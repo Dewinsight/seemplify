@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import {
   AlertCircle,
   ArrowLeft,
@@ -91,8 +92,7 @@ type Payslip = {
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function formatMoney(currency: string, value: any) {
-  const n = Number(value || 0);
-  return `${currency} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return formatPayrollMoney(value || 0, currency);
 }
 
 function formatRunSummaryValue(
@@ -183,11 +183,11 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = run?.runNumber ? `payroll-${run.runNumber}.csv` : `payroll-run-${runId}.csv`;
+      a.download = run?.runNumber ? `payroll-register-${run.runNumber}.csv` : `payroll-register-${runId}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert(err?.response?.data?.error || err?.message || 'Failed to export CSV');
+      alert(err?.response?.data?.error || err?.message || 'Failed to export accounting CSV');
     } finally {
       setBusy(null);
     }
@@ -383,7 +383,7 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium disabled:opacity-50"
               >
                 <Download className="w-4 h-4" />
-                CSV Export
+                Accounting CSV
               </button>
             )}
 

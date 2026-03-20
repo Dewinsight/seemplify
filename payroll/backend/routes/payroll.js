@@ -7,6 +7,7 @@ const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
 const PayrollEngineService = require('../services/PayrollEngineService');
 const taxService = require('../services/TaxCalculationService');
+const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const payrollEngineService = new PayrollEngineService();
 
 // Import RBAC middleware
@@ -154,6 +155,19 @@ async function assignIdpOnboarding(accessToken, organizationId, payload) {
   const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/assign`;
 
   const res = await axios.post(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function sendIdpOnboardingReminder(accessToken, organizationId, memberId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const encodedMemberId = encodeURIComponent(String(memberId || '').trim());
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/members/${encodedMemberId}/reminder`;
+
+  const res = await axios.post(url, {}, {
     headers: { Authorization: `Bearer ${accessToken}` },
     timeout: 15000,
   });
@@ -329,6 +343,23 @@ function normalizeTaxConfigPayload(input) {
   };
 }
 
+function normalizePayrollFlagsPayload(input, basicSalary, existingFlags = {}) {
+  const merged = {
+    ...(existingFlags || {}),
+    ...(input || {}),
+  };
+
+  if (!(Number(basicSalary || 0) > 0)) {
+    merged.includeInNextRun = false;
+    merged.requiresReview = true;
+    if (!String(merged.reviewReason || '').trim()) {
+      merged.reviewReason = 'Automatically excluded from payroll until payroll setup is completed.';
+    }
+  }
+
+  return merged;
+}
+
 function roundMoney(value) {
   const parsed = Number(value || 0);
   return Math.round((parsed + Number.EPSILON) * 100) / 100;
@@ -383,6 +414,7 @@ router.get('/profile/me', requireAuth, async (req, res) => {
         organizationId,
         basicSalary: 0,
         currency: 'USD',
+        payrollFlags: normalizePayrollFlagsPayload({}, 0, {}),
         employeeInfo: {
           name: req.session.user?.name,
           email: req.session.user?.email
@@ -715,6 +747,35 @@ router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
   }
 });
 
+router.post('/idp/onboarding/members/:memberId/reminder', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+    const memberId = String(req.params?.memberId || '').trim();
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+    }
+
+    if (!memberId) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+
+    const data = await sendIdpOnboardingReminder(accessToken, organizationId, memberId);
+    res.json(data);
+  } catch (err) {
+    console.error('IDP Onboarding Reminder Proxy Error:', err?.response?.data || err.message || err);
+    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(status).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to send onboarding reminder')
+    });
+  }
+});
+
 router.patch('/idp/onboarding/members/:memberId/status', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
@@ -980,6 +1041,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       idpProfileSync
     } = req.body || {};
     const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
+    const normalizedBasicSalary = Math.max(0, toNumber(basicSalary, 0));
     let syncedMember = null;
 
     if (idpProfileSync !== undefined) {
@@ -1026,7 +1088,6 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       profile.statutoryContributions = { ...(profile.statutoryContributions || {}), ...(statutoryContributions || {}) };
     }
     if (bankAccounts !== undefined) profile.bankAccounts = bankAccounts;
-    if (payrollFlags !== undefined) profile.payrollFlags = { ...(profile.payrollFlags || {}), ...(payrollFlags || {}) };
     if (status !== undefined) profile.status = status;
     if (isActive !== undefined) profile.isActive = !!isActive;
     if (terminationDate !== undefined) profile.terminationDate = terminationDate ? new Date(terminationDate) : null;
@@ -1036,6 +1097,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (syncedMember) {
       applyPayrollSyncFromMember(profile, syncedMember);
     }
+    profile.payrollFlags = normalizePayrollFlagsPayload(payrollFlags, profile.basicSalary, profile.payrollFlags);
 
     profile.lastModifiedBy = adminId;
     await profile.save();
@@ -1082,7 +1144,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
     const profile = new PayrollProfile({
       userId,
       organizationId,
-      basicSalary: basicSalary || 0,
+      basicSalary: normalizedBasicSalary,
       currency: currency || 'USD',
       payFrequency: payFrequency || 'monthly',
       employeeInfo: employeeInfo || {},
@@ -1092,7 +1154,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       taxConfig: normalizedTaxConfig || {},
       statutoryContributions: statutoryContributions || {},
       bankAccounts: bankAccounts || [],
-      payrollFlags: payrollFlags || {},
+      payrollFlags: normalizePayrollFlagsPayload(payrollFlags, normalizedBasicSalary, {}),
       status: status || 'active',
       isActive: isActive !== undefined ? !!isActive : true,
       notes,
@@ -1101,10 +1163,10 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
     });
 
     // Record initial salary
-    if (basicSalary > 0) {
+    if (normalizedBasicSalary > 0) {
       profile.salaryHistory.push({
         effectiveDate: new Date(),
-        newSalary: basicSalary,
+        newSalary: normalizedBasicSalary,
         changeReason: 'joining',
         approvedBy: adminId
       });
@@ -1157,6 +1219,7 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
     if (existing) {
       existing.userId = resolvedUserId;
       applyPayrollSyncFromMember(existing, member);
+      existing.payrollFlags = normalizePayrollFlagsPayload(undefined, existing.basicSalary, existing.payrollFlags);
       await existing.save();
       return res.json({ success: true, profile: existing, existed: true });
     }
@@ -1171,6 +1234,7 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
       taxConfig: Number(member?.payrollSync?.dependentsCount || 0) > 0
         ? { dependents: Number(member.payrollSync.dependentsCount) }
         : {},
+      payrollFlags: normalizePayrollFlagsPayload({}, 0, {}),
       createdBy: adminId,
       status: 'active',
       isActive: true,
@@ -1713,100 +1777,21 @@ router.get('/runs/:id/export', requireHRAdmin, async (req, res) => {
       organizationId
     }).sort({ 'employeeSnapshot.name': 1 }).lean();
 
-    const csvEscape = (value) => {
-      if (value === null || value === undefined) return '';
-      const s = String(value);
-      return /[\",\\n\\r]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;
-    };
+    const userIds = Array.from(new Set(
+      payslips
+        .map((payslip) => String(payslip?.userId || '').trim())
+        .filter(Boolean)
+    ));
+    const profiles = userIds.length > 0
+      ? await PayrollProfile.find({ organizationId, userId: { $in: userIds } })
+        .select('userId currency employeeInfo bankAccounts')
+        .lean()
+      : [];
 
-    const sumByType = (items, type) => (items || [])
-      .filter(i => i && i.type === type)
-      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-
-    const sumByTypes = (items, types) => (items || [])
-      .filter(i => i && types.includes(i.type))
-      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-
-    const earningAllowanceTypes = ['hra', 'transport', 'meal', 'phone', 'medical', 'education', 'special'];
-    const bonusTypes = ['bonus', 'commission', 'incentive'];
-
-    const headers = [
-      'Run Number',
-      'Period',
-      'Payment Date',
-      'Employee Name',
-      'Employee ID',
-      'Email',
-      'Department',
-      'Designation',
-      'Currency',
-      'Basic Salary',
-      'Allowances',
-      'Overtime',
-      'Bonuses/Commissions',
-      'Reimbursements',
-      'Other Earnings',
-      'Gross Pay',
-      'Income Tax',
-      'Social Security',
-      'Pension',
-      'Loan Repayment',
-      'Unpaid Leave',
-      'Other Deductions',
-      'Total Deductions',
-      'Net Pay'
-    ];
-
-    const rows = payslips.map(p => {
-      const earnings = p.earnings || [];
-      const deductions = p.deductions || [];
-
-      const basic = sumByType(earnings, 'basic');
-      const allowances = sumByTypes(earnings, earningAllowanceTypes);
-      const overtime = sumByType(earnings, 'overtime');
-      const bonuses = sumByTypes(earnings, bonusTypes);
-      const reimbursements = sumByType(earnings, 'reimbursement');
-      const otherEarnings = (Number(p.earningsSummary?.grossPay) || 0) - (basic + allowances + overtime + bonuses + reimbursements);
-
-      const incomeTax = Number(p.taxBreakdown?.taxAmount) || sumByType(deductions, 'income_tax');
-      const socialSecurity = sumByType(deductions, 'social_security');
-      const pension = sumByType(deductions, 'pension');
-      const loan = sumByType(deductions, 'loan_repayment');
-      const unpaidLeave = sumByType(deductions, 'unpaid_leave');
-      const totalDeductions = Number(p.deductionsSummary?.totalDeductions) || 0;
-
-      const otherDeductions = totalDeductions - (incomeTax + socialSecurity + pension + loan + unpaidLeave);
-
-      return [
-        run.runNumber,
-        `${run.payPeriod?.month}/${run.payPeriod?.year}`,
-        run.payPeriod?.paymentDate ? new Date(run.payPeriod.paymentDate).toISOString().split('T')[0] : '',
-        p.employeeSnapshot?.name || '',
-        p.employeeSnapshot?.employeeId || '',
-        p.employeeSnapshot?.email || '',
-        p.employeeSnapshot?.department || '',
-        p.employeeSnapshot?.designation || '',
-        p.currency || 'USD',
-        basic,
-        allowances,
-        overtime,
-        bonuses,
-        reimbursements,
-        Math.max(0, otherEarnings),
-        Number(p.earningsSummary?.grossPay) || 0,
-        incomeTax,
-        socialSecurity,
-        pension,
-        loan,
-        unpaidLeave,
-        Math.max(0, otherDeductions),
-        totalDeductions,
-        Number(p.netPay) || 0
-      ].map(csvEscape);
-    });
-
-    const csv = [headers.map(csvEscape).join(','), ...rows.map(r => r.join(','))].join('\n');
-    const filename = `payroll-${run.runNumber}.csv`;
+    const runById = new Map([[String(run._id), run]]);
+    const profileByUserId = new Map(profiles.map((profile) => [String(profile.userId), profile]));
+    const { csv } = buildPayrollRegisterCsv({ payslips, runById, profileByUserId });
+    const filename = `payroll-register-${run.runNumber}.csv`;
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

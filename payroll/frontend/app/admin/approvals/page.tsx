@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, XCircle, Clock, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
 import api, { isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 
 interface ApprovalRequest {
     _id: string;
@@ -236,7 +237,7 @@ export default function ApprovalsPage() {
                                             <div className="text-2xl font-bold text-white">
                                                 {request.type === 'overtime' && request.overtimeHours
                                                     ? `${request.overtimeHours}h @ ${request.overtimeMultiplier || 1.5}x`
-                                                    : `${request.currency || 'USD'} ${Number(request.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                                    : formatPayrollMoney(request.amount || 0, request.currency || 'USD')}
                                             </div>
                                             <div className="text-xs text-zinc-500">Requested Amount</div>
                                         </div>

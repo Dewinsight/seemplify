@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api, { authApi, handleAuthCallback } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
+import { resolveIdpUrl } from '@/lib/runtimeConfig';
 import Link from 'next/link';
 import {
     Search,
@@ -54,8 +56,15 @@ type EmployeeRow = {
     profile?: any;
 };
 
+type EmployeeIssue = 'onboarding' | 'profile' | 'setup' | null;
+const AUTO_EXCLUSION_REASONS = [
+    'Automatically excluded from payroll until onboarding is completed.',
+    'Automatically excluded from payroll until a payroll profile is created.',
+    'Automatically excluded from payroll until payroll setup is completed.',
+];
+
 function getIdpBaseUrl(): string {
-    return (process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000').replace(/\/$/, '');
+    return resolveIdpUrl();
 }
 
 function buildIdpWorkspaceUrl(organizationId: string, path: 'members' | 'onboarding'): string {
@@ -127,6 +136,51 @@ function getMemberAccountId(row: EmployeeRow): string {
     return String(row.member?.id || row.member?.sub || row.userId || '').trim();
 }
 
+function needsPayrollProfile(row: EmployeeRow): boolean {
+    return !row.profile;
+}
+
+function needsPayrollSetup(row: EmployeeRow): boolean {
+    return !needsPayrollProfile(row) && (!row.profile?.basicSalary || Number(row.profile.basicSalary) === 0);
+}
+
+function getPrimaryEmployeeIssue(row: EmployeeRow): EmployeeIssue {
+    if (!isOnboardingComplete(row)) return 'onboarding';
+    if (needsPayrollProfile(row)) return 'profile';
+    if (needsPayrollSetup(row)) return 'setup';
+    return null;
+}
+
+function shouldForceExcludeFromPayroll(row: EmployeeRow): boolean {
+    return getPrimaryEmployeeIssue(row) !== null;
+}
+
+function getResolveIssueLabel(row: EmployeeRow): string {
+    const issue = getPrimaryEmployeeIssue(row);
+    if (issue === 'onboarding') return 'Resolve Onboarding';
+    if (issue === 'profile') return 'Create Payroll Profile';
+    if (issue === 'setup') return 'Resolve Setup';
+    return 'View';
+}
+
+function getAutoExclusionReason(row: EmployeeRow): string {
+    const issue = getPrimaryEmployeeIssue(row);
+    if (issue === 'onboarding') {
+        return 'Automatically excluded from payroll until onboarding is completed.';
+    }
+    if (issue === 'profile') {
+        return 'Automatically excluded from payroll until a payroll profile is created.';
+    }
+    if (issue === 'setup') {
+        return 'Automatically excluded from payroll until payroll setup is completed.';
+    }
+    return '';
+}
+
+function isAutoExclusionReason(reason: string): boolean {
+    return AUTO_EXCLUSION_REASONS.includes(String(reason || '').trim());
+}
+
 export default function EmployeesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -145,6 +199,10 @@ export default function EmployeesPage() {
     const [selectedTeamId, setSelectedTeamId] = useState('');
     const [teamAssignmentBusy, setTeamAssignmentBusy] = useState(false);
     const [onboardingActionBusy, setOnboardingActionBusy] = useState(false);
+    const [excludeBusyUserId, setExcludeBusyUserId] = useState('');
+    const [autoExcludingUsers, setAutoExcludingUsers] = useState<string[]>([]);
+    const [autoIncludingUsers, setAutoIncludingUsers] = useState<string[]>([]);
+    const [resolutionUserId, setResolutionUserId] = useState('');
     const [syncNotice, setSyncNotice] = useState('');
     const [pageError, setPageError] = useState('');
 
@@ -345,6 +403,11 @@ export default function EmployeesPage() {
 
     const activeOnboardingRow = onboardingQueue[0] || null;
     const activeTeamAssignmentRow = activeOnboardingRow ? null : (teamAssignmentQueue[0] || null);
+    const resolutionRow = useMemo(
+        () => employees.find((row) => row.userId === resolutionUserId) || null,
+        [employees, resolutionUserId]
+    );
+    const resolutionIssue = resolutionRow ? getPrimaryEmployeeIssue(resolutionRow) : null;
 
     useEffect(() => {
         if (!activeTeamAssignmentRow) {
@@ -361,6 +424,149 @@ export default function EmployeesPage() {
         setEmployees((current) => current.map((row) => (
             row.userId === userId ? updater(row) : row
         )));
+    };
+
+    useEffect(() => {
+        const candidates = employees.filter((row) => {
+            if (!row.profile) return false;
+            if (!shouldForceExcludeFromPayroll(row)) return false;
+            if (row.profile?.payrollFlags?.includeInNextRun === false) return false;
+            if (autoExcludingUsers.includes(row.userId)) return false;
+            return true;
+        });
+
+        if (!candidates.length) {
+            return;
+        }
+
+        const candidateIds = candidates.map((row) => row.userId);
+        setAutoExcludingUsers((current) => Array.from(new Set([...current, ...candidateIds])));
+
+        candidates.forEach((row) => {
+            updateEmployeeRow(row.userId, (currentRow) => ({
+                ...currentRow,
+                profile: currentRow.profile ? {
+                    ...currentRow.profile,
+                    payrollFlags: {
+                        ...(currentRow.profile.payrollFlags || {}),
+                        includeInNextRun: false,
+                        requiresReview: true,
+                        reviewReason: getAutoExclusionReason(currentRow),
+                    }
+                } : currentRow.profile
+            }));
+        });
+
+        (async () => {
+            await Promise.allSettled(candidates.map(async (row) => {
+                try {
+                    await api.put(`/payroll/profiles/${row.userId}`, {
+                        payrollFlags: {
+                            ...(row.profile?.payrollFlags || {}),
+                            includeInNextRun: false,
+                            requiresReview: true,
+                            reviewReason: getAutoExclusionReason(row),
+                        }
+                    });
+                } catch (error) {
+                    console.error(`Failed to auto-exclude ${row.userId} from payroll:`, error);
+                } finally {
+                    setAutoExcludingUsers((current) => current.filter((userId) => userId !== row.userId));
+                }
+            }));
+        })();
+    }, [autoExcludingUsers, employees]);
+
+    useEffect(() => {
+        const candidates = employees.filter((row) => {
+            if (!row.profile) return false;
+            if (shouldForceExcludeFromPayroll(row)) return false;
+            if (row.profile?.payrollFlags?.includeInNextRun !== false) return false;
+            if (row.profile?.payrollFlags?.requiresReview !== true) return false;
+            if (!isAutoExclusionReason(row.profile?.payrollFlags?.reviewReason || '')) return false;
+            if (autoIncludingUsers.includes(row.userId)) return false;
+            return true;
+        });
+
+        if (!candidates.length) {
+            return;
+        }
+
+        const candidateIds = candidates.map((row) => row.userId);
+        setAutoIncludingUsers((current) => Array.from(new Set([...current, ...candidateIds])));
+
+        candidates.forEach((row) => {
+            updateEmployeeRow(row.userId, (currentRow) => ({
+                ...currentRow,
+                profile: currentRow.profile ? {
+                    ...currentRow.profile,
+                    payrollFlags: {
+                        ...(currentRow.profile.payrollFlags || {}),
+                        includeInNextRun: true,
+                        requiresReview: false,
+                        reviewReason: '',
+                    }
+                } : currentRow.profile
+            }));
+        });
+
+        (async () => {
+            await Promise.allSettled(candidates.map(async (row) => {
+                try {
+                    await api.put(`/payroll/profiles/${row.userId}`, {
+                        payrollFlags: {
+                            ...(row.profile?.payrollFlags || {}),
+                            includeInNextRun: true,
+                            requiresReview: false,
+                            reviewReason: '',
+                        }
+                    });
+                } catch (error) {
+                    console.error(`Failed to re-include ${row.userId} in payroll:`, error);
+                } finally {
+                    setAutoIncludingUsers((current) => current.filter((userId) => userId !== row.userId));
+                }
+            }));
+        })();
+    }, [autoIncludingUsers, employees]);
+
+    const handleExcludeForPayroll = async (row: EmployeeRow, excluded: boolean) => {
+        if (!row.profile) return;
+
+        const nextFlags = {
+            ...(row.profile?.payrollFlags || {}),
+            includeInNextRun: !excluded,
+            requiresReview: excluded,
+            reviewReason: excluded ? 'Excluded from payroll run by payroll admin.' : '',
+        };
+
+        setExcludeBusyUserId(row.userId);
+        updateEmployeeRow(row.userId, (currentRow) => ({
+            ...currentRow,
+            profile: currentRow.profile ? {
+                ...currentRow.profile,
+                payrollFlags: nextFlags,
+            } : currentRow.profile
+        }));
+
+        try {
+            await api.put(`/payroll/profiles/${row.userId}`, {
+                payrollFlags: nextFlags,
+            });
+        } catch (error: any) {
+            updateEmployeeRow(row.userId, (currentRow) => ({
+                ...currentRow,
+                profile: currentRow.profile ? {
+                    ...currentRow.profile,
+                    payrollFlags: {
+                        ...(row.profile?.payrollFlags || {})
+                    },
+                } : currentRow.profile
+            }));
+            alert(error?.response?.data?.error || error?.message || 'Failed to update payroll exclusion');
+        } finally {
+            setExcludeBusyUserId('');
+        }
     };
 
     const dismissActiveOnboarding = () => {
@@ -416,35 +622,47 @@ export default function EmployeesPage() {
         }
     };
 
-    const handleSendOnboarding = async () => {
-        if (!activeOnboardingRow || !activeOnboardingRow.member) return;
+    const handleSendOnboarding = async (targetRow: EmployeeRow | null = null) => {
+        const row = targetRow || resolutionRow || activeOnboardingRow;
+        if (!row || !row.member) return;
 
-        const memberId = getMemberAccountId(activeOnboardingRow);
+        const memberId = getMemberAccountId(row);
         if (!memberId) return;
+        const isReminder = resolveOnboardingStatus(row) === 'pending';
 
         setOnboardingActionBusy(true);
         try {
-            await api.post('/payroll/idp/onboarding/assign', { memberId });
+            if (isReminder) {
+                await api.post(`/payroll/idp/onboarding/members/${memberId}/reminder`);
+            } else {
+                await api.post('/payroll/idp/onboarding/assign', { memberId });
+            }
 
-            updateEmployeeRow(activeOnboardingRow.userId, (row) => ({
-                ...row,
-                member: row.member ? {
-                    ...row.member,
-                    onboardingStatus: 'pending',
-                    onboardingStatusSource: 'assignment',
-                } : row.member
-            }));
+            if (!isReminder) {
+                updateEmployeeRow(row.userId, (currentRow) => ({
+                    ...currentRow,
+                    member: currentRow.member ? {
+                        ...currentRow.member,
+                        onboardingStatus: 'pending',
+                        onboardingStatusSource: 'assignment',
+                    } : currentRow.member
+                }));
+            }
+            if (resolutionUserId === row.userId) {
+                setResolutionUserId('');
+            }
         } catch (error: any) {
-            alert(error?.response?.data?.error || error?.message || 'Failed to assign onboarding');
+            alert(error?.response?.data?.error || error?.message || (isReminder ? 'Failed to send onboarding reminder' : 'Failed to assign onboarding'));
         } finally {
             setOnboardingActionBusy(false);
         }
     };
 
-    const handleMarkOnboarded = async () => {
-        if (!activeOnboardingRow || !activeOnboardingRow.member) return;
+    const handleMarkOnboarded = async (targetRow: EmployeeRow | null = null) => {
+        const row = targetRow || resolutionRow || activeOnboardingRow;
+        if (!row || !row.member) return;
 
-        const memberId = getMemberAccountId(activeOnboardingRow);
+        const memberId = getMemberAccountId(row);
         if (!memberId) return;
 
         setOnboardingActionBusy(true);
@@ -453,19 +671,26 @@ export default function EmployeesPage() {
                 status: 'completed'
             });
 
-            updateEmployeeRow(activeOnboardingRow.userId, (row) => ({
-                ...row,
-                member: row.member ? {
-                    ...row.member,
+            updateEmployeeRow(row.userId, (currentRow) => ({
+                ...currentRow,
+                member: currentRow.member ? {
+                    ...currentRow.member,
                     onboardingStatus: 'completed',
                     onboardingStatusSource: 'manual',
-                } : row.member
+                } : currentRow.member
             }));
+            if (resolutionUserId === row.userId) {
+                setResolutionUserId('');
+            }
         } catch (error: any) {
             alert(error?.response?.data?.error || error?.message || 'Failed to mark employee as onboarded');
         } finally {
             setOnboardingActionBusy(false);
         }
+    };
+
+    const openResolutionModal = (row: EmployeeRow) => {
+        setResolutionUserId(row.userId);
     };
 
     if (loading) {
@@ -478,7 +703,7 @@ export default function EmployeesPage() {
 
     return (
         <div className="min-h-screen bg-zinc-950 text-zinc-200 p-8 pb-20">
-            {activeOnboardingRow && (
+            {false && activeOnboardingRow && (
                 <div className="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="w-full max-w-2xl rounded-3xl border border-amber-500/20 bg-zinc-900/95 shadow-2xl shadow-black/40">
                         <div className="flex items-start justify-between gap-4 border-b border-zinc-800/80 px-6 py-5">
@@ -521,7 +746,7 @@ export default function EmployeesPage() {
                             <div className="mt-5 grid gap-3 sm:grid-cols-2">
                                 <button
                                     type="button"
-                                    onClick={handleSendOnboarding}
+                                    onClick={() => { void handleSendOnboarding(); }}
                                     disabled={onboardingActionBusy}
                                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
@@ -530,7 +755,7 @@ export default function EmployeesPage() {
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={handleMarkOnboarded}
+                                    onClick={() => { void handleMarkOnboarded(); }}
                                     disabled={onboardingActionBusy}
                                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
@@ -559,7 +784,7 @@ export default function EmployeesPage() {
                 </div>
             )}
 
-            {!activeOnboardingRow && activeTeamAssignmentRow && (
+            {false && !activeOnboardingRow && activeTeamAssignmentRow && (
                 <div className="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="w-full max-w-2xl rounded-3xl border border-emerald-500/20 bg-zinc-900/95 shadow-2xl shadow-black/40">
                         <div className="flex items-start justify-between gap-4 border-b border-zinc-800/80 px-6 py-5">
@@ -574,9 +799,9 @@ export default function EmployeesPage() {
                                 </div>
                                 <h2 className="text-xl font-semibold text-white">Assign employee to a team</h2>
                                 <p className="mt-1 text-sm text-zinc-400">
-                                    {getEmployeeName(activeTeamAssignmentRow)}
-                                    {resolveEmployeeId(activeTeamAssignmentRow) ? ` • ${resolveEmployeeId(activeTeamAssignmentRow)}` : ''}
-                                    {getEmployeeEmail(activeTeamAssignmentRow) ? ` • ${getEmployeeEmail(activeTeamAssignmentRow)}` : ''}
+                                    {getEmployeeName(activeTeamAssignmentRow!)}
+                                    {resolveEmployeeId(activeTeamAssignmentRow!) ? ` • ${resolveEmployeeId(activeTeamAssignmentRow!)}` : ''}
+                                    {getEmployeeEmail(activeTeamAssignmentRow!) ? ` • ${getEmployeeEmail(activeTeamAssignmentRow!)}` : ''}
                                 </p>
                             </div>
                             <button
@@ -684,6 +909,135 @@ export default function EmployeesPage() {
                 </div>
             )}
 
+            {resolutionRow && resolutionIssue && (
+                <div className="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="w-full max-w-2xl rounded-3xl border border-amber-500/20 bg-zinc-900/95 shadow-2xl shadow-black/40">
+                        <div className="flex items-start justify-between gap-4 border-b border-zinc-800/80 px-6 py-5">
+                            <div>
+                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                    <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300">
+                                        {getResolveIssueLabel(resolutionRow)}
+                                    </span>
+                                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${
+                                        isOnboardingComplete(resolutionRow)
+                                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                                            : 'border-orange-500/20 bg-orange-500/10 text-orange-300'
+                                    }`}>
+                                        {formatOnboardingStatus(resolveOnboardingStatus(resolutionRow))}
+                                    </span>
+                                </div>
+                                <h2 className="text-xl font-semibold text-white">{getEmployeeName(resolutionRow)}</h2>
+                                <p className="mt-1 text-sm text-zinc-400">
+                                    {resolveEmployeeId(resolutionRow) ? `${resolveEmployeeId(resolutionRow)} • ` : ''}
+                                    {getEmployeeEmail(resolutionRow) || 'No email available'}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setResolutionUserId('')}
+                                className="rounded-full border border-zinc-700 p-2 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
+                                aria-label="Close resolution prompt"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <div className="px-6 py-5 space-y-4">
+                            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                                {resolutionIssue === 'onboarding' && (
+                                    <>
+                                        <p className="mb-2 text-sm font-medium text-zinc-200">This user is not fully onboarded.</p>
+                                        <p className="text-sm text-zinc-300">
+                                            {resolveOnboardingStatus(resolutionRow) === 'pending'
+                                                ? 'Their onboarding flow is already in progress, but it is still pending. You can send a reminder, or mark them as onboarded if HR completed the process outside the workflow.'
+                                                : 'They have not started onboarding yet. Create onboarding for them now, or mark them as onboarded if HR completed it manually.'}
+                                        </p>
+                                    </>
+                                )}
+                                {resolutionIssue === 'profile' && (
+                                    <>
+                                        <p className="mb-2 text-sm font-medium text-zinc-200">Payroll profile not created yet.</p>
+                                        <p className="text-sm text-zinc-300">
+                                            Onboarding is complete, but this employee does not have a payroll profile yet. Create the payroll profile before they can be included in a payroll run.
+                                        </p>
+                                    </>
+                                )}
+                                {resolutionIssue === 'setup' && (
+                                    <>
+                                        <p className="mb-2 text-sm font-medium text-zinc-200">Payroll setup is incomplete.</p>
+                                        <p className="text-sm text-zinc-300">
+                                            This employee has a payroll profile, but the required setup is incomplete. Finish salary and payroll configuration before including them in payroll.
+                                        </p>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {resolutionIssue === 'onboarding' && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSendOnboarding(resolutionRow)}
+                                            disabled={onboardingActionBusy}
+                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
+                                            {resolveOnboardingStatus(resolutionRow) === 'pending' ? 'Send Reminder' : 'Create Onboarding'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleMarkOnboarded(resolutionRow)}
+                                            disabled={onboardingActionBusy}
+                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                                            Mark As Onboarded
+                                        </button>
+                                    </>
+                                )}
+
+                                {resolutionIssue === 'profile' && (
+                                    <Link
+                                        href={`/admin/employees/onboard/${resolutionRow.userId}`}
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20"
+                                    >
+                                        <UserPlus className="h-4 w-4" />
+                                        Create Payroll Profile
+                                    </Link>
+                                )}
+
+                                {resolutionIssue === 'setup' && (
+                                    <Link
+                                        href={`/admin/employees/${resolutionRow.userId}`}
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20"
+                                    >
+                                        <ChevronRight className="h-4 w-4" />
+                                        Open Payroll Setup
+                                    </Link>
+                                )}
+
+                                <a
+                                    href={`${onboardingWorkspaceUrl}?workflow=onboarding`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-900"
+                                >
+                                    <FolderOpen className="h-4 w-4" />
+                                    Open Document Workspace
+                                </a>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setResolutionUserId('')}
+                                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-6xl mx-auto mb-6 flex flex-col gap-4 md:flex-row">
                 <div className="flex-1 relative">
                     <Search className="absolute left-3 top-2.5 w-5 h-5 text-zinc-500" />
@@ -737,8 +1091,9 @@ export default function EmployeesPage() {
                     const hasProfile = !!employee;
                     const onboardingStatus = resolveOnboardingStatus(row);
                     const onboardingComplete = onboardingStatus === 'completed';
-                    const needsPayrollProfile = !hasProfile;
-                    const needsSetup = hasProfile && (!employee?.basicSalary || Number(employee.basicSalary) === 0);
+                    const missingPayrollProfile = needsPayrollProfile(row);
+                    const needsSetup = needsPayrollSetup(row);
+                    const resolveIssueLabel = getResolveIssueLabel(row);
                     const teamName = resolveTeamName(row);
                     const departmentName = resolveDepartmentName(row);
                     const employeeId = resolveEmployeeId(row);
@@ -746,6 +1101,9 @@ export default function EmployeesPage() {
                     const totalAllowances = Number(employee?.totalAllowances || 0);
                     const grossMonthlySalary = Number(employee?.grossMonthlySalary || (Number(employee?.basicSalary || 0) + totalAllowances));
                     const holdPayment = !!employee?.payrollFlags?.holdPayment;
+                    const forceExcluded = shouldForceExcludeFromPayroll(row);
+                    const excludedForRun = forceExcluded || employee?.payrollFlags?.includeInNextRun === false;
+                    const excludeToggleDisabled = !hasProfile || forceExcluded || excludeBusyUserId === row.userId || autoExcludingUsers.includes(row.userId);
 
                     return (
                         <div
@@ -776,13 +1134,13 @@ export default function EmployeesPage() {
                                             {formatOnboardingStatus(onboardingStatus)}
                                         </span>
                                     )}
-                                    {onboardingComplete && needsPayrollProfile && (
+                                    {onboardingComplete && missingPayrollProfile && (
                                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
                                             <UserPlus className="w-3 h-3" />
                                             Payroll Profile Needed
                                         </span>
                                     )}
-                                    {onboardingComplete && !needsPayrollProfile && needsSetup && (
+                                    {onboardingComplete && !missingPayrollProfile && needsSetup && (
                                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
                                             <AlertCircle className="w-3 h-3" />
                                             Needs Setup
@@ -829,12 +1187,12 @@ export default function EmployeesPage() {
                                     <span className="text-zinc-500 flex items-center gap-1.5">
                                         <DollarSign className="w-3.5 h-3.5" /> Basic Salary
                                     </span>
-                                    <span className={`font-mono font-medium text-right ${needsPayrollProfile || needsSetup ? 'text-zinc-500' : 'text-emerald-400'}`}>
-                                        {needsPayrollProfile || needsSetup
-                                            ? 'Not Set'
-                                            : `${currency} ${Number(employee?.basicSalary || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                                    </span>
-                                </div>
+                                        <span className={`font-mono font-medium text-right ${missingPayrollProfile || needsSetup ? 'text-zinc-500' : 'text-emerald-400'}`}>
+                                            {missingPayrollProfile || needsSetup
+                                                ? 'Not Set'
+                                                : formatPayrollMoney(employee?.basicSalary || 0, currency)}
+                                        </span>
+                                    </div>
 
                                 {hasProfile && !needsSetup && (
                                     <div className="flex items-center justify-between gap-3 text-sm">
@@ -842,10 +1200,38 @@ export default function EmployeesPage() {
                                             <DollarSign className="w-3.5 h-3.5" /> Gross Monthly
                                         </span>
                                         <span className="font-mono font-medium text-zinc-200 text-right">
-                                            {currency} {grossMonthlySalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatPayrollMoney(grossMonthlySalary, currency)}
                                         </span>
                                     </div>
                                 )}
+
+                                <label className={`mt-1 flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${
+                                    excludedForRun
+                                        ? 'border-amber-500/20 bg-amber-500/10 text-amber-200'
+                                        : 'border-zinc-800 bg-zinc-950/40 text-zinc-300'
+                                }`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={excludedForRun}
+                                        disabled={excludeToggleDisabled}
+                                        onChange={(event) => handleExcludeForPayroll(row, event.target.checked)}
+                                        className="mt-0.5 rounded bg-zinc-900 border-zinc-700"
+                                    />
+                                    <span className="flex-1">
+                                        <span className="block font-medium">
+                                            Exclude from payroll run
+                                        </span>
+                                        <span className={`block mt-0.5 text-xs ${
+                                            excludedForRun ? 'text-amber-200/80' : 'text-zinc-500'
+                                        }`}>
+                                            {forceExcluded
+                                                ? getAutoExclusionReason(row)
+                                                : (employee?.payrollFlags?.includeInNextRun === false
+                                                    ? 'This employee is manually excluded from the next payroll run.'
+                                                    : 'This employee is currently included in the next payroll run.')}
+                                        </span>
+                                    </span>
+                                </label>
 
                                 <div className="pt-3 mt-3 border-t border-zinc-800/50 flex items-center justify-between gap-3">
                                     <span className={`text-xs px-2 py-0.5 rounded-full border ${
@@ -856,29 +1242,49 @@ export default function EmployeesPage() {
                                         {employee?.isActive !== false ? 'Active' : 'Inactive'}
                                     </span>
                                     {!onboardingComplete ? (
-                                        <a
-                                            href={`${onboardingWorkspaceUrl}?workflow=onboarding`}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
-                                        >
-                                            Resolve
-                                            <ChevronRight className="w-3.5 h-3.5" />
-                                        </a>
-                                    ) : needsPayrollProfile ? (
-                                        <Link
-                                            href={`/admin/employees/onboard/${row.userId}`}
+                                        <div className="flex flex-wrap items-center justify-end gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleMarkOnboarded(row)}
+                                                disabled={onboardingActionBusy}
+                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                Mark Onboarded
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => openResolutionModal(row)}
+                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
+                                            >
+                                                {resolveIssueLabel}
+                                                <ChevronRight className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    ) : missingPayrollProfile ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => openResolutionModal(row)}
                                             className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
                                         >
                                             <UserPlus className="w-3.5 h-3.5" />
-                                            Setup Payroll
-                                        </Link>
+                                            {resolveIssueLabel}
+                                        </button>
+                                    ) : needsSetup ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => openResolutionModal(row)}
+                                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
+                                        >
+                                            {resolveIssueLabel}
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
                                     ) : (
                                         <Link
                                             href={`/admin/employees/${row.userId}`}
                                             className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
                                         >
-                                            {needsSetup ? 'Setup' : 'View'}
+                                            View
                                             <ChevronRight className="w-3.5 h-3.5" />
                                         </Link>
                                     )}

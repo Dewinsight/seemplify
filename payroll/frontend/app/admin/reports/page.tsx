@@ -4,6 +4,7 @@ import { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { BarChart3, Download, FileText, DollarSign, Users, Calendar, TrendingUp } from 'lucide-react';
 import api, { isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 
 interface ReportSummary {
     totalPayroll: number;
@@ -59,19 +60,16 @@ export default function ReportsPage() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `payroll-report-${year}.${format}`;
+            a.download = `payroll-register-${year}.${format}`;
             a.click();
+            URL.revokeObjectURL(url);
         } catch (err: any) {
             alert(err.message || 'Export failed');
         }
     };
 
     const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: summary?.currency || 'USD',
-            minimumFractionDigits: 0,
-        }).format(amount);
+        return formatPayrollMoney(amount, summary?.currency || 'USD');
     };
 
     if (loading) {
@@ -107,7 +105,7 @@ export default function ReportsPage() {
                         className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm font-medium transition-colors"
                     >
                         <Download className="h-4 w-4" />
-                        Export CSV
+                        Accounting CSV
                     </button>
                 </div>
             </div>
@@ -247,8 +245,8 @@ export default function ReportsPage() {
                             >
                                 <FileText className="h-5 w-5 text-green-400" />
                                 <div className="text-left">
-                                    <div className="text-sm font-medium text-white">CSV Export</div>
-                                    <div className="text-xs text-zinc-500">Spreadsheet format</div>
+                                    <div className="text-sm font-medium text-white">Accounting CSV</div>
+                                    <div className="text-xs text-zinc-500">Payroll register with bank details</div>
                                 </div>
                             </button>
                             <button

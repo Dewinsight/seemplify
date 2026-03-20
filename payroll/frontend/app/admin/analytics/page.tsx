@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { isAuthenticated, authApi } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -39,14 +40,14 @@ const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 const fullMonthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 // Utility for formatting currency
-const formatCurrency = (amount: number, compact = false) => {
+const formatCurrency = (amount: number, compact = false, currency = 'USD') => {
   if (compact && amount >= 1000000) {
-    return `$${(amount / 1000000).toFixed(1)}M`;
+    return `${currency} ${(amount / 1000000).toFixed(1)}M`;
   }
   if (compact && amount >= 1000) {
-    return `$${(amount / 1000).toFixed(0)}K`;
+    return `${currency} ${(amount / 1000).toFixed(0)}K`;
   }
-  return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  return formatPayrollMoney(amount, currency);
 };
 
 // Color palette for charts

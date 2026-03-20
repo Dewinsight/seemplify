@@ -4,6 +4,7 @@ const router = express.Router();
 const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
+const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 
 // RBAC
 const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
@@ -233,41 +234,34 @@ router.get('/export', requireHRAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Only csv export is supported' });
     }
 
-    const csvEscape = (value) => {
-      if (value === null || value === undefined) return '';
-      const s = String(value);
-      return /[\",\\n\\r]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;
-    };
+    const runIds = Array.from(new Set(
+      payslips
+        .map((payslip) => String(payslip?.payrollRunId || '').trim())
+        .filter(Boolean)
+    ));
+    const userIds = Array.from(new Set(
+      payslips
+        .map((payslip) => String(payslip?.userId || '').trim())
+        .filter(Boolean)
+    ));
 
-    const headers = [
-      'Employee Name',
-      'Employee ID',
-      'Department',
-      'Month',
-      'Year',
-      'Currency',
-      'Gross Pay',
-      'Total Deductions',
-      'Income Tax',
-      'Net Pay',
-    ];
+    const [runs, profiles] = await Promise.all([
+      runIds.length > 0
+        ? PayrollRun.find({ _id: { $in: runIds }, organizationId }).lean()
+        : Promise.resolve([]),
+      userIds.length > 0
+        ? PayrollProfile.find({ organizationId, userId: { $in: userIds } })
+          .select('userId currency employeeInfo bankAccounts')
+          .lean()
+        : Promise.resolve([]),
+    ]);
 
-    const rows = payslips.map(p => [
-      p.employeeSnapshot?.name || '',
-      p.employeeSnapshot?.employeeId || '',
-      p.employeeSnapshot?.department || '',
-      p.payPeriod?.month || '',
-      p.payPeriod?.year || '',
-      p.currency || 'USD',
-      Number(p.earningsSummary?.grossPay) || 0,
-      Number(p.deductionsSummary?.totalDeductions) || 0,
-      Number(p.taxBreakdown?.taxAmount) || sumByType(p.deductions, 'income_tax'),
-      Number(p.netPay) || 0,
-    ].map(csvEscape));
+    const runById = new Map(runs.map((run) => [String(run._id), run]));
+    const profileByUserId = new Map(profiles.map((profile) => [String(profile.userId), profile]));
+    const { csv } = buildPayrollRegisterCsv({ payslips, runById, profileByUserId });
 
-    const csv = [headers.map(csvEscape).join(','), ...rows.map(r => r.join(','))].join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="payroll-report-${y}${month ? `-${month}` : ''}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="payroll-register-${y}${month ? `-${month}` : ''}.csv"`);
     res.send(csv);
   } catch (err) {
     console.error('Export Error:', err);
@@ -276,4 +270,3 @@ router.get('/export', requireHRAdmin, async (req, res) => {
 });
 
 module.exports = router;
-

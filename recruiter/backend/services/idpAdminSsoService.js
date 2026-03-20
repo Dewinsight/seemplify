@@ -28,6 +28,9 @@ const getIdpAdminSsoConfig = () => ({
   secret: String(
     process.env.RECRUITER_ADMIN_SSO_SECRET ||
     process.env.IDP_RECRUITER_ADMIN_SSO_SECRET ||
+    process.env.OIDC_CLIENT_SECRET ||
+    process.env.SMART_HR_CLIENT_SECRET ||
+    process.env.SMARTHR_CLIENT_SECRET ||
     ''
   ).trim(),
   issuer: String(

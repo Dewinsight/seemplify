@@ -1,17 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { authApi, handleAuthCallback } from '@/lib/api';
-import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import {
-    filingStatusOptions,
-    isManualOnlyJurisdiction,
-    manualTaxModeOptions,
-    payrollTaxJurisdictions,
-    residencyStatusOptions,
-    ukTaxSubdivisionOptions
-} from '@/lib/payrollTaxJurisdictions';
+    TaxFieldDefinition,
+    TaxJurisdictionSummary,
+    listTaxJurisdictions,
+} from '@/lib/payrollTax';
+import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -94,9 +92,17 @@ function getDefaultSetupData() {
 function getDefaultTaxConfig() {
     return {
         taxId: '',
-        calculationMode: 'manual',
+        calculationMode: 'configured',
+        jurisdictionConfigId: '',
+        jurisdictionVersionId: '',
         jurisdictionCode: 'OTHER',
         jurisdictionName: '',
+        employeeTaxInputs: {} as Record<string, any>,
+        taxValidation: {
+            status: 'unknown',
+            messages: [] as string[],
+            validatedAt: null as string | null,
+        },
         taxSubdivision: 'standard',
         residencyStatus: 'resident',
         filingStatus: 'single',
@@ -334,54 +340,159 @@ function normalizeStatutoryContributionsForJurisdiction(raw: any = {}, jurisdict
     return next;
 }
 
-function mapTaxConfigForForm(raw: any = {}) {
-    const defaults = getDefaultTaxConfig();
-    const jurisdictionCode = String(raw?.jurisdictionCode || raw?.jurisdictionCountry || '').toUpperCase();
-    const legacyRegime = String(raw?.calculationRegime || '').toLowerCase();
+const COUNTRY_CODE_HINTS: Record<string, string> = {
+    UK: 'GB',
+    'UNITED KINGDOM': 'GB',
+    ENGLAND: 'GB',
+    SCOTLAND: 'GB',
+    WALES: 'GB',
+    'NORTHERN IRELAND': 'GB',
+    US: 'US',
+    USA: 'US',
+    'UNITED STATES': 'US',
+    'UNITED STATES OF AMERICA': 'US',
+    NIGERIA: 'NG',
+    GHANA: 'GH',
+    KENYA: 'KE',
+    'SOUTH AFRICA': 'ZA',
+};
 
-    let calculationMode = raw?.calculationMode || '';
-    let manualCalculationType = raw?.manualCalculationType || '';
-    let resolvedJurisdictionCode = jurisdictionCode || defaults.jurisdictionCode;
+function normalizeJurisdictionCode(value: any): string {
+    const raw = String(value || '').trim().toUpperCase();
+    return COUNTRY_CODE_HINTS[raw] || raw;
+}
 
-    if (!calculationMode) {
-        if (legacyRegime === 'progressive_us') {
-            calculationMode = 'builtin';
-            resolvedJurisdictionCode = 'US';
-        } else if (legacyRegime === 'progressive_uk') {
-            calculationMode = 'builtin';
-            resolvedJurisdictionCode = 'GB';
-        } else if (legacyRegime === 'flat') {
-            calculationMode = 'manual';
-            manualCalculationType = 'flat';
-        } else if (legacyRegime === 'none') {
-            calculationMode = 'manual';
-            manualCalculationType = 'none';
-        } else if (legacyRegime === 'progressive_generic') {
-            calculationMode = 'manual';
-            manualCalculationType = 'progressive';
+function findJurisdictionById(jurisdictions: TaxJurisdictionSummary[] = [], jurisdictionId: string) {
+    const normalizedId = String(jurisdictionId || '').trim();
+    if (!normalizedId) return null;
+    return jurisdictions.find((jurisdiction) => String(jurisdiction._id) === normalizedId) || null;
+}
+
+function findJurisdictionByCode(jurisdictions: TaxJurisdictionSummary[] = [], code: string) {
+    const normalizedCode = normalizeJurisdictionCode(code || 'OTHER') || 'OTHER';
+    const candidates = jurisdictions.filter((jurisdiction) => normalizeJurisdictionCode(jurisdiction.countryCode) === normalizedCode);
+    return candidates.find((jurisdiction) => jurisdiction.scope === 'organization' && jurisdiction.publishedVersion)
+        || candidates.find((jurisdiction) => !!jurisdiction.publishedVersion)
+        || candidates.find((jurisdiction) => jurisdiction.scope === 'organization')
+        || candidates[0]
+        || null;
+}
+
+function findJurisdictionByName(jurisdictions: TaxJurisdictionSummary[] = [], name: string) {
+    const normalizedName = String(name || '').trim().toLowerCase();
+    if (!normalizedName) return null;
+    return jurisdictions.find((jurisdiction) => String(jurisdiction.displayName || '').trim().toLowerCase() === normalizedName)
+        || jurisdictions.find((jurisdiction) => String(jurisdiction.countryName || '').trim().toLowerCase() === normalizedName)
+        || null;
+}
+
+function hydrateEmployeeTaxInputs(
+    fieldDefinitions: TaxFieldDefinition[] = [],
+    rawInputs: Record<string, any> = {},
+    rawTaxConfig: Record<string, any> = {}
+) {
+    const hydrated: Record<string, any> = { ...(rawInputs || {}) };
+
+    for (const field of fieldDefinitions || []) {
+        if (hydrated[field.key] !== undefined) continue;
+        if (rawTaxConfig[field.key] !== undefined) {
+            hydrated[field.key] = rawTaxConfig[field.key];
+            continue;
+        }
+        hydrated[field.key] = field.defaultValue !== undefined
+            ? field.defaultValue
+            : (field.type === 'boolean' ? false : '');
+    }
+
+    return hydrated;
+}
+
+function syncTaxConfigWithJurisdiction(rawTaxConfig: Record<string, any> = {}, jurisdiction: TaxJurisdictionSummary | null) {
+    const publishedVersion = jurisdiction?.publishedVersion || null;
+    const employeeTaxInputs = hydrateEmployeeTaxInputs(
+        Array.isArray(publishedVersion?.fieldDefinitions) ? publishedVersion.fieldDefinitions : [],
+        (rawTaxConfig?.employeeTaxInputs && typeof rawTaxConfig.employeeTaxInputs === 'object') ? rawTaxConfig.employeeTaxInputs : {},
+        rawTaxConfig
+    );
+
+    return {
+        ...getDefaultTaxConfig(),
+        ...rawTaxConfig,
+        calculationMode: 'configured',
+        jurisdictionConfigId: jurisdiction?._id ? String(jurisdiction._id) : String(rawTaxConfig?.jurisdictionConfigId || ''),
+        jurisdictionVersionId: publishedVersion?._id ? String(publishedVersion._id) : '',
+        jurisdictionCode: jurisdiction?.countryCode || normalizeJurisdictionCode(rawTaxConfig?.jurisdictionCode || 'OTHER') || 'OTHER',
+        jurisdictionName: jurisdiction?.displayName || rawTaxConfig?.jurisdictionName || jurisdiction?.countryName || '',
+        employeeTaxInputs,
+        taxValidation: {
+            status: publishedVersion ? 'ready' : 'needs_configuration',
+            messages: publishedVersion ? [] : ['The selected tax jurisdiction does not have a published rule yet.'],
+            validatedAt: rawTaxConfig?.taxValidation?.validatedAt || null,
+        },
+    };
+}
+
+function resolveEmployeeTaxConfig(
+    rawTaxConfig: Record<string, any> = {},
+    jurisdictions: TaxJurisdictionSummary[] = [],
+    countryHints: string[] = []
+) {
+    let jurisdiction = findJurisdictionById(jurisdictions, String(rawTaxConfig?.jurisdictionConfigId || rawTaxConfig?.configId || ''));
+
+    if (!jurisdiction) {
+        jurisdiction = findJurisdictionByCode(jurisdictions, String(rawTaxConfig?.jurisdictionCode || ''));
+    }
+
+    if (!jurisdiction && rawTaxConfig?.jurisdictionName) {
+        jurisdiction = findJurisdictionByName(jurisdictions, rawTaxConfig.jurisdictionName);
+    }
+
+    if (!jurisdiction) {
+        for (const hint of countryHints) {
+            const byCode = findJurisdictionByCode(jurisdictions, hint);
+            if (byCode) {
+                jurisdiction = byCode;
+                break;
+            }
+            const byName = findJurisdictionByName(jurisdictions, hint);
+            if (byName) {
+                jurisdiction = byName;
+                break;
+            }
         }
     }
 
-    if (!calculationMode) {
-        calculationMode = isManualOnlyJurisdiction(resolvedJurisdictionCode) ? 'manual' : 'builtin';
+    if (!jurisdiction) {
+        jurisdiction = findJurisdictionByCode(jurisdictions, 'OTHER');
     }
 
-    if (!manualCalculationType) {
-        manualCalculationType = 'progressive';
-    }
+    return syncTaxConfigWithJurisdiction(rawTaxConfig, jurisdiction);
+}
+
+function mapTaxConfigForForm(raw: any = {}) {
+    const defaults = getDefaultTaxConfig();
+    const jurisdictionCode = normalizeJurisdictionCode(raw?.jurisdictionCode || raw?.jurisdictionCountry || '') || defaults.jurisdictionCode;
 
     return {
         ...defaults,
         ...raw,
-        calculationMode,
-        jurisdictionCode: resolvedJurisdictionCode,
+        calculationMode: 'configured',
+        jurisdictionConfigId: String(raw?.jurisdictionConfigId || raw?.configId || ''),
+        jurisdictionVersionId: String(raw?.jurisdictionVersionId || raw?.versionId || ''),
+        jurisdictionCode,
         jurisdictionName: raw?.jurisdictionName || '',
+        employeeTaxInputs: (raw?.employeeTaxInputs && typeof raw.employeeTaxInputs === 'object') ? raw.employeeTaxInputs : {},
+        taxValidation: {
+            status: String(raw?.taxValidation?.status || defaults.taxValidation.status),
+            messages: Array.isArray(raw?.taxValidation?.messages) ? raw.taxValidation.messages : [],
+            validatedAt: raw?.taxValidation?.validatedAt || null,
+        },
         taxSubdivision: raw?.taxSubdivision || 'standard',
         residencyStatus: raw?.residencyStatus || 'resident',
         filingStatus: raw?.filingStatus || 'single',
         dependents: Number(raw?.dependents || 0),
         additionalWithholding: Number(raw?.additionalWithholding || 0),
-        manualCalculationType,
+        manualCalculationType: raw?.manualCalculationType || 'progressive',
         manualTaxFreeAllowance: Number(raw?.manualTaxFreeAllowance || 0),
         flatTaxRate: Number(raw?.flatTaxRate || 0),
         otherIncome: Number(raw?.otherIncome || 0),
@@ -411,17 +522,7 @@ function serializeCustomBrackets(brackets: Array<{ min: number; max: number | ''
 }
 
 function formatCurrencyAmount(amount: any, currency = 'USD') {
-    const resolvedCurrency = String(currency || 'USD').trim().toUpperCase() || 'USD';
-    const numericAmount = Number(amount || 0);
-    try {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: resolvedCurrency,
-            maximumFractionDigits: 2
-        }).format(numericAmount);
-    } catch {
-        return `${resolvedCurrency} ${numericAmount.toFixed(2)}`;
-    }
+    return formatPayrollMoney(amount, currency);
 }
 
 export default function EmployeeEditPage({ params }: { params: { id: string } }) {
@@ -434,6 +535,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     const [profileCompletion, setProfileCompletion] = useState<any>(null);
     const [idpSyncWarning, setIdpSyncWarning] = useState('');
     const [canSyncIdpProfile, setCanSyncIdpProfile] = useState(false);
+    const [taxJurisdictions, setTaxJurisdictions] = useState<TaxJurisdictionSummary[]>([]);
     const [taxPreview, setTaxPreview] = useState<any>(null);
     const [taxPreviewLoading, setTaxPreviewLoading] = useState(false);
     const [taxPreviewError, setTaxPreviewError] = useState('');
@@ -513,6 +615,14 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 const res = await api.get(`/payroll/profiles/${params.id}`);
                 setProfile(res.data);
 
+                let jurisdictionSummaries: TaxJurisdictionSummary[] = [];
+                try {
+                    jurisdictionSummaries = await listTaxJurisdictions();
+                } catch (taxJurisdictionError) {
+                    console.error('Failed to load tax jurisdictions:', taxJurisdictionError);
+                }
+                setTaxJurisdictions(jurisdictionSummaries);
+
                 const idpSync = res.data?.idpSync || null;
                 const payrollSync = idpSync?.payrollSync || {};
                 const syncedBankAccount = payrollSync?.banking?.accounts?.[0] || {};
@@ -559,7 +669,17 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     dependentsDeclarationStatus: nextDependentsStatus
                 });
 
-                const nextTaxConfig = mapTaxConfigForForm(res.data.taxConfig);
+                const nextTaxConfig = resolveEmployeeTaxConfig(
+                    mapTaxConfigForForm(res.data.taxConfig),
+                    jurisdictionSummaries,
+                    [
+                        payrollSync?.personalInfo?.mailingAddress?.country,
+                        syncedBankAccount?.country,
+                        payrollSync?.banking?.country,
+                        payrollBankAccount?.country,
+                        res.data?.employeeInfo?.country,
+                    ]
+                );
                 const nextStatutoryContributions = normalizeStatutoryContributionsForJurisdiction(
                     res.data.statutoryContributions,
                     nextTaxConfig.jurisdictionCode
@@ -636,6 +756,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     recurringDeductions: formData.recurringDeductions,
                     taxConfig: {
                         ...formData.taxConfig,
+                        calculationMode: 'configured',
+                        jurisdictionCode: formData.taxConfig.jurisdictionCode,
+                        jurisdictionName: formData.taxConfig.jurisdictionName,
+                        employeeTaxInputs: formData.taxConfig.employeeTaxInputs || {},
+                        taxValidation: formData.taxConfig.taxValidation || { status: 'unknown', messages: [] },
                         dependents: Number(formData.taxConfig.dependents || 0),
                         additionalWithholding: Number(formData.taxConfig.additionalWithholding || 0),
                         flatTaxRate: Number(formData.taxConfig.flatTaxRate || 0),
@@ -679,7 +804,21 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             cancelled = true;
             window.clearTimeout(timeoutId);
         };
-    }, [loading, params.id, profile?._id, profile?.payFrequency, setupData.personalInfo?.dateOfBirth, taxPreviewInputKey]);
+    }, [
+        loading,
+        params.id,
+        profile?._id,
+        profile?.employeeInfo,
+        profile?.payFrequency,
+        formData.allowances,
+        formData.basicSalary,
+        formData.currency,
+        formData.recurringDeductions,
+        formData.statutoryContributions,
+        formData.taxConfig,
+        setupData.personalInfo?.dateOfBirth,
+        taxPreviewInputKey
+    ]);
 
     const handleSubmit = async (e?: React.SyntheticEvent) => {
         e?.preventDefault?.();
@@ -770,6 +909,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 payrollFlags: formData.payrollFlags,
                 taxConfig: {
                     ...formData.taxConfig,
+                    calculationMode: 'configured',
+                    jurisdictionCode: selectedJurisdiction?.countryCode || formData.taxConfig.jurisdictionCode,
+                    jurisdictionName: selectedJurisdiction?.displayName || formData.taxConfig.jurisdictionName,
+                    employeeTaxInputs: formData.taxConfig.employeeTaxInputs || {},
+                    taxValidation: formData.taxConfig.taxValidation || { status: 'unknown', messages: [] },
                     dependents: Number(formData.taxConfig.dependents || 0),
                     additionalWithholding: Number(formData.taxConfig.additionalWithholding || 0),
                     flatTaxRate: Number(formData.taxConfig.flatTaxRate || 0),
@@ -926,55 +1070,49 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         });
     };
 
-    const setJurisdictionCode = (code: string) => {
-        const manualOnly = isManualOnlyJurisdiction(code);
+    const setJurisdictionConfig = (jurisdictionId: string) => {
+        const nextJurisdiction = findJurisdictionById(taxJurisdictions, jurisdictionId)
+            || findJurisdictionByCode(taxJurisdictions, jurisdictionId)
+            || null;
         setFormData({
             ...formData,
-            taxConfig: {
-                ...formData.taxConfig,
-                jurisdictionCode: code,
-                calculationMode: manualOnly ? 'manual' : 'builtin',
-                taxSubdivision: code === 'GB' ? (formData.taxConfig.taxSubdivision || 'standard') : '',
-            },
+            taxConfig: syncTaxConfigWithJurisdiction(formData.taxConfig, nextJurisdiction),
             statutoryContributions: normalizeStatutoryContributionsForJurisdiction(
                 formData.statutoryContributions,
-                code
+                nextJurisdiction?.countryCode || formData.taxConfig.jurisdictionCode
             )
         });
     };
 
-    const addManualBracket = () => {
+    const updateEmployeeTaxInput = (field: TaxFieldDefinition, value: any) => {
         updateTaxConfig({
-            customBrackets: [
-                ...(formData.taxConfig.customBrackets || []),
-                { min: 0, max: '', rate: 0 }
-            ]
+            employeeTaxInputs: {
+                ...(formData.taxConfig.employeeTaxInputs || {}),
+                [field.key]: value,
+            },
         });
     };
 
-    const updateManualBracket = (index: number, key: 'min' | 'max' | 'rate', value: string) => {
-        const next = [...(formData.taxConfig.customBrackets || [])];
-        next[index] = {
-            ...next[index],
-            [key]: key === 'max' && value === '' ? '' : Number(value)
-        };
-        updateTaxConfig({ customBrackets: next });
-    };
-
-    const removeManualBracket = (index: number) => {
-        const next = [...(formData.taxConfig.customBrackets || [])];
-        next.splice(index, 1);
-        updateTaxConfig({ customBrackets: next });
-    };
-
-    const selectedJurisdiction = payrollTaxJurisdictions.find((item) => item.code === formData.taxConfig.jurisdictionCode)
-        || payrollTaxJurisdictions[payrollTaxJurisdictions.length - 1];
-    const statutoryProfile = getStatutoryProfile(formData.taxConfig.jurisdictionCode);
-    const canUseBuiltInTax = selectedJurisdiction?.mode === 'builtin';
-    const showUsTaxFields = canUseBuiltInTax && formData.taxConfig.jurisdictionCode === 'US' && formData.taxConfig.calculationMode === 'builtin';
-    const showUkTaxFields = canUseBuiltInTax && formData.taxConfig.jurisdictionCode === 'GB' && formData.taxConfig.calculationMode === 'builtin';
-    const showResidencyStatus = canUseBuiltInTax && ['GH', 'KE'].includes(formData.taxConfig.jurisdictionCode) && formData.taxConfig.calculationMode === 'builtin';
-    const showManualTaxFields = formData.taxConfig.calculationMode === 'manual';
+    const selectedJurisdiction = useMemo(
+        () => findJurisdictionById(taxJurisdictions, formData.taxConfig.jurisdictionConfigId)
+            || findJurisdictionByCode(taxJurisdictions, formData.taxConfig.jurisdictionCode)
+            || null,
+        [formData.taxConfig.jurisdictionCode, formData.taxConfig.jurisdictionConfigId, taxJurisdictions]
+    );
+    const selectedJurisdictionVersion = selectedJurisdiction?.publishedVersion || null;
+    const selectedJurisdictionLabel = selectedJurisdiction?.displayName
+        || formData.taxConfig.jurisdictionName
+        || formData.taxConfig.jurisdictionCode
+        || 'Unconfigured';
+    const selectedTaxFields = Array.isArray(selectedJurisdictionVersion?.fieldDefinitions)
+        ? selectedJurisdictionVersion.fieldDefinitions
+        : [];
+    const taxValidationMessages = Array.from(new Set([
+        ...(Array.isArray(formData.taxConfig.taxValidation?.messages) ? formData.taxConfig.taxValidation.messages : []),
+        ...(Array.isArray(taxPreview?.validationErrors) ? taxPreview.validationErrors : []),
+    ].filter(Boolean)));
+    const statutoryProfile = getStatutoryProfile(selectedJurisdiction?.countryCode || formData.taxConfig.jurisdictionCode);
+    const showLegacyStatutoryRateOverrides = !selectedJurisdictionVersion;
     const hasRetirementConfig = statutoryProfile.retirementIsStatutory
         || formData.statutoryContributions.pensionOptIn
         || Number(formData.statutoryContributions.pensionContributionPercent || 0) > 0
@@ -1108,147 +1246,20 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                             </div>
 
                             <div className="mt-4 bg-zinc-800/30 border border-zinc-700/60 rounded-xl p-4">
-                                <div className="flex items-center justify-between gap-4 flex-wrap">
-                                    <div>
-                                        <p className="text-sm font-semibold text-zinc-200">{selectedJurisdiction.label}</p>
-                                        <p className="text-xs text-zinc-500 mt-1">{selectedJurisdiction.description}</p>
-                                    </div>
-                                    {canUseBuiltInTax && (
-                                        <div className="flex items-center gap-2 bg-zinc-900/70 p-1 rounded-lg border border-zinc-700/60">
-                                            <button
-                                                type="button"
-                                                onClick={() => updateTaxConfig({ calculationMode: 'builtin' })}
-                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'builtin' ? 'bg-amber-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                            >
-                                                Built-In Rule
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => updateTaxConfig({ calculationMode: 'manual' })}
-                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'manual' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                            >
-                                                Manual Override
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
+                                <p className="text-sm font-semibold text-zinc-200">{selectedJurisdictionLabel}</p>
+                                <p className="text-xs text-zinc-500 mt-1">
+                                    {selectedJurisdiction?.description || 'Automatic tax calculation depends on the selected rule below.'}
+                                </p>
+                                {selectedJurisdictionVersion ? (
+                                    <p className="text-xs text-zinc-500 mt-2">
+                                        Active version: {selectedJurisdictionVersion.label} (v{selectedJurisdictionVersion.versionNumber})
+                                    </p>
+                                ) : (
+                                    <p className="text-xs text-amber-300 mt-2">
+                                        This employee still needs a published tax rule before automatic payroll withholding can run cleanly.
+                                    </p>
+                                )}
                             </div>
-
-                            {(showUkTaxFields || showResidencyStatus || showUsTaxFields || showManualTaxFields) && (
-                                <div className="mt-4 space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {showUkTaxFields && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">UK Tax Region</label>
-                                                <select
-                                                    value={formData.taxConfig.taxSubdivision}
-                                                    onChange={(e) => updateTaxConfig({ taxSubdivision: e.target.value })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                >
-                                                    {ukTaxSubdivisionOptions.map((option) => (
-                                                        <option key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        )}
-
-                                        {showResidencyStatus && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Residency Status</label>
-                                                <select
-                                                    value={formData.taxConfig.residencyStatus}
-                                                    onChange={(e) => updateTaxConfig({ residencyStatus: e.target.value })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                >
-                                                    {residencyStatusOptions.map((option) => (
-                                                        <option key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {showUsTaxFields && (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Filing Status</label>
-                                                <select
-                                                    value={formData.taxConfig.filingStatus}
-                                                    onChange={(e) => updateTaxConfig({ filingStatus: e.target.value })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                >
-                                                    {filingStatusOptions.map((option) => (
-                                                        <option key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents (record only)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    value={formData.taxConfig.dependents}
-                                                    onChange={(e) => updateTaxConfig({ dependents: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Other Income (W-4 Step 4a)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.otherIncome}
-                                                    onChange={(e) => updateTaxConfig({ otherIncome: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Deductions Adjustment (W-4 Step 4b)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.deductionsAdjustment}
-                                                    onChange={(e) => updateTaxConfig({ deductionsAdjustment: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Tax Credits (W-4 Step 3)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.taxCredits}
-                                                    onChange={(e) => updateTaxConfig({ taxCredits: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
-                                                <span className="text-sm text-zinc-300">Use IRS Multiple Jobs Table</span>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!!formData.taxConfig.multipleJobs}
-                                                    onChange={(e) => updateTaxConfig({ multipleJobs: e.target.checked })}
-                                                    className="rounded bg-zinc-900 border-zinc-700"
-                                                />
-                                            </label>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
                         </div>
 
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
@@ -1680,7 +1691,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                 )}
                                             </div>
                                             <div className="text-xs text-zinc-500 mt-1">
-                                                {formData.currency} {Number(allowance.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {formatCurrencyAmount(allowance.amount || 0, formData.currency)}
                                                 {allowance.effectiveFrom && <span className="ml-2">From {new Date(allowance.effectiveFrom).toLocaleDateString()}</span>}
                                                 {allowance.effectiveTo && <span className="ml-2">To {new Date(allowance.effectiveTo).toLocaleDateString()}</span>}
                                             </div>
@@ -2112,86 +2123,74 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee Tax Jurisdiction</label>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee Tax Rule</label>
                                     <select
-                                        value={formData.taxConfig.jurisdictionCode}
-                                        onChange={(e) => setJurisdictionCode(e.target.value)}
+                                        value={formData.taxConfig.jurisdictionConfigId || selectedJurisdiction?._id || ''}
+                                        onChange={(e) => setJurisdictionConfig(e.target.value)}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                     >
-                                        {payrollTaxJurisdictions.map((jurisdiction) => (
-                                            <option key={jurisdiction.code} value={jurisdiction.code}>
-                                                {jurisdiction.label}
+                                        <option value="">Select a tax rule</option>
+                                        {taxJurisdictions.map((jurisdiction) => (
+                                            <option key={jurisdiction._id} value={jurisdiction._id}>
+                                                {jurisdiction.scope === 'organization' ? '[Org] ' : '[Seeded] '}
+                                                {jurisdiction.displayName}
                                             </option>
                                         ))}
                                     </select>
                                     <p className="text-xs text-zinc-500 mt-1.5">
-                                        Payroll tax follows the employee&apos;s tax jurisdiction, not the company&apos;s country.
+                                        Tax now follows the selected payroll jurisdiction rule. Manage formulas and country packs in Tax Rules.
                                     </p>
                                 </div>
 
-                                {(formData.taxConfig.jurisdictionCode === 'EU' || formData.taxConfig.jurisdictionCode === 'OTHER') && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Jurisdiction Name</label>
-                                        <input
-                                            type="text"
-                                            value={formData.taxConfig.jurisdictionName}
-                                            onChange={(e) => updateTaxConfig({ jurisdictionName: e.target.value })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            placeholder="e.g. France, Germany, Rwanda"
-                                        />
-                                    </div>
-                                )}
-
-                                <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Additional Withholding</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={formData.taxConfig.additionalWithholding}
-                                        onChange={(e) => updateTaxConfig({ additionalWithholding: Number(e.target.value) })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-4 bg-zinc-800/30 border border-zinc-700/60 rounded-xl p-4">
-                                <div className="flex items-center justify-between gap-4 flex-wrap">
-                                    <div>
-                                        <p className="text-sm font-semibold text-zinc-200">{selectedJurisdiction.label}</p>
-                                        <p className="text-xs text-zinc-500 mt-1">{selectedJurisdiction.description}</p>
-                                    </div>
-                                    {canUseBuiltInTax && (
-                                        <div className="flex items-center gap-2 bg-zinc-900/70 p-1 rounded-lg border border-zinc-700/60">
-                                            <button
-                                                type="button"
-                                                onClick={() => updateTaxConfig({ calculationMode: 'builtin' })}
-                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'builtin' ? 'bg-amber-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                            >
-                                                Built-In Rule
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => updateTaxConfig({ calculationMode: 'manual' })}
-                                                className={`px-3 py-1.5 rounded-md text-sm transition-colors ${formData.taxConfig.calculationMode === 'manual' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                            >
-                                                Manual Override
-                                            </button>
+                                <div className="md:col-span-2 rounded-xl border border-zinc-700/60 bg-zinc-800/30 p-4">
+                                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                                        <div>
+                                            <p className="text-sm font-semibold text-zinc-200">{selectedJurisdictionLabel}</p>
+                                            <p className="text-xs text-zinc-500 mt-1">
+                                                {selectedJurisdiction?.description || 'Pick a published tax rule to calculate withholding automatically.'}
+                                            </p>
+                                            {selectedJurisdictionVersion ? (
+                                                <p className="text-xs text-zinc-500 mt-2">
+                                                    Version {selectedJurisdictionVersion.versionNumber}: {selectedJurisdictionVersion.label}
+                                                </p>
+                                            ) : null}
                                         </div>
-                                    )}
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="rounded-full border border-zinc-700 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                                                {selectedJurisdiction?.scope === 'organization' ? 'Org Rule' : 'Seeded Rule'}
+                                            </span>
+                                            <Link
+                                                href="/admin/settings/tax"
+                                                className="px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/70 text-sm text-zinc-200 hover:border-amber-500/40 hover:text-amber-300 transition-colors"
+                                            >
+                                                Manage Tax Rules
+                                            </Link>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
+
+                            {taxValidationMessages.length > 0 && (
+                                <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                                    <p className="text-xs uppercase tracking-wide text-amber-300 mb-2">Tax Rule Attention Needed</p>
+                                    <div className="space-y-1 text-sm text-amber-100">
+                                        {taxValidationMessages.map((message: string, index: number) => (
+                                            <p key={`${message}-${index}`}>{message}</p>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="mt-4 rounded-xl border border-zinc-700/60 bg-zinc-950/40 p-4">
                                 <div className="flex items-start justify-between gap-4 flex-wrap">
                                     <div>
                                         <h4 className="text-sm font-semibold text-zinc-200">Estimated Tax This Pay Period</h4>
                                         <p className="text-xs text-zinc-500 mt-1">
-                                            This preview uses the current salary, allowances, deductions, and jurisdiction settings on this page. Change any field below and the estimate updates automatically.
+                                            This preview uses the current salary, allowances, deductions, statutory settings, and the selected jurisdiction rule.
                                         </p>
                                     </div>
                                     <span className="rounded-full border border-zinc-700 bg-zinc-900/70 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-                                        {formData.taxConfig.calculationMode === 'builtin' ? 'Built-In Estimate' : 'Manual Estimate'}
+                                        {selectedJurisdictionVersion ? 'Configured Rule' : 'Needs Configuration'}
                                     </span>
                                 </div>
 
@@ -2273,11 +2272,19 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                 <div className="space-y-2 text-sm">
                                                     <div className="flex items-center justify-between gap-3">
                                                         <span className="text-zinc-500">Rule</span>
-                                                        <span className="text-zinc-200">{taxPreview.incomeTax?.jurisdictionName || selectedJurisdiction.label}</span>
+                                                        <span className="text-zinc-200">{taxPreview.incomeTax?.jurisdictionName || selectedJurisdictionLabel}</span>
                                                     </div>
                                                     <div className="flex items-center justify-between gap-3">
                                                         <span className="text-zinc-500">Method</span>
-                                                        <span className="text-zinc-200">{taxPreview.incomeTax?.method || formData.taxConfig.calculationMode}</span>
+                                                        <span className="text-zinc-200">{taxPreview.incomeTax?.method || 'configured_rule'}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="text-zinc-500">Rule version</span>
+                                                        <span className="text-zinc-200">
+                                                            {taxPreview.jurisdictionVersion
+                                                                ? `${taxPreview.jurisdictionVersion.label} (v${taxPreview.jurisdictionVersion.versionNumber})`
+                                                                : (selectedJurisdictionVersion ? `${selectedJurisdictionVersion.label} (v${selectedJurisdictionVersion.versionNumber})` : 'Not published')}
+                                                        </span>
                                                     </div>
                                                     <div className="flex items-center justify-between gap-3">
                                                         <span className="text-zinc-500">Annualized taxable income</span>
@@ -2328,240 +2335,102 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 ) : null}
                             </div>
 
-                            {(showUkTaxFields || showResidencyStatus || showUsTaxFields) && (
-                                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {showUkTaxFields && (
-                                        <div>
-                                            <label className="block text-sm font-medium text-zinc-400 mb-1.5">UK Tax Region</label>
-                                            <select
-                                                value={formData.taxConfig.taxSubdivision}
-                                                onChange={(e) => updateTaxConfig({ taxSubdivision: e.target.value })}
-                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            >
-                                                {ukTaxSubdivisionOptions.map((option) => (
-                                                    <option key={option.value} value={option.value}>
-                                                        {option.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
-
-                                    {showResidencyStatus && (
-                                        <div>
-                                            <label className="block text-sm font-medium text-zinc-400 mb-1.5">Residency Status</label>
-                                            <select
-                                                value={formData.taxConfig.residencyStatus}
-                                                onChange={(e) => updateTaxConfig({ residencyStatus: e.target.value })}
-                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            >
-                                                {residencyStatusOptions.map((option) => (
-                                                    <option key={option.value} value={option.value}>
-                                                        {option.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
-
-                                    {showUsTaxFields && (
-                                        <>
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Filing Status</label>
-                                                <select
-                                                    value={formData.taxConfig.filingStatus}
-                                                    onChange={(e) => updateTaxConfig({ filingStatus: e.target.value })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                >
-                                                    {filingStatusOptions.map((option) => (
-                                                        <option key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Dependents (record only)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    value={formData.taxConfig.dependents}
-                                                    onChange={(e) => updateTaxConfig({ dependents: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Other Income (W-4 Step 4a)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.otherIncome}
-                                                    onChange={(e) => updateTaxConfig({ otherIncome: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Deductions Adjustment (W-4 Step 4b)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.deductionsAdjustment}
-                                                    onChange={(e) => updateTaxConfig({ deductionsAdjustment: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Tax Credits (W-4 Step 3)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.taxCredits}
-                                                    onChange={(e) => updateTaxConfig({ taxCredits: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-
-                                            <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
-                                                <span className="text-sm text-zinc-300">Use IRS Multiple Jobs Table</span>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!!formData.taxConfig.multipleJobs}
-                                                    onChange={(e) => updateTaxConfig({ multipleJobs: e.target.checked })}
-                                                    className="rounded bg-zinc-900 border-zinc-700"
-                                                />
-                                            </label>
-                                        </>
-                                    )}
-                                </div>
-                            )}
-
-                            {showManualTaxFields && (
-                                <div className="mt-4 space-y-4 border-t border-zinc-800/70 pt-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-zinc-400 mb-1.5">Manual Tax Mode</label>
-                                            <select
-                                                value={formData.taxConfig.manualCalculationType}
-                                                onChange={(e) => updateTaxConfig({ manualCalculationType: e.target.value })}
-                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            >
-                                                {manualTaxModeOptions.map((option) => (
-                                                    <option key={option.value} value={option.value}>
-                                                        {option.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        {formData.taxConfig.manualCalculationType === 'flat' && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Flat Tax Rate (%)</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    max="100"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.flatTaxRate}
-                                                    onChange={(e) => updateTaxConfig({ flatTaxRate: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-                                        )}
-
-                                        {formData.taxConfig.manualCalculationType === 'progressive' && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Annual Tax-Free Allowance</label>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={formData.taxConfig.manualTaxFreeAllowance}
-                                                    onChange={(e) => updateTaxConfig({ manualTaxFreeAllowance: Number(e.target.value) })}
-                                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                                />
-                                            </div>
-                                        )}
+                            <div className="mt-4 space-y-4 border-t border-zinc-800/70 pt-6">
+                                <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-zinc-300">Employee Tax Inputs</h4>
+                                        <p className="text-xs text-zinc-500 mt-1">
+                                            These fields come from the selected jurisdiction rule and are used directly in payroll tax formulas.
+                                        </p>
                                     </div>
-
-                                    {formData.taxConfig.manualCalculationType === 'progressive' && (
-                                        <div className="space-y-3">
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <h4 className="text-sm font-semibold text-zinc-300">Manual Tax Brackets</h4>
-                                                    <p className="text-xs text-zinc-500">Enter annual bracket thresholds for unsupported countries or custom cases.</p>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={addManualBracket}
-                                                    className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-sm text-zinc-200 transition-colors"
-                                                >
-                                                    Add Bracket
-                                                </button>
-                                            </div>
-
-                                            {(formData.taxConfig.customBrackets || []).length === 0 && (
-                                                <div className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-sm text-zinc-500">
-                                                    No manual brackets configured yet.
-                                                </div>
-                                            )}
-
-                                            {(formData.taxConfig.customBrackets || []).map((bracket: any, index: number) => (
-                                                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-zinc-800/20 border border-zinc-700/50 rounded-lg p-3">
-                                                    <div>
-                                                        <label className="text-xs text-zinc-500 block mb-1">Annual Min</label>
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            value={bracket.min}
-                                                            onChange={(e) => updateManualBracket(index, 'min', e.target.value)}
-                                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-zinc-500 block mb-1">Annual Max</label>
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            value={bracket.max}
-                                                            onChange={(e) => updateManualBracket(index, 'max', e.target.value)}
-                                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
-                                                            placeholder="Leave blank for no upper limit"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-zinc-500 block mb-1">Rate (%)</label>
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            max="100"
-                                                            step="0.01"
-                                                            value={bracket.rate}
-                                                            onChange={(e) => updateManualBracket(index, 'rate', e.target.value)}
-                                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
-                                                        />
-                                                    </div>
-                                                    <div className="flex items-end">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => removeManualBracket(index)}
-                                                            className="w-full py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
-                                                        >
-                                                            Remove
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                    <Link
+                                        href="/admin/settings/tax"
+                                        className="text-sm text-amber-300 hover:text-amber-200 transition-colors"
+                                    >
+                                        Edit formulas and field schema
+                                    </Link>
                                 </div>
-                            )}
+
+                                {!selectedJurisdictionVersion ? (
+                                    <div className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-sm text-zinc-500">
+                                        Select a tax rule with a published version before payroll can calculate automatically for this employee.
+                                    </div>
+                                ) : selectedTaxFields.length === 0 ? (
+                                    <div className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-sm text-zinc-500">
+                                        This jurisdiction rule does not require employee-specific tax inputs.
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {selectedTaxFields.map((field) => {
+                                            const currentValue = formData.taxConfig.employeeTaxInputs?.[field.key]
+                                                ?? field.defaultValue
+                                                ?? (field.type === 'boolean' ? false : '');
+                                            const isNumericField = ['currency', 'percent', 'integer'].includes(field.type);
+                                            const inputType = field.type === 'date'
+                                                ? 'date'
+                                                : (isNumericField ? 'number' : 'text');
+
+                                            if (field.type === 'boolean') {
+                                                return (
+                                                    <label
+                                                        key={field.key}
+                                                        className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50"
+                                                    >
+                                                        <div className="pr-4">
+                                                            <span className="text-sm text-zinc-300">{field.label}</span>
+                                                            {field.helpText ? <p className="text-xs text-zinc-500 mt-1">{field.helpText}</p> : null}
+                                                        </div>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!currentValue}
+                                                            onChange={(e) => updateEmployeeTaxInput(field, e.target.checked)}
+                                                            className="rounded bg-zinc-900 border-zinc-700"
+                                                        />
+                                                    </label>
+                                                );
+                                            }
+
+                                            return (
+                                                <div key={field.key}>
+                                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                                        {field.label}
+                                                        {field.required ? <span className="text-amber-400 ml-1">*</span> : null}
+                                                    </label>
+                                                    {field.type === 'select' ? (
+                                                        <select
+                                                            value={String(currentValue ?? '')}
+                                                            onChange={(e) => updateEmployeeTaxInput(field, e.target.value)}
+                                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                        >
+                                                            <option value="">Select</option>
+                                                            {(field.options || []).map((option) => (
+                                                                <option key={option.value} value={option.value}>
+                                                                    {option.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        <input
+                                                            type={inputType}
+                                                            value={currentValue}
+                                                            placeholder={field.placeholder || ''}
+                                                            step={field.type === 'integer' ? '1' : (isNumericField ? '0.01' : undefined)}
+                                                            onChange={(e) => updateEmployeeTaxInput(
+                                                                field,
+                                                                isNumericField
+                                                                    ? (e.target.value === '' ? '' : Number(e.target.value))
+                                                                    : e.target.value
+                                                            )}
+                                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                        />
+                                                    )}
+                                                    {field.helpText ? <p className="text-xs text-zinc-500 mt-1.5">{field.helpText}</p> : null}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
 
                             <div className="mt-6 pt-6 border-t border-zinc-800/70">
                                 <h4 className="text-sm font-semibold text-zinc-300 mb-2">Statutory Contributions</h4>
@@ -2571,7 +2440,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 {statutoryProfile.socialEnabled && (
                                     <div className="rounded-xl border border-zinc-800/70 bg-zinc-950/30 p-4 mb-4">
                                         <h5 className="text-sm font-semibold text-zinc-200 mb-1">{statutoryProfile.socialTitle}</h5>
-                                        <p className="text-xs text-zinc-500 mb-4">{statutoryProfile.manualOverrideHelpText}</p>
+                                        <p className="text-xs text-zinc-500 mb-4">
+                                            {showLegacyStatutoryRateOverrides
+                                                ? statutoryProfile.manualOverrideHelpText
+                                                : 'Statutory contribution rates come from the selected tax rule. Manage rate and cap changes in Tax Rules.'}
+                                        </p>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <label className="flex items-center justify-between bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50">
                                                 <span className="text-sm text-zinc-300">{statutoryProfile.socialOptInLabel}</span>
@@ -2606,7 +2479,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                 />
                                             </div>
 
-                                            {statutoryProfile.manualOverrideEnabled && (
+                                            {statutoryProfile.manualOverrideEnabled && showLegacyStatutoryRateOverrides && (
                                                 <>
                                                     <div>
                                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">{statutoryProfile.manualRateLabel}</label>

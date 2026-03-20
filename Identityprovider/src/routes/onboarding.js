@@ -692,6 +692,70 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
   }
 })
 
+router.post('/organizations/:orgId/onboarding/members/:memberId/reminder', requireAuth, requireOrganizationMember, async (req, res) => {
+  if (!canManageOnboarding(req.memberRole)) {
+    return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
+  }
+
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' })
+    }
+
+    const memberEntry = organization.members.find(
+      m => m.account.toString() === req.params.memberId && m.status === 'active'
+    )
+
+    if (!memberEntry) {
+      return res.status(404).json({ error: 'Member not found in this organization' })
+    }
+
+    const assignment = await OnboardingAssignment.findOne({
+      organization: req.params.orgId,
+      member: req.params.memberId,
+      workflowType: 'onboarding',
+      status: { $in: ['pending', 'in_progress'] }
+    }).sort({ updatedAt: -1, createdAt: -1 })
+
+    if (!assignment) {
+      return res.status(404).json({
+        error: 'No active onboarding assignment found for this member'
+      })
+    }
+
+    const memberAccount = await Account.findById(req.params.memberId)
+    if (!memberAccount?.email) {
+      return res.status(400).json({ error: 'Member does not have a valid email address' })
+    }
+
+    const memberName = memberAccount.profile?.name || memberAccount.email.split('@')[0]
+    const orgName = organization.name
+    const { subject, html, text } = buildOnboardingEmail(
+      memberName,
+      orgName,
+      process.env.ISSUER_URL,
+      assignment.workflowType || 'onboarding'
+    )
+
+    await emailService.sendEmail({
+      to: memberAccount.email,
+      subject,
+      html,
+      text
+    })
+
+    res.json({
+      message: 'Onboarding reminder sent',
+      assignmentId: assignment._id,
+      memberId: req.params.memberId
+    })
+  } catch (error) {
+    console.error('Send onboarding reminder error:', error)
+    res.status(500).json({ error: 'Failed to send onboarding reminder' })
+  }
+})
+
 router.patch('/organizations/:orgId/onboarding/members/:memberId/status', requireAuth, requireOrganizationMember, async (req, res) => {
   if (!canManageOnboarding(req.memberRole)) {
     return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })

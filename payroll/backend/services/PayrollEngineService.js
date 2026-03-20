@@ -337,6 +337,7 @@ class PayrollEngineService {
     const profileQuery = {
       organizationId,
       isActive: true,
+      basicSalary: { $gt: 0 },
       'payrollFlags.includeInNextRun': true,
     };
 

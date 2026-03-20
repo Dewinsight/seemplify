@@ -64,6 +64,8 @@ export type TaxRulePreviewRequest = {
   ytdGrossPay?: number;
   ytdTaxableIncome?: number;
   taxConfig: Record<string, any>;
+  versionDefinition?: Record<string, any>;
+  configDefinition?: Record<string, any>;
 };
 
 export type TaxRulePreviewResponse = {

@@ -1,5 +1,8 @@
 import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
 import { SignJWT } from 'jose'
+import { fileURLToPath } from 'url'
 
 const isProduction = process.env.NODE_ENV === 'production'
 
@@ -45,9 +48,38 @@ const FULL_ADMIN_PERMISSIONS = {
   systemSettings: true
 }
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+let cachedLegacyRecruiterClientSecret = null
+
+const getLegacyRecruiterClientSecret = () => {
+  if (cachedLegacyRecruiterClientSecret !== null) {
+    return cachedLegacyRecruiterClientSecret
+  }
+
+  try {
+    const clientsPath = path.resolve(__dirname, '../../clients.json')
+    const raw = fs.readFileSync(clientsPath, 'utf8')
+    const parsed = JSON.parse(raw)
+    const clients = Array.isArray(parsed?.clients) ? parsed.clients : []
+    const recruiterClient = clients.find((client) => client?.client_id === 'smarthr-backend')
+
+    cachedLegacyRecruiterClientSecret = String(recruiterClient?.client_secret || '').trim()
+  } catch (error) {
+    console.warn('Failed to resolve recruiter OIDC client secret fallback:', error.message)
+    cachedLegacyRecruiterClientSecret = ''
+  }
+
+  return cachedLegacyRecruiterClientSecret
+}
+
 const getRecruiterAdminSsoSecret = () => String(
   process.env.RECRUITER_ADMIN_SSO_SECRET ||
   process.env.IDP_RECRUITER_ADMIN_SSO_SECRET ||
+  process.env.OIDC_CLIENT_SECRET ||
+  process.env.SMARTHR_CLIENT_SECRET ||
+  getLegacyRecruiterClientSecret() ||
   ''
 ).trim()
 

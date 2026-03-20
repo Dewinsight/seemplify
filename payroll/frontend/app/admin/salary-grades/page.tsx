@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
 import Link from 'next/link';
 import {
@@ -180,7 +181,7 @@ export default function SalaryGradesPage() {
                                         <span className="px-2 py-0.5 bg-zinc-800 rounded text-xs">L{grade.gradeLevel}</span>
                                     </td>
                                     <td className="px-5 py-4 font-mono text-emerald-400">
-                                        {grade.salaryRange.currency} {grade.salaryRange.minimum.toLocaleString()} - {grade.salaryRange.maximum.toLocaleString()}
+                                        {formatPayrollMoney(grade.salaryRange.minimum, grade.salaryRange.currency)} - {formatPayrollMoney(grade.salaryRange.maximum, grade.salaryRange.currency)}
                                     </td>
                                     <td className="px-5 py-4 text-zinc-500">{grade.department || '--'}</td>
                                     <td className="px-5 py-4 text-right">

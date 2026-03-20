@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import { ArrowLeft, Download, FileText, Loader2 } from 'lucide-react';
 
 type Money = number;
@@ -120,15 +121,15 @@ export default function MyPayslipsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
               <div className="text-xs text-zinc-500 mb-1">Total Gross</div>
-              <div className="text-2xl font-bold text-zinc-100 font-mono">{displayCurrency} {totals.gross.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-zinc-100 font-mono">{formatPayrollMoney(totals.gross, displayCurrency)}</div>
             </div>
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
               <div className="text-xs text-zinc-500 mb-1">Total Deductions</div>
-              <div className="text-2xl font-bold text-red-400 font-mono">{displayCurrency} {totals.deductions.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-red-400 font-mono">{formatPayrollMoney(totals.deductions, displayCurrency)}</div>
             </div>
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
               <div className="text-xs text-zinc-500 mb-1">Total Net</div>
-              <div className="text-2xl font-bold text-emerald-400 font-mono">{displayCurrency} {totals.net.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-emerald-400 font-mono">{formatPayrollMoney(totals.net, displayCurrency)}</div>
             </div>
           </div>
         )}
@@ -179,15 +180,15 @@ export default function MyPayslipsPage() {
                       <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
                         <div>
                           <div className="text-xs text-zinc-500">Gross</div>
-                          <div className="font-mono text-zinc-200">{slip.currency || 'USD'} {gross.toLocaleString()}</div>
+                          <div className="font-mono text-zinc-200">{formatPayrollMoney(gross, slip.currency || 'USD')}</div>
                         </div>
                         <div>
                           <div className="text-xs text-zinc-500">Deductions</div>
-                          <div className="font-mono text-red-400">{slip.currency || 'USD'} {ded.toLocaleString()}</div>
+                          <div className="font-mono text-red-400">{formatPayrollMoney(ded, slip.currency || 'USD')}</div>
                         </div>
                         <div>
                           <div className="text-xs text-zinc-500">Net</div>
-                          <div className="font-mono text-emerald-400">{slip.currency || 'USD'} {net.toLocaleString()}</div>
+                          <div className="font-mono text-emerald-400">{formatPayrollMoney(net, slip.currency || 'USD')}</div>
                         </div>
                       </div>
                     </div>
@@ -209,7 +210,7 @@ export default function MyPayslipsPage() {
                         {(slip.earnings || []).map((e, idx) => (
                           <div key={idx} className="flex items-center justify-between text-sm">
                             <span className="text-zinc-300">{e.name}</span>
-                            <span className="font-mono text-zinc-200">{slip.currency || 'USD'} {Number(e.amount || 0).toLocaleString()}</span>
+                            <span className="font-mono text-zinc-200">{formatPayrollMoney(e.amount || 0, slip.currency || 'USD')}</span>
                           </div>
                         ))}
                       </div>
@@ -220,7 +221,7 @@ export default function MyPayslipsPage() {
                         {(slip.deductions || []).map((d, idx) => (
                           <div key={idx} className="flex items-center justify-between text-sm">
                             <span className="text-zinc-300">{d.name}</span>
-                            <span className="font-mono text-red-400">-{slip.currency || 'USD'} {Number(d.amount || 0).toLocaleString()}</span>
+                            <span className="font-mono text-red-400">{formatPayrollMoney(-(Number(d.amount || 0)), slip.currency || 'USD')}</span>
                           </div>
                         ))}
                       </div>

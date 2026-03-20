@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -59,7 +60,7 @@ const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const formatMoney = (currency: string, amount: number) => (
-    `${currency} ${Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    formatPayrollMoney(amount || 0, currency)
 );
 
 const formatSummaryAmount = (

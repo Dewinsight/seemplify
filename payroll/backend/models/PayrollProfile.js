@@ -455,18 +455,36 @@ PayrollProfileSchema.methods.syncFromIdpUser = function (idpUser) {
 
 // ===== STATICS =====
 
+function buildDefaultPayrollFlags(basicSalary, existingFlags = {}) {
+  const flags = {
+    ...(existingFlags || {}),
+  };
+
+  if (!(Number(basicSalary || 0) > 0)) {
+    flags.includeInNextRun = false;
+    flags.requiresReview = true;
+    if (!String(flags.reviewReason || '').trim()) {
+      flags.reviewReason = 'Automatically excluded from payroll until payroll setup is completed.';
+    }
+  }
+
+  return flags;
+}
+
 // Find or create profile for user
 PayrollProfileSchema.statics.findOrCreateForUser = async function (userId, organizationId, defaults = {}) {
   let profile = await this.findOne({ userId, organizationId });
 
   if (!profile) {
+    const basicSalary = Number(defaults.basicSalary || 0);
     profile = new this({
       userId,
       organizationId,
-      basicSalary: defaults.basicSalary || 0,
+      ...defaults,
+      basicSalary,
       currency: defaults.currency || 'USD',
       employeeInfo: defaults.employeeInfo || {},
-      ...defaults
+      payrollFlags: buildDefaultPayrollFlags(basicSalary, defaults.payrollFlags),
     });
     await profile.save();
   }
@@ -479,6 +497,7 @@ PayrollProfileSchema.statics.getActiveByOrganization = function (organizationId,
   const query = {
     organizationId,
     isActive: true,
+    basicSalary: { $gt: 0 },
     'payrollFlags.includeInNextRun': true
   };
 

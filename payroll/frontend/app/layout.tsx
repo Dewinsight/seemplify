@@ -5,7 +5,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUserContext, useOrganizations } from '@/lib/hooks';
 import { authApi, handleAuthCallback } from '@/lib/api';
+import { resolveIdpUrl } from '@/lib/runtimeConfig';
 import { PayrollViewModeProvider, PayrollViewMode } from '@/context/PayrollViewModeContext';
+import PageGuide from '@/components/PageGuide';
 import './globals.css';
 import {
   LayoutGrid,
@@ -152,7 +154,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   };
 
   const isLoginPage = pathname === '/login';
-  const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
+  const hubUrl = resolveIdpUrl();
   const hasOrganizations = Array.isArray(organizations) && organizations.length > 0;
   const showNoOrganizations = !contextLoading && !orgsLoading && user && !hasOrganizations;
 
@@ -699,6 +701,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {children}
               </div>
             </main>
+            <PageGuide />
           </div>
         </PayrollViewModeProvider>
       </body>

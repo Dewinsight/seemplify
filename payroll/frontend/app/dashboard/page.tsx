@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { handleAuthCallback, isAuthenticated, authApi } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import Link from 'next/link';
 import { usePayrollViewMode } from '@/context/PayrollViewModeContext';
 import {
@@ -96,7 +97,7 @@ export default function Dashboard() {
   }, [user]);
 
   const formatMoney = (amount: any) =>
-    Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    formatPayrollMoney(amount || 0, currency);
 
   if (loading) {
     return (
@@ -365,15 +366,15 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
                   <span className="text-zinc-400 text-sm">Gross Earnings</span>
-                  <span className="font-semibold text-zinc-200">{currency} {formatMoney(dashboardStats?.ytd?.grossEarnings)}</span>
+                  <span className="font-semibold text-zinc-200">{formatMoney(dashboardStats?.ytd?.grossEarnings)}</span>
                 </div>
                 <div className="flex justify-between items-center py-2 border-b border-zinc-800/50">
                   <span className="text-zinc-400 text-sm">Total Tax</span>
-                  <span className="font-semibold text-zinc-200">{currency} {formatMoney(dashboardStats?.ytd?.totalTax)}</span>
+                  <span className="font-semibold text-zinc-200">{formatMoney(dashboardStats?.ytd?.totalTax)}</span>
                 </div>
                 <div className="flex justify-between items-center py-2 bg-emerald-500/10 -mx-2 px-2 rounded-lg border border-emerald-500/20">
                   <span className="text-emerald-400 font-medium text-sm">Net Pay</span>
-                  <span className="font-bold text-lg text-emerald-300">{currency} {formatMoney(dashboardStats?.ytd?.netPay)}</span>
+                  <span className="font-bold text-lg text-emerald-300">{formatMoney(dashboardStats?.ytd?.netPay)}</span>
                 </div>
               </div>
             </div>
