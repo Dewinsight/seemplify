@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { findPrimaryMarketByCountryCode } from './app/seo-markets'
+import { findLocalizedMarketByCountryCode } from './app/seo-markets'
 
 const MARKET_COOKIE = 'seemplify-market'
 
@@ -26,7 +26,7 @@ function detectCountryCode(request: NextRequest) {
 
 export function middleware(request: NextRequest) {
   const response = NextResponse.next()
-  const market = findPrimaryMarketByCountryCode(detectCountryCode(request))
+  const market = findLocalizedMarketByCountryCode(detectCountryCode(request))
 
   response.cookies.set(MARKET_COOKIE, market?.slug ?? 'global', {
     path: '/',

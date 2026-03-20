@@ -169,6 +169,43 @@ export const primaryMarkets: SeoMarket[] = [
   },
 ]
 
+export const localizedMarkets: SeoMarket[] = [
+  ...primaryMarkets,
+  {
+    slug: 'united-kingdom',
+    country: 'United Kingdom',
+    headline: 'HR software for the United Kingdom',
+    description:
+      'Support recruiting, onboarding, leave, performance, employee records, and HR operations for teams in London, Manchester, Birmingham, and across the United Kingdom.',
+    intro:
+      'Seemplify helps UK teams run structured people operations with cleaner workflows, clearer visibility, and one operating system for hiring, approvals, employee administration, and performance.',
+    cities: ['London', 'Manchester', 'Birmingham'],
+    industries: ['Technology', 'Professional services', 'Healthcare', 'Education'],
+    highlights: [
+      'Unify HR workflows across offices, hybrid teams, and fast-growing departments in the UK.',
+      'Give managers and HR teams one system for approvals, onboarding, employee records, and performance management.',
+      'Replace fragmented tools with a more consistent operating model for people operations.',
+    ],
+    faqs: [
+      {
+        question: 'Is Seemplify suitable for UK-based teams?',
+        answer:
+          'Yes. Seemplify is a strong fit for UK teams that want more structure and visibility across recruiting, onboarding, employee operations, and performance workflows.',
+      },
+      {
+        question: 'Can Seemplify support hybrid and multi-office teams in the UK?',
+        answer:
+          'Yes. Seemplify helps HR teams coordinate workflows across London, Manchester, Birmingham, and distributed teams using one shared operating layer.',
+      },
+      {
+        question: 'What HR processes can teams in the UK manage in Seemplify?',
+        answer:
+          'Teams can manage recruiting coordination, onboarding, employee records, leave approvals, performance cycles, and operational reporting in one platform.',
+      },
+    ],
+  },
+]
+
 export const homeFaqs: SeoFaq[] = [
   {
     question: 'Does Seemplify support HR teams in Nigeria, Ghana, Kenya, and South Africa?',
@@ -214,14 +251,20 @@ export const primaryMarketMap = Object.fromEntries(
   primaryMarkets.map((market) => [market.slug, market]),
 ) as Record<string, SeoMarket>
 
+export const localizedMarketMap = Object.fromEntries(
+  localizedMarkets.map((market) => [market.slug, market]),
+) as Record<string, SeoMarket>
+
 export const primaryMarketCountryCodeMap: Record<string, SeoMarket['slug']> = {
   NG: 'nigeria',
   GH: 'ghana',
   KE: 'kenya',
   ZA: 'south-africa',
+  GB: 'united-kingdom',
+  UK: 'united-kingdom',
 }
 
-export function findPrimaryMarketByCountryCode(countryCode?: string | null) {
+export function findLocalizedMarketByCountryCode(countryCode?: string | null) {
   const normalizedCountryCode = countryCode?.trim().toUpperCase()
 
   if (!normalizedCountryCode) {
@@ -234,5 +277,5 @@ export function findPrimaryMarketByCountryCode(countryCode?: string | null) {
     return null
   }
 
-  return primaryMarketMap[marketSlug] ?? null
+  return localizedMarketMap[marketSlug] ?? null
 }

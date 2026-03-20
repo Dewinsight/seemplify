@@ -18,6 +18,7 @@ import { CheckCircle, Shield, Zap, TrendingUp, UserPlus, FileSignature, Laptop, 
 import {
   broaderEnglishSpeakingAfricanCountries,
   homeFaqs,
+  localizedMarketMap,
   primaryMarketMap,
   primaryMarkets,
   type SeoMarket,
@@ -620,10 +621,14 @@ export default function HomePage() {
   useEffect(() => {
     const marketSlug = getCookieValue(MARKET_COOKIE)
     const nextMarket =
-      marketSlug && marketSlug !== 'global' ? primaryMarketMap[marketSlug] ?? null : null
+      marketSlug && marketSlug !== 'global' ? localizedMarketMap[marketSlug] ?? null : null
 
     setPersonalizedMarket(nextMarket)
   }, [])
+
+  const isAfricaPersonalization = personalizedMarket
+    ? Boolean(primaryMarketMap[personalizedMarket.slug])
+    : false
 
   const heroEyebrow = personalizedMarket
     ? `${personalizedMarket.country} HR Software`
@@ -650,16 +655,22 @@ export default function HomePage() {
       { label: 'Avg. Launch Time', value: '14 days' },
     ]
   const africaSectionTitle = personalizedMarket
-    ? `Support teams in ${personalizedMarket.country} while staying aligned across the wider region.`
+    ? isAfricaPersonalization
+      ? `Support teams in ${personalizedMarket.country} while staying aligned across the wider region.`
+      : `Operate in the ${personalizedMarket.country} while keeping regional expansion options open.`
     : 'Built for teams operating across Africa with local context where it matters.'
   const africaSectionDescription = personalizedMarket
-    ? `This visit is highlighting ${personalizedMarket.country}, while still giving you access to Seemplify's broader Africa coverage for regional and multi-country teams.`
+    ? isAfricaPersonalization
+      ? `This visit is highlighting ${personalizedMarket.country}, while still giving you access to Seemplify's broader Africa coverage for regional and multi-country teams.`
+      : `This visit is highlighting the ${personalizedMarket.country}. Seemplify still supports multi-country operating models, including teams expanding into or working with African markets.`
     : 'Whether you manage one country or several, Seemplify gives HR teams a consistent operating model across Nigeria, Ghana, Kenya, South Africa, and other English-speaking African markets.'
   const prioritizedMarkets = personalizedMarket
+    ? isAfricaPersonalization
     ? [
       personalizedMarket,
       ...primaryMarkets.filter((market) => market.slug !== personalizedMarket.slug),
     ]
+      : primaryMarkets
     : primaryMarkets
 
   return (
