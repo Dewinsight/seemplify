@@ -153,9 +153,10 @@ function pickPrimaryTeam(userTeams, accessibleTeamIdsSet, isHrPlus) {
   return matching || userTeams[0];
 }
 
-async function resolveAppraisalAccessScope(req, { force = false } = {}) {
-  if (!force && req._appraisalAccessScope) {
-    return req._appraisalAccessScope;
+async function resolveAppraisalAccessScope(req, { force = false, includeSelf = false } = {}) {
+  const cacheKey = includeSelf ? '_appraisalAccessScopeWithSelf' : '_appraisalAccessScope';
+  if (!force && req[cacheKey]) {
+    return req[cacheKey];
   }
 
   const sessionUser = getSessionUser(req);
@@ -171,6 +172,7 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
     organizationId,
     organizationRole,
     userRole,
+    includeSelf,
     isHrPlus,
     canManageAppraisals: isHrPlus || isAppraisalManagerRole(userRole),
     managedTeams,
@@ -183,7 +185,7 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
   };
 
   if (!scope.canManageAppraisals || !organizationId) {
-    req._appraisalAccessScope = scope;
+    req[cacheKey] = scope;
     return scope;
   }
 
@@ -197,7 +199,7 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
     .lean();
 
   if (!orgUsers.length) {
-    req._appraisalAccessScope = scope;
+    req[cacheKey] = scope;
     return scope;
   }
 
@@ -222,7 +224,7 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
     : collectHierarchyTeamIds(managedRootTeamIds, teamNodesById);
 
   if (!isHrPlus && accessibleTeamIdsSet.size === 0) {
-    req._appraisalAccessScope = scope;
+    req[cacheKey] = scope;
     return scope;
   }
 
@@ -233,7 +235,8 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
 
   orgUsers.forEach((userDoc) => {
     const email = normalizeEmail(userDoc.email);
-    if (selfEmail && email && selfEmail === email) return;
+    const isSelf = Boolean(selfEmail && email && selfEmail === email);
+    if (!includeSelf && isSelf) return;
 
     const userTeams = (userDoc.idpTeams || []).filter(
       (team) => normalizeId(team.organizationId) === organizationId
@@ -257,7 +260,9 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
       email: userDoc.email,
       name: getDisplayName(userDoc),
       jobTitle: userDoc.profile?.title || primaryTeam?.role || 'Employee',
-      department: primaryTeam?.name || userDoc.profile?.department || '',
+      department: primaryTeam?.departmentName || userDoc.profile?.department || '',
+      departmentId: normalizeId(primaryTeam?.departmentId) || null,
+      departmentName: primaryTeam?.departmentName || userDoc.profile?.department || '',
       teamId: normalizeId(primaryTeam?.id),
       teamName: primaryTeam?.name || null,
       teamRole: primaryTeam?.role || null,
@@ -265,7 +270,8 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
       managerId: normalizeId(primaryTeam?.managerId) || null,
       managerName: primaryTeam?.managerName || null,
       managerEmail: primaryTeam?.managerEmail || null,
-      teamIds: userTeams.map((team) => normalizeId(team.id)).filter(Boolean)
+      teamIds: userTeams.map((team) => normalizeId(team.id)).filter(Boolean),
+      isSelf
     });
   });
 
@@ -286,7 +292,7 @@ async function resolveAppraisalAccessScope(req, { force = false } = {}) {
   scope.directReports = dedupedUsers;
   scope.organizationUsers = dedupedUsers;
 
-  req._appraisalAccessScope = scope;
+  req[cacheKey] = scope;
   return scope;
 }
 

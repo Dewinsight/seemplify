@@ -85,6 +85,10 @@ const promotionReadinessLabels: Record<string, { label: string; color: 'error' |
   'overdue': { label: 'Overdue for Promotion', color: 'info' }
 };
 
+function getApiErrorMessage(error: any, fallback: string) {
+  return error?.response?.data?.error || fallback;
+}
+
 export default function ManagerReviewPage() {
   const params = useParams();
   const router = useRouter();
@@ -272,9 +276,15 @@ export default function ManagerReviewPage() {
       if (showNotification) {
         setSnackbar({ open: true, message: 'Progress saved successfully!', severity: 'success' });
       }
+      return true;
     } catch (error) {
       console.error('Save error:', error);
-      setSnackbar({ open: true, message: 'Failed to save progress', severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: getApiErrorMessage(error, 'Failed to save progress'),
+        severity: 'error'
+      });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -309,7 +319,11 @@ export default function ManagerReviewPage() {
       setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
     } catch (error) {
       console.error('Submit error:', error);
-      setSnackbar({ open: true, message: 'Failed to submit review', severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: getApiErrorMessage(error, 'Failed to submit review'),
+        severity: 'error'
+      });
     } finally {
       setSubmitting(false);
     }
@@ -1287,9 +1301,11 @@ export default function ManagerReviewPage() {
           <Button
             variant="contained"
             endIcon={<ArrowForward />}
-            onClick={() => {
-              handleSave(false);
-              setActiveStep(prev => prev + 1);
+            onClick={async () => {
+              const saved = await handleSave(false);
+              if (saved) {
+                setActiveStep(prev => prev + 1);
+              }
             }}
           >
             Next

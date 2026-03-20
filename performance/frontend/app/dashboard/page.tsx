@@ -251,6 +251,8 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
   }
 
   if (isHRAdmin) {
+    quickActions.push({ name: 'Create Cycle', href: '/admin/appraisal-cycles/new', icon: Flag, color: 'from-rose-500 to-orange-500' });
+    quickActions.push({ name: 'Manage Cycles', href: '/admin/appraisal-cycles', icon: LayoutGrid, color: 'from-red-500 to-amber-500' });
     quickActions.push({ name: 'Admin Panel', href: '/admin', icon: Flag, color: 'from-rose-500 to-orange-500' });
   }
 
@@ -578,11 +580,16 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
 
         {isHRAdmin && (
           <div className="glass-card rounded-xl shadow-lg border border-red-500/20 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <Flag className="h-5 w-5 text-red-500 dark:text-red-400" />
-                HR Administration
-              </h2>
+            <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
+              <div>
+                <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Flag className="h-5 w-5 text-red-500 dark:text-red-400" />
+                  HR Administration
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Create an appraisal cycle, choose participants, and launch it immediately from one flow.
+                </p>
+              </div>
               <Link
                 href="/admin"
                 className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors font-medium"
@@ -590,9 +597,20 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
                 Admin Panel →
               </Link>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Manage appraisal cycles, calibration sessions, and organization-wide reports.
-            </p>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/admin/appraisal-cycles/new"
+                className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              >
+                Create Cycle
+              </Link>
+              <Link
+                href="/admin/appraisal-cycles"
+                className="inline-flex items-center justify-center rounded-xl border border-red-500/30 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-500/5 dark:text-red-300"
+              >
+                Manage Cycles
+              </Link>
+            </div>
           </div>
         )}
     </div>

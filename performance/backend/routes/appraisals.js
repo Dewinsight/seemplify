@@ -118,6 +118,118 @@ function isAppraisalEmployee(req, appraisal) {
   return Boolean(appraisalEmail && userEmail && appraisalEmail === userEmail);
 }
 
+function toPlainObject(value, fallback = {}) {
+  if (!value) return fallback;
+  if (typeof value.toObject === 'function') return value.toObject();
+  if (typeof value === 'object') return value;
+  return fallback;
+}
+
+function normalizeOptionalObjectId(value) {
+  if (!value) return null;
+
+  if (looksLikeObjectId(String(value))) {
+    return String(value);
+  }
+
+  if (typeof value === 'object') {
+    const nestedId = value._id || value.id;
+    if (nestedId && looksLikeObjectId(String(nestedId))) {
+      return String(nestedId);
+    }
+  }
+
+  return null;
+}
+
+function normalizeNumberInRange(value, minimum, maximum, fallback = null) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallback;
+  return Math.min(maximum, Math.max(minimum, numericValue));
+}
+
+function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
+  const allowedPromotionReadiness = new Set(['not_ready', 'developing', 'ready', 'overdue']);
+  const currentManagerReview = toPlainObject(appraisal?.managerReview);
+  const currentSummary = toPlainObject(currentManagerReview?.overallSummary);
+  const nextSummary = toPlainObject(managerReview?.overallSummary);
+  const selfCompetencyRatings = Array.isArray(appraisal?.selfAssessment?.competencyRatings)
+    ? appraisal.selfAssessment.competencyRatings
+    : [];
+
+  const normalizedPromotionReadiness = allowedPromotionReadiness.has(nextSummary?.promotionReadiness)
+    ? nextSummary.promotionReadiness
+    : (
+      allowedPromotionReadiness.has(currentSummary?.promotionReadiness)
+        ? currentSummary.promotionReadiness
+        : 'developing'
+    );
+
+  const competencyRatings = Array.isArray(managerReview?.competencyRatings)
+    ? managerReview.competencyRatings
+      .map((rawRating) => {
+        const competencyId = rawRating?.competencyId ? String(rawRating.competencyId) : null;
+        if (!competencyId) return null;
+
+        const managerRating = normalizeNumberInRange(rawRating?.managerRating, 1, 5, null);
+        const selfRating = selfCompetencyRatings.find((entry) => entry?.competencyId === competencyId);
+        const selfRatingValue = normalizeNumberInRange(selfRating?.selfRating, 1, 5, null);
+
+        return {
+          competencyId,
+          competencyName: typeof rawRating?.competencyName === 'string' ? rawRating.competencyName.trim() : '',
+          ...(managerRating !== null ? { managerRating } : {}),
+          managerComments: typeof rawRating?.managerComments === 'string' ? rawRating.managerComments.trim() : '',
+          gapFromSelf: managerRating !== null && selfRatingValue !== null
+            ? managerRating - selfRatingValue
+            : null
+        };
+      })
+      .filter(Boolean)
+    : (Array.isArray(currentManagerReview?.competencyRatings) ? currentManagerReview.competencyRatings : []);
+
+  const okrAssessment = Array.isArray(managerReview?.okrAssessment)
+    ? managerReview.okrAssessment
+      .map((rawOkr) => {
+        const okrId = normalizeOptionalObjectId(rawOkr?.okrId);
+        const okrTitle = typeof rawOkr?.okrTitle === 'string' ? rawOkr.okrTitle.trim() : '';
+        const managerVerifiedCompletion = normalizeNumberInRange(rawOkr?.managerVerifiedCompletion, 0, 100, 0);
+        const qualityRating = normalizeNumberInRange(rawOkr?.qualityRating, 1, 5, 3);
+
+        if (!okrId && !okrTitle) return null;
+
+        return {
+          ...(okrId ? { okrId } : {}),
+          okrTitle,
+          managerVerifiedCompletion,
+          managerComments: typeof rawOkr?.managerComments === 'string' ? rawOkr.managerComments.trim() : '',
+          qualityRating
+        };
+      })
+      .filter(Boolean)
+    : (Array.isArray(currentManagerReview?.okrAssessment) ? currentManagerReview.okrAssessment : []);
+
+  const overallManagerRating = normalizeNumberInRange(
+    managerReview?.overallManagerRating,
+    1,
+    5,
+    normalizeNumberInRange(currentManagerReview?.overallManagerRating, 1, 5, 3)
+  );
+
+  return {
+    overallSummary: {
+      achievements: typeof nextSummary?.achievements === 'string' ? nextSummary.achievements.trim() : (currentSummary?.achievements || ''),
+      strengths: typeof nextSummary?.strengths === 'string' ? nextSummary.strengths.trim() : (currentSummary?.strengths || ''),
+      improvements: typeof nextSummary?.improvements === 'string' ? nextSummary.improvements.trim() : (currentSummary?.improvements || ''),
+      recommendations: typeof nextSummary?.recommendations === 'string' ? nextSummary.recommendations.trim() : (currentSummary?.recommendations || ''),
+      promotionReadiness: normalizedPromotionReadiness
+    },
+    competencyRatings,
+    okrAssessment,
+    overallManagerRating
+  };
+}
+
 function normalizeConversationText(value) {
   return (value || '').toString().replace(/\s+/g, ' ').trim();
 }
@@ -581,6 +693,291 @@ async function buildCycleStatsMap(cycleIds = [], orgId = null, referenceDate = n
   return statsMap;
 }
 
+function normalizeLaunchEmployee(employee = {}) {
+  const normalizedTeamIds = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(employee.teamIds) ? employee.teamIds : []),
+        employee.teamId
+      ]
+        .filter(Boolean)
+        .map((value) => String(value))
+    )
+  );
+
+  return {
+    userId: employee?.userId ? String(employee.userId) : null,
+    name: typeof employee?.name === 'string' ? employee.name.trim() : '',
+    email: typeof employee?.email === 'string' ? employee.email.trim() : '',
+    department: typeof employee?.department === 'string' ? employee.department.trim() : '',
+    departmentId: employee?.departmentId ? String(employee.departmentId) : null,
+    departmentName: typeof employee?.departmentName === 'string' ? employee.departmentName.trim() : '',
+    jobTitle: typeof employee?.jobTitle === 'string' ? employee.jobTitle.trim() : '',
+    teamId: employee?.teamId ? String(employee.teamId) : (normalizedTeamIds[0] || null),
+    teamIds: normalizedTeamIds,
+    teamName: typeof employee?.teamName === 'string' ? employee.teamName.trim() : '',
+    teamRole: typeof employee?.teamRole === 'string' ? employee.teamRole.trim() : '',
+    isSelf: Boolean(employee?.isSelf),
+    managerId: employee?.managerId ? String(employee.managerId) : null,
+    managerName: typeof employee?.managerName === 'string' ? employee.managerName.trim() : '',
+    managerEmail: typeof employee?.managerEmail === 'string' ? employee.managerEmail.trim() : ''
+  };
+}
+
+function normalizeLaunchEmployees(employees = []) {
+  return Array.from(
+    new Map(
+      (Array.isArray(employees) ? employees : [])
+        .map((employee) => normalizeLaunchEmployee(employee))
+        .filter((employee) => employee.userId || employee.email)
+        .map((employee) => {
+          const key = employee.userId || normalizeIdentityEmail(employee.email);
+          return key ? [key, employee] : null;
+        })
+        .filter(Boolean)
+    ).values()
+  );
+}
+
+function buildCycleScopeFromEmployees(userRole, employees = []) {
+  const targetIds = Array.from(
+    new Set(
+      employees.flatMap((employee) => {
+        const teamIds = Array.isArray(employee.teamIds) ? employee.teamIds : [];
+        return [...teamIds, employee.teamId].filter(Boolean).map((value) => String(value));
+      })
+    )
+  );
+
+  if (userRole === 'hr_admin') {
+    if (targetIds.length === 1) {
+      return { type: 'team', targetIds };
+    }
+
+    return { type: 'organization', targetIds: [] };
+  }
+
+  return { type: 'team', targetIds };
+}
+
+function employeeHasRealManager(employee = {}) {
+  const managerId = employee?.managerId ? String(employee.managerId) : null;
+  const managerEmail = normalizeIdentityEmail(employee?.managerEmail);
+  const employeeId = employee?.userId ? String(employee.userId) : null;
+  const employeeEmail = normalizeIdentityEmail(employee?.email);
+
+  if (managerId && employeeId && managerId === employeeId) {
+    return false;
+  }
+
+  if (managerEmail && employeeEmail && managerEmail === employeeEmail) {
+    return false;
+  }
+
+  return Boolean(managerId || managerEmail);
+}
+
+async function resolveManagerIdentityForLaunch(employee, req) {
+  const organizationId = resolveOrganizationId(req);
+  const requestedTeamIds = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(employee?.teamIds) ? employee.teamIds : []),
+        employee?.teamId
+      ]
+        .filter(Boolean)
+        .map((value) => String(value))
+    )
+  );
+
+  let managerUserId = employee?.managerId ? String(employee.managerId) : null;
+  let managerName = typeof employee?.managerName === 'string' ? employee.managerName.trim() : '';
+  let managerEmail = typeof employee?.managerEmail === 'string' ? employee.managerEmail.trim() : '';
+
+  if (!employeeHasRealManager({
+    userId: employee?.userId,
+    email: employee?.email,
+    managerId: managerUserId,
+    managerEmail
+  })) {
+    managerUserId = null;
+    managerName = '';
+    managerEmail = '';
+  }
+
+  if (!managerUserId || !managerEmail || !managerName) {
+    const employeeLookupOr = [];
+    if (employee?.userId) {
+      employeeLookupOr.push({ idpSub: String(employee.userId) });
+      if (looksLikeObjectId(String(employee.userId))) {
+        employeeLookupOr.push({ _id: String(employee.userId) });
+      }
+    }
+    if (employee?.email) {
+      employeeLookupOr.push({ email: employee.email });
+    }
+
+    if (employeeLookupOr.length > 0) {
+      const employeeUser = await User.findOne({ $or: employeeLookupOr })
+        .select('idpSub email idpTeams')
+        .lean();
+
+      const employeeTeams = Array.isArray(employeeUser?.idpTeams)
+        ? employeeUser.idpTeams
+        : [];
+      const employeeTeamsInOrg = Array.isArray(employeeUser?.idpTeams)
+        ? employeeUser.idpTeams.filter((team) => {
+          const teamOrgId = team?.organizationId ? String(team.organizationId) : null;
+          return !organizationId || !teamOrgId || teamOrgId === organizationId;
+        })
+        : [];
+      const prioritizedTeams = employeeTeamsInOrg.length > 0 ? employeeTeamsInOrg : employeeTeams;
+      const teamWithManager = prioritizedTeams.find((team) => {
+        if (!team?.managerId && !team?.managerEmail) return false;
+        const teamId = team?.id ? String(team.id) : null;
+        if (requestedTeamIds.length === 0) return true;
+        return !teamId || requestedTeamIds.includes(teamId);
+      }) || prioritizedTeams.find((team) => team?.managerId || team?.managerEmail);
+
+      if (teamWithManager) {
+        managerUserId = managerUserId || (teamWithManager.managerId ? String(teamWithManager.managerId) : null);
+        managerName = managerName || teamWithManager.managerName || '';
+        managerEmail = managerEmail || teamWithManager.managerEmail || '';
+      }
+    }
+  }
+
+  if ((!managerUserId || !managerName) && employee?.userId) {
+    const teams = req.session?.user?.idpTeams || req.session?.user?.teams || [];
+    const matchedManager = findManagerForEmployee(employee.userId, teams);
+
+    if (matchedManager) {
+      managerUserId = managerUserId || (matchedManager.userId ? String(matchedManager.userId) : null);
+      managerName = managerName || matchedManager.name || '';
+      managerEmail = managerEmail || matchedManager.email || '';
+    }
+  }
+
+  if (managerUserId && !managerEmail) {
+    const managerLookupOr = [{ email: String(managerUserId) }, { idpSub: String(managerUserId) }];
+    if (looksLikeObjectId(String(managerUserId))) {
+      managerLookupOr.unshift({ _id: String(managerUserId) });
+    }
+
+    const managerUser = await User.findOne({ $or: managerLookupOr }).select('email').lean();
+    if (managerUser?.email) {
+      managerEmail = managerUser.email;
+    }
+  }
+
+  if (!managerName && managerEmail) {
+    managerName = managerEmail.split('@')[0];
+  }
+
+  if (!employeeHasRealManager({
+    userId: employee?.userId,
+    email: employee?.email,
+    managerId: managerUserId,
+    managerEmail
+  }) || !managerUserId || !managerEmail || !managerName) {
+    return {
+      error: 'This employee cannot be included because no line manager is assigned in the reporting hierarchy.'
+    };
+  }
+
+  return {
+    manager: {
+      userId: String(managerUserId),
+      name: managerName,
+      email: managerEmail
+    }
+  };
+}
+
+async function createAppraisalsForCycle(cycle, employees = [], req) {
+  const normalizedEmployees = normalizeLaunchEmployees(employees);
+  const createdAppraisals = [];
+  const errors = [];
+
+  for (const employee of normalizedEmployees) {
+    try {
+      if (!employee?.userId || !employee?.email || !employee?.name) {
+        errors.push({
+          userId: employee?.userId || null,
+          email: employee?.email || null,
+          error: 'Employee userId, name, and email are required.'
+        });
+        continue;
+      }
+
+      const existingQuery = { cycleId: cycle._id };
+      const employeeIdentityMatch = buildEmployeeIdentityMatch(employee);
+      if (employeeIdentityMatch?.$or) {
+        existingQuery.$or = employeeIdentityMatch.$or;
+      } else if (employeeIdentityMatch) {
+        Object.assign(existingQuery, employeeIdentityMatch);
+      }
+
+      const existing = await Appraisal.findOne(existingQuery);
+      if (existing) {
+        errors.push({ userId: employee.userId, error: 'Appraisal already exists' });
+        continue;
+      }
+
+      const managerIdentity = await resolveManagerIdentityForLaunch(employee, req);
+      if (managerIdentity?.error) {
+        errors.push({ userId: employee.userId, error: managerIdentity.error });
+        continue;
+      }
+
+      const appraisal = new Appraisal({
+        cycleId: cycle._id,
+        organizationId: cycle.organizationId,
+        employee: {
+          userId: employee.userId,
+          name: employee.name,
+          email: employee.email,
+          department: employee.department || employee.departmentName,
+          jobTitle: employee.jobTitle
+        },
+        manager: managerIdentity.manager,
+        status: 'self_assessment_pending',
+        deadlines: {
+          selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
+          managerReviewDue: cycle.phases?.managerReview?.endDate
+        }
+      });
+
+      await appraisal.save();
+      createdAppraisals.push(appraisal);
+
+      appraisal.addAuditLog('appraisal_created', req.session.user, {
+        cycleId: cycle._id,
+        cycleName: cycle.name
+      });
+      await appraisal.save();
+    } catch (employeeError) {
+      console.error(`Error creating appraisal for ${employee?.userId || employee?.email}:`, employeeError);
+      errors.push({
+        userId: employee?.userId || null,
+        email: employee?.email || null,
+        error: employeeError.message
+      });
+    }
+  }
+
+  if (createdAppraisals.length > 0) {
+    await syncCycleProgress(cycle._id);
+  }
+
+  return {
+    launched: createdAppraisals.length,
+    errors: errors.length,
+    appraisals: createdAppraisals,
+    errorDetails: errors
+  };
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -665,17 +1062,26 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
     const userId = req.session?.user?.id || req.session?.user?.sub;
     const userName = req.session?.user?.name;
     const userRole = req.userRole;
+    const normalizedEmployees = normalizeLaunchEmployees(req.body?.employees);
+    const shouldLaunchImmediately = Boolean(req.body?.launchNow || normalizedEmployees.length > 0);
+    const derivedScope = shouldLaunchImmediately ? buildCycleScopeFromEmployees(userRole, normalizedEmployees) : null;
+    const requestedScope = req.body?.scope || derivedScope;
 
     if (!orgId) {
       return res.status(400).json({ success: false, error: 'No active organization selected' });
     }
 
+    if (shouldLaunchImmediately && normalizedEmployees.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Select at least one employee to launch the cycle immediately.'
+      });
+    }
+
     // SCOPE VALIDATION
     // If not HR Admin, enforce team scope
     if (isAppraisalManagerRole(userRole) && userRole !== 'hr_admin') {
-      const { scope } = req.body;
-
-      if (!scope || scope.type !== 'team') {
+      if (!requestedScope || requestedScope.type !== 'team') {
         return res.status(403).json({
           success: false,
           error: 'Managers can only create appraisal cycles for their teams'
@@ -686,7 +1092,7 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
       const accessScope = await resolveAppraisalAccessScope(req);
       const managedTeamIds = accessScope.accessibleTeamIds || [];
 
-      const targetIds = scope.targetIds || [];
+      const targetIds = requestedScope.targetIds || [];
       const invalidTargets = targetIds.filter(id => !managedTeamIds.includes(id));
 
       if (invalidTargets.length > 0) {
@@ -699,12 +1105,41 @@ router.post('/cycles', requireAuth, requireManager, async (req, res) => {
 
     const cycle = new AppraisalCycle({
       ...req.body,
+      scope: requestedScope || req.body?.scope,
       organizationId: orgId,
       createdBy: { userId, name: userName, role: userRole }
     });
 
     await cycle.save();
-    res.status(201).json({ success: true, data: cycle });
+
+    if (!shouldLaunchImmediately) {
+      return res.status(201).json({ success: true, data: cycle });
+    }
+
+    const launchSummary = await createAppraisalsForCycle(cycle, normalizedEmployees, req);
+
+    if (launchSummary.launched <= 0) {
+      await AppraisalCycle.findByIdAndDelete(cycle._id);
+      const firstError = Array.isArray(launchSummary.errorDetails) && launchSummary.errorDetails.length > 0
+        ? launchSummary.errorDetails[0]?.error
+        : null;
+
+      return res.status(400).json({
+        success: false,
+        error: firstError || 'Failed to launch the cycle for the selected employees.',
+        data: launchSummary
+      });
+    }
+
+    const refreshedCycle = await AppraisalCycle.findById(cycle._id).lean();
+    return res.status(201).json({
+      success: true,
+      data: {
+        cycle: refreshedCycle,
+        launchSummary
+      },
+      message: `Cycle created and launched for ${launchSummary.launched} employee${launchSummary.launched === 1 ? '' : 's'}.`
+    });
   } catch (error) {
     console.error('Create cycle error:', error);
     res.status(500).json({ success: false, error: 'Failed to create appraisal cycle' });
@@ -843,10 +1278,11 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
       return res.status(404).json({ success: false, error: 'Cycle not found' });
     }
 
+    const employees = normalizeLaunchEmployees(req.body?.employees);
+
     // Permission check for non-HR appraisers (line managers and team leads).
     if (req.userRole !== 'hr_admin' && isAppraisalManagerRole(req.userRole)) {
-      const { employees } = req.body;
-      if (!employees || !Array.isArray(employees)) {
+      if (employees.length === 0) {
         return res.status(400).json({ error: 'Employee list required' });
       }
 
@@ -877,169 +1313,28 @@ router.post('/cycles/:cycleId/launch', requireAuth, requireManager, async (req, 
       return res.status(400).json({ success: false, error: 'Cannot launch a completed cycle' });
     }
 
-    const { employees } = req.body;
-    // employees should be array of: { userId, name, email, managerId, managerName, managerEmail, department?, jobTitle? }
-
-    if (!employees || !Array.isArray(employees) || employees.length === 0) {
+    if (employees.length === 0) {
       return res.status(400).json({ success: false, error: 'Employee list required to launch cycle' });
     }
 
-    const createdAppraisals = [];
-    const errors = [];
+    const launchSummary = await createAppraisalsForCycle(cycle, employees, req);
 
-    for (const emp of employees) {
-      try {
-        // Check if appraisal already exists for this employee in this cycle
-        const existingQuery = { cycleId: cycle._id };
-        const employeeIdentityMatch = buildEmployeeIdentityMatch(emp);
-        if (employeeIdentityMatch?.$or) {
-          existingQuery.$or = employeeIdentityMatch.$or;
-        } else if (employeeIdentityMatch) {
-          Object.assign(existingQuery, employeeIdentityMatch);
-        }
+    if (launchSummary.launched <= 0) {
+      const firstError = Array.isArray(launchSummary.errorDetails) && launchSummary.errorDetails.length > 0
+        ? launchSummary.errorDetails[0]?.error
+        : null;
 
-        const existing = await Appraisal.findOne(existingQuery);
-
-        if (existing) {
-          errors.push({ userId: emp.userId, error: 'Appraisal already exists' });
-          continue;
-        }
-
-        // Create new appraisal
-        // If manager info is missing, try to auto-derive from:
-        // 1. Employee's own team data (their line_manager)
-        // 2. HR Admin's view of the org structure
-        // 3. Fallback to HR Admin as temporary manager
-        let managerUserId = emp.managerId;
-        let managerName = emp.managerName;
-        let managerEmail = emp.managerEmail;
-
-        if (!managerUserId) {
-          // First, try to find manager from the employee's own user record
-          const employeeLookupOr = [{ idpSub: String(emp.userId) }, { email: emp.email }];
-          if (looksLikeObjectId(String(emp.userId))) {
-            employeeLookupOr.unshift({ _id: emp.userId });
-          }
-          const employeeUser = await User.findOne({
-            $or: employeeLookupOr
-          });
-
-          if (employeeUser?.idpTeams?.length > 0) {
-            // Find the team where this employee has a manager assigned
-            const teamWithManager = employeeUser.idpTeams.find(t => t.managerId);
-            if (teamWithManager) {
-              managerUserId = teamWithManager.managerId;
-              managerName = teamWithManager.managerName;
-              managerEmail = teamWithManager.managerEmail;
-              console.log(`Found manager from employee's team data: ${managerName} for ${emp.name}`);
-            }
-          }
-
-          // If still no manager, try from HR Admin's team view
-          if (!managerUserId) {
-            const teams = req.session?.user?.idpTeams || req.session?.user?.teams || [];
-            const matchedManager = findManagerForEmployee(emp.userId, teams);
-
-            if (matchedManager) {
-              managerUserId = matchedManager.userId;
-              managerName = matchedManager.name;
-              console.log(`Auto-assigned manager from IdP: ${managerName} for ${emp.name}`);
-            }
-          }
-
-          // Try to find manager email if we have userId but no email
-          if (managerUserId && !managerEmail) {
-            const managerLookupOr = [{ email: String(managerUserId) }];
-            if (looksLikeObjectId(String(managerUserId))) {
-              managerLookupOr.unshift({ _id: managerUserId });
-            }
-            managerLookupOr.unshift({ idpSub: String(managerUserId) });
-            const managerUser = await User.findOne({
-              $or: managerLookupOr
-            }).select('email');
-            if (managerUser?.email) managerEmail = managerUser.email;
-          }
-        }
-
-        if (managerUserId && !managerName && managerEmail) {
-          managerName = managerEmail.split('@')[0];
-        }
-
-        // Fallback to requester if any required manager identity field is still missing.
-        // This keeps launch resilient when upstream manager email claims are incomplete.
-        if (!managerUserId || !managerEmail || !managerName) {
-          managerUserId = managerUserId || req.session?.user?.id || req.session?.user?.sub;
-          managerName = managerName || req.session?.user?.name || req.session?.user?.email || 'HR Admin';
-          managerEmail = managerEmail || req.session?.user?.email;
-          console.log(`Using requester fallback manager identity for ${emp.name}`);
-        }
-
-        if (!managerUserId || !managerEmail || !managerName) {
-          errors.push({ userId: emp.userId, error: 'Manager information missing and no fallback available' });
-          continue;
-        }
-
-        const appraisal = new Appraisal({
-          cycleId: cycle._id,
-          organizationId: cycle.organizationId,
-          employee: {
-            userId: emp.userId,
-            name: emp.name,
-            email: emp.email,
-            department: emp.department,
-            jobTitle: emp.jobTitle
-          },
-          manager: {
-            userId: managerUserId,
-            name: managerName,
-            email: managerEmail
-          },
-          // Skip goal setting, start directly at self-assessment
-          status: 'self_assessment_pending',
-          deadlines: {
-            selfAssessmentDue: cycle.phases?.selfAssessment?.endDate,
-            managerReviewDue: cycle.phases?.managerReview?.endDate
-          }
-        });
-
-        await appraisal.save();
-        createdAppraisals.push(appraisal);
-
-        // Add audit log
-        appraisal.addAuditLog('appraisal_created', req.session.user, {
-          cycleId: cycle._id,
-          cycleName: cycle.name
-        });
-        await appraisal.save();
-
-      } catch (empError) {
-        console.error(`Error creating appraisal for ${emp.userId}:`, empError);
-        errors.push({ userId: emp.userId, error: empError.message });
-      }
-    }
-
-    // Update cycle status
-    if (createdAppraisals.length > 0) {
-      console.log('Updating cycle status to active:', cycle._id);
-      cycle.status = 'active';
-      // Skip goalSetting, start at selfAssessment
-      cycle.currentPhase = 'selfAssessment';
-      cycle.phases.selfAssessment.isActive = true;
-      cycle.markModified('phases'); // Ensure nested changes are detected
-      await cycle.save();
-      await syncCycleProgress(cycle._id);
-      console.log('Cycle updated successfully');
+      return res.status(400).json({
+        success: false,
+        error: firstError || 'Failed to launch the cycle for the selected employees.',
+        data: launchSummary
+      });
     }
 
     res.json({
       success: true,
-      data: {
-        launched: createdAppraisals.length,
-        errors: errors.length,
-        appraisals: createdAppraisals,
-        errorDetails: errors
-      },
-      message: `Created ${createdAppraisals.length} appraisals${errors.length > 0 ? `, ${errors.length} failed` : ''}`
+      data: launchSummary,
+      message: `Created ${launchSummary.launched} appraisals${launchSummary.errors > 0 ? `, ${launchSummary.errors} failed` : ''}`
     });
   } catch (error) {
     console.error('Launch cycle error:', error);
@@ -2254,26 +2549,14 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
 
     const aiAssistEnabled = isAiAssistEnabledForCycle(appraisal.cycleId);
     const { managerReview = {}, submit } = req.body;
+    const normalizedManagerReview = normalizeManagerReviewPayload(managerReview, appraisal);
+    const currentManagerReview = toPlainObject(appraisal.managerReview);
 
-    // Update manager review
     appraisal.managerReview = {
-      ...appraisal.managerReview,
-      ...managerReview,
+      ...currentManagerReview,
+      ...normalizedManagerReview,
       lastSavedAt: new Date()
     };
-
-    // Calculate gaps from self-rating
-    if (managerReview.competencyRatings) {
-      appraisal.managerReview.competencyRatings = managerReview.competencyRatings.map(cr => {
-        const selfRating = appraisal.selfAssessment?.competencyRatings?.find(
-          sr => sr.competencyId === cr.competencyId
-        );
-        return {
-          ...cr,
-          gapFromSelf: selfRating ? cr.managerRating - selfRating.selfRating : null
-        };
-      });
-    }
 
     if (submit) {
       appraisal.managerReview.submittedAt = new Date();
@@ -2323,7 +2606,14 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
     res.json({ success: true, data: appraisal });
   } catch (error) {
     console.error('Save manager review error:', error);
-    res.status(500).json({ success: false, error: 'Failed to save manager review' });
+    const validationMessage = error?.name === 'ValidationError'
+      ? Object.values(error.errors || {}).map((issue) => issue?.message).filter(Boolean).join('; ')
+      : (error?.name === 'CastError' ? error.message : null);
+
+    res.status(validationMessage ? 400 : 500).json({
+      success: false,
+      error: validationMessage || 'Failed to save manager review'
+    });
   }
 });
 

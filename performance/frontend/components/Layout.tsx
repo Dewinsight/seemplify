@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
+import PageGuide from './PageGuide';
 
 type NavItem = {
   name: string;
@@ -696,6 +697,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         isDarkMode ? "" : "bg-slate-50"
       )}>
         <div className="mx-auto px-4 py-8 lg:px-8 xl:px-10 max-w-[1440px]">
+          <PageGuide />
           {children}
         </div>
       </main>

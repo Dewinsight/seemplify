@@ -374,6 +374,9 @@ export default function AdminOverviewPage() {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Button variant="contained" color="success" startIcon={<Assessment />} onClick={() => router.push('/admin/appraisal-cycles/new')}>
+            Create Cycle
+          </Button>
           <Button variant="contained" startIcon={<Settings />} onClick={() => router.push('/admin/appraisal-cycles')}>
             Manage Cycles
           </Button>

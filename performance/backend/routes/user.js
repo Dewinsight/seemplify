@@ -42,6 +42,52 @@ function resolveOrganizationId(req) {
   );
 }
 
+function hasAssignedManager(employee = {}) {
+  const managerId = employee?.managerId ? String(employee.managerId) : null;
+  const managerEmail = normalizeEmail(employee?.managerEmail);
+  const employeeId = employee?.userId ? String(employee.userId) : null;
+  const employeeEmail = normalizeEmail(employee?.email);
+
+  if (managerId && employeeId && managerId === employeeId) {
+    return false;
+  }
+
+  if (managerEmail && employeeEmail && managerEmail === employeeEmail) {
+    return false;
+  }
+
+  return Boolean(managerId || managerEmail);
+}
+
+function decorateEmployeeForAppraisalSelection(employee = {}, sessionUser = null) {
+  const isSelf = Boolean(
+    employee?.isSelf ||
+    (normalizeEmail(employee?.email) && normalizeEmail(sessionUser?.email) && normalizeEmail(employee.email) === normalizeEmail(sessionUser.email))
+  );
+  const isSelectableForAppraisal = hasAssignedManager(employee);
+
+  return {
+    ...employee,
+    isSelf,
+    isSelectableForAppraisal,
+    selectionBlockedReason: isSelectableForAppraisal
+      ? null
+      : 'No line manager is assigned in the reporting hierarchy for this employee.'
+  };
+}
+
+function sortEmployeesForAppraisalSelection(employees = []) {
+  return [...employees].sort((left, right) => {
+    if (left.isSelectableForAppraisal !== right.isSelectableForAppraisal) {
+      return left.isSelectableForAppraisal ? -1 : 1;
+    }
+    if (left.isSelf !== right.isSelf) {
+      return left.isSelf ? -1 : 1;
+    }
+    return (left.name || '').localeCompare(right.name || '');
+  });
+}
+
 /**
  * GET /api/user/context - Get comprehensive user context
  * Returns all necessary info for frontend role-based rendering
@@ -370,12 +416,12 @@ router.get('/all-employees', requireAuth, async (req, res) => {
     }).select('idpSub email profile idpTeams currentOrganizationId');
 
     // Map users with their manager info from teams
-    const employees = users.map(u => {
+    const employees = sortEmployeesForAppraisalSelection(users.map((u) => {
       // Find user's team info to get manager
       const userTeams = Array.isArray(u.idpTeams) ? u.idpTeams : [];
       const primaryTeam = userTeams.find((t) => t?.organizationId === currentOrgId) || userTeams[0];
 
-      return {
+      return decorateEmployeeForAppraisalSelection({
         userId: getPreferredUserId(u),
         name: u.profile?.displayName ||
           `${u.profile?.firstName || ''} ${u.profile?.lastName || ''}`.trim() ||
@@ -386,11 +432,20 @@ router.get('/all-employees', requireAuth, async (req, res) => {
         department: primaryTeam?.departmentName || u.profile?.department || '',
         departmentId: primaryTeam?.departmentId || '',
         departmentName: primaryTeam?.departmentName || '',
+        teamId: primaryTeam?.id || '',
+        teamIds: Array.isArray(userTeams)
+          ? userTeams
+            .filter((team) => !currentOrgId || team?.organizationId === currentOrgId)
+            .map((team) => team?.id)
+            .filter(Boolean)
+          : [],
+        teamName: primaryTeam?.name || '',
+        teamRole: primaryTeam?.role || '',
         managerId: primaryTeam?.managerId,
         managerName: primaryTeam?.managerName,
         managerEmail: primaryTeam?.managerEmail
-      };
-    });
+      }, req.session?.user);
+    }));
 
     res.json({
       success: true,
@@ -755,9 +810,9 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       });
     }
 
-    const scope = await resolveAppraisalAccessScope(req);
+    const scope = await resolveAppraisalAccessScope(req, { includeSelf: role === 'hr_admin' });
     const sourceEmployees = scope.isHrPlus ? scope.organizationUsers : scope.directReports;
-    const employees = (sourceEmployees || []).map((member) => ({
+    const employees = (sourceEmployees || []).map((member) => decorateEmployeeForAppraisalSelection({
       userId: member.userId,
       name: member.name,
       email: member.email,
@@ -774,8 +829,9 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       isManager: member.isManager,
       managerId: member.managerId || null,
       managerName: member.managerName || null,
-      managerEmail: member.managerEmail || null
-    }));
+      managerEmail: member.managerEmail || null,
+      isSelf: member.isSelf
+    }, sessionUser));
 
     let uniqueEmployees = Array.from(
       new Map(
@@ -827,7 +883,7 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
               .filter(Boolean)
             : [];
 
-          return {
+          return decorateEmployeeForAppraisalSelection({
             userId: userDoc.idpSub || userDoc._id?.toString(),
             name,
             email: userDoc.email,
@@ -843,7 +899,7 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
             managerId: teamInOrg?.managerId || null,
             managerName: teamInOrg?.managerName || null,
             managerEmail: teamInOrg?.managerEmail || null
-          };
+          }, sessionUser);
         });
 
         uniqueEmployees = Array.from(
@@ -859,8 +915,12 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
       }
     }
 
+    uniqueEmployees = sortEmployeesForAppraisalSelection(uniqueEmployees);
+
     const managersMap = new Map();
-    uniqueEmployees.forEach((employee) => {
+    uniqueEmployees
+      .filter((employee) => employee.isSelectableForAppraisal)
+      .forEach((employee) => {
       const managerKey = employee.managerId || normalizeEmail(employee.managerEmail) || null;
       if (!managerKey) return;
 
@@ -879,9 +939,10 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
         name: employee.name,
         email: employee.email,
         jobTitle: employee.jobTitle,
-        teamName: employee.teamName
+        teamName: employee.teamName,
+        isSelf: employee.isSelf
       });
-    });
+      });
 
     // Group by manager for easy UI rendering
     const byManager = Array.from(managersMap.values()).sort((a, b) =>
@@ -889,9 +950,7 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
     );
 
     // Find employees without managers
-    const withoutManager = uniqueEmployees.filter((employee) => {
-      return !employee.managerId && !normalizeEmail(employee.managerEmail);
-    });
+    const withoutManager = uniqueEmployees.filter((employee) => !employee.isSelectableForAppraisal);
 
     res.json({
       success: true,
@@ -901,6 +960,8 @@ router.get('/employees-for-appraisal', requireAuth, async (req, res) => {
         withoutManager: withoutManager,
         summary: {
           totalEmployees: uniqueEmployees.length,
+          eligibleEmployees: uniqueEmployees.filter((employee) => employee.isSelectableForAppraisal).length,
+          ineligibleEmployees: withoutManager.length,
           withManager: uniqueEmployees.length - withoutManager.length,
           withoutManager: withoutManager.length,
           totalManagers: byManager.length

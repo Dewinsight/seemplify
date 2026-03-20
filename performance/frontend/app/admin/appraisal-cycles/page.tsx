@@ -338,7 +338,7 @@ export default function AppraisalCyclesAdminPage() {
                     onClick={() => handleOpenLaunchDialog(cycle)}
                     size="small"
                   >
-                    Launch
+                    Finish Setup
                   </Button>
                 )}
                 {cycle.status === 'active' && (
@@ -400,7 +400,7 @@ export default function AppraisalCyclesAdminPage() {
             Appraisal Cycle Management
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Create, launch, and manage performance appraisal cycles for your organization
+            Create, launch, and manage appraisal cycles from one place. New cycles now go live as soon as you create them.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -416,10 +416,14 @@ export default function AppraisalCyclesAdminPage() {
             startIcon={<Add />}
             onClick={() => router.push('/admin/appraisal-cycles/new')}
           >
-            Create New Cycle
+            Create And Launch Cycle
           </Button>
         </Box>
       </Box>
+
+      <Alert severity="info" sx={{ mb: 3 }}>
+        New flow: define the cycle, choose participants, and create it once. Draft-only setup is now legacy behavior for older cycles.
+      </Alert>
 
       {/* Summary Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -443,7 +447,7 @@ export default function AppraisalCyclesAdminPage() {
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
-                  <Typography variant="overline" color="text.secondary">Draft Cycles</Typography>
+                  <Typography variant="overline" color="text.secondary">Legacy Drafts</Typography>
                   <Typography variant="h3" fontWeight={700} color="warning.main">
                     {draftCycles.length}
                   </Typography>
@@ -513,7 +517,7 @@ export default function AppraisalCyclesAdminPage() {
         sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
       >
         <Tab label={<Badge badgeContent={activeCycles.length} color="success">Active</Badge>} />
-        <Tab label={<Badge badgeContent={draftCycles.length} color="warning">Drafts</Badge>} />
+        <Tab label={<Badge badgeContent={draftCycles.length} color="warning">Legacy Drafts</Badge>} />
         <Tab label="Completed" />
       </Tabs>
 
@@ -528,14 +532,14 @@ export default function AppraisalCyclesAdminPage() {
             activeCycles.length > 0 ? (
               activeCycles.map((cycle: AppraisalCycle) => renderCycleCard(cycle))
             ) : (
-              <Alert severity="info">No active cycles. Create and launch a cycle to get started.</Alert>
+                <Alert severity="info">No active cycles. Use Create And Launch Cycle to start a new appraisal run.</Alert>
             )
           )}
           {selectedTab === 1 && (
             draftCycles.length > 0 ? (
               draftCycles.map((cycle: AppraisalCycle) => renderCycleCard(cycle))
             ) : (
-              <Alert severity="info">No draft cycles.</Alert>
+                <Alert severity="info">No legacy draft cycles.</Alert>
             )
           )}
           {selectedTab === 2 && (
