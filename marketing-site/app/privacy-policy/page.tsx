@@ -1,6 +1,23 @@
+import type { Metadata } from 'next'
 import React from 'react';
 import { Shield, Lock, Eye, FileText, Mail, Server } from 'lucide-react';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+    title: 'Privacy Policy',
+    description: 'Read the Seemplify privacy policy.',
+    alternates: {
+        canonical: '/privacy-policy',
+        languages: {
+            en: '/privacy-policy',
+        },
+    },
+    openGraph: {
+        title: 'Privacy Policy | Seemplify',
+        description: 'Read the Seemplify privacy policy.',
+        url: '/privacy-policy',
+    },
+}
 
 export default function PrivacyPolicy() {
     const lastUpdated = "January 6, 2026";

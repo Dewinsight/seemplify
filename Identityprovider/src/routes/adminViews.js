@@ -558,13 +558,15 @@ router.post('/organizations/:organizationId/invitations', async (req, res) => {
       role = 'recruiter',
       designation = '',
       employeeId: rawEmployeeId = '',
-      team: teamId = ''
+      team: teamId = '',
+      sendAsReminder: rawSendAsReminder = ''
     } = req.body || {}
 
     const normalizedEmail = String(email || '').trim().toLowerCase()
     const normalizedRole = String(role || '').trim()
     const normalizedDesignation = String(designation || '').trim()
     const normalizedEmployeeId = normalizeEmployeeId(rawEmployeeId)
+    const sendAsReminder = ['1', 'true', 'on', 'yes'].includes(String(rawSendAsReminder || '').trim().toLowerCase())
 
     if (!normalizedEmail || !normalizedEmail.includes('@')) {
       return res.redirect(buildOrgDetailRedirectPath(organizationId, 'A valid email address is required', 'error'))
@@ -614,25 +616,50 @@ router.post('/organizations/:organizationId/invitations', async (req, res) => {
       return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Employee ID is already pending on another invitation', 'error'))
     }
 
-    const hasPendingInvite = await OrganizationInvite.hasPendingInvite(organizationId, normalizedEmail)
-    if (hasPendingInvite) {
+    const existingInvite = await OrganizationInvite.findOne({
+      organization: organizationId,
+      email: normalizedEmail,
+      status: 'pending',
+      expiresAt: { $gt: new Date() }
+    })
+
+    if (existingInvite && !sendAsReminder) {
       return res.redirect(buildOrgDetailRedirectPath(organizationId, 'An invitation is already pending for this email', 'error'))
     }
 
     const { plainToken, tokenHash } = await OrganizationInvite.generateToken()
-    const invitation = await OrganizationInvite.create({
-      organization: organizationId,
-      email: normalizedEmail,
-      role: normalizedRole,
-      designation: normalizedDesignation,
-      employeeId: normalizedEmployeeId || undefined,
-      department: departmentId,
-      team: invitedTeam._id,
-      appAccess: { mode: 'all', appIds: [] },
-      tokenHash,
-      invitedBy: req.user._id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    })
+    let invitation
+
+    if (existingInvite) {
+      if (await hasPendingInviteWithEmployeeId(organizationId, normalizedEmployeeId, existingInvite._id)) {
+        return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Employee ID is already pending on another invitation', 'error'))
+      }
+
+      existingInvite.role = normalizedRole
+      existingInvite.designation = normalizedDesignation
+      existingInvite.employeeId = normalizedEmployeeId || undefined
+      existingInvite.department = departmentId
+      existingInvite.team = invitedTeam._id
+      existingInvite.appAccess = { mode: 'all', appIds: [] }
+      existingInvite.invitedBy = req.user._id
+      existingInvite.tokenHash = tokenHash
+      existingInvite.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      invitation = await existingInvite.save()
+    } else {
+      invitation = await OrganizationInvite.create({
+        organization: organizationId,
+        email: normalizedEmail,
+        role: normalizedRole,
+        designation: normalizedDesignation,
+        employeeId: normalizedEmployeeId || undefined,
+        department: departmentId,
+        team: invitedTeam._id,
+        appAccess: { mode: 'all', appIds: [] },
+        tokenHash,
+        invitedBy: req.user._id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      })
+    }
 
     const inviteUrl = `${process.env.ISSUER_URL}/invitations/accept?token=${plainToken}`
     try {
@@ -645,18 +672,22 @@ router.post('/organizations/:organizationId/invitations', async (req, res) => {
         employeeId: normalizedEmployeeId,
         departmentName: department.name,
         teamName: invitedTeam.name,
-        inviteUrl
+        inviteUrl,
+        isReminder: sendAsReminder
       })
     } catch (emailError) {
       console.error('Admin organization invite email failed:', emailError)
       return res.redirect(buildOrgDetailRedirectPath(
         organizationId,
-        `Invitation created for ${invitation.email}, but the email could not be sent`,
+        `${sendAsReminder ? 'Reminder' : 'Invitation'} created for ${invitation.email}, but the email could not be sent`,
         'error'
       ))
     }
 
-    return res.redirect(buildOrgDetailRedirectPath(organizationId, `Invitation sent to ${invitation.email}`))
+    return res.redirect(buildOrgDetailRedirectPath(
+      organizationId,
+      `${sendAsReminder ? 'Reminder' : 'Invitation'} sent to ${invitation.email}`
+    ))
   } catch (error) {
     console.error('Admin organization invite error:', error)
     return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Failed to send invitation', 'error'))
