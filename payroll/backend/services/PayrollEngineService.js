@@ -780,8 +780,9 @@ class PayrollEngineService {
       const netTaxableIncome = Math.max(0, roundMoney(taxableEarnings - preTaxDeductions));
       const taxPaymentDate = payslip.payPeriod?.paymentDate || payEnd;
       const ytdContext = await this.getEmployeeYearToDatePayrollContext(profile, taxPaymentDate);
-      const taxResult = taxService.calculatePayrollTaxes({
+      const taxResult = await taxService.calculatePayrollTaxes({
         taxConfig: profile.taxConfig || {},
+        organizationId: profile.organizationId,
         statutoryContributions: profile.statutoryContributions || {},
         grossPay: roundMoney(payslip.earningsSummary?.grossPay || taxableEarnings),
         taxableIncome: netTaxableIncome,
@@ -811,6 +812,8 @@ class PayrollEngineService {
           yearToDateTax: roundMoney(ytdContext.ytdIncomeTax + incomeTaxAmount),
           jurisdictionCode: taxResult?.incomeTax?.jurisdictionCode || '',
           jurisdictionName: taxResult?.incomeTax?.jurisdictionName || '',
+          jurisdictionConfigId: taxResult?.jurisdictionConfig?._id || null,
+          jurisdictionVersionId: taxResult?.jurisdictionVersion?._id || null,
           taxYearLabel: taxResult?.incomeTax?.taxYearLabel || ytdContext.taxYear?.label || '',
           calculationMode: taxResult?.incomeTax?.calculationMode || '',
           method: taxResult?.incomeTax?.method || '',
@@ -819,6 +822,10 @@ class PayrollEngineService {
           taxableIncomeAfterReliefs: roundMoney(taxResult?.incomeTax?.taxableIncomeAfterReliefs || 0),
           notes: Array.isArray(taxResult?.incomeTax?.notes) ? taxResult.incomeTax.notes : [],
           details: taxResult?.incomeTax?.details || undefined,
+          calculationTrace: {
+            validationErrors: Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [],
+            employeeTaxInputs: taxResult?.employeeTaxInputs || {},
+          },
         };
       }
 

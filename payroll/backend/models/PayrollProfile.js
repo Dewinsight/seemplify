@@ -97,8 +97,8 @@ const TaxConfigSchema = new Schema({
   },
   calculationMode: {
     type: String,
-    enum: ['builtin', 'manual'],
-    default: 'manual'
+    enum: ['builtin', 'manual', 'configured'],
+    default: 'configured'
   },
   jurisdictionCode: {
     type: String,
@@ -108,6 +108,31 @@ const TaxConfigSchema = new Schema({
     default: 'OTHER'
   },
   jurisdictionName: String,
+  jurisdictionConfigId: {
+    type: Schema.Types.ObjectId,
+    ref: 'TaxJurisdictionConfig',
+    default: null,
+  },
+  jurisdictionVersionId: {
+    type: Schema.Types.ObjectId,
+    default: null,
+  },
+  employeeTaxInputs: {
+    type: Schema.Types.Mixed,
+    default: {},
+  },
+  taxValidation: {
+    status: {
+      type: String,
+      enum: ['valid', 'warning', 'error', 'unknown'],
+      default: 'unknown',
+    },
+    messages: {
+      type: [String],
+      default: [],
+    },
+    validatedAt: Date,
+  },
   taxSubdivision: String,
   residencyStatus: {
     type: String,

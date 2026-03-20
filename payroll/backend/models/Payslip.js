@@ -118,6 +118,8 @@ const TaxBreakdownSchema = new Schema({
   taxBracket: String, // e.g., "20% bracket"
   jurisdictionCode: String,
   jurisdictionName: String,
+  jurisdictionConfigId: Schema.Types.ObjectId,
+  jurisdictionVersionId: Schema.Types.ObjectId,
   taxYearLabel: String,
   calculationMode: String,
   method: String,
@@ -125,7 +127,8 @@ const TaxBreakdownSchema = new Schema({
   annualizedTaxableIncome: { type: Number, default: 0 },
   taxableIncomeAfterReliefs: { type: Number, default: 0 },
   notes: [String],
-  details: Schema.Types.Mixed
+  details: Schema.Types.Mixed,
+  calculationTrace: Schema.Types.Mixed,
 }, { _id: false });
 
 // Year-to-Date summary schema

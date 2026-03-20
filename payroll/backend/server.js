@@ -13,10 +13,12 @@ require('./models/CompensationRequest');
 require('./models/SalaryGrade');
 require('./models/ExchangeRate');
 require('./models/CurrencySyncSettings');
+require('./models/TaxJurisdictionConfig');
 
 // Now we can safely import services that depend on models
 const MonthlyPayrollScheduler = require('./jobs/MonthlyPayrollScheduler');
 const ExchangeRateScheduler = require('./jobs/ExchangeRateScheduler');
+const taxJurisdictionService = require('./services/TaxJurisdictionService');
 
 // Import webhook routes and claims middleware
 const webhooksRouter = require('./routes/webhooks');
@@ -80,7 +82,11 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/payroll-m
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-  .then(() => console.log('Connected to MongoDB (Payroll DB)'))
+  .then(async () => {
+    console.log('Connected to MongoDB (Payroll DB)');
+    await taxJurisdictionService.seedGlobalDefaults();
+    console.log('Seeded global tax jurisdictions');
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
@@ -90,6 +96,7 @@ app.use('/api/compensation', require('./routes/compensation'));
 app.use('/api/payroll/reports', require('./routes/reports'));
 app.use('/api/payroll/salary-grades', require('./routes/salary-grades'));
 app.use('/api/payroll/currencies', require('./routes/currencies'));
+app.use('/api/payroll/tax', require('./routes/tax'));
 app.use('/api/webhooks', webhooksRouter);
 
 // Initialize Payroll Scheduler

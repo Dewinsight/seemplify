@@ -233,6 +233,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       name: 'Settings',
       icon: Settings,
       items: [
+        { name: 'Tax Rules', href: '/admin/settings/tax', icon: Calculator },
         { name: 'Currencies', href: '/admin/currencies', icon: Coins },
       ],
     },

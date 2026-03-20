@@ -281,7 +281,7 @@ function applyPayrollSyncFromMember(profile, member = {}) {
 function deriveLegacyCalculationRegime(taxConfig = {}) {
   if (taxConfig.taxRegime === 'exempt') return 'none';
 
-  if (taxConfig.calculationMode === 'builtin') {
+  if (taxConfig.calculationMode === 'builtin' || taxConfig.calculationMode === 'configured') {
     if (taxConfig.jurisdictionCode === 'GB') return 'progressive_uk';
     if (taxConfig.jurisdictionCode === 'US') return 'progressive_us';
     return 'progressive_generic';
@@ -301,6 +301,14 @@ function normalizeTaxConfigPayload(input) {
     ...input,
     ...normalized,
     calculationRegime: deriveLegacyCalculationRegime(normalized),
+    jurisdictionConfigId: normalized.jurisdictionConfigId || null,
+    jurisdictionVersionId: normalized.jurisdictionVersionId || null,
+    employeeTaxInputs: (normalized.employeeTaxInputs && typeof normalized.employeeTaxInputs === 'object')
+      ? normalized.employeeTaxInputs
+      : {},
+    taxValidation: (normalized.taxValidation && typeof normalized.taxValidation === 'object')
+      ? normalized.taxValidation
+      : { status: 'unknown', messages: [] },
     flatTaxRate: Number(normalized.flatTaxRate || 0),
     manualTaxFreeAllowance: Number(normalized.manualTaxFreeAllowance || 0),
     socialSecurityRate: Number(normalized.socialSecurityRate || 0),
@@ -874,7 +882,8 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
     const preTaxDeductions = roundMoney(recurringPreTaxDeductions + employeePensionAmount);
     const taxableIncome = Math.max(0, roundMoney(taxableEarnings - preTaxDeductions));
 
-    const taxResult = taxService.calculatePayrollTaxes({
+    const taxResult = await taxService.calculatePayrollTaxes({
+      organizationId,
       taxConfig,
       statutoryContributions,
       grossPay,
@@ -903,6 +912,14 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
       currency,
       payFrequency,
       calculationMode: taxConfig.calculationMode,
+      validationErrors: Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [],
+      jurisdictionVersion: taxResult?.jurisdictionVersion ? {
+        _id: taxResult.jurisdictionVersion._id,
+        label: taxResult.jurisdictionVersion.label,
+        versionNumber: taxResult.jurisdictionVersion.versionNumber,
+        effectiveFrom: taxResult.jurisdictionVersion.effectiveFrom,
+        effectiveTo: taxResult.jurisdictionVersion.effectiveTo,
+      } : null,
       summary: {
         basicSalary: roundMoney(basicSalary),
         grossPay,
