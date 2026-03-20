@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation';
 import api, { authApi, handleAuthCallback } from '@/lib/api';
 import { formatPayrollMoney } from '@/lib/payrollMoney';
 import {
+    getPayrollBankAccountTypes,
+    getPayrollBankJurisdiction,
+    getPayrollDefaultBankAccountType,
+    normalizePayrollBankCountry,
+    PAYROLL_BANK_JURISDICTIONS,
+} from '@/lib/payrollBankJurisdictions.mjs';
+import {
     TaxFieldDefinition,
     TaxJurisdictionSummary,
     listTaxJurisdictions,
@@ -52,7 +59,14 @@ function normalizePayrollBankAccountType(country: string, accountType: string): 
     if (rawType === 'checking' || rawType === 'savings' || rawType === 'current') {
         return rawType;
     }
-    if (rawType === 'salary' || country === 'UK' || country === 'Nigeria') {
+    if (rawType === 'salary') {
+        return 'current';
+    }
+    const defaultType = getPayrollDefaultBankAccountType(country, { preferSalary: false });
+    if (defaultType === 'current' || defaultType === 'savings') {
+        return defaultType;
+    }
+    if (country === 'UK' || country === 'Nigeria' || country === 'Ghana' || country === 'Kenya' || country === 'South Africa' || country === 'EU') {
         return 'current';
     }
     return 'checking';
@@ -627,11 +641,12 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 const payrollSync = idpSync?.payrollSync || {};
                 const syncedBankAccount = payrollSync?.banking?.accounts?.[0] || {};
                 const payrollBankAccount = res.data.bankAccounts?.[0] || {};
-                const resolvedCountry = String(
+                const resolvedCountry = normalizePayrollBankCountry(
                     syncedBankAccount?.country
                     || payrollSync?.banking?.country
                     || 'USA'
-                ).trim() || 'USA';
+                );
+                const resolvedBankJurisdiction = getPayrollBankJurisdiction(resolvedCountry);
                 const dependentsCount = Number(payrollSync?.dependentsCount || 0);
                 const nextDependentsStatus = dependentsCount > 0
                     ? 'provided'
@@ -704,11 +719,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                         accountHolderName: syncedBankAccount?.accountHolderName || payrollBankAccount?.accountName || res.data?.employeeInfo?.name || '',
                         accountNumber: syncedBankAccount?.accountNumber || payrollBankAccount?.accountNumber || '',
                         routingNumber: syncedBankAccount?.routingNumber || payrollBankAccount?.routingNumber || '',
-                        sortCode: syncedBankAccount?.sortCode || (resolvedCountry === 'UK' ? (payrollBankAccount?.branchCode || '') : ''),
+                        sortCode: syncedBankAccount?.sortCode || (resolvedBankJurisdiction?.localField?.key === 'sortCode' ? (payrollBankAccount?.branchCode || '') : ''),
                         iban: syncedBankAccount?.iban || payrollBankAccount?.iban || '',
                         bicSwift: syncedBankAccount?.bicSwift || payrollBankAccount?.swiftCode || '',
-                        bankCode: syncedBankAccount?.bankCode || (resolvedCountry === 'Nigeria' ? (payrollBankAccount?.branchCode || '') : ''),
-                        accountType: syncedBankAccount?.accountType || payrollBankAccount?.accountType || (resolvedCountry === 'USA' ? 'checking' : 'current')
+                        bankCode: syncedBankAccount?.bankCode || (resolvedBankJurisdiction?.localField?.key === 'bankCode' ? (payrollBankAccount?.branchCode || '') : ''),
+                        accountType: syncedBankAccount?.accountType || payrollBankAccount?.accountType || getPayrollDefaultBankAccountType(resolvedCountry, { preferSalary: false })
                     },
                     recurringDeductions: res.data.recurringDeductions || []
                 });
@@ -825,7 +840,9 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         setSaving(true);
 
         try {
-            const bankCountry = String(formData.bankAccount?.country || 'USA').trim() || 'USA';
+            const bankCountry = normalizePayrollBankCountry(formData.bankAccount?.country || 'USA');
+            const bankJurisdiction = getPayrollBankJurisdiction(bankCountry);
+            const localFieldKey = bankJurisdiction?.localField?.key || '';
             const bankName = String(formData.bankAccount?.bankName || '').trim();
             const accountHolderName = String(formData.bankAccount?.accountHolderName || '').trim();
             const accountNumber = String(formData.bankAccount?.accountNumber || '').trim();
@@ -852,7 +869,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                         bankName,
                         accountNumber: effectivePayrollAccountNumber,
                         routingNumber: routingNumber || undefined,
-                        branchCode: (bankCountry === 'UK' ? sortCode : bankCountry === 'Nigeria' ? bankCode : '') || undefined,
+                        branchCode: (localFieldKey === 'sortCode' ? sortCode : localFieldKey === 'bankCode' ? bankCode : '') || undefined,
                         swiftCode: bicSwift || undefined,
                         iban: iban || undefined,
                         accountType: normalizePayrollBankAccountType(bankCountry, accountType),
@@ -1967,16 +1984,14 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                 bankAccount: {
                                                     ...formData.bankAccount,
                                                     country: e.target.value,
-                                                    accountType: e.target.value === 'USA' ? 'checking' : 'current'
+                                                    accountType: getPayrollDefaultBankAccountType(e.target.value, { preferSalary: false })
                                                 }
                                             })}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                         >
-                                            <option value="USA">USA</option>
-                                            <option value="UK">UK</option>
-                                            <option value="EU">EU</option>
-                                            <option value="Nigeria">Nigeria</option>
-                                            <option value="Other">Other</option>
+                                            {PAYROLL_BANK_JURISDICTIONS.map((countryOption: any) => (
+                                                <option key={countryOption.value} value={countryOption.value}>{countryOption.label}</option>
+                                            ))}
                                         </select>
                                     </div>
                                     <div>
@@ -2014,17 +2029,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             })}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                         >
-                                            {formData.bankAccount.country === 'USA' ? (
-                                                <>
-                                                    <option value="checking">Checking</option>
-                                                    <option value="savings">Savings</option>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <option value="current">Current</option>
-                                                    <option value="salary">Salary</option>
-                                                </>
-                                            )}
+                                            {getPayrollBankAccountTypes(formData.bankAccount.country).map((accountTypeOption: any) => (
+                                                <option key={accountTypeOption.value} value={accountTypeOption.value}>
+                                                    {accountTypeOption.label}
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                 </div>
@@ -2041,35 +2050,37 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                                            {formData.bankAccount.country === 'UK'
-                                                ? 'Sort Code'
-                                                : formData.bankAccount.country === 'Nigeria'
-                                                    ? 'Bank Code'
-                                                    : 'Routing Number'}
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={
-                                                formData.bankAccount.country === 'UK'
-                                                    ? formData.bankAccount.sortCode
-                                                    : formData.bankAccount.country === 'Nigeria'
-                                                        ? formData.bankAccount.bankCode
-                                                        : formData.bankAccount.routingNumber
-                                            }
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                bankAccount: {
-                                                    ...formData.bankAccount,
-                                                    sortCode: formData.bankAccount.country === 'UK' ? e.target.value : formData.bankAccount.sortCode,
-                                                    bankCode: formData.bankAccount.country === 'Nigeria' ? e.target.value : formData.bankAccount.bankCode,
-                                                    routingNumber: !['UK', 'Nigeria'].includes(formData.bankAccount.country) ? e.target.value : formData.bankAccount.routingNumber
+                                    {getPayrollBankJurisdiction(formData.bankAccount.country).localField ? (
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                                {getPayrollBankJurisdiction(formData.bankAccount.country).localField?.label}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={
+                                                    getPayrollBankJurisdiction(formData.bankAccount.country).localField?.key === 'sortCode'
+                                                        ? formData.bankAccount.sortCode
+                                                        : getPayrollBankJurisdiction(formData.bankAccount.country).localField?.key === 'bankCode'
+                                                            ? formData.bankAccount.bankCode
+                                                            : formData.bankAccount.routingNumber
                                                 }
-                                            })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                        />
-                                    </div>
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    bankAccount: {
+                                                        ...formData.bankAccount,
+                                                        sortCode: getPayrollBankJurisdiction(formData.bankAccount.country).localField?.key === 'sortCode' ? e.target.value : formData.bankAccount.sortCode,
+                                                        bankCode: getPayrollBankJurisdiction(formData.bankAccount.country).localField?.key === 'bankCode' ? e.target.value : formData.bankAccount.bankCode,
+                                                        routingNumber: getPayrollBankJurisdiction(formData.bankAccount.country).localField?.key === 'routingNumber' ? e.target.value : formData.bankAccount.routingNumber
+                                                    }
+                                                })}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                placeholder={getPayrollBankJurisdiction(formData.bankAccount.country).localField?.placeholder || 'Enter local bank code'}
+                                            />
+                                            <p className="text-xs text-zinc-500 mt-1.5">
+                                                {getPayrollBankJurisdiction(formData.bankAccount.country).localField?.hint}
+                                            </p>
+                                        </div>
+                                    ) : null}
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">IBAN</label>
                                         <input

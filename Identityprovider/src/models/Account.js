@@ -289,7 +289,7 @@ const AccountSchema = new mongoose.Schema({
       // Primary country for banking (determines which fields are required)
       country: {
         type: String,
-        enum: ['USA', 'UK', 'EU', 'Nigeria', 'Other'],
+        enum: ['USA', 'UK', 'EU', 'Nigeria', 'Ghana', 'Kenya', 'South Africa', 'Other'],
         default: 'USA'
       },
 
@@ -315,13 +315,14 @@ const AccountSchema = new mongoose.Schema({
           enum: ['checking', 'savings', 'current', 'salary'], // checking/savings = USA, current/salary = UK/Nigeria
           default: 'checking'
         },
-        accountHolderName: String,
-        percentage: { type: Number, default: 100 },  // For split deposits
-        isActive: { type: Boolean, default: true },
-        country: String,  // Store country per account
-        createdAt: { type: Date, default: Date.now }
-      }]
-    },
+          accountHolderName: String,
+          percentage: { type: Number, default: 100 },  // For split deposits
+          isActive: { type: Boolean, default: true },
+          country: String,  // Store country per account
+          createdAt: { type: Date, default: Date.now },
+          updatedAt: Date
+        }]
+      },
 
     // Dependents and beneficiaries
     dependents: [{

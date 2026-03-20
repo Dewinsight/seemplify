@@ -2,6 +2,11 @@ import express from 'express';
 import { Account } from '../models/Account.js';
 import CrossModuleApiService from '../../services/CrossModuleApiService.js';
 import { getProfileCompletionForAccount } from '../utils/profileCompletion.js';
+import {
+    getPayrollBankAccountTypes,
+    getPayrollBankJurisdiction,
+    normalizePayrollBankCountry,
+} from '../../../payroll/frontend/lib/payrollBankJurisdictions.mjs';
 
 const router = express.Router();
 
@@ -50,20 +55,50 @@ function isSalaryAccount(account = {}) {
     return normalizeText(account.accountType).toLowerCase() === 'salary';
 }
 
+function normalizeDigits(value) {
+    return normalizeText(value).replace(/\D+/g, '');
+}
+
+function normalizeIban(value) {
+    return normalizeText(value).replace(/\s+/g, '').toUpperCase();
+}
+
+function normalizeSwift(value) {
+    return normalizeText(value).replace(/\s+/g, '').toUpperCase();
+}
+
+function normalizeSortCode(value) {
+    const digits = normalizeDigits(value);
+    if (digits.length === 6) {
+        return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`;
+    }
+    return normalizeText(value);
+}
+
 function normalizeBankAccount(country, account = {}) {
-    const normalizedCountry = normalizeText(account.country || country || 'Other') || 'Other';
+    const normalizedCountry = normalizePayrollBankCountry(account.country || country || 'Other');
+    const jurisdiction = getPayrollBankJurisdiction(normalizedCountry);
+    const accountTypes = getPayrollBankAccountTypes(normalizedCountry);
+    const normalizedAccountType = normalizeText(account.accountType);
+    const accountType = accountTypes.some((item) => item.value === normalizedAccountType)
+        ? normalizedAccountType
+        : (accountTypes[0]?.value || 'current');
 
     return {
         country: normalizedCountry,
         bankName: normalizeText(account.bankName),
         accountHolderName: normalizeText(account.accountHolderName),
-        accountNumber: normalizeText(account.accountNumber),
-        routingNumber: normalizeText(account.routingNumber),
-        sortCode: normalizeText(account.sortCode),
-        iban: normalizeText(account.iban),
-        bicSwift: normalizeText(account.bicSwift),
-        bankCode: normalizeText(account.bankCode),
-        accountType: normalizeText(account.accountType),
+        accountNumber: jurisdiction.requiresAccountNumber && normalizedCountry === 'Nigeria'
+            ? normalizeDigits(account.accountNumber)
+            : normalizeText(account.accountNumber),
+        routingNumber: normalizeDigits(account.routingNumber),
+        sortCode: normalizeSortCode(account.sortCode),
+        iban: normalizeIban(account.iban),
+        bicSwift: normalizeSwift(account.bicSwift),
+        bankCode: normalizedCountry === 'Nigeria'
+            ? normalizeDigits(account.bankCode)
+            : normalizeText(account.bankCode).toUpperCase(),
+        accountType,
         percentage: normalizeOptionalNumber(account.percentage, 100),
         isActive: account.isActive !== false,
         updatedAt: new Date()
@@ -71,8 +106,33 @@ function normalizeBankAccount(country, account = {}) {
 }
 
 function validateBankAccount(account = {}) {
+    const jurisdiction = getPayrollBankJurisdiction(account.country);
+
     if (!normalizeText(account.bankName)) {
         return 'Bank name is required';
+    }
+
+    if (jurisdiction.requiresAccountNumber && !normalizeText(account.accountNumber)) {
+        return `${jurisdiction.accountNumberLabel || 'Account number'} is required`;
+    }
+
+    if (jurisdiction.requiresIban && !normalizeText(account.iban)) {
+        return 'IBAN is required for this country';
+    }
+
+    if (jurisdiction.localField?.required) {
+        const localValue = normalizeText(account[jurisdiction.localField.key]);
+        if (!localValue) {
+            return `${jurisdiction.localField.label} is required`;
+        }
+    }
+
+    if (account.iban && !/^[A-Z0-9]{15,34}$/.test(account.iban)) {
+        return 'IBAN must be 15 to 34 alphanumeric characters';
+    }
+
+    if (account.bicSwift && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(account.bicSwift)) {
+        return 'SWIFT / BIC code must be 8 or 11 letters or numbers';
     }
 
     switch (account.country) {
@@ -80,40 +140,41 @@ function validateBankAccount(account = {}) {
             if (!/^\d{9}$/.test(account.routingNumber || '')) {
                 return 'Routing number must be exactly 9 digits';
             }
-            if (!normalizeText(account.accountNumber)) {
-                return 'Account number is required';
-            }
             break;
         case 'UK':
             if (!/^\d{2}-\d{2}-\d{2}$/.test(account.sortCode || '')) {
                 return 'Sort code must be in format XX-XX-XX';
             }
-            if (!normalizeText(account.accountNumber)) {
-                return 'Account number is required';
-            }
-            break;
-        case 'EU':
-            if (!normalizeText(account.iban) || !normalizeText(account.bicSwift)) {
-                return 'IBAN and BIC/SWIFT code are required';
+            if (account.accountNumber && !/^\d{8}$/.test(account.accountNumber)) {
+                return 'UK account numbers must be exactly 8 digits';
             }
             break;
         case 'Nigeria':
-            if (!normalizeText(account.bankCode)) {
-                return 'Bank code is required';
+            if (!/^\d{3}$/.test(account.bankCode || '')) {
+                return 'Bank code must be exactly 3 digits';
             }
             if (!/^\d{10}$/.test(account.accountNumber || '')) {
                 return 'Nigerian account numbers must be exactly 10 digits';
             }
             break;
-        default:
-            if (!normalizeText(account.accountNumber) && !normalizeText(account.iban)) {
-                return 'Account details are required';
+        case 'South Africa':
+            if (account.bankCode && !/^\d{6}$/.test(account.bankCode)) {
+                return 'South African branch codes must be 6 digits';
             }
+            break;
+        case 'Ghana':
+        case 'Kenya':
+            if (account.bankCode && !/^[A-Z0-9-]{3,12}$/i.test(account.bankCode)) {
+                return `${jurisdiction.localField?.label || 'Bank code'} must be 3 to 12 letters, numbers, or hyphens`;
+            }
+            break;
+        default:
             break;
     }
 
-    if (!normalizeText(account.accountType)) {
-        return 'Account type is required';
+    const allowedAccountTypes = getPayrollBankAccountTypes(account.country);
+    if (!allowedAccountTypes.some((item) => item.value === account.accountType)) {
+        return 'Account type is invalid for the selected country';
     }
 
     return null;

@@ -50,6 +50,10 @@ import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import { startProfileCompletionReminderJobs } from './jobs/profileCompletionReminders.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
 import { getProfileCompletion, getProfileCompletionForAccount } from './utils/profileCompletion.js'
+import {
+  PAYROLL_BANK_JURISDICTIONS,
+  NIGERIAN_BANK_OPTIONS
+} from '../../payroll/frontend/lib/payrollBankJurisdictions.mjs'
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
@@ -8744,7 +8748,11 @@ app.get('/profile/tax', getSessionUser, async (req, res) => {
 
 app.get('/profile/banking', getSessionUser, async (req, res) => {
   try {
-    res.render('profile-banking', buildProfilePageViewModel(req, 'banking'))
+    res.render('profile-banking', {
+      ...buildProfilePageViewModel(req, 'banking'),
+      bankJurisdictions: PAYROLL_BANK_JURISDICTIONS,
+      nigerianBanks: NIGERIAN_BANK_OPTIONS
+    })
   } catch (error) {
     console.error('Error loading banking page:', error)
     res.status(500).send('Error loading page')
