@@ -1097,6 +1097,10 @@ app.get('/interaction/:uid', async (req, res) => {
               errorDiv.textContent = errorMsgSafe;
               errorDiv.classList.add('show');
             }
+
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('error');
+            window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
           }
           
           form.addEventListener('submit', (e) => {
@@ -1412,6 +1416,10 @@ app.get('/signup/:uid', async (req, res) => {
         if (errorMsgSafe && errorDiv) {
           errorDiv.textContent = errorMsgSafe;
           errorDiv.classList.add('show');
+
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('error');
+          window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         }
 
         passwordInput.addEventListener('input', () => {
@@ -8199,6 +8207,13 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
         const passwordToggle = document.getElementById('passwordToggle');
         const capsLockHint = document.getElementById('capsLockHint');
         const submitLabel = '${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}';
+        const hasError = ${JSON.stringify(Boolean(errorMsg))};
+
+        if (hasError) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('error');
+          window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        }
 
         function setSubmittingState(isSubmitting) {
           if (!submitBtn || !btnText) return;
@@ -8357,7 +8372,7 @@ function renderHubSignupPage(errorMsg) {
             </div>
           </div>
 
-          ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
+          ${errorMsg ? `<div class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
 
           <form id="signupForm" action="/signup" method="POST">
             <div class="form-group">
@@ -8405,6 +8420,13 @@ function renderHubSignupPage(errorMsg) {
         const confirmPasswordInput = document.getElementById('confirmPassword');
         const strengthBar = document.getElementById('strengthBar');
         const strengthText = document.getElementById('strengthText');
+        const hasError = ${JSON.stringify(Boolean(errorMsg))};
+
+        if (hasError) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('error');
+          window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        }
 
         passwordInput.addEventListener('input', () => {
           const password = passwordInput.value;
