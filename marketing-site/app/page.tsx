@@ -8,14 +8,24 @@ import HeroBackground from '@/components/HeroBackground'
 import SeemplifyLogo from '@/components/SeemplifyLogo'
 import ThemeToggle from '@/components/ThemeToggle'
 import BookDemoModal from '@/components/BookDemoModal'
+import JsonLd from '@/components/JsonLd'
 
 import HeroBannerBeautiful from '../public/hero-banner-beautiful.png'
 import HeroBannerDark from '../public/hero-banner-dark.png'
 import HRProfessionalsImage from '../public/images/hr-professionals.png'
 import LeadersReviewingImage from '../public/images/leaders-reviewing.png'
 import { CheckCircle, Shield, Zap, TrendingUp, UserPlus, FileSignature, Laptop, Award } from 'lucide-react'
+import {
+  broaderEnglishSpeakingAfricanCountries,
+  homeFaqs,
+  primaryMarketMap,
+  primaryMarkets,
+  type SeoMarket,
+} from './seo-markets'
+import { absoluteUrl, siteConfig } from './site-config'
 
 const IDP_URL = 'https://auth.seemplifyai.com'
+const MARKET_COOKIE = 'seemplify-market'
 
 type ModuleCardProps = {
   title: string
@@ -527,9 +537,79 @@ const modules: ModuleCardProps[] = [
   },
 ]
 
+const homeStructuredData = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      name: siteConfig.name,
+      url: siteConfig.url,
+      logo: absoluteUrl('/logo-icon.svg'),
+      email: siteConfig.contactEmail,
+      areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
+        '@type': 'Country',
+        name: country,
+      })),
+    },
+    {
+      '@type': 'WebSite',
+      name: siteConfig.name,
+      url: siteConfig.url,
+      description: siteConfig.description,
+    },
+    {
+      '@type': 'SoftwareApplication',
+      name: siteConfig.name,
+      applicationCategory: 'BusinessApplication',
+      applicationSubCategory: 'Human Resources Software',
+      operatingSystem: 'Web',
+      url: siteConfig.url,
+      description: siteConfig.description,
+      areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
+        '@type': 'Country',
+        name: country,
+      })),
+      featureList: [
+        'Recruiting workflow automation',
+        'Digital onboarding',
+        'Leave management',
+        'Performance management',
+        'Time and attendance',
+        'Payroll operations',
+      ],
+    },
+    {
+      '@type': 'FAQPage',
+      mainEntity: homeFaqs.map((faq) => ({
+        '@type': 'Question',
+        name: faq.question,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: faq.answer,
+        },
+      })),
+    },
+  ],
+}
+
+function getCookieValue(cookieName: string) {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  const cookiePrefix = `${cookieName}=`
+  const cookiePart = document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(cookiePrefix))
+
+  return cookiePart ? decodeURIComponent(cookiePart.slice(cookiePrefix.length)) : null
+}
+
 export default function HomePage() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [personalizedMarket, setPersonalizedMarket] = useState<SeoMarket | null>(null)
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20)
@@ -537,8 +617,54 @@ export default function HomePage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
+  useEffect(() => {
+    const marketSlug = getCookieValue(MARKET_COOKIE)
+    const nextMarket =
+      marketSlug && marketSlug !== 'global' ? primaryMarketMap[marketSlug] ?? null : null
+
+    setPersonalizedMarket(nextMarket)
+  }, [])
+
+  const heroEyebrow = personalizedMarket
+    ? `${personalizedMarket.country} HR Software`
+    : 'Global HR Software'
+  const heroTitle = personalizedMarket ? `AI HR software for ${personalizedMarket.country}` : 'AI HR software'
+  const heroSubtitle = personalizedMarket
+    ? `built for teams in ${personalizedMarket.country}.`
+    : 'for modern people ops.'
+  const heroDescription = personalizedMarket
+    ? `${personalizedMarket.intro} Teams in ${personalizedMarket.cities.join(', ')}, and beyond can run recruiting, onboarding, leave, performance, time, and payroll workflows in one operating system.`
+    : 'Seemplify unifies recruiting, onboarding, leave, performance, time, and payroll workflows for modern teams across regions in one operating system.'
+  const heroTags = personalizedMarket
+    ? [personalizedMarket.country, ...personalizedMarket.cities, 'Localized Workflows']
+    : ['Global teams', 'Multi-country ops', 'Recruiting', 'Performance', 'Payroll']
+  const heroStats = personalizedMarket
+    ? [
+      { label: 'Detected Market', value: personalizedMarket.country },
+      { label: 'Top Cities', value: `${personalizedMarket.cities.length}` },
+      { label: 'Avg. Launch Time', value: '14 days' },
+    ]
+    : [
+      { label: 'Primary Markets', value: `${primaryMarkets.length}` },
+      { label: 'Regional Coverage', value: `${broaderEnglishSpeakingAfricanCountries.length} Countries` },
+      { label: 'Avg. Launch Time', value: '14 days' },
+    ]
+  const africaSectionTitle = personalizedMarket
+    ? `Country pages and search journeys for ${personalizedMarket.country} and the wider region.`
+    : 'Local landing pages for African HR search demand.'
+  const africaSectionDescription = personalizedMarket
+    ? `We detected interest from ${personalizedMarket.country}, so this visit highlights that market while keeping the broader Africa hub and global product narrative available.`
+    : 'Search visibility improves when the site has dedicated, indexable pages for high-intent markets. Seemplify now has market pages for Nigeria, Ghana, Kenya, and South Africa, supported by a broader Africa hub.'
+  const prioritizedMarkets = personalizedMarket
+    ? [
+      personalizedMarket,
+      ...primaryMarkets.filter((market) => market.slug !== personalizedMarket.slug),
+    ]
+    : primaryMarkets
+
   return (
     <div className="relative min-h-screen bg-[#f7f7fb] text-zinc-900 dark:bg-[#020205] dark:text-white">
+      <JsonLd data={homeStructuredData} />
       <BookDemoModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
       <div className="bg-noise" />
       <HeroBackground />
@@ -558,7 +684,9 @@ export default function HomePage() {
           <div className="hidden items-center gap-8 text-sm text-zinc-700 dark:text-white/80 lg:flex">
             <Link href="#modules" className="transition hover:text-zinc-900 dark:hover:text-white">Modules</Link>
             <Link href="#how-it-works" className="transition hover:text-zinc-900 dark:hover:text-white">How It Works</Link>
+            <Link href="#africa" className="transition hover:text-zinc-900 dark:hover:text-white">Markets</Link>
             <Link href="#platform" className="transition hover:text-zinc-900 dark:hover:text-white">Platform</Link>
+            <Link href="#faq" className="transition hover:text-zinc-900 dark:hover:text-white">FAQ</Link>
             <Link href="#cta" className="transition hover:text-zinc-900 dark:hover:text-white">Demo</Link>
           </div>
 
@@ -597,7 +725,7 @@ export default function HomePage() {
                   className="inline-flex items-center gap-3 rounded-full border border-black/10 bg-white px-4 py-2 text-xs uppercase tracking-[0.35em] text-zinc-700 dark:border-white/20 dark:bg-white/10 dark:text-white/75"
                 >
                   <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
-                  Unified HR OS
+                  {heroEyebrow}
                 </motion.div>
 
                 <motion.h1
@@ -606,9 +734,9 @@ export default function HomePage() {
                   transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
                   className="mt-6 font-display text-5xl leading-[1.05] tracking-tight text-[#0b2f29] dark:text-white md:text-7xl"
                 >
-                  The operating system
+                  {heroTitle}
                   <span className="block bg-gradient-to-r from-[#0b2f29] via-emerald-800 to-teal-700 bg-clip-text text-transparent dark:from-white dark:via-cyan-200 dark:to-emerald-200">
-                    for modern people ops.
+                    {heroSubtitle}
                   </span>
                 </motion.h1>
 
@@ -618,10 +746,19 @@ export default function HomePage() {
                   transition={{ duration: 0.9, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
                   className="mt-6 max-w-xl text-lg text-[#294942] dark:text-white/75"
                 >
-                  Seemplify unifies recruiting, identity, performance, time, and payroll into one
-                  cinematic control surface. Precision workflows, continuous intelligence, and zero
-                  compromise execution.
+                  {heroDescription}
                 </motion.p>
+
+                <div className="mt-6 flex max-w-3xl flex-wrap gap-3">
+                  {heroTags.map((market) => (
+                    <span
+                      key={market}
+                      className="rounded-full border border-black/10 bg-white/80 px-4 py-2 text-xs uppercase tracking-[0.25em] text-zinc-700 dark:border-white/15 dark:bg-white/[0.05] dark:text-white/70"
+                    >
+                      {market}
+                    </span>
+                  ))}
+                </div>
 
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -644,11 +781,7 @@ export default function HomePage() {
                 </motion.div>
 
                 <div className="mt-10 grid gap-6 text-sm text-zinc-700 dark:text-white/70 sm:grid-cols-3">
-                  {[
-                    { label: 'Automation Coverage', value: '94%' },
-                    { label: 'Core Modules', value: '7' },
-                    { label: 'Avg. Launch Time', value: '14 days' },
-                  ].map((stat) => (
+                  {heroStats.map((stat) => (
                     <div key={stat.label} className="rounded-2xl border border-black/5 bg-white/70 p-4 dark:border-white/20 dark:bg-white/[0.05]">
                       <div className="text-xs uppercase tracking-[0.25em] text-zinc-600 dark:text-white/40">{stat.label}</div>
                       <div className="mt-2 font-display text-2xl text-zinc-900 dark:text-white">{stat.value}</div>
@@ -1064,6 +1197,106 @@ export default function HomePage() {
                   </motion.div>
                 </div>
               </motion.div>
+            </div>
+          </div>
+        </section>
+
+        <section id="africa" className="relative py-24 bg-[#f8efe6] dark:bg-transparent">
+          <div className="absolute inset-0 bg-gradient-to-b from-[#f8efe6] via-transparent to-transparent dark:from-transparent" />
+          <div className="container relative z-10 mx-auto px-6">
+            <div className="grid gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">Regional SEO</p>
+                <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
+                  {africaSectionTitle}
+                </h2>
+                <p className="mt-4 text-zinc-700 dark:text-white/75">
+                  {africaSectionDescription}
+                </p>
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  <InfoCard
+                    eyebrow="Primary Markets"
+                    title="Nigeria, Ghana, Kenya, South Africa"
+                    description="Dedicated URLs target country-level HR software queries with region-specific copy, metadata, and FAQs."
+                  />
+                  <InfoCard
+                    eyebrow="Broader Reach"
+                    title="English-Speaking Africa"
+                    description="The homepage and Africa hub also target multi-country search demand across English-speaking African markets."
+                  />
+                </div>
+
+                <div className="mt-8 flex flex-wrap gap-3 text-sm text-zinc-700 dark:text-white/70">
+                  {broaderEnglishSpeakingAfricanCountries.map((country) => (
+                    <span
+                      key={country}
+                      className="rounded-full border border-black/10 bg-white/80 px-4 py-2 dark:border-white/15 dark:bg-white/[0.05]"
+                    >
+                      {country}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Link
+                  href="/africa"
+                  className="rounded-3xl border border-black/10 bg-[#0b2f29] p-8 text-white transition hover:-translate-y-1 dark:border-white/10"
+                >
+                  <p className="text-xs uppercase tracking-[0.35em] text-white/60">Hub Page</p>
+                  <h3 className="mt-4 font-display text-3xl">HR Software for Africa</h3>
+                  <p className="mt-4 text-sm text-white/75">
+                    Regional overview page targeting Africa-wide and English-speaking Africa queries.
+                  </p>
+                </Link>
+
+                {prioritizedMarkets.map((market) => (
+                  <Link
+                    key={market.slug}
+                    href={`/africa/${market.slug}`}
+                    className="rounded-3xl border border-black/10 bg-white p-8 transition hover:-translate-y-1 hover:border-emerald-500/40 dark:border-white/10 dark:bg-white/[0.04]"
+                  >
+                    <p className="text-xs uppercase tracking-[0.35em] text-zinc-500 dark:text-white/50">
+                      {market.country}
+                    </p>
+                    <h3 className="mt-4 font-display text-3xl text-zinc-900 dark:text-white">
+                      {market.headline}
+                    </h3>
+                    <p className="mt-4 text-sm text-zinc-700 dark:text-white/70">
+                      {market.description}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="faq" className="relative py-24">
+          <div className="container mx-auto px-6">
+            <div className="max-w-3xl">
+              <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">SEO FAQ</p>
+              <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
+                Answers for high-intent African HR software queries.
+              </h2>
+              <p className="mt-4 text-zinc-700 dark:text-white/75">
+                This section supports long-tail search intent and feeds matching FAQ structured data
+                for the homepage.
+              </p>
+            </div>
+
+            <div className="mt-10 grid gap-4">
+              {homeFaqs.map((faq) => (
+                <article
+                  key={faq.question}
+                  className="rounded-3xl border border-black/10 bg-white p-8 dark:border-white/10 dark:bg-white/[0.04]"
+                >
+                  <h3 className="font-display text-2xl text-zinc-900 dark:text-white">
+                    {faq.question}
+                  </h3>
+                  <p className="mt-3 text-zinc-700 dark:text-white/75">{faq.answer}</p>
+                </article>
+              ))}
             </div>
           </div>
         </section>

@@ -155,6 +155,12 @@
       justify-content: space-between;
     }
 
+    .org-toggle-note {
+      display: grid;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
     @media (max-width: 1100px) {
       .org-detail-grid {
         grid-template-columns: 1fr;
@@ -540,9 +546,18 @@
                 <% } %>
               </div>
 
+              <label class="admin-form-checkbox">
+                <input id="invite-send-as-reminder" name="sendAsReminder" type="checkbox" value="1">
+                <span>Send as reminder</span>
+              </label>
+              <div class="org-toggle-note org-muted">
+                <span>If enabled, the email is sent with reminder wording instead of first-time invitation wording.</span>
+                <span>If a pending invite already exists for this email, it will be refreshed and resent instead of being blocked.</span>
+              </div>
+
               <div class="org-invite-actions">
                 <div class="org-muted">New invites grant access to all assigned workspace apps by default.</div>
-                <button type="submit" class="btn btn-primary" <%= inviteTeamOptions.length === 0 ? 'disabled' : '' %>>Send Invite</button>
+                <button id="invite-submit-button" type="submit" class="btn btn-primary" <%= inviteTeamOptions.length === 0 ? 'disabled' : '' %>>Send Invite</button>
               </div>
             </form>
 
@@ -755,6 +770,21 @@
       </div>
     </main>
   </div>
+
+  <script>
+    (function () {
+      const reminderToggle = document.getElementById('invite-send-as-reminder');
+      const submitButton = document.getElementById('invite-submit-button');
+      if (!reminderToggle || !submitButton) return;
+
+      const syncSubmitLabel = () => {
+        submitButton.textContent = reminderToggle.checked ? 'Send Reminder' : 'Send Invite';
+      };
+
+      reminderToggle.addEventListener('change', syncSubmitLabel);
+      syncSubmitLabel();
+    })();
+  </script>
 </body>
 
 </html>
