@@ -635,18 +635,18 @@ export default function HomePage() {
     : 'Global HR Software'
   const heroTitle = personalizedMarket ? `AI HR software for ${personalizedMarket.country}` : 'AI HR software'
   const heroSubtitle = personalizedMarket
-    ? `built for teams in ${personalizedMarket.country}.`
+    ? 'built for modern teams.'
     : 'for modern people ops.'
   const heroDescription = personalizedMarket
-    ? `${personalizedMarket.intro} Teams in ${personalizedMarket.cities.join(', ')}, and beyond can run recruiting, onboarding, leave, performance, time, and payroll workflows in one operating system.`
+    ? `${personalizedMarket.intro} Manage recruiting, onboarding, leave, performance, time, and payroll workflows in one operating system.`
     : 'Seemplify unifies recruiting, onboarding, leave, performance, time, and payroll workflows for modern teams across regions in one operating system.'
   const heroTags = personalizedMarket
-    ? [personalizedMarket.country, ...personalizedMarket.cities, 'Localized Workflows']
+    ? [personalizedMarket.country, 'People Ops', 'Approvals', 'Performance', 'Localized Workflows']
     : ['Global teams', 'Multi-country ops', 'Recruiting', 'Performance', 'Payroll']
   const heroStats = personalizedMarket
     ? [
       { label: 'Detected Market', value: personalizedMarket.country },
-      { label: 'Top Cities', value: `${personalizedMarket.cities.length}` },
+      { label: 'Experience', value: 'Localized' },
       { label: 'Avg. Launch Time', value: '14 days' },
     ]
     : [
