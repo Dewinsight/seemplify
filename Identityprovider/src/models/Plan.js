@@ -65,6 +65,7 @@ const PlanSchema = new mongoose.Schema({
   // Plan Status
   isActive: { type: Boolean, default: true },
   isPublic: { type: Boolean, default: true }, // Visible to organizations
+  isRequestable: { type: Boolean, default: true }, // Can organizations request/renew this plan themselves
   isFeatured: { type: Boolean, default: false }, // Highlight in UI
   isTrial: { type: Boolean, default: false }, // Trial plan flag
   trialDays: { type: Number, default: 14 }, // Trial period in days

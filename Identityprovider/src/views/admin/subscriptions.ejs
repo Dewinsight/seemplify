@@ -90,6 +90,9 @@
                       <% } else if (sub.status === 'suspended') { %>
                         <button onclick="reactivateSubscription('<%= sub._id %>')" class="btn btn-sm btn-success">Reactivate</button>
                       <% } %>
+                      <% if (['active', 'suspended', 'pending_renewal'].includes(sub.status)) { %>
+                        <button onclick="expireSubscription('<%= sub._id %>', <%- JSON.stringify(sub.organization?.name || 'this organization') %>)" class="btn btn-sm btn-secondary" style="color: #ef4444;">Expire Now</button>
+                      <% } %>
                       <% if (sub.status !== 'cancelled') { %>
                         <button onclick="cancelSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary" style="color: #ef4444;">Cancel</button>
                       <% } %>
@@ -686,6 +689,31 @@
       } catch (error) {
         console.error('Error:', error);
         alert('Failed to suspend subscription');
+      }
+    }
+
+    async function expireSubscription(subId, organizationName) {
+      const reason = prompt('Reason for expiring this plan now (optional):');
+      if (reason === null) return;
+
+      if (!confirm(`Expire the current plan for ${organizationName || 'this organization'} now? Access will lock immediately and the grace period will start from today.`)) return;
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}/expire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to expire subscription');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to expire subscription');
       }
     }
 

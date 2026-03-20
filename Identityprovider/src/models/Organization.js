@@ -470,6 +470,21 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
         }
       }
     )
+    await Account.updateOne(
+      {
+        _id: accountId,
+        $or: [
+          { currentOrganization: { $exists: false } },
+          { currentOrganization: null }
+        ]
+      },
+      {
+        $set: {
+          currentOrganization: this._id,
+          updatedAt: new Date()
+        }
+      }
+    )
 
     return this
   }
@@ -494,14 +509,29 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
     { _id: accountId },
     {
       $push: {
-          organizations: {
-            organization: this._id,
-            role: role,
-            department: departmentId,
-            appAccess: normalizedAppAccess,
-            joinedAt: new Date(),
-            isActive: true
+        organizations: {
+          organization: this._id,
+          role: role,
+          department: departmentId,
+          appAccess: normalizedAppAccess,
+          joinedAt: new Date(),
+          isActive: true
         }
+      }
+    }
+  )
+  await Account.updateOne(
+    {
+      _id: accountId,
+      $or: [
+        { currentOrganization: { $exists: false } },
+        { currentOrganization: null }
+      ]
+    },
+    {
+      $set: {
+        currentOrganization: this._id,
+        updatedAt: new Date()
       }
     }
   )

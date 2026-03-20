@@ -343,6 +343,39 @@ const requireApiAuth = async (req, res, next) => {
   next()
 }
 
+const hasCurrentOrganizationActiveSubscription = async (account) => {
+  const organizationId = toIdString(account?.currentOrganization)
+  if (!organizationId) {
+    return true
+  }
+
+  const subscription = await subscriptionService.getSubscriptionForOrg(organizationId)
+  if (!subscription || subscription.status !== 'active' || !subscription.endDate) {
+    return false
+  }
+
+  return new Date(subscription.endDate).getTime() >= Date.now()
+}
+
+const requirePageSubscriptionAccess = async (req, res, next) => {
+  if (await hasCurrentOrganizationActiveSubscription(req.user)) {
+    return next()
+  }
+
+  return res.redirect('/?subscription=locked')
+}
+
+const requireApiSubscriptionAccess = async (req, res, next) => {
+  if (await hasCurrentOrganizationActiveSubscription(req.user)) {
+    return next()
+  }
+
+  return res.status(403).json({
+    error: 'Simple LMS is locked until another plan is approved for the current organization.',
+    requiresPlanRequest: true
+  })
+}
+
 const resolveCurrentOrganizationContext = async (account) => {
   const organizationId = toIdString(account?.currentOrganization)
   if (!organizationId) {
@@ -702,7 +735,7 @@ const parseDueDate = (value) => {
   return parsed
 }
 
-pageRouter.get('/', requirePageAuth, async (req, res) => {
+pageRouter.get('/', requirePageAuth, requirePageSubscriptionAccess, async (req, res) => {
   try {
     const orgContext = await resolveCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -923,7 +956,7 @@ pageRouter.get('/', requirePageAuth, async (req, res) => {
   }
 })
 
-apiRouter.use(requireApiAuth)
+apiRouter.use(requireApiAuth, requireApiSubscriptionAccess)
 
 apiRouter.get('/workspace', async (req, res) => {
   return res.redirect('/simple-lms')

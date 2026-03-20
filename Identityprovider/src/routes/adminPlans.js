@@ -110,6 +110,7 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
       showComingSoonCards,
       isActive,
       isPublic,
+      isRequestable,
       isFeatured,
       isTrial,
       trialDays,
@@ -143,6 +144,7 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
       showComingSoonCards: Array.isArray(showComingSoonCards) ? showComingSoonCards : [],
       isActive: isActive !== false,
       isPublic: isPublic !== false,
+      isRequestable: isRequestable !== false,
       isFeatured: isFeatured || false,
       isTrial: isTrial || false,
       trialDays: trialDays || 14,
@@ -186,6 +188,7 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
       showComingSoonCards,
       isActive,
       isPublic,
+      isRequestable,
       isFeatured,
       isTrial,
       trialDays,
@@ -212,6 +215,7 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
     if (showComingSoonCards !== undefined) planData.showComingSoonCards = Array.isArray(showComingSoonCards) ? showComingSoonCards : []
     if (isActive !== undefined) planData.isActive = isActive
     if (isPublic !== undefined) planData.isPublic = isPublic
+    if (isRequestable !== undefined) planData.isRequestable = isRequestable
     if (isFeatured !== undefined) planData.isFeatured = isFeatured
     if (isTrial !== undefined) planData.isTrial = isTrial
     if (trialDays !== undefined) planData.trialDays = trialDays

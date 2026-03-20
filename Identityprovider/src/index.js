@@ -8,6 +8,7 @@ import { MongoAdapter } from './adapter/mongoAdapter.js'
 import { Account } from './models/Account.js'
 import { Organization } from './models/Organization.js'
 import { OrganizationInvite } from './models/OrganizationInvite.js'
+import SubscriptionRequest from './models/SubscriptionRequest.js'
 import { Team } from './models/Team.js'
 import { Notification } from './models/Notification.js'
 import { OnboardingTemplate } from './models/OnboardingTemplate.js'
@@ -63,6 +64,7 @@ const __dirname = dirname(__filename)
 // =============================================================================
 const claimsCache = new Map()
 const CLAIMS_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const DAY_IN_MS = 24 * 60 * 60 * 1000
 
 /**
  * Get cached claims or build new ones
@@ -283,6 +285,111 @@ async function buildSubscriptionClaims(acc) {
       isInGracePeriod: false
     }
   }
+}
+
+async function getCurrentOrganizationSubscriptionAccessState(user, options = {}) {
+  const { includePendingRequest = false } = options
+  const organizationId =
+    user?.currentOrganization?._id?.toString() ||
+    user?.currentOrganization?.toString() ||
+    null
+
+  if (!organizationId) {
+    return null
+  }
+
+  const now = new Date()
+  const [organization, subscription, pendingRequest] = await Promise.all([
+    Organization.findById(organizationId)
+      .select('name subscriptionStatus subscriptionExpiresAt currentPlan')
+      .populate('currentPlan', 'name')
+      .lean(),
+    subscriptionService.getSubscriptionForOrg(organizationId),
+    includePendingRequest
+      ? SubscriptionRequest.findOne({
+        organization: organizationId,
+        status: 'pending',
+        expiresAt: { $gte: now }
+      })
+        .populate('plan', 'name slug')
+        .sort({ createdAt: -1 })
+        .lean()
+      : Promise.resolve(null)
+  ])
+
+  if (!organization) {
+    return null
+  }
+
+  const hasActiveAccess = Boolean(
+    subscription &&
+    subscription.status === 'active' &&
+    subscription.endDate &&
+    new Date(subscription.endDate).getTime() >= now.getTime()
+  )
+  const daysUntilExpiry = hasActiveAccess && subscription?.endDate
+    ? Math.max(0, Math.ceil((new Date(subscription.endDate).getTime() - now.getTime()) / DAY_IN_MS))
+    : null
+
+  const status = hasActiveAccess
+    ? 'active'
+    : (
+      organization.subscriptionStatus ||
+      (subscription?.isInGracePeriod ? 'grace_period' : 'none')
+    )
+
+  return {
+    organizationId,
+    organizationName: organization.name || 'Organization',
+    status,
+    hasActiveAccess,
+    isLocked: !hasActiveAccess,
+    planName: subscription?.plan?.name || organization.currentPlan?.name || null,
+    expiresAt: subscription?.endDate || organization.subscriptionExpiresAt || null,
+    gracePeriodEnd: subscription?.gracePeriodEnd || null,
+    daysUntilExpiry,
+    showExpiryReminder: Boolean(hasActiveAccess && daysUntilExpiry !== null && daysUntilExpiry <= 7),
+    pendingRequest: pendingRequest
+      ? {
+        id: pendingRequest._id?.toString?.() || '',
+        planName: pendingRequest.plan?.name || 'Requested plan',
+        status: pendingRequest.status,
+        createdAt: pendingRequest.createdAt
+      }
+      : null
+  }
+}
+
+function respondToSubscriptionLock(req, res, accessState) {
+  const message = accessState?.pendingRequest
+    ? `Access is locked for ${accessState.organizationName}. A plan request is already pending approval.`
+    : `Access is locked for ${accessState?.organizationName || 'this organization'}. Request another plan to continue.`
+
+  const acceptsJson = String(req.get('accept') || '').includes('application/json') || req.xhr
+  if (req.method !== 'GET' || acceptsJson) {
+    return res.status(403).json({
+      error: message,
+      subscriptionStatus: accessState?.status || 'none',
+      requiresPlanRequest: true
+    })
+  }
+
+  return res.redirect('/?subscription=locked')
+}
+
+const requireCurrentOrganizationActiveSubscription = async (req, res, next) => {
+  if (!req.user) return next()
+
+  const accessState = await getCurrentOrganizationSubscriptionAccessState(req.user, {
+    includePendingRequest: true
+  })
+
+  req.currentSubscriptionAccess = accessState
+  if (!accessState || accessState.hasActiveAccess) {
+    return next()
+  }
+
+  return respondToSubscriptionLock(req, res, accessState)
 }
 
 // =============================================================================
@@ -2906,6 +3013,10 @@ app.get('/plans', async (req, res) => {
   try {
     const sessionAccount = await getSessionFromCookies(req)
     const plans = await subscriptionService.getPublicPlans()
+    const planPageErrorMessages = {
+      plan_not_found: 'The requested plan could not be found.',
+      plan_not_requestable: 'That plan is admin-assigned only and cannot be requested or renewed from here.'
+    }
 
     // If user is logged in, get their organization subscription info
     let currentSubscription = null
@@ -2926,6 +3037,7 @@ app.get('/plans', async (req, res) => {
       plans,
       currentSubscription,
       organization,
+      errorMessage: planPageErrorMessages[req.query?.error] || null,
       activePage: 'plans'
     })
   } catch (err) {
@@ -3105,6 +3217,9 @@ app.get('/request-plan/:planId', async (req, res) => {
     if (!plan || !plan.isActive || !plan.isPublic) {
       return res.redirect('/plans?error=plan_not_found')
     }
+    if (plan.isRequestable === false) {
+      return res.redirect('/plans?error=plan_not_requestable')
+    }
 
     // Check if there's already a pending request
     const SubscriptionRequest = (await import('./models/SubscriptionRequest.js')).default
@@ -3162,8 +3277,12 @@ app.get('/', async (req, res) => {
       }
     })
 
-    const { appIdSet } = getHubAppMetadata()
+    const { appIdSet, appNameById } = getHubAppMetadata()
+    const hasOrganizations = organizations.length > 0
     const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
+    const currentSubscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account, {
+      includePendingRequest: true
+    })
     const memberAppAccess = getMemberAppAccessForOrganization(
       userOrganizations,
       currentOrgId,
@@ -3202,6 +3321,38 @@ app.get('/', async (req, res) => {
       }
     }
 
+    const pendingInvites = await OrganizationInvite.find({
+      email: account.email.toLowerCase(),
+      status: 'pending',
+      expiresAt: { $gt: new Date() }
+    })
+      .populate('organization', 'name description')
+      .populate('invitedBy', 'email profile.name')
+      .sort({ createdAt: -1 })
+      .lean()
+
+    const pendingInvitations = pendingInvites.map(invite => ({
+      id: invite._id.toString(),
+      organization: {
+        id: invite.organization?._id?.toString?.() || '',
+        name: invite.organization?.name || 'Organization',
+        description: invite.organization?.description || ''
+      },
+      role: invite.role,
+      invitedBy: {
+        email: invite.invitedBy?.email || '',
+        name: invite.invitedBy?.profile?.name || ''
+      },
+      expiresAt: invite.expiresAt,
+      createdAt: invite.createdAt,
+      ...getInvitationAccessSummary(invite, appNameById, appIdSet)
+    }))
+
+    if (!hasOrganizations || currentSubscriptionAccess?.isLocked) {
+      apps = []
+      comingSoonCards = []
+    }
+
     const notificationSummary = await buildNotificationCenterData(account, {
       maxTasks: 12
     })
@@ -3218,6 +3369,10 @@ app.get('/', async (req, res) => {
       apps,
       comingSoonCards,
       organizations,
+      hasOrganizations,
+      currentSubscriptionAccess,
+      pendingInvitations,
+      pendingInvitationsCount: pendingInvitations.length,
       accessError: req.query?.error === 'app_not_assigned'
         ? `${req.query?.app || 'This app'} is not assigned to your account for the current organization.`
         : null,
@@ -3433,12 +3588,33 @@ app.get('/logout', async (req, res) => {
   }
 })
 
-app.get('/simple-lms', (req, res) => {
-  const params = new URLSearchParams(req.query || {})
-  const targetUrl = params.toString()
-    ? `${SIMPLE_LMS_EXTERNAL_WORKSPACE_URL}?${params.toString()}`
-    : SIMPLE_LMS_EXTERNAL_WORKSPACE_URL
-  return res.redirect(targetUrl)
+app.get('/simple-lms', async (req, res) => {
+  try {
+    const account = await getSessionFromCookies(req)
+    if (account) {
+      const organizationIds = getOrganizationIdsFromAccount(account)
+      if (organizationIds.length === 0) {
+        return res.redirect('/')
+      }
+
+      const accessState = await getCurrentOrganizationSubscriptionAccessState(account)
+      if (!accessState) {
+        return res.redirect('/')
+      }
+      if (accessState.isLocked) {
+        return res.redirect('/?subscription=locked')
+      }
+    }
+
+    const params = new URLSearchParams(req.query || {})
+    const targetUrl = params.toString()
+      ? `${SIMPLE_LMS_EXTERNAL_WORKSPACE_URL}?${params.toString()}`
+      : SIMPLE_LMS_EXTERNAL_WORKSPACE_URL
+    return res.redirect(targetUrl)
+  } catch (error) {
+    console.error('Simple LMS redirect failed:', error)
+    return res.redirect('/')
+  }
 })
 
 
@@ -3477,20 +3653,57 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || null
-    let currentMemberAppAccess = normalizeAppAccess(null)
-
-    if (currentOrgId) {
-      const { appIdSet } = getHubAppMetadata()
-      const currentOrganization = await Organization.findById(currentOrgId)
-        .select('members.account members.status members.appAccess')
-        .lean()
-
-      const currentMember = currentOrganization?.members?.find(
-        m => m?.status === 'active' && m?.account?.toString() === account._id.toString()
-      )
-
-      currentMemberAppAccess = normalizeAppAccess(currentMember?.appAccess, appIdSet)
+    if (!currentOrgId) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_no_organization',
+        details: {
+          appId
+        }
+      })
+      return res.redirect('/')
     }
+
+    const currentSubscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account)
+    if (!currentSubscriptionAccess || currentSubscriptionAccess.isLocked) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_subscription',
+        details: {
+          organizationId: currentOrgId,
+          subscriptionStatus: currentSubscriptionAccess?.status || 'none'
+        }
+      })
+      return res.redirect('/?subscription=locked')
+    }
+
+    const { appIdSet } = getHubAppMetadata()
+    const currentOrganization = await Organization.findById(currentOrgId)
+      .select('members.account members.status members.appAccess')
+      .lean()
+
+    const currentMember = currentOrganization?.members?.find(
+      m => m?.status === 'active' && m?.account?.toString() === account._id.toString()
+    )
+
+    if (!currentMember) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_no_membership',
+        details: {
+          organizationId: currentOrgId
+        }
+      })
+      return res.redirect('/')
+    }
+
+    const currentMemberAppAccess = normalizeAppAccess(currentMember.appAccess, appIdSet)
 
     if (!memberCanAccessApp(currentMemberAppAccess, appId)) {
       await logAppLaunchActivity({
@@ -6197,7 +6410,7 @@ const resolveOnboardingBackUrl = (backParam, isManager, organizationId) => {
   return safeBackUrl || defaultBackUrl
 }
 
-app.get('/performance-evaluations', getSessionUser, async (req, res) => {
+app.get('/performance-evaluations', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const orgContext = await getCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -6451,7 +6664,7 @@ app.get('/performance-evaluations', getSessionUser, async (req, res) => {
   }
 })
 
-app.post('/performance-evaluations', getSessionUser, async (req, res) => {
+app.post('/performance-evaluations', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const orgContext = await getCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -6614,7 +6827,7 @@ app.post('/performance-evaluations', getSessionUser, async (req, res) => {
   }
 })
 
-app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, async (req, res) => {
+app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const orgContext = await getCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -6713,7 +6926,7 @@ app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, async 
   }
 })
 
-app.post('/performance-evaluations/fields', getSessionUser, async (req, res) => {
+app.post('/performance-evaluations/fields', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const orgContext = await getCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -6785,7 +6998,7 @@ app.post('/performance-evaluations/fields', getSessionUser, async (req, res) => 
   }
 })
 
-app.post('/performance-evaluations/fields/:fieldKey/delete', getSessionUser, async (req, res) => {
+app.post('/performance-evaluations/fields/:fieldKey/delete', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const orgContext = await getCurrentOrganizationContext(req.user)
     if (orgContext.error) {
@@ -6865,13 +7078,13 @@ app.post('/performance-evaluations/fields/:fieldKey/delete', getSessionUser, asy
   }
 })
 
-app.get('/simple-performance-evaluation', getSessionUser, async (req, res) => {
+app.get('/simple-performance-evaluation', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   const query = new URLSearchParams(req.query).toString()
   return res.redirect(`/performance-evaluations${query ? `?${query}` : ''}`)
 })
 
 // View onboarding documents (uses PDF.js viewer so Cloudinary raw PDFs render correctly in-app)
-app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, async (req, res) => {
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
     if (access.error === 'not_found') {
@@ -6924,7 +7137,7 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
 })
 
 // Download onboarding documents with a stable filename + extension.
-app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download', getSessionUser, async (req, res) => {
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
     if (access.error === 'not_found') {
@@ -6970,7 +7183,7 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download',
 })
 
 // Document workspace page (onboarding + agreements + policy + general docs)
-app.get('/documents', getSessionUser, async (req, res) => {
+app.get('/documents', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const activeWorkflow = normalizeWorkflowType(req.query.workflow, {
       allowAll: true,
@@ -7034,7 +7247,7 @@ app.get('/documents', getSessionUser, async (req, res) => {
 })
 
 // Backward-compatible onboarding route
-app.get('/onboarding', getSessionUser, async (req, res) => {
+app.get('/onboarding', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
     const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
@@ -7488,6 +7701,8 @@ app.post('/invitations/accept/do', getSessionUser, async (req, res) => {
       matchedInvite.invitedBy,
       normalizeAppAccess(matchedInvite.appAccess)
     )
+
+    invalidateClaimsCache(req.user.sub)
 
     console.log(`✅ User ${req.user.email} joined organization ${organization.name} as ${matchedInvite.role}`)
 
@@ -8545,7 +8760,7 @@ app.get('/profile/dependents', getSessionUser, async (req, res) => {
   }
 })
 
-app.get('/profile/documents', getSessionUser, async (req, res) => {
+app.get('/profile/documents', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
     const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
     const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
@@ -8643,6 +8858,13 @@ app.listen(PORT, async () => {
   console.log(`🏢 Organization management: ${baseUrl}/organizations`)
 
   // Initialize background jobs
+  try {
+    const defaultTrialPlan = await subscriptionService.ensureDefaultTrialPlan()
+    console.log(`✅ Default trial plan ready: ${defaultTrialPlan.name} (${defaultTrialPlan.slug})`)
+  } catch (error) {
+    console.error('⚠️ Failed to ensure default trial plan:', error)
+  }
+
   try {
     await initializeCleanupJobs()
     console.log('✅ Cleanup jobs initialized')

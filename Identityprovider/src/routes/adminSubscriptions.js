@@ -1,6 +1,9 @@
 import express from 'express'
 import { requireAdminAuth, auditLog, adminRateLimit } from '../middleware/adminAuth.js'
 import { subscriptionService } from '../services/subscriptionService.js'
+import { Organization } from '../models/Organization.js'
+import { Account } from '../models/Account.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
 const SUBSCRIPTION_FEATURE_KEYS = [
@@ -54,6 +57,48 @@ const sanitizeCustomFeatures = (customFeaturesInput = {}) => {
   })
 
   return Object.keys(sanitized).length > 0 ? sanitized : undefined
+}
+
+async function invalidateClaimsForOrganization(organizationId) {
+  const normalizedOrganizationId = organizationId?.toString?.() || String(organizationId || '').trim()
+  if (!normalizedOrganizationId) {
+    return
+  }
+
+  const organization = await Organization.findById(normalizedOrganizationId)
+    .select('owner members.account')
+    .lean()
+
+  if (!organization) {
+    return
+  }
+
+  const accountIds = new Set()
+  if (organization.owner) {
+    accountIds.add(String(organization.owner))
+  }
+
+  for (const member of organization.members || []) {
+    if (member?.account) {
+      accountIds.add(String(member.account))
+    }
+  }
+
+  if (accountIds.size === 0) {
+    return
+  }
+
+  const accounts = await Account.find({
+    _id: { $in: Array.from(accountIds) }
+  })
+    .select('sub')
+    .lean()
+
+  for (const account of accounts) {
+    if (account?.sub) {
+      invalidateClaimsCache(account.sub)
+    }
+  }
 }
 
 /**
@@ -162,6 +207,8 @@ router.post('/', auditLog('create_subscription_direct'), async (req, res) => {
       req.user._id
     )
 
+    await invalidateClaimsForOrganization(subscription.organization)
+
     res.status(201).json({
       message: 'Subscription created successfully',
       subscription
@@ -197,6 +244,8 @@ router.post('/:subscriptionId/extend', auditLog('extend_subscription'), async (r
       notes
     )
 
+    await invalidateClaimsForOrganization(subscription.organization)
+
     res.json({
       message: `Subscription extended by ${days} days`,
       subscription
@@ -207,6 +256,41 @@ router.post('/:subscriptionId/extend', auditLog('extend_subscription'), async (r
       return res.status(404).json({ error: 'Subscription not found' })
     }
     res.status(500).json({ error: 'Failed to extend subscription' })
+  }
+})
+
+/**
+ * POST /api/admin/subscriptions/:subscriptionId/expire
+ * Expire a subscription immediately
+ */
+router.post('/:subscriptionId/expire', auditLog('expire_subscription'), async (req, res) => {
+  try {
+    const { reason } = req.body
+
+    const subscription = await subscriptionService.expireSubscription(
+      req.params.subscriptionId,
+      req.user._id,
+      reason
+    )
+
+    await invalidateClaimsForOrganization(subscription.organization)
+
+    res.json({
+      message: 'Subscription expired successfully',
+      subscription
+    })
+  } catch (error) {
+    console.error('Error expiring subscription:', error)
+    if (error.message === 'Subscription not found') {
+      return res.status(404).json({ error: 'Subscription not found' })
+    }
+    if (
+      error.message === 'Subscription is already expired' ||
+      error.message === 'Cancelled subscriptions cannot be expired'
+    ) {
+      return res.status(400).json({ error: error.message })
+    }
+    res.status(500).json({ error: 'Failed to expire subscription' })
   }
 })
 
@@ -223,6 +307,8 @@ router.post('/:subscriptionId/cancel', auditLog('cancel_subscription'), async (r
       reason,
       req.user._id
     )
+
+    await invalidateClaimsForOrganization(subscription.organization)
 
     res.json({
       message: 'Subscription cancelled',
@@ -250,6 +336,8 @@ router.post('/:subscriptionId/suspend', auditLog('suspend_subscription'), async 
       reason
     )
 
+    await invalidateClaimsForOrganization(subscription.organization)
+
     res.json({
       message: 'Subscription suspended',
       subscription
@@ -272,6 +360,8 @@ router.post('/:subscriptionId/reactivate', auditLog('reactivate_subscription'), 
     const subscription = await subscriptionService.reactivateSubscription(
       req.params.subscriptionId
     )
+
+    await invalidateClaimsForOrganization(subscription.organization)
 
     res.json({
       message: 'Subscription reactivated',
@@ -302,6 +392,8 @@ router.put('/:subscriptionId/customizations', auditLog('update_subscription_cust
       sanitizedCustomFeatures,
       notes
     )
+
+    await invalidateClaimsForOrganization(subscription.organization)
 
     res.json({
       message: 'Subscription customizations updated',

@@ -250,13 +250,11 @@ SubscriptionSchema.methods.getEffectiveLimits = async function() {
 
 // Method: Check if org can access a specific app
 SubscriptionSchema.methods.canAccessApp = async function(appKey) {
-  // Check status first
-  if (this.status === 'cancelled' || this.status === 'suspended') {
+  if (this.status !== 'active') {
     return false
   }
 
-  // Check if active or in grace period
-  if (this.status !== 'active' && !this.isInGracePeriod) {
+  if (!this.endDate || this.endDate < new Date()) {
     return false
   }
 
@@ -280,6 +278,21 @@ SubscriptionSchema.methods.extend = function(days) {
   if (this.gracePeriodEnd) {
     this.gracePeriodEnd = new Date(this.endDate.getTime() + 7 * 24 * 60 * 60 * 1000)
   }
+  return this.save()
+}
+
+// Method: Expire subscription immediately and start grace period now
+SubscriptionSchema.methods.expire = function(graceDays = 7) {
+  const now = new Date()
+  const safeGraceDays = Number.isFinite(Number(graceDays)) && Number(graceDays) >= 0
+    ? Math.floor(Number(graceDays))
+    : 7
+
+  this.status = 'expired'
+  this.endDate = now
+  this.gracePeriodEnd = new Date(now.getTime() + safeGraceDays * 24 * 60 * 60 * 1000)
+  this.accessRemovalEmailSent = false
+
   return this.save()
 }
 

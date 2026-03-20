@@ -11,6 +11,7 @@ import {
 import { requireAuthOrAPIToken, requireScopes } from '../middleware/apiAuth.js'
 import { invalidateClaimsCache } from '../index.js'
 import zulipService from '../services/zulipService.js'
+import { subscriptionService } from '../services/subscriptionService.js'
 
 const router = express.Router()
 
@@ -71,6 +72,17 @@ router.post('/',
         }]
       })
 
+      let trialSubscription = null
+      try {
+        trialSubscription = await subscriptionService.assignDefaultTrialToOrganization(
+          organization._id,
+          req.user._id
+        )
+      } catch (trialError) {
+        await Organization.findByIdAndDelete(organization._id).catch(() => {})
+        throw trialError
+      }
+
       // Provision Zulip realm for the organization
       let zulipRealmInfo = null
       try {
@@ -110,12 +122,27 @@ router.post('/',
 
       console.log('✅ Organization created:', organization.name, 'by', req.user.email)
 
+      const trialWelcome = subscriptionService.buildDefaultTrialWelcomePayload({
+        organizationName: organization.name,
+        subscription: trialSubscription
+      })
+
       res.status(201).json({
         id: organization._id,
         name: organization.name,
         description: organization.description,
         memberCount: 1,
         role: 'owner',
+        assignedPlan: {
+          id: trialSubscription?.plan?._id || null,
+          name: trialSubscription?.plan?.name || null,
+          slug: trialSubscription?.plan?.slug || null,
+          isTrial: Boolean(trialSubscription?.plan?.isTrial),
+          trialDays: trialSubscription?.plan?.trialDays || null,
+          startDate: trialSubscription?.startDate || null,
+          endDate: trialSubscription?.endDate || null
+        },
+        trialWelcome,
         zulip: zulipRealmInfo ? {
           realmId: zulipRealmInfo.realmId,
           realmStringId: zulipRealmInfo.realmStringId,

@@ -197,6 +197,16 @@
     const pendingInvitationsCount = <%= typeof pendingInvitationsCount !== 'undefined' ? pendingInvitationsCount : 0 %>;
     const popupShownKey = 'invitationsPopupShown_' + new Date().toDateString();
 
+    function persistTrialWelcome(payload) {
+      if (!payload) return;
+
+      try {
+        sessionStorage.setItem('trialWelcome', JSON.stringify(payload));
+      } catch (error) {
+        console.warn('Could not persist trial welcome payload:', error);
+      }
+    }
+
     function showCreateModal() {
       document.getElementById('createModal').classList.add('active');
     }
@@ -371,11 +381,12 @@
             description: formData.get('description')
           })
         });
+        const data = await response.json();
 
         if (response.ok) {
-          window.location.reload();
+          persistTrialWelcome(data.trialWelcome);
+          window.location.href = '/';
         } else {
-          const data = await response.json();
           alert(data.error || 'Failed to create organization');
         }
       } catch (error) {
@@ -444,7 +455,9 @@
   </script>
 
   <!-- Invitation Gatekeeper - Blocks page until invitation decision is made -->
-  <script src="/js/invitation-gatekeeper.js"></script>
+  <% if (organizations && organizations.length > 0) { %>
+    <script src="/js/invitation-gatekeeper.js"></script>
+  <% } %>
 </body>
 
 </html>

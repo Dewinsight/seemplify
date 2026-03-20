@@ -16,6 +16,7 @@ import {
   requireOrganizationAdmin,
   rateLimit
 } from '../middleware/permissions.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
 
@@ -303,6 +304,8 @@ router.post('/accept/:invitationId',
         }
       }
 
+      invalidateClaimsCache(req.user.sub)
+
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 
       res.json({
@@ -378,6 +381,8 @@ router.post('/:token/accept',
           await team.addMember(req.user._id, 'member')
         }
       }
+
+      invalidateClaimsCache(req.user.sub)
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 

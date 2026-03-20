@@ -161,6 +161,72 @@
       margin-top: 6px;
     }
 
+    .org-action-panel {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 18px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel-strong);
+    }
+
+    .org-action-toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .org-action-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .org-action-summary {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .org-table-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .org-checkbox-cell {
+      width: 40px;
+    }
+
+    .org-member-flags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .org-mini-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(59, 130, 246, 0.12);
+      color: #93c5fd;
+    }
+
+    .org-mini-badge--danger {
+      background: rgba(239, 68, 68, 0.12);
+      color: #fca5a5;
+    }
+
+    .org-danger-zone {
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
     @media (max-width: 1100px) {
       .org-detail-grid {
         grid-template-columns: 1fr;
@@ -190,6 +256,7 @@
   <% const inviteTeamOptions = inviteTeams || []; %>
   <% const successfulLaunches = launchItems.filter(item => item.isSuccessful).length; %>
   <% const onboardingInProgress = onboardingSummary?.inProgress || 0; %>
+  <% const replacementCandidates = activeMembers.filter(member => member.account); %>
 
   <div class="admin-layout">
     <%- include('../partials/admin-nav', { activePage: 'organizations' }) %>
@@ -257,22 +324,93 @@
             </div>
 
             <% if (members.length > 0) { %>
+              <form id="member-action-form" method="post" action="/admin/organizations/<%= organization._id %>/members/action" class="org-action-panel">
+                <input type="hidden" id="member-action-input" name="action" value="">
+
+                <div class="org-action-toolbar">
+                  <div class="org-action-summary">
+                    <strong id="selected-member-count">0</strong> selected.
+                    Remove detaches users from this organization only. Delete permanently removes the account from IDP when it has no other active organizations.
+                  </div>
+                  <div class="org-action-buttons">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="submitMemberAction('remove_members')">Remove Selected</button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="submitMemberAction('delete_accounts')">Delete Selected Accounts</button>
+                  </div>
+                </div>
+
+                <div class="admin-form-row">
+                  <div class="admin-form-group">
+                    <label class="admin-form-label" for="owner-replacement-id">Owner Replacement</label>
+                    <select id="owner-replacement-id" name="ownerReplacementId" class="admin-form-select">
+                      <option value="">Select if required</option>
+                      <% replacementCandidates.forEach(member => { %>
+                        <option value="<%= member.account._id %>">
+                          <%= member.account.profile?.name || member.account.email || 'Unknown user' %> (<%= member.role.replace(/_/g, ' ') %>)
+                        </option>
+                      <% }) %>
+                    </select>
+                    <div class="org-muted" style="margin-top: 6px;">Required if the selected members include the last owner and the organization will continue.</div>
+                  </div>
+
+                  <div class="admin-form-group">
+                    <label class="admin-form-label" for="admin-replacement-id">Admin Replacement</label>
+                    <select id="admin-replacement-id" name="adminReplacementId" class="admin-form-select">
+                      <option value="">Select if required</option>
+                      <% replacementCandidates.forEach(member => { %>
+                        <option value="<%= member.account._id %>">
+                          <%= member.account.profile?.name || member.account.email || 'Unknown user' %> (<%= member.role.replace(/_/g, ' ') %>)
+                        </option>
+                      <% }) %>
+                    </select>
+                    <div class="org-muted" style="margin-top: 6px;">Required if the selected members include the last active organization admin and the organization will continue.</div>
+                  </div>
+                </div>
+
+                <label class="admin-form-checkbox">
+                  <input id="delete-org-if-empty" name="deleteOrganizationIfEmpty" type="checkbox" value="1">
+                  <span>Delete the organization too if this action would remove every remaining member</span>
+                </label>
+              </form>
+
               <div class="admin-table-container" style="border: none;">
                 <table class="admin-table">
                   <thead>
                     <tr>
+                      <th class="org-checkbox-cell">
+                        <input type="checkbox" id="select-all-members">
+                      </th>
                       <th>User</th>
                       <th>Role</th>
                       <th>Status</th>
                       <th>Joined</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     <% members.forEach(member => { %>
                       <tr>
+                        <td class="org-checkbox-cell">
+                          <% if (member.status === 'active') { %>
+                            <input
+                              type="checkbox"
+                              class="member-select-checkbox"
+                              form="member-action-form"
+                              name="memberIds"
+                              value="<%= member.account?._id || '' %>"
+                            >
+                          <% } %>
+                        </td>
                         <td>
                           <div style="font-weight: 600;"><%= member.account?.profile?.name || member.account?.email || 'Unknown user' %></div>
                           <div class="org-muted"><%= member.account?.email || 'N/A' %></div>
+                          <div class="org-member-flags">
+                            <% if (member.role === 'owner') { %>
+                              <span class="org-mini-badge">Owner</span>
+                            <% } %>
+                            <% if (member.account?.isSystemAdmin || member.account?.isSuperAdmin) { %>
+                              <span class="org-mini-badge org-mini-badge--danger">Protected admin account</span>
+                            <% } %>
+                          </div>
                         </td>
                         <td style="text-transform: capitalize;"><%= (member.role || 'unknown').replace(/_/g, ' ') %></td>
                         <td>
@@ -280,6 +418,20 @@
                         </td>
                         <td>
                           <%= member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : 'N/A' %>
+                        </td>
+                        <td>
+                          <% if (member.status === 'active' && member.account?._id) { %>
+                            <div class="org-table-actions">
+                              <button type="button" class="btn btn-sm btn-secondary" onclick='submitSingleMemberAction("remove_members", "<%= member.account._id %>", <%- JSON.stringify(member.account?.profile?.name || member.account?.email || "this member") %>)'>Remove</button>
+                              <% if (member.account?.isSystemAdmin || member.account?.isSuperAdmin) { %>
+                                <span class="org-muted">Delete blocked</span>
+                              <% } else { %>
+                                <button type="button" class="btn btn-sm btn-danger" onclick='submitSingleMemberAction("delete_accounts", "<%= member.account._id %>", <%- JSON.stringify(member.account?.profile?.name || member.account?.email || "this member") %>)'>Delete Account</button>
+                              <% } %>
+                            </div>
+                          <% } else { %>
+                            <span class="org-muted">-</span>
+                          <% } %>
                         </td>
                       </tr>
                     <% }) %>
@@ -492,6 +644,21 @@
               </div>
             <% } %>
           </div>
+
+          <div class="admin-card org-danger-zone">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Organization Removal</div>
+            </div>
+            <div class="org-muted" style="margin-bottom: 14px;">
+              Delete the entire organization, all teams, invitations, onboarding records, subscriptions, and related admin data.
+            </div>
+            <form method="post" action="/admin/organizations/<%= organization._id %>/members/action" onsubmit='return window.confirm("Delete " + <%- JSON.stringify(organization.name || "this organization") %> + "? This cannot be undone.");'>
+              <input type="hidden" name="action" value="delete_organization">
+              <div class="org-table-actions">
+                <button type="submit" class="btn btn-danger">Delete Organization</button>
+              </div>
+            </form>
+          </div>
         </section>
 
         <aside class="org-detail-stack">
@@ -664,6 +831,18 @@
                   </div>
                 </div>
               </div>
+              <div class="org-table-actions" style="margin-top: 14px;">
+                <a href="/admin/subscriptions" class="btn btn-sm btn-secondary">Open Subscriptions</a>
+                <% if (['active', 'suspended', 'pending_renewal'].includes(currentSubscription.status)) { %>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-secondary"
+                    style="color: #ef4444;"
+                    onclick='expireOrganizationSubscription("<%= currentSubscription._id %>", <%- JSON.stringify(organization.name || "this organization") %>)'>
+                    Expire Plan Now
+                  </button>
+                <% } %>
+              </div>
             <% } else if (organization.currentPlan) { %>
               <div class="org-kv-list">
                 <div class="org-kv-item">
@@ -784,6 +963,102 @@
       reminderToggle.addEventListener('change', syncSubmitLabel);
       syncSubmitLabel();
     })();
+
+    (function () {
+      const form = document.getElementById('member-action-form');
+      const selectAll = document.getElementById('select-all-members');
+      const selectedCount = document.getElementById('selected-member-count');
+      const actionInput = document.getElementById('member-action-input');
+
+      if (!form || !actionInput) return;
+
+      const getCheckboxes = () => Array.from(document.querySelectorAll('.member-select-checkbox'));
+      const getSelectedCheckboxes = () => getCheckboxes().filter(checkbox => checkbox.checked);
+
+      const updateSelectionState = () => {
+        const checkboxes = getCheckboxes();
+        const checked = getSelectedCheckboxes();
+        if (selectedCount) {
+          selectedCount.textContent = String(checked.length);
+        }
+        if (selectAll) {
+          selectAll.checked = checkboxes.length > 0 && checked.length === checkboxes.length;
+          selectAll.indeterminate = checked.length > 0 && checked.length < checkboxes.length;
+        }
+      };
+
+      if (selectAll) {
+        selectAll.addEventListener('change', () => {
+          getCheckboxes().forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+          });
+          updateSelectionState();
+        });
+      }
+
+      getCheckboxes().forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectionState);
+      });
+
+      window.submitMemberAction = (action) => {
+        const checked = getSelectedCheckboxes();
+        if (checked.length === 0) {
+          window.alert('Select at least one active member first.');
+          return;
+        }
+
+        const actionLabel = action === 'delete_accounts' ? 'delete the selected account(s)' : 'remove the selected member(s)';
+        if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) {
+          return;
+        }
+
+        actionInput.value = action;
+        form.submit();
+      };
+
+      window.submitSingleMemberAction = (action, memberId, memberLabel) => {
+        getCheckboxes().forEach(checkbox => {
+          checkbox.checked = checkbox.value === memberId;
+        });
+        updateSelectionState();
+
+        const actionLabel = action === 'delete_accounts' ? 'delete this account' : 'remove this member from the organization';
+        if (!window.confirm(`Are you sure you want to ${actionLabel} for ${memberLabel}?`)) {
+          return;
+        }
+
+        actionInput.value = action;
+        form.submit();
+      };
+
+      updateSelectionState();
+    })();
+
+    async function expireOrganizationSubscription(subscriptionId, organizationName) {
+      const reason = window.prompt('Reason for expiring this plan now (optional):');
+      if (reason === null) return;
+
+      if (!window.confirm(`Expire the current plan for ${organizationName || 'this organization'} now? Access will lock immediately and the grace period will start from today.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subscriptionId}/expire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason })
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to expire subscription.');
+        }
+
+        window.location.reload();
+      } catch (error) {
+        window.alert(error.message || 'Failed to expire subscription.');
+      }
+    }
   </script>
 </body>
 

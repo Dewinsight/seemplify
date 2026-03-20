@@ -13,6 +13,13 @@ import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { buildRecruiterAdminLaunchUrl } from '../services/recruiterAdminSsoService.js'
 import { getWorkforceOperationsAnalytics } from '../services/adminAnalyticsService.js'
 import { emailService } from '../services/emailService.js'
+import {
+  ADMIN_ORGANIZATION_ACTIONS,
+  deleteOrganizationAccounts,
+  deleteOrganizationCascade,
+  removeMembersFromOrganization
+} from '../services/adminOrganizationManagementService.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
 const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
@@ -37,6 +44,40 @@ function buildOrgDetailRedirectPath(organizationId, notice, noticeType = 'succes
   if (notice) params.set('notice', notice)
   if (noticeType) params.set('noticeType', noticeType)
   return `/admin/organizations/${organizationId}?${params.toString()}`
+}
+
+function buildOrganizationsRedirectPath(notice, noticeType = 'success') {
+  const params = new URLSearchParams()
+  if (notice) params.set('notice', notice)
+  if (noticeType) params.set('noticeType', noticeType)
+  const query = params.toString()
+  return query ? `/admin/organizations?${query}` : '/admin/organizations'
+}
+
+function parseBooleanInput(value) {
+  return ['1', 'true', 'on', 'yes'].includes(String(value || '').trim().toLowerCase())
+}
+
+async function invalidateClaimsForAccounts(accountIds = []) {
+  const ids = Array.from(new Set(
+    accountIds
+      .map(id => id?.toString?.() || String(id || '').trim())
+      .filter(Boolean)
+  ))
+
+  if (ids.length === 0) {
+    return
+  }
+
+  const accounts = await Account.find({ _id: { $in: ids } })
+    .select('sub')
+    .lean()
+
+  accounts.forEach((account) => {
+    if (account?.sub) {
+      invalidateClaimsCache(account.sub)
+    }
+  })
 }
 
 async function hasPendingInviteWithEmployeeId(organizationId, employeeId, excludeInvitationId = null) {
@@ -291,12 +332,16 @@ router.get('/recruiter-admin', async (req, res) => {
  */
 router.get('/organizations', async (req, res) => {
   try {
+    const notice = typeof req.query.notice === 'string' ? req.query.notice.trim() : ''
+    const noticeType = req.query.noticeType === 'error' ? 'error' : 'success'
     const organizations = await Organization.find()
       .populate(['owner', 'activeSubscription', 'currentPlan'])
       .sort({ createdAt: -1 })
 
     res.render('admin/organizations', {
       organizations,
+      notice,
+      noticeType,
       user: req.user
     })
   } catch (error) {
@@ -321,7 +366,7 @@ router.get('/organizations/:organizationId', async (req, res) => {
     const [organization, subscriptions, requests, onboardingAssignmentsRaw, appLaunchesRaw, pendingInvitationsRaw, organizationTeams] = await Promise.all([
       Organization.findById(organizationId)
         .populate('owner', 'email profile.name')
-        .populate('members.account', 'email profile.name')
+        .populate('members.account', 'email profile.name isSystemAdmin isSuperAdmin')
         .populate({
           path: 'activeSubscription',
           populate: [
@@ -540,6 +585,85 @@ router.get('/organizations/:organizationId', async (req, res) => {
       title: 'Error',
       message: 'Failed to load organization details'
     })
+  }
+})
+
+router.post('/organizations/:organizationId/members/action', async (req, res) => {
+  const organizationId = req.params.organizationId
+
+  try {
+    const organization = await Organization.findById(organizationId)
+      .populate('members.account', 'email profile.name isSystemAdmin isSuperAdmin organizations')
+
+    if (!organization) {
+      return res.redirect(buildOrganizationsRedirectPath('Organization not found', 'error'))
+    }
+
+    const action = String(req.body.action || '').trim()
+    const memberIds = Array.isArray(req.body.memberIds)
+      ? req.body.memberIds
+      : [req.body.memberIds].filter(Boolean)
+    const ownerReplacementId = String(req.body.ownerReplacementId || '').trim()
+    const adminReplacementId = String(req.body.adminReplacementId || '').trim()
+    const deleteOrganizationIfEmpty = parseBooleanInput(req.body.deleteOrganizationIfEmpty)
+
+    let result
+
+    if (action === ADMIN_ORGANIZATION_ACTIONS.DELETE_ORGANIZATION) {
+      result = await deleteOrganizationCascade(organization, { deletedBy: req.user._id })
+      await invalidateClaimsForAccounts(result.deletedMemberIds || [])
+      return res.redirect(buildOrganizationsRedirectPath(
+        `Organization "${organization.name}" was deleted successfully.`
+      ))
+    }
+
+    if (action === ADMIN_ORGANIZATION_ACTIONS.REMOVE_MEMBERS) {
+      result = await removeMembersFromOrganization(organization, {
+        memberIds,
+        ownerReplacementId,
+        adminReplacementId,
+        deleteOrganizationIfEmpty,
+        updatedBy: req.user._id
+      })
+    } else if (action === ADMIN_ORGANIZATION_ACTIONS.DELETE_ACCOUNTS) {
+      result = await deleteOrganizationAccounts(organization, {
+        memberIds,
+        ownerReplacementId,
+        adminReplacementId,
+        deleteOrganizationIfEmpty,
+        deletedBy: req.user._id
+      })
+    } else {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Select a valid member action', 'error'))
+    }
+
+    const affectedAccountIds = [
+      ...(result.removedMemberIds || []),
+      ...(result.deletedAccountIds || []),
+      ...(result.promotedAccountIds || []),
+      ...(result.deletedMemberIds || [])
+    ]
+    await invalidateClaimsForAccounts(affectedAccountIds)
+
+    if (result.organizationDeleted) {
+      const message = action === ADMIN_ORGANIZATION_ACTIONS.DELETE_ACCOUNTS
+        ? `Deleted ${result.deletedAccountIds?.length || 0} account(s) and removed the empty organization.`
+        : `Removed ${result.removedMemberIds?.length || 0} member(s) and deleted the empty organization.`
+      return res.redirect(buildOrganizationsRedirectPath(message))
+    }
+
+    const message = action === ADMIN_ORGANIZATION_ACTIONS.DELETE_ACCOUNTS
+      ? `Deleted ${result.deletedAccountIds?.length || 0} account(s) successfully.`
+      : `Removed ${result.removedMemberIds?.length || 0} member(s) successfully.`
+
+    return res.redirect(buildOrgDetailRedirectPath(organizationId, message))
+  } catch (error) {
+    console.error('Admin organization member action error:', error)
+    return res.redirect(buildOrgDetailRedirectPath(
+      organizationId,
+      error.message || 'Failed to complete member action',
+      'error'
+    ))
   }
 })
 

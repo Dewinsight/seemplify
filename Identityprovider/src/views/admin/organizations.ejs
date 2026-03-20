@@ -37,6 +37,13 @@
         <h1>Organizations</h1>
       </div>
 
+      <% if (notice) { %>
+        <div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>">
+          <span class="alert-icon"><%= noticeType === 'error' ? 'âš ' : 'âœ“' %></span>
+          <span><%= notice %></span>
+        </div>
+      <% } %>
+
       <div class="admin-stats-grid">
         <div class="admin-stat-card">
           <div class="admin-stat-label">Total Organizations</div>

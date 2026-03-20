@@ -4,6 +4,44 @@ import SubscriptionRequest from '../models/SubscriptionRequest.js'
 import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
 import { emailService } from './emailService.js'
+import {
+  buildDefaultTrialPlanData,
+  DEFAULT_TRIAL_APP_NAMES,
+  DEFAULT_TRIAL_PLAN_DAYS,
+  DEFAULT_TRIAL_PLAN_NAME,
+  DEFAULT_TRIAL_PLAN_SLUG,
+  LEGACY_DEFAULT_TRIAL_PLAN_SLUG
+} from '../config/defaultTrialPlan.js'
+
+const EMPTY_EFFECTIVE_FEATURES = Object.freeze({
+  recruiter: false,
+  leaveManagement: false,
+  payrollManagement: false,
+  performanceManagement: false,
+  timeAttendance: false,
+  outlineDocs: false,
+  aiChat: false,
+  lms: false
+})
+
+const EMPTY_EFFECTIVE_LIMITS = Object.freeze({
+  maxMembers: 0,
+  maxTeams: 0,
+  maxStorage: 0,
+  maxSystemCourses: null
+})
+
+const cloneEmptyEffectiveFeatures = () => ({ ...EMPTY_EFFECTIVE_FEATURES })
+
+const cloneEmptyEffectiveLimits = () => ({ ...EMPTY_EFFECTIVE_LIMITS })
+
+const hasActiveSubscriptionAccess = (subscription) => {
+  if (!subscription || subscription.status !== 'active' || !subscription.endDate) {
+    return false
+  }
+
+  return new Date(subscription.endDate).getTime() >= Date.now()
+}
 
 /**
  * Subscription Service
@@ -89,6 +127,43 @@ class SubscriptionService {
     return plan.save()
   }
 
+  /**
+   * Ensure the default free trial plan exists and matches the current defaults.
+   */
+  async ensureDefaultTrialPlan() {
+    const planData = buildDefaultTrialPlanData()
+    let plan = await Plan.findOne({ slug: DEFAULT_TRIAL_PLAN_SLUG })
+
+    if (!plan) {
+      plan = await Plan.findOne({ slug: LEGACY_DEFAULT_TRIAL_PLAN_SLUG, isTrial: true })
+    }
+
+    if (!plan) {
+      plan = new Plan(planData)
+      return plan.save()
+    }
+
+    plan.name = planData.name
+    plan.slug = planData.slug
+    plan.description = planData.description
+    plan.pricing = planData.pricing
+    plan.limits = planData.limits
+    plan.hideHubCards = planData.hideHubCards
+    plan.showComingSoonCards = planData.showComingSoonCards
+    plan.features = planData.features
+    plan.isActive = planData.isActive
+    plan.isPublic = planData.isPublic
+    plan.isRequestable = planData.isRequestable !== false
+    plan.isFeatured = planData.isFeatured
+    plan.isTrial = planData.isTrial
+    plan.trialDays = planData.trialDays
+    plan.displayOrder = planData.displayOrder
+    plan.badgeText = planData.badgeText
+    plan.color = planData.color
+
+    return plan.save()
+  }
+
   // ========================================
   // SUBSCRIPTION REQUEST OPERATIONS
   // ========================================
@@ -115,6 +190,9 @@ class SubscriptionService {
     const plan = await Plan.findById(planId)
     if (!plan || !plan.isActive || !plan.isPublic) {
       throw new Error('Plan not found or unavailable')
+    }
+    if (plan.isRequestable === false) {
+      throw new Error('Plan is not requestable')
     }
 
     // Check for existing pending request
@@ -442,6 +520,65 @@ class SubscriptionService {
   }
 
   /**
+   * Assign the default free trial plan to a newly created organization.
+   */
+  async assignDefaultTrialToOrganization(organizationId, approvedBy = null) {
+    const organization = await Organization.findById(organizationId)
+    if (!organization) {
+      throw new Error('Organization not found')
+    }
+
+    const existingSubscription = await Subscription.findActiveForOrg(organizationId)
+    if (existingSubscription) {
+      return existingSubscription
+    }
+
+    const plan = await this.ensureDefaultTrialPlan()
+    const startDate = new Date()
+    const endDate = new Date(startDate.getTime() + ((plan.trialDays || DEFAULT_TRIAL_PLAN_DAYS) * 24 * 60 * 60 * 1000))
+
+    const subscription = new Subscription({
+      organization: organizationId,
+      plan: plan._id,
+      billingCycle: 'monthly',
+      priceAtPurchase: 0,
+      currency: plan.pricing?.currency || 'NGN',
+      status: 'active',
+      startDate,
+      endDate,
+      gracePeriodEnd: endDate,
+      approvedBy,
+      approvedAt: new Date(),
+      notes: `Automatically assigned ${DEFAULT_TRIAL_PLAN_NAME} on organization creation.`
+    })
+
+    await subscription.save()
+    await organization.updateSubscriptionCache(subscription)
+
+    return Subscription.findById(subscription._id).populate('plan')
+  }
+
+  /**
+   * Build the user-facing summary for the default free trial assignment.
+   */
+  buildDefaultTrialWelcomePayload({ organizationName, subscription }) {
+    const trialDays = Number(subscription?.plan?.trialDays || DEFAULT_TRIAL_PLAN_DAYS)
+
+    return {
+      organizationName,
+      planName: subscription?.plan?.name || DEFAULT_TRIAL_PLAN_NAME,
+      planSlug: subscription?.plan?.slug || DEFAULT_TRIAL_PLAN_SLUG,
+      trialDays,
+      expiresAt: subscription?.endDate || null,
+      accessSummary: 'You can explore every app currently available in the Seemplify workspace during your trial.',
+      accessibleApps: [...DEFAULT_TRIAL_APP_NAMES],
+      headline: `Congratulations, ${organizationName} is ready.`,
+      subheadline: `We've assigned your organization the default ${DEFAULT_TRIAL_PLAN_NAME} for ${trialDays} day${trialDays === 1 ? '' : 's'}.`,
+      closingMessage: 'Happy exploring.'
+    }
+  }
+
+  /**
    * Extend subscription
    */
   async extendSubscription(subscriptionId, days, adminId, notes) {
@@ -459,6 +596,36 @@ class SubscriptionService {
     // Update organization cache
     const organization = await Organization.findById(subscription.organization)
     await organization.updateSubscriptionCache(subscription)
+
+    return subscription
+  }
+
+  /**
+   * Expire a subscription immediately and start the grace period from now.
+   */
+  async expireSubscription(subscriptionId, adminId, reason) {
+    const subscription = await Subscription.findById(subscriptionId)
+    if (!subscription) {
+      throw new Error('Subscription not found')
+    }
+    if (subscription.status === 'cancelled') {
+      throw new Error('Cancelled subscriptions cannot be expired')
+    }
+    if (subscription.status === 'expired') {
+      throw new Error('Subscription is already expired')
+    }
+
+    const auditNote = `Manually expired on ${new Date().toISOString()} by admin`
+    subscription.notes = (subscription.notes ? subscription.notes + '\n' : '') + `${auditNote}${reason ? `: ${reason}` : ''}`
+
+    await subscription.expire(this.gracePeriodDays)
+
+    const organization = await Organization.findById(subscription.organization)
+    if (organization) {
+      await organization.updateSubscriptionCache(subscription)
+    }
+
+    await this.notifyOrgOfExpiry(subscription)
 
     return subscription
   }
@@ -550,7 +717,7 @@ class SubscriptionService {
    */
   async canAccessApp(organizationId, appKey) {
     const subscription = await Subscription.findActiveForOrg(organizationId)
-    if (!subscription) return false
+    if (!hasActiveSubscriptionAccess(subscription)) return false
 
     return subscription.canAccessApp(appKey)
   }
@@ -560,7 +727,7 @@ class SubscriptionService {
    */
   async canAddMembers(organizationId, currentMemberCount) {
     const subscription = await Subscription.findActiveForOrg(organizationId)
-    if (!subscription) return false
+    if (!hasActiveSubscriptionAccess(subscription)) return false
 
     return subscription.canAddMembers(currentMemberCount)
   }
@@ -570,17 +737,8 @@ class SubscriptionService {
    */
   async getEffectiveFeatures(organizationId) {
     const subscription = await Subscription.findActiveForOrg(organizationId)
-    if (!subscription) {
-      return {
-        recruiter: false,
-        leaveManagement: false,
-        payrollManagement: false,
-        performanceManagement: false,
-        timeAttendance: false,
-        outlineDocs: false,
-        aiChat: false,
-        lms: false
-      }
+    if (!hasActiveSubscriptionAccess(subscription)) {
+      return cloneEmptyEffectiveFeatures()
     }
 
     return subscription.getEffectiveFeatures()
@@ -591,13 +749,8 @@ class SubscriptionService {
    */
   async getEffectiveLimits(organizationId) {
     const subscription = await Subscription.findActiveForOrg(organizationId)
-    if (!subscription) {
-      return {
-        maxMembers: 0,
-        maxTeams: 0,
-        maxStorage: 0,
-        maxSystemCourses: null
-      }
+    if (!hasActiveSubscriptionAccess(subscription)) {
+      return cloneEmptyEffectiveLimits()
     }
 
     return subscription.getEffectiveLimits()
@@ -761,9 +914,9 @@ class SubscriptionService {
     try {
       await subscription.populate(['organization', 'plan'])
 
-      const owner = await Account.findById(subscription.organization.owner)
-      if (owner) {
-        await this.sendExpiryNotificationEmail(owner.email, subscription)
+      const recipients = await this.getSubscriptionNotificationRecipients(subscription.organization)
+      for (const recipient of recipients) {
+        await this.sendExpiryNotificationEmail(recipient.email, subscription)
       }
     } catch (error) {
       console.error('Failed to notify org of expiry:', error)
@@ -777,13 +930,49 @@ class SubscriptionService {
     try {
       await subscription.populate(['organization', 'plan'])
 
-      const owner = await Account.findById(subscription.organization.owner)
-      if (owner) {
-        await this.sendAccessRemovalEmail(owner.email, subscription)
+      const recipients = await this.getSubscriptionNotificationRecipients(subscription.organization)
+      for (const recipient of recipients) {
+        await this.sendAccessRemovalEmail(recipient.email, subscription)
       }
     } catch (error) {
       console.error('Failed to notify org of access removal:', error)
     }
+  }
+
+  async getSubscriptionNotificationRecipients(organizationInput) {
+    const organizationId = organizationInput?._id || organizationInput
+    if (!organizationId) return []
+
+    const organization = organizationInput?.members
+      ? organizationInput
+      : await Organization.findById(organizationId)
+        .select('owner members')
+        .lean()
+
+    if (!organization) return []
+
+    const recipientIds = new Set()
+    if (organization.owner) {
+      recipientIds.add(String(organization.owner))
+    }
+
+    for (const member of organization.members || []) {
+      if (member?.status !== 'active') continue
+      if (!['owner', 'admin'].includes(member.role)) continue
+      if (member.account) {
+        recipientIds.add(String(member.account))
+      }
+    }
+
+    if (recipientIds.size === 0) return []
+
+    const recipients = await Account.find({
+      _id: { $in: Array.from(recipientIds) }
+    })
+      .select('email profile.name')
+      .lean()
+
+    return recipients.filter(recipient => String(recipient?.email || '').trim())
   }
 
   // ========================================
@@ -1001,9 +1190,13 @@ class SubscriptionService {
 
   async sendRenewalReminderEmail(subscription, daysRemaining) {
     await subscription.populate(['organization', 'plan'])
-
-    const owner = await Account.findById(subscription.organization.owner)
-    if (!owner) return
+    const identityProviderUrl = process.env.ISSUER_URL || process.env.ISSUER_BASE_URL || 'http://localhost:4000'
+    const requestPlanUrl = `${identityProviderUrl}/plans`
+    const graceEndsAt = subscription.gracePeriodEnd
+      ? new Date(subscription.gracePeriodEnd).toLocaleDateString()
+      : null
+    const recipients = await this.getSubscriptionNotificationRecipients(subscription.organization)
+    if (recipients.length === 0) return
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -1022,7 +1215,7 @@ class SubscriptionService {
             <p style="font-size: 18px; margin: 0 0 16px;">Hello,</p>
 
             <p style="font-size: 16px; line-height: 1.6; color: #666; margin: 0 0 24px;">
-              Your subscription for <strong>${subscription.organization.name}</strong> will expire in <strong>${daysRemaining} day${daysRemaining > 1 ? 's' : ''}</strong>.
+              The <strong>${subscription.plan.name}</strong> plan for <strong>${subscription.organization.name}</strong> will expire in <strong>${daysRemaining} day${daysRemaining > 1 ? 's' : ''}</strong>.
             </p>
 
             <div style="background: #f9fafb; border-radius: 8px; padding: 20px; margin: 24px 0;">
@@ -1040,8 +1233,21 @@ class SubscriptionService {
             </div>
 
             <p style="font-size: 16px; line-height: 1.6; color: #666; margin: 24px 0;">
-              To continue enjoying uninterrupted access, please renew your subscription before the expiry date.
+              Request the next plan before the expiry date to avoid access being locked in the IDP and connected apps.
             </p>
+
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin: 24px 0;">
+              <p style="margin: 0; font-size: 14px; color: #1d4ed8;">
+                <strong>After expiry:</strong> users in this organization will see an access lock screen as soon as they log in.
+                ${graceEndsAt ? `Data remains preserved until ${graceEndsAt} while you request a replacement plan.` : 'Data remains preserved while you request a replacement plan.'}
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 32px 0 8px;">
+              <a href="${requestPlanUrl}" style="display: inline-block; background: linear-gradient(135deg, #18181b 0%, #334155 100%); color: white; padding: 14px 32px; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 16px;">
+                Review & Request Plans
+              </a>
+            </div>
           </div>
 
           <div style="background: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #e5e7eb;">
@@ -1054,14 +1260,21 @@ class SubscriptionService {
       </html>
     `
 
-    return emailService.sendEmail({
-      to: owner.email,
-      subject: `Subscription Renewal Reminder - ${daysRemaining} day${daysRemaining > 1 ? 's' : ''} remaining`,
-      html: htmlContent
-    })
+    for (const recipient of recipients) {
+      await emailService.sendEmail({
+        to: recipient.email,
+        subject: `Plan Expiry Reminder - ${daysRemaining} day${daysRemaining > 1 ? 's' : ''} remaining`,
+        html: htmlContent
+      })
+    }
   }
 
   async sendExpiryNotificationEmail(toEmail, subscription) {
+    const identityProviderUrl = process.env.ISSUER_URL || process.env.ISSUER_BASE_URL || 'http://localhost:4000'
+    const requestPlanUrl = `${identityProviderUrl}/plans`
+    const graceEndsAt = subscription.gracePeriodEnd
+      ? new Date(subscription.gracePeriodEnd).toLocaleDateString()
+      : null
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -1077,19 +1290,25 @@ class SubscriptionService {
 
           <div style="padding: 40px 24px; color: #333;">
             <p style="font-size: 16px; line-height: 1.6; color: #666; margin: 0 0 24px;">
-              Your subscription for <strong>${subscription.organization.name}</strong> has expired.
+              The <strong>${subscription.plan?.name || 'current'}</strong> plan for <strong>${subscription.organization.name}</strong> has expired.
             </p>
 
             <div style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; padding: 16px; margin: 24px 0;">
               <p style="margin: 0; font-size: 14px; color: #92400e;">
-                <strong>Grace Period:</strong> You have a ${this.gracePeriodDays}-day grace period during which your data will be preserved.
-                After this period, access to premium features will be disabled.
+                <strong>Access is now locked:</strong> members in this organization can no longer use IDP apps until another plan is approved.
+                ${graceEndsAt ? `Data will remain preserved until ${graceEndsAt}.` : `Data will remain preserved during the ${this.gracePeriodDays}-day grace period.`}
               </p>
             </div>
 
             <p style="font-size: 16px; line-height: 1.6; color: #666; margin: 24px 0;">
-              To restore access, please renew your subscription as soon as possible.
+              To restore access, request another plan as soon as possible.
             </p>
+
+            <div style="text-align: center; margin: 32px 0 8px;">
+              <a href="${requestPlanUrl}" style="display: inline-block; background: linear-gradient(135deg, #18181b 0%, #334155 100%); color: white; padding: 14px 32px; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 16px;">
+                Request Another Plan
+              </a>
+            </div>
           </div>
 
           <div style="background: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #e5e7eb;">
@@ -1104,12 +1323,14 @@ class SubscriptionService {
 
     return emailService.sendEmail({
       to: toEmail,
-      subject: 'Your Subscription Has Expired',
+      subject: 'Your Plan Has Expired',
       html: htmlContent
     })
   }
 
   async sendAccessRemovalEmail(toEmail, subscription) {
+    const identityProviderUrl = process.env.ISSUER_URL || process.env.ISSUER_BASE_URL || 'http://localhost:4000'
+    const requestPlanUrl = `${identityProviderUrl}/plans`
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -1130,8 +1351,14 @@ class SubscriptionService {
             </p>
 
             <p style="font-size: 16px; line-height: 1.6; color: #666; margin: 24px 0;">
-              Your data is still preserved. To restore access, please contact us to renew your subscription.
+              Your data is still preserved. To restore access, request another plan for the organization.
             </p>
+
+            <div style="text-align: center; margin: 32px 0 8px;">
+              <a href="${requestPlanUrl}" style="display: inline-block; background: linear-gradient(135deg, #18181b 0%, #334155 100%); color: white; padding: 14px 32px; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 16px;">
+                View Requestable Plans
+              </a>
+            </div>
           </div>
 
           <div style="background: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #e5e7eb;">

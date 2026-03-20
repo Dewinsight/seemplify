@@ -126,6 +126,326 @@
       border-radius: 14px;
       background: var(--hover-bg);
     }
+    .org-setup-card {
+      padding: 28px;
+      border-color: rgba(99, 102, 241, 0.32);
+      background:
+        radial-gradient(circle at top right, rgba(34, 211, 238, 0.14), transparent 34%),
+        linear-gradient(160deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.88));
+    }
+    .org-setup-card__eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, 0.14);
+      color: #c7d2fe;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .org-setup-card__title {
+      margin: 18px 0 10px;
+      font-size: 32px;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .org-setup-card__copy {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .org-setup-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-top: 22px;
+    }
+    .org-setup-option {
+      padding: 18px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.48);
+    }
+    .org-setup-option__title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .org-setup-option__copy {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .org-setup-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    .org-setup-invites {
+      margin-top: 24px;
+      display: grid;
+      gap: 12px;
+    }
+    .org-setup-invite {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 18px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.42);
+    }
+    .org-setup-invite__title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .org-setup-invite__desc {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .org-setup-invite__meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .org-setup-empty {
+      margin-top: 24px;
+      padding: 18px;
+      border-radius: 16px;
+      border: 1px dashed var(--border);
+      background: rgba(15, 23, 42, 0.24);
+      color: var(--muted);
+      text-align: center;
+    }
+    .subscription-reminder-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+    .subscription-lock-card {
+      border-color: rgba(239, 68, 68, 0.28);
+      background:
+        radial-gradient(circle at top right, rgba(239, 68, 68, 0.16), transparent 34%),
+        linear-gradient(160deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.9));
+    }
+    .subscription-lock-kicker {
+      background: rgba(239, 68, 68, 0.14);
+      color: #fecaca;
+    }
+    .subscription-lock-note {
+      margin-top: 18px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(15, 23, 42, 0.42);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .celebration-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(2, 6, 23, 0.78);
+      backdrop-filter: blur(10px);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.28s ease, visibility 0.28s ease;
+    }
+    .celebration-modal.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    .celebration-panel {
+      position: relative;
+      width: min(760px, 100%);
+      border-radius: 28px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background:
+        radial-gradient(circle at top left, rgba(16, 185, 129, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 34%),
+        linear-gradient(160deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.92));
+      box-shadow: 0 28px 80px rgba(2, 6, 23, 0.54);
+      transform: translateY(18px) scale(0.96);
+      transition: transform 0.28s ease;
+    }
+    .celebration-modal.active .celebration-panel {
+      transform: translateY(0) scale(1);
+    }
+    .celebration-confetti {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .celebration-confetti-piece {
+      position: absolute;
+      top: -14%;
+      left: calc((var(--piece) * 7%) + 4%);
+      width: 12px;
+      height: 22px;
+      border-radius: 999px;
+      opacity: 0.9;
+      background: var(--piece-color, #34d399);
+      transform: rotate(calc((var(--piece) * 17deg) - 18deg));
+      animation: confettiFall 3.6s ease-in infinite;
+      animation-delay: calc(var(--piece) * 0.12s);
+    }
+    .celebration-shell {
+      position: relative;
+      padding: 34px 32px 30px;
+    }
+    .celebration-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 197, 94, 0.14);
+      color: #bbf7d0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .celebration-icon {
+      width: 72px;
+      height: 72px;
+      margin-top: 18px;
+      border-radius: 24px;
+      display: grid;
+      place-items: center;
+      font-size: 34px;
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(59, 130, 246, 0.22));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 18px 40px rgba(16, 185, 129, 0.18);
+      animation: celebrationPulse 2.8s ease-in-out infinite;
+    }
+    .celebration-title {
+      margin: 18px 0 10px;
+      font-size: 34px;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+      color: var(--text);
+    }
+    .celebration-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.75;
+      max-width: 640px;
+    }
+    .celebration-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .celebration-summary-card {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.48);
+    }
+    .celebration-summary-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .celebration-summary-value {
+      margin-top: 8px;
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .celebration-apps-title {
+      margin-top: 24px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .celebration-apps-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .celebration-app-chip {
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .celebration-footnote {
+      margin-top: 18px;
+      color: #bbf7d0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .celebration-actions {
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .celebration-dismiss {
+      min-width: 180px;
+    }
+    @keyframes confettiFall {
+      0% {
+        transform: translate3d(0, -30px, 0) rotate(0deg);
+        opacity: 0;
+      }
+      10% {
+        opacity: 0.95;
+      }
+      100% {
+        transform: translate3d(calc((var(--piece) - 6) * 7px), 420px, 0) rotate(420deg);
+        opacity: 0;
+      }
+    }
+    @keyframes celebrationPulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+    }
 
     [data-theme="light"] .hub-content {
       position: relative;
@@ -230,11 +550,80 @@
       border-color: rgba(99, 102, 241, 0.12);
       color: #5b6475;
     }
+    [data-theme="light"] .org-setup-card {
+      background:
+        radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 32%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 246, 255, 0.96));
+      box-shadow: 0 36px 74px -40px rgba(79, 70, 229, 0.24), 0 18px 34px -24px rgba(15, 23, 42, 0.18);
+    }
+    [data-theme="light"] .org-setup-card__eyebrow {
+      background: rgba(99, 102, 241, 0.1);
+      color: #4338ca;
+    }
+    [data-theme="light"] .org-setup-option,
+    [data-theme="light"] .org-setup-invite,
+    [data-theme="light"] .org-setup-empty {
+      background: rgba(255, 255, 255, 0.74);
+      border-color: rgba(99, 102, 241, 0.12);
+      box-shadow: 0 18px 32px -28px rgba(15, 23, 42, 0.18);
+    }
+    [data-theme="light"] .celebration-panel {
+      border-color: rgba(99, 102, 241, 0.12);
+      background:
+        radial-gradient(circle at top left, rgba(16, 185, 129, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.16), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 246, 255, 0.96));
+      box-shadow: 0 32px 88px rgba(15, 23, 42, 0.22);
+    }
+    [data-theme="light"] .celebration-kicker {
+      background: rgba(34, 197, 94, 0.12);
+      color: #15803d;
+    }
+    [data-theme="light"] .celebration-summary-card,
+    [data-theme="light"] .celebration-app-chip {
+      background: rgba(255, 255, 255, 0.78);
+      border-color: rgba(99, 102, 241, 0.12);
+      box-shadow: 0 18px 32px -28px rgba(15, 23, 42, 0.14);
+    }
+    [data-theme="light"] .celebration-footnote {
+      color: #15803d;
+    }
     @media (max-width: 720px) {
       body { padding: 16px 12px 32px; }
       .hub-hero { grid-template-columns: 1fr; }
       .hub-content { margin-top: 4px; }
       .section-title { font-size: 15px; margin: 16px 0 8px; }
+      .org-setup-card {
+        padding: 20px;
+      }
+      .org-setup-card__title {
+        font-size: 26px;
+      }
+      .org-setup-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .org-setup-actions .btn,
+      .org-setup-actions .ghost-btn {
+        width: 100%;
+        text-align: center;
+      }
+      .org-setup-invite {
+        align-items: stretch;
+      }
+      .celebration-shell {
+        padding: 26px 20px 24px;
+      }
+      .celebration-title {
+        font-size: 28px;
+      }
+      .celebration-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .celebration-dismiss {
+        width: 100%;
+      }
 
       /* Organization card mobile layout */
       .org-top-strip {
@@ -468,19 +857,177 @@
     .org-option-role { font-size: 13px; color: var(--muted); text-transform: capitalize; }
   </style>
   <script src="/js/theme.js?v=2"></script>
-  <script src="/js/invitation-gatekeeper.js"></script>
+  <% if (hasOrganizations) { %>
+    <script src="/js/invitation-gatekeeper.js"></script>
+  <% } %>
 </head>
 
 <body>
   <%- include('partials/nav', { activePage: 'home' }) %>
   <% const pendingSignatureCount = notificationSummary?.pendingSignatureCount || 0; %>
   <% const pendingSignatureDocuments = Array.isArray(notificationSummary?.pendingSignatureDocuments) ? notificationSummary.pendingSignatureDocuments : []; %>
+  <% const pendingInviteRows = Array.isArray(pendingInvitations) ? pendingInvitations : []; %>
 
   <div class="container hub-content">
     <% if (accessError) { %>
       <div class="alert alert-error"><%= accessError %></div>
     <% } %>
 
+    <% if (!hasOrganizations) { %>
+      <section class="apps">
+        <div class="section-title">Organization required</div>
+        <div class="card org-setup-card">
+          <div class="org-setup-card__eyebrow">Complete setup to continue</div>
+          <h1 class="org-setup-card__title">Create an organization or accept an invite before you can use any apps.</h1>
+          <p class="org-setup-card__copy">
+            Your dashboard stays locked until your account belongs to an organization. Once you create one or join one, app access will appear here automatically.
+          </p>
+
+          <div class="org-setup-options">
+            <div class="org-setup-option">
+              <div class="org-setup-option__title">Create your own organization</div>
+              <div class="org-setup-option__copy">
+                Start a new workspace, become the owner, and unlock the IDP apps for that organization.
+              </div>
+            </div>
+            <div class="org-setup-option">
+              <div class="org-setup-option__title">Accept an invitation</div>
+              <div class="org-setup-option__copy">
+                <% if (pendingInvitationsCount > 0) { %>
+                  You have <%= pendingInvitationsCount %> pending invitation<%= pendingInvitationsCount === 1 ? '' : 's' %> ready to accept.
+                <% } else { %>
+                  If another admin has invited you already, accept it here and your apps will unlock immediately.
+                <% } %>
+              </div>
+            </div>
+          </div>
+
+          <div class="org-setup-actions">
+            <button type="button" class="btn btn-primary" onclick="showCreateModal()">Create Organization</button>
+            <a href="/invitations/pending" class="ghost-btn">
+              <%= pendingInvitationsCount > 0 ? `View Invitations (${pendingInvitationsCount})` : 'Check Invitations' %>
+            </a>
+          </div>
+
+          <% if (pendingInviteRows.length > 0) { %>
+            <div class="org-setup-invites">
+              <% pendingInviteRows.forEach(invite => { %>
+                <div class="org-setup-invite" data-home-invite-id="<%= invite.id %>">
+                  <div>
+                    <div class="org-setup-invite__title"><%= invite.organization.name %></div>
+                    <% if (invite.organization.description) { %>
+                      <div class="org-setup-invite__desc"><%= invite.organization.description %></div>
+                    <% } %>
+                    <div class="org-setup-invite__meta">
+                      <span class="role-badge role-<%= invite.role %>"><%= invite.role %></span>
+                      <span class="pill pill--soft"><%= invite.appAccessLabel || 'All apps' %></span>
+                      <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %></span>
+                      <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
+                      <% if (invite.appAccess && invite.appAccess.mode === 'selected' && invite.appAccessAppNames && invite.appAccessAppNames.length > 0) { %>
+                        <span>Apps: <%= invite.appAccessAppNames.join(', ') %></span>
+                      <% } %>
+                    </div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      data-invite-id="<%= invite.id %>"
+                      data-org-name="<%= invite.organization.name %>"
+                      onclick="acceptDashboardInvite(this)">
+                      Accept Invite
+                    </button>
+                    <a href="/invitations/pending" class="ghost-btn">View Details</a>
+                  </div>
+                </div>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <div class="org-setup-empty">
+              No invitations are waiting right now. Create an organization to unlock the dashboard.
+            </div>
+          <% } %>
+        </div>
+      </section>
+    <% } %>
+
+    <% if (currentSubscriptionAccess && currentSubscriptionAccess.showExpiryReminder) { %>
+      <div class="card subscription-reminder-card">
+        <div>
+          <div style="font-weight: 700; font-size: 16px;">Plan expiry reminder</div>
+          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+            <%= currentSubscriptionAccess.planName || 'Your current plan' %> for <%= currentSubscriptionAccess.organizationName %> expires
+            <strong style="color: var(--text);"><%= currentSubscriptionAccess.daysUntilExpiry === 0 ? 'today' : `in ${currentSubscriptionAccess.daysUntilExpiry} day${currentSubscriptionAccess.daysUntilExpiry === 1 ? '' : 's'}` %></strong>.
+            Request another plan now to avoid access being locked.
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a href="/plans" class="btn btn-primary">Request a Plan</a>
+          <a href="/subscription" class="ghost-btn">Open Subscription</a>
+        </div>
+      </div>
+    <% } %>
+
+    <% if (hasOrganizations && currentSubscriptionAccess && currentSubscriptionAccess.isLocked) { %>
+      <section class="apps">
+        <div class="section-title">Plan action required</div>
+        <div class="card org-setup-card subscription-lock-card">
+          <div class="org-setup-card__eyebrow subscription-lock-kicker">Access locked</div>
+          <h1 class="org-setup-card__title">You need an active plan before this organization can use the IDP apps.</h1>
+          <p class="org-setup-card__copy">
+            <strong style="color: var(--text);"><%= currentSubscriptionAccess.organizationName %></strong>
+            <% if (currentSubscriptionAccess.status === 'grace_period' || currentSubscriptionAccess.status === 'expired') { %>
+              no longer has an active plan. Access is restricted immediately after expiry.
+            <% } else if (currentSubscriptionAccess.status === 'suspended') { %>
+              has a suspended subscription. Access is restricted until a new active plan is in place.
+            <% } else { %>
+              does not currently have an active plan. Request another plan to restore access.
+            <% } %>
+          </p>
+
+          <div class="celebration-summary">
+            <div class="celebration-summary-card">
+              <div class="celebration-summary-label">Organization</div>
+              <div class="celebration-summary-value"><%= currentSubscriptionAccess.organizationName %></div>
+            </div>
+            <div class="celebration-summary-card">
+              <div class="celebration-summary-label">Previous Plan</div>
+              <div class="celebration-summary-value"><%= currentSubscriptionAccess.planName || 'No active plan' %></div>
+            </div>
+            <div class="celebration-summary-card">
+              <div class="celebration-summary-label">Access Status</div>
+              <div class="celebration-summary-value"><%= currentSubscriptionAccess.status === 'grace_period' ? 'Expired' : (currentSubscriptionAccess.status || 'none').replace('_', ' ') %></div>
+            </div>
+          </div>
+
+          <% if (currentSubscriptionAccess.pendingRequest) { %>
+            <div class="subscription-lock-note">
+              A request for <strong style="color: var(--text);"><%= currentSubscriptionAccess.pendingRequest.planName %></strong> is already pending approval.
+              Access stays locked until that request is approved.
+            </div>
+          <% } else { %>
+            <div class="subscription-lock-note">
+              Request another plan to restore access. If you belong to more than one organization, you can switch to another active organization from here.
+            </div>
+          <% } %>
+
+          <div class="org-setup-actions">
+            <% if (currentSubscriptionAccess.pendingRequest) { %>
+              <a href="/subscription" class="btn btn-primary">Review Request Status</a>
+            <% } else { %>
+              <a href="/plans" class="btn btn-primary">Request Another Plan</a>
+            <% } %>
+            <a href="/subscription" class="ghost-btn">Open Subscription</a>
+            <a href="/organizations" class="ghost-btn">Organizations</a>
+            <% if (organizations && organizations.length > 1) { %>
+              <button type="button" class="ghost-btn" onclick="openOrgModal()">Switch Organization</button>
+            <% } %>
+          </div>
+        </div>
+      </section>
+    <% } %>
+
+    <% if (hasOrganizations && !(currentSubscriptionAccess && currentSubscriptionAccess.isLocked)) { %>
     <% if (notificationSummary && notificationSummary.totalUnread > 0) { %>
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.35);">
         <div>
@@ -793,8 +1340,36 @@
         </div>
       <% } %>
     </section>
+    <% } %>
   </div>
 
+  <!-- Create Organization Modal -->
+  <div class="modal" id="createModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Organization</h2>
+        <button class="modal-close" onclick="hideCreateModal()">&times;</button>
+      </div>
+      <form action="/api/organizations" method="POST" id="createForm">
+        <div class="form-group">
+          <label for="name">Organization Name *</label>
+          <input type="text" id="name" name="name" required maxlength="100" placeholder="Enter organization name">
+        </div>
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea id="description" name="description" maxlength="500" placeholder="Brief description (optional)"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideCreateModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="trialWelcomeModal" class="celebration-modal" hidden></div>
+
+  <% if (hasOrganizations) { %>
   <!-- Organization Switch Modal -->
   <div id="customOrgModal" class="custom-modal-overlay">
     <div class="custom-modal" onclick="event.stopPropagation()">
@@ -858,8 +1433,230 @@
       </div>
     </div>
   </div>
+  <% } %>
 
   <script>
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function persistTrialWelcome(payload) {
+      if (!payload) return;
+
+      try {
+        sessionStorage.setItem('trialWelcome', JSON.stringify(payload));
+      } catch (error) {
+        console.warn('Could not persist trial welcome payload:', error);
+      }
+    }
+
+    function consumeTrialWelcome() {
+      try {
+        const raw = sessionStorage.getItem('trialWelcome');
+        if (!raw) return null;
+        sessionStorage.removeItem('trialWelcome');
+        return JSON.parse(raw);
+      } catch (error) {
+        sessionStorage.removeItem('trialWelcome');
+        return null;
+      }
+    }
+
+    function formatTrialDate(value) {
+      if (!value) return '';
+
+      try {
+        return new Date(value).toLocaleDateString(undefined, {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        });
+      } catch (error) {
+        return '';
+      }
+    }
+
+    function closeTrialWelcome() {
+      const modal = document.getElementById('trialWelcomeModal');
+      if (!modal) return;
+
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleTrialWelcomeEscape);
+      if (modal.__trialWelcomeClickHandler) {
+        modal.removeEventListener('click', modal.__trialWelcomeClickHandler);
+        modal.__trialWelcomeClickHandler = null;
+      }
+
+      setTimeout(() => {
+        modal.hidden = true;
+        modal.innerHTML = '';
+      }, 280);
+    }
+
+    function handleTrialWelcomeEscape(event) {
+      if (event.key === 'Escape') {
+        closeTrialWelcome();
+      }
+    }
+
+    function showTrialWelcome(payload) {
+      const modal = document.getElementById('trialWelcomeModal');
+      if (!modal || !payload) return;
+
+      const appChips = Array.isArray(payload.accessibleApps)
+        ? payload.accessibleApps.map((appName) => `<span class="celebration-app-chip">${escapeHtml(appName)}</span>`).join('')
+        : '';
+      const trialDays = Number(payload.trialDays || 7);
+      const expiresLabel = formatTrialDate(payload.expiresAt);
+      const confettiColors = ['#34d399', '#22c55e', '#f59e0b', '#f97316', '#38bdf8', '#6366f1'];
+      const confettiMarkup = Array.from({ length: 18 }, (_, index) => {
+        const color = confettiColors[index % confettiColors.length];
+        return `<span class="celebration-confetti-piece" style="--piece:${index};--piece-color:${color};"></span>`;
+      }).join('');
+
+      modal.innerHTML = `
+        <div class="celebration-panel" role="dialog" aria-modal="true" aria-labelledby="trialWelcomeTitle">
+          <div class="celebration-confetti">${confettiMarkup}</div>
+          <div class="celebration-shell">
+            <div class="celebration-kicker">Congratulations</div>
+            <div class="celebration-icon">✨</div>
+            <h2 class="celebration-title" id="trialWelcomeTitle">${escapeHtml(payload.headline || 'Your organization is ready.')}</h2>
+            <p class="celebration-copy">${escapeHtml(payload.subheadline || `We've assigned your organization the default Free Trial for ${trialDays} days.`)}</p>
+            <div class="celebration-summary">
+              <div class="celebration-summary-card">
+                <div class="celebration-summary-label">Assigned Plan</div>
+                <div class="celebration-summary-value">${escapeHtml(payload.planName || 'Free Trial')}</div>
+              </div>
+              <div class="celebration-summary-card">
+                <div class="celebration-summary-label">Access Window</div>
+                <div class="celebration-summary-value">${trialDays} day${trialDays === 1 ? '' : 's'}</div>
+              </div>
+              <div class="celebration-summary-card">
+                <div class="celebration-summary-label">Expires</div>
+                <div class="celebration-summary-value">${escapeHtml(expiresLabel || 'Soon')}</div>
+              </div>
+            </div>
+            <div class="celebration-apps-title">${escapeHtml(payload.accessSummary || 'You can now explore every app in the workspace during your trial.')}</div>
+            <div class="celebration-apps-grid">${appChips}</div>
+            <div class="celebration-footnote">${escapeHtml(payload.closingMessage || 'Happy exploring.')}</div>
+            <div class="celebration-actions">
+              <div style="color: var(--muted); font-size: 13px;">Your new organization is ready to use immediately.</div>
+              <button type="button" class="btn btn-primary celebration-dismiss" data-trial-welcome-close>Start Exploring</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      modal.hidden = false;
+      document.body.style.overflow = 'hidden';
+      requestAnimationFrame(() => modal.classList.add('active'));
+
+      if (modal.__trialWelcomeClickHandler) {
+        modal.removeEventListener('click', modal.__trialWelcomeClickHandler);
+      }
+      modal.__trialWelcomeClickHandler = (event) => {
+        if (event.target === modal || event.target.closest('[data-trial-welcome-close]')) {
+          closeTrialWelcome();
+        }
+      };
+      modal.addEventListener('click', modal.__trialWelcomeClickHandler);
+
+      window.addEventListener('keydown', handleTrialWelcomeEscape);
+    }
+
+    function showCreateModal() {
+      const modal = document.getElementById('createModal');
+      if (modal) {
+        modal.classList.add('active');
+      }
+    }
+
+    function hideCreateModal() {
+      const modal = document.getElementById('createModal');
+      if (modal) {
+        modal.classList.remove('active');
+      }
+    }
+
+    async function acceptDashboardInvite(button) {
+      const inviteId = button?.dataset?.inviteId;
+      const orgName = button?.dataset?.orgName || 'this organization';
+      if (!inviteId) return;
+
+      if (!confirm(`Accept invitation to join ${orgName}?`)) return;
+
+      button.disabled = true;
+      button.textContent = 'Accepting...';
+
+      try {
+        const response = await fetch(`/api/invitations/accept/${inviteId}`, {
+          method: 'POST',
+          credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to accept invitation');
+        }
+
+        window.location.href = '/';
+      } catch (error) {
+        alert(error.message || 'Failed to accept invitation');
+        button.disabled = false;
+        button.textContent = 'Accept Invite';
+      }
+    }
+
+    const createForm = document.getElementById('createForm');
+    if (createForm) {
+      createForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(createForm);
+
+        try {
+          const response = await fetch('/api/organizations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              name: formData.get('name'),
+              description: formData.get('description')
+            })
+          });
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to create organization');
+          }
+
+          persistTrialWelcome(data.trialWelcome);
+          window.location.href = '/';
+        } catch (error) {
+          alert(error.message || 'Failed to create organization');
+        }
+      });
+    }
+
+    const createModal = document.getElementById('createModal');
+    if (createModal) {
+      createModal.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal')) {
+          hideCreateModal();
+        }
+      });
+    }
+
+    const pendingTrialWelcome = consumeTrialWelcome();
+    if (pendingTrialWelcome) {
+      showTrialWelcome(pendingTrialWelcome);
+    }
+
     function openOrgModal() {
       const modal = document.getElementById('customOrgModal');
       modal.classList.add('active');

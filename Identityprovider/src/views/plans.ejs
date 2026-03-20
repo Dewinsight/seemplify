@@ -244,6 +244,26 @@
       color: var(--text);
     }
 
+    .plans-alert {
+      max-width: 720px;
+      margin: 0 auto 24px;
+      padding: 16px 18px;
+      border-radius: 12px;
+      border: 1px solid rgba(245, 158, 11, 0.28);
+      background: rgba(245, 158, 11, 0.1);
+      color: #f59e0b;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .plan-cta-note {
+      margin-top: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
+      text-align: center;
+    }
+
     @media (max-width: 768px) {
       .plans-header h1 {
         font-size: 24px;
@@ -282,6 +302,10 @@
       <h1>Choose Your Plan</h1>
       <p>Select the plan that best fits your organization's needs. All plans include secure single sign-on and organization management.</p>
     </div>
+
+    <% if (typeof errorMessage !== 'undefined' && errorMessage) { %>
+      <div class="plans-alert"><%= errorMessage %></div>
+    <% } %>
 
     <% if (typeof currentSubscription !== 'undefined' && currentSubscription) { %>
       <div style="text-align: center; margin-bottom: 32px;">
@@ -411,14 +435,15 @@
               </li>
             </ul>
 
-            <% if (typeof user !== 'undefined' && user && typeof organization !== 'undefined' && organization) { %>
-              <% if (currentSubscription && currentSubscription.plan._id.toString() === plan._id.toString()) { %>
-                <button class="plan-cta plan-cta-secondary" disabled>Current Plan</button>
-              <% } else { %>
-                <a href="/request-plan/<%= plan._id %>" class="plan-cta plan-cta-primary">
-                  Request This Plan
-                </a>
-              <% } %>
+            <% if (currentSubscription && currentSubscription.plan._id.toString() === plan._id.toString()) { %>
+              <button class="plan-cta plan-cta-secondary" disabled>Current Plan</button>
+            <% } else if (plan.isRequestable === false) { %>
+              <button class="plan-cta plan-cta-secondary" disabled>Admin Assigned Only</button>
+              <div class="plan-cta-note">This plan cannot be requested or renewed by organizations directly.</div>
+            <% } else if (typeof user !== 'undefined' && user && typeof organization !== 'undefined' && organization) { %>
+              <a href="/request-plan/<%= plan._id %>" class="plan-cta plan-cta-primary">
+                Request This Plan
+              </a>
             <% } else if (typeof user !== 'undefined' && user) { %>
               <a href="/organizations" class="plan-cta plan-cta-secondary">
                 Select an Organization First

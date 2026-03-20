@@ -114,6 +114,9 @@
                     <% if (plan.isFeatured) { %>
                       <span class="status-badge" style="background: rgba(245,158,11,0.1); color: #f59e0b; margin-left: 4px;">Featured</span>
                     <% } %>
+                    <% if (plan.isRequestable === false) { %>
+                      <span class="status-badge" style="background: rgba(15,23,42,0.08); color: var(--muted); margin-left: 4px;">Admin Assigned Only</span>
+                    <% } %>
                   </td>
                   <td>
                     <div style="display: flex; gap: 8px;">
@@ -306,6 +309,10 @@
               <span>Public</span>
             </label>
             <label class="admin-form-checkbox">
+              <input type="checkbox" id="isRequestable" name="isRequestable" checked>
+              <span>Requestable</span>
+            </label>
+            <label class="admin-form-checkbox">
               <input type="checkbox" id="isFeatured" name="isFeatured">
               <span>Featured</span>
             </label>
@@ -393,6 +400,7 @@
           document.getElementById('badgeText').value = plan.badgeText || '';
           document.getElementById('isActive').checked = plan.isActive;
           document.getElementById('isPublic').checked = plan.isPublic;
+          document.getElementById('isRequestable').checked = plan.isRequestable !== false;
           document.getElementById('isFeatured').checked = plan.isFeatured;
 
           const features = plan.features || {};
@@ -472,6 +480,7 @@
         badgeText: document.getElementById('badgeText').value,
         isActive: document.getElementById('isActive').checked,
         isPublic: document.getElementById('isPublic').checked,
+        isRequestable: document.getElementById('isRequestable').checked,
         isFeatured: document.getElementById('isFeatured').checked,
         hideHubCards: Array.from(document.querySelectorAll('[name="hideHubCards"]:checked')).map(cb => cb.value),
         showComingSoonCards: Array.from(document.querySelectorAll('[name="showComingSoonCards"]:checked')).map(cb => cb.value)
