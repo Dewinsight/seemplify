@@ -81,15 +81,14 @@ export default function AfricaPage() {
       <div className="mx-auto max-w-6xl">
         <div className="max-w-4xl">
           <p className="text-xs uppercase tracking-[0.35em] text-emerald-700 dark:text-emerald-300">
-            Africa SEO Hub
+            Africa Coverage
           </p>
           <h1 className="mt-4 font-display text-5xl tracking-tight md:text-6xl">
             HR software for Nigeria, Ghana, Kenya, South Africa, and English-speaking Africa.
           </h1>
           <p className="mt-6 max-w-3xl text-lg text-zinc-700 dark:text-white/75">
-            This page organizes Seemplify&apos;s market relevance for companies across African
-            growth markets. Use the country pages below for more specific search intent and local
-            relevance.
+            Explore how Seemplify supports HR teams across key African growth markets. Use the
+            country pages below to see the product in the context of your operating footprint.
           </p>
         </div>
 
@@ -121,9 +120,8 @@ export default function AfricaPage() {
               Built for English-speaking African teams beyond the major hubs.
             </h2>
             <p className="mt-4 text-zinc-700 dark:text-white/75">
-              The strategy is not limited to four markets. Seemplify can target multi-country HR
-              demand across English-speaking Africa with one platform narrative and country-specific
-              supporting pages where search demand justifies it.
+              Seemplify is designed for regional teams that need consistent recruiting, onboarding,
+              employee operations, leave, and performance workflows across multiple countries.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               {broaderEnglishSpeakingAfricanCountries.map((country) => (
@@ -138,17 +136,17 @@ export default function AfricaPage() {
           </div>
 
           <div className="rounded-3xl border border-black/10 bg-[#0b2f29] p-10 text-white dark:border-white/10">
-            <p className="text-xs uppercase tracking-[0.35em] text-white/60">Search Intent</p>
+            <p className="text-xs uppercase tracking-[0.35em] text-white/60">What Teams Need</p>
             <h2 className="mt-4 font-display text-4xl">
-              Capture regional, country, and solution-aware queries together.
+              Core priorities for growing HR teams across Africa.
             </h2>
             <ul className="mt-6 grid gap-4 text-sm text-white/75">
-              <li>HR software Africa</li>
-              <li>HR software Nigeria</li>
-              <li>HR software Ghana</li>
-              <li>HR software Kenya</li>
-              <li>HR software South Africa</li>
-              <li>HRIS for African companies</li>
+              <li>Faster hiring coordination</li>
+              <li>Cleaner employee records</li>
+              <li>Consistent onboarding journeys</li>
+              <li>Reliable leave and approval workflows</li>
+              <li>Performance management at scale</li>
+              <li>Multi-country operational visibility</li>
             </ul>
           </div>
         </section>

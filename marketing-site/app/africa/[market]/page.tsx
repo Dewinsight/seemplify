@@ -161,10 +161,10 @@ export default async function MarketPage({ params }: MarketPageProps) {
         <section className="mt-16 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-3xl border border-black/10 bg-white p-10 dark:border-white/10 dark:bg-white/[0.04]">
             <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">
-              Why This Page Exists
+              Why Teams Choose Seemplify
             </p>
             <h2 className="mt-4 font-display text-4xl">
-              Regional relevance matters for B2B HR search intent.
+              How Seemplify supports growing teams in {page.country}.
             </h2>
             <p className="mt-4 text-zinc-700 dark:text-white/75">{page.description}</p>
             <div className="mt-8 grid gap-4">

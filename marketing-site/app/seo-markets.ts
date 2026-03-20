@@ -194,9 +194,9 @@ export const homeFaqs: SeoFaq[] = [
 
 export const africaFaqs: SeoFaq[] = [
   {
-    question: 'Why create dedicated HR software pages for African markets?',
+    question: 'How does Seemplify support teams across multiple African markets?',
     answer:
-      'Dedicated market pages help companies evaluate Seemplify against the needs of their region while also making it easier for search engines to understand the platform’s relevance to African HR teams.',
+      'Seemplify gives regional teams one platform for recruiting, onboarding, employee operations, leave, performance management, and internal coordination across multiple African markets.',
   },
   {
     question: 'Which countries does Seemplify target in English-speaking Africa?',

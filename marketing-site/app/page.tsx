@@ -650,11 +650,11 @@ export default function HomePage() {
       { label: 'Avg. Launch Time', value: '14 days' },
     ]
   const africaSectionTitle = personalizedMarket
-    ? `Country pages and search journeys for ${personalizedMarket.country} and the wider region.`
-    : 'Local landing pages for African HR search demand.'
+    ? `Support teams in ${personalizedMarket.country} while staying aligned across the wider region.`
+    : 'Built for teams operating across Africa with local context where it matters.'
   const africaSectionDescription = personalizedMarket
-    ? `We detected interest from ${personalizedMarket.country}, so this visit highlights that market while keeping the broader Africa hub and global product narrative available.`
-    : 'Search visibility improves when the site has dedicated, indexable pages for high-intent markets. Seemplify now has market pages for Nigeria, Ghana, Kenya, and South Africa, supported by a broader Africa hub.'
+    ? `This visit is highlighting ${personalizedMarket.country}, while still giving you access to Seemplify's broader Africa coverage for regional and multi-country teams.`
+    : 'Whether you manage one country or several, Seemplify gives HR teams a consistent operating model across Nigeria, Ghana, Kenya, South Africa, and other English-speaking African markets.'
   const prioritizedMarkets = personalizedMarket
     ? [
       personalizedMarket,
@@ -1206,7 +1206,7 @@ export default function HomePage() {
           <div className="container relative z-10 mx-auto px-6">
             <div className="grid gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
               <div>
-                <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">Regional SEO</p>
+                <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">Regional Coverage</p>
                 <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
                   {africaSectionTitle}
                 </h2>
@@ -1217,12 +1217,12 @@ export default function HomePage() {
                   <InfoCard
                     eyebrow="Primary Markets"
                     title="Nigeria, Ghana, Kenya, South Africa"
-                    description="Dedicated URLs target country-level HR software queries with region-specific copy, metadata, and FAQs."
+                    description="Explore country-specific pages with relevant workflows, examples, and FAQs for each market."
                   />
                   <InfoCard
                     eyebrow="Broader Reach"
                     title="English-Speaking Africa"
-                    description="The homepage and Africa hub also target multi-country search demand across English-speaking African markets."
+                    description="Support distributed teams across English-speaking African markets with one consistent operating system."
                   />
                 </div>
 
@@ -1243,10 +1243,10 @@ export default function HomePage() {
                   href="/africa"
                   className="rounded-3xl border border-black/10 bg-[#0b2f29] p-8 text-white transition hover:-translate-y-1 dark:border-white/10"
                 >
-                  <p className="text-xs uppercase tracking-[0.35em] text-white/60">Hub Page</p>
+                  <p className="text-xs uppercase tracking-[0.35em] text-white/60">Africa Overview</p>
                   <h3 className="mt-4 font-display text-3xl">HR Software for Africa</h3>
                   <p className="mt-4 text-sm text-white/75">
-                    Regional overview page targeting Africa-wide and English-speaking Africa queries.
+                    See how Seemplify supports multi-country HR teams across Africa.
                   </p>
                 </Link>
 
