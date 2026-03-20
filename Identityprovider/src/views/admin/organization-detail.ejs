@@ -107,6 +107,54 @@
       letter-spacing: 0.04em;
     }
 
+    .org-invite-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .org-invite-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      background: var(--panel-strong);
+      display: grid;
+      gap: 10px;
+    }
+
+    .org-invite-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .org-invite-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .org-invite-meta {
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .org-invite-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .org-invite-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+
     @media (max-width: 1100px) {
       .org-detail-grid {
         grid-template-columns: 1fr;
@@ -132,6 +180,8 @@
   <% const statusBadgeClass = organization.subscriptionStatus === 'none' ? 'cancelled' : (organization.subscriptionStatus || 'pending'); %>
   <% const launchItems = appLaunches || []; %>
   <% const onboardingItems = onboardingAssignments || []; %>
+  <% const inviteItems = pendingInvitations || []; %>
+  <% const inviteTeamOptions = inviteTeams || []; %>
   <% const successfulLaunches = launchItems.filter(item => item.isSuccessful).length; %>
   <% const onboardingInProgress = onboardingSummary?.inProgress || 0; %>
 
@@ -150,6 +200,13 @@
           <a href="/admin/requests" class="btn btn-secondary">Requests</a>
         </div>
       </div>
+
+      <% if (notice) { %>
+        <div class="alert <%= noticeType === 'error' ? 'alert-danger' : 'alert-success' %>">
+          <span class="alert-icon"><%= noticeType === 'error' ? '⚠' : '✓' %></span>
+          <span><%= notice %></span>
+        </div>
+      <% } %>
 
       <div class="admin-stats-grid">
         <div class="admin-stat-card">
@@ -179,6 +236,10 @@
           <div class="admin-stat-label">Onboarding</div>
           <div class="admin-stat-value"><%= onboardingItems.length %></div>
           <div class="org-muted"><%= onboardingInProgress %> in progress</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Pending Invites</div>
+          <div class="admin-stat-value"><%= inviteItems.length %></div>
         </div>
       </div>
 
@@ -428,6 +489,99 @@
         </section>
 
         <aside class="org-detail-stack">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Organization Invitations</div>
+            </div>
+
+            <form method="post" action="/admin/organizations/<%= organization._id %>/invitations" class="org-invite-form">
+              <div class="admin-form-row">
+                <div class="admin-form-group">
+                  <label class="admin-form-label" for="invite-email">Email</label>
+                  <input id="invite-email" name="email" type="email" class="admin-form-input" placeholder="new.member@example.com" required>
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label" for="invite-role">Role</label>
+                  <select id="invite-role" name="role" class="admin-form-select" required>
+                    <option value="recruiter">Recruiter</option>
+                    <option value="staff">Staff</option>
+                    <option value="interviewer">Interviewer</option>
+                    <option value="hr_manager">HR Manager</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="admin-form-row">
+                <div class="admin-form-group">
+                  <label class="admin-form-label" for="invite-designation">Designation</label>
+                  <input id="invite-designation" name="designation" type="text" class="admin-form-input" placeholder="Product Designer" required>
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label" for="invite-employee-id">Employee ID</label>
+                  <input id="invite-employee-id" name="employeeId" type="text" class="admin-form-input" placeholder="Optional">
+                </div>
+              </div>
+
+              <div class="admin-form-group">
+                <label class="admin-form-label" for="invite-team">Team</label>
+                <select id="invite-team" name="team" class="admin-form-select" <%= inviteTeamOptions.length === 0 ? 'disabled' : 'required' %>>
+                  <% if (inviteTeamOptions.length === 0) { %>
+                    <option value="">No teams available</option>
+                  <% } else { %>
+                    <option value="">Select a team</option>
+                    <% inviteTeamOptions.forEach(team => { %>
+                      <option value="<%= team.id %>"><%= team.name %> (<%= team.departmentName %>)</option>
+                    <% }) %>
+                  <% } %>
+                </select>
+                <% if (inviteTeamOptions.length === 0) { %>
+                  <div class="org-muted" style="margin-top: 6px;">Create at least one team in this organization before sending invites.</div>
+                <% } %>
+              </div>
+
+              <div class="org-invite-actions">
+                <div class="org-muted">New invites grant access to all assigned workspace apps by default.</div>
+                <button type="submit" class="btn btn-primary" <%= inviteTeamOptions.length === 0 ? 'disabled' : '' %>>Send Invite</button>
+              </div>
+            </form>
+
+            <div style="height: 1px; background: var(--border); margin: 20px 0;"></div>
+
+            <% if (inviteItems.length > 0) { %>
+              <div class="org-invite-list">
+                <% inviteItems.forEach(invite => { %>
+                  <div class="org-invite-item">
+                    <div class="org-invite-header">
+                      <div>
+                        <div class="org-invite-title"><%= invite.email %></div>
+                        <div class="org-muted"><%= invite.role.replace(/_/g, ' ') %> · <%= invite.designation %></div>
+                      </div>
+                      <span class="status-badge status-badge--pending">pending</span>
+                    </div>
+                    <div class="org-invite-meta">
+                      <span>Department: <%= invite.departmentName %></span>
+                      <span>Team: <%= invite.teamName %></span>
+                      <% if (invite.employeeId) { %><span>Employee ID: <%= invite.employeeId %></span><% } %>
+                      <span>Invited by: <%= invite.invitedBy?.profile?.name || invite.invitedBy?.email || 'System' %></span>
+                      <span>Expires: <%= invite.expiresAt ? new Date(invite.expiresAt).toLocaleString() : 'N/A' %></span>
+                    </div>
+                    <div class="org-invite-actions">
+                      <div class="org-muted">Created <%= invite.createdAt ? new Date(invite.createdAt).toLocaleString() : 'N/A' %></div>
+                      <form method="post" action="/admin/organizations/<%= organization._id %>/invitations/<%= invite._id %>/reminder">
+                        <button type="submit" class="btn btn-sm btn-secondary">Send Reminder</button>
+                      </form>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="admin-empty" style="padding: 16px 0 0;">
+                <p>No pending invitations for this organization.</p>
+              </div>
+            <% } %>
+          </div>
+
           <div class="admin-card">
             <div class="admin-card-header">
               <div class="admin-card-title">Organization Overview</div>

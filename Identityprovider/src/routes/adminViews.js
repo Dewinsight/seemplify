@@ -8,8 +8,11 @@ import Subscription from '../models/Subscription.js'
 import SubscriptionRequest from '../models/SubscriptionRequest.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import AppLaunchActivity from '../models/AppLaunchActivity.js'
+import { Team } from '../models/Team.js'
+import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { buildRecruiterAdminLaunchUrl } from '../services/recruiterAdminSsoService.js'
 import { getWorkforceOperationsAnalytics } from '../services/adminAnalyticsService.js'
+import { emailService } from '../services/emailService.js'
 
 const router = express.Router()
 const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
@@ -22,6 +25,82 @@ const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
 const SIMPLE_LMS_EXTERNAL_WORKSPACE_URL = SIMPLE_LMS_EXTERNAL_BASE_URL.endsWith('/simple-lms')
   ? SIMPLE_LMS_EXTERNAL_BASE_URL
   : `${SIMPLE_LMS_EXTERNAL_BASE_URL}/simple-lms`
+
+const INVITE_ROLES = ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
+
+function normalizeEmployeeId(value = '') {
+  return String(value || '').trim()
+}
+
+function buildOrgDetailRedirectPath(organizationId, notice, noticeType = 'success') {
+  const params = new URLSearchParams()
+  if (notice) params.set('notice', notice)
+  if (noticeType) params.set('noticeType', noticeType)
+  return `/admin/organizations/${organizationId}?${params.toString()}`
+}
+
+async function hasPendingInviteWithEmployeeId(organizationId, employeeId, excludeInvitationId = null) {
+  const normalizedEmployeeId = normalizeEmployeeId(employeeId)
+  if (!normalizedEmployeeId) return false
+
+  const pendingInvites = await OrganizationInvite.find({
+    organization: organizationId,
+    status: 'pending',
+    expiresAt: { $gt: new Date() },
+    employeeId: { $exists: true, $ne: null }
+  }).select('_id employeeId')
+
+  const targetKey = normalizedEmployeeId.toLowerCase()
+  return pendingInvites.some((invite) => {
+    if (excludeInvitationId && invite._id.toString() === excludeInvitationId.toString()) {
+      return false
+    }
+    return String(invite.employeeId || '').trim().toLowerCase() === targetKey
+  })
+}
+
+async function sendOrganizationInviteEmail({
+  organizationName,
+  inviterName,
+  email,
+  role,
+  designation,
+  employeeId,
+  departmentName,
+  teamName,
+  inviteUrl,
+  isReminder = false
+}) {
+  const heading = isReminder
+    ? `Reminder: You've been invited to join ${organizationName}`
+    : `You've been invited to join ${organizationName}`
+  const intro = isReminder
+    ? 'This is a reminder that you have a pending invitation to join this organization on AIIN Identity.'
+    : `<strong>${inviterName}</strong> has invited you to join their organization on AIIN Identity.`
+
+  await emailService.sendEmail({
+    to: email,
+    subject: heading,
+    html: `
+      <h2>${heading}</h2>
+      <p>${intro}</p>
+      <p><strong>Role:</strong> ${role}</p>
+      <p><strong>Designation:</strong> ${designation}</p>
+      ${employeeId ? `<p><strong>Employee ID:</strong> ${employeeId}</p>` : ''}
+      <p><strong>Department:</strong> ${departmentName}</p>
+      <p><strong>Team:</strong> ${teamName}</p>
+      <p><strong>Access:</strong> All assigned workspace apps</p>
+      <p>Click the link below to accept the invitation:</p>
+      <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
+      <p style="color: #666; font-size: 14px; margin-top: 16px;">
+        Or copy and paste this link into your browser:<br>
+        <a href="${inviteUrl}" style="color: #60a5fa; word-break: break-all;">${inviteUrl}</a>
+      </p>
+      <p style="color: #666; font-size: 14px;">This invitation expires in 7 days.</p>
+      ${isReminder ? '' : `<p style="color: #666; font-size: 12px;">If you didn't expect this invitation, you can safely ignore this email.</p>`}
+    `
+  })
+}
 
 /**
  * Admin View Routes
@@ -236,8 +315,10 @@ router.get('/organizations', async (req, res) => {
 router.get('/organizations/:organizationId', async (req, res) => {
   try {
     const organizationId = req.params.organizationId
+    const notice = typeof req.query.notice === 'string' ? req.query.notice.trim() : ''
+    const noticeType = req.query.noticeType === 'error' ? 'error' : 'success'
 
-    const [organization, subscriptions, requests, onboardingAssignmentsRaw, appLaunchesRaw] = await Promise.all([
+    const [organization, subscriptions, requests, onboardingAssignmentsRaw, appLaunchesRaw, pendingInvitationsRaw, organizationTeams] = await Promise.all([
       Organization.findById(organizationId)
         .populate('owner', 'email profile.name')
         .populate('members.account', 'email profile.name')
@@ -271,6 +352,20 @@ router.get('/organizations/:organizationId', async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(60)
         .populate('account', 'email profile.name')
+      ,
+      OrganizationInvite.find({
+        organization: organizationId,
+        status: 'pending',
+        expiresAt: { $gt: new Date() }
+      })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .populate('invitedBy', 'email profile.name')
+        .populate('team', 'name'),
+      Team.find({ organization: organizationId })
+        .select('name department')
+        .sort({ name: 1 })
+        .lean()
     ])
 
     if (!organization) {
@@ -369,6 +464,23 @@ router.get('/organizations/:organizationId', async (req, res) => {
     const appLaunchSummary = Array.from(appLaunchSummaryMap.values())
       .sort((a, b) => b.totalLaunches - a.totalLaunches)
 
+    const pendingInvitations = pendingInvitationsRaw.map((invitation) => {
+      const invitationObject = invitation.toObject()
+      const department = organization.getDepartmentById(invitationObject.department)
+
+      return {
+        ...invitationObject,
+        departmentName: department?.name || 'Unknown department',
+        teamName: invitationObject.team?.name || 'Unknown team'
+      }
+    })
+
+    const inviteTeams = organizationTeams.map((team) => ({
+      id: team._id.toString(),
+      name: team.name,
+      departmentName: organization.getDepartmentById(team.department)?.name || 'Unknown department'
+    }))
+
     const activity = [
       ...requests.map(request => ({
         id: request._id,
@@ -413,6 +525,10 @@ router.get('/organizations/:organizationId', async (req, res) => {
       requests,
       onboardingAssignments,
       onboardingSummary,
+      pendingInvitations,
+      inviteTeams,
+      notice,
+      noticeType,
       appLaunches,
       appLaunchSummary,
       activity,
@@ -424,6 +540,185 @@ router.get('/organizations/:organizationId', async (req, res) => {
       title: 'Error',
       message: 'Failed to load organization details'
     })
+  }
+})
+
+router.post('/organizations/:organizationId/invitations', async (req, res) => {
+  const organizationId = req.params.organizationId
+
+  try {
+    const organization = await Organization.findById(organizationId)
+
+    if (!organization) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Organization not found', 'error'))
+    }
+
+    const {
+      email = '',
+      role = 'recruiter',
+      designation = '',
+      employeeId: rawEmployeeId = '',
+      team: teamId = ''
+    } = req.body || {}
+
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    const normalizedRole = String(role || '').trim()
+    const normalizedDesignation = String(designation || '').trim()
+    const normalizedEmployeeId = normalizeEmployeeId(rawEmployeeId)
+
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'A valid email address is required', 'error'))
+    }
+
+    if (!INVITE_ROLES.includes(normalizedRole)) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Please select a valid organization role', 'error'))
+    }
+
+    if (!normalizedDesignation) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Designation is required', 'error'))
+    }
+
+    if (!teamId) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Please select a team for this invitation', 'error'))
+    }
+
+    const invitedTeam = await Team.findById(teamId).select('name organization department').lean()
+    if (!invitedTeam || invitedTeam.organization.toString() !== organizationId) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Selected team is invalid for this organization', 'error'))
+    }
+
+    const departmentId = invitedTeam.department?.toString() || null
+    const department = departmentId ? organization.getDepartmentById(departmentId) : null
+    if (!department) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Selected team must belong to a valid department', 'error'))
+    }
+
+    const existingAccount = await Account.findOne({ email: normalizedEmail })
+    if (existingAccount) {
+      const isActiveMember = organization.members.find(
+        (member) => member.account.toString() === existingAccount._id.toString() && member.status === 'active'
+      )
+
+      if (isActiveMember) {
+        return res.redirect(buildOrgDetailRedirectPath(organizationId, 'That user is already an active member of this organization', 'error'))
+      }
+    }
+
+    try {
+      organization.assertActiveEmployeeIdAvailable(normalizedEmployeeId)
+    } catch (validationError) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, validationError.message, 'error'))
+    }
+
+    if (await hasPendingInviteWithEmployeeId(organizationId, normalizedEmployeeId)) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Employee ID is already pending on another invitation', 'error'))
+    }
+
+    const hasPendingInvite = await OrganizationInvite.hasPendingInvite(organizationId, normalizedEmail)
+    if (hasPendingInvite) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'An invitation is already pending for this email', 'error'))
+    }
+
+    const { plainToken, tokenHash } = await OrganizationInvite.generateToken()
+    const invitation = await OrganizationInvite.create({
+      organization: organizationId,
+      email: normalizedEmail,
+      role: normalizedRole,
+      designation: normalizedDesignation,
+      employeeId: normalizedEmployeeId || undefined,
+      department: departmentId,
+      team: invitedTeam._id,
+      appAccess: { mode: 'all', appIds: [] },
+      tokenHash,
+      invitedBy: req.user._id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    })
+
+    const inviteUrl = `${process.env.ISSUER_URL}/invitations/accept?token=${plainToken}`
+    try {
+      await sendOrganizationInviteEmail({
+        organizationName: organization.name,
+        inviterName: req.user.profile?.name || req.user.email,
+        email: normalizedEmail,
+        role: normalizedRole,
+        designation: normalizedDesignation,
+        employeeId: normalizedEmployeeId,
+        departmentName: department.name,
+        teamName: invitedTeam.name,
+        inviteUrl
+      })
+    } catch (emailError) {
+      console.error('Admin organization invite email failed:', emailError)
+      return res.redirect(buildOrgDetailRedirectPath(
+        organizationId,
+        `Invitation created for ${invitation.email}, but the email could not be sent`,
+        'error'
+      ))
+    }
+
+    return res.redirect(buildOrgDetailRedirectPath(organizationId, `Invitation sent to ${invitation.email}`))
+  } catch (error) {
+    console.error('Admin organization invite error:', error)
+    return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Failed to send invitation', 'error'))
+  }
+})
+
+router.post('/organizations/:organizationId/invitations/:invitationId/reminder', async (req, res) => {
+  const organizationId = req.params.organizationId
+
+  try {
+    const invitation = await OrganizationInvite.findOne({
+      _id: req.params.invitationId,
+      organization: organizationId
+    }).populate('organization', 'name').populate('team', 'name')
+
+    if (!invitation) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Invitation not found', 'error'))
+    }
+
+    if (invitation.status !== 'pending' || invitation.expiresAt <= new Date()) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Invitation is no longer pending', 'error'))
+    }
+
+    const organization = await Organization.findById(organizationId)
+    if (!organization) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Organization not found', 'error'))
+    }
+
+    const department = organization.getDepartmentById(invitation.department)
+    if (!department) {
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Invitation department could not be resolved', 'error'))
+    }
+
+    const { plainToken, tokenHash } = await OrganizationInvite.generateToken()
+    invitation.tokenHash = tokenHash
+    invitation.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    await invitation.save()
+
+    const inviteUrl = `${process.env.ISSUER_URL}/invitations/accept?token=${plainToken}`
+
+    try {
+      await sendOrganizationInviteEmail({
+        organizationName: invitation.organization?.name || organization.name,
+        inviterName: req.user.profile?.name || req.user.email,
+        email: invitation.email,
+        role: invitation.role,
+        designation: invitation.designation,
+        employeeId: invitation.employeeId,
+        departmentName: department.name,
+        teamName: invitation.team?.name || 'Unknown team',
+        inviteUrl,
+        isReminder: true
+      })
+    } catch (emailError) {
+      console.error('Admin organization invite reminder failed:', emailError)
+      return res.redirect(buildOrgDetailRedirectPath(organizationId, `Failed to send reminder to ${invitation.email}`, 'error'))
+    }
+
+    return res.redirect(buildOrgDetailRedirectPath(organizationId, `Reminder sent to ${invitation.email}`))
+  } catch (error) {
+    console.error('Admin organization invite reminder error:', error)
+    return res.redirect(buildOrgDetailRedirectPath(organizationId, 'Failed to send invitation reminder', 'error'))
   }
 })
 
