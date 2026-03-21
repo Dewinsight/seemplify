@@ -715,9 +715,9 @@ export default function HomePage() {
       <main className="relative z-10">
         <section className="relative overflow-hidden pt-32 pb-24 bg-[#f8efe6] dark:bg-transparent">
           <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#f8efe6] via-[#f8efe6]/60 to-transparent dark:from-transparent dark:via-transparent" />
-          <div className="container relative z-10 mx-auto px-6">
-            <div className="grid gap-16 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-              <div>
+          <div className="container relative z-10 mx-auto max-w-[1520px] px-6 min-[1360px]:px-8 2xl:px-10">
+            <div className="grid gap-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:items-center xl:gap-10 2xl:gap-16">
+              <div className="max-w-2xl min-[1360px]:max-[1600px]:max-w-[38rem]">
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -732,7 +732,7 @@ export default function HomePage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-                  className="mt-6 font-display text-5xl leading-[1.05] tracking-tight text-[#35184f] dark:text-white md:text-7xl"
+                  className="mt-6 font-display text-[clamp(3rem,4.7vw,5.15rem)] leading-[0.98] tracking-tight text-[#35184f] dark:text-white"
                 >
                   {heroTitle}
                   <span className="block bg-gradient-to-r from-[#4c1d95] via-[#7c3aed] to-[#a855f7] bg-clip-text text-transparent dark:from-white dark:via-violet-200 dark:to-fuchsia-200">
@@ -744,7 +744,7 @@ export default function HomePage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.9, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="mt-6 max-w-xl text-lg text-[#5f4d74] dark:text-white/75"
+                  className="mt-6 max-w-xl text-base leading-7 text-[#5f4d74] dark:text-white/75 md:text-lg"
                 >
                   {heroDescription}
                 </motion.p>
@@ -788,13 +788,14 @@ export default function HomePage() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                className="relative mx-auto flex w-full max-w-[560px] items-center justify-center lg:max-w-[620px] xl:max-w-[680px] min-[1360px]:max-[1600px]:max-w-[600px] 2xl:max-w-[760px]"
               >
                 <Image
                   src={HeroBannerBeautiful}
                   alt="Seemplify Platform Overview"
                   width={1000}
                   height={800}
-                  className="block w-full h-auto object-contain dark:hidden"
+                  className="mx-auto block h-auto w-full object-contain dark:hidden"
                   priority
                   placeholder="blur"
                 />
@@ -803,7 +804,7 @@ export default function HomePage() {
                   alt="Seemplify Platform Overview (Dark Mode)"
                   width={1000}
                   height={800}
-                  className="hidden w-full h-auto object-contain dark:block"
+                  className="mx-auto hidden h-auto w-full object-contain dark:block"
                   priority
                   placeholder="blur"
                 />
