@@ -7,9 +7,22 @@
   <style>
     <%- include('../../public/css/idp-theme.css') %>
 
-    .campaign-workspace-grid { display:grid; grid-template-columns:minmax(0, 1.5fr) minmax(340px, .9fr); gap:20px; align-items:start; }
+    .campaign-workspace-grid { display:grid; grid-template-columns:minmax(0, 1.48fr) minmax(320px, .82fr); gap:20px; align-items:start; }
     .campaign-shell { display:grid; gap:18px; }
     .campaign-sticky { position:sticky; top:20px; display:grid; gap:18px; }
+    .campaign-stepper { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; margin:0 0 20px; }
+    .campaign-step-tab { display:flex; align-items:flex-start; gap:12px; width:100%; border:1px solid var(--border); border-radius:18px; padding:14px 16px; background:var(--panel); color:var(--text); cursor:pointer; text-align:left; transition:border-color .18s ease, transform .18s ease, background .18s ease; }
+    .campaign-step-tab:hover { border-color:rgba(99, 102, 241, 0.28); transform:translateY(-1px); }
+    .campaign-step-tab.is-active { border-color:rgba(99, 102, 241, 0.32); background:rgba(99, 102, 241, 0.08); }
+    .campaign-step-index { width:30px; height:30px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:var(--panel-strong); color:#a5b4fc; font-size:12px; font-weight:800; flex:none; }
+    .campaign-step-tab.is-active .campaign-step-index { background:rgba(99, 102, 241, 0.18); color:#c7d2fe; }
+    .campaign-step-copy { display:grid; gap:4px; min-width:0; }
+    .campaign-step-label { color:var(--text); font-size:13px; font-weight:700; }
+    .campaign-step-help { color:var(--muted); font-size:12px; line-height:1.5; }
+    .campaign-step-panel { display:none; gap:18px; }
+    .campaign-step-panel.is-active { display:grid; }
+    .campaign-step-actions { display:flex; justify-content:space-between; gap:12px; margin-top:4px; }
+    .campaign-step-actions-right { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
     .campaign-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
     .campaign-form-grid--triple { grid-template-columns:repeat(3, minmax(0, 1fr)); }
     .campaign-toolbar { display:flex; flex-wrap:wrap; gap:10px; }
@@ -99,13 +112,28 @@
     .campaign-preview-table { width:100%; min-width:540px; border-collapse:collapse; }
     .campaign-preview-table th, .campaign-preview-table td { padding:10px 12px; border-bottom:1px solid rgba(148,163,184,.12); text-align:left; vertical-align:top; font-size:13px; }
     .campaign-preview-table th { background:var(--panel-strong); color:var(--text); font-weight:700; }
+    .campaign-review-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+    .campaign-review-card { padding:16px; border-radius:18px; border:1px solid var(--border); background:var(--panel-strong); display:grid; gap:12px; }
+    .campaign-checklist { display:grid; gap:10px; }
+    .campaign-check-item { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:12px 14px; border-radius:14px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-check-copy { display:grid; gap:4px; min-width:0; }
+    .campaign-check-title { color:var(--text); font-size:13px; font-weight:700; }
+    .campaign-check-help { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-review-meta { display:grid; gap:10px; }
+    .campaign-review-meta-item { padding:12px 14px; border-radius:14px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-review-meta-item strong { display:block; margin-bottom:6px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .campaign-review-meta-item span { color:var(--text); font-weight:600; line-height:1.5; word-break:break-word; }
+    .campaign-side-guide { display:grid; gap:10px; }
+    .campaign-side-guide-item { padding:12px 14px; border-radius:16px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-side-guide-item strong { display:block; margin-bottom:4px; color:var(--text); font-size:13px; font-weight:700; }
+    .campaign-side-guide-item span { color:var(--muted); font-size:12px; line-height:1.6; }
     .campaign-link-popover { position:fixed; z-index:1200; min-width:260px; padding:12px; border-radius:16px; border:1px solid var(--border); background:var(--panel-solid); box-shadow:0 20px 60px rgba(2,6,23,.35); display:none; gap:10px; }
     .campaign-link-popover.show { display:grid; }
     .campaign-link-popover-actions { display:flex; justify-content:flex-end; gap:8px; }
     .campaign-empty-state { border:1px dashed var(--border); border-radius:18px; padding:18px; color:var(--muted); text-align:center; }
 
     @media (max-width: 1280px) {
-      .campaign-workspace-grid, .campaign-builder-grid, .campaign-html-grid { grid-template-columns:1fr; }
+      .campaign-workspace-grid, .campaign-builder-grid, .campaign-html-grid, .campaign-stepper, .campaign-review-grid { grid-template-columns:1fr; }
       .campaign-sticky { position:static; }
     }
 
@@ -115,12 +143,21 @@
       .campaign-mini-grid,
       .campaign-preview-meta,
       .campaign-mapping-grid,
-      .campaign-selected-grid {
+      .campaign-selected-grid,
+      .campaign-review-grid {
         grid-template-columns:1fr;
       }
 
       .campaign-list-metrics {
         grid-template-columns:repeat(2, minmax(0, 1fr));
+      }
+
+      .campaign-step-actions {
+        flex-direction:column;
+      }
+
+      .campaign-step-actions-right {
+        justify-content:stretch;
       }
     }
   </style>
@@ -149,9 +186,40 @@
         </div>
       </div>
 
+      <nav class="campaign-stepper" id="campaignStepTabs" aria-label="Campaign workflow">
+        <button class="campaign-step-tab is-active" type="button" data-workspace-step-target="setup">
+          <span class="campaign-step-index">1</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Setup</span>
+            <span class="campaign-step-help">Campaign basics, sender details, pacing, tracking, and template choice.</span>
+          </span>
+        </button>
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="content">
+          <span class="campaign-step-index">2</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Content</span>
+            <span class="campaign-step-help">Build the message visually or switch to HTML when you need direct markup control.</span>
+          </span>
+        </button>
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="audience">
+          <span class="campaign-step-index">3</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Audience</span>
+            <span class="campaign-step-help">Upload contacts, map CSV or Excel fields, and attach the right audience.</span>
+          </span>
+        </button>
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="review">
+          <span class="campaign-step-index">4</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Review & Send</span>
+            <span class="campaign-step-help">Run the checklist, send a test, and launch only when the setup is complete.</span>
+          </span>
+        </button>
+      </nav>
+
       <div class="campaign-workspace-grid">
         <section class="campaign-shell">
-          <div class="admin-card">
+          <div class="admin-card campaign-step-panel is-active" data-workspace-step-panel="setup">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Campaign Setup</div>
@@ -235,7 +303,7 @@
             </form>
           </div>
 
-          <div class="admin-card">
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="content">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Email Builder</div>
@@ -279,9 +347,58 @@
               </div>
             </div>
 
-            <div class="campaign-toolbar" style="margin-top:18px;">
+          </div>
+
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="review">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Review & Send</div>
+                <div class="admin-card-subtitle">Check readiness before you send a test or launch the campaign.</div>
+              </div>
+            </div>
+            <div class="campaign-review-grid">
+              <div class="campaign-review-card">
+                <div class="admin-card-title" style="font-size:15px;">Checklist</div>
+                <div id="campaignReviewChecklist" class="campaign-checklist"></div>
+              </div>
+              <div class="campaign-review-card">
+                <div class="admin-card-title" style="font-size:15px;">Campaign Snapshot</div>
+                <div id="campaignReviewHighlights" class="campaign-review-meta"></div>
+              </div>
+            </div>
+            <div class="campaign-toolbar">
               <button id="sendTestBtn" class="btn btn-secondary" type="button">Send Test</button>
               <a id="campaignDetailLink" class="btn btn-secondary" href="#" target="_blank" rel="noopener noreferrer">Open Analytics</a>
+            </div>
+          </div>
+
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Audience Workflow</div>
+                <div class="admin-card-subtitle">Use the audience tools in the right rail to import the file, map the fields, and attach the correct audience.</div>
+              </div>
+            </div>
+            <div class="campaign-side-guide">
+              <div class="campaign-side-guide-item">
+                <strong>Upload</strong>
+                <span>Choose the CSV or Excel file, then extract the headers so the mapper can inspect the sheet correctly.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>Map</strong>
+                <span>Match the imported columns to the campaign fields and confirm the merge tags shown for each one.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>Import</strong>
+                <span>Import the cleaned audience, then confirm the selected audience back in the setup summary before launch.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="campaign-step-actions">
+            <button id="campaignStepPrevBtn" class="btn btn-secondary" type="button">Previous Step</button>
+            <div class="campaign-step-actions-right">
+              <button id="campaignStepNextBtn" class="btn btn-primary" type="button">Next Step</button>
             </div>
           </div>
         </section>
@@ -297,7 +414,7 @@
             <div id="selectedCampaignSummary" class="campaign-selected-card"></div>
           </div>
 
-          <div class="admin-card">
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Audience Studio</div>
@@ -358,7 +475,7 @@
             </div>
           </div>
 
-          <div class="admin-card">
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Audience Library</div>
@@ -368,7 +485,7 @@
             <div id="audienceList" class="campaign-card-stack"></div>
           </div>
 
-          <div class="admin-card">
+          <div class="admin-card campaign-step-panel is-active" data-workspace-step-panel="setup">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Template Library</div>
@@ -378,7 +495,7 @@
             <div id="templateList" class="campaign-card-stack"></div>
           </div>
 
-          <div class="admin-card">
+          <div class="admin-card campaign-step-panel is-active" data-workspace-step-panel="setup">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Sender Health</div>
@@ -386,6 +503,33 @@
               </div>
             </div>
             <div id="senderHealthList" class="campaign-health-list"></div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Workflow Guide</div>
+                <div class="admin-card-subtitle">Use the steps above instead of trying to do everything at once.</div>
+              </div>
+            </div>
+            <div class="campaign-side-guide">
+              <div class="campaign-side-guide-item">
+                <strong>1. Setup</strong>
+                <span>Choose the template, define the sender, and lock down the pacing and tracking basics.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>2. Content</strong>
+                <span>Build the email visually or switch to HTML for direct control over the markup and preview.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>3. Audience</strong>
+                <span>Upload the file, map the fields, verify the merge tags, and import the audience cleanly.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>4. Review & Send</strong>
+                <span>Run the checklist, send a test, and launch only when the sender, content, and audience are all ready.</span>
+              </div>
+            </div>
           </div>
         </aside>
       </div>

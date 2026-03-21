@@ -86,6 +86,12 @@
       sourceFields: []
     }
   ]
+  const CAMPAIGN_WORKSPACE_STEPS = [
+    { key: 'setup', label: 'Setup' },
+    { key: 'content', label: 'Content' },
+    { key: 'audience', label: 'Audience' },
+    { key: 'review', label: 'Review & Send' }
+  ]
 
   const state = {
     campaigns: Array.isArray(boot.campaigns) ? boot.campaigns : [],
@@ -101,12 +107,14 @@
     linkHost: null,
     campaignSearch: '',
     campaignStatusFilter: 'all',
-    audiencePreview: null
+    audiencePreview: null,
+    activeStep: 'setup'
   }
   const workspaceMode = String(boot.workspaceMode || '').trim().toLowerCase()
 
   const els = {
     campaignId: document.getElementById('campaignId'),
+    campaignForm: document.getElementById('campaignForm'),
     campaignName: document.getElementById('campaignName'),
     campaignAudience: document.getElementById('campaignAudience'),
     senderName: document.getElementById('senderName'),
@@ -152,6 +160,8 @@
     audiencePreviewMeta: document.getElementById('audiencePreviewMeta'),
     audiencePreviewTable: document.getElementById('audiencePreviewTable'),
     audienceDerivedVariables: document.getElementById('audienceDerivedVariables'),
+    campaignReviewChecklist: document.getElementById('campaignReviewChecklist'),
+    campaignReviewHighlights: document.getElementById('campaignReviewHighlights'),
     newCampaignBtn: document.getElementById('newCampaignBtn'),
     saveCampaignBtn: document.getElementById('saveCampaignBtn'),
     launchCampaignBtn: document.getElementById('launchCampaignBtn'),
@@ -167,7 +177,11 @@
     campaignStatTotal: document.getElementById('campaignStatTotal'),
     campaignStatAudiences: document.getElementById('campaignStatAudiences'),
     campaignStatTemplates: document.getElementById('campaignStatTemplates'),
-    campaignStatHealthySenders: document.getElementById('campaignStatHealthySenders')
+    campaignStatHealthySenders: document.getElementById('campaignStatHealthySenders'),
+    campaignStepPrevBtn: document.getElementById('campaignStepPrevBtn'),
+    campaignStepNextBtn: document.getElementById('campaignStepNextBtn'),
+    stepTabs: Array.from(document.querySelectorAll('[data-workspace-step-target]')),
+    stepPanels: Array.from(document.querySelectorAll('[data-workspace-step-panel]'))
   }
 
   function clone(value) {
@@ -296,11 +310,31 @@
     }
   }
 
-  function createDraftFromTemplate(template) {
-    const design = clone(template && template.design ? template.design : { version: 1, blocks: defaultBlocks() })
+  function normalizeTemplateContent(template) {
+    const templateContent = template && typeof template.content === 'object' && template.content
+      ? template.content
+      : {}
+    const designMode = String(templateContent.designMode || template?.designMode || 'visual').trim().toLowerCase() === 'html'
+      ? 'html'
+      : 'visual'
+    const design = clone(templateContent.design || template?.design || { version: 1, blocks: defaultBlocks() })
     if (!Array.isArray(design.blocks) || design.blocks.length === 0) {
       design.blocks = defaultBlocks()
     }
+
+    return {
+      subject: String(templateContent.subject || template?.subject || '{{ contact.FIRSTNAME }}, simplify HR operations with Seemplify').trim(),
+      previewText: String(templateContent.previewText || template?.previewText || 'One operating system for recruiting, onboarding, approvals, payroll, and performance.').trim(),
+      replyTo: String(templateContent.replyTo || template?.replyTo || '').trim().toLowerCase(),
+      designMode,
+      design,
+      htmlContent: String(templateContent.htmlContent || template?.htmlContent || ''),
+      textContent: String(templateContent.textContent || template?.textContent || '')
+    }
+  }
+
+  function createDraftFromTemplate(template) {
+    const templateContent = normalizeTemplateContent(template)
 
     return {
       _id: '',
@@ -313,13 +347,13 @@
         readinessReasons: []
       },
       content: {
-        subject: '{{ contact.FIRSTNAME }}, simplify HR operations with Seemplify',
-        previewText: template && template.previewText ? template.previewText : 'One operating system for recruiting, onboarding, approvals, payroll, and performance.',
-        replyTo: '',
-        designMode: 'visual',
-        design,
-        htmlContent: '',
-        textContent: '',
+        subject: templateContent.subject,
+        previewText: templateContent.previewText,
+        replyTo: templateContent.replyTo,
+        designMode: templateContent.designMode,
+        design: templateContent.design,
+        htmlContent: templateContent.htmlContent,
+        textContent: templateContent.textContent,
         template: template
           ? {
             templateId: template._id,
@@ -349,6 +383,23 @@
     return state.templates.find((template) => String(template._id) === value) || state.templates[0] || null
   }
 
+  function getDraftMode(draft) {
+    return String(draft?.content?.designMode || '').trim().toLowerCase() === 'html' ? 'html' : 'visual'
+  }
+
+  function syncModeUi(mode) {
+    const normalizedMode = mode === 'html' ? 'html' : 'visual'
+    const isVisual = normalizedMode === 'visual'
+    state.mode = normalizedMode
+    if (state.draft?.content) {
+      state.draft.content.designMode = normalizedMode
+    }
+    els.visualBuilder.style.display = isVisual ? '' : 'none'
+    els.htmlBuilder.style.display = isVisual ? 'none' : ''
+    els.visualModeBtn.classList.toggle('active', isVisual)
+    els.htmlModeBtn.classList.toggle('active', !isVisual)
+  }
+
   function setDraft(nextDraft) {
     state.draft = nextDraft
     renderForm()
@@ -356,6 +407,8 @@
     renderHtmlEditor()
     updateActionState()
     renderSelectedCampaignSummary()
+    renderReviewPanel()
+    syncModeUi(getDraftMode(nextDraft))
   }
 
   function renderStats() {
@@ -481,6 +534,116 @@
         </div>
       </div>
     `
+  }
+
+  function renderReviewPanel() {
+    if (!els.campaignReviewChecklist || !els.campaignReviewHighlights || !state.draft) return
+
+    const audience = state.audiences.find((entry) => String(entry._id) === String(state.draft.audience || ''))
+    const templateName = state.draft?.content?.template?.name || 'Custom content'
+    const hasHtmlContent = Boolean(String(state.draft?.content?.htmlContent || '').trim())
+    const hasVisualBlocks = Array.isArray(state.draft?.content?.design?.blocks) && state.draft.content.design.blocks.length > 0
+    const hasContent = hasHtmlContent || hasVisualBlocks
+    const hasSender = isValidEmail(state.draft?.sender?.email || '')
+    const hasAudience = Boolean(state.draft?.audience)
+    const hasSubject = Boolean(String(state.draft?.content?.subject || '').trim())
+    const hasTests = Array.isArray(state.draft?.testSendEmails) && state.draft.testSendEmails.length > 0
+
+    const checks = [
+      {
+        title: 'Campaign basics',
+        ok: Boolean(String(state.draft?.name || '').trim()) && hasSubject,
+        help: 'Set the campaign name and subject before you move into send testing.'
+      },
+      {
+        title: 'Sender readiness',
+        ok: hasSender,
+        help: 'Use a valid sender email so tests and launch can run cleanly.'
+      },
+      {
+        title: 'Message content',
+        ok: hasContent,
+        help: 'Add visual blocks or HTML content so the campaign has something to send.'
+      },
+      {
+        title: 'Audience attached',
+        ok: hasAudience,
+        help: 'Select an audience or import one in the Audience step before launch.'
+      },
+      {
+        title: 'Test recipients',
+        ok: hasTests,
+        help: 'Recommended before launch. Add one or more test emails in Setup.'
+      }
+    ]
+
+    els.campaignReviewChecklist.innerHTML = checks.map((check) => `
+      <div class="campaign-check-item">
+        <div class="campaign-check-copy">
+          <div class="campaign-check-title">${escapeHtml(check.title)}</div>
+          <div class="campaign-check-help">${escapeHtml(check.help)}</div>
+        </div>
+        <span class="campaign-pill ${check.ok ? 'green' : 'amber'}">${check.ok ? 'Ready' : 'Needs attention'}</span>
+      </div>
+    `).join('')
+
+    els.campaignReviewHighlights.innerHTML = `
+      <div class="campaign-review-meta-item">
+        <strong>Template</strong>
+        <span>${escapeHtml(templateName)}</span>
+      </div>
+      <div class="campaign-review-meta-item">
+        <strong>Audience</strong>
+        <span>${escapeHtml(audience?.name || 'No audience selected')}</span>
+      </div>
+      <div class="campaign-review-meta-item">
+        <strong>Sender</strong>
+        <span>${escapeHtml(state.draft?.sender?.email || 'Not set')}</span>
+      </div>
+      <div class="campaign-review-meta-item">
+        <strong>Editor Mode</strong>
+        <span>${escapeHtml(getDraftMode(state.draft) === 'html' ? 'HTML' : 'Visual')}</span>
+      </div>
+      <div class="campaign-review-meta-item">
+        <strong>Preview Text</strong>
+        <span>${escapeHtml(state.draft?.content?.previewText || 'Not set')}</span>
+      </div>
+      <div class="campaign-review-meta-item">
+        <strong>Test Recipients</strong>
+        <span>${Array.isArray(state.draft?.testSendEmails) && state.draft.testSendEmails.length > 0 ? escapeHtml(state.draft.testSendEmails.join(', ')) : 'Not set'}</span>
+      </div>
+    `
+  }
+
+  function getWorkspaceStepIndex(stepKey) {
+    return CAMPAIGN_WORKSPACE_STEPS.findIndex((step) => step.key === stepKey)
+  }
+
+  function setActiveWorkspaceStep(stepKey) {
+    if (!els.stepTabs.length || !els.stepPanels.length) return
+    const nextIndex = getWorkspaceStepIndex(stepKey)
+    if (nextIndex < 0) return
+
+    state.activeStep = stepKey
+
+    els.stepTabs.forEach((button) => {
+      button.classList.toggle('is-active', button.getAttribute('data-workspace-step-target') === stepKey)
+    })
+
+    els.stepPanels.forEach((panel) => {
+      panel.classList.toggle('is-active', panel.getAttribute('data-workspace-step-panel') === stepKey)
+    })
+
+    if (els.campaignStepPrevBtn) {
+      els.campaignStepPrevBtn.disabled = nextIndex === 0
+    }
+
+    if (els.campaignStepNextBtn) {
+      const isLastStep = nextIndex === CAMPAIGN_WORKSPACE_STEPS.length - 1
+      const nextLabel = isLastStep ? 'Stay on Review' : `Next: ${CAMPAIGN_WORKSPACE_STEPS[nextIndex + 1].label}`
+      els.campaignStepNextBtn.textContent = nextLabel
+      els.campaignStepNextBtn.disabled = isLastStep
+    }
   }
 
   function renderAudienceOptions() {
@@ -1057,6 +1220,7 @@
     els.visualPreview.innerHTML = blocks.length === 0
       ? '<div class="campaign-empty-state">Add blocks from the palette to build the email.</div>'
       : blocks.map(buildPreviewBlock).join('')
+    renderReviewPanel()
   }
 
   function renderEmailHtmlFromBlocks() {
@@ -1112,6 +1276,7 @@
     }
     els.htmlEditor.value = state.draft.content.htmlContent || ''
     els.htmlPreview.innerHTML = state.draft.content.htmlContent || ''
+    renderReviewPanel()
   }
 
   function updateActionState() {
@@ -1218,22 +1383,28 @@
     if (!response.ok) throw new Error(payload.error || 'Failed to load campaign.')
     state.selectedCampaignId = payload.campaign._id
     setDraft(payload.campaign)
+    setActiveWorkspaceStep('setup')
     renderCampaignList()
   }
 
   function switchMode(mode) {
-    state.mode = mode
-    state.draft.content.designMode = mode
-    const isVisual = mode === 'visual'
-    els.visualBuilder.style.display = isVisual ? '' : 'none'
-    els.htmlBuilder.style.display = isVisual ? 'none' : ''
-    els.visualModeBtn.classList.toggle('active', isVisual)
-    els.htmlModeBtn.classList.toggle('active', !isVisual)
-    if (!isVisual) {
-      syncVisualStateFromDom()
-      state.draft.content.htmlContent = renderEmailHtmlFromBlocks()
+    const normalizedMode = mode === 'html' ? 'html' : 'visual'
+    const previousMode = state.mode
+    const hasVisualBlocks = Array.isArray(state.draft.content?.design?.blocks) && state.draft.content.design.blocks.length > 0
+
+    if (normalizedMode === 'html') {
+      if (previousMode === 'visual' && hasVisualBlocks) {
+        syncVisualStateFromDom()
+        state.draft.content.htmlContent = renderEmailHtmlFromBlocks()
+      } else if (!String(state.draft.content?.htmlContent || '').trim() && hasVisualBlocks) {
+        state.draft.content.htmlContent = renderEmailHtmlFromBlocks()
+      }
       renderHtmlEditor()
+    } else if (previousMode === 'html') {
+      state.draft.content.htmlContent = els.htmlEditor.value
     }
+
+    syncModeUi(normalizedMode)
   }
 
   function hideLinkPopover() {
@@ -1324,10 +1495,8 @@
     if (!response.ok) throw new Error(result.error || 'Failed to save draft.')
 
     state.selectedCampaignId = result.campaign._id
-    state.draft = result.campaign
     await Promise.all([refreshCampaigns(), refreshSenderHealth()])
-    renderForm()
-    updateActionState()
+    setDraft(result.campaign)
     alert(result.message || 'Campaign saved.')
     return result.campaign
   }
@@ -1378,10 +1547,8 @@
     })
     const result = await response.json()
     if (!response.ok) throw new Error(result.error || `Failed to ${action} campaign.`)
-    state.draft = result.campaign
     await Promise.all([refreshCampaigns(), refreshSenderHealth()])
-    renderForm()
-    updateActionState()
+    setDraft(result.campaign)
     alert(result.message || `Campaign ${action}d.`)
   }
 
@@ -1393,11 +1560,47 @@
 
     state.selectedCampaignId = ''
     setDraft(createDraftFromTemplate(getSelectedTemplate()))
+    setActiveWorkspaceStep('setup')
     renderCampaignList()
   }
 
   async function uploadAudience(event) {
     await previewAudienceImport(event)
+  }
+
+  if (els.stepTabs.length > 0) {
+    els.stepTabs.forEach((button) => {
+      button.addEventListener('click', function () {
+        setActiveWorkspaceStep(button.getAttribute('data-workspace-step-target'))
+      })
+    })
+  }
+
+  if (els.campaignStepPrevBtn) {
+    els.campaignStepPrevBtn.addEventListener('click', function () {
+      const currentIndex = getWorkspaceStepIndex(state.activeStep)
+      if (currentIndex <= 0) return
+      setActiveWorkspaceStep(CAMPAIGN_WORKSPACE_STEPS[currentIndex - 1].key)
+    })
+  }
+
+  if (els.campaignStepNextBtn) {
+    els.campaignStepNextBtn.addEventListener('click', function () {
+      const currentIndex = getWorkspaceStepIndex(state.activeStep)
+      if (currentIndex < 0 || currentIndex >= CAMPAIGN_WORKSPACE_STEPS.length - 1) return
+      setActiveWorkspaceStep(CAMPAIGN_WORKSPACE_STEPS[currentIndex + 1].key)
+    })
+  }
+
+  if (els.campaignForm) {
+    const handleCampaignFormChange = function () {
+      if (!state.draft) return
+      syncDraftFromForm()
+      renderSelectedCampaignSummary()
+      renderReviewPanel()
+    }
+    els.campaignForm.addEventListener('input', handleCampaignFormChange)
+    els.campaignForm.addEventListener('change', handleCampaignFormChange)
   }
 
   if (els.visualModeBtn) {
@@ -1547,6 +1750,7 @@
       nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
       nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
       setDraft(nextDraft)
+      setActiveWorkspaceStep('setup')
     })
   }
 
@@ -1571,6 +1775,7 @@
       nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
       nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
       setDraft(nextDraft)
+      setActiveWorkspaceStep('setup')
     })
   }
 
@@ -1684,11 +1889,13 @@
   els.htmlEditor.addEventListener('input', function () {
     state.draft.content.htmlContent = els.htmlEditor.value
     els.htmlPreview.innerHTML = state.draft.content.htmlContent
+    renderReviewPanel()
   })
 
   els.htmlPreview.addEventListener('input', function () {
     state.draft.content.htmlContent = els.htmlPreview.innerHTML
     els.htmlEditor.value = state.draft.content.htmlContent
+    renderReviewPanel()
   })
 
   els.htmlPreview.addEventListener('mouseup', function () {
@@ -1727,6 +1934,5 @@
   renderTemplateList()
   renderSenderHealth()
   setDraft(initialSelectedCampaign ? clone(initialSelectedCampaign) : createDraftFromTemplate(state.templates[0] || null))
-  switchMode(state.draft?.content?.designMode === 'html' ? 'html' : 'visual')
-  renderForm()
+  setActiveWorkspaceStep('setup')
 })()

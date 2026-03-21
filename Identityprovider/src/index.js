@@ -6435,13 +6435,15 @@ const getComparableActorId = (value) => {
   return String(value)
 }
 
+const ensureArray = (value) => (Array.isArray(value) ? value : [])
+
 const getOnboardingESignState = (item, {
   currentUserId = '',
   assignmentMemberId = '',
   assignmentStatus = ''
 } = {}) => {
-  const signerConfigList = Array.isArray(item?.config?.signers) ? item.config.signers : []
-  const signerStatusList = Array.isArray(item?.data?.esign?.signers) ? item.data.esign.signers : []
+  const signerConfigList = ensureArray(item?.config?.signers)
+  const signerStatusList = ensureArray(item?.data?.esign?.signers)
   const signerConfigIds = signerConfigList
     .map(signer => getComparableActorId(signer))
     .filter(Boolean)
@@ -6474,134 +6476,150 @@ const buildProfileDocumentEntries = (assignments = [], user = {}) => {
 
   assignments.forEach((assignment) => {
     const assignmentId = assignment?._id?.toString?.() || ''
-    const assignmentMemberId = getComparableActorId(assignment?.member)
-    const isAssignee = assignmentMemberId === currentUserId
-    const organizationName = assignment?.organization?.name || 'Organization'
-    const workflowType = normalizeWorkflowType(assignment?.workflowType, { fallback: 'general' })
-    const workflowLabel = WORKFLOW_LABELS[workflowType] || 'Document Workflow'
 
-    ;(assignment?.items || []).forEach((item) => {
-      if (!['esign', 'upload'].includes(item?.type)) {
-        return
-      }
+    try {
+      const assignmentMemberId = getComparableActorId(assignment?.member)
+      const isAssignee = assignmentMemberId === currentUserId
+      const organizationName = assignment?.organization?.name || 'Organization'
+      const workflowType = normalizeWorkflowType(assignment?.workflowType, { fallback: 'general' })
+      const workflowLabel = WORKFLOW_LABELS[workflowType] || 'Document Workflow'
 
-      const configuredSigners = item?.config?.signers || []
-      const signingStatus = item?.data?.esign?.signers || []
-      const isConfiguredSigner = item.type === 'esign'
-        ? configuredSigners.some((signer) => getComparableActorId(signer) === currentUserId)
-        : false
-      const isSignerInStatus = item.type === 'esign'
-        ? signingStatus.some((signer) => getComparableActorId(signer?.member) === currentUserId)
-        : false
+      ensureArray(assignment?.items).forEach((item) => {
+        try {
+          if (!['esign', 'upload'].includes(item?.type)) {
+            return
+          }
 
-      if (!(isAssignee || isConfiguredSigner || isSignerInStatus)) {
-        return
-      }
+          const configuredSigners = ensureArray(item?.config?.signers)
+          const signingStatus = ensureArray(item?.data?.esign?.signers)
+          const isConfiguredSigner = item.type === 'esign'
+            ? configuredSigners.some((signer) => getComparableActorId(signer) === currentUserId)
+            : false
+          const isSignerInStatus = item.type === 'esign'
+            ? signingStatus.some((signer) => getComparableActorId(signer?.member) === currentUserId)
+            : false
 
-      const descriptor = resolveOnboardingDocumentPayload(item, item.type === 'esign' ? 'signed' : null)
-      if (!descriptor?.docUrl) {
-        return
-      }
+          if (!(isAssignee || isConfiguredSigner || isSignerInStatus)) {
+            return
+          }
 
-      const esignState = item.type === 'esign'
-        ? getOnboardingESignState(item, {
-            currentUserId,
-            assignmentMemberId,
-            assignmentStatus: assignment?.status || ''
+          const descriptor = resolveOnboardingDocumentPayload(item, item.type === 'esign' ? 'signed' : null)
+          if (!descriptor?.docUrl) {
+            return
+          }
+
+          const esignState = item.type === 'esign'
+            ? getOnboardingESignState(item, {
+                currentUserId,
+                assignmentMemberId,
+                assignmentStatus: assignment?.status || ''
+              })
+            : null
+
+          let statusKey = 'available'
+          let statusLabel = 'Available'
+
+          if (item.type === 'esign') {
+            if (esignState?.isCancelled) {
+              statusKey = 'available'
+              statusLabel = 'Cancelled'
+            } else if (esignState?.userDone) {
+              statusKey = 'completed'
+              statusLabel = 'Signed'
+            } else if (esignState?.userActionable) {
+              statusKey = 'needs_action'
+              statusLabel = 'Needs Signature'
+            } else {
+              statusKey = 'available'
+              statusLabel = 'Waiting'
+            }
+          } else if (item.type === 'upload') {
+            if (assignment?.status === 'cancelled') {
+              statusKey = 'available'
+              statusLabel = 'Cancelled'
+            } else {
+              statusKey = 'completed'
+              statusLabel = 'Uploaded'
+            }
+          }
+
+          const issuedAt = item.type === 'esign'
+            ? (esignState?.signerEntry?.signedAt || item?.data?.esign?.signedAt || assignment?.completedAt || assignment?.createdAt)
+            : (item?.data?.upload?.uploadedAt || assignment?.completedAt || assignment?.createdAt)
+
+          const fileName = descriptor.docFileName || item?.data?.upload?.fileName || item?.config?.document?.fileName || item?.title || 'Document'
+          const title = item?.title || fileName
+          const requiresSignature = item.type === 'esign' && esignState?.userActionable === true
+          const workspaceActionUrl = buildDocumentWorkspaceActionUrl({
+            assignmentId,
+            itemId: item?._id?.toString?.() || '',
+            workflowType,
+            itemType: item.type,
+            statusKey
           })
-        : null
+          const searchText = [
+            title,
+            fileName,
+            descriptor.subtitle,
+            organizationName,
+            workflowLabel,
+            statusLabel,
+            item?.description || ''
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
 
-      let statusKey = 'available'
-      let statusLabel = 'Available'
-
-      if (item.type === 'esign') {
-        if (esignState?.isCancelled) {
-          statusKey = 'available'
-          statusLabel = 'Cancelled'
-        } else if (esignState?.userDone) {
-          statusKey = 'completed'
-          statusLabel = 'Signed'
-        } else if (esignState?.userActionable) {
-          statusKey = 'needs_action'
-          statusLabel = 'Needs Signature'
-        } else {
-          statusKey = 'available'
-          statusLabel = 'Waiting'
+          entries.push({
+            id: `${assignmentId}:${item?._id?.toString?.() || ''}`,
+            assignmentId,
+            itemId: item?._id?.toString?.() || '',
+            title,
+            description: item?.description || '',
+            organizationName,
+            workflowType,
+            workflowLabel,
+            itemType: item.type,
+            itemTypeLabel: item.type === 'esign' ? 'E-sign Document' : 'Uploaded File',
+            subtitle: descriptor.subtitle,
+            fileName,
+            statusKey,
+            statusLabel,
+            assignmentStatus: assignment?.status || 'pending',
+            itemStatus: item?.status || 'pending',
+            issuedAt: issuedAt || assignment?.createdAt || null,
+            dueAt: assignment?.dueAt || null,
+            viewUrl: buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+            downloadUrl: buildDocumentDownloadUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+            actionUrl: requiresSignature ? workspaceActionUrl : buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+            actionLabel: requiresSignature ? 'Review & Sign' : 'View',
+            actionHint: requiresSignature
+              ? 'Open the signing screen for this exact document and finish your signature there.'
+              : (statusLabel === 'Cancelled'
+                  ? 'This document assignment was cancelled. Open the document if you need to review the original file.'
+                  : (statusLabel === 'Waiting'
+                      ? 'This document is visible to you, but there is no signature action pending from your account right now.'
+                      : (statusKey === 'completed'
+                          ? 'Open the completed document.'
+                          : 'Open the document to review it.'))),
+            requiresSignature,
+            searchText,
+            sortPriority: requiresSignature ? 0 : (statusKey === 'needs_action' ? 1 : (statusKey === 'available' ? 2 : 3))
+          })
+        } catch (itemError) {
+          console.error('Failed to build profile document entry:', {
+            assignmentId,
+            itemId: item?._id?.toString?.() || '',
+            itemType: item?.type || 'unknown'
+          }, itemError)
         }
-      } else if (item.type === 'upload') {
-        if (assignment?.status === 'cancelled') {
-          statusKey = 'available'
-          statusLabel = 'Cancelled'
-        } else {
-          statusKey = 'completed'
-          statusLabel = 'Uploaded'
-        }
-      }
-
-      const issuedAt = item.type === 'esign'
-        ? (esignState?.signerEntry?.signedAt || item?.data?.esign?.signedAt || assignment?.completedAt || assignment?.createdAt)
-        : (item?.data?.upload?.uploadedAt || assignment?.completedAt || assignment?.createdAt)
-
-      const fileName = descriptor.docFileName || item?.data?.upload?.fileName || item?.config?.document?.fileName || item?.title || 'Document'
-      const title = item?.title || fileName
-      const requiresSignature = item.type === 'esign' && esignState?.userActionable === true
-      const workspaceActionUrl = buildDocumentWorkspaceActionUrl({
-        assignmentId,
-        itemId: item?._id?.toString?.() || '',
-        workflowType,
-        itemType: item.type,
-        statusKey
       })
-      const searchText = [
-        title,
-        fileName,
-        descriptor.subtitle,
-        organizationName,
-        workflowLabel,
-        statusLabel,
-        item?.description || ''
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-
-      entries.push({
-        id: `${assignmentId}:${item?._id?.toString?.() || ''}`,
+    } catch (assignmentError) {
+      console.error('Failed to process document assignment for profile entries:', {
         assignmentId,
-        itemId: item?._id?.toString?.() || '',
-        title,
-        description: item?.description || '',
-        organizationName,
-        workflowType,
-        workflowLabel,
-        itemType: item.type,
-        itemTypeLabel: item.type === 'esign' ? 'E-sign Document' : 'Uploaded File',
-        subtitle: descriptor.subtitle,
-        fileName,
-        statusKey,
-        statusLabel,
-        assignmentStatus: assignment?.status || 'pending',
-        itemStatus: item?.status || 'pending',
-        issuedAt: issuedAt || assignment?.createdAt || null,
-        dueAt: assignment?.dueAt || null,
-        viewUrl: buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
-        downloadUrl: buildDocumentDownloadUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
-        actionUrl: requiresSignature ? workspaceActionUrl : buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
-        actionLabel: requiresSignature ? 'Review & Sign' : 'View',
-        actionHint: requiresSignature
-          ? 'Open the signing screen for this exact document and finish your signature there.'
-          : (statusLabel === 'Cancelled'
-              ? 'This document assignment was cancelled. Open the document if you need to review the original file.'
-              : (statusLabel === 'Waiting'
-                  ? 'This document is visible to you, but there is no signature action pending from your account right now.'
-                  : (statusKey === 'completed'
-                      ? 'Open the completed document.'
-                      : 'Open the document to review it.'))),
-        requiresSignature,
-        searchText,
-        sortPriority: requiresSignature ? 0 : (statusKey === 'needs_action' ? 1 : (statusKey === 'available' ? 2 : 3))
-      })
-    })
+        workflowType: assignment?.workflowType || 'unknown'
+      }, assignmentError)
+    }
   })
 
   return entries.sort((left, right) => {
@@ -6639,10 +6657,10 @@ const resolveOnboardingDocumentAccess = async (assignmentId, itemId, userId) => 
   const isManager = !!(member && ONBOARDING_MANAGER_ROLES.includes(member.role))
   const isAssignee = assignment.member?.toString() === userIdStr
   const isConfiguredSigner = item.type === 'esign'
-    ? (item.config?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
+    ? ensureArray(item?.config?.signers).some(signer => signer?.member?.toString() === userIdStr)
     : false
   const isSignerInStatus = item.type === 'esign'
-    ? (item.data?.esign?.signers || []).some(signer => signer?.member?.toString() === userIdStr)
+    ? ensureArray(item?.data?.esign?.signers).some(signer => signer?.member?.toString() === userIdStr)
     : false
 
   return {
