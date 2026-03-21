@@ -644,17 +644,6 @@ export default function HomePage() {
   const heroTags = personalizedMarket
     ? [personalizedMarket.country, 'People Ops', 'Approvals', 'Performance', 'Localized Workflows']
     : ['Global teams', 'Multi-country ops', 'Recruiting', 'Performance', 'Payroll']
-  const heroStats = personalizedMarket
-    ? [
-      { label: 'Detected Market', value: personalizedMarket.country },
-      { label: 'Experience', value: 'Localized' },
-      { label: 'Avg. Launch Time', value: '14 days' },
-    ]
-    : [
-      { label: 'Primary Markets', value: `${primaryMarkets.length}` },
-      { label: 'Regional Coverage', value: `${broaderEnglishSpeakingAfricanCountries.length} Countries` },
-      { label: 'Avg. Launch Time', value: '14 days' },
-    ]
   const africaSectionTitle = personalizedMarket
     ? isAfricaPersonalization
       ? `Support teams in ${personalizedMarket.country} while staying aligned across the wider region.`
@@ -793,14 +782,6 @@ export default function HomePage() {
                   </button>
                 </motion.div>
 
-                <div className="mt-10 grid gap-6 text-sm text-zinc-700 dark:text-white/70 sm:grid-cols-3">
-                  {heroStats.map((stat) => (
-                    <div key={stat.label} className="rounded-2xl border border-black/5 bg-white/70 p-4 dark:border-white/20 dark:bg-white/[0.05]">
-                      <div className="text-xs uppercase tracking-[0.25em] text-zinc-600 dark:text-white/40">{stat.label}</div>
-                      <div className="mt-2 font-display text-2xl text-zinc-900 dark:text-white">{stat.value}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               <motion.div
