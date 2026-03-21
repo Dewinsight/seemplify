@@ -425,12 +425,16 @@ p {
   gap: 12px;
   color: var(--text);
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .top-nav-brand img,
 .top-nav-brand svg {
-  width: 30px;
+  display: block;
+  width: 148px;
+  max-width: 100%;
   height: auto;
+  flex-shrink: 0;
 }
 
 .top-nav-brand span {
@@ -3520,6 +3524,11 @@ body.light .value {
     flex-wrap: nowrap;
     gap: 10px;
     position: relative;
+  }
+
+  .top-nav-brand img,
+  .top-nav-brand svg {
+    width: 128px;
   }
 
   /* Show hamburger button on mobile */

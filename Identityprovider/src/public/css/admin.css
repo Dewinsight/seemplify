@@ -291,6 +291,14 @@
   color: var(--text);
 }
 
+.admin-nav-logo img {
+  display: block;
+  width: 148px;
+  max-width: 100%;
+  height: auto;
+  flex-shrink: 0;
+}
+
 .admin-nav-title {
   font-size: 16px;
   font-weight: 700;
