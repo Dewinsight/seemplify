@@ -55,7 +55,7 @@ import { getProfileCompletion, getProfileCompletionForAccount } from './utils/pr
 import {
   PAYROLL_BANK_JURISDICTIONS,
   NIGERIAN_BANK_OPTIONS
-} from '../../payroll/frontend/lib/payrollBankJurisdictions.mjs'
+} from './config/payrollBankJurisdictions.js'
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'

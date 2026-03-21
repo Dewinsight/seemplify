@@ -6,7 +6,7 @@ import {
     getPayrollBankAccountTypes,
     getPayrollBankJurisdiction,
     normalizePayrollBankCountry,
-} from '../../../payroll/frontend/lib/payrollBankJurisdictions.mjs';
+} from '../config/payrollBankJurisdictions.js';
 
 const router = express.Router();
 
