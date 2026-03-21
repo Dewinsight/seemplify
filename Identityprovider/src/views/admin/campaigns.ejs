@@ -81,6 +81,20 @@
     .campaign-mapping-card.required { border-color:rgba(245,158,11,.25); background:rgba(245,158,11,.08); }
     .campaign-mapping-label { display:flex; justify-content:space-between; gap:8px; align-items:center; color:var(--text); font-weight:700; font-size:13px; }
     .campaign-mapping-description { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-guide-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+    .campaign-guide-item { display:flex; gap:10px; align-items:flex-start; }
+    .campaign-guide-step { width:22px; height:22px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:rgba(99, 102, 241, 0.14); color:#a5b4fc; font-size:12px; font-weight:800; flex:none; }
+    .campaign-guide-copy { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-variable-grid { display:grid; gap:12px; }
+    .campaign-variable-card { padding:12px; border-radius:16px; border:1px solid var(--border); background:var(--panel); display:grid; gap:10px; }
+    .campaign-variable-card.is-missing { border-style:dashed; }
+    .campaign-variable-header { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+    .campaign-variable-title { color:var(--text); font-weight:700; font-size:13px; }
+    .campaign-token-list { display:flex; flex-wrap:wrap; gap:8px; }
+    .campaign-token { display:inline-flex; align-items:center; border-radius:999px; padding:6px 10px; background:rgba(99, 102, 241, 0.12); color:#a5b4fc; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; font-weight:700; }
+    .campaign-variable-meta { display:grid; gap:6px; color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-variable-source { color:var(--text); font-weight:600; }
+    .campaign-variable-empty { color:var(--muted); }
     .campaign-preview-table-wrap { overflow:auto; border-radius:16px; border:1px solid var(--border); background:var(--panel); }
     .campaign-preview-table { width:100%; min-width:540px; border-collapse:collapse; }
     .campaign-preview-table th, .campaign-preview-table td { padding:10px 12px; border-bottom:1px solid rgba(148,163,184,.12); text-align:left; vertical-align:top; font-size:13px; }
@@ -291,7 +305,24 @@
               </div>
             </div>
             <div class="campaign-audience-hint">
-              Upload CSV or Excel, extract the headers, map the important fields, preview the sample rows, then import the audience and assign it in the form.
+              <ul class="campaign-guide-list">
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">1</span>
+                  <span class="campaign-guide-copy">Upload your CSV or Excel file, then click <strong>Extract Fields</strong> so Seemplify can read the headers.</span>
+                </li>
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">2</span>
+                  <span class="campaign-guide-copy">For each campaign field, choose the matching column from your file. The card shows the exact merge tag that field powers.</span>
+                </li>
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">3</span>
+                  <span class="campaign-guide-copy">Use those merge tags in the subject, preview text, visual builder, or raw HTML to personalize the campaign.</span>
+                </li>
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">4</span>
+                  <span class="campaign-guide-copy">Preview the sample rows, import the audience, then assign that audience to the campaign.</span>
+                </li>
+              </ul>
             </div>
             <form id="audienceUploadForm" class="campaign-upload-form">
               <input id="audienceName" class="admin-form-input" type="text" placeholder="Audience name">
@@ -312,7 +343,13 @@
               <div id="audiencePreviewMeta" class="campaign-preview-meta"></div>
               <div>
                 <div class="admin-card-title" style="font-size:15px; margin-bottom:8px;">Field Mapping</div>
+                <div class="admin-card-subtitle" style="margin-bottom:10px;">Each mapped field shows the merge tag you can use inside the campaign content.</div>
                 <div id="audienceColumnMapping" class="campaign-mapping-grid"></div>
+              </div>
+              <div>
+                <div class="admin-card-title" style="font-size:15px; margin-bottom:8px;">Derived Personalization</div>
+                <div class="admin-card-subtitle" style="margin-bottom:10px;">These variables are generated from the mapped audience data and are available in the subject, preview text, visual builder, and HTML.</div>
+                <div id="audienceDerivedVariables" class="campaign-variable-grid"></div>
               </div>
               <div>
                 <div class="admin-card-title" style="font-size:15px; margin-bottom:8px;">Sample Rows</div>

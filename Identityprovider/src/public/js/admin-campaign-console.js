@@ -18,6 +18,74 @@
     { key: 'companyDescription', label: 'Company Description', description: 'Short description or notes.' },
     { key: 'tailoredMessage', label: 'Tailored Message', description: 'Custom message used for personalization.' }
   ]
+  const AUDIENCE_FIELD_VARIABLES = {
+    email: {
+      tokens: ['{{ contact.EMAIL }}']
+    },
+    firstName: {
+      tokens: ['{{ contact.FIRSTNAME }}']
+    },
+    lastName: {
+      tokens: ['{{ contact.LASTNAME }}']
+    },
+    role: {
+      tokens: ['{{ contact.ROLE }}']
+    },
+    jobTitle: {
+      tokens: ['{{ contact.JOBTITLE }}']
+    },
+    jobLevel: {
+      tokens: ['{{ contact.JOBLEVEL }}']
+    },
+    department: {
+      tokens: ['{{ contact.DEPARTMENT }}']
+    },
+    companyName: {
+      tokens: ['{{ contact.COMPANYNAME }}']
+    },
+    industry: {
+      tokens: ['{{ contact.INDUSTRY }}']
+    },
+    companyHeadCount: {
+      tokens: ['{{ contact.HEADCOUNT }}']
+    },
+    location: {
+      tokens: ['{{ contact.LOCATION }}']
+    },
+    companyDescription: {
+      tokens: ['{{ contact.COMPANYDESCRIPTION }}']
+    },
+    tailoredMessage: {
+      tokens: ['{{ contact.CUSTOM_OPENING }}'],
+      note: 'Tailored Message feeds the personalized opening. There is no direct {{ contact.TAILORED_MESSAGE }} merge tag.'
+    }
+  }
+  const DERIVED_VARIABLES = [
+    {
+      label: 'Personalized opening',
+      tokens: ['{{ contact.CUSTOM_OPENING }}'],
+      description: 'Uses Tailored Message when you map it. If that field is blank, Seemplify builds the opening from role, job title, and company name.',
+      sourceFields: ['tailoredMessage', 'role', 'jobTitle', 'companyName']
+    },
+    {
+      label: 'Benefits copy',
+      tokens: ['{{ contact.CUSTOM_BENEFITS }}'],
+      description: 'Generated from role, job title, job level, and department to adapt the benefits section automatically.',
+      sourceFields: ['role', 'jobTitle', 'jobLevel', 'department']
+    },
+    {
+      label: 'Free trial link',
+      tokens: ['{{ contact.FREE_TRIAL_URL }}'],
+      description: 'System variable provided by Seemplify for CTA buttons and links. This does not come from the uploaded file.',
+      sourceFields: []
+    },
+    {
+      label: 'Campaign variables',
+      tokens: ['{{ campaign.NAME }}', '{{ campaign.UTM_CAMPAIGN }}'],
+      description: 'These come from the campaign form itself, not from the imported audience file.',
+      sourceFields: []
+    }
+  ]
 
   const state = {
     campaigns: Array.isArray(boot.campaigns) ? boot.campaigns : [],
@@ -83,6 +151,7 @@
     audienceColumnMapping: document.getElementById('audienceColumnMapping'),
     audiencePreviewMeta: document.getElementById('audiencePreviewMeta'),
     audiencePreviewTable: document.getElementById('audiencePreviewTable'),
+    audienceDerivedVariables: document.getElementById('audienceDerivedVariables'),
     newCampaignBtn: document.getElementById('newCampaignBtn'),
     saveCampaignBtn: document.getElementById('saveCampaignBtn'),
     launchCampaignBtn: document.getElementById('launchCampaignBtn'),
@@ -598,6 +667,70 @@
     els.audienceImportBtn.disabled = !state.audiencePreview || !columnMap.email
   }
 
+  function getAudienceFieldDefinition(fieldKey) {
+    return state.audienceFields.find((field) => String(field.key) === String(fieldKey)) || null
+  }
+
+  function getAudienceFieldVariableMeta(fieldKey) {
+    return AUDIENCE_FIELD_VARIABLES[fieldKey] || { tokens: [], note: '' }
+  }
+
+  function getAudiencePreviewSampleValue(preview, header) {
+    if (!preview || !Array.isArray(preview.headers) || !Array.isArray(preview.sampleRows)) return ''
+    const headerIndex = preview.headers.findIndex((entry) => String(entry) === String(header))
+    if (headerIndex < 0) return ''
+    for (const row of preview.sampleRows) {
+      const value = String((row && row[headerIndex]) || '').trim()
+      if (value) {
+        return value
+      }
+    }
+    return ''
+  }
+
+  function renderAudienceDerivedVariables(preview) {
+    if (!els.audienceDerivedVariables) return
+
+    els.audienceDerivedVariables.innerHTML = DERIVED_VARIABLES.map((item) => {
+      const mappedSources = (item.sourceFields || [])
+        .map((fieldKey) => {
+          const field = getAudienceFieldDefinition(fieldKey)
+          const mappedHeader = preview?.columnMap?.[fieldKey] || ''
+          if (!field || !mappedHeader) return ''
+          return `${field.label}: ${mappedHeader}`
+        })
+        .filter(Boolean)
+
+      const waitingFields = (item.sourceFields || [])
+        .map((fieldKey) => {
+          const field = getAudienceFieldDefinition(fieldKey)
+          const mappedHeader = preview?.columnMap?.[fieldKey] || ''
+          if (!field || mappedHeader) return ''
+          return field.label
+        })
+        .filter(Boolean)
+
+      return `
+        <div class="campaign-variable-card ${mappedSources.length === 0 && (item.sourceFields || []).length > 0 ? 'is-missing' : ''}">
+          <div class="campaign-variable-header">
+            <div class="campaign-variable-title">${escapeHtml(item.label)}</div>
+            ${mappedSources.length > 0
+              ? '<span class="campaign-pill green">Ready</span>'
+              : ((item.sourceFields || []).length > 0 ? '<span class="campaign-pill amber">Needs mapped fields</span>' : '<span class="campaign-pill blue">System</span>')}
+          </div>
+          <div class="campaign-token-list">
+            ${(item.tokens || []).map((token) => `<span class="campaign-token">${escapeHtml(token)}</span>`).join('')}
+          </div>
+          <div class="campaign-variable-meta">
+            <div>${escapeHtml(item.description || '')}</div>
+            ${mappedSources.length > 0 ? `<div>Using mapped columns: <span class="campaign-variable-source">${escapeHtml(mappedSources.join(', '))}</span></div>` : ''}
+            ${waitingFields.length > 0 ? `<div class="campaign-variable-empty">Waiting for mapped columns: ${escapeHtml(waitingFields.join(', '))}</div>` : ''}
+          </div>
+        </div>
+      `
+    }).join('')
+  }
+
   function renderAudiencePreview() {
     const preview = state.audiencePreview
 
@@ -607,6 +740,7 @@
       if (els.audiencePreviewMeta) els.audiencePreviewMeta.innerHTML = ''
       if (els.audienceColumnMapping) els.audienceColumnMapping.innerHTML = ''
       if (els.audiencePreviewTable) els.audiencePreviewTable.innerHTML = ''
+      if (els.audienceDerivedVariables) els.audienceDerivedVariables.innerHTML = ''
       updateAudienceImportAvailability()
       return
     }
@@ -655,6 +789,14 @@
             ${options}
           </select>
           <div class="campaign-mapping-description">${escapeHtml(field.description || '')}</div>
+          <div class="campaign-token-list">
+            ${(getAudienceFieldVariableMeta(field.key).tokens || []).map((token) => `<span class="campaign-token">${escapeHtml(token)}</span>`).join('')}
+          </div>
+          <div class="campaign-variable-meta">
+            <div class="campaign-variable-empty" data-audience-source="${escapeHtml(field.key)}">Not mapped yet. Choose a column to populate this variable.</div>
+            <div class="campaign-variable-empty" data-audience-sample="${escapeHtml(field.key)}"></div>
+            ${getAudienceFieldVariableMeta(field.key).note ? `<div>${escapeHtml(getAudienceFieldVariableMeta(field.key).note)}</div>` : ''}
+          </div>
         </div>
       `).join('')
 
@@ -662,7 +804,28 @@
         const key = select.getAttribute('data-audience-map')
         select.value = preview.columnMap?.[key] || ''
       })
+
+      state.audienceFields.forEach((field) => {
+        const mappedHeader = preview.columnMap?.[field.key] || ''
+        const sourceEl = els.audienceColumnMapping.querySelector(`[data-audience-source="${field.key}"]`)
+        const sampleEl = els.audienceColumnMapping.querySelector(`[data-audience-sample="${field.key}"]`)
+        const sampleValue = mappedHeader ? getAudiencePreviewSampleValue(preview, mappedHeader) : ''
+
+        if (sourceEl) {
+          sourceEl.innerHTML = mappedHeader
+            ? `Mapped from: <span class="campaign-variable-source">${escapeHtml(mappedHeader)}</span>`
+            : 'Not mapped yet. Choose a column to populate this variable.'
+        }
+
+        if (sampleEl) {
+          sampleEl.innerHTML = sampleValue
+            ? `Sample value: <span class="campaign-variable-source">${escapeHtml(sampleValue)}</span>`
+            : ''
+        }
+      })
     }
+
+    renderAudienceDerivedVariables(preview)
 
     if (els.audiencePreviewTable) {
       if (!Array.isArray(preview.sampleRows) || preview.sampleRows.length === 0) {
@@ -733,7 +896,7 @@
       els.audienceName.value = getAudienceFileBaseName(file.name)
     }
     renderAudiencePreview()
-    setAudienceStatus(`Extracted ${Number(state.audiencePreview?.totalRows || 0)} rows from ${file.name}.`, 'success')
+    setAudienceStatus(`Extracted ${Number(state.audiencePreview?.totalRows || 0)} rows from ${file.name}. Map the fields, then use the merge tags shown on each card.`, 'success')
   }
 
   async function importAudienceFromPreview() {
@@ -1338,7 +1501,7 @@
       if (els.audienceFile.files && els.audienceFile.files[0] && !els.audienceName.value.trim()) {
         els.audienceName.value = getAudienceFileBaseName(els.audienceFile.files[0].name)
       }
-      setAudienceStatus('File selected. Click "Extract Fields" to inspect and map the columns.')
+      setAudienceStatus('File selected. Click "Extract Fields" to inspect the headers, map each field, and see the merge tags.')
     })
   }
 
