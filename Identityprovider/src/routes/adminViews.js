@@ -10,6 +10,7 @@ import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import AppLaunchActivity from '../models/AppLaunchActivity.js'
 import { Team } from '../models/Team.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
+import DemoRequest from '../models/DemoRequest.js'
 import { buildRecruiterAdminLaunchUrl } from '../services/recruiterAdminSsoService.js'
 import { getWorkforceOperationsAnalytics } from '../services/adminAnalyticsService.js'
 import { emailService } from '../services/emailService.js'
@@ -52,6 +53,19 @@ function buildOrganizationsRedirectPath(notice, noticeType = 'success') {
   if (noticeType) params.set('noticeType', noticeType)
   const query = params.toString()
   return query ? `/admin/organizations?${query}` : '/admin/organizations'
+}
+
+function buildDemoRequestNotice(query = {}) {
+  const errorMap = {
+    invalid_status: { type: 'error', message: 'Invalid status selected.' },
+    update_failed: { type: 'error', message: 'Failed to update demo request.' }
+  }
+
+  if (query.message) {
+    return { type: 'success', message: String(query.message) }
+  }
+
+  return errorMap[String(query.error || '')] || null
 }
 
 function parseBooleanInput(value) {
@@ -158,18 +172,26 @@ router.use(setAdminContext)
  */
 router.get('/', async (req, res) => {
   try {
-    const [stats, recentRequests, workforceAnalytics] = await Promise.all([
+    const [stats, recentRequests, workforceAnalytics, demoRequestStats, recentDemoRequests] = await Promise.all([
       subscriptionService.getStats(),
       SubscriptionRequest.find()
         .sort({ createdAt: -1 })
         .limit(5)
         .populate(['organization', 'plan', 'requestedBy']),
-      getWorkforceOperationsAnalytics()
+      getWorkforceOperationsAnalytics(),
+      DemoRequest.getStats(),
+      DemoRequest.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('processedBy', 'email profile.name')
+        .lean()
     ])
 
     res.render('admin/dashboard', {
       stats,
       recentRequests,
+      demoRequestStats,
+      recentDemoRequests,
       workforceAnalytics,
       user: req.user
     })
@@ -179,6 +201,115 @@ router.get('/', async (req, res) => {
       title: 'Error',
       message: 'Failed to load admin dashboard'
     })
+  }
+})
+
+router.get('/demo-requests', async (req, res) => {
+  try {
+    const status = String(req.query.status || 'all').trim().toLowerCase()
+    const search = String(req.query.q || '').trim()
+    const filters = {}
+
+    if (status && status !== 'all') {
+      filters.status = status
+    }
+
+    if (search) {
+      filters.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { company: { $regex: search, $options: 'i' } },
+        { role: { $regex: search, $options: 'i' } }
+      ]
+    }
+
+    const [requests, stats] = await Promise.all([
+      DemoRequest.find(filters)
+        .sort({ createdAt: -1 })
+        .populate('processedBy', 'email profile.name')
+        .lean(),
+      DemoRequest.getStats()
+    ])
+
+    res.render('admin/demo-requests', {
+      requests,
+      stats,
+      currentFilter: status,
+      currentSearch: search,
+      user: req.user
+    })
+  } catch (error) {
+    console.error('Error loading demo requests:', error)
+    res.status(500).render('error', {
+      title: 'Error',
+      message: 'Failed to load demo requests'
+    })
+  }
+})
+
+router.get('/demo-requests/:requestId', async (req, res) => {
+  try {
+    const request = await DemoRequest.findById(req.params.requestId)
+      .populate('processedBy', 'email profile.name')
+
+    if (!request) {
+      return res.status(404).render('error', {
+        title: 'Not Found',
+        message: 'Demo request not found'
+      })
+    }
+
+    res.render('admin/demo-request-detail', {
+      request,
+      notice: buildDemoRequestNotice(req.query),
+      user: req.user
+    })
+  } catch (error) {
+    console.error('Error loading demo request detail:', error)
+    res.status(500).render('error', {
+      title: 'Error',
+      message: 'Failed to load demo request detail'
+    })
+  }
+})
+
+router.post('/demo-requests/:requestId/update', async (req, res) => {
+  try {
+    const request = await DemoRequest.findById(req.params.requestId)
+
+    if (!request) {
+      return res.status(404).render('error', {
+        title: 'Not Found',
+        message: 'Demo request not found'
+      })
+    }
+
+    const nextStatus = String(req.body.status || '').trim()
+    const adminNotes = String(req.body.adminNotes || '').trim()
+    const scheduledForInput = String(req.body.scheduledFor || '').trim()
+    const allowedStatuses = new Set(['new', 'contacted', 'scheduled', 'closed', 'spam'])
+
+    if (!allowedStatuses.has(nextStatus)) {
+      return res.redirect(`/admin/demo-requests/${request._id}?error=invalid_status`)
+    }
+
+    request.status = nextStatus
+    request.adminNotes = adminNotes
+    request.processedBy = req.user._id
+    request.processedAt = new Date()
+
+    if (nextStatus !== 'new' && !request.respondedAt) {
+      request.respondedAt = new Date()
+    }
+
+    request.scheduledFor = scheduledForInput ? new Date(scheduledForInput) : null
+
+    await request.save()
+
+    return res.redirect(`/admin/demo-requests/${request._id}?message=Demo request updated`)
+  } catch (error) {
+    console.error('Error updating demo request:', error)
+    res.redirect(`/admin/demo-requests/${req.params.requestId}?error=update_failed`)
   }
 })
 

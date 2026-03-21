@@ -62,9 +62,9 @@
 }
 
 .alert-success {
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  color: #86efac;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #ddd6fe;
 }
 
 .alert-icon {
@@ -303,7 +303,7 @@
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
-  background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1);
+  background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95);
   color: white;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -378,7 +378,7 @@
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1);
+  background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -561,7 +561,7 @@
 }
 
 .admin-stat-change.positive {
-  color: #22c55e;
+  color: #8b5cf6;
 }
 
 .admin-stat-change.negative {
@@ -627,13 +627,33 @@
 }
 
 .status-badge--active {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
+  background: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
 }
 
 .status-badge--approved {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
+  background: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
+}
+
+.status-badge--contacted {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+}
+
+.status-badge--scheduled {
+  background: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
+}
+
+.status-badge--closed {
+  background: rgba(107, 114, 128, 0.12);
+  color: #94a3b8;
+}
+
+.status-badge--spam {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
 }
 
 .status-badge--rejected {
@@ -753,27 +773,27 @@
 }
 
 .btn-success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
   border-radius: 999px;
-  color: #86efac;
+  color: #ddd6fe;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-success:hover {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.5);
 }
 
 [data-theme="light"] .btn-success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  color: #16a34a;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  color: #6d28d9;
 }
 
 [data-theme="light"] .btn-success:hover {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.4);
 }
 
 .btn-danger {
@@ -857,7 +877,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 4px;
-  background: linear-gradient(180deg, #10b981, #14b8a6, #6366f1);
+  background: linear-gradient(180deg, #b980ff, #8b5cf6, #4c1d95);
 }
 
 .workforce-app-grid {

@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, CheckCircle, Loader2 } from 'lucide-react'
+import { ensureAttributionState, trackMarketingVisit } from '@/lib/marketingAttribution'
+import { idpUrl } from '@/app/site-config'
 
 interface BookDemoModalProps {
     isOpen: boolean
@@ -24,13 +26,36 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
         setStatus('submitting')
 
         try {
+            const attribution = ensureAttributionState()
             const res = await fetch('/api/book-demo', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({
+                    ...formData,
+                    visitorId: attribution.visitorId,
+                    sessionId: attribution.sessionId,
+                    attributionToken: attribution.attributionToken,
+                    utm_source: attribution.utmSource,
+                    utm_medium: attribution.utmMedium,
+                    utm_campaign: attribution.utmCampaign,
+                    utm_term: attribution.utmTerm,
+                    utm_content: attribution.utmContent,
+                    landingPage: attribution.landingPage,
+                    referrer: attribution.referrer,
+                })
             })
 
             if (res.ok) {
+                trackMarketingVisit(idpUrl('/api/public/marketing/visit'), {
+                    eventType: 'demo_submit',
+                    sourceApp: 'marketing-site',
+                    source: 'marketing-site',
+                    channel: 'web',
+                    pageUrl: window.location.href,
+                    path: window.location.pathname,
+                    referrer: document.referrer,
+                    eventLabel: 'book-demo-modal',
+                }).catch(() => {})
                 setStatus('success')
                 setTimeout(() => {
                     onClose()
@@ -79,7 +104,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                     <motion.div
                                         initial={{ scale: 0 }}
                                         animate={{ scale: 1 }}
-                                        className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400"
+                                        className="flex h-16 w-16 items-center justify-center rounded-full bg-violet-500/20 text-violet-400"
                                     >
                                         <CheckCircle size={32} />
                                     </motion.div>
@@ -102,7 +127,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                                 <input
                                                     required
                                                     type="text"
-                                                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-emerald-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-violet-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
                                                     placeholder="Jane Doe"
                                                     value={formData.name}
                                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -112,7 +137,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                                 <label className="text-xs font-medium text-zinc-400">Company</label>
                                                 <input
                                                     type="text"
-                                                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-emerald-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-violet-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
                                                     placeholder="Acme Inc."
                                                     value={formData.company}
                                                     onChange={(e) => setFormData({ ...formData, company: e.target.value })}
@@ -125,7 +150,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                             <input
                                                 required
                                                 type="email"
-                                                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-emerald-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-violet-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
                                                 placeholder="jane@company.com"
                                                 value={formData.email}
                                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -136,7 +161,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                             <label className="text-xs font-medium text-zinc-400">Role</label>
                                             <input
                                                 type="text"
-                                                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-emerald-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-violet-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
                                                 placeholder="HR Manager, CTO, etc."
                                                 value={formData.role}
                                                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
@@ -147,7 +172,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                             <label className="text-xs font-medium text-zinc-400">Message (Optional)</label>
                                             <textarea
                                                 rows={3}
-                                                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-emerald-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-violet-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
                                                 placeholder="Tell us about your needs..."
                                                 value={formData.message}
                                                 onChange={(e) => setFormData({ ...formData, message: e.target.value })}
@@ -158,7 +183,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                             <button
                                                 type="submit"
                                                 disabled={status === 'submitting'}
-                                                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3 text-sm font-medium text-white shadow-lg shadow-emerald-500/20 transition hover:shadow-emerald-500/30 disabled:opacity-70"
+                                                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 py-3 text-sm font-medium text-white shadow-lg shadow-violet-500/20 transition hover:shadow-violet-500/30 disabled:opacity-70"
                                             >
                                                 {status === 'submitting' ? <Loader2 className="animate-spin" size={18} /> : 'Book Demo'}
                                             </button>

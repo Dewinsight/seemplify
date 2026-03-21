@@ -55,6 +55,12 @@
           <div class="admin-stat-label">Orgs Without Subscription</div>
           <div class="admin-stat-value"><%= stats.organizations.withoutSubscription %></div>
         </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">New Demo Requests</div>
+          <div class="admin-stat-value" style="color: <%= demoRequestStats?.new > 0 ? '#f59e0b' : 'var(--text)' %>">
+            <%= demoRequestStats?.new || 0 %>
+          </div>
+        </div>
       </div>
 
       <div class="admin-card">
@@ -307,6 +313,57 @@
             </svg>
             <h3>No recent requests</h3>
             <p>When organizations request subscriptions, they will appear here.</p>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <div class="admin-card-title">Recent Demo Requests</div>
+          <a href="/admin/demo-requests" class="btn btn-sm btn-secondary">Open Queue</a>
+        </div>
+
+        <% if (recentDemoRequests && recentDemoRequests.length > 0) { %>
+          <div class="admin-table-container" style="border: none;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Requester</th>
+                  <th>Company</th>
+                  <th>Status</th>
+                  <th>Submitted</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% recentDemoRequests.forEach(request => { %>
+                  <tr>
+                    <td>
+                      <div style="font-weight: 600;"><%= request.name %></div>
+                      <div style="font-size: 12px; color: var(--muted);"><%= request.email %></div>
+                    </td>
+                    <td><%= request.company || 'N/A' %></td>
+                    <td>
+                      <span class="status-badge status-badge--<%= request.status === 'new' ? 'pending' : request.status %>">
+                        <%= request.status %>
+                      </span>
+                    </td>
+                    <td><%= new Date(request.createdAt).toLocaleDateString('en-GB') %></td>
+                    <td>
+                      <a href="/admin/demo-requests/<%= request._id %>" class="btn btn-sm btn-secondary">View</a>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } else { %>
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <h3>No demo requests yet</h3>
+            <p>Public book-a-demo submissions will appear here for follow-up.</p>
           </div>
         <% } %>
       </div>

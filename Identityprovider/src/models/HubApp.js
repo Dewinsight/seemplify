@@ -81,7 +81,7 @@ export async function seedDefaultApps() {
       name: 'Leave Management',
       description: 'Manage employee leave requests and approvals',
       icon: 'calendar',
-      color: '#10b981',
+      color: '#8b5cf6',
       url: leaveManagementUrl,
       loginUrl: null,
       clientId: 'leave-management',

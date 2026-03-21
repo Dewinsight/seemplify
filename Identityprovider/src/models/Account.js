@@ -207,6 +207,103 @@ const AccountSchema = new mongoose.Schema({
     default: 'local'
   },
 
+  acquisition: {
+    firstTouch: {
+      sourceType: {
+        type: String,
+        enum: ['website_visit', 'campaign_click', 'signup', 'demo_request', 'manual', 'unknown'],
+        default: 'unknown'
+      },
+      source: String,
+      channel: String,
+      campaignId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaign'
+      },
+      batchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignBatch'
+      },
+      recipientId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignRecipient'
+      },
+      campaignName: String,
+      brevoCampaignId: Number,
+      brevoMessageId: String,
+      signedToken: String,
+      visitorId: String,
+      sessionId: String,
+      email: String,
+      landingPage: String,
+      referrer: String,
+      utm: {
+        source: String,
+        medium: String,
+        campaign: String,
+        term: String,
+        content: String
+      },
+      metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      occurredAt: Date
+    },
+    lastTouch: {
+      sourceType: {
+        type: String,
+        enum: ['website_visit', 'campaign_click', 'signup', 'demo_request', 'manual', 'unknown'],
+        default: 'unknown'
+      },
+      source: String,
+      channel: String,
+      campaignId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaign'
+      },
+      batchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignBatch'
+      },
+      recipientId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignRecipient'
+      },
+      campaignName: String,
+      brevoCampaignId: Number,
+      brevoMessageId: String,
+      signedToken: String,
+      visitorId: String,
+      sessionId: String,
+      email: String,
+      landingPage: String,
+      referrer: String,
+      utm: {
+        source: String,
+        medium: String,
+        campaign: String,
+        term: String,
+        content: String
+      },
+      metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      occurredAt: Date
+    },
+    conversionSource: {
+      type: String,
+      enum: ['website', 'campaign', 'demo_request', 'manual', 'unknown'],
+      default: 'unknown'
+    },
+    visitorId: String,
+    attributionSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    }
+  },
+
   // Dashboard notification view checkpoints (per organization)
   notificationViews: {
     documentsByOrganization: {

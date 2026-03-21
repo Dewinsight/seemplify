@@ -21,7 +21,7 @@
   --brand: #818cf8;
   --brand-2: #a855f7;
   --accent: #818cf8;
-  --success: #22c55e;
+  --success: #8b5cf6;
   --error: #ef4444;
   --warning: #f59e0b;
   --card-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -47,8 +47,8 @@
   --badge-owner-text: #e9d5ff;
   --badge-admin-bg: rgba(129, 140, 248, 0.18);
   --badge-admin-text: #c7d2fe;
-  --badge-success-bg: rgba(34, 197, 94, 0.16);
-  --badge-success-text: #bbf7d0;
+  --badge-success-bg: rgba(139, 92, 246, 0.16);
+  --badge-success-text: #ede9fe;
   --badge-warning-bg: rgba(245, 158, 11, 0.16);
   --badge-warning-text: #fed7aa;
   --badge-neutral-bg: rgba(148, 163, 184, 0.16);
@@ -72,7 +72,7 @@
   --brand: #6366f1;
   --brand-2: #a855f7;
   --accent: #6366f1;
-  --success: #16a34a;
+  --success: #7c3aed;
   --error: #dc2626;
   --warning: #d97706;
   --card-shadow: 0 32px 80px -34px rgba(79, 70, 229, 0.22), 0 18px 38px -28px rgba(15, 23, 42, 0.28), inset 0 1px 0 0 rgba(255, 255, 255, 0.92);
@@ -98,8 +98,8 @@
   --badge-owner-text: #7e22ce;
   --badge-admin-bg: rgba(99, 102, 241, 0.12);
   --badge-admin-text: #4338ca;
-  --badge-success-bg: rgba(22, 163, 74, 0.12);
-  --badge-success-text: #15803d;
+  --badge-success-bg: rgba(124, 58, 237, 0.12);
+  --badge-success-text: #6d28d9;
   --badge-warning-bg: rgba(217, 119, 6, 0.12);
   --badge-warning-text: #b45309;
   --badge-neutral-bg: rgba(148, 163, 184, 0.12);
@@ -754,27 +754,27 @@ p {
 }
 
 .btn-success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
   border-radius: 999px;
-  color: #86efac;
+  color: #ddd6fe;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-success:hover {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.5);
 }
 
 [data-theme="light"] .btn-success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  color: #16a34a;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  color: #6d28d9;
 }
 
 [data-theme="light"] .btn-success:hover {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.4);
 }
 
 .card {
@@ -1028,8 +1028,8 @@ p {
 }
 
 .onboarding-assignment-card--completed {
-  border-left-color: rgba(34, 197, 94, 0.85);
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.2);
+  border-left-color: rgba(139, 92, 246, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.2);
 }
 
 .onboarding-assignment-card--cancelled {
@@ -1132,8 +1132,8 @@ p {
 }
 
 .onboarding-step-link.completed .onboarding-step-index {
-  border-color: rgba(34, 197, 94, 0.5);
-  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(139, 92, 246, 0.5);
+  background: rgba(139, 92, 246, 0.16);
   color: var(--text);
 }
 
@@ -1185,8 +1185,8 @@ p {
 }
 
 .onboarding-step-link.completed .onboarding-step-chip.status {
-  background: rgba(34, 197, 94, 0.16);
-  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(139, 92, 246, 0.16);
+  border-color: rgba(139, 92, 246, 0.35);
   color: var(--text);
 }
 
@@ -1423,11 +1423,11 @@ p {
 }
 
 .brand-mark {
-  background: var(--brand);
-  color: #fff;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  width: 156px;
+  height: auto;
+  border-radius: 0;
   display: grid;
   place-items: center;
   font-weight: 700;
@@ -1961,7 +1961,7 @@ p {
 }
 
 .esign-field.active {
-  border-color: #22c55e;
+  border-color: #8b5cf6;
 }
 
 .esign-field.selected {
@@ -2072,7 +2072,7 @@ p {
 .workflow-lane-card.active {
   border-color: rgba(14, 165, 233, 0.82);
   box-shadow: 0 10px 24px rgba(14, 165, 233, 0.14);
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.16), rgba(34, 197, 94, 0.08));
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.08));
 }
 
 .workflow-lane-title {
@@ -2162,9 +2162,9 @@ p {
 }
 
 .workflow-type-badge--general {
-  background: rgba(34, 197, 94, 0.16);
-  border-color: rgba(34, 197, 94, 0.45);
-  color: #bbf7d0;
+  background: rgba(139, 92, 246, 0.16);
+  border-color: rgba(139, 92, 246, 0.45);
+  color: #ddd6fe;
 }
 
 /* Assign Onboarding tabbed view */
@@ -2670,8 +2670,8 @@ p {
 }
 
 .assignment-board-item--completed {
-  border-left-color: rgba(34, 197, 94, 0.85);
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.2);
+  border-left-color: rgba(139, 92, 246, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.2);
 }
 
 .assignment-board-item--cancelled {
@@ -3102,7 +3102,7 @@ textarea {
 
 .password-strength-bar.strength-strong {
   width: 100%;
-  background: linear-gradient(90deg, #22c55e, #10b981);
+  background: linear-gradient(90deg, #8b5cf6, #a855f7);
 }
 
 .password-hint {
@@ -3222,9 +3222,9 @@ body.light .surface {
 }
 
 .badge.success {
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.4);
-  color: #bbf7d0;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  color: #ddd6fe;
 }
 
 .dot {
@@ -3242,8 +3242,8 @@ body.light .dot {
 }
 
 .dot.online {
-  background: #22c55e;
-  box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.12);
+  background: #8b5cf6;
+  box-shadow: 0 0 0 8px rgba(139, 92, 246, 0.12);
 }
 
 .auth-shell,
@@ -3310,19 +3310,19 @@ body.light .eyebrow {
 }
 
 .brand-mark {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--brand), var(--accent));
+  width: 156px;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
   display: grid;
   place-items: center;
-  color: #fff;
-  box-shadow: 0 10px 26px rgba(37, 99, 235, 0.35);
+  color: inherit;
+  box-shadow: none;
 }
 
 .brand-mark svg {
-  width: 26px;
-  height: 26px;
+  width: 100%;
+  height: auto;
   display: block;
 }
 

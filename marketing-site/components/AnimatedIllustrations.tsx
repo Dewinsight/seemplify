@@ -56,13 +56,13 @@ export function CalendarIllustration() {
   return (
     <div className="relative w-full h-64 flex items-center justify-center overflow-hidden">
       {/* Perspective Grid */}
-      <div className="absolute inset-x-0 bottom-0 h-full bg-[linear-gradient(transparent_0%,rgba(16,185,129,0.05)_100%)]" />
+      <div className="absolute inset-x-0 bottom-0 h-full bg-[linear-gradient(transparent_0%,rgba(139,92,246,0.05)_100%)]" />
 
       <div className="flex gap-2 items-end h-32">
         {[...Array(7)].map((_, i) => (
           <motion.div
             key={i}
-            className="w-8 rounded-t-sm bg-gradient-to-t from-emerald-900/40 to-emerald-500/10 border-x border-t border-emerald-500/20 backdrop-blur-sm relative overflow-hidden"
+            className="w-8 rounded-t-sm bg-gradient-to-t from-violet-900/40 to-violet-500/10 border-x border-t border-violet-500/20 backdrop-blur-sm relative overflow-hidden"
             initial={{ height: "20%" }}
             animate={{ height: ["20%", "60%", "40%", "80%", "30%"][i % 5] }}
             transition={{
@@ -73,9 +73,9 @@ export function CalendarIllustration() {
               delay: i * 0.2
             }}
           >
-            <div className="absolute inset-x-0 top-0 h-[1px] bg-emerald-400/30" />
+            <div className="absolute inset-x-0 top-0 h-[1px] bg-violet-400/30" />
             <motion.div
-              className="absolute inset-x-0 top-0 h-full bg-gradient-to-b from-emerald-400/10 to-transparent"
+              className="absolute inset-x-0 top-0 h-full bg-gradient-to-b from-violet-400/10 to-transparent"
               animate={{ opacity: [0, 0.5, 0] }}
               transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
             />

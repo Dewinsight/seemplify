@@ -26,6 +26,7 @@ import crypto from 'crypto'
 import { SignJWT, jwtVerify } from 'jose'
 import { emailService } from './services/emailService.js'
 import { otpService } from './services/otpService.js'
+import MarketingVisit from './models/MarketingVisit.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
 import { buildMemberStructureMap, getMemberStructure } from './utils/memberStructure.js'
@@ -47,6 +48,7 @@ import {
   normalizeAppAccess
 } from './utils/appAccess.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
+import { startCampaignWorker } from './jobs/campaignWorker.js'
 import { startProfileCompletionReminderJobs } from './jobs/profileCompletionReminders.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
 import { getProfileCompletion, getProfileCompletionForAccount } from './utils/profileCompletion.js'
@@ -57,6 +59,12 @@ import {
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
+import {
+  ATTRIBUTION_QUERY_PARAM,
+  buildAttributionTouch,
+  resolveRequestAttribution
+} from './services/campaignAttributionService.js'
+import { registerCampaignConversion, resolveVisitorTouches } from './services/marketingConversionService.js'
 import { samlIdPService as samlService } from './services/samlService.js'
 import { subscriptionService } from './services/subscriptionService.js'
 
@@ -457,8 +465,12 @@ import onboardingRouter from './routes/onboarding.js'
 import adminPlansRouter from './routes/adminPlans.js'
 import adminSubscriptionRequestsRouter from './routes/adminSubscriptionRequests.js'
 import adminSubscriptionsRouter from './routes/adminSubscriptions.js'
+import adminCampaignApiRouter from './routes/adminCampaignApi.js'
+import adminCampaignViewsRouter from './routes/adminCampaignViews.js'
 import adminViewsRouter from './routes/adminViews.js'
 import publicPlansRouter from './routes/publicPlans.js'
+import publicMarketingRoutesRouter from './routes/publicMarketingRoutes.js'
+import publicRoutesRouter from './routes/publicRoutes.js'
 import organizationSubscriptionRouter from './routes/organizationSubscription.js'
 import adminUsersRouter from './routes/adminUsers.js'
 import profileRouter from './routes/profile.js'
@@ -468,18 +480,25 @@ dotenv.config()
 // Shared UI theme for IdP pages (marketing-site aesthetic)
 const themeCss = readFileSync(join(__dirname, 'public/css/idp-theme.css'), 'utf-8')
 const seemplifyMarkSvg = `
-  <svg viewBox="0 0 100 100" aria-hidden="true">
+  <svg viewBox="0 0 520 84" aria-hidden="true">
     <defs>
-      <linearGradient id="seemplifyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#10b981" />
-        <stop offset="50%" stop-color="#2dd4bf" />
-        <stop offset="100%" stop-color="#6366f1" />
+      <linearGradient id="seemplifyGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#b980ff" />
+        <stop offset="42%" stop-color="#8b5cf6" />
+        <stop offset="100%" stop-color="#4c1d95" />
       </linearGradient>
     </defs>
-    <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75" stroke="url(#seemplifyGradient)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="65" cy="25" r="6" fill="#fff" />
-    <circle cx="50" cy="50" r="6" fill="#fff" />
-    <circle cx="35" cy="75" r="6" fill="#fff" />
+    <text
+      x="10"
+      y="60"
+      fill="url(#seemplifyGradient)"
+      font-family="'Space Grotesk', 'IBM Plex Sans', sans-serif"
+      font-size="72"
+      font-weight="700"
+      letter-spacing="-4"
+    >
+      seemplify
+    </text>
   </svg>
 `
 
@@ -512,6 +531,106 @@ function validateOrigin(origin, allowedOrigins) {
     const regex = new RegExp(`^${regexPattern}$`)
     return regex.test(origin)
   })
+}
+
+const SIGNUP_ATTRIBUTION_FIELDS = [
+  ATTRIBUTION_QUERY_PARAM,
+  'visitorId',
+  'sessionId',
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content'
+]
+
+function escapeAttribute(value = '') {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function collectSignupAttribution(source = {}) {
+  const values = {}
+  for (const field of SIGNUP_ATTRIBUTION_FIELDS) {
+    const value = String(source?.[field] ?? '').trim()
+    if (value) {
+      values[field] = value
+    }
+  }
+  return values
+}
+
+function buildHiddenAttributionInputs(source = {}) {
+  return Object.entries(collectSignupAttribution(source))
+    .map(([field, value]) => `<input type="hidden" name="${field}" value="${escapeAttribute(value)}" />`)
+    .join('\n')
+}
+
+function buildPathWithQuery(pathname, source = {}, extra = {}) {
+  const params = new URLSearchParams()
+  for (const [field, value] of Object.entries(collectSignupAttribution(source))) {
+    params.set(field, value)
+  }
+  for (const [field, value] of Object.entries(extra)) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      params.set(field, String(value))
+    }
+  }
+  const query = params.toString()
+  return query ? `${pathname}?${query}` : pathname
+}
+
+async function buildSignupAttributionState(req, email = '') {
+  const resolved = await resolveRequestAttribution(req, req.body || {})
+  const occurredAt = new Date()
+  const websiteTouch = buildAttributionTouch({
+    sourceType: resolved.verifiedToken ? 'campaign_click' : 'website_visit',
+    source: String(req.body?.source || req.query?.source || 'website'),
+    channel: 'web',
+    campaignId: resolved.verifiedToken?.campaignId || null,
+    batchId: resolved.verifiedToken?.batchId || null,
+    recipientId: resolved.verifiedToken?.recipientId || null,
+    campaignName: resolved.verifiedToken?.campaignName || '',
+    signedToken: resolved.signedToken,
+    visitorId: resolved.visitorId,
+    sessionId: resolved.sessionId,
+    email: String(email || '').trim().toLowerCase(),
+    landingPage: String(req.body?.landingPage || req.query?.landingPage || req.headers.referer || ''),
+    referrer: String(req.body?.referrer || req.headers.referer || ''),
+    utm: resolved.utm,
+    occurredAt
+  })
+  const { firstTouch, lastTouch } = await resolveVisitorTouches({
+    visitorId: resolved.visitorId,
+    fallbackTouch: websiteTouch
+  })
+  const signupTouch = buildAttributionTouch({
+    sourceType: 'signup',
+    source: 'identityprovider',
+    channel: 'web',
+    campaignId: lastTouch?.campaignId || resolved.verifiedToken?.campaignId || null,
+    batchId: lastTouch?.batchId || resolved.verifiedToken?.batchId || null,
+    recipientId: lastTouch?.recipientId || resolved.verifiedToken?.recipientId || null,
+    campaignName: lastTouch?.campaignName || resolved.verifiedToken?.campaignName || '',
+    signedToken: resolved.signedToken,
+    visitorId: resolved.visitorId,
+    sessionId: resolved.sessionId,
+    email: String(email || '').trim().toLowerCase(),
+    landingPage: String(req.body?.landingPage || req.query?.landingPage || req.originalUrl || ''),
+    referrer: String(req.body?.referrer || req.headers.referer || ''),
+    utm: resolved.utm,
+    occurredAt
+  })
+
+  return {
+    resolved,
+    firstTouch,
+    lastTouch,
+    signupTouch
+  }
 }
 
 // Store clients metadata for later use (CORS, validation)
@@ -1035,7 +1154,7 @@ app.get('/interaction/:uid', async (req, res) => {
                 <div class="error" id="errorQuick"></div>
                 <div style="background: var(--surface-2, rgba(30,41,59,0.4)); border:1px solid var(--border); padding: 16px; border-radius: 14px; margin-bottom: 14px;">
                   <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 18px; font-weight: bold; margin-right: 12px;">
+                    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 18px; font-weight: bold; margin-right: 12px;">
                       ${lastLoggedInEmail.charAt(0).toUpperCase()}
                     </div>
                     <div style="flex: 1;">
@@ -1136,7 +1255,7 @@ app.get('/interaction/:uid', async (req, res) => {
                 </div>
 
                 <div class="feature-card">
-                  <div class="feature-icon feature-icon--green">
+                  <div class="feature-icon feature-icon--accent">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
                   </div>
                   <div>
@@ -1364,6 +1483,7 @@ app.get('/signup/:uid', async (req, res) => {
     passwords_mismatch: 'Passwords do not match.'
   }
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
+  const hiddenAttributionInputs = buildHiddenAttributionInputs(req.query)
 
   res.send(`
     <!DOCTYPE html>
@@ -1424,6 +1544,7 @@ app.get('/signup/:uid', async (req, res) => {
             <div class="error" id="error"></div>
 
             <form id="signupForm" action="/interaction/${uid}/signup" method="POST">
+              ${hiddenAttributionInputs}
               <div class="form-group">
                 <label for="name">Full name (optional)</label>
                 <input type="text" id="name" name="name" placeholder="Jordan Harper" autocomplete="name" />
@@ -1500,7 +1621,7 @@ app.get('/signup/:uid', async (req, res) => {
               </div>
 
               <div class="feature-card">
-                <div class="feature-icon feature-icon--green">
+                <div class="feature-icon feature-icon--accent">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
                 </div>
                 <div>
@@ -1670,15 +1791,30 @@ app.post('/interaction/:uid/login', async (req, res) => {
 
 app.post('/interaction/:uid/signup', async (req, res) => {
   try {
-    console.log('📝 Signup attempt for:', req.body.email)
-    const { email, password, name } = req.body
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+    const confirmPassword = String(req.body?.confirmPassword || '')
+    const name = String(req.body?.name || '').trim()
+    const attributionQuery = collectSignupAttribution(req.body)
+
+    console.log('📝 Signup attempt for:', email)
+
+    if (password !== confirmPassword) {
+      return res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, attributionQuery, {
+        error: 'passwords_mismatch'
+      }))
+    }
 
     // Check if user already exists
     const existing = await Account.findOne({ email })
     if (existing) {
       console.log('❌ Account already exists:', email)
-      return res.redirect(`/signup/${req.params.uid}?error=account_exists`)
+      return res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, attributionQuery, {
+        error: 'account_exists'
+      }))
     }
+
+    const attributionState = await buildSignupAttributionState(req, email)
 
     // Create new account (NOT verified yet)
     const sub = new mongoose.Types.ObjectId().toString()
@@ -1693,10 +1829,54 @@ app.post('/interaction/:uid/signup', async (req, res) => {
         name: name || email.split('@')[0],
         preferred_username: email.split('@')[0]
       },
-      security: {}
+      security: {},
+      acquisition: {
+        firstTouch: attributionState.firstTouch,
+        lastTouch: attributionState.lastTouch,
+        conversionSource: attributionState.resolved.verifiedToken ? 'campaign' : 'website',
+        visitorId: attributionState.resolved.visitorId,
+        attributionSnapshot: {
+          signupTouch: attributionState.signupTouch
+        }
+      }
     })
 
     console.log(`✅ New account created (unverified): ${email}`)
+
+    const signupTrackingResults = await Promise.allSettled([
+      MarketingVisit.create({
+        visitorId: attributionState.resolved.visitorId,
+        sessionId: attributionState.resolved.sessionId,
+        eventType: 'signup_complete',
+        sourceApp: 'identityprovider',
+        pageUrl: String(req.body?.landingPage || ''),
+        path: req.originalUrl,
+        referrer: String(req.body?.referrer || req.headers.referer || ''),
+        ipAddress: req.ip || req.connection?.remoteAddress || '',
+        userAgent: String(req.headers['user-agent'] || ''),
+        utm: attributionState.resolved.utm,
+        attribution: attributionState.signupTouch,
+        account: acc._id,
+        metadata: {
+          route: 'interaction_signup'
+        },
+        occurredAt: attributionState.signupTouch.occurredAt
+      }),
+      registerCampaignConversion({
+        conversionType: 'signup',
+        campaignId: attributionState.resolved.verifiedToken?.campaignId || attributionState.lastTouch?.campaignId || null,
+        recipientId: attributionState.resolved.verifiedToken?.recipientId || attributionState.lastTouch?.recipientId || null,
+        email,
+        visitorId: attributionState.resolved.visitorId,
+        occurredAt: attributionState.signupTouch.occurredAt,
+        accountId: acc._id
+      })
+    ])
+    signupTrackingResults.forEach((result) => {
+      if (result.status === 'rejected') {
+        console.error('Interaction signup tracking error:', result.reason)
+      }
+    })
 
     // Generate and send verification OTP
     const otp = otpService.generateOTP()
@@ -1722,7 +1902,9 @@ app.post('/interaction/:uid/signup', async (req, res) => {
     console.error('💥 Signup error:', err)
     console.error('💥 Error stack:', err.stack)
     if (!res.headersSent) {
-      res.redirect(`/signup/${req.params.uid}?error=signup_failed`)
+      res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, req.body, {
+        error: 'signup_failed'
+      }))
     }
   }
 })
@@ -2147,7 +2329,7 @@ app.get('/forgot-password', async (req, res) => {
         .logo-icon {
           width: 60px;
           height: 60px;
-          background: linear-gradient(135deg, #10b981, #2dd4bf, #6366f1);
+          background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95);
           border-radius: 14px;
           display: inline-flex;
           align-items: center;
@@ -3518,19 +3700,33 @@ app.get('/signup', async (req, res) => {
   }
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
 
-  res.send(renderHubSignupPage(errorMsg))
+  res.send(renderHubSignupPage(errorMsg, req.query))
 })
 
 // Hub Signup Handler
 app.post('/signup', async (req, res) => {
   try {
-    const { email, password, name } = req.body
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+    const confirmPassword = String(req.body?.confirmPassword || '')
+    const name = String(req.body?.name || '').trim()
+    const attributionQuery = collectSignupAttribution(req.body)
+
+    if (password !== confirmPassword) {
+      return res.redirect(buildPathWithQuery('/signup', attributionQuery, {
+        error: 'passwords_mismatch'
+      }))
+    }
 
     // Check if account exists
     const existing = await Account.findOne({ email })
     if (existing) {
-      return res.redirect('/signup?error=account_exists')
+      return res.redirect(buildPathWithQuery('/signup', attributionQuery, {
+        error: 'account_exists'
+      }))
     }
+
+    const attributionState = await buildSignupAttributionState(req, email)
 
     // Create account (NOT verified yet)
     const sub = new mongoose.Types.ObjectId().toString()
@@ -3545,10 +3741,54 @@ app.post('/signup', async (req, res) => {
         name: name || email.split('@')[0],
         preferred_username: email.split('@')[0]
       },
-      security: {}
+      security: {},
+      acquisition: {
+        firstTouch: attributionState.firstTouch,
+        lastTouch: attributionState.lastTouch,
+        conversionSource: attributionState.resolved.verifiedToken ? 'campaign' : 'website',
+        visitorId: attributionState.resolved.visitorId,
+        attributionSnapshot: {
+          signupTouch: attributionState.signupTouch
+        }
+      }
     })
 
     console.log('Hub signup successful (unverified):', email)
+
+    const hubSignupTrackingResults = await Promise.allSettled([
+      MarketingVisit.create({
+        visitorId: attributionState.resolved.visitorId,
+        sessionId: attributionState.resolved.sessionId,
+        eventType: 'signup_complete',
+        sourceApp: 'identityprovider',
+        pageUrl: String(req.body?.landingPage || ''),
+        path: req.originalUrl,
+        referrer: String(req.body?.referrer || req.headers.referer || ''),
+        ipAddress: req.ip || req.connection?.remoteAddress || '',
+        userAgent: String(req.headers['user-agent'] || ''),
+        utm: attributionState.resolved.utm,
+        attribution: attributionState.signupTouch,
+        account: acc._id,
+        metadata: {
+          route: 'hub_signup'
+        },
+        occurredAt: attributionState.signupTouch.occurredAt
+      }),
+      registerCampaignConversion({
+        conversionType: 'signup',
+        campaignId: attributionState.resolved.verifiedToken?.campaignId || attributionState.lastTouch?.campaignId || null,
+        recipientId: attributionState.resolved.verifiedToken?.recipientId || attributionState.lastTouch?.recipientId || null,
+        email,
+        visitorId: attributionState.resolved.visitorId,
+        occurredAt: attributionState.signupTouch.occurredAt,
+        accountId: acc._id
+      })
+    ])
+    hubSignupTrackingResults.forEach((result) => {
+      if (result.status === 'rejected') {
+        console.error('Hub signup tracking error:', result.reason)
+      }
+    })
 
     // Generate and send verification OTP
     const otp = otpService.generateOTP()
@@ -3571,7 +3811,9 @@ app.post('/signup', async (req, res) => {
 
   } catch (err) {
     console.error('Hub signup error:', err)
-    res.redirect('/signup?error=signup_failed')
+    res.redirect(buildPathWithQuery('/signup', req.body, {
+      error: 'signup_failed'
+    }))
   }
 })
 
@@ -3618,6 +3860,12 @@ app.get('/simple-lms', async (req, res) => {
   } catch (error) {
     console.error('Simple LMS redirect failed:', error)
     return res.redirect('/')
+  }
+  try {
+    startCampaignWorker()
+    console.log('âœ… Campaign worker initialized')
+  } catch (error) {
+    console.error('âš ï¸ Failed to initialize campaign worker:', error)
   }
 })
 
@@ -5175,12 +5423,15 @@ app.use('/api/organizations', notificationsRouter) // Notification routes for /a
 app.use('/api', onboardingRouter)
 
 // Subscription Management API Routes
+app.use('/api/admin', adminCampaignApiRouter)
 app.use('/api/admin/plans', adminPlansRouter)
 app.use('/api/admin/subscription-requests', adminSubscriptionRequestsRouter)
 app.use('/api/admin/subscriptions', adminSubscriptionsRouter)
 app.use('/api/admin/users', adminUsersRouter)
 app.use('/api/plans', publicPlansRouter)
 app.use('/api/organizations', organizationSubscriptionRouter)
+app.use('/api/public', publicMarketingRoutesRouter)
+app.use('/', publicRoutesRouter)
 
 // Admin Login Routes (must come before admin views router)
 app.get('/admin/login', (req, res) => {
@@ -5254,6 +5505,7 @@ app.get('/admin/logout', (req, res, next) => {
 })
 
 // Admin Panel View Routes
+app.use('/admin/campaigns', adminCampaignViewsRouter)
 app.use('/admin', adminViewsRouter)
 
 // SAML 2.0 Identity Provider Routes
@@ -7424,7 +7676,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
             --line: #1f2a44;
             --text: #e2e8f0;
             --muted: #94a3b8;
-            --success: #22c55e;
+            --success: #8b5cf6;
           }
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
@@ -7451,7 +7703,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
           .icon {
             width: 80px;
             height: 80px;
-            background: linear-gradient(135deg, var(--success), #16a34a);
+            background: linear-gradient(135deg, var(--success), #4c1d95);
             border-radius: 20px;
             display: flex;
             align-items: center;
@@ -7515,7 +7767,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
           }
           .role-owner { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
           .role-admin { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
-          .role-hr_manager { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+          .role-hr_manager { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
           .role-recruiter { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
           .role-interviewer { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
           .buttons {
@@ -7533,12 +7785,12 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
             transition: all 0.2s;
           }
           .btn-primary {
-            background: linear-gradient(135deg, var(--success), #16a34a);
+            background: linear-gradient(135deg, var(--success), #4c1d95);
             color: white;
           }
           .btn-primary:hover {
             transform: translateY(-1px);
-            box-shadow: 0 8px 24px rgba(34, 197, 94, 0.3);
+            box-shadow: 0 8px 24px rgba(139, 92, 246, 0.3);
           }
           .btn-secondary {
             background: rgba(255,255,255,0.08);
@@ -7796,7 +8048,7 @@ function renderHubPage(account, apps, organizations = []) {
         .hub-card .chip { background: var(--panel-strong); border: 1px solid var(--border); }
         .hub-card .chip.secondary { color: var(--brand-2); }
         .stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text); font-weight: 600; }
-        .dot { width: 10px; height: 10px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,0.14); }
+        .dot { width: 10px; height: 10px; border-radius: 999px; background: #8b5cf6; box-shadow: 0 0 0 6px rgba(139,92,246,0.14); }
 
         .apps { width: 100%; display: block; margin-top: 18px; }
         .section-title {
@@ -8218,8 +8470,8 @@ function renderHubPage(account, apps, organizations = []) {
 function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
   const inviteBanner = pendingInviteInfo ? `
     <div style="
-      background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(59, 130, 246, 0.15));
-      border: 1px solid rgba(34, 197, 94, 0.4);
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15));
+      border: 1px solid rgba(139, 92, 246, 0.4);
       border-radius: 12px;
       padding: 16px 20px;
       margin-bottom: 20px;
@@ -8230,7 +8482,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
       <div style="
         width: 40px;
         height: 40px;
-        background: linear-gradient(135deg, #22c55e, #3b82f6);
+        background: linear-gradient(135deg, #8b5cf6, #6366f1);
         border-radius: 10px;
         display: flex;
         align-items: center;
@@ -8357,6 +8609,10 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
             <div class="signup-link">
               Don't have an account? <a class="link" href="/signup">Create free account</a>
             </div>
+
+            <div class="signup-link" style="margin-top: 12px;">
+              Need a guided walkthrough? <a class="link" href="/book-demo">Book a demo</a>
+            </div>
           </div>
         </div>
 
@@ -8402,7 +8658,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
               </div>
 
               <div class="feature-card">
-                <div class="feature-icon feature-icon--green">
+                <div class="feature-icon feature-icon--accent">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/>
                     <path d="M9 12l2 2 4-4"/>
@@ -8507,7 +8763,8 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
 }
 
 // Hub Signup Page Renderer
-function renderHubSignupPage(errorMsg) {
+function renderHubSignupPage(errorMsg, attributionValues = {}) {
+  const hiddenAttributionInputs = buildHiddenAttributionInputs(attributionValues)
   return `
     <!DOCTYPE html>
     <html>
@@ -8594,6 +8851,7 @@ function renderHubSignupPage(errorMsg) {
           ${errorMsg ? `<div class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
 
           <form id="signupForm" action="/signup" method="POST">
+            ${hiddenAttributionInputs}
             <div class="form-group">
               <label for="name">Full name (optional)</label>
               <input type="text" id="name" name="name" placeholder="Jordan Harper" />
@@ -8669,7 +8927,7 @@ function renderHubSignupPage(errorMsg) {
           } else {
             strengthBar.classList.add('strength-strong');
             strengthText.textContent = 'Strong password!';
-            strengthText.style.color = '#34d399';
+            strengthText.style.color = '#c4b5fd';
           }
         });
 

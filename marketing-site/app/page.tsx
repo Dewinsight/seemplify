@@ -23,9 +23,10 @@ import {
   primaryMarkets,
   type SeoMarket,
 } from './seo-markets'
-import { absoluteUrl, siteConfig } from './site-config'
+import { absoluteUrl, idpUrl, siteConfig } from './site-config'
 
-const IDP_URL = 'https://auth.seemplifyai.com'
+const IDP_LOGIN_URL = idpUrl('/')
+const IDP_SIGNUP_URL = idpUrl('/signup')
 const MARKET_COOKIE = 'seemplify-market'
 
 type ModuleCardProps = {
@@ -159,7 +160,7 @@ const RecruitingKanban = () => (
       }}
       transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', times: [0, 0.5, 1] }}
     >
-      <div className="h-3 w-3 rounded-full bg-emerald-400/80 flex items-center justify-center">
+      <div className="h-3 w-3 rounded-full bg-violet-400/80 flex items-center justify-center">
       </div>
       <div className="h-1.5 w-6 rounded-sm bg-zinc-300 dark:bg-white/60" />
     </motion.div>
@@ -183,7 +184,7 @@ const IdentityOrbit = () => (
       animate={{ rotate: 360 }}
       transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}
     >
-      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-cyan-400/80 shadow-[0_0_12px_rgba(34,211,238,0.4)]" />
+      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-fuchsia-400/80 shadow-[0_0_12px_rgba(217,70,239,0.4)]" />
     </motion.div>
 
     <motion.div
@@ -246,7 +247,7 @@ const LeaveCalendar = () => {
       <div className="flex justify-between items-center mb-3 px-2">
         <div className="text-[10px] font-bold tracking-widest uppercase text-zinc-800 dark:text-white/80">October</div>
         <div className="flex gap-2 text-[8px] uppercase tracking-wider font-semibold">
-          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><div className="w-2 h-2 rounded bg-emerald-400" /> Approved</span>
+          <span className="flex items-center gap-1 text-violet-600 dark:text-violet-400"><div className="w-2 h-2 rounded bg-violet-400" /> Approved</span>
           <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400"><div className="w-2 h-2 rounded bg-amber-400" /> Pending</span>
         </div>
       </div>
@@ -262,7 +263,7 @@ const LeaveCalendar = () => {
           let baseClass = "flex h-6 items-center justify-center rounded-md font-medium text-zinc-600 dark:text-white/70 "
 
           if (isApproved) {
-            baseClass += "bg-emerald-400/20 text-emerald-700 dark:text-emerald-200 border-b-2 border-emerald-500"
+            baseClass += "bg-violet-400/20 text-violet-700 dark:text-violet-200 border-b-2 border-violet-500"
           } else if (isPending) {
             baseClass += "bg-amber-400/20 text-amber-700 dark:text-amber-200 border-b-2 border-amber-500 border-dashed"
           }
@@ -313,7 +314,7 @@ const PayrollLedger = () => {
       <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/10 flex items-center justify-between z-10">
         <span className="text-[10px] uppercase tracking-widest text-zinc-400 dark:text-white/40 font-bold">Net Pay</span>
         <motion.span
-          className="font-display text-lg text-emerald-600 dark:text-emerald-400 font-bold"
+          className="font-display text-lg text-violet-600 dark:text-violet-400 font-bold"
           animate={{ scale: [1, 1.05, 1] }}
           transition={{ duration: 2, repeat: Infinity }}
         >
@@ -323,7 +324,7 @@ const PayrollLedger = () => {
 
       {/* Scanning effect */}
       <motion.div
-        className="absolute inset-x-0 h-8 bg-gradient-to-b from-transparent via-emerald-400/10 to-transparent z-0 pointer-events-none"
+        className="absolute inset-x-0 h-8 bg-gradient-to-b from-transparent via-violet-400/10 to-transparent z-0 pointer-events-none"
         animate={{ top: ['-20%', '120%'] }}
         transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
       />
@@ -335,29 +336,29 @@ const TimeClock = () => (
   <div className="relative flex h-40 flex-col items-center justify-center overflow-hidden rounded-2xl border border-black/5 dark:border-white/10 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900/50 dark:to-black/50">
     {/* Concentric pulsing circles */}
     <motion.div
-      className="absolute h-32 w-32 rounded-full border border-cyan-400/20"
+      className="absolute h-32 w-32 rounded-full border border-fuchsia-400/20"
       animate={{ scale: [1, 1.5], opacity: [0.8, 0] }}
       transition={{ duration: 3, repeat: Infinity, ease: 'easeOut' }}
     />
     <motion.div
-      className="absolute h-32 w-32 rounded-full border border-cyan-500/30"
+      className="absolute h-32 w-32 rounded-full border border-violet-500/30"
       animate={{ scale: [1, 1.5], opacity: [0.8, 0] }}
       transition={{ duration: 3, repeat: Infinity, ease: 'easeOut', delay: 1 }}
     />
 
-    <div className="absolute h-24 w-24 rounded-full bg-white dark:bg-zinc-900 shadow-[0_0_30px_rgba(34,211,238,0.15)] z-0" />
+    <div className="absolute h-24 w-24 rounded-full bg-white dark:bg-zinc-900 shadow-[0_0_30px_rgba(168,85,247,0.15)] z-0" />
 
     <div className="relative z-10 flex flex-col items-center">
       <div className="font-mono text-4xl font-light tracking-tight text-zinc-800 dark:text-white mb-2">
-        09<span className="text-cyan-500 animate-pulse">:</span>41<span className="text-xl text-zinc-400 ml-1">AM</span>
+        09<span className="text-violet-500 animate-pulse">:</span>41<span className="text-xl text-zinc-400 ml-1">AM</span>
       </div>
 
       <motion.div
-        className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 shadow-sm backdrop-blur-sm"
+        className="flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 shadow-sm backdrop-blur-sm"
         whileHover={{ scale: 1.05 }}
       >
-        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="text-[9px] uppercase tracking-widest text-emerald-700 dark:text-emerald-300 font-bold">Clocked In</span>
+        <div className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse" />
+        <span className="text-[9px] uppercase tracking-widest text-violet-700 dark:text-violet-300 font-bold">Clocked In</span>
       </motion.div>
     </div>
 
@@ -382,12 +383,12 @@ const LMSChecklist = () => {
         <div key={course.title} className="flex items-center gap-4 group">
 
           {/* Status Icon */}
-          <div className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${course.completed ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800'}`}>
+          <div className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${course.completed ? 'border-violet-500 bg-violet-500/10' : 'border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800'}`}>
             {course.completed ? (
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
             ) : (
               <motion.div
-                className="h-2 w-2 rounded-full bg-teal-500"
+                className="h-2 w-2 rounded-full bg-fuchsia-500"
                 animate={{ scale: [0.8, 1.2, 0.8], opacity: [0.5, 1, 0.5] }}
                 transition={{ duration: 2, repeat: Infinity, delay: index * 0.3 }}
               />
@@ -405,7 +406,7 @@ const LMSChecklist = () => {
 
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
               <motion.div
-                className={`h-full ${course.completed ? 'bg-emerald-500' : 'bg-gradient-to-r from-teal-400 to-emerald-400'}`}
+                className={`h-full ${course.completed ? 'bg-violet-500' : 'bg-gradient-to-r from-fuchsia-400 to-violet-400'}`}
                 initial={{ width: 0 }}
                 animate={{ width: `${course.progress}%` }}
                 transition={{ duration: 1.5, delay: index * 0.2, ease: "easeOut" }}
@@ -432,7 +433,7 @@ const MarqueeStrip = () => (
         {[...Array(8)].map((_, i) => (
           <div key={i} className="flex items-center gap-4 text-3xl text-zinc-900 dark:text-white md:text-4xl">
             <span className="font-sans italic font-light tracking-wide opacity-40">Run Smart.</span>
-            <span className="font-display font-medium tracking-tight bg-gradient-to-r from-emerald-500 to-cyan-600 bg-clip-text text-transparent dark:from-emerald-400 dark:to-cyan-400">Run Seemple.</span>
+            <span className="font-display font-medium tracking-tight bg-gradient-to-r from-violet-500 to-fuchsia-600 bg-clip-text text-transparent dark:from-violet-400 dark:to-fuchsia-400">Run Seemple.</span>
           </div>
         ))}
       </motion.div>
@@ -484,7 +485,7 @@ const modules: ModuleCardProps[] = [
     title: 'Identity Provider',
     tag: 'Access & Security',
     description: 'Centralized SSO with granular policy enforcement, role-based access control, and continuous trust scoring.',
-    accent: 'from-cyan-500 via-blue-500 to-transparent',
+    accent: 'from-fuchsia-500 via-indigo-500 to-transparent',
     visual: <IdentityOrbit />,
     className: 'md:col-span-4 min-h-[340px]',
   },
@@ -500,7 +501,7 @@ const modules: ModuleCardProps[] = [
     title: 'Time & Attendance',
     tag: 'Workforce',
     description: 'Pulse-accurate, geofenced time tracking with biometric capabilities and automatic compliance alerts.',
-    accent: 'from-blue-400 via-cyan-400 to-transparent',
+    accent: 'from-indigo-400 via-fuchsia-400 to-transparent',
     visual: <TimeClock />,
     className: 'md:col-span-4 min-h-[340px]',
   },
@@ -516,7 +517,7 @@ const modules: ModuleCardProps[] = [
     title: 'Payroll',
     tag: 'Finance & Comp',
     description: 'Run global payroll with audit-ready precision, instant reconciliation, and automated tax compliance routing.',
-    accent: 'from-emerald-500 via-teal-500 to-transparent',
+    accent: 'from-violet-500 via-fuchsia-500 to-transparent',
     visual: <PayrollLedger />,
     className: 'md:col-span-4 min-h-[340px]',
   },
@@ -524,7 +525,7 @@ const modules: ModuleCardProps[] = [
     title: 'Learning (LMS)',
     tag: 'Development',
     description: 'Curated skill pathways that adapt to role changes, automated certification tracking, and compliance cadences.',
-    accent: 'from-teal-400 via-emerald-400 to-transparent',
+    accent: 'from-fuchsia-400 via-violet-400 to-transparent',
     visual: <LMSChecklist />,
     className: 'md:col-span-8 min-h-[340px]',
   },
@@ -545,7 +546,7 @@ const homeStructuredData = {
       '@type': 'Organization',
       name: siteConfig.name,
       url: siteConfig.url,
-      logo: absoluteUrl('/logo-icon.svg'),
+      logo: absoluteUrl('/logo.svg'),
       email: siteConfig.contactEmail,
       areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
         '@type': 'Country',
@@ -687,9 +688,8 @@ export default function HomePage() {
           }`}
       >
         <nav className="container mx-auto flex items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center">
             <SeemplifyLogo size="sm" animated={false} />
-            <span className="font-display text-lg tracking-tight text-zinc-900 dark:text-white">Seemplify</span>
           </Link>
 
           <div className="hidden items-center gap-8 text-sm text-zinc-700 dark:text-white/80 lg:flex">
@@ -703,7 +703,7 @@ export default function HomePage() {
 
           <div className="hidden items-center gap-3 md:flex">
             <ThemeToggle />
-            <Link href={IDP_URL} className="text-sm text-zinc-700 transition hover:text-zinc-900 dark:text-white/80 dark:hover:text-white">
+            <Link href={IDP_LOGIN_URL} className="text-sm text-zinc-700 transition hover:text-zinc-900 dark:text-white/80 dark:hover:text-white">
               Sign In
             </Link>
             <button
@@ -715,7 +715,7 @@ export default function HomePage() {
           </div>
 
           <Link
-            href={IDP_URL}
+            href={IDP_SIGNUP_URL}
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/15 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/30 md:hidden"
           >
             Get Started
@@ -735,7 +735,7 @@ export default function HomePage() {
                   transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                   className="inline-flex items-center gap-3 rounded-full border border-black/10 bg-white px-4 py-2 text-xs uppercase tracking-[0.35em] text-zinc-700 dark:border-white/20 dark:bg-white/10 dark:text-white/75"
                 >
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
+                  <span className="h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_12px_rgba(168,85,247,0.8)]" />
                   {heroEyebrow}
                 </motion.div>
 
@@ -743,10 +743,10 @@ export default function HomePage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-                  className="mt-6 font-display text-5xl leading-[1.05] tracking-tight text-[#0b2f29] dark:text-white md:text-7xl"
+                  className="mt-6 font-display text-5xl leading-[1.05] tracking-tight text-[#35184f] dark:text-white md:text-7xl"
                 >
                   {heroTitle}
-                  <span className="block bg-gradient-to-r from-[#0b2f29] via-emerald-800 to-teal-700 bg-clip-text text-transparent dark:from-white dark:via-cyan-200 dark:to-emerald-200">
+                  <span className="block bg-gradient-to-r from-[#4c1d95] via-[#7c3aed] to-[#a855f7] bg-clip-text text-transparent dark:from-white dark:via-violet-200 dark:to-fuchsia-200">
                     {heroSubtitle}
                   </span>
                 </motion.h1>
@@ -755,7 +755,7 @@ export default function HomePage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.9, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="mt-6 max-w-xl text-lg text-[#294942] dark:text-white/75"
+                  className="mt-6 max-w-xl text-lg text-[#5f4d74] dark:text-white/75"
                 >
                   {heroDescription}
                 </motion.p>
@@ -778,12 +778,14 @@ export default function HomePage() {
                   className="mt-8 flex flex-wrap gap-4"
                 >
                   <Link
-                    href={IDP_URL}
+                    href={IDP_SIGNUP_URL}
+                    data-track-cta="hero-start-free-trial"
                     className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white shadow-[0_0_35px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_45px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_35px_rgba(255,255,255,0.25)] dark:hover:shadow-[0_0_45px_rgba(255,255,255,0.4)]"
                   >
                     Start Free Trial
                   </Link>
                   <button
+                    data-track-cta="hero-book-demo"
                     onClick={() => setIsModalOpen(true)}
                     className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/20 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/40"
                   >
@@ -856,7 +858,7 @@ export default function HomePage() {
         <section id="how-it-works" className="relative py-24 bg-[#0b0b11] text-white">
           <div className="absolute inset-0 opacity-70">
             <div className="absolute -top-24 left-10 h-72 w-72 rounded-full bg-indigo-500/20 blur-[140px]" />
-            <div className="absolute bottom-[-120px] right-0 h-80 w-80 rounded-full bg-emerald-400/15 blur-[160px]" />
+            <div className="absolute bottom-[-120px] right-0 h-80 w-80 rounded-full bg-violet-400/15 blur-[160px]" />
           </div>
           <div className="container relative z-10 mx-auto px-6">
             <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
@@ -888,7 +890,7 @@ export default function HomePage() {
                     transition={{ delay: 0.5 }}
                   >
                     <div className="flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-emerald-400" />
+                      <CheckCircle className="w-5 h-5 text-violet-400" />
                       <span className="text-sm font-medium text-white">Workflow Authorized</span>
                     </div>
                   </motion.div>
@@ -901,7 +903,7 @@ export default function HomePage() {
                     transition={{ delay: 0.7 }}
                   >
                     <div className="flex items-center gap-3">
-                      <Zap className="w-5 h-5 text-cyan-400" />
+                      <Zap className="w-5 h-5 text-fuchsia-400" />
                       <div>
                         <div className="text-xs text-white/70">Data Synced</div>
                         <div className="text-sm font-medium text-white">Real-time update</div>
@@ -1031,7 +1033,7 @@ export default function HomePage() {
         {/* Document Signing Section */}
         <section id="documents" className="relative py-24 bg-[#0b0b11] text-white">
           <div className="absolute inset-0 opacity-50">
-            <div className="absolute top-0 right-0 h-96 w-96 rounded-full bg-cyan-500/10 blur-[120px]" />
+            <div className="absolute top-0 right-0 h-96 w-96 rounded-full bg-fuchsia-500/10 blur-[120px]" />
           </div>
           <div className="container relative z-10 mx-auto px-6">
             <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
@@ -1061,7 +1063,7 @@ export default function HomePage() {
                     transition={{ delay: 0.5 }}
                   >
                     <div className="flex items-center gap-3">
-                      <FileSignature className="w-6 h-6 text-emerald-400" />
+                      <FileSignature className="w-6 h-6 text-violet-400" />
                       <div>
                         <div className="text-xs text-white/70">Offer Letter</div>
                         <div className="text-sm font-bold text-white">Document Signed ✓</div>
@@ -1186,7 +1188,7 @@ export default function HomePage() {
                     transition={{ delay: 0.5 }}
                   >
                     <div className="flex items-center gap-3">
-                      <TrendingUp className="w-6 h-6 text-emerald-500 dark:text-emerald-400" />
+                      <TrendingUp className="w-6 h-6 text-violet-500 dark:text-violet-400" />
                       <div>
                         <div className="text-xs text-zinc-500 dark:text-white/60">System Uptime</div>
                         <div className="text-sm font-bold text-zinc-900 dark:text-white">99.99%</div>
@@ -1265,7 +1267,7 @@ export default function HomePage() {
                   <Link
                     key={market.slug}
                     href={`/africa/${market.slug}`}
-                    className="rounded-3xl border border-black/10 bg-white p-8 transition hover:-translate-y-1 hover:border-emerald-500/40 dark:border-white/10 dark:bg-white/[0.04]"
+                    className="rounded-3xl border border-black/10 bg-white p-8 transition hover:-translate-y-1 hover:border-violet-500/40 dark:border-white/10 dark:bg-white/[0.04]"
                   >
                     <p className="text-xs uppercase tracking-[0.35em] text-zinc-500 dark:text-white/50">
                       {market.country}
@@ -1355,12 +1357,14 @@ export default function HomePage() {
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-4">
                   <Link
-                    href={IDP_URL}
+                    href={IDP_SIGNUP_URL}
+                    data-track-cta="footer-start-free-trial"
                     className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white shadow-[0_0_35px_rgba(15,23,42,0.2)] transition hover:shadow-[0_0_45px_rgba(15,23,42,0.35)] dark:bg-white dark:text-black dark:shadow-[0_0_35px_rgba(255,255,255,0.25)] dark:hover:shadow-[0_0_45px_rgba(255,255,255,0.4)]"
                   >
                     Start Free Trial
                   </Link>
                   <button
+                    data-track-cta="footer-book-demo"
                     onClick={() => setIsModalOpen(true)}
                     className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm text-zinc-700 transition hover:border-black/30 dark:border-white/20 dark:bg-white/5 dark:text-white/80 dark:hover:border-white/40"
                   >
@@ -1375,9 +1379,8 @@ export default function HomePage() {
 
       <footer className="relative z-10 border-t border-black/10 bg-white/90 py-12 backdrop-blur-xl dark:border-white/20 dark:bg-[#0b0b11]">
         <div className="container mx-auto flex flex-col items-center justify-between gap-6 px-6 text-sm text-zinc-700 dark:text-white/80 md:flex-row">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center">
             <SeemplifyLogo size="sm" animated={false} />
-            <span className="font-display text-zinc-900 dark:text-white">Seemplify</span>
           </div>
           <div className="flex items-center gap-6">
             <Link href="/privacy-policy" className="transition hover:text-zinc-900 dark:hover:text-white">

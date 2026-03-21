@@ -16,13 +16,13 @@ const WORKFORCE_APPS = [
     appId: 'leave-management',
     featureKey: 'leaveManagement',
     defaultName: 'Leave Management',
-    defaultColor: '#10b981'
+    defaultColor: '#8b5cf6'
   },
   {
     appId: 'time-attendance',
     featureKey: 'timeAttendance',
     defaultName: 'Time & Attendance',
-    defaultColor: '#14b8a6'
+    defaultColor: '#a855f7'
   }
 ]
 

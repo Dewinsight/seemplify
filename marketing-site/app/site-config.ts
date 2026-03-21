@@ -2,6 +2,7 @@ export const siteConfig = {
   name: 'Seemplify',
   shortName: 'Seemplify',
   url: (process.env.NEXT_PUBLIC_SITE_URL || 'https://seemplifyai.com').replace(/\/$/, ''),
+  idpBaseUrl: (process.env.NEXT_PUBLIC_IDP_BASE_URL || 'https://auth.seemplifyai.com').replace(/\/$/, ''),
   title: 'HR Software for Nigeria, Ghana, Kenya & South Africa | Seemplify',
   description:
     'Seemplify is AI HR software for Nigeria, Ghana, Kenya, South Africa, and English-speaking African teams. Unify recruiting, onboarding, leave, performance, time, and payroll workflows in one platform.',
@@ -32,4 +33,8 @@ export const siteConfig = {
 
 export function absoluteUrl(path = '/') {
   return new URL(path, `${siteConfig.url}/`).toString()
+}
+
+export function idpUrl(path = '/') {
+  return new URL(path, `${siteConfig.idpBaseUrl}/`).toString()
 }

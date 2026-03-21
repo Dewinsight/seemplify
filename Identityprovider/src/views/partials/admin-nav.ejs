@@ -2,25 +2,27 @@
 <nav class="admin-nav">
   <div class="admin-nav-brand">
     <a href="/admin" class="admin-nav-logo">
-      <svg viewBox="0 0 100 100" width="36" height="36" aria-hidden="true">
+      <svg viewBox="0 0 520 84" width="148" height="28" aria-hidden="true">
         <defs>
-          <linearGradient id="adminNavGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#10b981" />
-            <stop offset="50%" stop-color="#2dd4bf" />
-            <stop offset="100%" stop-color="#6366f1" />
+          <linearGradient id="adminNavGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#b980ff" />
+            <stop offset="42%" stop-color="#8b5cf6" />
+            <stop offset="100%" stop-color="#4c1d95" />
           </linearGradient>
         </defs>
-        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
-          stroke="url(#adminNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <circle cx="65" cy="25" r="6" fill="#10b981" />
-        <circle cx="50" cy="50" r="6" fill="#2dd4bf" />
-        <circle cx="35" cy="75" r="6" fill="#6366f1" />
+        <text
+          x="10"
+          y="60"
+          fill="url(#adminNavGradient)"
+          font-family="'Space Grotesk', 'IBM Plex Sans', sans-serif"
+          font-size="72"
+          font-weight="700"
+          letter-spacing="-4"
+        >
+          seemplify
+        </text>
       </svg>
-      <div>
-        <span class="admin-nav-title">Seemplify Admin</span>
-        <span class="admin-nav-badge">IDP</span>
-      </div>
+      <span class="admin-nav-badge">Admin</span>
     </a>
   </div>
 
@@ -55,6 +57,25 @@
       <% if (typeof adminStats !== 'undefined' && adminStats.pendingRequests > 0) { %>
         <span class="admin-nav-badge-count"><%= adminStats.pendingRequests %></span>
       <% } %>
+    </a>
+    <a href="/admin/demo-requests" class="admin-nav-link <%= typeof activePage !== 'undefined' && activePage === 'demo-requests' ? 'active' : '' %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        <path d="M8 9h8" />
+        <path d="M8 13h5" />
+      </svg>
+      Demo Requests
+      <% if (typeof adminStats !== 'undefined' && adminStats.pendingDemoRequests > 0) { %>
+        <span class="admin-nav-badge-count"><%= adminStats.pendingDemoRequests %></span>
+      <% } %>
+    </a>
+    <a href="/admin/campaigns" class="admin-nav-link <%= typeof activePage !== 'undefined' && activePage === 'campaigns' ? 'active' : '' %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 6h16v12H4z" />
+        <path d="M4 8l8 5 8-5" />
+        <path d="M8 17h8" />
+      </svg>
+      Campaigns
     </a>
     <a href="/admin/subscriptions" class="admin-nav-link <%= typeof activePage !== 'undefined' && activePage === 'subscriptions' ? 'active' : '' %>">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
