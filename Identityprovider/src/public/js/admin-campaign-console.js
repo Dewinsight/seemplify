@@ -1,17 +1,36 @@
 (function () {
   const boot = window.__CAMPAIGN_CONSOLE__ || {}
+  const DEFAULT_AUDIENCE_FIELDS = [
+    { key: 'email', label: 'Email', required: true, description: 'Primary recipient email address.' },
+    { key: 'firstName', label: 'First Name', description: 'Used for personalization tokens.' },
+    { key: 'lastName', label: 'Last Name', description: 'Used for personalization tokens.' },
+    { key: 'role', label: 'Role', description: 'Primary role or position label.' },
+    { key: 'jobTitle', label: 'Job Title', description: 'Specific job title for the contact.' },
+    { key: 'jobLevel', label: 'Job Level', description: 'Seniority or level data.' },
+    { key: 'department', label: 'Department', description: 'Department or function.' },
+    { key: 'companyName', label: 'Company Name', description: 'Organization name for the recipient.' },
+    { key: 'industry', label: 'Industry', description: 'Industry or sector for the company.' },
+    { key: 'companyHeadCount', label: 'Company Headcount', description: 'Employee count or size band.' },
+    { key: 'location', label: 'Location', description: 'Country, region, or office.' },
+    { key: 'companyDescription', label: 'Company Description', description: 'Short description or notes.' },
+    { key: 'tailoredMessage', label: 'Tailored Message', description: 'Custom message used for personalization.' }
+  ]
 
   const state = {
     campaigns: Array.isArray(boot.campaigns) ? boot.campaigns : [],
     audiences: Array.isArray(boot.audiences) ? boot.audiences : [],
     templates: Array.isArray(boot.templates) ? boot.templates : [],
     senderHealth: Array.isArray(boot.senderHealth) ? boot.senderHealth : [],
+    audienceFields: Array.isArray(boot.audienceFields) && boot.audienceFields.length > 0 ? boot.audienceFields : DEFAULT_AUDIENCE_FIELDS,
     selectedCampaignId: '',
     mode: 'visual',
     draft: null,
     draggingBlockId: '',
     linkRange: null,
-    linkHost: null
+    linkHost: null,
+    campaignSearch: '',
+    campaignStatusFilter: 'all',
+    audiencePreview: null
   }
 
   const els = {
@@ -39,6 +58,10 @@
     htmlEditor: document.getElementById('htmlEditor'),
     htmlPreview: document.getElementById('htmlPreview'),
     campaignList: document.getElementById('campaignList'),
+    campaignSearchInput: document.getElementById('campaignSearchInput'),
+    campaignStatusFilter: document.getElementById('campaignStatusFilter'),
+    campaignListSummary: document.getElementById('campaignListSummary'),
+    selectedCampaignSummary: document.getElementById('selectedCampaignSummary'),
     audienceList: document.getElementById('audienceList'),
     templateList: document.getElementById('templateList'),
     senderHealthList: document.getElementById('senderHealthList'),
@@ -46,6 +69,16 @@
     audienceName: document.getElementById('audienceName'),
     audienceDescription: document.getElementById('audienceDescription'),
     audienceFile: document.getElementById('audienceFile'),
+    audienceSheetGroup: document.getElementById('audienceSheetGroup'),
+    audienceSheetSelect: document.getElementById('audienceSheetSelect'),
+    audiencePreviewBtn: document.getElementById('audiencePreviewBtn'),
+    audienceImportBtn: document.getElementById('audienceImportBtn'),
+    audienceResetBtn: document.getElementById('audienceResetBtn'),
+    audienceImportStatus: document.getElementById('audienceImportStatus'),
+    audienceMappingPanel: document.getElementById('audienceMappingPanel'),
+    audienceColumnMapping: document.getElementById('audienceColumnMapping'),
+    audiencePreviewMeta: document.getElementById('audiencePreviewMeta'),
+    audiencePreviewTable: document.getElementById('audiencePreviewTable'),
     newCampaignBtn: document.getElementById('newCampaignBtn'),
     saveCampaignBtn: document.getElementById('saveCampaignBtn'),
     launchCampaignBtn: document.getElementById('launchCampaignBtn'),
@@ -70,6 +103,10 @@
 
   function uid(prefix) {
     return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
+  }
+
+  function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
   }
 
   function escapeHtml(value) {
@@ -245,6 +282,7 @@
     renderVisualPreview()
     renderHtmlEditor()
     updateActionState()
+    renderSelectedCampaignSummary()
   }
 
   function renderStats() {
@@ -252,6 +290,121 @@
     els.campaignStatAudiences.textContent = state.audiences.length
     els.campaignStatTemplates.textContent = state.templates.length
     els.campaignStatHealthySenders.textContent = state.senderHealth.filter((item) => item.readinessBand === 'green').length
+  }
+
+  function formatDateTime(value) {
+    if (!value) return 'N/A'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'N/A'
+    return date.toLocaleString()
+  }
+
+  function getStatusTone(status) {
+    const normalized = String(status || '').trim().toLowerCase()
+    if (normalized === 'running' || normalized === 'completed') return 'green'
+    if (normalized === 'scheduled' || normalized === 'paused') return 'blue'
+    if (normalized === 'failed' || normalized === 'cancelled') return 'red'
+    return 'amber'
+  }
+
+  function getFilteredCampaigns() {
+    const needle = String(state.campaignSearch || '').trim().toLowerCase()
+    const statusFilter = String(state.campaignStatusFilter || 'all').trim().toLowerCase()
+
+    return state.campaigns.filter((campaign) => {
+      const matchesStatus = statusFilter === 'all' || String(campaign.status || '').trim().toLowerCase() === statusFilter
+      if (!matchesStatus) return false
+      if (!needle) return true
+
+      const haystack = [
+        campaign.name,
+        campaign.status,
+        campaign?.sender?.email,
+        campaign?.sender?.name,
+        campaign?.audience?.name
+      ].join(' ').toLowerCase()
+
+      return haystack.includes(needle)
+    })
+  }
+
+  function updateCampaignListSummary(filteredCampaigns) {
+    if (!els.campaignListSummary) return
+
+    const total = state.campaigns.length
+    const visible = filteredCampaigns.length
+    const parts = []
+
+    if (state.campaignSearch) {
+      parts.push(`search "${state.campaignSearch}"`)
+    }
+
+    if (state.campaignStatusFilter && state.campaignStatusFilter !== 'all') {
+      parts.push(`status ${state.campaignStatusFilter}`)
+    }
+
+    if (parts.length === 0) {
+      els.campaignListSummary.textContent = `Showing ${visible} of ${total} campaigns. Click any campaign card to reopen it in the editor.`
+      return
+    }
+
+    els.campaignListSummary.textContent = `Showing ${visible} of ${total} campaigns filtered by ${parts.join(' and ')}.`
+  }
+
+  function renderSelectedCampaignSummary() {
+    if (!els.selectedCampaignSummary || !state.draft) return
+
+    const audience = state.audiences.find((entry) => String(entry._id) === String(state.draft.audience || ''))
+    const status = state.draft.status || (state.selectedCampaignId ? 'draft' : 'unsaved')
+    const readiness = state.draft?.sender?.readinessBand || 'amber'
+    const metrics = state.draft.metrics || {}
+
+    els.selectedCampaignSummary.innerHTML = `
+      <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+        <div>
+          <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:700;">Current Campaign</div>
+          <div style="margin-top:6px; font-size:22px; font-weight:800; color:var(--text); line-height:1.1;">${escapeHtml(state.draft.name || 'Unsaved campaign')}</div>
+          <div class="admin-card-subtitle" style="margin-top:6px;">${escapeHtml(audience?.name || 'No audience selected')}</div>
+        </div>
+        <span class="campaign-pill ${escapeHtml(getStatusTone(status))}">${escapeHtml(status)}</span>
+      </div>
+      <div class="campaign-selected-grid">
+        <div class="campaign-selected-item">
+          <strong>Sender</strong>
+          <span>${escapeHtml(state.draft?.sender?.email || 'Not set')}</span>
+        </div>
+        <div class="campaign-selected-item">
+          <strong>Sender Readiness</strong>
+          <span>${escapeHtml(readiness)}</span>
+        </div>
+        <div class="campaign-selected-item">
+          <strong>Test Recipients</strong>
+          <span>${Array.isArray(state.draft.testSendEmails) && state.draft.testSendEmails.length > 0 ? escapeHtml(state.draft.testSendEmails.join(', ')) : 'Not set'}</span>
+        </div>
+        <div class="campaign-selected-item">
+          <strong>Last Updated</strong>
+          <span>${escapeHtml(formatDateTime(state.draft.updatedAt))}</span>
+        </div>
+      </div>
+      <div class="campaign-list-metrics">
+        <div class="campaign-mini-stat">
+          <span class="campaign-mini-stat-label">Queued</span>
+          <span class="campaign-mini-stat-value">${Number(metrics.queued || 0)}</span>
+        </div>
+        <div class="campaign-mini-stat">
+          <span class="campaign-mini-stat-label">Sent</span>
+          <span class="campaign-mini-stat-value">${Number(metrics.sent || 0)}</span>
+        </div>
+        <div class="campaign-mini-stat">
+          <span class="campaign-mini-stat-label">Opened</span>
+          <span class="campaign-mini-stat-value">${Number(metrics.opened || 0)}</span>
+        </div>
+        <div class="campaign-mini-stat">
+          <span class="campaign-mini-stat-label">Clicked</span>
+          <span class="campaign-mini-stat-value">${Number(metrics.clicked || 0)}</span>
+        </div>
+      </div>
+    `
   }
 
   function renderAudienceOptions() {
@@ -294,28 +447,53 @@
   }
 
   function renderCampaignList() {
-    if (state.campaigns.length === 0) {
-      els.campaignList.innerHTML = '<div class="campaign-empty-state">No campaigns yet.</div>'
+    const campaigns = getFilteredCampaigns()
+    updateCampaignListSummary(campaigns)
+
+    if (campaigns.length === 0) {
+      els.campaignList.innerHTML = state.campaigns.length === 0
+        ? '<div class="campaign-empty-state">No campaigns yet.</div>'
+        : '<div class="campaign-empty-state">No campaigns match the current search or status filter.</div>'
       return
     }
 
-    els.campaignList.innerHTML = state.campaigns.map((campaign) => {
+    els.campaignList.innerHTML = campaigns.map((campaign) => {
       const isActive = String(campaign._id) === String(state.selectedCampaignId)
       const readiness = campaign?.sender?.readinessBand || 'amber'
       const audienceName = campaign?.audience?.name || 'No audience selected'
+      const metrics = campaign?.metrics || {}
+      const status = campaign?.status || 'draft'
       return `
         <article class="campaign-list-card ${isActive ? 'active' : ''}" data-campaign-id="${escapeHtml(campaign._id)}">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+          <div class="campaign-list-head">
             <div>
               <div style="font-weight:700; color:var(--text);">${escapeHtml(campaign.name || 'Untitled Campaign')}</div>
               <div class="admin-card-subtitle">${escapeHtml(audienceName)}</div>
             </div>
-            <span class="campaign-pill ${escapeHtml(readiness)}">${escapeHtml(campaign.status || 'draft')}</span>
+            <span class="campaign-pill ${escapeHtml(getStatusTone(status))}">${escapeHtml(status)}</span>
           </div>
           <div class="campaign-list-meta">
-            <span class="admin-card-subtitle">Sender: ${escapeHtml(campaign?.sender?.email || 'Not set')}</span>
+            <span class="admin-card-subtitle">Sender: ${escapeHtml(campaign?.sender?.email || 'Not set')} <span class="campaign-pill ${escapeHtml(readiness)}" style="margin-left:8px;">${escapeHtml(readiness)}</span></span>
             <span class="admin-card-subtitle">Pacing: ${Number(campaign?.pacing?.batchSize || 0)} every ${Number(campaign?.pacing?.intervalMinutes || 0)} min</span>
-            <span class="admin-card-subtitle">Updated: ${campaign.updatedAt ? new Date(campaign.updatedAt).toLocaleString() : 'N/A'}</span>
+            <span class="admin-card-subtitle">Updated: ${escapeHtml(formatDateTime(campaign.updatedAt))}</span>
+          </div>
+          <div class="campaign-list-metrics">
+            <div class="campaign-mini-stat">
+              <span class="campaign-mini-stat-label">Queued</span>
+              <span class="campaign-mini-stat-value">${Number(metrics.queued || 0)}</span>
+            </div>
+            <div class="campaign-mini-stat">
+              <span class="campaign-mini-stat-label">Sent</span>
+              <span class="campaign-mini-stat-value">${Number(metrics.sent || 0)}</span>
+            </div>
+            <div class="campaign-mini-stat">
+              <span class="campaign-mini-stat-label">Opened</span>
+              <span class="campaign-mini-stat-value">${Number(metrics.opened || 0)}</span>
+            </div>
+            <div class="campaign-mini-stat">
+              <span class="campaign-mini-stat-label">Clicked</span>
+              <span class="campaign-mini-stat-value">${Number(metrics.clicked || 0)}</span>
+            </div>
           </div>
         </article>
       `
@@ -324,15 +502,15 @@
 
   function renderAudienceList() {
     if (state.audiences.length === 0) {
-      els.audienceList.innerHTML = '<div class="campaign-empty-state">Upload a CSV to create your first reusable audience.</div>'
+      els.audienceList.innerHTML = '<div class="campaign-empty-state">Import a CSV or Excel file in the audience studio to create your first reusable audience.</div>'
       return
     }
 
     els.audienceList.innerHTML = state.audiences.map((audience) => `
       <article class="campaign-audience-card">
         <div style="font-weight:700; color:var(--text);">${escapeHtml(audience.name)}</div>
-        <div class="admin-card-subtitle">${escapeHtml(audience.description || audience.sourceFileName || 'CSV audience')}</div>
-        <div class="admin-card-subtitle">${Number(audience.contactCount || audience.contacts?.length || 0)} contacts • ${Number(audience.importSummary?.invalidRecipients || 0)} invalid • ${Number(audience.importSummary?.duplicateRecipients || 0)} duplicates</div>
+        <div class="admin-card-subtitle">${escapeHtml(audience.description || audience.sourceFileName || 'Imported audience')}</div>
+        <div class="admin-card-subtitle">${Number(audience.contactCount || audience.contacts?.length || 0)} contacts | ${Number(audience.importSummary?.invalidRecipients || 0)} invalid | ${Number(audience.importSummary?.duplicateRecipients || 0)} duplicates</div>
       </article>
     `).join('')
   }
@@ -372,6 +550,223 @@
         <div class="admin-card-subtitle">${escapeHtml((item.readinessReasons || []).join(' '))}</div>
       </article>
     `).join('')
+  }
+
+  function getAudienceFileBaseName(fileName) {
+    return String(fileName || '')
+      .replace(/\.(csv|xlsx?|xls)$/i, '')
+      .trim()
+  }
+
+  function setAudienceStatus(message, tone) {
+    if (!els.audienceImportStatus) return
+    els.audienceImportStatus.textContent = message || ''
+    els.audienceImportStatus.classList.remove('success', 'error')
+    if (tone === 'success' || tone === 'error') {
+      els.audienceImportStatus.classList.add(tone)
+    }
+  }
+
+  function getAudienceColumnMapFromForm() {
+    if (!els.audienceColumnMapping) return {}
+    const next = {}
+    Array.from(els.audienceColumnMapping.querySelectorAll('[data-audience-map]')).forEach((select) => {
+      const field = select.getAttribute('data-audience-map')
+      const value = String(select.value || '').trim()
+      if (field && value) {
+        next[field] = value
+      }
+    })
+    return next
+  }
+
+  function updateAudienceImportAvailability() {
+    if (!els.audienceImportBtn) return
+    const columnMap = state.audiencePreview ? getAudienceColumnMapFromForm() : {}
+    els.audienceImportBtn.disabled = !state.audiencePreview || !columnMap.email
+  }
+
+  function renderAudiencePreview() {
+    const preview = state.audiencePreview
+
+    if (!preview) {
+      if (els.audienceSheetGroup) els.audienceSheetGroup.style.display = 'none'
+      if (els.audienceMappingPanel) els.audienceMappingPanel.style.display = 'none'
+      if (els.audiencePreviewMeta) els.audiencePreviewMeta.innerHTML = ''
+      if (els.audienceColumnMapping) els.audienceColumnMapping.innerHTML = ''
+      if (els.audiencePreviewTable) els.audiencePreviewTable.innerHTML = ''
+      updateAudienceImportAvailability()
+      return
+    }
+
+    if (els.audienceSheetGroup) {
+      const showSheetPicker = Array.isArray(preview.sheetNames) && preview.sheetNames.length > 1
+      els.audienceSheetGroup.style.display = showSheetPicker ? '' : 'none'
+      if (showSheetPicker && els.audienceSheetSelect) {
+        els.audienceSheetSelect.innerHTML = preview.sheetNames.map((sheetName) => `
+          <option value="${escapeHtml(sheetName)}">${escapeHtml(sheetName)}</option>
+        `).join('')
+        els.audienceSheetSelect.value = preview.selectedSheetName || preview.sheetNames[0] || ''
+      }
+    }
+
+    if (els.audiencePreviewMeta) {
+      const mappedCount = Object.keys(preview.columnMap || {}).length
+      els.audiencePreviewMeta.innerHTML = `
+        <div class="campaign-mini-stat">
+          <span class="campaign-mini-stat-label">Source</span>
+          <span class="campaign-mini-stat-value">${escapeHtml(preview.sourceType || 'csv')}</span>
+        </div>
+        <div class="campaign-mini-stat">
+          <span class="campaign-mini-stat-label">Rows Detected</span>
+          <span class="campaign-mini-stat-value">${Number(preview.totalRows || 0)}</span>
+        </div>
+        <div class="campaign-mini-stat">
+          <span class="campaign-mini-stat-label">Mapped Fields</span>
+          <span class="campaign-mini-stat-value">${mappedCount}</span>
+        </div>
+      `
+    }
+
+    if (els.audienceColumnMapping) {
+      const options = ['<option value="">Ignore this field</option>']
+        .concat((preview.headers || []).map((header) => `<option value="${escapeHtml(header)}">${escapeHtml(header)}</option>`))
+        .join('')
+
+      els.audienceColumnMapping.innerHTML = state.audienceFields.map((field) => `
+        <div class="campaign-mapping-card ${field.required ? 'required' : ''}">
+          <label class="campaign-mapping-label" for="audienceMap-${escapeHtml(field.key)}">
+            <span>${escapeHtml(field.label)}</span>
+            ${field.required ? '<span class="campaign-pill amber">Required</span>' : ''}
+          </label>
+          <select id="audienceMap-${escapeHtml(field.key)}" class="admin-form-select" data-audience-map="${escapeHtml(field.key)}">
+            ${options}
+          </select>
+          <div class="campaign-mapping-description">${escapeHtml(field.description || '')}</div>
+        </div>
+      `).join('')
+
+      Array.from(els.audienceColumnMapping.querySelectorAll('[data-audience-map]')).forEach((select) => {
+        const key = select.getAttribute('data-audience-map')
+        select.value = preview.columnMap?.[key] || ''
+      })
+    }
+
+    if (els.audiencePreviewTable) {
+      if (!Array.isArray(preview.sampleRows) || preview.sampleRows.length === 0) {
+        els.audiencePreviewTable.innerHTML = '<div class="campaign-empty-state">No sample rows were found after the header row.</div>'
+      } else {
+        els.audiencePreviewTable.innerHTML = `
+          <table class="campaign-preview-table">
+            <thead>
+              <tr>${(preview.headers || []).map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${preview.sampleRows.map((row) => `
+                <tr>${(preview.headers || []).map((_, index) => `<td>${escapeHtml((row && row[index]) || '-')}</td>`).join('')}</tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `
+      }
+    }
+
+    if (els.audienceMappingPanel) {
+      els.audienceMappingPanel.style.display = ''
+    }
+
+    updateAudienceImportAvailability()
+  }
+
+  function resetAudiencePreviewState(clearForm) {
+    state.audiencePreview = null
+    if (clearForm && els.audienceUploadForm) {
+      els.audienceUploadForm.reset()
+    }
+    renderAudiencePreview()
+    setAudienceStatus('No file extracted yet.')
+  }
+
+  async function previewAudienceImport(event, requestedSheetName) {
+    if (event && typeof event.preventDefault === 'function') {
+      event.preventDefault()
+    }
+
+    const file = els.audienceFile.files && els.audienceFile.files[0]
+    if (!file) {
+      throw new Error('Choose a CSV or Excel file first.')
+    }
+
+    const data = new FormData()
+    data.append('file', file)
+    if (requestedSheetName || els.audienceSheetSelect.value) {
+      data.append('sheetName', requestedSheetName || els.audienceSheetSelect.value)
+    }
+
+    const response = await fetch('/api/admin/campaign-audiences/preview', {
+      method: 'POST',
+      body: data
+    })
+    const payload = await response.json()
+    if (!response.ok) {
+      throw new Error(payload.error || 'Failed to extract audience fields.')
+    }
+
+    if (Array.isArray(payload.fields) && payload.fields.length > 0) {
+      state.audienceFields = payload.fields
+    }
+
+    state.audiencePreview = payload.preview || null
+    if (!els.audienceName.value.trim()) {
+      els.audienceName.value = getAudienceFileBaseName(file.name)
+    }
+    renderAudiencePreview()
+    setAudienceStatus(`Extracted ${Number(state.audiencePreview?.totalRows || 0)} rows from ${file.name}.`, 'success')
+  }
+
+  async function importAudienceFromPreview() {
+    const file = els.audienceFile.files && els.audienceFile.files[0]
+    if (!file) {
+      throw new Error('Choose a CSV or Excel file first.')
+    }
+
+    if (!state.audiencePreview) {
+      throw new Error('Extract the file fields before importing the audience.')
+    }
+
+    const columnMap = getAudienceColumnMapFromForm()
+    if (!columnMap.email) {
+      throw new Error('Map the Email field before importing the audience.')
+    }
+
+    const data = new FormData()
+    data.append('file', file)
+    data.append('name', els.audienceName.value.trim() || getAudienceFileBaseName(file.name))
+    data.append('description', els.audienceDescription.value.trim())
+    data.append('columnMap', JSON.stringify(columnMap))
+    if (state.audiencePreview.selectedSheetName) {
+      data.append('sheetName', state.audiencePreview.selectedSheetName)
+    }
+
+    const response = await fetch('/api/admin/campaign-audiences/import', {
+      method: 'POST',
+      body: data
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      throw new Error(Array.isArray(result.details) && result.details.length > 0
+        ? result.details.join('\n')
+        : (result.error || 'Failed to upload audience.'))
+    }
+
+    await refreshAudiences()
+    if (result.audience && state.draft) {
+      state.draft.audience = result.audience._id
+      renderForm()
+      renderSelectedCampaignSummary()
+    }
+    resetAudiencePreviewState(true)
+    setAudienceStatus(result.message || 'Audience imported.', 'success')
   }
 
   function buildPreviewBlock(block) {
@@ -627,6 +1022,7 @@
     state.audiences = Array.isArray(payload.audiences) ? payload.audiences : []
     renderAudienceOptions()
     renderAudienceList()
+    renderSelectedCampaignSummary()
     renderStats()
   }
 
@@ -766,6 +1162,36 @@
     return state.draft
   }
 
+  function validateTestSendState() {
+    syncDraftFromForm()
+
+    if (!String(state.draft.name || '').trim()) {
+      throw new Error('Enter a campaign name before sending a test.')
+    }
+
+    if (!String(state.draft.sender?.email || '').trim()) {
+      throw new Error('Set a sender email before sending a test.')
+    }
+
+    if (!isValidEmail(state.draft.sender.email)) {
+      throw new Error('The sender email is not valid.')
+    }
+
+    const emails = Array.isArray(state.draft.testSendEmails) ? state.draft.testSendEmails : []
+    if (emails.length === 0) {
+      throw new Error('Add at least one test email before sending a test.')
+    }
+
+    const invalidEmails = emails.filter((email) => !isValidEmail(email))
+    if (invalidEmails.length > 0) {
+      throw new Error(`Invalid test email${invalidEmails.length === 1 ? '' : 's'}: ${invalidEmails.join(', ')}`)
+    }
+
+    if (!String(state.draft.content?.subject || '').trim()) {
+      throw new Error('Add a campaign subject before sending a test.')
+    }
+  }
+
   async function handleLifecycle(action, extraPayload) {
     await ensureSavedCampaign()
     const response = await fetch(`/api/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}/${action}`, {
@@ -789,28 +1215,7 @@
   }
 
   async function uploadAudience(event) {
-    event.preventDefault()
-    const file = els.audienceFile.files && els.audienceFile.files[0]
-    if (!file) {
-      alert('Choose a CSV file first.')
-      return
-    }
-
-    const data = new FormData()
-    data.append('file', file)
-    data.append('name', els.audienceName.value.trim() || file.name.replace(/\.csv$/i, ''))
-    data.append('description', els.audienceDescription.value.trim())
-
-    const response = await fetch('/api/admin/campaign-audiences/import', {
-      method: 'POST',
-      body: data
-    })
-    const result = await response.json()
-    if (!response.ok) throw new Error(result.error || 'Failed to upload audience.')
-
-    els.audienceUploadForm.reset()
-    await refreshAudiences()
-    alert(result.message || 'Audience uploaded.')
+    await previewAudienceImport(event)
   }
 
   els.visualModeBtn.addEventListener('click', function () {
@@ -848,6 +1253,7 @@
 
   els.sendTestBtn.addEventListener('click', async function () {
     try {
+      validateTestSendState()
       await ensureSavedCampaign()
       const emails = els.campaignTestEmails.value.trim()
       const response = await fetch(`/api/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}/test-send`, {
@@ -856,7 +1262,12 @@
         body: JSON.stringify({ emails })
       })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Failed to send test campaign.')
+      if (!response.ok) {
+        const message = Array.isArray(result.details) && result.details.length > 0
+          ? result.details.join('\n')
+          : (result.error || 'Failed to send test campaign.')
+        throw new Error(message)
+      }
       alert(result.message || 'Test sent.')
     } catch (error) {
       alert(error.message || 'Failed to send test campaign.')
@@ -864,8 +1275,66 @@
   })
 
   els.audienceUploadForm.addEventListener('submit', function (event) {
-    uploadAudience(event).catch((error) => alert(error.message || 'Failed to upload audience.'))
+    uploadAudience(event).catch((error) => {
+      setAudienceStatus(error.message || 'Failed to extract audience fields.', 'error')
+    })
   })
+
+  if (els.audienceImportBtn) {
+    els.audienceImportBtn.addEventListener('click', function () {
+      importAudienceFromPreview().catch((error) => {
+        setAudienceStatus(error.message || 'Failed to upload audience.', 'error')
+      })
+    })
+  }
+
+  if (els.audienceResetBtn) {
+    els.audienceResetBtn.addEventListener('click', function () {
+      resetAudiencePreviewState(true)
+    })
+  }
+
+  if (els.audienceFile) {
+    els.audienceFile.addEventListener('change', function () {
+      state.audiencePreview = null
+      renderAudiencePreview()
+      if (els.audienceFile.files && els.audienceFile.files[0] && !els.audienceName.value.trim()) {
+        els.audienceName.value = getAudienceFileBaseName(els.audienceFile.files[0].name)
+      }
+      setAudienceStatus('File selected. Click "Extract Fields" to inspect and map the columns.')
+    })
+  }
+
+  if (els.audienceSheetSelect) {
+    els.audienceSheetSelect.addEventListener('change', function () {
+      previewAudienceImport(null, els.audienceSheetSelect.value).catch((error) => {
+        setAudienceStatus(error.message || 'Failed to extract audience fields.', 'error')
+      })
+    })
+  }
+
+  if (els.audienceColumnMapping) {
+    els.audienceColumnMapping.addEventListener('change', function () {
+      if (!state.audiencePreview) return
+      state.audiencePreview.columnMap = getAudienceColumnMapFromForm()
+      renderAudiencePreview()
+      setAudienceStatus('Field mapping updated. Import the audience when you are ready.')
+    })
+  }
+
+  if (els.campaignSearchInput) {
+    els.campaignSearchInput.addEventListener('input', function () {
+      state.campaignSearch = els.campaignSearchInput.value.trim()
+      renderCampaignList()
+    })
+  }
+
+  if (els.campaignStatusFilter) {
+    els.campaignStatusFilter.addEventListener('change', function () {
+      state.campaignStatusFilter = els.campaignStatusFilter.value || 'all'
+      renderCampaignList()
+    })
+  }
 
   els.campaignTemplate.addEventListener('change', function () {
     const template = getSelectedTemplate()

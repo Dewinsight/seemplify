@@ -6,7 +6,12 @@ import CampaignTemplate from '../models/CampaignTemplate.js'
 import CampaignBatch from '../models/CampaignBatch.js'
 import CampaignRecipient from '../models/CampaignRecipient.js'
 import { requireAdminAuth, adminRateLimit } from '../middleware/adminAuth.js'
-import { importAudienceFromCsv, slugifyValue } from '../services/campaignAudienceService.js'
+import {
+  CAMPAIGN_AUDIENCE_FIELDS,
+  importAudienceFromUpload,
+  previewAudienceUpload,
+  slugifyValue
+} from '../services/campaignAudienceService.js'
 import { getCampaignAnalytics, getCampaignConsoleSummary, getRecipientAnalytics } from '../services/campaignAnalyticsService.js'
 import {
   buildBrevoContactAttributes,
@@ -65,6 +70,73 @@ function normalizeEmailList(value) {
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean)
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
+async function validateCampaignTestSend(campaign, rawEmails) {
+  const emails = Array.from(new Set(normalizeEmailList(rawEmails)))
+  const errors = []
+
+  if (emails.length === 0) {
+    errors.push('At least one test email is required.')
+  }
+
+  const invalidEmails = emails.filter((email) => !isValidEmail(email))
+  if (invalidEmails.length > 0) {
+    errors.push(`Invalid test email${invalidEmails.length === 1 ? '' : 's'}: ${invalidEmails.join(', ')}`)
+  }
+
+  if (!brevoMarketingService.isConfigured()) {
+    errors.push('Campaign test send is unavailable because BREVO_API_KEY is not configured.')
+  }
+
+  const senderEmail = String(campaign?.sender?.email || '').trim().toLowerCase()
+  if (!senderEmail) {
+    errors.push('Set a sender email before sending a campaign test.')
+  } else if (!isValidEmail(senderEmail)) {
+    errors.push('The sender email is not valid.')
+  }
+
+  const senderReadiness = senderEmail
+    ? await computeSenderReadiness(senderEmail)
+    : null
+
+  if (senderEmail && senderReadiness) {
+    if (!senderReadiness.sender) {
+      errors.push('Sender does not exist in Brevo.')
+    } else if (senderReadiness.sender.active === false) {
+      errors.push('Sender exists in Brevo but is inactive.')
+    }
+
+    const explicitDomainStatus = typeof senderReadiness?.domain?.authenticated === 'boolean'
+      ? senderReadiness.domain.authenticated
+      : (String(senderReadiness?.domain?.status || '').trim().toLowerCase() === 'verified' ? true : null)
+
+    if (explicitDomainStatus === false) {
+      errors.push('Sender domain is not authenticated in Brevo.')
+    }
+  }
+
+  const compiled = compileCampaignTemplateContent(campaign)
+  if (!String(compiled.subject || '').trim()) {
+    errors.push('Add a campaign subject before sending a test.')
+  }
+
+  const hasHtml = String(compiled.html || '').trim()
+  const hasText = String(compiled.text || '').trim()
+  if (!hasHtml && !hasText) {
+    errors.push('Add campaign content before sending a test.')
+  }
+
+  return {
+    emails,
+    compiled,
+    senderReadiness,
+    errors: Array.from(new Set(errors))
+  }
 }
 
 async function buildCampaignDocument(payload, user, existingCampaign = null) {
@@ -166,7 +238,7 @@ router.get('/campaign-audiences', async (req, res) => {
   try {
     const audiences = await CampaignAudience.find()
       .sort({ updatedAt: -1 })
-      .select('name slug description sourceType sourceFileName importSummary contacts createdAt updatedAt')
+      .select('name slug description sourceType sourceFileName columnMap importSummary contacts createdAt updatedAt')
       .lean()
 
     res.json({
@@ -181,20 +253,56 @@ router.get('/campaign-audiences', async (req, res) => {
   }
 })
 
+router.post('/campaign-audiences/preview', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Choose a CSV or Excel file first.' })
+    }
+
+    const preview = previewAudienceUpload({
+      buffer: req.file.buffer,
+      sourceFileName: req.file.originalname,
+      sheetName: String(req.body.sheetName || '').trim()
+    })
+
+    if (preview.errors.length > 0) {
+      return res.status(400).json({
+        error: preview.errors[0],
+        details: preview.errors
+      })
+    }
+
+    res.json({
+      preview,
+      fields: CAMPAIGN_AUDIENCE_FIELDS
+    })
+  } catch (error) {
+    console.error('Preview campaign audience error:', error)
+    res.status(500).json({ error: 'Failed to extract audience fields.' })
+  }
+})
+
 router.post('/campaign-audiences/import', upload.single('file'), async (req, res) => {
   try {
-    const csvText = req.file
-      ? req.file.buffer.toString('utf-8')
-      : String(req.body.csvText || '')
+    if (!req.file && !req.body.csvText) {
+      return res.status(400).json({ error: 'Choose a CSV or Excel file first.' })
+    }
+
     const audienceName = String(req.body.name || req.file?.originalname || 'Uploaded Audience').trim()
-    const imported = importAudienceFromCsv({
-      csvText,
+    const imported = importAudienceFromUpload({
+      buffer: req.file?.buffer || null,
+      csvText: String(req.body.csvText || ''),
       audienceName,
-      sourceFileName: req.file?.originalname || ''
+      sourceFileName: req.file?.originalname || '',
+      sheetName: String(req.body.sheetName || '').trim(),
+      columnMap: parseMaybeJson(req.body.columnMap, {})
     })
 
     if (imported.errors.length > 0) {
-      return res.status(400).json({ error: imported.errors.join(' ') })
+      return res.status(400).json({
+        error: imported.errors[0],
+        details: imported.errors
+      })
     }
 
     const slug = await ensureUniqueSlug(CampaignAudience, slugifyValue(audienceName, 'audience'))
@@ -202,7 +310,7 @@ router.post('/campaign-audiences/import', upload.single('file'), async (req, res
       name: audienceName,
       slug,
       description: String(req.body.description || '').trim(),
-      sourceType: 'csv',
+      sourceType: imported.sourceType,
       sourceFileName: imported.sourceFileName,
       columnMap: imported.columnMap,
       importSummary: imported.summary,
@@ -296,9 +404,12 @@ router.post('/campaigns/:campaignId/test-send', async (req, res) => {
       return res.status(404).json({ error: 'Campaign not found.' })
     }
 
-    const emails = normalizeEmailList(req.body.emails || campaign.testSendEmails || [])
-    if (emails.length === 0) {
-      return res.status(400).json({ error: 'At least one test email is required.' })
+    const validation = await validateCampaignTestSend(campaign, req.body.emails || campaign.testSendEmails || [])
+    if (validation.errors.length > 0) {
+      return res.status(400).json({
+        error: validation.errors[0],
+        details: validation.errors
+      })
     }
 
     await brevoMarketingService.ensureAttributes(getRequiredBrevoAttributes())
@@ -310,7 +421,7 @@ router.post('/campaigns/:campaignId/test-send', async (req, res) => {
 
     await brevoMarketingService.upsertContacts({
       listId: list.id,
-      contacts: emails.map((email) => ({
+      contacts: validation.emails.map((email) => ({
         email,
         attributes: buildBrevoContactAttributes({
           email,
@@ -324,33 +435,46 @@ router.post('/campaigns/:campaignId/test-send', async (req, res) => {
       }))
     })
 
-    const compiled = compileCampaignTemplateContent(campaign)
     const created = await brevoMarketingService.createEmailCampaign({
       name: `[Test] ${campaign.name}`,
-      subject: compiled.subject,
-      previewText: compiled.previewText,
+      subject: validation.compiled.subject,
+      previewText: validation.compiled.previewText,
       sender: {
         name: campaign?.sender?.name || 'Seemplify',
         email: campaign?.sender?.email || ''
       },
       replyTo: campaign?.content?.replyTo || undefined,
-      htmlContent: compiled.html,
-      textContent: compiled.text,
+      htmlContent: validation.compiled.html,
+      textContent: validation.compiled.text,
       recipients: {
         listIds: [list.id]
       }
     })
 
-    await brevoMarketingService.sendCampaignTest(created.id, emails)
+    await brevoMarketingService.sendCampaignTest(created.id, validation.emails)
 
     res.json({
       message: 'Test campaign sent.',
       testCampaignId: created.id,
-      emails
+      emails: validation.emails
     })
   } catch (error) {
     console.error('Campaign test send error:', error)
-    res.status(500).json({ error: error.message || 'Failed to send campaign test.' })
+    const status = Number(error?.status || 0)
+    const message = error?.message || 'Failed to send campaign test.'
+    const isBrevoConfigurationError = /brevo_api_key|sender|campaign test send is unavailable/i.test(message)
+    const responseStatus = status >= 400 && status < 500
+      ? 400
+      : (isBrevoConfigurationError ? 400 : 500)
+
+    res.status(responseStatus).json({
+      error: responseStatus === 400
+        ? message
+        : 'Failed to send campaign test.',
+      details: responseStatus === 400 && error?.payload
+        ? [message]
+        : undefined
+    })
   }
 })
 

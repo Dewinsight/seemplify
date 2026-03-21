@@ -63,7 +63,7 @@ const campaignAudienceSchema = new Schema({
   },
   sourceType: {
     type: String,
-    enum: ['csv', 'manual', 'saved'],
+    enum: ['csv', 'excel', 'manual', 'saved'],
     default: 'csv'
   },
   sourceFileName: {

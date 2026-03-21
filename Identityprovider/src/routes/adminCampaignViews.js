@@ -3,6 +3,7 @@ import { requireAdminAuth, setAdminContext } from '../middleware/adminAuth.js'
 import CampaignAudience from '../models/CampaignAudience.js'
 import CampaignTemplate from '../models/CampaignTemplate.js'
 import { getCampaignAnalytics, getCampaignConsoleSummary } from '../services/campaignAnalyticsService.js'
+import { CAMPAIGN_AUDIENCE_FIELDS } from '../services/campaignAudienceService.js'
 import { ensureSystemCampaignTemplates, getSenderHealthSummary } from '../services/campaignOperationsService.js'
 
 const router = express.Router()
@@ -17,7 +18,7 @@ router.get('/', async (req, res) => {
       getCampaignConsoleSummary(50),
       CampaignAudience.find()
         .sort({ updatedAt: -1 })
-        .select('name slug importSummary contacts updatedAt')
+        .select('name slug description sourceType sourceFileName columnMap importSummary contacts updatedAt')
         .lean(),
       CampaignTemplate.find()
         .sort({ systemTemplate: -1, updatedAt: -1 })
@@ -34,6 +35,7 @@ router.get('/', async (req, res) => {
       })),
       templates,
       senderHealth,
+      audienceFields: CAMPAIGN_AUDIENCE_FIELDS,
       user: req.user
     })
   } catch (error) {
