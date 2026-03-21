@@ -145,9 +145,11 @@ body {
   box-shadow: none;
 }
 
+.login-brand .brand-mark img,
 .login-brand .brand-mark svg { 
   width: 100%; 
   height: auto; 
+  display: block;
 }
 
 .login-brand-name {

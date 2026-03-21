@@ -3320,6 +3320,7 @@ body.light .eyebrow {
   box-shadow: none;
 }
 
+.brand-mark img,
 .brand-mark svg {
   width: 100%;
   height: auto;

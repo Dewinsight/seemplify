@@ -480,26 +480,7 @@ dotenv.config()
 // Shared UI theme for IdP pages (marketing-site aesthetic)
 const themeCss = readFileSync(join(__dirname, 'public/css/idp-theme.css'), 'utf-8')
 const seemplifyMarkSvg = `
-  <svg viewBox="0 0 520 84" aria-hidden="true">
-    <defs>
-      <linearGradient id="seemplifyGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#b980ff" />
-        <stop offset="42%" stop-color="#8b5cf6" />
-        <stop offset="100%" stop-color="#4c1d95" />
-      </linearGradient>
-    </defs>
-    <text
-      x="10"
-      y="60"
-      fill="url(#seemplifyGradient)"
-      font-family="'Space Grotesk', 'IBM Plex Sans', sans-serif"
-      font-size="72"
-      font-weight="700"
-      letter-spacing="-4"
-    >
-      seemplify
-    </text>
-  </svg>
+  <img src="/images/seemplifylogo.png" alt="Seemplify" loading="eager" decoding="async" />
 `
 
 // Production environment detection
@@ -3860,12 +3841,6 @@ app.get('/simple-lms', async (req, res) => {
   } catch (error) {
     console.error('Simple LMS redirect failed:', error)
     return res.redirect('/')
-  }
-  try {
-    startCampaignWorker()
-    console.log('âœ… Campaign worker initialized')
-  } catch (error) {
-    console.error('âš ï¸ Failed to initialize campaign worker:', error)
   }
 })
 
@@ -9151,5 +9126,12 @@ app.listen(PORT, async () => {
     console.log('✅ Subscription lifecycle jobs initialized')
   } catch (error) {
     console.error('⚠️ Failed to initialize subscription lifecycle jobs:', error)
+  }
+
+  try {
+    startCampaignWorker()
+    console.log('✅ Campaign worker initialized')
+  } catch (error) {
+    console.error('⚠️ Failed to initialize campaign worker:', error)
   }
 })

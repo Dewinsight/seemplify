@@ -546,7 +546,7 @@ const homeStructuredData = {
       '@type': 'Organization',
       name: siteConfig.name,
       url: siteConfig.url,
-      logo: absoluteUrl('/logo.svg'),
+      logo: absoluteUrl('/images/seemplifylogo.png'),
       email: siteConfig.contactEmail,
       areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
         '@type': 'Country',
