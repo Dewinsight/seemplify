@@ -293,9 +293,9 @@
 
 .admin-nav-logo img {
   display: block;
-  width: 148px;
+  width: auto;
   max-width: 100%;
-  height: auto;
+  height: 34px;
   flex-shrink: 0;
 }
 

@@ -488,7 +488,20 @@ const seemplifyMarkSvg = `
     height="62"
     loading="eager"
     decoding="async"
-    style="display:block;width:148px;max-width:100%;height:auto;"
+    class="seemplify-wordmark"
+    style="display:block;width:auto;max-width:100%;height:40px;"
+  />
+`
+const seemplifyNavLogoImg = `
+  <img
+    src="${seemplifyLogoUrl}"
+    alt="Seemplify"
+    width="148"
+    height="62"
+    loading="eager"
+    decoding="async"
+    class="seemplify-wordmark seemplify-wordmark--nav"
+    style="display:block;width:auto;max-width:100%;height:34px;"
   />
 `
 
@@ -8127,7 +8140,7 @@ function renderHubPage(account, apps, organizations = []) {
 
       <nav class="top-nav">
         <a href="/" class="top-nav-brand">
-          ${seemplifyMarkSvg}
+          ${seemplifyNavLogoImg}
         </a>
         <!-- Mobile Nav Toggle Label -->
         <label for="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Toggle navigation">

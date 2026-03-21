@@ -422,7 +422,7 @@ p {
 .top-nav-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0;
   color: var(--text);
   font-weight: 700;
   flex-shrink: 0;
@@ -431,18 +431,14 @@ p {
 .top-nav-brand img,
 .top-nav-brand svg {
   display: block;
-  width: 148px;
+  width: auto;
   max-width: 100%;
-  height: auto;
+  height: 34px;
   flex-shrink: 0;
 }
 
 .top-nav-brand span {
-  background: linear-gradient(135deg, var(--brand), var(--brand-2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  font-size: 18px;
+  display: none;
 }
 
 .top-nav-links {
@@ -3528,7 +3524,8 @@ body.light .value {
 
   .top-nav-brand img,
   .top-nav-brand svg {
-    width: 128px;
+    width: auto;
+    height: 30px;
   }
 
   /* Show hamburger button on mobile */
