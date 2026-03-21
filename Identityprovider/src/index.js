@@ -4616,7 +4616,8 @@ const buildNotificationCenterData = async (account, options = {}) => {
     $or: [
       { member: account._id },
       { 'items.config.signers.member': account._id },
-      { 'items.data.esign.signers.member': account._id }
+      { 'items.data.esign.signers.member': account._id },
+      { 'items.config.signatureFields.signerId': account._id }
     ],
     status: { $nin: ['completed', 'cancelled'] }
   })
@@ -4636,6 +4637,8 @@ const buildNotificationCenterData = async (account, options = {}) => {
       'items.status',
       'items.config.document',
       'items.config.signers',
+      'items.config.signatureFields',
+      'items.data.esign.status',
       'items.data.esign.signedAt',
       'items.data.esign.signedUrl',
       'items.data.esign.signedFileName',
@@ -4663,6 +4666,11 @@ const buildNotificationCenterData = async (account, options = {}) => {
   const unreadDocumentAssignments = pendingOnboardingAssignments.filter(assignment => {
     const assignmentId = assignment?._id?.toString()
     if (!assignmentId) return true
+
+    const signatureDocuments = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
+    if (signatureDocuments.length > 0) {
+      return true
+    }
 
     const assignmentOrganizationId =
       assignment?.organization?._id?.toString() ||
@@ -6425,11 +6433,22 @@ const buildDocumentWorkspaceActionUrl = ({
 const getComparableActorId = (value) => {
   if (!value) return ''
 
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed || trimmed === 'undefined' || trimmed === 'null' || trimmed === '[object Object]') {
+      return ''
+    }
+    const objectIdMatch = trimmed.match(/^[Oo]bject[Ii]d\(['"]([0-9a-fA-F]{24})['"]\)$/)
+    return objectIdMatch ? objectIdMatch[1] : trimmed
+  }
+
   if (typeof value === 'object') {
+    if (typeof value.$oid === 'string') return value.$oid
     if (value._id) return getComparableActorId(value._id)
     if (value.member) return getComparableActorId(value.member)
     if (value.memberId) return getComparableActorId(value.memberId)
     if (value.key) return getComparableActorId(value.key)
+    if (value.id) return getComparableActorId(value.id)
   }
 
   return String(value)
@@ -6437,22 +6456,47 @@ const getComparableActorId = (value) => {
 
 const ensureArray = (value) => (Array.isArray(value) ? value : [])
 
+const isOnboardingESignFieldAssignedToUser = (field, {
+  currentUserId = '',
+  assignmentMemberId = ''
+} = {}) => {
+  const rawSignerId = getComparableActorId(field?.signerId || field?.signerKey || field?.signer)
+
+  if (!rawSignerId) {
+    return assignmentMemberId === currentUserId
+  }
+
+  const resolvedSignerId = rawSignerId === 'assignee'
+    ? assignmentMemberId
+    : rawSignerId
+
+  return resolvedSignerId === currentUserId
+}
+
 const getOnboardingESignState = (item, {
   currentUserId = '',
   assignmentMemberId = '',
   assignmentStatus = ''
 } = {}) => {
   const signerConfigList = ensureArray(item?.config?.signers)
+  const signatureFieldList = ensureArray(item?.config?.signatureFields)
   const signerStatusList = ensureArray(item?.data?.esign?.signers)
   const signerConfigIds = signerConfigList
     .map(signer => getComparableActorId(signer))
     .filter(Boolean)
+  const hasAssignedField = signatureFieldList.some(field => (
+    isOnboardingESignFieldAssignedToUser(field, {
+      currentUserId,
+      assignmentMemberId
+    })
+  ))
   const signerEntry = signerStatusList.find(signer => getComparableActorId(signer?.member) === currentUserId) || null
   const hasSigned = signerEntry?.status === 'signed'
   const canSign = Boolean(
     signerEntry ||
     signerConfigIds.includes(currentUserId) ||
-    (!signerConfigIds.length && assignmentMemberId === currentUserId)
+    hasAssignedField ||
+    ((!signerConfigIds.length && !signatureFieldList.length) && assignmentMemberId === currentUserId)
   )
   const isCancelled = assignmentStatus === 'cancelled'
   const isCompleted = item?.status === 'completed' || item?.data?.esign?.status === 'completed'
@@ -6463,6 +6507,7 @@ const getOnboardingESignState = (item, {
     signerEntry,
     hasSigned,
     canSign,
+    hasAssignedField,
     isCancelled,
     isCompleted,
     userActionable,
@@ -6491,15 +6536,24 @@ const buildProfileDocumentEntries = (assignments = [], user = {}) => {
           }
 
           const configuredSigners = ensureArray(item?.config?.signers)
+          const signatureFields = ensureArray(item?.config?.signatureFields)
           const signingStatus = ensureArray(item?.data?.esign?.signers)
           const isConfiguredSigner = item.type === 'esign'
             ? configuredSigners.some((signer) => getComparableActorId(signer) === currentUserId)
+            : false
+          const isFieldSigner = item.type === 'esign'
+            ? signatureFields.some((field) => (
+                isOnboardingESignFieldAssignedToUser(field, {
+                  currentUserId,
+                  assignmentMemberId
+                })
+              ))
             : false
           const isSignerInStatus = item.type === 'esign'
             ? signingStatus.some((signer) => getComparableActorId(signer?.member) === currentUserId)
             : false
 
-          if (!(isAssignee || isConfiguredSigner || isSignerInStatus)) {
+          if (!(isAssignee || isConfiguredSigner || isFieldSigner || isSignerInStatus)) {
             return
           }
 
@@ -6659,6 +6713,14 @@ const resolveOnboardingDocumentAccess = async (assignmentId, itemId, userId) => 
   const isConfiguredSigner = item.type === 'esign'
     ? ensureArray(item?.config?.signers).some(signer => signer?.member?.toString() === userIdStr)
     : false
+  const isFieldSigner = item.type === 'esign'
+    ? ensureArray(item?.config?.signatureFields).some(field => (
+        isOnboardingESignFieldAssignedToUser(field, {
+          currentUserId: userIdStr,
+          assignmentMemberId: assignment.member?.toString?.() || ''
+        })
+      ))
+    : false
   const isSignerInStatus = item.type === 'esign'
     ? ensureArray(item?.data?.esign?.signers).some(signer => signer?.member?.toString() === userIdStr)
     : false
@@ -6668,7 +6730,7 @@ const resolveOnboardingDocumentAccess = async (assignmentId, itemId, userId) => 
     item,
     organizationId,
     isManager,
-    canAccess: isManager || isAssignee || isConfiguredSigner || isSignerInStatus
+    canAccess: isManager || isAssignee || isConfiguredSigner || isFieldSigner || isSignerInStatus
   }
 }
 

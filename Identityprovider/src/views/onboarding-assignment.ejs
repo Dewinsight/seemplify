@@ -16,8 +16,6 @@
   <%- include('partials/nav', { activePage: activePage || 'organizations' }) %>
 
   <div class="container">
-    <a class="back-link" href="/organizations/<%= organization._id %>/onboarding">&larr; Back to onboarding</a>
-
     <% const memberName = assignment.member?.profile?.name || assignment.member?.email?.split('@')[0] || 'Member'; %>
     <% const memberEmail = assignment.member?.email || ''; %>
     <% const createdByName = assignment.createdBy?.profile?.name || assignment.createdBy?.email || 'System'; %>
@@ -33,6 +31,7 @@
       general: 'General Document Workflow'
     }; %>
     <% const workflowLabel = workflowLabels[workflowType] || 'Onboarding'; %>
+    <a class="back-link" href="/organizations/<%= organization._id %>/onboarding">&larr; Back to <%= workflowType === 'onboarding' ? 'onboarding' : 'document workspace' %></a>
 
     <% const totalItems = (assignment.items || []).length; %>
     <% const completedItems = (assignment.items || []).filter(i => i.status === 'completed').length; %>
@@ -50,7 +49,7 @@
 
     <div class="header">
       <div>
-        <h1 style="margin: 0;">Onboarding: <%= memberName %></h1>
+        <h1 style="margin: 0;"><%= workflowType === 'onboarding' ? 'Onboarding' : workflowLabel %>: <%= memberName %></h1>
         <div class="header-subtitle">
           <span><%= memberEmail %></span>
           <span> | </span>
@@ -67,7 +66,8 @@
         </span>
         <span class="role-badge workflow-type-badge workflow-type-badge--<%= workflowType %>"><%= workflowLabel %></span>
         <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
-          <button class="btn btn-danger" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel assignment</button>
+          <a class="btn btn-secondary" href="/organizations/<%= organization._id %>/onboarding?tab=center&editAssignment=<%= assignment._id %>">Edit workflow</a>
+          <button class="btn btn-danger" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Retract workflow</button>
         <% } %>
       </div>
     </div>
@@ -260,7 +260,7 @@
   <script>
     async function cancelAssignment(assignmentId) {
       if (!assignmentId) return;
-      if (!confirm('Cancel this onboarding assignment?')) return;
+      if (!confirm('Retract this workflow assignment?')) return;
       const orgId = '<%= organization._id %>';
       try {
         const response = await fetch(`/api/organizations/${orgId}/onboarding/assignments/${assignmentId}/cancel`, {
@@ -269,12 +269,12 @@
         });
         const data = await response.json();
         if (!response.ok) {
-          alert(data.error || 'Failed to cancel assignment');
+          alert(data.error || 'Failed to retract assignment');
           return;
         }
-        window.location.href = `/organizations/${orgId}/onboarding/assignments/${assignmentId}?success=${encodeURIComponent('Assignment cancelled')}`;
+        window.location.href = `/organizations/${orgId}/onboarding/assignments/${assignmentId}?success=${encodeURIComponent('Workflow retracted')}`;
       } catch (e) {
-        alert('Failed to cancel assignment');
+        alert('Failed to retract assignment');
       }
     }
   </script>

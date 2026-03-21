@@ -113,6 +113,215 @@ const normalizeSignatureFields = (fields = []) => {
     .filter(field => Number.isFinite(field.x) && Number.isFinite(field.y))
 }
 
+const getEsignFieldIdentity = (field = {}) => {
+  const signerRef = String(field.signerKey || field.signerId || field.signer || 'all').trim().toLowerCase() || 'all'
+  const roundValue = (value) => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? Math.round(numeric * 1000) / 1000 : 0
+  }
+
+  return [
+    String(field.type || 'signature').trim().toLowerCase(),
+    String(field.label || '').trim().toLowerCase(),
+    Number(field.page) || 1,
+    roundValue(field.x),
+    roundValue(field.y),
+    roundValue(field.width),
+    roundValue(field.height),
+    String(field.origin || 'top-left').trim().toLowerCase(),
+    signerRef
+  ].join('|')
+}
+
+const normalizeEsignFieldValues = (fieldValues = {}) => {
+  if (!fieldValues || typeof fieldValues !== 'object' || Array.isArray(fieldValues)) {
+    return {}
+  }
+
+  return Object.entries(fieldValues).reduce((acc, [key, value]) => {
+    const normalizedKey = String(key || '').trim()
+    if (!normalizedKey) {
+      return acc
+    }
+
+    const normalizedValue = typeof value === 'string'
+      ? value.trim()
+      : String(value ?? '').trim()
+
+    acc[normalizedKey] = normalizedValue
+    return acc
+  }, {})
+}
+
+const splitPdfTextIntoLines = ({ text = '', font, fontSize = 11, maxWidth = 120 } = {}) => {
+  const normalizedText = String(text ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim()
+
+  if (!normalizedText) {
+    return []
+  }
+
+  const lines = []
+  const paragraphs = normalizedText.split('\n')
+
+  const pushWordSegments = (word, output) => {
+    const characters = Array.from(String(word || ''))
+    let segment = ''
+
+    characters.forEach(character => {
+      const candidate = `${segment}${character}`
+      if (!segment || font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+        segment = candidate
+      } else {
+        output.push(segment)
+        segment = character
+      }
+    })
+
+    if (segment) {
+      output.push(segment)
+    }
+  }
+
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    const words = paragraph.split(/\s+/).filter(Boolean)
+
+    if (!words.length) {
+      lines.push('')
+    } else {
+      let currentLine = ''
+
+      words.forEach(word => {
+        const candidate = currentLine ? `${currentLine} ${word}` : word
+        if (!currentLine || font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+          currentLine = candidate
+          return
+        }
+
+        lines.push(currentLine)
+
+        if (font.widthOfTextAtSize(word, fontSize) <= maxWidth) {
+          currentLine = word
+          return
+        }
+
+        const brokenSegments = []
+        pushWordSegments(word, brokenSegments)
+        currentLine = brokenSegments.pop() || ''
+        lines.push(...brokenSegments)
+      })
+
+      if (currentLine) {
+        lines.push(currentLine)
+      }
+    }
+
+    if (paragraphIndex < paragraphs.length - 1) {
+      lines.push('')
+    }
+  })
+
+  return lines
+}
+
+const fitPdfTextIntoField = ({ text = '', font, width = 120, height = 30, preferredFontSize = 11, minFontSize = 7 } = {}) => {
+  const safeWidth = Math.max(10, Number(width) || 120)
+  const safeHeight = Math.max(12, Number(height) || 30)
+
+  for (let fontSize = preferredFontSize; fontSize >= minFontSize; fontSize -= 0.5) {
+    const lineHeight = fontSize * 1.2
+    const maxLines = Math.max(1, Math.floor(safeHeight / lineHeight))
+    const lines = splitPdfTextIntoLines({
+      text,
+      font,
+      fontSize,
+      maxWidth: safeWidth
+    })
+
+    if (lines.length <= maxLines) {
+      return {
+        fontSize,
+        lineHeight,
+        maxLines,
+        lines
+      }
+    }
+  }
+
+  const fallbackFontSize = minFontSize
+  const fallbackLineHeight = fallbackFontSize * 1.2
+  const fallbackMaxLines = Math.max(1, Math.floor(safeHeight / fallbackLineHeight))
+  const fallbackLines = splitPdfTextIntoLines({
+    text,
+    font,
+    fontSize: fallbackFontSize,
+    maxWidth: safeWidth
+  }).slice(0, fallbackMaxLines)
+
+  return {
+    fontSize: fallbackFontSize,
+    lineHeight: fallbackLineHeight,
+    maxLines: fallbackMaxLines,
+    lines: fallbackLines
+  }
+}
+
+const drawPdfFieldText = ({
+  page,
+  font,
+  text = '',
+  x = 0,
+  y = 0,
+  width = 120,
+  height = 30,
+  color = rgb(0.1, 0.1, 0.1)
+} = {}) => {
+  const normalizedText = String(text ?? '').trim()
+  if (!normalizedText) {
+    return
+  }
+
+  const horizontalPadding = 3
+  const verticalPadding = 3
+  const innerWidth = Math.max(10, Number(width) - (horizontalPadding * 2))
+  const innerHeight = Math.max(12, Number(height) - (verticalPadding * 2))
+  const fitted = fitPdfTextIntoField({
+    text: normalizedText,
+    font,
+    width: innerWidth,
+    height: innerHeight
+  })
+
+  const startY = Number(y) + Number(height) - verticalPadding - fitted.fontSize
+  fitted.lines.slice(0, fitted.maxLines).forEach((line, index) => {
+    page.drawText(line, {
+      x: Number(x) + horizontalPadding,
+      y: Math.max(Number(y) + verticalPadding, startY - (index * fitted.lineHeight)),
+      size: fitted.fontSize,
+      font,
+      color
+    })
+  })
+}
+
+const normalizeSubmittedDateValue = (value = '') => {
+  const raw = String(value || '').trim()
+  if (!raw) {
+    return ''
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const parsed = new Date(`${raw}T00:00:00`)
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString()
+    }
+  }
+
+  return raw
+}
+
 const normalizeItems = (items = []) => {
   if (!Array.isArray(items)) return []
   return items
@@ -350,6 +559,78 @@ const buildOnboardingEmail = (memberName, orgName, issuerUrl, workflowType = 'on
     `,
     text: `Hi ${memberName},\n\n${introLine}\n\nOpen Notifications to review your pending tasks: ${workspaceUrl}`
   }
+}
+
+const sendAssignmentEmail = async ({
+  memberId,
+  organization,
+  workflowType
+} = {}) => {
+  if (!memberId || !organization) return
+
+  const memberAccount = await Account.findById(memberId)
+  if (!memberAccount?.email) return
+
+  const memberName = memberAccount.profile?.name || memberAccount.email.split('@')[0]
+  const { subject, html, text } = buildOnboardingEmail(
+    memberName,
+    organization.name,
+    process.env.ISSUER_URL,
+    workflowType
+  )
+
+  try {
+    await emailService.sendEmail({
+      to: memberAccount.email,
+      subject,
+      html,
+      text
+    })
+  } catch (emailError) {
+    console.error('Failed to send onboarding email:', emailError)
+  }
+}
+
+const collectAssignmentAssetPublicIds = (items = []) => {
+  const assetIds = new Set()
+
+  items.forEach(item => {
+    const documentPublicId = item?.config?.document?.publicId
+    if (documentPublicId) {
+      assetIds.add(String(documentPublicId))
+    }
+
+    const uploadPublicId = item?.data?.upload?.publicId
+    if (uploadPublicId) {
+      assetIds.add(String(uploadPublicId))
+    }
+
+    const signedPublicId = item?.data?.esign?.signedPublicId
+    if (signedPublicId) {
+      assetIds.add(String(signedPublicId))
+    }
+  })
+
+  return assetIds
+}
+
+const cleanupRemovedAssignmentAssets = async ({
+  previousItems = [],
+  nextItems = []
+} = {}) => {
+  if (!isCloudinaryConfigured()) return
+
+  const previousAssetIds = collectAssignmentAssetPublicIds(previousItems)
+  const nextAssetIds = collectAssignmentAssetPublicIds(nextItems)
+  const removedAssetIds = Array.from(previousAssetIds).filter(publicId => !nextAssetIds.has(publicId))
+
+  await Promise.all(removedAssetIds.map(async publicId => {
+    try {
+      await deleteFromCloudinary({ publicId, resourceType: 'raw' })
+    } catch (error) {
+      console.warn('Failed to remove replaced onboarding asset:', publicId, error)
+    }
+  }))
 }
 
 // =========================
@@ -662,33 +943,105 @@ router.post('/organizations/:orgId/onboarding/assign', requireAuth, requireOrgan
       }
     })
 
-    const memberAccount = await Account.findById(memberId)
-    if (memberAccount?.email) {
-      const memberName = memberAccount.profile?.name || memberAccount.email.split('@')[0]
-      const orgName = organization.name
-      const { subject, html, text } = buildOnboardingEmail(
-        memberName,
-        orgName,
-        process.env.ISSUER_URL,
-        resolvedWorkflowType
-      )
-
-      try {
-        await emailService.sendEmail({
-          to: memberAccount.email,
-          subject,
-          html,
-          text
-        })
-      } catch (emailError) {
-        console.error('Failed to send onboarding email:', emailError)
-      }
-    }
+    await sendAssignmentEmail({
+      memberId,
+      organization,
+      workflowType: resolvedWorkflowType
+    })
 
     res.status(201).json(assignment)
   } catch (error) {
     console.error('Assign onboarding error:', error)
     res.status(500).json({ error: 'Failed to assign onboarding' })
+  }
+})
+
+router.patch('/organizations/:orgId/onboarding/assignments/:assignmentId', requireAuth, requireOrganizationMember, async (req, res) => {
+  if (!canManageOnboarding(req.memberRole)) {
+    return res.status(403).json({ error: 'Insufficient permissions to manage onboarding' })
+  }
+
+  try {
+    const { memberId, dueAt } = req.body || {}
+    const requestedWorkflowType = normalizeWorkflowType(req.body?.workflowType)
+    const customItemsInput = parseJson(req.body?.customItems, [])
+    const customItems = normalizeItems(customItemsInput)
+
+    if (!memberId) {
+      return res.status(400).json({ error: 'Member is required' })
+    }
+
+    if (customItems.length === 0) {
+      return res.status(400).json({ error: 'At least one workflow item is required' })
+    }
+
+    const organization = await Organization.findById(req.params.orgId)
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' })
+    }
+
+    const memberEntry = organization.members.find(m => m.account.toString() === memberId && m.status === 'active')
+    if (!memberEntry) {
+      return res.status(404).json({ error: 'Member not found in this organization' })
+    }
+
+    const assignment = await OnboardingAssignment.findOne({
+      _id: req.params.assignmentId,
+      organization: req.params.orgId
+    })
+
+    if (!assignment) {
+      return res.status(404).json({ error: 'Onboarding assignment not found' })
+    }
+
+    if (assignment.status === 'cancelled') {
+      return res.status(400).json({ error: 'Cancelled assignments cannot be edited' })
+    }
+
+    if (assignment.status === 'completed') {
+      return res.status(400).json({ error: 'Completed assignments cannot be edited' })
+    }
+
+    const previousStatus = assignment.status
+    const previousItems = assignment.items.map(item => item.toObject())
+
+    const resolvedItems = await Promise.all(
+      customItems.map(item => resolveEsignSigners(item, memberId, organization))
+    )
+
+    if (memberEntry.onboardingStatusOverride) {
+      await organization.setMemberOnboardingStatusOverride(memberId, null, req.user._id)
+    }
+
+    assignment.member = memberId
+    assignment.workflowType = requestedWorkflowType
+    assignment.template = null
+    assignment.items = resolvedItems
+    assignment.dueAt = dueAt ? new Date(dueAt) : undefined
+    assignment.completedAt = undefined
+    assignment.cancelledAt = undefined
+    assignment.status = 'pending'
+    updateAssignmentStatus(assignment)
+    await assignment.save()
+
+    await cleanupRemovedAssignmentAssets({
+      previousItems,
+      nextItems: assignment.items.map(item => item.toObject())
+    })
+
+    await sendAssignmentEmail({
+      memberId,
+      organization,
+      workflowType: assignment.workflowType
+    })
+
+    res.json({
+      message: 'Assignment updated',
+      assignment
+    })
+  } catch (error) {
+    console.error('Update onboarding assignment error:', error)
+    res.status(500).json({ error: 'Failed to update onboarding assignment' })
   }
 })
 
@@ -892,7 +1245,8 @@ router.get('/onboarding/my', requireAuth, async (req, res) => {
       $or: [
         { member: req.user._id },
         { 'items.config.signers.member': req.user._id },
-        { 'items.data.esign.signers.member': req.user._id }
+        { 'items.data.esign.signers.member': req.user._id },
+        { 'items.config.signatureFields.signerId': req.user._id }
       ],
       status: { $ne: 'completed' }
     }
@@ -1019,19 +1373,8 @@ router.post('/onboarding/:assignmentId/items/:itemId/upload',
 
 router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAuth, async (req, res) => {
   try {
-    const { signatureDataUrl, signerName } = req.body || {}
-
-    if (!signatureDataUrl) {
-      return res.status(400).json({ error: 'Signature is required' })
-    }
-
-    const signatureMatch = signatureDataUrl.match(/^data:image\/(png|jpeg);base64,(.+)$/)
-    if (!signatureMatch) {
-      return res.status(400).json({ error: 'Invalid signature format' })
-    }
-
-    const signatureFormat = signatureMatch[1]
-    const signatureBuffer = Buffer.from(signatureMatch[2], 'base64')
+    const { signatureDataUrl, signerName, fieldValues } = req.body || {}
+    const normalizedFieldValues = normalizeEsignFieldValues(fieldValues)
 
     const assignment = await OnboardingAssignment.findOne({
       _id: req.params.assignmentId
@@ -1057,45 +1400,6 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     const previousSignedPublicId = item.data?.esign?.signedPublicId
 
     const signerIdStr = req.user._id.toString()
-    const configuredSigners = item.config?.signers?.length
-      ? item.config.signers
-      : [{ member: assignment.member }]
-    const signerAllowed = configuredSigners.some(signer => signer?.member?.toString() === signerIdStr)
-      || assignment.member?.toString() === signerIdStr
-
-    if (!signerAllowed) {
-      return res.status(403).json({ error: 'You are not assigned to sign this document' })
-    }
-
-    const sourceUrl = item.data?.esign?.signedUrl || document.url
-    const docResponse = await fetch(sourceUrl)
-    if (!docResponse.ok) {
-      return res.status(500).json({ error: 'Failed to fetch document for signing' })
-    }
-    const arrayBuffer = await docResponse.arrayBuffer()
-
-    const pdfDoc = await PDFDocument.load(arrayBuffer)
-    const pages = pdfDoc.getPages()
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
-
-    const signatureImage = signatureFormat === 'png'
-      ? await pdfDoc.embedPng(signatureBuffer)
-      : await pdfDoc.embedJpg(signatureBuffer)
-
-    const allSignatureFields = item.config?.signatureFields?.length
-      ? item.config.signatureFields
-      : [{
-          label: 'Signature',
-          type: 'signature',
-          page: 1,
-          x: 50,
-          y: 50,
-          width: 180,
-          height: 60,
-          origin: 'top-left',
-          signerId: signerIdStr
-        }]
-
     const normalizeSignerId = (value) => {
       if (!value) return ''
       if (typeof value === 'string') return value
@@ -1118,6 +1422,47 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
       }
     }
 
+    const configuredSigners = item.config?.signers?.length
+      ? item.config.signers
+      : [{ member: assignment.member }]
+    const allSignatureFields = item.config?.signatureFields?.length
+      ? item.config.signatureFields
+      : [{
+          label: 'Signature',
+          type: 'signature',
+          page: 1,
+          x: 50,
+          y: 50,
+          width: 180,
+          height: 60,
+          origin: 'top-left',
+          signerId: signerIdStr
+        }]
+
+    const signerAllowed = configuredSigners.some(signer => signer?.member?.toString() === signerIdStr)
+      || assignment.member?.toString() === signerIdStr
+      || allSignatureFields.some(field => {
+        const rawSigner = normalizeSignerId(field.signerKey || field.signerId || field.signer)
+        if (!rawSigner) return assignment.member?.toString() === signerIdStr
+        const resolvedSigner = rawSigner === 'assignee' ? assignment.member?.toString() : rawSigner
+        return resolvedSigner === signerIdStr
+      })
+
+    if (!signerAllowed) {
+      return res.status(403).json({ error: 'You are not assigned to sign this document' })
+    }
+
+    const sourceUrl = item.data?.esign?.signedUrl || document.url
+    const docResponse = await fetch(sourceUrl)
+    if (!docResponse.ok) {
+      return res.status(500).json({ error: 'Failed to fetch document for signing' })
+    }
+    const arrayBuffer = await docResponse.arrayBuffer()
+
+    const pdfDoc = await PDFDocument.load(arrayBuffer)
+    const pages = pdfDoc.getPages()
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+
     const signatureFields = allSignatureFields.filter(field => {
       const rawSigner = normalizeSignerId(field.signerKey || field.signerId || field.signer)
       if (!rawSigner) return true
@@ -1129,9 +1474,53 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
       return res.status(400).json({ error: 'No signature fields assigned to you' })
     }
 
+    const requiresSignature = signatureFields.some(field => field.type === 'signature')
+    if (requiresSignature && !signatureDataUrl) {
+      return res.status(400).json({ error: 'Signature is required' })
+    }
+
+    let signatureFormat = ''
+    let signatureBuffer = null
+    if (signatureDataUrl) {
+      const signatureMatch = signatureDataUrl.match(/^data:image\/(png|jpeg);base64,(.+)$/)
+      if (!signatureMatch) {
+        return res.status(400).json({ error: 'Invalid signature format' })
+      }
+
+      signatureFormat = signatureMatch[1]
+      signatureBuffer = Buffer.from(signatureMatch[2], 'base64')
+    }
+
+    let signatureImage = null
+    if (requiresSignature && signatureBuffer) {
+      signatureImage = signatureFormat === 'png'
+        ? await pdfDoc.embedPng(signatureBuffer)
+        : await pdfDoc.embedJpg(signatureBuffer)
+    }
+
     const now = new Date()
     const dateText = now.toLocaleDateString()
     const resolvedSignerName = signerName || req.user.profile?.name || req.user.email
+
+    const missingField = signatureFields.find(field => {
+      if (field.type === 'signature') {
+        return false
+      }
+
+      const fieldKey = getEsignFieldIdentity(field)
+      const submittedValue = normalizedFieldValues[fieldKey]
+      const fallbackValue = field.type === 'date'
+        ? dateText
+        : (field.text || '')
+
+      return !String(submittedValue || fallbackValue).trim()
+    })
+
+    if (missingField) {
+      return res.status(400).json({
+        error: `${missingField.label || (missingField.type === 'date' ? 'Date' : 'Text')} is required`
+      })
+    }
 
     signatureFields.forEach(field => {
       const pageIndex = Math.min(pages.length - 1, Math.max(0, (field.page || 1) - 1))
@@ -1145,27 +1534,35 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
         : (Number(field.y) || 0)
       const width = Number(field.width) || 180
       const height = Number(field.height) || 60
+      const fieldKey = getEsignFieldIdentity(field)
+      const submittedFieldValue = normalizedFieldValues[fieldKey]
 
       if (field.type === 'date') {
-        page.drawText(dateText, {
-          x: drawX,
-          y: drawY + (height / 4),
-          size: 11,
+        drawPdfFieldText({
+          page,
           font,
+          text: normalizeSubmittedDateValue(submittedFieldValue || field.text || dateText),
+          x: drawX,
+          y: drawY,
+          width,
+          height,
           color: rgb(0.1, 0.1, 0.1)
         })
       } else if (field.type === 'text') {
-        const textValue = field.text || resolvedSignerName
+        const textValue = String(submittedFieldValue || field.text || '').trim()
         if (textValue) {
-          page.drawText(textValue, {
-            x: drawX,
-            y: drawY + (height / 4),
-            size: 11,
+          drawPdfFieldText({
+            page,
             font,
+            text: textValue,
+            x: drawX,
+            y: drawY,
+            width,
+            height,
             color: rgb(0.1, 0.1, 0.1)
           })
         }
-      } else {
+      } else if (signatureImage) {
         page.drawImage(signatureImage, {
           x: drawX,
           y: drawY,

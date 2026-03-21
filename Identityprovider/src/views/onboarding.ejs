@@ -423,17 +423,33 @@
               <label for="esign-signer-name">Your name (optional)</label>
               <input type="text" id="esign-signer-name" placeholder="Type your name" />
             </div>
+          </div>
 
+          <div class="esign-panel" id="esign-active-field-panel">
+            <div class="esign-panel-header">
+              <div class="esign-panel-title">Selected Field</div>
+              <div id="esign-active-field-kind" style="color: var(--muted); font-size: 12px;"></div>
+            </div>
+            <div id="esign-active-field-empty" class="form-hint">Select a field to type directly into the document.</div>
+            <div id="esign-active-field-editor" hidden>
+              <div class="esign-active-field-label" id="esign-active-field-label"></div>
+              <input type="text" id="esign-active-field-input" class="esign-active-field-input" hidden />
+              <textarea id="esign-active-field-textarea" class="esign-active-field-textarea" hidden></textarea>
+              <div id="esign-active-field-hint" class="form-hint" style="margin-top: 8px;"></div>
+            </div>
+          </div>
+
+          <div class="esign-panel" id="esign-signature-group">
             <div class="form-group" style="margin-bottom: 0;">
               <label>Signature</label>
               <div style="border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px;">
                 <canvas id="esign-canvas" style="width: 100%; height: 180px; border-radius: 10px; touch-action: none;"></canvas>
               </div>
               <div style="display:flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
-                <button class="btn btn-secondary btn-sm" type="button" onclick="clearSignature()">Clear</button>
+                <button class="btn btn-secondary btn-sm" id="esign-clear-signature-btn" type="button" onclick="clearSignature()">Clear</button>
                 <button class="btn btn-primary btn-sm" id="esign-submit-btn" type="button" onclick="submitESignature()">Finish & Generate Signed PDF</button>
               </div>
-              <div class="form-hint" style="margin-top: 8px;">Your signature will be applied to all fields assigned to you.</div>
+              <div class="form-hint" id="esign-signature-hint" style="margin-top: 8px;">Your signature will be applied to all fields assigned to you.</div>
             </div>
           </div>
         </div>
@@ -631,6 +647,16 @@
     const esignSignerName = document.getElementById('esign-signer-name');
     const esignFieldsList = document.getElementById('esign-fields-list');
     const esignFieldsCount = document.getElementById('esign-fields-count');
+    const esignActiveFieldPanel = document.getElementById('esign-active-field-panel');
+    const esignActiveFieldKind = document.getElementById('esign-active-field-kind');
+    const esignActiveFieldEmpty = document.getElementById('esign-active-field-empty');
+    const esignActiveFieldEditor = document.getElementById('esign-active-field-editor');
+    const esignActiveFieldLabel = document.getElementById('esign-active-field-label');
+    const esignActiveFieldInput = document.getElementById('esign-active-field-input');
+    const esignActiveFieldTextarea = document.getElementById('esign-active-field-textarea');
+    const esignActiveFieldHint = document.getElementById('esign-active-field-hint');
+    const esignSignatureGroup = document.getElementById('esign-signature-group');
+    const esignSignatureHint = document.getElementById('esign-signature-hint');
     const esignSubmitBtn = document.getElementById('esign-submit-btn');
     const signatureCanvas = document.getElementById('esign-canvas');
     const signatureCtx = signatureCanvas.getContext('2d');
@@ -638,6 +664,7 @@
     let activeAssignmentId = null;
     let activeItemId = null;
     let activeFields = [];
+    let esignFieldValues = {};
     let selectedEsignFieldIndex = -1;
     let signaturePreviewUrl = null;
     let esignPdfUrl = null;
@@ -704,6 +731,180 @@
       return `${index + 1}. Signature`;
     }
 
+    function roundEsignFieldNumber(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? Math.round(numeric * 1000) / 1000 : 0;
+    }
+
+    function getEsignFieldIdentity(field) {
+      const signerRef = String(field.signerKey || field.signerId || field.signer || 'all').trim().toLowerCase() || 'all';
+      return [
+        String(field.type || 'signature').trim().toLowerCase(),
+        String(field.label || '').trim().toLowerCase(),
+        Number(field.page) || 1,
+        roundEsignFieldNumber(field.x),
+        roundEsignFieldNumber(field.y),
+        roundEsignFieldNumber(field.width),
+        roundEsignFieldNumber(field.height),
+        String(field.origin || 'top-left').trim().toLowerCase(),
+        signerRef
+      ].join('|');
+    }
+
+    function getTodayEsignInputValue() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getDefaultEsignFieldValue(field) {
+      if (!field || field.type === 'signature') return '';
+      if (field.type === 'date') {
+        return String(field.text || '').trim() || getTodayEsignInputValue();
+      }
+      return String(field.text || '').trim();
+    }
+
+    function ensureEsignFieldValue(field) {
+      const fieldKey = getEsignFieldIdentity(field);
+      if (!Object.prototype.hasOwnProperty.call(esignFieldValues, fieldKey)) {
+        esignFieldValues[fieldKey] = getDefaultEsignFieldValue(field);
+      }
+      return esignFieldValues[fieldKey] || '';
+    }
+
+    function getEsignFieldValue(field) {
+      if (!field || field.type === 'signature') return '';
+      return ensureEsignFieldValue(field);
+    }
+
+    function isEsignFieldComplete(field) {
+      if (!field) return false;
+      if (field.type === 'signature') return hasSignature;
+      return Boolean(String(getEsignFieldValue(field) || '').trim());
+    }
+
+    function activeEsignRequiresSignature() {
+      return activeFields.some(field => field.type === 'signature');
+    }
+
+    function shouldUseEsignTextarea(field) {
+      if (!field || field.type !== 'text') return false;
+      return Number(field.height) >= 44 || Number(field.width) >= 280;
+    }
+
+    function focusEsignOverlayField(index) {
+      const fieldEl = esignPdfOverlay?.querySelector(`.esign-field-preview[data-index="${index}"]`);
+      const input = fieldEl?.querySelector('.esign-field-input');
+      if (input) {
+        requestAnimationFrame(() => input.focus({ preventScroll: true }));
+      }
+    }
+
+    function syncEsignSubmitUi() {
+      const requiresSignature = activeEsignRequiresSignature();
+      if (esignSignatureGroup) {
+        esignSignatureGroup.hidden = !requiresSignature;
+      }
+      if (esignSignatureHint) {
+        esignSignatureHint.textContent = requiresSignature
+          ? 'Your signature will be applied to all signature fields assigned to you.'
+          : 'This document only needs typed values. No drawn signature is required.';
+      }
+      if (esignSubmitBtn) {
+        esignSubmitBtn.textContent = requiresSignature
+          ? 'Finish & Generate Signed PDF'
+          : 'Generate Completed PDF';
+      }
+      if (esignActiveFieldPanel) {
+        esignActiveFieldPanel.classList.toggle('is-signature-selected', requiresSignature && activeFields[selectedEsignFieldIndex]?.type === 'signature');
+      }
+    }
+
+    function updateEsignFieldValue(field, value, source = 'overlay') {
+      if (!field || field.type === 'signature') return;
+      const fieldKey = getEsignFieldIdentity(field);
+      const nextValue = String(value ?? '');
+      esignFieldValues[fieldKey] = nextValue;
+      renderEsignFieldsList();
+
+      if (source !== 'overlay') {
+        const overlayInput = esignPdfOverlay?.querySelector(`.esign-field-preview[data-index="${selectedEsignFieldIndex}"] .esign-field-input`);
+        if (overlayInput && overlayInput.value !== nextValue) {
+          overlayInput.value = nextValue;
+        }
+      }
+
+      if (source !== 'sidebar') {
+        const activeInput = shouldUseEsignTextarea(field) ? esignActiveFieldTextarea : esignActiveFieldInput;
+        if (activeInput && !activeInput.hidden && activeInput.value !== nextValue) {
+          activeInput.value = nextValue;
+        }
+      }
+    }
+
+    function renderEsignActiveFieldEditor() {
+      if (!esignActiveFieldEditor || !esignActiveFieldEmpty || !esignActiveFieldLabel || !esignActiveFieldKind) {
+        return;
+      }
+
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field) {
+        esignActiveFieldEmpty.hidden = false;
+        esignActiveFieldEditor.hidden = true;
+        esignActiveFieldKind.textContent = '';
+        esignActiveFieldEmpty.textContent = 'Select a field to type directly into the document.';
+        return;
+      }
+
+      const typeLabel = field.type === 'signature'
+        ? 'Signature'
+        : (field.type === 'date' ? 'Date field' : 'Text field');
+      esignActiveFieldKind.textContent = typeLabel;
+      esignActiveFieldLabel.textContent = field.label || typeLabel;
+
+      if (field.type === 'signature') {
+        esignActiveFieldEmpty.hidden = false;
+        esignActiveFieldEditor.hidden = true;
+        esignActiveFieldEmpty.textContent = 'This field requires your drawn signature in the signature box below.';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = '';
+        }
+        return;
+      }
+
+      const fieldValue = getEsignFieldValue(field);
+      const useTextarea = shouldUseEsignTextarea(field);
+      esignActiveFieldEmpty.hidden = true;
+      esignActiveFieldEditor.hidden = false;
+      esignActiveFieldInput.hidden = useTextarea;
+      esignActiveFieldTextarea.hidden = !useTextarea;
+
+      const activeInput = useTextarea ? esignActiveFieldTextarea : esignActiveFieldInput;
+      const inactiveInput = useTextarea ? esignActiveFieldInput : esignActiveFieldTextarea;
+      activeInput.value = fieldValue;
+      inactiveInput.value = '';
+
+      if (field.type === 'date') {
+        esignActiveFieldInput.type = 'date';
+        esignActiveFieldInput.placeholder = '';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = 'Pick the date that should be written into the PDF.';
+        }
+      } else {
+        esignActiveFieldInput.type = 'text';
+        esignActiveFieldInput.placeholder = 'Type the value for this field';
+        esignActiveFieldTextarea.placeholder = 'Type the value for this field';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = useTextarea
+            ? 'This field is large enough for multiple lines.'
+            : 'Type the exact value that should appear in the document.';
+        }
+      }
+    }
+
     function renderEsignFieldsList() {
       if (!esignFieldsList) return;
       esignFieldsList.innerHTML = '';
@@ -732,7 +933,10 @@
 
         const meta = document.createElement('div');
         meta.className = 'esign-field-row-meta';
-        meta.textContent = `Page ${field.page || 1} - ${field.type || 'signature'}`;
+        const stateLabel = isEsignFieldComplete(field)
+          ? 'Filled'
+          : (field.type === 'signature' ? 'Needs signature' : 'Needs value');
+        meta.textContent = `Page ${field.page || 1} - ${field.type || 'signature'} - ${stateLabel}`;
 
         body.appendChild(title);
         body.appendChild(meta);
@@ -777,6 +981,8 @@
       const safeIndex = clampNumber(Number(index) || 0, 0, activeFields.length - 1);
       selectedEsignFieldIndex = safeIndex;
       renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
 
       const field = activeFields[selectedEsignFieldIndex];
       if (!field) return;
@@ -792,6 +998,9 @@
 
       renderEsignOverlay();
       if (options.scroll !== false) scrollToEsignField(field);
+      if (field.type !== 'signature') {
+        focusEsignOverlayField(selectedEsignFieldIndex);
+      }
     }
 
     function jumpEsignField(delta) {
@@ -837,6 +1046,9 @@
           localStorage.removeItem('esignSignatureDataUrl');
         }
       }
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
       renderEsignOverlay();
     }
 
@@ -848,6 +1060,9 @@
         signatureCtx.drawImage(image, 0, 0, signatureCanvas.width, signatureCanvas.height);
         hasSignature = true;
         signaturePreviewUrl = dataUrl;
+        renderEsignFieldsList();
+        renderEsignActiveFieldEditor();
+        syncEsignSubmitUi();
         renderEsignOverlay();
       };
       image.src = dataUrl;
@@ -858,6 +1073,9 @@
       const dataUrl = signatureCanvas.toDataURL('image/png');
       signaturePreviewUrl = dataUrl;
       localStorage.setItem('esignSignatureDataUrl', dataUrl);
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
       renderEsignOverlay();
     }
 
@@ -1013,8 +1231,6 @@
       esignPdfOverlay.innerHTML = '';
       const scale = esignPdfState.scale || 1;
       const pdfHeight = esignPdfState.viewport.viewBox[3] - esignPdfState.viewport.viewBox[1];
-      const now = new Date().toLocaleDateString();
-      const signerName = esignSignerName.value.trim();
 
       activeFields.forEach((field, index) => {
         if ((field.page || 1) !== esignPdfState.page) return;
@@ -1052,22 +1268,41 @@
             label.textContent = field.label || 'Signature';
             fieldEl.appendChild(label);
           }
-        } else if (field.type === 'date') {
-          const label = document.createElement('div');
-          label.className = 'esign-field-title';
-          label.textContent = now;
-          fieldEl.appendChild(label);
-        } else if (field.type === 'text') {
-          const label = document.createElement('div');
-          label.className = 'esign-field-title';
-          label.textContent = field.text || signerName || 'Text';
-          fieldEl.appendChild(label);
+        } else {
+          fieldEl.classList.add('has-input');
+          const fieldInput = document.createElement(shouldUseEsignTextarea(field) ? 'textarea' : 'input');
+          fieldInput.className = 'esign-field-input' + (shouldUseEsignTextarea(field) ? ' esign-field-input--multiline' : '');
+          fieldInput.value = getEsignFieldValue(field);
+          fieldInput.placeholder = field.label || (field.type === 'date' ? 'Select date' : 'Type here');
+          fieldInput.setAttribute('aria-label', field.label || (field.type === 'date' ? 'Date field' : 'Text field'));
+
+          if (field.type === 'date') {
+            fieldInput.type = 'date';
+          } else if (fieldInput.tagName === 'INPUT') {
+            fieldInput.type = 'text';
+          }
+
+          fieldInput.addEventListener('pointerdown', (event) => {
+            event.stopPropagation();
+            selectEsignField(index, { scroll: false });
+          });
+          fieldInput.addEventListener('click', (event) => {
+            event.stopPropagation();
+            selectEsignField(index, { scroll: false });
+          });
+          fieldInput.addEventListener('input', (event) => {
+            updateEsignFieldValue(field, event.target.value, 'overlay');
+          });
+
+          fieldEl.appendChild(fieldInput);
         }
 
         fieldEl.addEventListener('click', () => {
           selectEsignField(index, { scroll: true });
-          if (!hasSignature && field.type === 'signature') {
+          if (field.type === 'signature' && !hasSignature) {
             signatureCanvas?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else if (field.type !== 'signature') {
+            focusEsignOverlayField(index);
           }
         });
 
@@ -1193,6 +1428,12 @@
       activeAssignmentId = assignmentId;
       activeItemId = itemId;
       activeAssigneeId = assigneeId;
+      esignFieldValues = {};
+      activeFields.forEach(field => {
+        if (field.type !== 'signature') {
+          ensureEsignFieldValue(field);
+        }
+      });
       selectedEsignFieldIndex = 0;
       esignDocumentName.textContent = docName || 'Document';
       if (esignDocumentSubtitle) {
@@ -1212,7 +1453,9 @@
         if (storedSignature) {
           loadSignatureDataUrl(storedSignature);
         }
+        syncEsignSubmitUi();
         renderEsignFieldsList();
+        renderEsignActiveFieldEditor();
         loadEsignPdf(previewUrl);
         selectEsignField(0, { scroll: false });
       }, 50);
@@ -1223,6 +1466,7 @@
       activeAssignmentId = null;
       activeItemId = null;
       activeFields = [];
+      esignFieldValues = {};
       selectedEsignFieldIndex = -1;
       esignPdfState.pdf = null;
       esignPdfState.page = 1;
@@ -1232,6 +1476,12 @@
       if (esignPdfViewer) {
         esignPdfViewer.style.display = 'none';
       }
+      if (esignPdfOverlay) {
+        esignPdfOverlay.innerHTML = '';
+      }
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
     }
 
     esignModal.addEventListener('click', (event) => {
@@ -1242,6 +1492,18 @@
 
     esignSignerName.addEventListener('input', () => {
       renderEsignOverlay();
+    });
+
+    esignActiveFieldInput?.addEventListener('input', (event) => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type === 'signature') return;
+      updateEsignFieldValue(field, event.target.value, 'sidebar');
+    });
+
+    esignActiveFieldTextarea?.addEventListener('input', (event) => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type === 'signature') return;
+      updateEsignFieldValue(field, event.target.value, 'sidebar');
     });
 
     let esignPageScrubTimer = null;
@@ -1277,14 +1539,33 @@
 
     async function submitESignature() {
       if (!activeAssignmentId || !activeItemId) return;
-      if (!hasSignature) {
+      const requiresSignature = activeEsignRequiresSignature();
+      if (requiresSignature && !hasSignature) {
         alert('Please add your signature before submitting');
         return;
       }
 
-      const payload = {
-        signatureDataUrl: signatureCanvas.toDataURL('image/png')
-      };
+      const payload = { fieldValues: {} };
+      const missingField = activeFields.find(field => {
+        if (field.type === 'signature') {
+          return false;
+        }
+        const value = String(getEsignFieldValue(field) || '').trim();
+        if (value) {
+          payload.fieldValues[getEsignFieldIdentity(field)] = value;
+        }
+        return !value;
+      });
+
+      if (missingField) {
+        selectEsignField(activeFields.indexOf(missingField), { scroll: true });
+        alert(`Please complete "${missingField.label || (missingField.type === 'date' ? 'Date' : 'Text')}" before submitting`);
+        return;
+      }
+
+      if (requiresSignature) {
+        payload.signatureDataUrl = signatureCanvas.toDataURL('image/png');
+      }
       const signerName = esignSignerName.value.trim();
       if (signerName) {
         payload.signerName = signerName;

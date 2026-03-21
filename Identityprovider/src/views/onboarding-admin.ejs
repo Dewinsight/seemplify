@@ -574,6 +574,17 @@
             <h3 tabindex="-1">Step <%= centerStepNumbers.recipient %>: Recipient and Schedule</h3>
             <p>Select member, optional template, and due date.</p>
           </div>
+        <div class="alert alert-warning" id="assignment-edit-banner" style="display:none; margin-bottom: 14px;">
+          <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+            <div>
+              <strong id="assignment-edit-title">Editing live workflow</strong>
+              <div id="assignment-edit-meta" style="margin-top:6px; color: var(--muted);">
+                Saving changes resets any in-flight signatures and submissions for this assignment.
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" type="button" onclick="cancelAssignmentEditing()">Stop Editing</button>
+          </div>
+        </div>
         <div class="form-group">
           <label for="assignmentMember">Member</label>
           <select id="assignmentMember">
@@ -609,6 +620,7 @@
               </option>
             <% }) %>
           </select>
+          <div class="form-hint" id="assignment-template-hint">Use a template for new assignments, or leave it blank to build the workflow manually.</div>
         </div>
 
         <div class="form-group">
@@ -835,7 +847,7 @@
             </div>
           </div>
           <div class="form-actions center-review-actions">
-            <button class="btn btn-primary" type="button" onclick="assignOnboarding()"><%= workspaceMode ? 'Assign Workflow' : 'Assign Onboarding' %></button>
+            <button class="btn btn-primary" id="assignment-submit-btn" type="button" onclick="assignOnboarding()"><%= workspaceMode ? 'Assign Workflow' : 'Assign Onboarding' %></button>
           </div>
         </section>
 
@@ -946,7 +958,8 @@
                 <span class="role-badge workflow-type-badge workflow-type-badge--<%= assignmentWorkflowType %>"><%= assignmentWorkflowLabel %></span>
                 <a class="btn btn-secondary btn-sm" href="/organizations/<%= organization._id %>/onboarding/assignments/<%= assignment._id %>">View</a>
                 <% if (assignment.status !== 'completed' && assignment.status !== 'cancelled') { %>
-                  <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Cancel</button>
+                  <button class="btn btn-secondary btn-sm" type="button" onclick="startAssignmentEdit('<%= assignment._id %>')">Edit</button>
+                  <button class="btn btn-danger btn-sm" type="button" onclick="cancelAssignment('<%= assignment._id %>')">Retract</button>
                 <% } %>
               </div>
             </article>
@@ -1474,17 +1487,33 @@
                 <label for="esign-signer-name">Your name (optional)</label>
                 <input type="text" id="esign-signer-name" placeholder="Type your name" />
               </div>
+            </div>
 
+            <div class="esign-panel" id="esign-active-field-panel">
+              <div class="esign-panel-header">
+                <div class="esign-panel-title">Selected Field</div>
+                <div id="esign-active-field-kind" style="color: var(--muted); font-size: 12px;"></div>
+              </div>
+              <div id="esign-active-field-empty" class="form-hint">Select a field to type directly into the document.</div>
+              <div id="esign-active-field-editor" hidden>
+                <div class="esign-active-field-label" id="esign-active-field-label"></div>
+                <input type="text" id="esign-active-field-input" class="esign-active-field-input" hidden />
+                <textarea id="esign-active-field-textarea" class="esign-active-field-textarea" hidden></textarea>
+                <div id="esign-active-field-hint" class="form-hint" style="margin-top: 8px;"></div>
+              </div>
+            </div>
+
+            <div class="esign-panel" id="esign-signature-group">
               <div class="form-group" style="margin-bottom: 0;">
                 <label>Signature</label>
                 <div style="border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px;">
                   <canvas id="esign-canvas" style="width: 100%; height: 180px; border-radius: 10px; touch-action: none;"></canvas>
                 </div>
                 <div style="display:flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
-                  <button class="btn btn-secondary btn-sm" type="button" onclick="clearSignature()">Clear</button>
+                  <button class="btn btn-secondary btn-sm" id="esign-clear-signature-btn" type="button" onclick="clearSignature()">Clear</button>
                   <button class="btn btn-primary btn-sm" id="esign-submit-btn" type="button" onclick="submitESignature()">Finish & Generate Signed PDF</button>
                 </div>
-                <div class="form-hint" style="margin-top: 8px;">Your signature will be applied to all fields assigned to you.</div>
+                <div class="form-hint" id="esign-signature-hint" style="margin-top: 8px;">Your signature will be applied to all fields assigned to you.</div>
               </div>
             </div>
           </div>
@@ -1499,6 +1528,88 @@
     const orgMembers = <%- JSON.stringify(members || []) %>;
     const templateItems = [];
     const customItems = [];
+    const assignmentEditorMap = <%- JSON.stringify((assignments || []).reduce((acc, assignment) => {
+      const assignmentMemberId = String(assignment?.member?._id || assignment?.member || '')
+      acc[String(assignment?._id || '')] = {
+        id: String(assignment?._id || ''),
+        memberId: assignmentMemberId,
+        memberLabel: assignment?.member?.profile?.name || assignment?.member?.email || 'Member',
+        workflowType: assignment?.workflowType || 'onboarding',
+        workflowLabel: (workflowLabelMap && workflowLabelMap[assignment?.workflowType || 'onboarding']) || 'Onboarding',
+        dueAt: assignment?.dueAt ? new Date(assignment.dueAt).toISOString().slice(0, 10) : '',
+        status: assignment?.status || 'pending',
+        templateName: assignment?.template?.name || '',
+        items: (assignment?.items || []).map(item => {
+          const signers = Array.isArray(item?.config?.signers) && item.config.signers.length
+            ? item.config.signers
+            : (Array.isArray(item?.data?.esign?.signers) ? item.data.esign.signers : [])
+          return {
+            type: item?.type || 'form',
+            title: item?.title || '',
+            description: item?.description || '',
+            required: item?.required !== false,
+            config: {
+              fields: Array.isArray(item?.config?.fields)
+                ? item.config.fields.map(field => ({
+                    key: field?.key || '',
+                    label: field?.label || '',
+                    type: field?.type || 'text',
+                    required: field?.required === true,
+                    options: Array.isArray(field?.options) ? field.options : []
+                  }))
+                : [],
+              accept: item?.config?.accept || '',
+              document: item?.config?.document
+                ? {
+                    url: item.config.document.url || '',
+                    publicId: item.config.document.publicId || '',
+                    fileName: item.config.document.fileName || '',
+                    mimeType: item.config.document.mimeType || '',
+                    size: item.config.document.size || 0
+                  }
+                : null,
+              signers: signers.map(signer => {
+                const signerMemberId = String(signer?.member?._id || signer?.member || '')
+                const isAssignee = signerMemberId && signerMemberId === assignmentMemberId
+                return {
+                  key: isAssignee ? 'assignee' : signerMemberId,
+                  type: isAssignee ? 'assignee' : 'member',
+                  memberId: isAssignee ? undefined : signerMemberId,
+                  label: isAssignee
+                    ? 'Onboarding member'
+                    : (signer?.name && signer?.email ? `${signer.name} (${signer.email})` : (signer?.name || signer?.email || 'Signer'))
+                }
+              }).filter(signer => signer.key),
+              signatureFields: Array.isArray(item?.config?.signatureFields)
+                ? item.config.signatureFields.map(field => {
+                    const fieldSignerId = String(field?.signerId?._id || field?.signerId || '')
+                    const isAssignee = fieldSignerId && fieldSignerId === assignmentMemberId
+                    return {
+                      label: field?.label || '',
+                      type: field?.type || 'signature',
+                      page: Number(field?.page) || 1,
+                      x: Number(field?.x) || 0,
+                      y: Number(field?.y) || 0,
+                      width: Number(field?.width) || 180,
+                      height: Number(field?.height) || 60,
+                      origin: field?.origin === 'bottom-left' ? 'bottom-left' : 'top-left',
+                      text: field?.text || '',
+                      signerKey: isAssignee ? 'assignee' : (fieldSignerId || 'assignee')
+                    }
+                  })
+                : []
+            },
+            _meta: {
+              persisted: true,
+              documentPublicId: item?.config?.document?.publicId || '',
+              uploadPublicId: item?.data?.upload?.publicId || '',
+              signedPublicId: item?.data?.esign?.signedPublicId || ''
+            }
+          }
+        })
+      }
+      return acc
+    }, {})) %>;
     const formFieldState = { template: [], custom: [] };
     const signatureFieldState = { template: [], custom: [] };
     const selectedSignatureFieldIndex = { template: -1, custom: -1 };
@@ -1547,6 +1658,9 @@
     const DEFAULT_UPLOAD_ACCEPT = '.pdf,.jpg,.jpeg,.png';
     let customDraftTouched = false;
     let customBuilderFeedback = '';
+    let editingAssignmentId = '';
+    let editingItemIndex = -1;
+    let editingItemPreservedPublicId = '';
 
     function clampStep(step, max) {
       const n = Number(step);
@@ -1639,7 +1753,9 @@
       }
 
       if (addBtn) {
-        addBtn.textContent = hasItems ? 'Add Another Item' : 'Add Custom Item';
+        addBtn.textContent = editingItemIndex >= 0
+          ? 'Save Item Changes'
+          : (hasItems ? 'Add Another Item' : 'Add Custom Item');
       }
     }
 
@@ -1715,6 +1831,9 @@
 
       const existingDoc = signatureDocumentState.custom;
       const existingPublicId = existingDoc?.publicId;
+      const preservedPublicId = options.preservedDocumentPublicId !== undefined
+        ? options.preservedDocumentPublicId
+        : editingItemPreservedPublicId;
       signatureDocumentState.custom = null;
       pdfState.custom = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
       placeModeState.custom = false;
@@ -1731,10 +1850,12 @@
       syncFieldTypeUI('custom');
       toggleItemInputs('custom');
 
-      if (existingPublicId) {
+      if (existingPublicId && existingPublicId !== preservedPublicId) {
         deleteUploadedDocument(existingPublicId);
       }
 
+      editingItemIndex = -1;
+      editingItemPreservedPublicId = '';
       customDraftTouched = false;
       if (options.feedback) {
         customBuilderFeedback = options.feedback;
@@ -1745,9 +1866,136 @@
       }
 
       refreshCustomStepFlowState();
+      updateCustomItemEditorUi();
       if (options.focus !== false) {
         titleInput?.focus();
       }
+    }
+
+    function updateAssignmentEditUi() {
+      const banner = document.getElementById('assignment-edit-banner');
+      const title = document.getElementById('assignment-edit-title');
+      const meta = document.getElementById('assignment-edit-meta');
+      const submitButton = document.getElementById('assignment-submit-btn');
+      const templateSelect = document.getElementById('assignmentTemplate');
+      const templateHint = document.getElementById('assignment-template-hint');
+      const assignmentData = editingAssignmentId ? assignmentEditorMap[editingAssignmentId] : null;
+
+      if (banner) {
+        banner.style.display = assignmentData ? 'block' : 'none';
+      }
+      if (title) {
+        title.textContent = assignmentData
+          ? `Editing live workflow for ${assignmentData.memberLabel || 'member'}`
+          : 'Editing live workflow';
+      }
+      if (meta) {
+        meta.textContent = assignmentData
+          ? 'Saving changes resets any in-flight signatures and submissions for this assignment.'
+          : 'Saving changes resets any in-flight signatures and submissions for this assignment.';
+      }
+      if (submitButton) {
+        submitButton.textContent = assignmentData
+          ? (workspaceModeEnabled ? 'Save Workflow Changes' : 'Save Onboarding Changes')
+          : (workspaceModeEnabled ? 'Assign Workflow' : 'Assign Onboarding');
+      }
+      if (templateSelect) {
+        templateSelect.disabled = !!assignmentData;
+        if (!assignmentData && !templateSelect.value) {
+          syncAssignmentTemplateOptions();
+        }
+      }
+      if (templateHint) {
+        templateHint.textContent = assignmentData
+          ? 'Template re-apply is disabled while editing a live assignment. All current items are loaded below for direct editing.'
+          : 'Use a template for new assignments, or leave it blank to build the workflow manually.';
+      }
+    }
+
+    function updateCustomItemEditorUi() {
+      const addBtn = document.getElementById('custom-add-item-btn');
+      if (addBtn) {
+        addBtn.textContent = editingItemIndex >= 0 ? 'Save Item Changes' : (customItems.length > 0 ? 'Add Another Item' : 'Add Custom Item');
+      }
+    }
+
+    function cloneBuilderItem(item = {}) {
+      return {
+        type: item.type || 'form',
+        title: item.title || '',
+        description: item.description || '',
+        required: item.required !== false,
+        config: {
+          fields: Array.isArray(item?.config?.fields)
+            ? item.config.fields.map(field => ({
+                key: field?.key || '',
+                label: field?.label || '',
+                type: field?.type || 'text',
+                required: field?.required === true,
+                options: Array.isArray(field?.options) ? [...field.options] : []
+              }))
+            : [],
+          accept: item?.config?.accept || DEFAULT_UPLOAD_ACCEPT,
+          document: item?.config?.document
+            ? { ...item.config.document }
+            : null,
+          signers: Array.isArray(item?.config?.signers)
+            ? item.config.signers.map(signer => ({ ...signer }))
+            : [],
+          signatureFields: Array.isArray(item?.config?.signatureFields)
+            ? item.config.signatureFields.map(field => ({ ...field }))
+            : []
+        },
+        _meta: item?._meta ? { ...item._meta } : undefined
+      };
+    }
+
+    function serializeBuilderItem(item = {}) {
+      return {
+        type: item.type || 'form',
+        title: item.title || '',
+        description: item.description || '',
+        required: item.required !== false,
+        config: {
+          fields: Array.isArray(item?.config?.fields)
+            ? item.config.fields.map(field => ({
+                key: field?.key || '',
+                label: field?.label || '',
+                type: field?.type || 'text',
+                required: field?.required === true,
+                options: Array.isArray(field?.options) ? [...field.options] : []
+              }))
+            : [],
+          accept: item?.config?.accept || DEFAULT_UPLOAD_ACCEPT,
+          document: item?.config?.document ? { ...item.config.document } : null,
+          signers: Array.isArray(item?.config?.signers)
+            ? item.config.signers.map(signer => ({
+                key: signer?.key || 'assignee',
+                type: signer?.type || (signer?.key === 'assignee' ? 'assignee' : 'member'),
+                memberId: signer?.memberId || undefined,
+                label: signer?.label || ''
+              }))
+            : [],
+          signatureFields: Array.isArray(item?.config?.signatureFields)
+            ? item.config.signatureFields.map(field => ({
+                label: field?.label || '',
+                type: field?.type || 'signature',
+                page: Number(field?.page) || 1,
+                x: Number(field?.x) || 0,
+                y: Number(field?.y) || 0,
+                width: Number(field?.width) || 180,
+                height: Number(field?.height) || 60,
+                origin: field?.origin === 'bottom-left' ? 'bottom-left' : 'top-left',
+                text: field?.text || undefined,
+                signerKey: field?.signerKey || 'assignee'
+              }))
+            : []
+        }
+      };
+    }
+
+    function serializeBuilderItems(list = []) {
+      return list.map(item => serializeBuilderItem(item));
     }
 
     function getWorkflowSelectId(scope) {
@@ -1830,6 +2078,7 @@
       const workflowLabel = workflowType ? (workflowLabels[workflowType] || workflowType) : 'Not selected';
       const dueLabel = dueInput?.value ? new Date(`${dueInput.value}T00:00:00`).toLocaleDateString() : 'Not set';
       const esignCount = customItems.filter(item => item.type === 'esign').length;
+      const editContext = editingAssignmentId ? assignmentEditorMap[editingAssignmentId] : null;
 
       const memberEl = document.getElementById('review-member');
       const templateEl = document.getElementById('review-template');
@@ -1839,7 +2088,11 @@
       const esignCountEl = document.getElementById('review-esign-count');
 
       if (memberEl) memberEl.textContent = memberSelect?.value ? memberLabel : 'Not selected';
-      if (templateEl) templateEl.textContent = templateSelect?.value ? templateLabel : 'No template';
+      if (templateEl) {
+        templateEl.textContent = editContext
+          ? (editContext.templateName ? `Live workflow edit (source: ${editContext.templateName})` : 'Live workflow edit')
+          : (templateSelect?.value ? templateLabel : 'No template');
+      }
       if (workflowEl) workflowEl.textContent = workflowLabel;
       if (dueEl) dueEl.textContent = dueLabel;
       if (customCountEl) customCountEl.textContent = `${customItems.length} item(s)`;
@@ -1940,6 +2193,126 @@
       if (options.jumpToStep !== false) {
         setCenterStep(centerWizardConfig.recipientStep, { focus: false });
       }
+    }
+
+    async function loadCustomItemIntoDraft(item, index) {
+      const draft = cloneBuilderItem(item);
+      const typeInput = document.getElementById('custom-type');
+      const titleInput = document.getElementById('custom-title');
+      const descriptionInput = document.getElementById('custom-description');
+      const requiredInput = document.getElementById('custom-required');
+      const acceptInput = document.getElementById('custom-accept');
+
+      if (typeInput) typeInput.value = draft.type || 'form';
+      if (titleInput) titleInput.value = draft.title || '';
+      if (descriptionInput) descriptionInput.value = draft.description || '';
+      if (requiredInput) requiredInput.checked = draft.required !== false;
+      if (acceptInput) acceptInput.value = draft.config?.accept || DEFAULT_UPLOAD_ACCEPT;
+
+      editingItemIndex = Number.isInteger(index) ? index : -1;
+      editingItemPreservedPublicId = draft.config?.document?.publicId || '';
+
+      formFieldState.custom = Array.isArray(draft.config?.fields) && draft.config.fields.length
+        ? draft.config.fields.map(field => createFormField(field.type, field))
+        : [createFormField('text', { label: 'Question 1', required: true })];
+
+      const signerKeys = Array.isArray(draft.config?.signers) && draft.config.signers.length
+        ? draft.config.signers.map(signer => signer.key || 'assignee')
+        : ['assignee'];
+      updateSignerSelection('custom', signerKeys, { silent: true });
+      renderSignerOptions('custom');
+
+      signatureFieldState.custom = Array.isArray(draft.config?.signatureFields)
+        ? draft.config.signatureFields.map(field => ({
+            label: field.label || '',
+            type: field.type || 'signature',
+            page: Number(field.page) || 1,
+            x: Number(field.x) || 0,
+            y: Number(field.y) || 0,
+            width: Number(field.width) || 180,
+            height: Number(field.height) || 60,
+            origin: field.origin === 'bottom-left' ? 'bottom-left' : 'top-left',
+            text: field.text || '',
+            signerKey: field.signerKey || 'assignee'
+          }))
+        : [];
+      selectedSignatureFieldIndex.custom = signatureFieldState.custom.length ? 0 : -1;
+
+      signatureDocumentState.custom = draft.config?.document ? { ...draft.config.document } : null;
+      if (signatureDocumentState.custom?.url) {
+        setDocumentStatus('custom', `Loaded: ${signatureDocumentState.custom.fileName || 'Document'}`);
+        await loadPdfPreview('custom', signatureDocumentState.custom.url);
+      } else {
+        pdfState.custom = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
+        placeModeState.custom = false;
+        const viewer = document.getElementById('custom-pdf-viewer');
+        if (viewer) viewer.style.display = 'none';
+        const empty = document.getElementById('custom-pdf-empty');
+        if (empty) empty.style.display = 'block';
+        setDocumentStatus('custom', 'No document uploaded.');
+      }
+
+      renderFormFieldBuilder('custom');
+      syncFieldTypeUI('custom');
+      toggleItemInputs('custom');
+      renderSignatureFields('custom');
+      customDraftTouched = false;
+      customBuilderFeedback = `Editing "${draft.title || 'item'}". Save changes to update this item.`;
+      refreshCustomStepFlowState();
+      updateCustomItemEditorUi();
+      titleInput?.focus();
+    }
+
+    async function editCustomItem(index) {
+      const item = customItems[index];
+      if (!item) return;
+      await loadCustomItemIntoDraft(item, index);
+    }
+
+    async function startAssignmentEdit(assignmentId) {
+      const assignment = assignmentEditorMap[String(assignmentId || '')];
+      if (!assignment) {
+        alert('Assignment could not be loaded for editing');
+        return;
+      }
+      if (['completed', 'cancelled'].includes(assignment.status || '')) {
+        alert('This assignment can no longer be edited');
+        return;
+      }
+
+      editingAssignmentId = assignment.id;
+      customItems.splice(0, customItems.length, ...assignment.items.map(item => cloneBuilderItem(item)));
+      document.getElementById('assignmentMember').value = assignment.memberId || '';
+      setWorkflowSelection('assignment', assignment.workflowType || 'onboarding', { renderReview: false });
+      const templateSelect = document.getElementById('assignmentTemplate');
+      if (templateSelect) {
+        templateSelect.value = '';
+      }
+      document.getElementById('assignmentDue').value = assignment.dueAt || '';
+      clearCustomItemDraft({
+        silent: true,
+        focus: false,
+        preservedDocumentPublicId: ''
+      });
+      renderItems(customItems, 'custom-items-list');
+      renderCenterReview();
+      updateAssignmentEditUi();
+      setActiveOnboardingTab('center');
+      setActiveAssignTab('assign');
+      setCenterStep(workspaceModeEnabled ? centerWizardConfig.recipientStep : centerWizardConfig.recipientStep, { focus: false });
+      window.setTimeout(() => {
+        document.getElementById('assignmentMember')?.focus();
+      }, 40);
+    }
+
+    function cancelAssignmentEditing() {
+      if (!editingAssignmentId) {
+        clearCustomItemDraft();
+        return;
+      }
+      const ok = confirm('Stop editing this live assignment? Unsaved changes will be discarded.');
+      if (!ok) return;
+      window.location.href = `/organizations/${orgId}/onboarding?tab=center`;
     }
 
     function filterTemplateLibrary(query) {
@@ -4008,18 +4381,22 @@
     function renderItems(list, containerId) {
       const container = document.getElementById(containerId);
       if (!container) return;
+      const isCustomList = containerId === 'custom-items-list';
 
       if (list.length === 0) {
         container.innerHTML = '<div class="center-items-empty">No items added yet.</div>';
       } else {
         container.innerHTML = list
           .map((item, index) => `
-            <article class="center-item-preview">
+            <article class="center-item-preview ${isCustomList && editingItemIndex === index ? 'is-editing' : ''}">
               <div class="center-item-preview-body">
                 <div class="center-item-preview-title">${escapeHtml(item.title || 'Untitled')}</div>
                 <div class="center-item-preview-meta">${escapeHtml((item.type || '').toUpperCase())} - ${item.required ? 'Required' : 'Optional'}</div>
               </div>
-              <button class="btn btn-danger btn-sm" type="button" onclick="removeItem('${containerId}', ${index})">Remove</button>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                ${isCustomList ? `<button class="btn btn-secondary btn-sm" type="button" onclick="editCustomItem(${index})">${editingItemIndex === index ? 'Editing' : 'Edit'}</button>` : ''}
+                <button class="btn btn-danger btn-sm" type="button" onclick="removeItem('${containerId}', ${index})">Remove</button>
+              </div>
             </article>
           `)
           .join('');
@@ -4038,9 +4415,19 @@
         templateItems.splice(index, 1);
         renderItems(templateItems, containerId);
       } else {
+        if (editingItemIndex === index) {
+          clearCustomItemDraft({
+            silent: true,
+            focus: false,
+            preservedDocumentPublicId: ''
+          });
+        } else if (editingItemIndex > index) {
+          editingItemIndex -= 1;
+        }
         customItems.splice(index, 1);
         customBuilderFeedback = '';
         renderItems(customItems, containerId);
+        updateCustomItemEditorUi();
       }
     }
 
@@ -4108,7 +4495,12 @@
         }));
       }
 
-      list.push(item);
+      const replacingIndex = prefix === 'custom' ? editingItemIndex : -1;
+      if (replacingIndex >= 0 && replacingIndex < list.length) {
+        list.splice(replacingIndex, 1, item);
+      } else {
+        list.push(item);
+      }
       renderItems(list, containerId);
 
       if (type === 'esign') {
@@ -4124,6 +4516,12 @@
         resetSignatureFields(prefix);
       }
 
+      if (prefix === 'custom') {
+        editingItemIndex = -1;
+        editingItemPreservedPublicId = '';
+        updateCustomItemEditorUi();
+      }
+
       return true;
     }
 
@@ -4133,6 +4531,7 @@
 
     async function addCustomItem() {
       const title = document.getElementById('custom-title')?.value.trim() || 'Custom item';
+      const wasEditingItem = editingItemIndex >= 0;
       const added = await addItem('custom', customItems, 'custom-items-list');
       if (!added) {
         refreshCustomStepFlowState();
@@ -4141,7 +4540,10 @@
       clearCustomItemDraft({
         silent: true,
         preserveType: true,
-        feedback: `Added "${title}". Add another item or continue.`
+        feedback: wasEditingItem
+          ? `Saved changes for "${title}".`
+          : `Added "${title}". Add another item or continue.`,
+        preservedDocumentPublicId: ''
       });
     }
 
@@ -4199,7 +4601,7 @@
     }
 
     async function cancelAssignment(assignmentId) {
-      if (!confirm(workspaceModeEnabled ? 'Cancel this workflow assignment?' : 'Cancel this onboarding assignment?')) return;
+      if (!confirm(workspaceModeEnabled ? 'Retract this workflow assignment?' : 'Retract this onboarding assignment?')) return;
       const response = await fetch(`/api/organizations/${orgId}/onboarding/assignments/${assignmentId}/cancel`, {
         method: 'PATCH'
       });
@@ -4207,13 +4609,13 @@
         window.location.reload();
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to cancel assignment');
+        alert(data.error || 'Failed to retract assignment');
       }
     }
 
     async function assignOnboarding() {
       const memberId = document.getElementById('assignmentMember').value;
-      const templateId = document.getElementById('assignmentTemplate').value;
+      const templateId = editingAssignmentId ? '' : document.getElementById('assignmentTemplate').value;
       const workflowType = getWorkflowSelection('assignment');
       const dueAt = document.getElementById('assignmentDue').value;
 
@@ -4226,23 +4628,36 @@
         return;
       }
 
-      const response = await fetch(`/api/organizations/${orgId}/onboarding/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          memberId,
-          templateId: templateId || null,
-          workflowType,
-          customItems,
-          dueAt: dueAt || null
-        })
-      });
+      const payload = {
+        memberId,
+        templateId: templateId || null,
+        workflowType,
+        customItems: serializeBuilderItems(customItems),
+        dueAt: dueAt || null
+      };
+      const isEditingAssignment = !!editingAssignmentId;
+      const response = await fetch(
+        isEditingAssignment
+          ? `/api/organizations/${orgId}/onboarding/assignments/${editingAssignmentId}`
+          : `/api/organizations/${orgId}/onboarding/assign`,
+        {
+          method: isEditingAssignment ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }
+      );
 
       if (response.ok) {
-        window.location.reload();
+        if (isEditingAssignment) {
+          window.location.href = `/organizations/${orgId}/onboarding?tab=center&success=${encodeURIComponent(workspaceModeEnabled ? 'Workflow updated' : 'Onboarding updated')}`;
+        } else {
+          window.location.reload();
+        }
       } else {
         const data = await response.json();
-        alert(data.error || (workspaceModeEnabled ? 'Failed to assign workflow' : 'Failed to assign onboarding'));
+        alert(data.error || (isEditingAssignment
+          ? (workspaceModeEnabled ? 'Failed to update workflow' : 'Failed to update onboarding')
+          : (workspaceModeEnabled ? 'Failed to assign workflow' : 'Failed to assign onboarding')));
       }
     }
 
@@ -4367,6 +4782,16 @@
     const esignSignerName = document.getElementById('esign-signer-name');
     const esignFieldsList = document.getElementById('esign-fields-list');
     const esignFieldsCount = document.getElementById('esign-fields-count');
+    const esignActiveFieldPanel = document.getElementById('esign-active-field-panel');
+    const esignActiveFieldKind = document.getElementById('esign-active-field-kind');
+    const esignActiveFieldEmpty = document.getElementById('esign-active-field-empty');
+    const esignActiveFieldEditor = document.getElementById('esign-active-field-editor');
+    const esignActiveFieldLabel = document.getElementById('esign-active-field-label');
+    const esignActiveFieldInput = document.getElementById('esign-active-field-input');
+    const esignActiveFieldTextarea = document.getElementById('esign-active-field-textarea');
+    const esignActiveFieldHint = document.getElementById('esign-active-field-hint');
+    const esignSignatureGroup = document.getElementById('esign-signature-group');
+    const esignSignatureHint = document.getElementById('esign-signature-hint');
     const esignSubmitBtn = document.getElementById('esign-submit-btn');
     const signatureCanvas = document.getElementById('esign-canvas');
     const signatureCtx = signatureCanvas.getContext('2d');
@@ -4374,6 +4799,7 @@
     let activeAssignmentId = null;
     let activeItemId = null;
     let activeFields = [];
+    let esignFieldValues = {};
     let selectedEsignFieldIndex = -1;
     let signaturePreviewUrl = null;
     let esignPdfUrl = null;
@@ -4431,6 +4857,180 @@
       return `${index + 1}. Signature`;
     }
 
+    function roundEsignFieldNumber(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? Math.round(numeric * 1000) / 1000 : 0;
+    }
+
+    function getEsignFieldIdentity(field) {
+      const signerRef = String(field.signerKey || field.signerId || field.signer || 'all').trim().toLowerCase() || 'all';
+      return [
+        String(field.type || 'signature').trim().toLowerCase(),
+        String(field.label || '').trim().toLowerCase(),
+        Number(field.page) || 1,
+        roundEsignFieldNumber(field.x),
+        roundEsignFieldNumber(field.y),
+        roundEsignFieldNumber(field.width),
+        roundEsignFieldNumber(field.height),
+        String(field.origin || 'top-left').trim().toLowerCase(),
+        signerRef
+      ].join('|');
+    }
+
+    function getTodayEsignInputValue() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getDefaultEsignFieldValue(field) {
+      if (!field || field.type === 'signature') return '';
+      if (field.type === 'date') {
+        return String(field.text || '').trim() || getTodayEsignInputValue();
+      }
+      return String(field.text || '').trim();
+    }
+
+    function ensureEsignFieldValue(field) {
+      const fieldKey = getEsignFieldIdentity(field);
+      if (!Object.prototype.hasOwnProperty.call(esignFieldValues, fieldKey)) {
+        esignFieldValues[fieldKey] = getDefaultEsignFieldValue(field);
+      }
+      return esignFieldValues[fieldKey] || '';
+    }
+
+    function getEsignFieldValue(field) {
+      if (!field || field.type === 'signature') return '';
+      return ensureEsignFieldValue(field);
+    }
+
+    function isEsignFieldComplete(field) {
+      if (!field) return false;
+      if (field.type === 'signature') return hasSignature;
+      return Boolean(String(getEsignFieldValue(field) || '').trim());
+    }
+
+    function activeEsignRequiresSignature() {
+      return activeFields.some(field => field.type === 'signature');
+    }
+
+    function shouldUseEsignTextarea(field) {
+      if (!field || field.type !== 'text') return false;
+      return Number(field.height) >= 44 || Number(field.width) >= 280;
+    }
+
+    function focusEsignOverlayField(index) {
+      const fieldEl = esignPdfOverlay?.querySelector(`.esign-field-preview[data-index="${index}"]`);
+      const input = fieldEl?.querySelector('.esign-field-input');
+      if (input) {
+        requestAnimationFrame(() => input.focus({ preventScroll: true }));
+      }
+    }
+
+    function syncEsignSubmitUi() {
+      const requiresSignature = activeEsignRequiresSignature();
+      if (esignSignatureGroup) {
+        esignSignatureGroup.hidden = !requiresSignature;
+      }
+      if (esignSignatureHint) {
+        esignSignatureHint.textContent = requiresSignature
+          ? 'Your signature will be applied to all signature fields assigned to you.'
+          : 'This document only needs typed values. No drawn signature is required.';
+      }
+      if (esignSubmitBtn) {
+        esignSubmitBtn.textContent = requiresSignature
+          ? 'Finish & Generate Signed PDF'
+          : 'Generate Completed PDF';
+      }
+      if (esignActiveFieldPanel) {
+        esignActiveFieldPanel.classList.toggle('is-signature-selected', requiresSignature && activeFields[selectedEsignFieldIndex]?.type === 'signature');
+      }
+    }
+
+    function updateEsignFieldValue(field, value, source = 'overlay') {
+      if (!field || field.type === 'signature') return;
+      const fieldKey = getEsignFieldIdentity(field);
+      const nextValue = String(value ?? '');
+      esignFieldValues[fieldKey] = nextValue;
+      renderEsignFieldsList();
+
+      if (source !== 'overlay') {
+        const overlayInput = esignPdfOverlay?.querySelector(`.esign-field-preview[data-index="${selectedEsignFieldIndex}"] .esign-field-input`);
+        if (overlayInput && overlayInput.value !== nextValue) {
+          overlayInput.value = nextValue;
+        }
+      }
+
+      if (source !== 'sidebar') {
+        const activeInput = shouldUseEsignTextarea(field) ? esignActiveFieldTextarea : esignActiveFieldInput;
+        if (activeInput && !activeInput.hidden && activeInput.value !== nextValue) {
+          activeInput.value = nextValue;
+        }
+      }
+    }
+
+    function renderEsignActiveFieldEditor() {
+      if (!esignActiveFieldEditor || !esignActiveFieldEmpty || !esignActiveFieldLabel || !esignActiveFieldKind) {
+        return;
+      }
+
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field) {
+        esignActiveFieldEmpty.hidden = false;
+        esignActiveFieldEditor.hidden = true;
+        esignActiveFieldKind.textContent = '';
+        esignActiveFieldEmpty.textContent = 'Select a field to type directly into the document.';
+        return;
+      }
+
+      const typeLabel = field.type === 'signature'
+        ? 'Signature'
+        : (field.type === 'date' ? 'Date field' : 'Text field');
+      esignActiveFieldKind.textContent = typeLabel;
+      esignActiveFieldLabel.textContent = field.label || typeLabel;
+
+      if (field.type === 'signature') {
+        esignActiveFieldEmpty.hidden = false;
+        esignActiveFieldEditor.hidden = true;
+        esignActiveFieldEmpty.textContent = 'This field requires your drawn signature in the signature box below.';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = '';
+        }
+        return;
+      }
+
+      const fieldValue = getEsignFieldValue(field);
+      const useTextarea = shouldUseEsignTextarea(field);
+      esignActiveFieldEmpty.hidden = true;
+      esignActiveFieldEditor.hidden = false;
+      esignActiveFieldInput.hidden = useTextarea;
+      esignActiveFieldTextarea.hidden = !useTextarea;
+
+      const activeInput = useTextarea ? esignActiveFieldTextarea : esignActiveFieldInput;
+      const inactiveInput = useTextarea ? esignActiveFieldInput : esignActiveFieldTextarea;
+      activeInput.value = fieldValue;
+      inactiveInput.value = '';
+
+      if (field.type === 'date') {
+        esignActiveFieldInput.type = 'date';
+        esignActiveFieldInput.placeholder = '';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = 'Pick the date that should be written into the PDF.';
+        }
+      } else {
+        esignActiveFieldInput.type = 'text';
+        esignActiveFieldInput.placeholder = 'Type the value for this field';
+        esignActiveFieldTextarea.placeholder = 'Type the value for this field';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = useTextarea
+            ? 'This field is large enough for multiple lines.'
+            : 'Type the exact value that should appear in the document.';
+        }
+      }
+    }
+
     function renderEsignFieldsList() {
       if (!esignFieldsList) return;
       esignFieldsList.innerHTML = '';
@@ -4459,7 +5059,10 @@
 
         const meta = document.createElement('div');
         meta.className = 'esign-field-row-meta';
-        meta.textContent = `Page ${field.page || 1} - ${field.type || 'signature'}`;
+        const stateLabel = isEsignFieldComplete(field)
+          ? 'Filled'
+          : (field.type === 'signature' ? 'Needs signature' : 'Needs value');
+        meta.textContent = `Page ${field.page || 1} - ${field.type || 'signature'} - ${stateLabel}`;
 
         body.appendChild(title);
         body.appendChild(meta);
@@ -4504,6 +5107,8 @@
       const safeIndex = clampNumber(Number(index) || 0, 0, activeFields.length - 1);
       selectedEsignFieldIndex = safeIndex;
       renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
 
       const field = activeFields[selectedEsignFieldIndex];
       if (!field) return;
@@ -4519,6 +5124,9 @@
 
       renderEsignOverlay();
       if (options.scroll !== false) scrollToEsignField(field);
+      if (field.type !== 'signature') {
+        focusEsignOverlayField(selectedEsignFieldIndex);
+      }
     }
 
     function jumpEsignField(delta) {
@@ -4564,6 +5172,9 @@
           localStorage.removeItem('esignSignatureDataUrl');
         }
       }
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
       renderEsignOverlay();
     }
 
@@ -4575,6 +5186,9 @@
         signatureCtx.drawImage(image, 0, 0, signatureCanvas.width, signatureCanvas.height);
         hasSignature = true;
         signaturePreviewUrl = dataUrl;
+        renderEsignFieldsList();
+        renderEsignActiveFieldEditor();
+        syncEsignSubmitUi();
         renderEsignOverlay();
       };
       image.src = dataUrl;
@@ -4585,6 +5199,9 @@
       const dataUrl = signatureCanvas.toDataURL('image/png');
       signaturePreviewUrl = dataUrl;
       localStorage.setItem('esignSignatureDataUrl', dataUrl);
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
       renderEsignOverlay();
     }
 
@@ -4739,8 +5356,6 @@
       esignPdfOverlay.innerHTML = '';
       const scale = esignPdfState.scale || 1;
       const pdfHeight = esignPdfState.viewport.viewBox[3] - esignPdfState.viewport.viewBox[1];
-      const now = new Date().toLocaleDateString();
-      const signerName = esignSignerName.value.trim();
 
       activeFields.forEach((field, index) => {
         if ((field.page || 1) !== esignPdfState.page) return;
@@ -4778,22 +5393,41 @@
             label.textContent = field.label || 'Signature';
             fieldEl.appendChild(label);
           }
-        } else if (field.type === 'date') {
-          const label = document.createElement('div');
-          label.className = 'esign-field-title';
-          label.textContent = now;
-          fieldEl.appendChild(label);
-        } else if (field.type === 'text') {
-          const label = document.createElement('div');
-          label.className = 'esign-field-title';
-          label.textContent = field.text || signerName || 'Text';
-          fieldEl.appendChild(label);
+        } else {
+          fieldEl.classList.add('has-input');
+          const fieldInput = document.createElement(shouldUseEsignTextarea(field) ? 'textarea' : 'input');
+          fieldInput.className = 'esign-field-input' + (shouldUseEsignTextarea(field) ? ' esign-field-input--multiline' : '');
+          fieldInput.value = getEsignFieldValue(field);
+          fieldInput.placeholder = field.label || (field.type === 'date' ? 'Select date' : 'Type here');
+          fieldInput.setAttribute('aria-label', field.label || (field.type === 'date' ? 'Date field' : 'Text field'));
+
+          if (field.type === 'date') {
+            fieldInput.type = 'date';
+          } else if (fieldInput.tagName === 'INPUT') {
+            fieldInput.type = 'text';
+          }
+
+          fieldInput.addEventListener('pointerdown', (event) => {
+            event.stopPropagation();
+            selectEsignField(index, { scroll: false });
+          });
+          fieldInput.addEventListener('click', (event) => {
+            event.stopPropagation();
+            selectEsignField(index, { scroll: false });
+          });
+          fieldInput.addEventListener('input', (event) => {
+            updateEsignFieldValue(field, event.target.value, 'overlay');
+          });
+
+          fieldEl.appendChild(fieldInput);
         }
 
         fieldEl.addEventListener('click', () => {
           selectEsignField(index, { scroll: true });
-          if (!hasSignature && field.type === 'signature') {
+          if (field.type === 'signature' && !hasSignature) {
             signatureCanvas?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else if (field.type !== 'signature') {
+            focusEsignOverlayField(index);
           }
         });
 
@@ -4919,6 +5553,12 @@
       activeAssignmentId = assignmentId;
       activeItemId = itemId;
       activeAssigneeId = assigneeId;
+      esignFieldValues = {};
+      activeFields.forEach(field => {
+        if (field.type !== 'signature') {
+          ensureEsignFieldValue(field);
+        }
+      });
       selectedEsignFieldIndex = 0;
       esignDocumentName.textContent = docName || 'Document';
       if (esignDocumentSubtitle) {
@@ -4938,7 +5578,9 @@
         if (storedSignature) {
           loadSignatureDataUrl(storedSignature);
         }
+        syncEsignSubmitUi();
         renderEsignFieldsList();
+        renderEsignActiveFieldEditor();
         loadEsignPdf(previewUrl);
         selectEsignField(0, { scroll: false });
       }, 50);
@@ -4949,6 +5591,7 @@
       activeAssignmentId = null;
       activeItemId = null;
       activeFields = [];
+      esignFieldValues = {};
       selectedEsignFieldIndex = -1;
       esignPdfState.pdf = null;
       esignPdfState.page = 1;
@@ -4958,6 +5601,12 @@
       if (esignPdfViewer) {
         esignPdfViewer.style.display = 'none';
       }
+      if (esignPdfOverlay) {
+        esignPdfOverlay.innerHTML = '';
+      }
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
     }
 
     esignModal?.addEventListener('click', (event) => {
@@ -4974,6 +5623,18 @@
 
     esignSignerName?.addEventListener('input', () => {
       renderEsignOverlay();
+    });
+
+    esignActiveFieldInput?.addEventListener('input', (event) => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type === 'signature') return;
+      updateEsignFieldValue(field, event.target.value, 'sidebar');
+    });
+
+    esignActiveFieldTextarea?.addEventListener('input', (event) => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type === 'signature') return;
+      updateEsignFieldValue(field, event.target.value, 'sidebar');
     });
 
     let esignPageScrubTimer = null;
@@ -5002,14 +5663,33 @@
 
     async function submitESignature() {
       if (!activeAssignmentId || !activeItemId) return;
-      if (!hasSignature) {
+      const requiresSignature = activeEsignRequiresSignature();
+      if (requiresSignature && !hasSignature) {
         alert('Please add your signature before submitting');
         return;
       }
 
-      const payload = {
-        signatureDataUrl: signatureCanvas.toDataURL('image/png')
-      };
+      const payload = { fieldValues: {} };
+      const missingField = activeFields.find(field => {
+        if (field.type === 'signature') {
+          return false;
+        }
+        const value = String(getEsignFieldValue(field) || '').trim();
+        if (value) {
+          payload.fieldValues[getEsignFieldIdentity(field)] = value;
+        }
+        return !value;
+      });
+
+      if (missingField) {
+        selectEsignField(activeFields.indexOf(missingField), { scroll: true });
+        alert(`Please complete "${missingField.label || (missingField.type === 'date' ? 'Date' : 'Text')}" before submitting`);
+        return;
+      }
+
+      if (requiresSignature) {
+        payload.signatureDataUrl = signatureCanvas.toDataURL('image/png');
+      }
       const signerName = esignSignerName.value.trim();
       if (signerName) {
         payload.signerName = signerName;
@@ -5064,6 +5744,8 @@
     syncBuilderCounts();
     renderCenterReview();
     renderTemplateReview();
+    updateAssignmentEditUi();
+    updateCustomItemEditorUi();
     setCenterStep(1, { focus: false });
     setTemplateModalStep(1, { focus: false });
     setWorkflowFilter(defaultWorkflowFilter);
@@ -5240,6 +5922,10 @@
     const focusAssignmentId = workspaceParams.get('focusAssignment');
     const focusItemId = workspaceParams.get('focusItem');
     const requestedAction = workspaceParams.get('action');
+    const editAssignmentId = workspaceParams.get('editAssignment');
+    if (editAssignmentId) {
+      startAssignmentEdit(editAssignmentId);
+    }
     if (focusAssignmentId) {
       try {
         localStorage.setItem('onboardingAdmin:activeTab', 'my');

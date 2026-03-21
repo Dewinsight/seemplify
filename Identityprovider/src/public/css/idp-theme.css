@@ -2003,6 +2003,69 @@ p {
   object-fit: contain;
 }
 
+.esign-field-preview.has-input {
+  padding: 4px 6px;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.esign-field-input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: rgba(255, 255, 255, 0.78);
+  color: #0f172a;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.25;
+  box-sizing: border-box;
+}
+
+.esign-field-input::placeholder {
+  color: #64748b;
+}
+
+.esign-field-input:focus {
+  box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.35);
+}
+
+.esign-field-input--multiline {
+  min-height: 100%;
+}
+
+.esign-active-field-label {
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.esign-active-field-input,
+.esign-active-field-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+}
+
+.esign-active-field-textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.esign-active-field-input[hidden],
+.esign-active-field-textarea[hidden],
+#esign-signature-group[hidden],
+#esign-active-field-editor[hidden],
+#esign-active-field-empty[hidden] {
+  display: none !important;
+}
+
 .tab-bar {
   display: flex;
   gap: 8px;
