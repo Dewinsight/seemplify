@@ -2,14 +2,12 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Campaigns - Seemplify IDP Admin</title>
+  <title><%= workspaceTitle %> - Campaigns - Seemplify IDP Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/css/admin.css">
-  <script src="/js/theme.js?v=2"></script>
   <style>
-    .campaign-console-grid { display:grid; grid-template-columns:minmax(0, 1.55fr) minmax(340px, .95fr); gap:20px; align-items:start; }
-    .campaign-stat-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:16px; margin-bottom:24px; }
-    .campaign-stat-card { padding:18px 20px; border-radius:18px; border:1px solid var(--border); background:var(--panel); }
+    <%- include('../../public/css/idp-theme.css') %>
+
+    .campaign-workspace-grid { display:grid; grid-template-columns:minmax(0, 1.5fr) minmax(340px, .9fr); gap:20px; align-items:start; }
     .campaign-shell { display:grid; gap:18px; }
     .campaign-sticky { position:sticky; top:20px; display:grid; gap:18px; }
     .campaign-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
@@ -22,8 +20,8 @@
     .campaign-palette { display:grid; gap:12px; }
     .campaign-palette-list { display:grid; gap:8px; }
     .campaign-palette-item { display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid var(--border); border-radius:14px; padding:12px 14px; background:var(--panel-strong); }
-    .campaign-preview-shell { position:relative; min-height:640px; padding:18px; border-radius:22px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(109,40,217,.08), rgba(20,184,166,.04)); }
-    .campaign-preview-canvas { width:100%; max-width:720px; margin:0 auto; background:#f6f0ff; border-radius:28px; padding:22px; box-shadow:0 25px 80px rgba(15,23,42,.16); }
+    .campaign-preview-shell { position:relative; min-height:640px; padding:18px; border-radius:22px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-preview-canvas { width:100%; max-width:720px; margin:0 auto; background:var(--panel-solid); border:1px solid var(--border); border-radius:28px; padding:22px; box-shadow:0 16px 40px rgba(15,23,42,.12); }
     .campaign-preview-stack { display:grid; gap:14px; }
     .campaign-block { position:relative; border-radius:26px; border:1px solid rgba(31,22,55,.08); background:#ffffff; overflow:hidden; }
     .campaign-block.is-dragging { opacity:.45; }
@@ -53,356 +51,97 @@
     .campaign-mini-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
     .campaign-html-grid { display:grid; grid-template-columns:minmax(0, .95fr) minmax(0, 1fr); gap:18px; }
     .campaign-html-editor { min-height:560px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; resize:vertical; }
-    .campaign-html-preview { min-height:560px; border:1px solid var(--border); border-radius:18px; background:#ffffff; padding:18px; overflow:auto; }
-    .campaign-card-stack { display:grid; gap:12px; }
-    .campaign-list-card { border:1px solid var(--border); border-radius:18px; padding:16px; background:var(--panel-strong); display:grid; gap:10px; cursor:pointer; }
-    .campaign-list-card.active { border-color:rgba(99,102,241,.45); box-shadow:0 0 0 1px rgba(99,102,241,.18); }
-    .campaign-list-meta, .campaign-health-list { display:grid; gap:8px; }
+    .campaign-html-preview { min-height:560px; border:1px solid var(--border); border-radius:18px; background:var(--panel-solid); padding:18px; overflow:auto; }
+    .campaign-card-stack, .campaign-health-list { display:grid; gap:12px; }
     .campaign-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
     .campaign-pill.red { background:rgba(239,68,68,.12); color:#fca5a5; }
     .campaign-pill.amber { background:rgba(245,158,11,.12); color:#fbbf24; }
     .campaign-pill.green { background:rgba(34,197,94,.12); color:#86efac; }
+    .campaign-pill.blue { background:rgba(59,130,246,.12); color:#93c5fd; }
+    .campaign-selected-card { display:grid; gap:14px; padding:18px; border-radius:20px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-selected-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+    .campaign-selected-item { padding:12px 14px; border-radius:16px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-selected-item strong { display:block; margin-bottom:6px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .campaign-selected-item span { color:var(--text); font-weight:600; line-height:1.4; }
+    .campaign-list-metrics { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; padding-top:10px; border-top:1px solid var(--border); }
+    .campaign-mini-stat { padding:10px 12px; border-radius:14px; background:var(--panel-strong); border:1px solid var(--border); }
+    .campaign-mini-stat-label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .campaign-mini-stat-value { color:var(--text); font-size:16px; font-weight:700; }
     .campaign-audience-card, .campaign-template-card, .campaign-health-card { border:1px solid var(--border); border-radius:18px; padding:14px; background:var(--panel-strong); display:grid; gap:8px; }
     .campaign-upload-form { display:grid; gap:12px; }
+    .campaign-audience-hint { padding:14px; border-radius:18px; border:1px solid var(--border); background:var(--panel-strong); color:var(--muted); font-size:13px; line-height:1.7; margin-bottom:14px; }
+    .campaign-upload-actions { display:flex; flex-wrap:wrap; gap:10px; }
+    .campaign-audience-status { min-height:20px; font-size:13px; color:var(--muted); margin-top:12px; }
+    .campaign-audience-status.success { color:#10b981; }
+    .campaign-audience-status.error { color:#f87171; }
+    .campaign-mapping-panel { display:grid; gap:16px; margin-top:16px; padding:16px; border-radius:18px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-preview-meta { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
+    .campaign-mapping-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+    .campaign-mapping-card { padding:12px; border-radius:16px; border:1px solid var(--border); background:var(--panel); display:grid; gap:8px; }
+    .campaign-mapping-card.required { border-color:rgba(245,158,11,.25); background:rgba(245,158,11,.08); }
+    .campaign-mapping-label { display:flex; justify-content:space-between; gap:8px; align-items:center; color:var(--text); font-weight:700; font-size:13px; }
+    .campaign-mapping-description { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-preview-table-wrap { overflow:auto; border-radius:16px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-preview-table { width:100%; min-width:540px; border-collapse:collapse; }
+    .campaign-preview-table th, .campaign-preview-table td { padding:10px 12px; border-bottom:1px solid rgba(148,163,184,.12); text-align:left; vertical-align:top; font-size:13px; }
+    .campaign-preview-table th { background:var(--panel-strong); color:var(--text); font-weight:700; }
     .campaign-link-popover { position:fixed; z-index:1200; min-width:260px; padding:12px; border-radius:16px; border:1px solid var(--border); background:var(--panel-solid); box-shadow:0 20px 60px rgba(2,6,23,.35); display:none; gap:10px; }
     .campaign-link-popover.show { display:grid; }
     .campaign-link-popover-actions { display:flex; justify-content:flex-end; gap:8px; }
     .campaign-empty-state { border:1px dashed var(--border); border-radius:18px; padding:18px; color:var(--muted); text-align:center; }
-    .campaign-hero-panel {
-      display:grid;
-      grid-template-columns:minmax(0, 1.3fr) minmax(280px, .85fr);
-      gap:18px;
-      padding:22px;
-      margin-bottom:24px;
-      border-radius:24px;
-      border:1px solid var(--border);
-      background:
-        radial-gradient(circle at top left, rgba(99,102,241,.18), transparent 42%),
-        linear-gradient(135deg, rgba(15,23,42,.98), rgba(24,24,44,.96));
-      box-shadow:0 24px 70px rgba(2,6,23,.22);
-    }
-    .campaign-hero-copy { display:grid; gap:14px; }
-    .campaign-hero-copy h2 { margin:0; color:#f8fafc; font-size:34px; line-height:1.04; letter-spacing:-.04em; }
-    .campaign-hero-copy p { margin:0; color:rgba(226,232,240,.8); max-width:760px; line-height:1.7; }
-    .campaign-hero-pill {
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      width:max-content;
-      padding:8px 12px;
-      border-radius:999px;
-      border:1px solid rgba(148,163,184,.14);
-      background:rgba(15,23,42,.4);
-      color:#cbd5e1;
-      font-size:12px;
-      font-weight:700;
-      letter-spacing:.06em;
-      text-transform:uppercase;
-    }
-    .campaign-hero-steps {
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0, 1fr));
-      gap:12px;
-    }
-    .campaign-hero-step {
-      padding:14px;
-      border-radius:18px;
-      border:1px solid rgba(148,163,184,.16);
-      background:rgba(15,23,42,.42);
-      display:grid;
-      gap:8px;
-      color:#e2e8f0;
-    }
-    .campaign-hero-step strong { color:#f8fafc; }
-    .campaign-hero-step-badge {
-      width:32px;
-      height:32px;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      border-radius:999px;
-      background:rgba(129,140,248,.18);
-      color:#c7d2fe;
-      font-size:12px;
-      font-weight:700;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-    }
-    .campaign-hero-aside {
-      display:grid;
-      gap:12px;
-      padding:18px;
-      border-radius:22px;
-      border:1px solid rgba(148,163,184,.16);
-      background:rgba(15,23,42,.52);
-      align-content:start;
-    }
-    .campaign-hero-aside h3 { margin:0; color:#f8fafc; font-size:18px; }
-    .campaign-hero-aside p { margin:0; color:rgba(226,232,240,.8); line-height:1.7; }
-    .campaign-manager-toolbar {
-      display:grid;
-      grid-template-columns:minmax(0, 1fr) 180px;
-      gap:12px;
-      margin-top:16px;
-    }
-    .campaign-manager-summary {
-      margin-top:14px;
-      padding:12px 14px;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.12);
-      background:rgba(99,102,241,.06);
-      color:var(--muted);
-      font-size:13px;
-    }
-    .campaign-list-card {
-      transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease;
-    }
-    .campaign-list-card:hover { transform:translateY(-1px); }
-    .campaign-list-card.active {
-      box-shadow:0 0 0 1px rgba(99,102,241,.18), 0 18px 40px rgba(15,23,42,.14);
-      background:linear-gradient(180deg, rgba(99,102,241,.08), rgba(15,23,42,.02));
-    }
-    .campaign-list-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
-    .campaign-list-metrics {
-      display:grid;
-      grid-template-columns:repeat(4, minmax(0, 1fr));
-      gap:10px;
-      padding-top:10px;
-      border-top:1px solid var(--border);
-    }
-    .campaign-mini-stat {
-      padding:10px 12px;
-      border-radius:14px;
-      background:rgba(148,163,184,.06);
-      border:1px solid rgba(148,163,184,.1);
-    }
-    .campaign-mini-stat-label {
-      display:block;
-      margin-bottom:4px;
-      color:var(--muted);
-      font-size:11px;
-      font-weight:700;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-    }
-    .campaign-mini-stat-value {
-      color:var(--text);
-      font-size:16px;
-      font-weight:700;
-    }
-    .campaign-selected-card {
-      display:grid;
-      gap:14px;
-      padding:18px;
-      border-radius:20px;
-      border:1px solid var(--border);
-      background:linear-gradient(180deg, rgba(99,102,241,.08), rgba(15,23,42,.02));
-    }
-    .campaign-selected-grid {
-      display:grid;
-      grid-template-columns:repeat(2, minmax(0, 1fr));
-      gap:10px;
-    }
-    .campaign-selected-item {
-      padding:12px 14px;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.1);
-      background:rgba(148,163,184,.06);
-    }
-    .campaign-selected-item strong {
-      display:block;
-      margin-bottom:6px;
-      color:var(--muted);
-      font-size:11px;
-      font-weight:700;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-    }
-    .campaign-selected-item span { color:var(--text); font-weight:600; line-height:1.4; }
-    .campaign-audience-hint {
-      padding:14px;
-      border-radius:18px;
-      border:1px solid rgba(148,163,184,.12);
-      background:rgba(20,184,166,.05);
-      color:var(--muted);
-      font-size:13px;
-      line-height:1.7;
-      margin-bottom:14px;
-    }
-    .campaign-upload-actions { display:flex; flex-wrap:wrap; gap:10px; }
-    .campaign-audience-status {
-      min-height:20px;
-      font-size:13px;
-      color:var(--muted);
-      margin-top:12px;
-    }
-    .campaign-audience-status.success { color:#10b981; }
-    .campaign-audience-status.error { color:#f87171; }
-    .campaign-mapping-panel {
-      display:grid;
-      gap:16px;
-      margin-top:16px;
-      padding:16px;
-      border-radius:18px;
-      border:1px solid rgba(148,163,184,.12);
-      background:rgba(15,23,42,.02);
-    }
-    .campaign-preview-meta {
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0, 1fr));
-      gap:10px;
-    }
-    .campaign-mapping-grid {
-      display:grid;
-      grid-template-columns:repeat(2, minmax(0, 1fr));
-      gap:12px;
-    }
-    .campaign-mapping-card {
-      padding:12px;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.1);
-      background:rgba(148,163,184,.06);
-      display:grid;
-      gap:8px;
-    }
-    .campaign-mapping-card.required {
-      border-color:rgba(245,158,11,.25);
-      background:rgba(245,158,11,.08);
-    }
-    .campaign-mapping-label {
-      display:flex;
-      justify-content:space-between;
-      gap:8px;
-      align-items:center;
-      color:var(--text);
-      font-weight:700;
-      font-size:13px;
-    }
-    .campaign-mapping-description {
-      color:var(--muted);
-      font-size:12px;
-      line-height:1.6;
-    }
-    .campaign-preview-table-wrap {
-      overflow:auto;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.12);
-      background:rgba(15,23,42,.02);
-    }
-    .campaign-preview-table {
-      width:100%;
-      min-width:540px;
-      border-collapse:collapse;
-    }
-    .campaign-preview-table th,
-    .campaign-preview-table td {
-      padding:10px 12px;
-      border-bottom:1px solid rgba(148,163,184,.12);
-      text-align:left;
-      vertical-align:top;
-      font-size:13px;
-    }
-    .campaign-preview-table th {
-      background:rgba(99,102,241,.08);
-      color:var(--text);
-      font-weight:700;
-    }
+
     @media (max-width: 1280px) {
-      .campaign-console-grid, .campaign-builder-grid, .campaign-html-grid { grid-template-columns:1fr; }
+      .campaign-workspace-grid, .campaign-builder-grid, .campaign-html-grid { grid-template-columns:1fr; }
       .campaign-sticky { position:static; }
-      .campaign-hero-panel { grid-template-columns:1fr; }
     }
+
     @media (max-width: 820px) {
-      .campaign-stat-grid,
       .campaign-form-grid,
       .campaign-form-grid--triple,
       .campaign-mini-grid,
-      .campaign-hero-steps,
-      .campaign-manager-toolbar,
       .campaign-preview-meta,
       .campaign-mapping-grid,
       .campaign-selected-grid {
         grid-template-columns:1fr;
       }
-      .campaign-list-metrics { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+
+      .campaign-list-metrics {
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+      }
     }
   </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
 </head>
 <body>
   <div class="admin-layout">
     <%- include('../partials/admin-nav', { activePage: 'campaigns' }) %>
+
     <main class="admin-content">
       <div class="admin-header">
         <div>
-          <h1>Campaign Console</h1>
-          <div style="color:var(--muted); font-size:13px; margin-top:4px;">Manage existing campaigns, edit the selected campaign, and import mapped audiences from CSV or Excel.</div>
+          <h1><%= workspaceTitle %></h1>
+          <div style="color:var(--muted); font-size:13px; margin-top:4px;"><%= workspaceDescription %></div>
         </div>
         <div class="campaign-toolbar">
-          <button id="newCampaignBtn" class="btn btn-secondary">New Campaign</button>
-          <button id="saveCampaignBtn" class="btn btn-primary">Save Draft</button>
-          <button id="launchCampaignBtn" class="btn btn-success">Launch</button>
-          <button id="pauseCampaignBtn" class="btn btn-secondary">Pause</button>
-          <button id="resumeCampaignBtn" class="btn btn-secondary">Resume</button>
-          <button id="cancelCampaignBtn" class="btn btn-danger">Cancel</button>
+          <a href="/admin/campaigns" class="btn btn-secondary">Campaign Home</a>
+          <a href="/admin/campaigns/manage" class="btn btn-secondary">Manage Campaigns</a>
+          <button id="newCampaignBtn" class="btn btn-secondary" type="button">New Campaign</button>
+          <button id="saveCampaignBtn" class="btn btn-primary" type="button">Save Draft</button>
+          <button id="launchCampaignBtn" class="btn btn-success" type="button">Launch</button>
+          <button id="pauseCampaignBtn" class="btn btn-secondary" type="button">Pause</button>
+          <button id="resumeCampaignBtn" class="btn btn-secondary" type="button">Resume</button>
+          <button id="cancelCampaignBtn" class="btn btn-danger" type="button">Cancel</button>
         </div>
       </div>
 
-      <section class="campaign-hero-panel">
-        <div class="campaign-hero-copy">
-          <div class="campaign-hero-pill">Campaign Operations</div>
-          <h2>See every campaign, manage the current one, and import mapped audiences properly.</h2>
-          <p>This page now separates the three real jobs: finding and reopening other campaigns, editing the campaign you have selected, and building reusable audiences from uploaded CSV or Excel files with extracted headers and explicit field mapping.</p>
-          <div class="campaign-hero-steps">
-            <div class="campaign-hero-step">
-              <span class="campaign-hero-step-badge">1</span>
-              <strong>Manage campaigns</strong>
-              <span>Use the manager list to search, filter, and reopen any draft, running, paused, or completed campaign.</span>
-            </div>
-            <div class="campaign-hero-step">
-              <span class="campaign-hero-step-badge">2</span>
-              <strong>Edit and test</strong>
-              <span>Keep sender, audience, pacing, and content in one place, then send test emails before launch.</span>
-            </div>
-            <div class="campaign-hero-step">
-              <span class="campaign-hero-step-badge">3</span>
-              <strong>Extract and map</strong>
-              <span>Upload CSV or Excel, inspect the detected columns, map the important fields, preview rows, then import.</span>
-            </div>
-          </div>
-        </div>
-        <aside class="campaign-hero-aside">
-          <h3>How to use this page</h3>
-          <p>Click any campaign card in the manager to load it back into the editor. The active campaign snapshot on the right shows what you are currently editing.</p>
-          <p>The audience studio is no longer a blind upload. Extract the columns first, map them, then import the audience into the library and select it in the form.</p>
-        </aside>
-      </section>
-
-      <div class="campaign-stat-grid">
-        <div class="campaign-stat-card">
-          <div class="admin-stat-label">Campaigns</div>
-          <div id="campaignStatTotal" class="admin-stat-value"><%= campaigns.length %></div>
-        </div>
-        <div class="campaign-stat-card">
-          <div class="admin-stat-label">Audiences</div>
-          <div id="campaignStatAudiences" class="admin-stat-value"><%= audiences.length %></div>
-        </div>
-        <div class="campaign-stat-card">
-          <div class="admin-stat-label">Templates</div>
-          <div id="campaignStatTemplates" class="admin-stat-value"><%= templates.length %></div>
-        </div>
-        <div class="campaign-stat-card">
-          <div class="admin-stat-label">Healthy Senders</div>
-          <div id="campaignStatHealthySenders" class="admin-stat-value"><%= senderHealth.filter((item) => item.readinessBand === 'green').length %></div>
-        </div>
-      </div>
-
-      <div class="campaign-console-grid">
+      <div class="campaign-workspace-grid">
         <section class="campaign-shell">
           <div class="admin-card">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Campaign Setup</div>
-                <div class="admin-card-subtitle">Define the audience, sender, pacing, and campaign metadata before launch.</div>
+                <div class="admin-card-subtitle">Configure the campaign metadata, sender, audience, and delivery settings.</div>
               </div>
             </div>
             <form id="campaignForm" class="campaign-shell">
@@ -486,7 +225,7 @@
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Email Builder</div>
-                <div class="admin-card-subtitle">Use the visual builder or raw HTML mode. Select text in preview mode to add or edit hyperlinks in place.</div>
+                <div class="admin-card-subtitle">Build the message in a focused editor. Switch to raw HTML when needed.</div>
               </div>
               <div class="campaign-mode-toggle">
                 <button id="visualModeBtn" type="button" class="active">Visual</button>
@@ -537,39 +276,8 @@
           <div class="admin-card">
             <div class="admin-card-header">
               <div>
-                <div class="admin-card-title">Campaigns</div>
-                <div class="admin-card-subtitle">This is where you see and manage other campaigns. Search, filter, and reopen any campaign from here.</div>
-              </div>
-            </div>
-            <div class="campaign-manager-toolbar">
-              <div class="admin-form-group" style="margin:0;">
-                <label class="admin-form-label">Search campaigns</label>
-                <input id="campaignSearchInput" class="admin-form-input" type="search" placeholder="Search by campaign, sender, audience, or status">
-              </div>
-              <div class="admin-form-group" style="margin:0;">
-                <label class="admin-form-label">Status</label>
-                <select id="campaignStatusFilter" class="admin-form-select">
-                  <option value="all">All statuses</option>
-                  <option value="draft">Draft</option>
-                  <option value="ready">Ready</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="running">Running</option>
-                  <option value="paused">Paused</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="failed">Failed</option>
-                </select>
-              </div>
-            </div>
-            <div id="campaignListSummary" class="campaign-manager-summary">Showing the most recent campaigns.</div>
-            <div id="campaignList" class="campaign-card-stack"></div>
-          </div>
-
-          <div class="admin-card">
-            <div class="admin-card-header">
-              <div>
-                <div class="admin-card-title">Active Campaign Snapshot</div>
-                <div class="admin-card-subtitle">A quick view of the campaign you currently have loaded into the editor.</div>
+                <div class="admin-card-title">Current Campaign</div>
+                <div class="admin-card-subtitle">A compact summary of the campaign loaded into this workspace.</div>
               </div>
             </div>
             <div id="selectedCampaignSummary" class="campaign-selected-card"></div>
@@ -579,11 +287,11 @@
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Audience Studio</div>
-                <div class="admin-card-subtitle">Upload CSV or Excel, extract the fields, map them explicitly, preview the rows, then import the audience.</div>
+                <div class="admin-card-subtitle">Import and map audience files without leaving the editor.</div>
               </div>
             </div>
             <div class="campaign-audience-hint">
-              Step 1: choose the file. Step 2: click <strong>Extract Fields</strong>. Step 3: map the detected headers. Step 4: click <strong>Import Audience</strong>. You can then assign that audience in the campaign form.
+              Upload CSV or Excel, extract the headers, map the important fields, preview the sample rows, then import the audience and assign it in the form.
             </div>
             <form id="audienceUploadForm" class="campaign-upload-form">
               <input id="audienceName" class="admin-form-input" type="text" placeholder="Audience name">
@@ -617,17 +325,17 @@
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Audience Library</div>
-                <div class="admin-card-subtitle">Reusable imported audiences. Import them in the studio above, then assign them to campaigns.</div>
+                <div class="admin-card-subtitle">Imported audiences available for this campaign.</div>
               </div>
             </div>
-            <div id="audienceList" class="campaign-card-stack" style="margin-top:16px;"></div>
+            <div id="audienceList" class="campaign-card-stack"></div>
           </div>
 
           <div class="admin-card">
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Template Library</div>
-                <div class="admin-card-subtitle">Start from a Seemplify template, then customize every block or switch to HTML.</div>
+                <div class="admin-card-subtitle">Pick a system template and apply it to the current draft.</div>
               </div>
             </div>
             <div id="templateList" class="campaign-card-stack"></div>
@@ -637,7 +345,7 @@
             <div class="admin-card-header">
               <div>
                 <div class="admin-card-title">Sender Health</div>
-                <div class="admin-card-subtitle">Warn-and-override readiness based on Brevo sender state, domain verification, webhook status, and recent local health.</div>
+                <div class="admin-card-subtitle">Review sender readiness without opening the management screen.</div>
               </div>
             </div>
             <div id="senderHealthList" class="campaign-health-list"></div>
@@ -661,7 +369,9 @@
       audiences,
       templates,
       senderHealth,
-      audienceFields
+      audienceFields,
+      selectedCampaign,
+      workspaceMode
     }).replace(/</g, '\\u003c') %>
   </script>
   <script src="/js/admin-campaign-console.js"></script>

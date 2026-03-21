@@ -1,5 +1,8 @@
 (function () {
   const boot = window.__CAMPAIGN_CONSOLE__ || {}
+  const initialSelectedCampaign = boot.selectedCampaign && typeof boot.selectedCampaign === 'object'
+    ? boot.selectedCampaign
+    : null
   const DEFAULT_AUDIENCE_FIELDS = [
     { key: 'email', label: 'Email', required: true, description: 'Primary recipient email address.' },
     { key: 'firstName', label: 'First Name', description: 'Used for personalization tokens.' },
@@ -22,7 +25,7 @@
     templates: Array.isArray(boot.templates) ? boot.templates : [],
     senderHealth: Array.isArray(boot.senderHealth) ? boot.senderHealth : [],
     audienceFields: Array.isArray(boot.audienceFields) && boot.audienceFields.length > 0 ? boot.audienceFields : DEFAULT_AUDIENCE_FIELDS,
-    selectedCampaignId: '',
+    selectedCampaignId: initialSelectedCampaign && initialSelectedCampaign._id ? String(initialSelectedCampaign._id) : '',
     mode: 'visual',
     draft: null,
     draggingBlockId: '',
@@ -32,6 +35,7 @@
     campaignStatusFilter: 'all',
     audiencePreview: null
   }
+  const workspaceMode = String(boot.workspaceMode || '').trim().toLowerCase()
 
   const els = {
     campaignId: document.getElementById('campaignId'),
@@ -286,6 +290,9 @@
   }
 
   function renderStats() {
+    if (!els.campaignStatTotal || !els.campaignStatAudiences || !els.campaignStatTemplates || !els.campaignStatHealthySenders) {
+      return
+    }
     els.campaignStatTotal.textContent = state.campaigns.length
     els.campaignStatAudiences.textContent = state.audiences.length
     els.campaignStatTemplates.textContent = state.templates.length
@@ -408,6 +415,7 @@
   }
 
   function renderAudienceOptions() {
+    if (!els.campaignAudience) return
     els.campaignAudience.innerHTML = state.audiences.length === 0
       ? '<option value="">No audiences uploaded yet</option>'
       : state.audiences.map((audience) => `<option value="${escapeHtml(audience._id)}">${escapeHtml(audience.name)} (${Number(audience.contactCount || audience.contacts?.length || 0)})</option>`).join('')
@@ -447,6 +455,7 @@
   }
 
   function renderCampaignList() {
+    if (!els.campaignList) return
     const campaigns = getFilteredCampaigns()
     updateCampaignListSummary(campaigns)
 
@@ -501,6 +510,7 @@
   }
 
   function renderAudienceList() {
+    if (!els.audienceList) return
     if (state.audiences.length === 0) {
       els.audienceList.innerHTML = '<div class="campaign-empty-state">Import a CSV or Excel file in the audience studio to create your first reusable audience.</div>'
       return
@@ -516,6 +526,7 @@
   }
 
   function renderTemplateList() {
+    if (!els.templateList) return
     if (state.templates.length === 0) {
       els.templateList.innerHTML = '<div class="campaign-empty-state">No templates available.</div>'
       return
@@ -536,6 +547,7 @@
   }
 
   function renderSenderHealth() {
+    if (!els.senderHealthList) return
     if (state.senderHealth.length === 0) {
       els.senderHealthList.innerHTML = '<div class="campaign-empty-state">No sender history yet. Enter a configured Brevo sender email in the form to validate it on save.</div>'
       return
@@ -941,11 +953,13 @@
 
   function updateActionState() {
     const hasCampaign = Boolean(state.selectedCampaignId)
-    els.campaignDetailLink.href = hasCampaign ? `/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}` : '#'
-    els.pauseCampaignBtn.disabled = !hasCampaign
-    els.resumeCampaignBtn.disabled = !hasCampaign
-    els.cancelCampaignBtn.disabled = !hasCampaign
-    els.launchCampaignBtn.disabled = false
+    if (els.campaignDetailLink) {
+      els.campaignDetailLink.href = hasCampaign ? `/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}` : '#'
+    }
+    if (els.pauseCampaignBtn) els.pauseCampaignBtn.disabled = !hasCampaign
+    if (els.resumeCampaignBtn) els.resumeCampaignBtn.disabled = !hasCampaign
+    if (els.cancelCampaignBtn) els.cancelCampaignBtn.disabled = !hasCampaign
+    if (els.launchCampaignBtn) els.launchCampaignBtn.disabled = false
   }
 
   function syncDraftFromForm() {
@@ -1209,6 +1223,11 @@
   }
 
   function resetDraft() {
+    if (workspaceMode === 'edit') {
+      window.location.href = '/admin/campaigns/create'
+      return
+    }
+
     state.selectedCampaignId = ''
     setDraft(createDraftFromTemplate(getSelectedTemplate()))
     renderCampaignList()
@@ -1218,61 +1237,79 @@
     await previewAudienceImport(event)
   }
 
-  els.visualModeBtn.addEventListener('click', function () {
-    switchMode('visual')
-  })
+  if (els.visualModeBtn) {
+    els.visualModeBtn.addEventListener('click', function () {
+      switchMode('visual')
+    })
+  }
 
-  els.htmlModeBtn.addEventListener('click', function () {
-    switchMode('html')
-  })
+  if (els.htmlModeBtn) {
+    els.htmlModeBtn.addEventListener('click', function () {
+      switchMode('html')
+    })
+  }
 
-  els.newCampaignBtn.addEventListener('click', function () {
-    resetDraft()
-  })
+  if (els.newCampaignBtn) {
+    els.newCampaignBtn.addEventListener('click', function () {
+      resetDraft()
+    })
+  }
 
-  els.saveCampaignBtn.addEventListener('click', function () {
-    saveDraft().catch((error) => alert(error.message || 'Failed to save draft.'))
-  })
+  if (els.saveCampaignBtn) {
+    els.saveCampaignBtn.addEventListener('click', function () {
+      saveDraft().catch((error) => alert(error.message || 'Failed to save draft.'))
+    })
+  }
 
-  els.launchCampaignBtn.addEventListener('click', function () {
-    handleLifecycle('launch', { overrideSenderQuality: true }).catch((error) => alert(error.message || 'Failed to launch campaign.'))
-  })
+  if (els.launchCampaignBtn) {
+    els.launchCampaignBtn.addEventListener('click', function () {
+      handleLifecycle('launch', { overrideSenderQuality: true }).catch((error) => alert(error.message || 'Failed to launch campaign.'))
+    })
+  }
 
-  els.pauseCampaignBtn.addEventListener('click', function () {
-    handleLifecycle('pause').catch((error) => alert(error.message || 'Failed to pause campaign.'))
-  })
+  if (els.pauseCampaignBtn) {
+    els.pauseCampaignBtn.addEventListener('click', function () {
+      handleLifecycle('pause').catch((error) => alert(error.message || 'Failed to pause campaign.'))
+    })
+  }
 
-  els.resumeCampaignBtn.addEventListener('click', function () {
-    handleLifecycle('resume').catch((error) => alert(error.message || 'Failed to resume campaign.'))
-  })
+  if (els.resumeCampaignBtn) {
+    els.resumeCampaignBtn.addEventListener('click', function () {
+      handleLifecycle('resume').catch((error) => alert(error.message || 'Failed to resume campaign.'))
+    })
+  }
 
-  els.cancelCampaignBtn.addEventListener('click', function () {
-    if (!window.confirm('Cancel this campaign and stop remaining batches?')) return
-    handleLifecycle('cancel').catch((error) => alert(error.message || 'Failed to cancel campaign.'))
-  })
+  if (els.cancelCampaignBtn) {
+    els.cancelCampaignBtn.addEventListener('click', function () {
+      if (!window.confirm('Cancel this campaign and stop remaining batches?')) return
+      handleLifecycle('cancel').catch((error) => alert(error.message || 'Failed to cancel campaign.'))
+    })
+  }
 
-  els.sendTestBtn.addEventListener('click', async function () {
-    try {
-      validateTestSendState()
-      await ensureSavedCampaign()
-      const emails = els.campaignTestEmails.value.trim()
-      const response = await fetch(`/api/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}/test-send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emails })
-      })
-      const result = await response.json()
-      if (!response.ok) {
-        const message = Array.isArray(result.details) && result.details.length > 0
-          ? result.details.join('\n')
-          : (result.error || 'Failed to send test campaign.')
-        throw new Error(message)
+  if (els.sendTestBtn) {
+    els.sendTestBtn.addEventListener('click', async function () {
+      try {
+        validateTestSendState()
+        await ensureSavedCampaign()
+        const emails = els.campaignTestEmails.value.trim()
+        const response = await fetch(`/api/admin/campaigns/${encodeURIComponent(state.selectedCampaignId)}/test-send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emails })
+        })
+        const result = await response.json()
+        if (!response.ok) {
+          const message = Array.isArray(result.details) && result.details.length > 0
+            ? result.details.join('\n')
+            : (result.error || 'Failed to send test campaign.')
+          throw new Error(message)
+        }
+        alert(result.message || 'Test sent.')
+      } catch (error) {
+        alert(error.message || 'Failed to send test campaign.')
       }
-      alert(result.message || 'Test sent.')
-    } catch (error) {
-      alert(error.message || 'Failed to send test campaign.')
-    }
-  })
+    })
+  }
 
   els.audienceUploadForm.addEventListener('submit', function (event) {
     uploadAudience(event).catch((error) => {
@@ -1336,37 +1373,43 @@
     })
   }
 
-  els.campaignTemplate.addEventListener('change', function () {
-    const template = getSelectedTemplate()
-    if (!template) return
-    const nextDraft = createDraftFromTemplate(template)
-    nextDraft.name = state.draft.name || ''
-    nextDraft.audience = state.draft.audience || ''
-    nextDraft.sender = clone(state.draft.sender || nextDraft.sender)
-    nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
-    nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
-    setDraft(nextDraft)
-  })
+  if (els.campaignTemplate) {
+    els.campaignTemplate.addEventListener('change', function () {
+      const template = getSelectedTemplate()
+      if (!template) return
+      const nextDraft = createDraftFromTemplate(template)
+      nextDraft.name = state.draft.name || ''
+      nextDraft.audience = state.draft.audience || ''
+      nextDraft.sender = clone(state.draft.sender || nextDraft.sender)
+      nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
+      nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
+      setDraft(nextDraft)
+    })
+  }
 
-  els.campaignList.addEventListener('click', function (event) {
-    const card = event.target.closest('[data-campaign-id]')
-    if (!card) return
-    loadCampaign(card.getAttribute('data-campaign-id')).catch((error) => alert(error.message || 'Failed to load campaign.'))
-  })
+  if (els.campaignList) {
+    els.campaignList.addEventListener('click', function (event) {
+      const card = event.target.closest('[data-campaign-id]')
+      if (!card) return
+      loadCampaign(card.getAttribute('data-campaign-id')).catch((error) => alert(error.message || 'Failed to load campaign.'))
+    })
+  }
 
-  els.templateList.addEventListener('click', function (event) {
-    const button = event.target.closest('[data-apply-template]')
-    if (!button) return
-    const template = state.templates.find((item) => String(item._id) === String(button.getAttribute('data-apply-template')))
-    if (!template) return
-    const nextDraft = createDraftFromTemplate(template)
-    nextDraft.name = state.draft.name || ''
-    nextDraft.audience = state.draft.audience || ''
-    nextDraft.sender = clone(state.draft.sender || nextDraft.sender)
-    nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
-    nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
-    setDraft(nextDraft)
-  })
+  if (els.templateList) {
+    els.templateList.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-apply-template]')
+      if (!button) return
+      const template = state.templates.find((item) => String(item._id) === String(button.getAttribute('data-apply-template')))
+      if (!template) return
+      const nextDraft = createDraftFromTemplate(template)
+      nextDraft.name = state.draft.name || ''
+      nextDraft.audience = state.draft.audience || ''
+      nextDraft.sender = clone(state.draft.sender || nextDraft.sender)
+      nextDraft.tracking = clone(state.draft.tracking || nextDraft.tracking)
+      nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
+      setDraft(nextDraft)
+    })
+  }
 
   document.querySelectorAll('[data-add-block]').forEach((button) => {
     button.addEventListener('click', function () {
@@ -1520,7 +1563,7 @@
   renderAudienceList()
   renderTemplateList()
   renderSenderHealth()
-  setDraft(createDraftFromTemplate(state.templates[0] || null))
-  switchMode('visual')
+  setDraft(initialSelectedCampaign ? clone(initialSelectedCampaign) : createDraftFromTemplate(state.templates[0] || null))
+  switchMode(state.draft?.content?.designMode === 'html' ? 'html' : 'visual')
   renderForm()
 })()
