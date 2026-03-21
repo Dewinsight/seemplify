@@ -268,6 +268,7 @@
   top: 0;
   bottom: 0;
   z-index: 100;
+  overflow: hidden;
 }
 
 .admin-content {
@@ -325,6 +326,31 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(129, 140, 248, 0.45) transparent;
+  scroll-behavior: smooth;
+}
+
+.admin-nav-links::-webkit-scrollbar {
+  width: 10px;
+}
+
+.admin-nav-links::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-nav-links::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(129, 140, 248, 0.65), rgba(99, 102, 241, 0.32));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.admin-nav-links::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(129, 140, 248, 0.82), rgba(79, 70, 229, 0.5));
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .admin-nav-link {
