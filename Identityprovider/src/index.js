@@ -479,9 +479,10 @@ dotenv.config()
 
 // Shared UI theme for IdP pages (marketing-site aesthetic)
 const themeCss = readFileSync(join(__dirname, 'public/css/idp-theme.css'), 'utf-8')
+const seemplifyLogoUrl = 'https://seemplifyai.com/images/seemplifylogo.png'
 const seemplifyMarkSvg = `
   <img
-    src="/images/seemplifylogo.png"
+    src="${seemplifyLogoUrl}"
     alt="Seemplify"
     width="148"
     height="62"
