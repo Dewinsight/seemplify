@@ -5,8 +5,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --omit=dev
+# Install dependencies without peer-resolution drift from upstream packages
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Copy source code
 COPY . .
