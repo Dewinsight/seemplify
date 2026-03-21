@@ -427,9 +427,10 @@ p {
   font-weight: 700;
 }
 
+.top-nav-brand img,
 .top-nav-brand svg {
   width: 30px;
-  height: 30px;
+  height: auto;
 }
 
 .top-nav-brand span {
