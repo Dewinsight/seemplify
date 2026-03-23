@@ -569,6 +569,9 @@ p {
   box-sizing: border-box;
   flex-shrink: 0;
   overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .top-nav .notification-icon svg {
