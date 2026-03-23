@@ -656,6 +656,203 @@ const aiContent = (
   </div>
 );
 
+const downloadHelpGuideAsPDF = () => {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MOSAIC Approver – Help Guide</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; font-size: 13px; line-height: 1.6; }
+    .header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #9B51E0; padding-bottom: 16px; margin-bottom: 32px; }
+    .logo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 32px; height: 32px; }
+    .logo-grid span { border-radius: 3px; background: #9B51E0; display: block; }
+    .logo-grid span:nth-child(2), .logo-grid span:nth-child(3) { opacity: 0.75; }
+    .logo-grid span:nth-child(4) { opacity: 0.5; }
+    .header-text h1 { font-size: 22px; font-weight: 800; color: #1a1a2e; letter-spacing: -0.5px; }
+    .header-text p { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .chapter { margin-bottom: 36px; page-break-inside: avoid; }
+    .chapter-title { font-size: 18px; font-weight: 800; color: #9B51E0; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.04em; }
+    h2 { font-size: 15px; font-weight: 700; color: #1a1a2e; margin: 14px 0 8px; }
+    h3 { font-size: 13px; font-weight: 700; color: #374151; margin: 12px 0 6px; }
+    h4 { font-size: 12px; font-weight: 700; color: #9B51E0; margin-bottom: 4px; }
+    p { font-size: 12px; color: #4b5563; margin-bottom: 8px; }
+    ul, ol { color: #4b5563; padding-left: 20px; margin-bottom: 10px; font-size: 12px; line-height: 1.8; }
+    .card { padding: 12px 14px; border: 1px solid #e5e7eb; border-left: 3px solid #9B51E0; border-radius: 6px; margin-bottom: 10px; page-break-inside: avoid; }
+    .card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+    .step { display: flex; gap: 12px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; page-break-inside: avoid; }
+    .step-num { width: 32px; height: 32px; border-radius: 50%; background: #9B51E0; color: white; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .tag { display: inline-block; background: rgba(155,81,224,0.1); color: #6b7280; font-size: 10px; padding: 2px 6px; border-radius: 3px; margin: 2px; }
+    code { background: #f3f4f6; color: #9B51E0; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+    .highlight { background: rgba(155,81,224,0.08); border: 1px solid rgba(155,81,224,0.2); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    .footer { margin-top: 36px; border-top: 1px solid #e5e7eb; padding-top: 12px; font-size: 11px; color: #9ca3af; text-align: center; }
+    @media print { body { padding: 20px; } .step, .card { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-grid"><span></span><span></span><span></span><span></span></div>
+    <div class="header-text">
+      <h1>MOSAIC Approver</h1>
+      <p>Complete Help Guide &amp; Documentation</p>
+    </div>
+  </div>
+
+  <!-- CHAPTER 1: OVERVIEW -->
+  <div class="chapter">
+    <div class="chapter-title">1. Overview – What is Approver?</div>
+    <p>Approver is a comprehensive initiative approval and governance platform designed to help organizations systematically evaluate, approve, and track projects and initiatives. It combines intelligent AI-powered analysis with flexible workflow automation to ensure every initiative gets the scrutiny it deserves while maintaining efficiency.</p>
+    <h2>Core Problems We Solve</h2>
+    <ul>
+      <li><strong>Ad-hoc decision making</strong> – Standardized evaluation criteria ensure consistent decisions</li>
+      <li><strong>Lost initiatives</strong> – Complete audit trail and tracking from submission to completion</li>
+      <li><strong>Resource misalignment</strong> – Clear visibility into budget, personnel, and timeline requirements</li>
+      <li><strong>Governance gaps</strong> – Configurable rules enforce organizational policies automatically</li>
+      <li><strong>Slow approvals</strong> – Automated workflows reduce bottlenecks and delays</li>
+    </ul>
+    <h2>Key Capabilities</h2>
+    <div class="card-grid">
+      <div class="card"><h4>Multi-Tenant Architecture</h4><p>Support multiple organizations with complete data isolation and custom configurations.</p></div>
+      <div class="card"><h4>AI-Powered Analysis</h4><p>Intelligent scoring based on strategic alignment, feasibility, risk, and expected impact.</p></div>
+      <div class="card"><h4>Configurable Workflows</h4><p>Define approval chains, conditions, and automatic actions based on initiative characteristics.</p></div>
+      <div class="card"><h4>Comprehensive Analytics</h4><p>Track initiative performance, approval times, and outcomes with detailed dashboards.</p></div>
+    </div>
+    <h2>How It All Fits Together</h2>
+    <div class="highlight">
+      <p>Approver works as a central hub where initiatives flow through a structured lifecycle:</p>
+      <ol>
+        <li><strong>Submission</strong> – Users submit initiatives with detailed information</li>
+        <li><strong>AI Analysis</strong> – The system analyzes the initiative against multiple criteria</li>
+        <li><strong>Rule Evaluation</strong> – Governance rules determine required approvals</li>
+        <li><strong>Workflow Execution</strong> – Initiatives move through approval stages</li>
+        <li><strong>Decision &amp; Tracking</strong> – Final decision recorded with full audit trail</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- CHAPTER 2: WORKFLOWS -->
+  <div class="chapter">
+    <div class="chapter-title">2. Understanding Workflows</div>
+    <p>Workflows define how initiatives move from submission to approval. They ensure the right people review the right initiatives at the right time, while maintaining compliance with organizational policies.</p>
+    <h2>Initiative Lifecycle</h2>
+    <div class="card"><h4 style="color:#6b7280">Draft</h4><p>Initiative created but not yet submitted. Can be edited and saved for later.</p></div>
+    <div class="card"><h4 style="color:#f59e0b">Pending Review</h4><p>Submitted and waiting for initial review. Entered the approval workflow.</p></div>
+    <div class="card"><h4 style="color:#3b82f6">In Review</h4><p>Being actively evaluated by reviewers. May require additional information.</p></div>
+    <div class="card"><h4 style="color:#10b981">Approved</h4><p>Approved for implementation. Can proceed to execution phase.</p></div>
+    <div class="card"><h4 style="color:#ef4444">Rejected</h4><p>Not approved. Feedback provided for resubmission or alternative approach.</p></div>
+    <div class="card"><h4 style="color:#8b5cf6">Deferred</h4><p>Put on hold for future consideration. Can be reconsidered later.</p></div>
+    <h2>Approval Flow Types</h2>
+    <div class="card-grid">
+      <div class="card"><h4>Sequential Approval</h4><p>Each approver reviews in order. One must approve before the next receives the request.</p></div>
+      <div class="card"><h4>Parallel Approval</h4><p>Multiple approvers review simultaneously. All must approve (or a quorum) for the initiative to proceed.</p></div>
+      <div class="card"><h4>Automatic Approval</h4><p>Based on rules, certain initiatives can auto-approve when they meet specific criteria (e.g., budget below threshold).</p></div>
+      <div class="card"><h4>AI-Assisted Approval</h4><p>AI provides scoring and recommendations to help human approvers make better decisions faster.</p></div>
+    </div>
+    <h2>Rule Triggers</h2>
+    <ul>
+      <li>Department or business unit</li>
+      <li>Project type or category</li>
+      <li>Budget range</li>
+      <li>Timeline duration</li>
+      <li>Number of personnel required</li>
+      <li>Strategic alignment score</li>
+      <li>Risk level</li>
+    </ul>
+  </div>
+
+  <!-- CHAPTER 3: ROLES -->
+  <div class="chapter">
+    <div class="chapter-title">3. Roles &amp; Permissions</div>
+    <p>Approver uses a role-based access control (RBAC) system that grants permissions based on user roles. This ensures users can only access features and data appropriate to their responsibilities.</p>
+    <h2>Core Roles</h2>
+    <div class="card">
+      <h4>Admin</h4>
+      <p>Full system access. Can manage organizations, users, departments, rules, and all settings.</p>
+      <p><span class="tag">Manage organizations</span><span class="tag">Manage users</span><span class="tag">Manage departments</span><span class="tag">Manage rules</span><span class="tag">View all initiatives</span><span class="tag">Override decisions</span><span class="tag">Configure scoring policies</span></p>
+    </div>
+    <div class="card">
+      <h4>Manager</h4>
+      <p>Can approve/reject initiatives within their department. May also submit initiatives.</p>
+      <p><span class="tag">Submit initiatives</span><span class="tag">Approve/reject in department</span><span class="tag">View department initiatives</span><span class="tag">Manage department members</span></p>
+    </div>
+    <div class="card">
+      <h4>User</h4>
+      <p>Standard user. Can submit and view their own initiatives.</p>
+      <p><span class="tag">Submit initiatives</span><span class="tag">View own initiatives</span><span class="tag">Track submission status</span></p>
+    </div>
+    <h2>Granular Permissions</h2>
+    <div class="card-grid">
+      <div class="card"><code>scoring.manage</code><p>Configure scoring policies and weights</p></div>
+      <div class="card"><code>rules.manage</code><p>Create and edit approval rules</p></div>
+      <div class="card"><code>rules.manage.system</code><p>Modify system-wide rules</p></div>
+      <div class="card"><code>projects.override</code><p>Override project decisions</p></div>
+      <div class="card"><code>projects.delete</code><p>Delete initiatives</p></div>
+      <div class="card"><code>users.invite</code><p>Invite new users</p></div>
+    </div>
+    <h2>Organization Context</h2>
+    <p>In multi-tenant mode, users belong to organizations. All actions are scoped to the current organization, ensuring data isolation. Users can switch between organizations they belong to via the sidebar.</p>
+  </div>
+
+  <!-- CHAPTER 4: AI ANALYSIS -->
+  <div class="chapter">
+    <div class="chapter-title">4. AI-Powered Analysis</div>
+    <p>Approver leverages artificial intelligence to provide objective, consistent analysis of initiatives. This helps decision-makers understand strengths, weaknesses, and risks before committing resources.</p>
+    <h2>How AI Analysis Works</h2>
+    <div class="highlight">
+      <ol>
+        <li><strong>Data Extraction</strong> – The system extracts key information from the initiative</li>
+        <li><strong>Context Loading</strong> – Relevant governance rules and organizational goals are loaded as context</li>
+        <li><strong>Multi-Criteria Evaluation</strong> – The AI evaluates against multiple dimensions</li>
+        <li><strong>Score Generation</strong> – A composite score is calculated based on configured weights</li>
+        <li><strong>Insight Generation</strong> – Strengths, weaknesses, and recommendations are generated</li>
+      </ol>
+    </div>
+    <h2>Evaluation Criteria</h2>
+    <div class="card"><h4>Strategic Alignment</h4><p>How well the initiative supports organizational goals and priorities</p></div>
+    <div class="card"><h4>Resource Feasibility</h4><p>Whether the required budget, personnel, and timeline are realistic</p></div>
+    <div class="card"><h4>Risk Assessment</h4><p>Identification of potential risks and mitigation strategies</p></div>
+    <div class="card"><h4>Expected ROI</h4><p>Projected return on investment and value creation</p></div>
+    <div class="card"><h4>Operational Impact</h4><p>Effect on existing operations and required changes</p></div>
+    <div class="card"><h4>Compliance Fit</h4><p>Alignment with regulatory requirements and internal policies</p></div>
+    <h2>Scoring Weights</h2>
+    <p>Admins can adjust how much each criterion contributes to the final score via the Scoring Policy page. This allows organizations to prioritize what matters most to them.</p>
+    <div class="highlight"><p><strong>Example:</strong> A startup might weight "Expected ROI" heavily, while an enterprise might prioritize "Compliance Fit" and "Risk Assessment".</p></div>
+    <h2>Without AI</h2>
+    <p>If AI features are disabled, initiatives can still be submitted and reviewed manually. Approvers will need to evaluate criteria themselves, but all other features (workflows, rules, tracking) remain available.</p>
+  </div>
+
+  <!-- CHAPTER 5: STEP-BY-STEP -->
+  <div class="chapter">
+    <div class="chapter-title">5. Step-by-Step Usage Guide</div>
+    <p>Follow this guide to get the most out of Approver for managing your initiatives.</p>
+    <div class="step"><div class="step-num">1</div><div><h3>Set Up Your Organization</h3><p>Go to the <strong>Organization</strong> page from the sidebar. Upload your logo, configure settings, and create departments that align with your organizational structure.</p></div></div>
+    <div class="step"><div class="step-num">2</div><div><h3>Invite Team Members</h3><p>Navigate to <strong>Invites</strong> in the sidebar. Click <strong>Send Invite</strong>, enter the user's email, assign to a department, set their role, and send. They'll receive an invitation email.</p></div></div>
+    <div class="step"><div class="step-num">3</div><div><h3>Configure Governance Rules</h3><p>Go to <strong>Rules</strong> in the sidebar. Click <strong>Add Rule</strong> to create custom rules, set trigger conditions, define required approvals and approvers, and set auto-approval thresholds if applicable.</p></div></div>
+    <div class="step"><div class="step-num">4</div><div><h3>(Optional) Configure AI Scoring</h3><p>Navigate to <strong>Scoring Policy</strong> in the sidebar. Adjust weights for each evaluation criterion and set minimum thresholds for auto-approval.</p></div></div>
+    <div class="step"><div class="step-num">5</div><div><h3>Submit Your First Initiative</h3><p>Click <strong>New Initiative</strong> from the Dashboard. Fill in the title, description, department, expected impact, and resource requirements (budget, personnel, timeline), then submit.</p></div></div>
+    <div class="step"><div class="step-num">6</div><div><h3>Review &amp; Approve Initiatives</h3><p>For Managers and Admins – go to <strong>Initiatives</strong> to see all submissions. Click an initiative to view details, review the AI analysis and scoring, then approve, reject, or request changes.</p></div></div>
+    <div class="step"><div class="step-num">7</div><div><h3>Track &amp; Monitor</h3><p>Use the <strong>Dashboard</strong> for overview statistics. Track initiative status, monitor approval times and bottlenecks, review analytics and trends, and export reports as needed.</p></div></div>
+    <h2>Quick Reference: What Can I Do?</h2>
+    <div class="card-grid">
+      <div class="card"><h4>As an Admin</h4><ul><li>Manage organizations</li><li>Invite &amp; manage users</li><li>Create departments</li><li>Configure rules</li><li>Set scoring policies</li><li>Override decisions</li></ul></div>
+      <div class="card"><h4>As a Manager</h4><ul><li>Submit initiatives</li><li>Approve/reject in dept</li><li>View department reports</li><li>Request changes</li></ul></div>
+      <div class="card"><h4>As a User</h4><ul><li>Submit initiatives</li><li>View own submissions</li><li>Track status</li><li>Resubmit if rejected</li></ul></div>
+    </div>
+  </div>
+
+  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@approver.aiinigeria.com</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+};
+
 const downloadFAQAsPDF = () => {
   const grouped: Record<string, FAQItem[]> = {};
   faqData.forEach(faq => {
@@ -760,7 +957,7 @@ const HelpPage = () => {
         return (
           <div>
             {/* Help Guide Sub-tabs */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <button
                 onClick={() => setHelpSubTab('understand')}
                 style={{
@@ -835,6 +1032,36 @@ const HelpPage = () => {
                 }}
               >
                 Step-by-Step
+              </button>
+
+              {/* Download Help Guide button */}
+              <button
+                onClick={downloadHelpGuideAsPDF}
+                title="Download full Help Guide as PDF"
+                style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.45rem 0.9rem',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(155, 81, 224, 0.3)',
+                  background: 'rgba(155, 81, 224, 0.1)',
+                  color: 'var(--brand-primary)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  transition: 'background 0.2s',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Download Guide
               </button>
             </div>
 
