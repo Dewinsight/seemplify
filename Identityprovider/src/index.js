@@ -49,7 +49,6 @@ import {
 } from './utils/appAccess.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import { startCampaignWorker } from './jobs/campaignWorker.js'
-import { startProfileCompletionReminderJobs } from './jobs/profileCompletionReminders.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
 import { getProfileCompletion, getProfileCompletionForAccount } from './utils/profileCompletion.js'
 import {
@@ -9493,13 +9492,6 @@ app.listen(PORT, async () => {
     console.log('✅ Cleanup jobs initialized')
   } catch (error) {
     console.error('⚠️ Failed to initialize cleanup jobs:', error)
-  }
-
-  try {
-    startProfileCompletionReminderJobs(24)
-    console.log('✅ Profile completion reminder jobs initialized')
-  } catch (error) {
-    console.error('⚠️ Failed to initialize profile completion reminder jobs:', error)
   }
 
   // Initialize subscription lifecycle jobs (runs every 6 hours)

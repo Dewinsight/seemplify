@@ -5,23 +5,30 @@ import { getProfileCompletionForAccount } from '../utils/profileCompletion.js'
 let reminderInterval = null
 let isRunning = false
 
-function buildReminderEmail(account, completion) {
+function buildReminderEmail(account, completion, options = {}) {
   const baseUrl = process.env.ISSUER_URL || 'http://localhost:4000'
   const nextRoute = completion?.nextIncompleteStep?.route || '/profile/personal'
   const actionUrl = `${baseUrl}${nextRoute}?wizard=1`
+  const organizationName = String(options.organizationName || '').trim()
   const missingSteps = (completion?.steps || [])
     .filter(step => !step.complete)
     .map(step => `<li><strong>${step.label}</strong>: ${step.description}</li>`)
     .join('')
   const recipientName = account?.profile?.name || account?.email || 'there'
+  const subject = organizationName
+    ? `Complete your employee profile for ${organizationName}`
+    : 'Complete your employee profile'
+  const profileContext = organizationName
+    ? ` for ${organizationName}`
+    : ''
 
   return {
-    subject: 'Complete your employee profile',
+    subject,
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
         <h2 style="margin-bottom: 12px;">Complete your employee profile</h2>
         <p>Hi ${recipientName},</p>
-        <p>Your employee profile is still missing a few required details for HR and payroll.</p>
+        <p>Your employee profile${profileContext} is still missing a few required details for HR and payroll.</p>
         <ul>
           ${missingSteps}
         </ul>
@@ -36,7 +43,7 @@ function buildReminderEmail(account, completion) {
     text: [
       `Hi ${recipientName},`,
       '',
-      'Your employee profile is still missing required details for HR and payroll.',
+      `Your employee profile${profileContext} is still missing required details for HR and payroll.`,
       '',
       ...(completion?.steps || [])
         .filter(step => !step.complete)
@@ -44,6 +51,107 @@ function buildReminderEmail(account, completion) {
       '',
       `Complete your profile here: ${actionUrl}`
     ].join('\n')
+  }
+}
+
+function wasReminderSentWithinCooldown(lastSentAt, now, cooldownHours) {
+  if (!lastSentAt) {
+    return false
+  }
+
+  const cutoff = now.getTime() - (cooldownHours * 60 * 60 * 1000)
+  return new Date(lastSentAt).getTime() > cutoff
+}
+
+async function sendProfileCompletionReminderForAccount(account, options = {}) {
+  const {
+    organizationId = null,
+    organizationName = '',
+    now = new Date(),
+    respectCooldown = true,
+    cooldownHours = 24
+  } = options
+
+  if (!account?.email) {
+    return { sent: false, reason: 'missing_email' }
+  }
+
+  const completion = await getProfileCompletionForAccount(account, { organizationId })
+  if (completion.complete) {
+    return { sent: false, reason: 'complete', completion }
+  }
+
+  const lastSentAt = completion?.reminder?.lastSentAt
+  if (respectCooldown && wasReminderSentWithinCooldown(lastSentAt, now, cooldownHours)) {
+    return { sent: false, reason: 'cooldown', completion }
+  }
+
+  const { subject, html, text } = buildReminderEmail(account, completion, { organizationName })
+
+  await emailService.sendEmail({
+    to: account.email,
+    subject,
+    html,
+    text
+  })
+
+  account.profile = account.profile || {}
+  account.profile.completionReminders = {
+    ...(account.profile.completionReminders || {}),
+    lastSentAt: now,
+    sendCount: Number(account.profile?.completionReminders?.sendCount || 0) + 1,
+    lastMissingSteps: (completion.steps || []).filter(step => !step.complete).map(step => step.key)
+  }
+  account.markModified('profile')
+  await account.save()
+
+  return {
+    sent: true,
+    reason: 'sent',
+    completion
+  }
+}
+
+export async function sendProfileCompletionRemindersForAccounts(accounts = [], options = {}) {
+  if (!emailService.apiKey) {
+    if (options.throwOnUnconfigured) {
+      throw new Error('Email service is not configured')
+    }
+
+    return {
+      sentCount: 0,
+      skippedCount: Array.isArray(accounts) ? accounts.length : 0,
+      failedCount: 0
+    }
+  }
+
+  const now = options.now || new Date()
+  let sentCount = 0
+  let skippedCount = 0
+  let failedCount = 0
+
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    try {
+      const result = await sendProfileCompletionReminderForAccount(account, {
+        ...options,
+        now
+      })
+
+      if (result.sent) {
+        sentCount += 1
+      } else {
+        skippedCount += 1
+      }
+    } catch (error) {
+      failedCount += 1
+      console.error(`❌ [PROFILE] Failed to send completion reminder to ${account?.email || 'unknown recipient'}:`, error)
+    }
+  }
+
+  return {
+    sentCount,
+    skippedCount,
+    failedCount
   }
 }
 
@@ -59,8 +167,6 @@ export async function sendProfileCompletionReminders() {
   }
 
   isRunning = true
-  const now = new Date()
-  const cutoff = now.getTime() - (24 * 60 * 60 * 1000)
 
   try {
     const accounts = await Account.find({
@@ -68,43 +174,11 @@ export async function sendProfileCompletionReminders() {
       'organizations.isActive': true
     })
 
-    let sentCount = 0
-
-    for (const account of accounts) {
-      const completion = await getProfileCompletionForAccount(account)
-      if (completion.complete) {
-        continue
-      }
-
-      const lastSentAt = completion?.reminder?.lastSentAt
-      if (lastSentAt && new Date(lastSentAt).getTime() > cutoff) {
-        continue
-      }
-
-      const { subject, html, text } = buildReminderEmail(account, completion)
-
-      try {
-        await emailService.sendEmail({
-          to: account.email,
-          subject,
-          html,
-          text
-        })
-
-        account.profile = account.profile || {}
-        account.profile.completionReminders = {
-          ...(account.profile.completionReminders || {}),
-          lastSentAt: now,
-          sendCount: Number(account.profile?.completionReminders?.sendCount || 0) + 1,
-          lastMissingSteps: (completion.steps || []).filter(step => !step.complete).map(step => step.key)
-        }
-        account.markModified('profile')
-        await account.save()
-        sentCount += 1
-      } catch (error) {
-        console.error(`❌ [PROFILE] Failed to send completion reminder to ${account.email}:`, error)
-      }
-    }
+    const { sentCount } = await sendProfileCompletionRemindersForAccounts(accounts, {
+      now: new Date(),
+      respectCooldown: true,
+      cooldownHours: 24
+    })
 
     console.log(`✅ [PROFILE] Sent ${sentCount} profile completion reminder(s)`)
     return sentCount

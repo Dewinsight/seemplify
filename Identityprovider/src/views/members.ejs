@@ -87,6 +87,7 @@
           <a href="/organizations/<%= organization._id %>/invitations" class="btn btn-primary">+ Invite Member</a>
         <% } %>
         <% if (['owner', 'admin'].includes(yourRole)) { %>
+          <button type="button" class="btn btn-secondary" onclick="sendProfileReminders(this)">Send Profile Reminders</button>
           <a href="/organizations/<%= organization._id %>/notifications" class="btn btn-secondary">Send Notification</a>
         <% } %>
       </div>
@@ -767,6 +768,38 @@
         }
       } catch (error) {
         alert('Failed to remove member');
+      }
+    }
+
+    async function sendProfileReminders(button) {
+      if (!confirm('Send profile reminders to all active members in this organization who still have incomplete profiles?')) return;
+
+      const originalLabel = button ? button.textContent : '';
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Sending...';
+      }
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/members/profile-reminders`, {
+          method: 'POST'
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          alert(data.error || 'Failed to send profile reminders');
+          return;
+        }
+
+        const successMessage = data.message || 'Profile reminders sent';
+        window.location.href = `/organizations/${orgId}/members?success=${encodeURIComponent(successMessage)}`;
+      } catch (error) {
+        alert('Failed to send profile reminders');
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
       }
     }
 

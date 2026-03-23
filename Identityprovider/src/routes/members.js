@@ -12,6 +12,8 @@ import { buildMemberStructureMap, getMemberStructure } from '../utils/memberStru
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onboardingStatus.js'
 import { buildPayrollProfileSyncData, getProfileCompletionForAccount } from '../utils/profileCompletion.js'
+import { sendProfileCompletionRemindersForAccounts } from '../jobs/profileCompletionReminders.js'
+import { emailService } from '../services/emailService.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -617,6 +619,56 @@ router.put('/:orgId/members/:memberId/payroll-sync',
     } catch (error) {
       console.error('Update member payroll sync error:', error)
       res.status(500).json({ error: error.message || 'Failed to update member payroll sync data' })
+    }
+  }
+)
+
+router.post('/:orgId/members/profile-reminders',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationAdmin,
+  async (req, res) => {
+    try {
+      if (!emailService.apiKey) {
+        return res.status(503).json({ error: 'Email service is not configured' })
+      }
+
+      const organization = await Organization.findById(req.params.orgId)
+        .select('name members.account members.status')
+        .populate('members.account', 'email profile')
+
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+
+      const accounts = organization.members
+        .filter((member) => member.status === 'active' && member.account?.email)
+        .map((member) => member.account)
+
+      const result = await sendProfileCompletionRemindersForAccounts(accounts, {
+        organizationId: req.params.orgId,
+        organizationName: organization.name,
+        respectCooldown: false,
+        throwOnUnconfigured: true
+      })
+
+      if (result.sentCount === 0 && result.failedCount > 0) {
+        return res.status(500).json({
+          error: `Failed to send profile reminders${result.failedCount > 1 ? ` to ${result.failedCount} members` : ''}`
+        })
+      }
+
+      const message = result.sentCount > 0
+        ? `Sent ${result.sentCount} profile reminder${result.sentCount === 1 ? '' : 's'} to members with incomplete profiles${result.failedCount > 0 ? `. ${result.failedCount} failed` : ''}.`
+        : 'No active members with incomplete profiles were found.'
+
+      res.json({
+        message,
+        ...result
+      })
+    } catch (error) {
+      console.error('Send profile reminders error:', error)
+      res.status(500).json({ error: error.message || 'Failed to send profile reminders' })
     }
   }
 )
