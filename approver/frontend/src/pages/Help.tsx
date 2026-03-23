@@ -656,6 +656,73 @@ const aiContent = (
   </div>
 );
 
+const downloadFAQAsPDF = () => {
+  const grouped: Record<string, FAQItem[]> = {};
+  faqData.forEach(faq => {
+    if (!grouped[faq.category]) grouped[faq.category] = [];
+    grouped[faq.category].push(faq);
+  });
+
+  const categoryBlocks = Object.entries(grouped).map(([cat, items]) => `
+    <div class="category-section">
+      <h2 class="category-title">${cat}</h2>
+      ${items.map(faq => `
+        <div class="faq-item">
+          <h3 class="question">${faq.question}</h3>
+          <p class="answer">${faq.answer}</p>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MOSAIC Approver – Help &amp; FAQ</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; font-size: 13px; line-height: 1.6; }
+    .header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #9B51E0; padding-bottom: 16px; margin-bottom: 28px; }
+    .logo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 32px; height: 32px; }
+    .logo-grid span { border-radius: 3px; background: #9B51E0; display: block; }
+    .logo-grid span:nth-child(2), .logo-grid span:nth-child(3) { opacity: 0.75; }
+    .logo-grid span:nth-child(4) { opacity: 0.5; }
+    .header-text h1 { font-size: 22px; font-weight: 800; color: #1a1a2e; letter-spacing: -0.5px; }
+    .header-text p { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .category-section { margin-bottom: 28px; page-break-inside: avoid; }
+    .category-title { font-size: 14px; font-weight: 700; color: #9B51E0; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin-bottom: 12px; }
+    .faq-item { margin-bottom: 14px; padding: 12px 14px; border: 1px solid #e5e7eb; border-left: 3px solid #9B51E0; border-radius: 6px; page-break-inside: avoid; }
+    .question { font-size: 13px; font-weight: 600; color: #1a1a2e; margin-bottom: 6px; }
+    .answer { font-size: 12px; color: #4b5563; line-height: 1.65; }
+    .footer { margin-top: 36px; border-top: 1px solid #e5e7eb; padding-top: 12px; font-size: 11px; color: #9ca3af; text-align: center; }
+    @media print {
+      body { padding: 20px; }
+      .faq-item { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-grid"><span></span><span></span><span></span><span></span></div>
+    <div class="header-text">
+      <h1>MOSAIC Approver</h1>
+      <p>Help &amp; Frequently Asked Questions</p>
+    </div>
+  </div>
+  ${categoryBlocks}
+  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@approver.aiinigeria.com</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+};
+
 const HelpPage = () => {
   const [activeTab, setActiveTab] = useState<TabType>('faq');
   const [helpSubTab, setHelpSubTab] = useState<'understand' | 'workflow' | 'roles' | 'ai' | 'steps'>('understand');
@@ -666,7 +733,7 @@ const HelpPage = () => {
   const categories = [...new Set(faqData.map(faq => faq.category))];
 
   const filteredFAQs = searchQuery
-    ? faqData.filter(faq => 
+    ? faqData.filter(faq =>
         faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
         faq.answer.toLowerCase().includes(searchQuery.toLowerCase())
       )
@@ -849,15 +916,15 @@ const HelpPage = () => {
               </Link>
             </div>
 
-            {/* Search */}
-            <div style={{ marginBottom: '2rem' }}>
+            {/* Search + Download */}
+            <div style={{ marginBottom: '2rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
               <input
                 type="text"
                 placeholder="Search for answers..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
-                  width: '100%',
+                  flex: 1,
                   padding: '1rem 1.25rem',
                   fontSize: '1rem',
                   borderRadius: '12px',
@@ -868,6 +935,33 @@ const HelpPage = () => {
                   transition: 'border-color 0.2s, box-shadow 0.2s'
                 }}
               />
+              <button
+                onClick={downloadFAQAsPDF}
+                title="Download FAQ as PDF"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.85rem 1.1rem',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(155, 81, 224, 0.3)',
+                  background: 'rgba(155, 81, 224, 0.1)',
+                  color: 'var(--brand-primary)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  transition: 'background 0.2s'
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                PDF
+              </button>
             </div>
 
             {/* FAQ Categories */}

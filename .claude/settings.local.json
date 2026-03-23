@@ -23,7 +23,9 @@
       "Bash(node -e:*)",
       "Bash(xargs:*)",
       "Bash(git status:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\approver\\\\frontend\\\\src\"\" 2>/dev/null | grep -E \"^d \")",
+      "Bash(grep -r PORT /c/Users/Michael/Documents/GitHub/seemplify/approver/backend/.env*)"
     ]
   }
 }

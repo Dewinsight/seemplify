@@ -84,6 +84,25 @@ const Login: React.FC = () => {
                     Forgot your password? <Link to="/forgot-password" style={{ color: 'var(--accent)' }}>Reset it here</Link>
                 </p>
             </div>
+            <p style={{ marginTop: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                <Link
+                    to="/docs"
+                    style={{
+                        color: 'var(--accent)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        textDecoration: 'none',
+                    }}
+                >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+                        <path d="M12 17h.01" />
+                    </svg>
+                    Help &amp; Documentation
+                </Link>
+            </p>
         </div>
     );
 };

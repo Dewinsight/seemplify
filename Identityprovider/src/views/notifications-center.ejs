@@ -223,6 +223,9 @@
   <%- include('partials/nav', { activePage: 'notifications' }) %>
   <% const pendingSignatureCount = notificationSummary?.pendingSignatureCount || 0; %>
   <% const pendingSignatureDocuments = Array.isArray(notificationSummary?.pendingSignatureDocuments) ? notificationSummary.pendingSignatureDocuments : []; %>
+  <% const firstDocumentTaskActionUrl = Array.isArray(tasks)
+    ? (tasks.find(task => task?.category === 'documents' && task?.actionUrl)?.actionUrl || '/notifications?category=documents')
+    : '/notifications?category=documents'; %>
 
   <div class="container notifications-shell">
     <a href="/" class="back-link">&larr; Back to Hub</a>
@@ -279,7 +282,7 @@
             </div>
           <% } %>
         </div>
-        <a href="/profile/documents?status=needs_action" class="btn btn-primary">Review &amp; Sign</a>
+        <a href="<%= firstDocumentTaskActionUrl %>" class="btn btn-primary">Review &amp; Sign</a>
       </div>
     <% } %>
 

@@ -866,6 +866,9 @@
   <%- include('partials/nav', { activePage: 'home' }) %>
   <% const pendingSignatureCount = notificationSummary?.pendingSignatureCount || 0; %>
   <% const pendingSignatureDocuments = Array.isArray(notificationSummary?.pendingSignatureDocuments) ? notificationSummary.pendingSignatureDocuments : []; %>
+  <% const firstDocumentNotificationActionUrl = Array.isArray(notificationSummary?.tasks)
+    ? (notificationSummary.tasks.find(task => task?.category === 'documents' && task?.actionUrl)?.actionUrl || '/notifications?category=documents')
+    : '/notifications?category=documents'; %>
   <% const pendingInviteRows = Array.isArray(pendingInvitations) ? pendingInvitations : []; %>
 
   <div class="container hub-content">
@@ -1062,7 +1065,7 @@
             </div>
           <% } %>
         </div>
-        <a href="/profile/documents?status=needs_action" class="btn btn-primary">Review &amp; Sign</a>
+        <a href="<%= firstDocumentNotificationActionUrl %>" class="btn btn-primary">Review &amp; Sign</a>
       </div>
     <% } else if (pendingOnboardingCount && pendingOnboardingCount > 0) { %>
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">

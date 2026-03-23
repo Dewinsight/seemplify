@@ -403,6 +403,7 @@
   function setDraft(nextDraft) {
     state.draft = nextDraft
     renderForm()
+    renderAudienceList()
     renderVisualPreview()
     renderHtmlEditor()
     updateActionState()
@@ -648,9 +649,10 @@
 
   function renderAudienceOptions() {
     if (!els.campaignAudience) return
-    els.campaignAudience.innerHTML = state.audiences.length === 0
+    const blankOption = state.audiences.length === 0
       ? '<option value="">No audiences uploaded yet</option>'
-      : state.audiences.map((audience) => `<option value="${escapeHtml(audience._id)}">${escapeHtml(audience.name)} (${Number(audience.contactCount || audience.contacts?.length || 0)})</option>`).join('')
+      : '<option value="">— select an audience —</option>'
+    els.campaignAudience.innerHTML = blankOption + state.audiences.map((audience) => `<option value="${escapeHtml(audience._id)}">${escapeHtml(audience.name)} (${Number(audience.contactCount || audience.contacts?.length || 0)})</option>`).join('')
   }
 
   function renderTemplateOptions() {
@@ -748,13 +750,20 @@
       return
     }
 
-    els.audienceList.innerHTML = state.audiences.map((audience) => `
-      <article class="campaign-audience-card">
-        <div style="font-weight:700; color:var(--text);">${escapeHtml(audience.name)}</div>
-        <div class="admin-card-subtitle">${escapeHtml(audience.description || audience.sourceFileName || 'Imported audience')}</div>
-        <div class="admin-card-subtitle">${Number(audience.contactCount || audience.contacts?.length || 0)} contacts | ${Number(audience.importSummary?.invalidRecipients || 0)} invalid | ${Number(audience.importSummary?.duplicateRecipients || 0)} duplicates</div>
-      </article>
-    `).join('')
+    const currentAudienceId = String(state.draft?.audience || '')
+    els.audienceList.innerHTML = state.audiences.map((audience) => {
+      const isAttached = String(audience._id) === currentAudienceId
+      return `
+        <article class="campaign-audience-card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+            <div style="font-weight:700; color:var(--text);">${escapeHtml(audience.name)}</div>
+            <button class="btn btn-sm ${isAttached ? 'btn-success' : 'btn-secondary'}" type="button" data-attach-audience="${escapeHtml(audience._id)}" style="flex-shrink:0;">${isAttached ? 'Attached' : 'Use'}</button>
+          </div>
+          <div class="admin-card-subtitle">${escapeHtml(audience.description || audience.sourceFileName || 'Imported audience')}</div>
+          <div class="admin-card-subtitle">${Number(audience.contactCount || audience.contacts?.length || 0)} contacts | ${Number(audience.importSummary?.invalidRecipients || 0)} invalid | ${Number(audience.importSummary?.duplicateRecipients || 0)} duplicates</div>
+        </article>
+      `
+    }).join('')
   }
 
   function renderTemplateList() {
@@ -1751,6 +1760,23 @@
       nextDraft.testSendEmails = clone(state.draft.testSendEmails || [])
       setDraft(nextDraft)
       setActiveWorkspaceStep('setup')
+    })
+  }
+
+  if (els.audienceList) {
+    els.audienceList.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-attach-audience]')
+      if (!button) return
+      const audienceId = button.getAttribute('data-attach-audience')
+      if (!state.draft) return
+      state.draft.audience = audienceId
+      if (els.campaignAudience) {
+        renderAudienceOptions()
+        els.campaignAudience.value = audienceId
+      }
+      renderAudienceList()
+      renderSelectedCampaignSummary()
+      renderReviewPanel()
     })
   }
 

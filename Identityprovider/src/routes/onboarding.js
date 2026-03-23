@@ -7,7 +7,7 @@ import { OnboardingTemplate } from '../models/OnboardingTemplate.js'
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { OnboardingActivity } from '../models/OnboardingActivity.js'
 import { emailService } from '../services/emailService.js'
-import { uploadBufferToCloudinary, isCloudinaryConfigured, deleteFromCloudinary } from '../services/cloudinaryService.js'
+import cloudinary, { uploadBufferToCloudinary, isCloudinaryConfigured, deleteFromCloudinary } from '../services/cloudinaryService.js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { normalizeManualOnboardingStatus } from '../utils/onboardingStatus.js'
 
@@ -26,6 +26,136 @@ const WORKFLOW_LABELS = {
   policy: 'Policy Acknowledgement',
   general: 'General Document Workflow'
 }
+const DEFAULT_ESIGN_TEXT_STYLE = Object.freeze({
+  fontSize: 12,
+  align: 'left',
+  bold: false,
+  italic: false,
+  underline: false
+})
+
+const normalizeMimeType = (mimeType) => (mimeType || '').toString().toLowerCase().split(';')[0].trim()
+
+const inferFileExtensionFromMimeType = (mimeType) => {
+  const normalized = normalizeMimeType(mimeType)
+  if (normalized === 'application/pdf') return '.pdf'
+  if (normalized === 'image/png') return '.png'
+  if (normalized === 'image/jpeg') return '.jpg'
+  return ''
+}
+
+const inferCloudinaryPublicIdFromUrl = (docUrl = '') => {
+  const rawUrl = (docUrl || '').toString().trim()
+  if (!rawUrl) return ''
+
+  try {
+    const parsed = new URL(rawUrl)
+    if (!/cloudinary\.com$/i.test(parsed.hostname)) {
+      return ''
+    }
+
+    const pathParts = parsed.pathname
+      .split('/')
+      .map(part => part.trim())
+      .filter(Boolean)
+
+    const uploadIndex = pathParts.findIndex(part => part === 'upload')
+    if (uploadIndex < 0 || uploadIndex === pathParts.length - 1) {
+      return ''
+    }
+
+    const publicIdParts = pathParts.slice(uploadIndex + 1)
+    if (publicIdParts[0] && /^v\d+$/i.test(publicIdParts[0])) {
+      publicIdParts.shift()
+    }
+
+    if (!publicIdParts.length) {
+      return ''
+    }
+
+    return decodeURIComponent(publicIdParts.join('/'))
+  } catch {
+    return ''
+  }
+}
+
+const buildCloudinaryRawDownloadUrl = ({
+  publicId = '',
+  mimeType = 'application/pdf'
+} = {}) => {
+  const normalizedPublicId = (publicId || '').toString().trim()
+  if (!normalizedPublicId || !isCloudinaryConfigured()) {
+    return ''
+  }
+
+  const fileExtension = inferFileExtensionFromMimeType(mimeType)
+  const format = fileExtension ? fileExtension.replace(/^\./, '') : undefined
+
+  try {
+    return cloudinary.utils.private_download_url(normalizedPublicId, format, {
+      resource_type: 'raw',
+      type: 'upload',
+      attachment: false
+    })
+  } catch (error) {
+    console.error('Failed to build onboarding Cloudinary download URL:', {
+      publicId: normalizedPublicId,
+      requestedFormat: format || null
+    }, error)
+    return ''
+  }
+}
+
+const fetchOnboardingPdfBuffer = async ({
+  url = '',
+  publicId = '',
+  mimeType = 'application/pdf'
+} = {}) => {
+  const candidateUrls = []
+  const cloudinaryDownloadUrl = buildCloudinaryRawDownloadUrl({ publicId, mimeType })
+
+  if (cloudinaryDownloadUrl) {
+    candidateUrls.push({
+      url: cloudinaryDownloadUrl,
+      label: 'cloudinary-download'
+    })
+  }
+
+  if (url) {
+    candidateUrls.push({
+      url,
+      label: 'stored-url'
+    })
+  }
+
+  let lastError = null
+
+  for (const candidate of candidateUrls) {
+    try {
+      const response = await fetch(candidate.url, {
+        headers: {
+          Accept: mimeType || 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`Document fetch failed (${candidate.label}): ${response.status}`)
+      }
+
+      return Buffer.from(await response.arrayBuffer())
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  console.error('Failed to fetch onboarding PDF source:', {
+    publicId,
+    url,
+    sourcesTried: candidateUrls.map(candidate => candidate.label)
+  }, lastError)
+
+  throw lastError || new Error('Failed to fetch onboarding PDF source')
+}
 
 const canManageOnboarding = (role) => ONBOARDING_MANAGER_ROLES.includes(role)
 
@@ -42,6 +172,42 @@ const normalizeWorkflowType = (value, options = {}) => {
 }
 
 const getWorkflowLabel = (value) => WORKFLOW_LABELS[normalizeWorkflowType(value)] || WORKFLOW_LABELS.onboarding
+
+const buildOnboardingParticipantMatchClauses = (userId) => {
+  if (!userId) {
+    return []
+  }
+
+  const userIdStr = String(userId?.toString?.() || userId || '').trim()
+  const clauses = [
+    { member: userId },
+    { 'items.config.signers.member': userId },
+    { 'items.data.esign.signers.member': userId },
+    { 'items.config.signatureFields.signerId': userId }
+  ]
+
+  if (!userIdStr) {
+    return clauses
+  }
+
+  clauses.push(
+    { 'items.config.signatureFields.signer': userIdStr },
+    { 'items.config.signatureFields.signerKey': userIdStr },
+    {
+      $and: [
+        { member: userId },
+        {
+          $or: [
+            { 'items.config.signatureFields.signer': 'assignee' },
+            { 'items.config.signatureFields.signerKey': 'assignee' }
+          ]
+        }
+      ]
+    }
+  )
+
+  return clauses
+}
 
 const parseJson = (value, fallback) => {
   if (!value) return fallback
@@ -144,6 +310,16 @@ const normalizeEsignFieldValues = (fieldValues = {}) => {
       return acc
     }
 
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      acc[normalizedKey] = {
+        text: String(value.text ?? '')
+          .replace(/\r\n/g, '\n')
+          .replace(/\r/g, '\n'),
+        style: normalizeEsignTextStyle(value.style || value)
+      }
+      return acc
+    }
+
     const normalizedValue = typeof value === 'string'
       ? value.trim()
       : String(value ?? '').trim()
@@ -151,6 +327,45 @@ const normalizeEsignFieldValues = (fieldValues = {}) => {
     acc[normalizedKey] = normalizedValue
     return acc
   }, {})
+}
+
+function normalizeEsignFontSize (value) {
+  const size = Number(value)
+  if (!Number.isFinite(size)) return DEFAULT_ESIGN_TEXT_STYLE.fontSize
+  if (size <= 10) return 10
+  if (size <= 12) return 12
+  if (size <= 14) return 14
+  return 16
+}
+
+function normalizeEsignTextStyle (style = {}) {
+  const safeStyle = style && typeof style === 'object' && !Array.isArray(style) ? style : {}
+  const align = String(safeStyle.align || '').trim().toLowerCase()
+  return {
+    fontSize: normalizeEsignFontSize(safeStyle.fontSize || safeStyle.size || DEFAULT_ESIGN_TEXT_STYLE.fontSize),
+    align: ['left', 'center', 'right'].includes(align) ? align : DEFAULT_ESIGN_TEXT_STYLE.align,
+    bold: safeStyle.bold === true || safeStyle.bold === 'true' || safeStyle.fontWeight === 'bold',
+    italic: safeStyle.italic === true || safeStyle.italic === 'true' || safeStyle.fontStyle === 'italic',
+    underline: safeStyle.underline === true || safeStyle.underline === 'true'
+  }
+}
+
+function getSubmittedEsignFieldText (value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return String(value.text ?? '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+  }
+
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+}
+
+function getSubmittedEsignFieldStyle (value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? normalizeEsignTextStyle(value.style || value)
+    : normalizeEsignTextStyle()
 }
 
 const splitPdfTextIntoLines = ({ text = '', font, fontSize = 11, maxWidth = 120 } = {}) => {
@@ -271,17 +486,35 @@ const fitPdfTextIntoField = ({ text = '', font, width = 120, height = 30, prefer
 const drawPdfFieldText = ({
   page,
   font,
+  fonts,
   text = '',
   x = 0,
   y = 0,
   width = 120,
   height = 30,
-  color = rgb(0.1, 0.1, 0.1)
+  color = rgb(0.1, 0.1, 0.1),
+  style = DEFAULT_ESIGN_TEXT_STYLE
 } = {}) => {
-  const normalizedText = String(text ?? '').trim()
+  const normalizedText = String(text ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim()
   if (!normalizedText) {
     return
   }
+
+  const normalizedStyle = normalizeEsignTextStyle(style)
+  const resolvedFont = fonts
+    ? (
+        normalizedStyle.bold && normalizedStyle.italic
+          ? (fonts.boldItalic || fonts.bold || fonts.italic || fonts.regular)
+          : normalizedStyle.bold
+            ? (fonts.bold || fonts.regular)
+            : normalizedStyle.italic
+              ? (fonts.italic || fonts.regular)
+              : fonts.regular
+      )
+    : font
 
   const horizontalPadding = 3
   const verticalPadding = 3
@@ -289,20 +522,42 @@ const drawPdfFieldText = ({
   const innerHeight = Math.max(12, Number(height) - (verticalPadding * 2))
   const fitted = fitPdfTextIntoField({
     text: normalizedText,
-    font,
+    font: resolvedFont,
     width: innerWidth,
-    height: innerHeight
+    height: innerHeight,
+    preferredFontSize: normalizedStyle.fontSize,
+    minFontSize: Math.max(7, normalizedStyle.fontSize - 3)
   })
 
   const startY = Number(y) + Number(height) - verticalPadding - fitted.fontSize
   fitted.lines.slice(0, fitted.maxLines).forEach((line, index) => {
+    const lineWidth = resolvedFont.widthOfTextAtSize(line, fitted.fontSize)
+    let lineX = Number(x) + horizontalPadding
+
+    if (normalizedStyle.align === 'center') {
+      lineX += Math.max(0, (innerWidth - lineWidth) / 2)
+    } else if (normalizedStyle.align === 'right') {
+      lineX += Math.max(0, innerWidth - lineWidth)
+    }
+
+    const lineY = Math.max(Number(y) + verticalPadding, startY - (index * fitted.lineHeight))
     page.drawText(line, {
-      x: Number(x) + horizontalPadding,
-      y: Math.max(Number(y) + verticalPadding, startY - (index * fitted.lineHeight)),
+      x: lineX,
+      y: lineY,
       size: fitted.fontSize,
-      font,
+      font: resolvedFont,
       color
     })
+
+    if (normalizedStyle.underline && lineWidth > 0) {
+      const underlineOffset = Math.max(0.8, fitted.fontSize * 0.12)
+      page.drawLine({
+        start: { x: lineX, y: Math.max(Number(y) + verticalPadding, lineY - underlineOffset) },
+        end: { x: lineX + Math.min(lineWidth, innerWidth), y: Math.max(Number(y) + verticalPadding, lineY - underlineOffset) },
+        thickness: Math.max(0.8, fitted.fontSize * 0.06),
+        color
+      })
+    }
   })
 }
 
@@ -1242,12 +1497,7 @@ router.get('/onboarding/my', requireAuth, async (req, res) => {
       fallback: 'all'
     })
     const query = {
-      $or: [
-        { member: req.user._id },
-        { 'items.config.signers.member': req.user._id },
-        { 'items.data.esign.signers.member': req.user._id },
-        { 'items.config.signatureFields.signerId': req.user._id }
-      ],
+      $or: buildOnboardingParticipantMatchClauses(req.user._id),
       status: { $ne: 'completed' }
     }
     if (workflowType !== 'all') {
@@ -1453,15 +1703,23 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
     }
 
     const sourceUrl = item.data?.esign?.signedUrl || document.url
-    const docResponse = await fetch(sourceUrl)
-    if (!docResponse.ok) {
-      return res.status(500).json({ error: 'Failed to fetch document for signing' })
-    }
-    const arrayBuffer = await docResponse.arrayBuffer()
+    const sourcePublicId = item.data?.esign?.signedPublicId
+      || document.publicId
+      || inferCloudinaryPublicIdFromUrl(sourceUrl)
+    const sourceBuffer = await fetchOnboardingPdfBuffer({
+      url: sourceUrl,
+      publicId: sourcePublicId,
+      mimeType: 'application/pdf'
+    })
 
-    const pdfDoc = await PDFDocument.load(arrayBuffer)
+    const pdfDoc = await PDFDocument.load(sourceBuffer)
     const pages = pdfDoc.getPages()
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+    const fonts = {
+      regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
+      bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+      italic: await pdfDoc.embedFont(StandardFonts.HelveticaOblique),
+      boldItalic: await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique)
+    }
 
     const signatureFields = allSignatureFields.filter(field => {
       const rawSigner = normalizeSignerId(field.signerKey || field.signerId || field.signer)
@@ -1513,7 +1771,7 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
         ? dateText
         : (field.text || '')
 
-      return !String(submittedValue || fallbackValue).trim()
+      return !String(getSubmittedEsignFieldText(submittedValue) || fallbackValue).trim()
     })
 
     if (missingField) {
@@ -1540,8 +1798,8 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
       if (field.type === 'date') {
         drawPdfFieldText({
           page,
-          font,
-          text: normalizeSubmittedDateValue(submittedFieldValue || field.text || dateText),
+          fonts,
+          text: normalizeSubmittedDateValue(getSubmittedEsignFieldText(submittedFieldValue) || field.text || dateText),
           x: drawX,
           y: drawY,
           width,
@@ -1549,17 +1807,18 @@ router.post('/onboarding/:assignmentId/items/:itemId/esign/complete', requireAut
           color: rgb(0.1, 0.1, 0.1)
         })
       } else if (field.type === 'text') {
-        const textValue = String(submittedFieldValue || field.text || '').trim()
+        const textValue = getSubmittedEsignFieldText(submittedFieldValue || field.text || '').trim()
         if (textValue) {
           drawPdfFieldText({
             page,
-            font,
+            fonts,
             text: textValue,
             x: drawX,
             y: drawY,
             width,
             height,
-            color: rgb(0.1, 0.1, 0.1)
+            color: rgb(0.1, 0.1, 0.1),
+            style: getSubmittedEsignFieldStyle(submittedFieldValue)
           })
         }
       } else if (signatureImage) {

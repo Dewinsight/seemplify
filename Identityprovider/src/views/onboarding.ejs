@@ -14,8 +14,12 @@
 
 <body>
   <%- include('partials/nav', { activePage: (typeof activePage !== 'undefined' ? activePage : 'documents') }) %>
+  <% const personalDocumentBackUrl = workspaceMode ? '/documents/my' : '/onboarding'; %>
 
   <div class="container">
+    <% if (workspaceMode) { %>
+      <a href="/documents" class="back-link">&larr; Back to Documents</a>
+    <% } %>
     <div class="header">
       <div>
         <h1><%= workspaceMode ? 'My Documents' : 'My Onboarding' %></h1>
@@ -290,12 +294,14 @@
                           <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
                           <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
                           <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                          <% const originalDocumentInlineUrl = `/onboarding/assignments/${assignment._id}/items/${item._id}/document/file?version=original`; %>
+                          <% const signedDocumentInlineUrl = `/onboarding/assignments/${assignment._id}/items/${item._id}/document/file?version=signed`; %>
                           <div style="margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
                             <span style="color: var(--muted); font-size: 13px;">
                               Document: <%= item.config?.document?.fileName || 'Contract' %>
                             </span>
                             <% if (item.config?.document?.url) { %>
-                              <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=original" target="_blank" rel="noreferrer">View</a>
+                              <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=original&back=<%= encodeURIComponent(personalDocumentBackUrl) %>" target="_blank" rel="noreferrer">View</a>
                             <% } %>
                             <% if (item.status !== 'completed' && canSign && !hasSigned) { %>
                               <button
@@ -306,12 +312,14 @@
                                 data-item="<%= item._id %>"
                                 data-assignee-id="<%= assignmentMemberId %>"
                                 data-doc-name="<%= item.config?.document?.fileName || 'Contract' %>"
-                                data-doc-url="<%= item.config?.document?.url || '' %>"
-                                data-preview-url="<%= item.data?.esign?.signedUrl || item.config?.document?.url || '' %>"
+                                data-doc-url="<%= item.config?.document?.url ? originalDocumentInlineUrl : '' %>"
+                                data-preview-url="<%= item.data?.esign?.signedUrl ? signedDocumentInlineUrl : (item.config?.document?.url ? originalDocumentInlineUrl : '') %>"
+                                data-doc-source-url="<%= item.config?.document?.url || '' %>"
+                                data-preview-source-url="<%= item.data?.esign?.signedUrl || item.config?.document?.url || '' %>"
                                 data-fields="<%= encodeURIComponent(JSON.stringify(item.config?.signatureFields || [])) %>"
                               >Sign document</button>
                             <% } else if (item.data?.esign?.signedUrl) { %>
-                              <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=signed" target="_blank" rel="noreferrer">Signed document</a>
+                              <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=signed&back=<%= encodeURIComponent(personalDocumentBackUrl) %>" target="_blank" rel="noreferrer">Signed document</a>
                             <% } %>
                           </div>
 
@@ -406,6 +414,43 @@
         </div>
 
         <div class="esign-modal-sidebar">
+          <div class="esign-panel" id="esign-active-field-panel">
+            <div class="esign-panel-header">
+              <div class="esign-panel-title">Selected Field</div>
+              <div id="esign-active-field-kind" style="color: var(--muted); font-size: 12px;"></div>
+            </div>
+            <div id="esign-active-field-empty" class="form-hint">Select a field to type directly into the document.</div>
+            <div id="esign-active-field-editor" hidden>
+              <div class="esign-active-field-label" id="esign-active-field-label"></div>
+              <div class="esign-active-field-toolbar" id="esign-active-field-toolbar" hidden>
+                <div class="esign-active-field-toolbar-group" role="group" aria-label="Text style">
+                  <button type="button" class="esign-format-btn" data-esign-style-toggle="bold" aria-label="Bold">B</button>
+                  <button type="button" class="esign-format-btn" data-esign-style-toggle="italic" aria-label="Italic"><span style="font-style: italic;">I</span></button>
+                  <button type="button" class="esign-format-btn" data-esign-style-toggle="underline" aria-label="Underline"><span style="text-decoration: underline;">U</span></button>
+                </div>
+                <div class="esign-active-field-toolbar-group" role="group" aria-label="Text alignment">
+                  <button type="button" class="esign-format-btn" data-esign-style-align="left" aria-label="Align left">Left</button>
+                  <button type="button" class="esign-format-btn" data-esign-style-align="center" aria-label="Align center">Center</button>
+                  <button type="button" class="esign-format-btn" data-esign-style-align="right" aria-label="Align right">Right</button>
+                </div>
+                <label class="esign-style-select" for="esign-font-size-select">
+                  <span>Size</span>
+                  <select id="esign-font-size-select" aria-label="Text size">
+                    <option value="10">Small</option>
+                    <option value="12">Medium</option>
+                    <option value="14">Large</option>
+                    <option value="16">XL</option>
+                  </select>
+                </label>
+                <button type="button" class="esign-format-btn esign-format-btn--ghost" id="esign-style-reset-btn">Reset</button>
+              </div>
+              <input type="text" id="esign-active-field-input" class="esign-active-field-input" hidden />
+              <textarea id="esign-active-field-textarea" class="esign-active-field-textarea" hidden></textarea>
+              <div id="esign-active-field-toolbar-note" class="form-hint" style="margin-top: 8px;" hidden>Formatting applies to the whole field and final PDF.</div>
+              <div id="esign-active-field-hint" class="form-hint" style="margin-top: 8px;"></div>
+            </div>
+          </div>
+
           <div class="esign-panel">
             <div class="esign-panel-header">
               <div class="esign-panel-title">Your Fields</div>
@@ -422,20 +467,6 @@
             <div class="form-group" style="margin-bottom: 12px;">
               <label for="esign-signer-name">Your name (optional)</label>
               <input type="text" id="esign-signer-name" placeholder="Type your name" />
-            </div>
-          </div>
-
-          <div class="esign-panel" id="esign-active-field-panel">
-            <div class="esign-panel-header">
-              <div class="esign-panel-title">Selected Field</div>
-              <div id="esign-active-field-kind" style="color: var(--muted); font-size: 12px;"></div>
-            </div>
-            <div id="esign-active-field-empty" class="form-hint">Select a field to type directly into the document.</div>
-            <div id="esign-active-field-editor" hidden>
-              <div class="esign-active-field-label" id="esign-active-field-label"></div>
-              <input type="text" id="esign-active-field-input" class="esign-active-field-input" hidden />
-              <textarea id="esign-active-field-textarea" class="esign-active-field-textarea" hidden></textarea>
-              <div id="esign-active-field-hint" class="form-hint" style="margin-top: 8px;"></div>
             </div>
           </div>
 
@@ -468,6 +499,7 @@
     const workflowOptions = <%- JSON.stringify(workflowTypes || ['onboarding', 'agreement', 'policy', 'general']) %>;
     const workspaceModeEnabled = <%= workspaceMode ? 'true' : 'false' %>;
     const workflowFilterState = { active: '<%= activeWorkflow || (workspaceMode ? "all" : "onboarding") %>' };
+    const documentViewerBackUrl = <%- JSON.stringify(personalDocumentBackUrl) %>;
 
     function setWorkflowFilter(scope = 'all') {
       const normalized = scope === 'all' || workflowOptions.includes(scope)
@@ -654,7 +686,13 @@
     const esignActiveFieldLabel = document.getElementById('esign-active-field-label');
     const esignActiveFieldInput = document.getElementById('esign-active-field-input');
     const esignActiveFieldTextarea = document.getElementById('esign-active-field-textarea');
+    const esignActiveFieldToolbar = document.getElementById('esign-active-field-toolbar');
+    const esignActiveFieldToolbarNote = document.getElementById('esign-active-field-toolbar-note');
     const esignActiveFieldHint = document.getElementById('esign-active-field-hint');
+    const esignFontSizeSelect = document.getElementById('esign-font-size-select');
+    const esignStyleResetBtn = document.getElementById('esign-style-reset-btn');
+    const esignStyleToggleButtons = Array.from(document.querySelectorAll('[data-esign-style-toggle]'));
+    const esignStyleAlignButtons = Array.from(document.querySelectorAll('[data-esign-style-align]'));
     const esignSignatureGroup = document.getElementById('esign-signature-group');
     const esignSignatureHint = document.getElementById('esign-signature-hint');
     const esignSubmitBtn = document.getElementById('esign-submit-btn');
@@ -675,6 +713,100 @@
     const esignPdfState = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
     let activeAssigneeId = null;
     const ESIGN_COLOR = '#6366f1';
+    const DEFAULT_ESIGN_TEXT_STYLE = Object.freeze({
+      fontSize: 12,
+      align: 'left',
+      bold: false,
+      italic: false,
+      underline: false
+    });
+
+    function normalizeEsignFontSize(value) {
+      const size = Number(value);
+      if (!Number.isFinite(size)) return DEFAULT_ESIGN_TEXT_STYLE.fontSize;
+      if (size <= 10) return 10;
+      if (size <= 12) return 12;
+      if (size <= 14) return 14;
+      return 16;
+    }
+
+    function normalizeEsignTextStyle(style = {}) {
+      const safeStyle = style && typeof style === 'object' && !Array.isArray(style) ? style : {};
+      const align = String(safeStyle.align || '').trim().toLowerCase();
+      return {
+        fontSize: normalizeEsignFontSize(safeStyle.fontSize || safeStyle.size || DEFAULT_ESIGN_TEXT_STYLE.fontSize),
+        align: ['left', 'center', 'right'].includes(align) ? align : DEFAULT_ESIGN_TEXT_STYLE.align,
+        bold: safeStyle.bold === true || safeStyle.bold === 'true' || safeStyle.fontWeight === 'bold',
+        italic: safeStyle.italic === true || safeStyle.italic === 'true' || safeStyle.fontStyle === 'italic',
+        underline: safeStyle.underline === true || safeStyle.underline === 'true'
+      };
+    }
+
+    function getDefaultEsignTextFieldState(field) {
+      return {
+        text: String(field?.text || ''),
+        style: normalizeEsignTextStyle(field?.style || field?.editorStyle || {})
+      };
+    }
+
+    function getEsignFieldStyleCss(style = {}) {
+      const normalizedStyle = normalizeEsignTextStyle(style);
+      return {
+        fontWeight: normalizedStyle.bold ? '700' : '500',
+        fontStyle: normalizedStyle.italic ? 'italic' : 'normal',
+        textDecoration: normalizedStyle.underline ? 'underline' : 'none',
+        textAlign: normalizedStyle.align,
+        fontSize: `${normalizedStyle.fontSize}px`,
+        lineHeight: normalizedStyle.fontSize >= 16 ? '1.5' : '1.4'
+      };
+    }
+
+    function applyEsignTextStyleToElement(element, field) {
+      if (!element) return;
+      const css = field?.type === 'text'
+        ? getEsignFieldStyleCss(getEsignFieldStyle(field))
+        : {
+            fontWeight: '',
+            fontStyle: '',
+            textDecoration: '',
+            textAlign: '',
+            fontSize: '',
+            lineHeight: ''
+          };
+
+      Object.entries(css).forEach(([key, value]) => {
+        element.style[key] = value;
+      });
+    }
+
+    function syncEsignToolbarState(field) {
+      const isTextField = field?.type === 'text';
+      if (esignActiveFieldToolbar) {
+        esignActiveFieldToolbar.hidden = !isTextField;
+      }
+      if (esignActiveFieldToolbarNote) {
+        esignActiveFieldToolbarNote.hidden = !isTextField;
+      }
+
+      const style = isTextField ? getEsignFieldStyle(field) : normalizeEsignTextStyle();
+      if (esignFontSizeSelect) {
+        esignFontSizeSelect.value = String(style.fontSize);
+      }
+
+      esignStyleToggleButtons.forEach(button => {
+        const styleKey = button.dataset.esignStyleToggle;
+        const isActive = isTextField && Boolean(style[styleKey]);
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+      });
+
+      esignStyleAlignButtons.forEach(button => {
+        const alignValue = button.dataset.esignStyleAlign;
+        const isActive = isTextField && style.align === alignValue;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+      });
+    }
 
     function normalizeId(value) {
       if (!value) return '';
@@ -764,20 +896,66 @@
       if (field.type === 'date') {
         return String(field.text || '').trim() || getTodayEsignInputValue();
       }
-      return String(field.text || '').trim();
+      return getDefaultEsignTextFieldState(field);
+    }
+
+    function normalizeEsignFieldValue(field, value) {
+      if (!field || field.type === 'signature') return '';
+      if (typeof value === 'undefined') {
+        return getDefaultEsignFieldValue(field);
+      }
+      if (field.type === 'date') {
+        return String(typeof value === 'object' && value ? (value.text ?? '') : (value ?? ''));
+      }
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return {
+          text: String(value.text ?? ''),
+          style: normalizeEsignTextStyle(value.style || value)
+        };
+      }
+      return {
+        text: String(value ?? ''),
+        style: normalizeEsignTextStyle(field?.style || field?.editorStyle || {})
+      };
     }
 
     function ensureEsignFieldValue(field) {
       const fieldKey = getEsignFieldIdentity(field);
-      if (!Object.prototype.hasOwnProperty.call(esignFieldValues, fieldKey)) {
-        esignFieldValues[fieldKey] = getDefaultEsignFieldValue(field);
-      }
-      return esignFieldValues[fieldKey] || '';
+      const rawValue = Object.prototype.hasOwnProperty.call(esignFieldValues, fieldKey)
+        ? esignFieldValues[fieldKey]
+        : undefined;
+      const normalizedValue = normalizeEsignFieldValue(field, rawValue);
+      esignFieldValues[fieldKey] = normalizedValue;
+      return normalizedValue;
     }
 
     function getEsignFieldValue(field) {
       if (!field || field.type === 'signature') return '';
-      return ensureEsignFieldValue(field);
+      const storedValue = ensureEsignFieldValue(field);
+      if (field.type === 'text') {
+        return String(storedValue?.text ?? '');
+      }
+      return String(storedValue ?? '');
+    }
+
+    function getEsignFieldStyle(field) {
+      if (!field || field.type !== 'text') {
+        return normalizeEsignTextStyle();
+      }
+      const storedValue = ensureEsignFieldValue(field);
+      return normalizeEsignTextStyle(storedValue?.style || {});
+    }
+
+    function getEsignFieldPayload(field) {
+      if (!field || field.type === 'signature') return '';
+      const storedValue = ensureEsignFieldValue(field);
+      if (field.type === 'text') {
+        return {
+          text: String(storedValue?.text ?? ''),
+          style: getEsignFieldStyle(field)
+        };
+      }
+      return String(storedValue ?? '');
     }
 
     function isEsignFieldComplete(field) {
@@ -823,26 +1001,59 @@
       }
     }
 
+    function updateEsignFieldStyle(field, patch = {}) {
+      if (!field || field.type !== 'text') return;
+      const fieldKey = getEsignFieldIdentity(field);
+      const currentValue = ensureEsignFieldValue(field);
+      esignFieldValues[fieldKey] = {
+        text: String(currentValue?.text ?? ''),
+        style: normalizeEsignTextStyle({
+          ...currentValue?.style,
+          ...patch
+        })
+      };
+      renderEsignActiveFieldEditor();
+      renderEsignOverlay();
+    }
+
     function updateEsignFieldValue(field, value, source = 'overlay') {
       if (!field || field.type === 'signature') return;
       const fieldKey = getEsignFieldIdentity(field);
       const nextValue = String(value ?? '');
-      esignFieldValues[fieldKey] = nextValue;
+
+      if (field.type === 'text') {
+        const currentValue = ensureEsignFieldValue(field);
+        esignFieldValues[fieldKey] = {
+          text: nextValue,
+          style: normalizeEsignTextStyle(currentValue?.style || {})
+        };
+      } else {
+        esignFieldValues[fieldKey] = nextValue;
+      }
+
       renderEsignFieldsList();
 
       if (source !== 'overlay') {
         const overlayInput = esignPdfOverlay?.querySelector(`.esign-field-preview[data-index="${selectedEsignFieldIndex}"] .esign-field-input`);
-        if (overlayInput && overlayInput.value !== nextValue) {
-          overlayInput.value = nextValue;
+        if (overlayInput) {
+          if (overlayInput.value !== nextValue) {
+            overlayInput.value = nextValue;
+          }
+          applyEsignTextStyleToElement(overlayInput, field);
         }
       }
 
       if (source !== 'sidebar') {
         const activeInput = shouldUseEsignTextarea(field) ? esignActiveFieldTextarea : esignActiveFieldInput;
-        if (activeInput && !activeInput.hidden && activeInput.value !== nextValue) {
-          activeInput.value = nextValue;
+        if (activeInput && !activeInput.hidden) {
+          if (activeInput.value !== nextValue) {
+            activeInput.value = nextValue;
+          }
+          applyEsignTextStyleToElement(activeInput, field);
         }
       }
+
+      syncEsignToolbarState(field);
     }
 
     function renderEsignActiveFieldEditor() {
@@ -856,6 +1067,7 @@
         esignActiveFieldEditor.hidden = true;
         esignActiveFieldKind.textContent = '';
         esignActiveFieldEmpty.textContent = 'Select a field to type directly into the document.';
+        syncEsignToolbarState(null);
         return;
       }
 
@@ -872,6 +1084,7 @@
         if (esignActiveFieldHint) {
           esignActiveFieldHint.textContent = '';
         }
+        syncEsignToolbarState(field);
         return;
       }
 
@@ -886,6 +1099,9 @@
       const inactiveInput = useTextarea ? esignActiveFieldInput : esignActiveFieldTextarea;
       activeInput.value = fieldValue;
       inactiveInput.value = '';
+      applyEsignTextStyleToElement(esignActiveFieldInput, field);
+      applyEsignTextStyleToElement(esignActiveFieldTextarea, field);
+      syncEsignToolbarState(field);
 
       if (field.type === 'date') {
         esignActiveFieldInput.type = 'date';
@@ -899,8 +1115,8 @@
         esignActiveFieldTextarea.placeholder = 'Type the value for this field';
         if (esignActiveFieldHint) {
           esignActiveFieldHint.textContent = useTextarea
-            ? 'This field is large enough for multiple lines.'
-            : 'Type the exact value that should appear in the document.';
+            ? 'Use the tools above to style the whole field before it is written into the PDF.'
+            : 'Use the tools above to style the whole field before it is written into the PDF.';
         }
       }
     }
@@ -1079,13 +1295,47 @@
       renderEsignOverlay();
     }
 
-    async function loadEsignPdf(url) {
-      if (!url || !window.pdfjsLib) {
+    async function fetchEsignPdfBytes(url, options = {}) {
+      if (!url) {
+        throw new Error('Missing PDF URL');
+      }
+
+      const normalizedUrl = String(url || '');
+      const isAbsoluteUrl = /^https?:\/\//i.test(normalizedUrl);
+      const isSameOriginAbsolute = isAbsoluteUrl && normalizedUrl.startsWith(window.location.origin);
+      const credentials = options.credentials || ((isAbsoluteUrl && !isSameOriginAbsolute) ? 'omit' : 'same-origin');
+      const response = await fetch(url, {
+        credentials,
+        headers: { Accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8' }
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load PDF preview (${response.status})`);
+      }
+
+      return new Uint8Array(await response.arrayBuffer());
+    }
+
+    async function loadEsignPdf(url, fallbackUrl = '') {
+      if ((!url && !fallbackUrl) || !window.pdfjsLib) {
         return;
       }
 
       pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
-      const loadingTask = pdfjsLib.getDocument(url);
+      let pdfBytes;
+      const primaryUrl = fallbackUrl || url;
+      const secondaryUrl = fallbackUrl && fallbackUrl !== url ? url : '';
+
+      try {
+        pdfBytes = await fetchEsignPdfBytes(primaryUrl);
+      } catch (primaryError) {
+        if (!secondaryUrl || secondaryUrl === primaryUrl) {
+          throw primaryError;
+        }
+        console.warn('Primary PDF preview source failed, retrying with alternate asset URL.', primaryError);
+        pdfBytes = await fetchEsignPdfBytes(secondaryUrl);
+      }
+
+      const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
       const pdf = await loadingTask.promise;
       esignPdfState.pdf = pdf;
       esignPdfState.totalPages = pdf.numPages;
@@ -1293,6 +1543,7 @@
           fieldInput.addEventListener('input', (event) => {
             updateEsignFieldValue(field, event.target.value, 'overlay');
           });
+          applyEsignTextStyleToElement(fieldInput, field);
 
           fieldEl.appendChild(fieldInput);
         }
@@ -1394,7 +1645,9 @@
       const assigneeId = button.dataset.assigneeId || '';
       const docName = button.dataset.docName;
       const docUrl = button.dataset.docUrl;
+      const docSourceUrl = button.dataset.docSourceUrl || '';
       const previewUrl = button.dataset.previewUrl || docUrl;
+      const previewSourceUrl = button.dataset.previewSourceUrl || docSourceUrl || previewUrl;
       const fieldsRaw = button.dataset.fields ? decodeURIComponent(button.dataset.fields) : '[]';
       let fields = [];
 
@@ -1440,7 +1693,7 @@
         esignDocumentSubtitle.textContent = `You have ${activeFields.length} field${activeFields.length === 1 ? '' : 's'} to complete.`;
       }
       const viewerVersion = (previewUrl && docUrl && previewUrl !== docUrl) ? 'signed' : 'original';
-      esignDocumentLink.href = `/onboarding/assignments/${assignmentId}/items/${itemId}/document?version=${viewerVersion}`;
+      esignDocumentLink.href = `/onboarding/assignments/${assignmentId}/items/${itemId}/document?version=${viewerVersion}&back=${encodeURIComponent(documentViewerBackUrl)}`;
       esignDocumentLink.style.display = (docUrl || previewUrl) ? 'inline-flex' : 'none';
       esignSignerName.value = '';
       esignModal.classList.add('active');
@@ -1456,7 +1709,7 @@
         syncEsignSubmitUi();
         renderEsignFieldsList();
         renderEsignActiveFieldEditor();
-        loadEsignPdf(previewUrl);
+        loadEsignPdf(previewUrl, previewSourceUrl);
         selectEsignField(0, { scroll: false });
       }, 50);
     }
@@ -1506,6 +1759,36 @@
       updateEsignFieldValue(field, event.target.value, 'sidebar');
     });
 
+    esignStyleToggleButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const field = activeFields[selectedEsignFieldIndex];
+        if (!field || field.type !== 'text') return;
+        const styleKey = button.dataset.esignStyleToggle;
+        const currentStyle = getEsignFieldStyle(field);
+        updateEsignFieldStyle(field, { [styleKey]: !currentStyle[styleKey] });
+      });
+    });
+
+    esignStyleAlignButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const field = activeFields[selectedEsignFieldIndex];
+        if (!field || field.type !== 'text') return;
+        updateEsignFieldStyle(field, { align: button.dataset.esignStyleAlign || 'left' });
+      });
+    });
+
+    esignFontSizeSelect?.addEventListener('change', () => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type !== 'text') return;
+      updateEsignFieldStyle(field, { fontSize: Number(esignFontSizeSelect.value) || DEFAULT_ESIGN_TEXT_STYLE.fontSize });
+    });
+
+    esignStyleResetBtn?.addEventListener('click', () => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type !== 'text') return;
+      updateEsignFieldStyle(field, DEFAULT_ESIGN_TEXT_STYLE);
+    });
+
     let esignPageScrubTimer = null;
     esignPdfPageRange?.addEventListener('input', () => {
       if (!esignPdfState.pdf) return;
@@ -1550,9 +1833,12 @@
         if (field.type === 'signature') {
           return false;
         }
-        const value = String(getEsignFieldValue(field) || '').trim();
+        const payloadValue = getEsignFieldPayload(field);
+        const value = field.type === 'text'
+          ? String(payloadValue?.text ?? '').trim()
+          : String(payloadValue ?? '').trim();
         if (value) {
-          payload.fieldValues[getEsignFieldIdentity(field)] = value;
+          payload.fieldValues[getEsignFieldIdentity(field)] = payloadValue;
         }
         return !value;
       });

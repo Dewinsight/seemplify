@@ -67,6 +67,7 @@ import {
 import { registerCampaignConversion, resolveVisitorTouches } from './services/marketingConversionService.js'
 import { samlIdPService as samlService } from './services/samlService.js'
 import { subscriptionService } from './services/subscriptionService.js'
+import cloudinary, { isCloudinaryConfigured } from './services/cloudinaryService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -4249,6 +4250,7 @@ const getSessionUser = async (req, res, next) => {
     const nextIncompleteStepKey = String(profileCompletion?.nextIncompleteStep?.key || '').trim().toLowerCase()
     const isProfileRoute = req.path.startsWith('/profile')
     const isDocumentWorkspaceRoute = req.path === '/documents'
+      || req.path.startsWith('/documents/')
       || req.path === '/onboarding'
       || req.path.startsWith('/onboarding/')
     const isCurrentCompletionRoute = isProfileRoute
@@ -4613,12 +4615,7 @@ const buildNotificationCenterData = async (account, options = {}) => {
   }
 
   const pendingOnboardingAssignments = await OnboardingAssignment.find({
-    $or: [
-      { member: account._id },
-      { 'items.config.signers.member': account._id },
-      { 'items.data.esign.signers.member': account._id },
-      { 'items.config.signatureFields.signerId': account._id }
-    ],
+    $or: buildOnboardingParticipantMatchClauses(account._id),
     status: { $nin: ['completed', 'cancelled'] }
   })
     .select([
@@ -5242,17 +5239,49 @@ const buildWorkflowSummary = ({ templates = [], assignments = [] } = {}) => {
   return summary
 }
 
+const buildOnboardingParticipantMatchClauses = (userId) => {
+  if (!userId) {
+    return []
+  }
+
+  const userIdStr = String(userId?.toString?.() || userId || '').trim()
+  const clauses = [
+    { member: userId },
+    { 'items.config.signers.member': userId },
+    { 'items.data.esign.signers.member': userId },
+    { 'items.config.signatureFields.signerId': userId }
+  ]
+
+  if (!userIdStr) {
+    return clauses
+  }
+
+  clauses.push(
+    { 'items.config.signatureFields.signer': userIdStr },
+    { 'items.config.signatureFields.signerKey': userIdStr },
+    {
+      $and: [
+        { member: userId },
+        {
+          $or: [
+            { 'items.config.signatureFields.signer': 'assignee' },
+            { 'items.config.signatureFields.signerKey': 'assignee' }
+          ]
+        }
+      ]
+    }
+  )
+
+  return clauses
+}
+
 const buildPersonalOnboardingQuery = (userId, organizationId, options = {}) => {
   const workflowType = normalizeWorkflowType(options.workflowType, {
     allowAll: true,
     fallback: 'all'
   })
   const base = {
-    $or: [
-      { member: userId },
-      { 'items.config.signers.member': userId },
-      { 'items.data.esign.signers.member': userId }
-    ]
+    $or: buildOnboardingParticipantMatchClauses(userId)
   }
 
   if (organizationId) {
@@ -5812,7 +5841,7 @@ app.get('/notifications/open', getSessionUser, async (req, res) => {
         params.set('action', 'sign')
       }
       const query = params.toString()
-      return res.redirect(query ? `/documents?${query}` : '/documents')
+      return res.redirect(query ? `/documents/my?${query}` : '/documents/my')
     }
 
     if (type === NOTIFICATION_CATEGORY.simplePerformance) {
@@ -6323,6 +6352,45 @@ const inferFileExtensionFromMimeType = (mimeType) => {
   return ''
 }
 
+const isGenericBinaryMimeType = (mimeType) => (
+  normalizeMimeType(mimeType) === 'application/octet-stream'
+)
+
+const inferCloudinaryPublicIdFromUrl = (docUrl = '') => {
+  const rawUrl = (docUrl || '').toString().trim()
+  if (!rawUrl) return ''
+
+  try {
+    const parsed = new URL(rawUrl)
+    if (!/cloudinary\.com$/i.test(parsed.hostname)) {
+      return ''
+    }
+
+    const pathParts = parsed.pathname
+      .split('/')
+      .map(part => part.trim())
+      .filter(Boolean)
+
+    const uploadIndex = pathParts.findIndex(part => part === 'upload')
+    if (uploadIndex < 0 || uploadIndex === pathParts.length - 1) {
+      return ''
+    }
+
+    const publicIdParts = pathParts.slice(uploadIndex + 1)
+    if (publicIdParts[0] && /^v\d+$/i.test(publicIdParts[0])) {
+      publicIdParts.shift()
+    }
+
+    if (!publicIdParts.length) {
+      return ''
+    }
+
+    return decodeURIComponent(publicIdParts.join('/'))
+  } catch {
+    return ''
+  }
+}
+
 const ensureExtensionForMimeType = (fileName, mimeType) => {
   const extension = inferFileExtensionFromMimeType(mimeType)
   if (!extension) return sanitizeDownloadFileName(fileName)
@@ -6333,8 +6401,10 @@ const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
   const normalizedVersion = (requestedVersion || '').toString().toLowerCase()
 
   if (item.type === 'esign') {
-    const originalUrl = item.config?.document?.url || ''
+    const originalUrl = item.data?.esign?.originalUrl || item.config?.document?.url || ''
     const signedUrl = item.data?.esign?.signedUrl || ''
+    const originalPublicId = item.config?.document?.publicId || inferCloudinaryPublicIdFromUrl(originalUrl)
+    const signedPublicId = item.data?.esign?.signedPublicId || inferCloudinaryPublicIdFromUrl(signedUrl)
     const originalFileName = ensureFileExtension(
       item.config?.document?.fileName || `${item.title || 'document'}.pdf`,
       '.pdf'
@@ -6358,9 +6428,10 @@ const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
 
     return {
       docUrl,
+      docPublicId: resolvedVersion === 'signed' ? signedPublicId : originalPublicId,
       docType: 'pdf',
       subtitle: resolvedVersion === 'signed' ? 'Signed document' : 'Original document',
-      docMimeType: 'application/pdf',
+      docMimeType: normalizeMimeType(item.data?.esign?.signedMimeType) || 'application/pdf',
       docFileName: resolvedVersion === 'signed' ? signedFileName : originalFileName,
       resolvedVersion
     }
@@ -6368,6 +6439,7 @@ const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
 
   const upload = item.data?.upload || {}
   const docUrl = upload.url || ''
+  const docPublicId = upload.publicId || inferCloudinaryPublicIdFromUrl(docUrl)
   const normalizedMimeType = normalizeMimeType(upload.mimeType) || inferMimeTypeFromFileName(upload.fileName)
   const docFileName = ensureExtensionForMimeType(
     upload.fileName || item.title || 'uploaded-document',
@@ -6379,6 +6451,7 @@ const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
 
   return {
     docUrl,
+    docPublicId,
     docType: isPdf ? 'pdf' : (isImage ? 'image' : 'unknown'),
     subtitle: 'Uploaded document',
     docMimeType: normalizedMimeType || 'application/octet-stream',
@@ -6394,6 +6467,15 @@ const buildDocumentDownloadUrl = (assignmentId, itemId, version) => {
   }
   const query = params.toString()
   return `/onboarding/assignments/${assignmentId}/items/${itemId}/document/download${query ? `?${query}` : ''}`
+}
+
+const buildDocumentInlineUrl = (assignmentId, itemId, version) => {
+  const params = new URLSearchParams()
+  if (version === 'original' || version === 'signed') {
+    params.set('version', version)
+  }
+  const query = params.toString()
+  return `/onboarding/assignments/${assignmentId}/items/${itemId}/document/file${query ? `?${query}` : ''}`
 }
 
 const buildDocumentViewUrl = (assignmentId, itemId, version) => {
@@ -6427,7 +6509,7 @@ const buildDocumentWorkspaceActionUrl = ({
     params.set('action', 'sign')
   }
 
-  return `/documents?${params.toString()}`
+  return `/documents/my?${params.toString()}`
 }
 
 const getComparableActorId = (value) => {
@@ -6444,7 +6526,17 @@ const getComparableActorId = (value) => {
 
   if (typeof value === 'object') {
     if (typeof value.$oid === 'string') return value.$oid
-    if (value._id) return getComparableActorId(value._id)
+    if (typeof value.toHexString === 'function') return value.toHexString()
+    if (typeof value.toString === 'function') {
+      const stringValue = value.toString()
+      if (/^[0-9a-fA-F]{24}$/.test(stringValue)) {
+        return stringValue
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(value, '_id')) {
+      const next = value._id
+      if (next && next !== value) return getComparableActorId(next)
+    }
     if (value.member) return getComparableActorId(value.member)
     if (value.memberId) return getComparableActorId(value.memberId)
     if (value.key) return getComparableActorId(value.key)
@@ -6741,6 +6833,99 @@ const resolveOnboardingBackUrl = (backParam, isManager, organizationId) => {
     ? `/organizations/${organizationId.toString()}/onboarding`
     : '/documents'
   return safeBackUrl || defaultBackUrl
+}
+
+const buildOnboardingCloudinaryDownloadUrl = (payload = {}) => {
+  const publicId = (payload.docPublicId || inferCloudinaryPublicIdFromUrl(payload.docUrl)).toString().trim()
+  if (!publicId || !isCloudinaryConfigured()) {
+    return ''
+  }
+
+  const fileExtension = inferFileExtensionFromMimeType(payload.docMimeType || '')
+  const format = fileExtension ? fileExtension.replace(/^\./, '') : undefined
+
+  try {
+    return cloudinary.utils.private_download_url(publicId, format, {
+      resource_type: 'raw',
+      type: 'upload',
+      attachment: false
+    })
+  } catch (error) {
+    console.error('Failed to build Cloudinary onboarding download URL:', {
+      publicId,
+      requestedFormat: format || null
+    }, error)
+    return ''
+  }
+}
+
+const fetchOnboardingDocumentAsset = async (payload) => {
+  const candidateUrls = []
+  const cloudinaryDownloadUrl = buildOnboardingCloudinaryDownloadUrl(payload)
+
+  if (cloudinaryDownloadUrl) {
+    candidateUrls.push({
+      url: cloudinaryDownloadUrl,
+      label: 'cloudinary-download'
+    })
+  }
+
+  if (payload.docUrl) {
+    candidateUrls.push({
+      url: payload.docUrl,
+      label: 'stored-url'
+    })
+  }
+
+  let lastError = null
+
+  for (const candidate of candidateUrls) {
+    try {
+      const upstream = await fetch(candidate.url, {
+        headers: {
+          Accept: payload.docMimeType || 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8'
+        }
+      })
+
+      if (!upstream.ok) {
+        throw new Error(`Upstream document fetch failed (${candidate.label}): ${upstream.status}`)
+      }
+
+      const upstreamContentType = normalizeMimeType(upstream.headers.get('content-type'))
+      const contentType = !upstreamContentType || isGenericBinaryMimeType(upstreamContentType)
+        ? (payload.docMimeType || inferMimeTypeFromFileName(payload.docFileName) || 'application/octet-stream')
+        : upstreamContentType
+
+      return {
+        buffer: Buffer.from(await upstream.arrayBuffer()),
+        contentType
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  console.error('Failed to fetch onboarding document asset from all sources:', {
+    docFileName: payload.docFileName || '',
+    docPublicId: payload.docPublicId || '',
+    docUrl: payload.docUrl || '',
+    sourcesTried: candidateUrls.map(candidate => candidate.label)
+  }, lastError)
+
+  throw lastError || new Error('Upstream document fetch failed')
+}
+
+const setOnboardingDocumentResponseHeaders = (res, payload, contentType, disposition = 'inline') => {
+  const fileName = sanitizeDownloadFileName(payload.docFileName || 'document')
+  const asciiFileName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_')
+
+  res.setHeader('Content-Type', contentType || payload.docMimeType || 'application/octet-stream')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.setHeader(
+    'Content-Disposition',
+    `${disposition}; filename="${asciiFileName || 'document'}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+  )
 }
 
 app.get('/performance-evaluations', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
@@ -7417,7 +7602,7 @@ app.get('/simple-performance-evaluation', getSessionUser, requireCurrentOrganiza
 })
 
 // View onboarding documents (uses PDF.js viewer so Cloudinary raw PDFs render correctly in-app)
-app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, async (req, res) => {
   try {
     const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
     if (access.error === 'not_found') {
@@ -7454,7 +7639,11 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
       activePage: isManager ? 'organizations' : 'documents',
       title: item.title || 'Document',
       subtitle: payload.subtitle,
-      docUrl: payload.docUrl,
+      docUrl: buildDocumentInlineUrl(
+        assignment._id.toString(),
+        item._id.toString(),
+        payload.resolvedVersion
+      ),
       docType: payload.docType,
       backUrl,
       downloadUrl: buildDocumentDownloadUrl(
@@ -7469,8 +7658,7 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessi
   }
 })
 
-// Download onboarding documents with a stable filename + extension.
-app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/file', getSessionUser, async (req, res) => {
   try {
     const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
     if (access.error === 'not_found') {
@@ -7491,23 +7679,39 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download',
       return res.status(404).send('Document not available')
     }
 
-    const upstream = await fetch(payload.docUrl)
-    if (!upstream.ok) {
-      throw new Error(`Upstream document fetch failed: ${upstream.status}`)
+    const { buffer, contentType } = await fetchOnboardingDocumentAsset(payload)
+    setOnboardingDocumentResponseHeaders(res, payload, contentType, 'inline')
+    res.send(buffer)
+  } catch (error) {
+    console.error('Onboarding document file error:', error)
+    res.status(500).send('Failed to load document')
+  }
+})
+
+// Download onboarding documents with a stable filename + extension.
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download', getSessionUser, async (req, res) => {
+  try {
+    const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
+    if (access.error === 'not_found') {
+      return res.status(404).send('Document not found')
     }
 
-    const fileName = sanitizeDownloadFileName(payload.docFileName || 'document')
-    const asciiFileName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_')
-    const buffer = Buffer.from(await upstream.arrayBuffer())
+    const { item, canAccess } = access
+    if (!canAccess) {
+      return res.status(403).send('Unauthorized')
+    }
 
-    res.setHeader('Content-Type', payload.docMimeType || 'application/octet-stream')
-    res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.setHeader('Cache-Control', 'private, no-store')
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${asciiFileName || 'document'}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    const payload = resolveOnboardingDocumentPayload(
+      item,
+      (req.query.version || '').toString().toLowerCase()
     )
 
+    if (!payload.docUrl) {
+      return res.status(404).send('Document not available')
+    }
+
+    const { buffer, contentType } = await fetchOnboardingDocumentAsset(payload)
+    setOnboardingDocumentResponseHeaders(res, payload, contentType, 'attachment')
     res.send(buffer)
   } catch (error) {
     console.error('Onboarding document download error:', error)
@@ -7515,67 +7719,144 @@ app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download',
   }
 })
 
-// Document workspace page (onboarding + agreements + policy + general docs)
+const buildPathFromRequestQuery = (pathname, query = {}, omitKeys = []) => {
+  const omitted = new Set((omitKeys || []).map(key => String(key || '').trim()).filter(Boolean))
+  const params = new URLSearchParams()
+
+  Object.keys(query || {}).forEach((key) => {
+    if (omitted.has(key)) return
+    const value = getQueryStringValue(query[key]).trim()
+    if (!value) return
+    params.set(key, value)
+  })
+
+  const nextQuery = params.toString()
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname
+}
+
+const markDocumentsNotificationViewedForUser = async (account) => {
+  const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
+  const documentNotificationOrgIds = getOrganizationIdsFromAccount(account)
+  if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
+    documentNotificationOrgIds.push(currentOrgId)
+  }
+
+  try {
+    await markDashboardNotificationViewed({
+      accountId: account._id,
+      type: 'documents',
+      organizationIds: documentNotificationOrgIds
+    })
+  } catch (notificationViewError) {
+    console.error('Failed to mark documents notification as viewed:', notificationViewError)
+  }
+}
+
+const renderMyDocumentsPage = async (req, res) => {
+  const activeWorkflow = normalizeWorkflowType(req.query.workflow, {
+    allowAll: true,
+    fallback: 'all'
+  })
+
+  await markDocumentsNotificationViewedForUser(req.user)
+
+  const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'all' })
+
+  return res.render('onboarding', {
+    assignments,
+    user: req.user,
+    activePage: 'documents',
+    activeWorkflow,
+    workspaceMode: true,
+    workflowLabels: WORKFLOW_LABELS,
+    workflowTypes: WORKFLOW_TYPES,
+    workflowSummary: buildWorkflowSummary({ assignments }),
+    error: req.query.error,
+    success: req.query.success
+  })
+}
+
+const renderDocumentsWorkspacePage = async (req, res) => {
+  const activeWorkflow = normalizeWorkflowType(req.query.workflow, {
+    allowAll: true,
+    fallback: 'all'
+  })
+
+  await markDocumentsNotificationViewedForUser(req.user)
+
+  const orgContext = await getCurrentOrganizationContext(req.user)
+  if (orgContext.error) {
+    return res.redirect(`/documents?error=${encodeURIComponent(orgContext.error)}`)
+  }
+
+  if (!ONBOARDING_MANAGER_ROLES.includes(orgContext.memberRole)) {
+    return res.redirect('/documents?error=Document workspace is available to owners, admins, and HR managers only')
+  }
+
+  const adminContext = await loadOnboardingAdminContext(req, orgContext.organizationId, { workflowType: 'all' })
+
+  return res.render('onboarding-admin', {
+    ...adminContext,
+    defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
+    activePage: 'documents',
+    activeWorkflow,
+    workspaceMode: true,
+    user: req.user,
+    error: req.query.error,
+    success: req.query.success
+  })
+}
+
+// Document workspace landing page
 app.get('/documents', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
   try {
-    const activeWorkflow = normalizeWorkflowType(req.query.workflow, {
-      allowAll: true,
-      fallback: 'all'
-    })
-    const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
-    const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
-    if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
-      documentNotificationOrgIds.push(currentOrgId)
+    const requestedTab = getQueryStringValue(req.query.tab).trim().toLowerCase()
+    const hasDirectMyDocumentsTarget = ['workflow', 'focusAssignment', 'focusItem', 'action']
+      .some(key => getQueryStringValue(req.query[key]).trim())
+
+    if (requestedTab === 'center') {
+      return res.redirect(buildPathFromRequestQuery('/documents/workspace', req.query, ['tab']))
     }
 
-    try {
-      await markDashboardNotificationViewed({
-        accountId: req.user._id,
-        type: 'documents',
-        organizationIds: documentNotificationOrgIds
-      })
-    } catch (notificationViewError) {
-      console.error('Failed to mark documents notification as viewed:', notificationViewError)
+    if (requestedTab === 'my' || hasDirectMyDocumentsTarget) {
+      return res.redirect(buildPathFromRequestQuery('/documents/my', req.query, ['tab']))
     }
 
-    if (currentOrgId) {
-      try {
-        const adminContext = await loadOnboardingAdminContext(req, currentOrgId, { workflowType: 'all' })
-        const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, currentOrgId, { workflowType: 'all' })
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    const canAccessWorkspace = !orgContext.error && ONBOARDING_MANAGER_ROLES.includes(orgContext.memberRole)
+    const currentOrganizationName = orgContext.organizationName
+      || req.user.currentOrganization?.name
+      || 'Current organization'
 
-        return res.render('onboarding-admin', {
-          ...adminContext,
-          personalAssignments,
-          defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
-          activePage: 'documents',
-          activeWorkflow,
-          workspaceMode: true,
-          user: req.user,
-          error: req.query.error,
-          success: req.query.success
-        })
-      } catch (adminError) {
-        // Fall back to personal document view if user isn't an admin/HR in the current org.
-      }
-    }
-
-    const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'all' })
-
-    res.render('onboarding', {
-      assignments,
+    return res.render('documents-home', {
       user: req.user,
       activePage: 'documents',
-      activeWorkflow,
-      workspaceMode: true,
-      workflowLabels: WORKFLOW_LABELS,
-      workflowTypes: WORKFLOW_TYPES,
-      workflowSummary: buildWorkflowSummary({ assignments }),
+      canAccessWorkspace,
+      currentOrganizationName,
       error: req.query.error,
       success: req.query.success
     })
   } catch (error) {
-    console.error('Documents page error:', error)
-    res.redirect('/?error=Failed to load documents')
+    console.error('Documents landing page error:', error)
+    return res.redirect('/?error=Failed to load documents')
+  }
+})
+
+app.get('/documents/my', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    return await renderMyDocumentsPage(req, res)
+  } catch (error) {
+    console.error('My documents page error:', error)
+    return res.redirect('/documents?error=Failed to load your documents')
+  }
+})
+
+app.get('/documents/workspace', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    return await renderDocumentsWorkspacePage(req, res)
+  } catch (error) {
+    console.error('Document workspace page error:', error)
+    return res.redirect('/documents?error=Failed to load document workspace')
   }
 })
 
