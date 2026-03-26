@@ -1,8 +1,13 @@
 import express from 'express'
+import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Team } from '../models/Team.js'
 import { getHubApps } from '../config/hubApps.js'
+import {
+  getPayrollBankAccountTypes,
+  normalizePayrollBankCountry
+} from '../config/payrollBankJurisdictions.js'
 import {
   APP_ACCESS_MODE_SELECTED,
   buildValidAppIdSet,
@@ -88,6 +93,10 @@ function normalizeText(value = '') {
   return String(value || '').trim()
 }
 
+function normalizeDigits(value = '') {
+  return normalizeText(value).replace(/\D+/g, '')
+}
+
 function normalizeDateValue(value) {
   if (value === undefined) return undefined
   if (value === null || value === '') return null
@@ -147,23 +156,56 @@ function bankingAccountHasValues(input = {}) {
 }
 
 function normalizeBankingAccount(country = '', input = {}, fallback = {}) {
-  const resolvedCountry = normalizeText(input.country ?? country ?? fallback.country ?? 'Other') || 'Other'
+  const resolvedCountry = normalizePayrollBankCountry(input.country ?? country ?? fallback.country ?? 'Other') || 'Other'
   const normalizedPercentage = Number.parseInt(input.percentage ?? fallback.percentage ?? 100, 10)
+  const availableAccountTypes = getPayrollBankAccountTypes(resolvedCountry)
+  const requestedAccountType = normalizeText(input.accountType ?? fallback.accountType).toLowerCase()
+  const accountType = availableAccountTypes.some((item) => item.value === requestedAccountType)
+    ? requestedAccountType
+    : (availableAccountTypes[0]?.value || 'current')
+  const accountNumber = resolvedCountry === 'Nigeria'
+    ? normalizeDigits(input.accountNumber ?? fallback.accountNumber)
+    : normalizeText(input.accountNumber ?? fallback.accountNumber)
+  const bankCode = resolvedCountry === 'Nigeria'
+    ? normalizeDigits(input.bankCode ?? fallback.bankCode)
+    : normalizeText(input.bankCode ?? fallback.bankCode)
 
   return {
     country: resolvedCountry,
     bankName: normalizeText(input.bankName ?? fallback.bankName),
     accountHolderName: normalizeText(input.accountHolderName ?? fallback.accountHolderName),
-    accountNumber: normalizeText(input.accountNumber ?? fallback.accountNumber),
-    routingNumber: normalizeText(input.routingNumber ?? fallback.routingNumber),
+    accountNumber,
+    routingNumber: normalizeDigits(input.routingNumber ?? fallback.routingNumber),
     sortCode: normalizeText(input.sortCode ?? fallback.sortCode),
     iban: normalizeText(input.iban ?? fallback.iban),
     bicSwift: normalizeText(input.bicSwift ?? fallback.bicSwift),
-    bankCode: normalizeText(input.bankCode ?? fallback.bankCode),
-    accountType: normalizeText(input.accountType ?? fallback.accountType),
+    bankCode,
+    accountType,
     percentage: Number.isFinite(normalizedPercentage) ? normalizedPercentage : 100,
     isActive: input.isActive !== false
   }
+}
+
+function cloneDocument(value = {}) {
+  if (!value) return {}
+  if (typeof value.toObject === 'function') {
+    return value.toObject()
+  }
+  return JSON.parse(JSON.stringify(value))
+}
+
+function buildMongoUpdate(setFields = {}, unsetFields = {}) {
+  const update = {}
+
+  if (Object.keys(setFields).length > 0) {
+    update.$set = setFields
+  }
+
+  if (Object.keys(unsetFields).length > 0) {
+    update.$unset = unsetFields
+  }
+
+  return update
 }
 
 async function updateCompletionTracking(account, organizationId) {
@@ -462,13 +504,37 @@ router.put('/:orgId/members/:memberId/payroll-sync',
       }
 
       if (hasDesignation || hasEmployeeId) {
-        await organization.updateMemberDetails(
-          member.account._id,
-          {
-            ...(hasDesignation ? { designation: body.designation } : {}),
-            ...(hasEmployeeId ? { employeeId: body.employeeId } : {})
-          },
-          req.user._id
+        const memberSet = {
+          'members.$.updatedAt': new Date(),
+          'members.$.updatedBy': req.user._id
+        }
+        const memberUnset = {}
+
+        if (hasDesignation) {
+          const nextDesignation = normalizeText(body.designation)
+          if (nextDesignation) {
+            memberSet['members.$.designation'] = nextDesignation
+          } else {
+            memberUnset['members.$.designation'] = ''
+          }
+          member.designation = nextDesignation
+        }
+
+        if (hasEmployeeId) {
+          const normalizedEmployeeId = normalizeEmployeeId(body.employeeId)
+          organization.assertActiveEmployeeIdAvailable(normalizedEmployeeId, member.account._id)
+          if (normalizedEmployeeId) {
+            memberSet['members.$.employeeId'] = normalizedEmployeeId
+          } else {
+            memberUnset['members.$.employeeId'] = ''
+          }
+          member.employeeId = normalizedEmployeeId
+        }
+
+        const memberUpdate = buildMongoUpdate(memberSet, memberUnset)
+        await Organization.updateOne(
+          { _id: req.params.orgId, 'members.account': member.account._id },
+          memberUpdate
         )
       }
 
@@ -477,33 +543,43 @@ router.put('/:orgId/members/:memberId/payroll-sync',
         return res.status(404).json({ error: 'Member account not found' })
       }
 
-      account.profile = account.profile || {}
-      account.profile.personalInfo = account.profile.personalInfo || {}
+      const accountSnapshot = cloneDocument(account)
+      accountSnapshot.profile = accountSnapshot.profile || {}
+      accountSnapshot.profile.personalInfo = accountSnapshot.profile.personalInfo || {}
+      const accountUpdateSet = {}
 
       if (hasName) {
-        account.profile.name = normalizeText(body.name)
+        const normalizedName = normalizeText(body.name)
+        accountSnapshot.profile.name = normalizedName
+        accountUpdateSet['profile.name'] = normalizedName
       }
 
       if (hasPersonalInfo) {
         const personalInfo = body.personalInfo || {}
-        const currentPersonalInfo = account.profile.personalInfo || {}
+        const currentPersonalInfo = accountSnapshot.profile.personalInfo || {}
 
         if (Object.prototype.hasOwnProperty.call(personalInfo, 'dateOfBirth')) {
-          account.profile.personalInfo.dateOfBirth = normalizeDateValue(personalInfo.dateOfBirth)
+          const normalizedDateOfBirth = normalizeDateValue(personalInfo.dateOfBirth)
+          accountSnapshot.profile.personalInfo.dateOfBirth = normalizedDateOfBirth
+          accountUpdateSet['profile.personalInfo.dateOfBirth'] = normalizedDateOfBirth
         }
 
         if (Object.prototype.hasOwnProperty.call(personalInfo, 'mailingAddress')) {
-          account.profile.personalInfo.mailingAddress = normalizeMailingAddress(
+          const normalizedMailingAddress = normalizeMailingAddress(
             personalInfo.mailingAddress || {},
             currentPersonalInfo.mailingAddress || {}
           )
+          accountSnapshot.profile.personalInfo.mailingAddress = normalizedMailingAddress
+          accountUpdateSet['profile.personalInfo.mailingAddress'] = normalizedMailingAddress
         }
 
         if (Object.prototype.hasOwnProperty.call(personalInfo, 'phoneNumbers')) {
-          account.profile.personalInfo.phoneNumbers = normalizePhoneNumbers(
+          const normalizedPhoneNumbers = normalizePhoneNumbers(
             personalInfo.phoneNumbers || {},
             currentPersonalInfo.phoneNumbers || {}
           )
+          accountSnapshot.profile.personalInfo.phoneNumbers = normalizedPhoneNumbers
+          accountUpdateSet['profile.personalInfo.phoneNumbers'] = normalizedPhoneNumbers
         }
 
         if (Object.prototype.hasOwnProperty.call(personalInfo, 'emergencyContact')) {
@@ -512,15 +588,17 @@ router.put('/:orgId/members/:memberId/payroll-sync',
             Array.isArray(currentPersonalInfo.emergencyContacts) ? currentPersonalInfo.emergencyContacts[0] : {}
           )
 
-          account.profile.personalInfo.emergencyContacts = emergencyContactHasValues(normalizedEmergencyContact)
+          const emergencyContacts = emergencyContactHasValues(normalizedEmergencyContact)
             ? [normalizedEmergencyContact]
             : []
+          accountSnapshot.profile.personalInfo.emergencyContacts = emergencyContacts
+          accountUpdateSet['profile.personalInfo.emergencyContacts'] = emergencyContacts
         }
       }
 
       if (hasBanking) {
         const banking = body.banking || {}
-        const currentBanking = account.profile.banking || {}
+        const currentBanking = accountSnapshot.profile.banking || {}
         const currentAccount = Array.isArray(currentBanking.accounts) ? currentBanking.accounts[0] || {} : {}
         const rawIncomingAccount = banking.account || {}
         const clearBankingAccount = Object.prototype.hasOwnProperty.call(banking, 'account')
@@ -529,7 +607,7 @@ router.put('/:orgId/members/:memberId/payroll-sync',
           ? normalizeBankingAccount(banking.country, rawIncomingAccount, {})
           : normalizeBankingAccount(banking.country, rawIncomingAccount, currentAccount)
 
-        account.profile.banking = {
+        const normalizedBanking = {
           ...(currentBanking || {}),
           country: normalizeText(banking.country ?? currentBanking.country ?? normalizedAccount.country) || normalizedAccount.country,
           accounts: !clearBankingAccount && bankingAccountHasValues(normalizedAccount)
@@ -539,6 +617,9 @@ router.put('/:orgId/members/:memberId/payroll-sync',
               }]
             : []
         }
+        accountSnapshot.profile.banking = normalizedBanking
+        accountUpdateSet['profile.banking.country'] = normalizedBanking.country
+        accountUpdateSet['profile.banking.accounts'] = normalizedBanking.accounts
       }
 
       if (hasDependentsDeclaration) {
@@ -547,7 +628,7 @@ router.put('/:orgId/members/:memberId/payroll-sync',
           return res.status(400).json({ error: 'Dependents declaration status must be pending or none' })
         }
 
-        account.profile.dependentsDeclaration = nextStatus === 'none'
+        const dependentsDeclaration = nextStatus === 'none'
           ? {
               status: 'none',
               confirmedAt: new Date(),
@@ -558,11 +639,18 @@ router.put('/:orgId/members/:memberId/payroll-sync',
               confirmedAt: null,
               lastUpdated: new Date()
             }
+        accountSnapshot.profile.dependentsDeclaration = dependentsDeclaration
+        accountUpdateSet['profile.dependentsDeclaration'] = dependentsDeclaration
       }
 
-      const completion = await updateCompletionTracking(account, req.params.orgId)
-      account.markModified('profile')
-      await account.save()
+      const completion = await updateCompletionTracking(accountSnapshot, req.params.orgId)
+      accountUpdateSet['profile.completionReminders'] = accountSnapshot.profile?.completionReminders || {}
+
+      await Account.updateOne(
+        { _id: account._id },
+        buildMongoUpdate(accountUpdateSet, {}),
+        { runValidators: true }
+      )
 
       const teams = await Team.find({
         organization: req.params.orgId,
@@ -612,12 +700,20 @@ router.put('/:orgId/members/:memberId/payroll-sync',
         onboardingStatusSource: onboardingState.source,
         onboardingLatestAssignmentId: onboardingState.latestAssignment?._id || null,
         payrollSync: {
-          ...buildPayrollProfileSyncData(account),
+          ...buildPayrollProfileSyncData(accountSnapshot),
           profileCompletion: completion
         }
       })
     } catch (error) {
       console.error('Update member payroll sync error:', error)
+      if (error?.name === 'ValidationError') {
+        return res.status(400).json({
+          error: 'Invalid member payroll sync data',
+          details: Object.values(error.errors || {})
+            .map((entry) => String(entry?.message || '').trim())
+            .filter(Boolean)
+        })
+      }
       res.status(500).json({ error: error.message || 'Failed to update member payroll sync data' })
     }
   }
