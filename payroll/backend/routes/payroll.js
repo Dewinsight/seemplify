@@ -320,9 +320,7 @@ function normalizeTaxConfigPayload(input) {
     employeeTaxInputs: (normalized.employeeTaxInputs && typeof normalized.employeeTaxInputs === 'object')
       ? normalized.employeeTaxInputs
       : {},
-    taxValidation: (normalized.taxValidation && typeof normalized.taxValidation === 'object')
-      ? normalized.taxValidation
-      : { status: 'unknown', messages: [] },
+    taxValidation: normalizeTaxValidationPayload(normalized.taxValidation),
     flatTaxRate: Number(normalized.flatTaxRate || 0),
     manualTaxFreeAllowance: Number(normalized.manualTaxFreeAllowance || 0),
     socialSecurityRate: Number(normalized.socialSecurityRate || 0),
@@ -340,6 +338,36 @@ function normalizeTaxConfigPayload(input) {
         rate: Number(bracket.rate || 0),
       }))
       : [],
+  };
+}
+
+function normalizeTaxValidationPayload(input = {}) {
+  const statusMap = {
+    valid: 'valid',
+    ready: 'valid',
+    configured: 'valid',
+    success: 'valid',
+    ok: 'valid',
+    warning: 'warning',
+    needs_configuration: 'warning',
+    pending_configuration: 'warning',
+    error: 'error',
+    invalid: 'error',
+    failed: 'error',
+    unknown: 'unknown',
+    pending: 'unknown',
+  };
+
+  const rawStatus = String(input?.status || '').trim().toLowerCase();
+  const normalizedStatus = statusMap[rawStatus] || 'unknown';
+  const validatedAt = input?.validatedAt ? new Date(input.validatedAt) : null;
+
+  return {
+    status: normalizedStatus,
+    messages: Array.isArray(input?.messages)
+      ? input.messages.map((message) => String(message || '').trim()).filter(Boolean)
+      : [],
+    validatedAt: validatedAt && !Number.isNaN(validatedAt.getTime()) ? validatedAt : null,
   };
 }
 
@@ -368,6 +396,16 @@ function roundMoney(value) {
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function extractValidationMessages(error) {
+  if (!error || typeof error !== 'object') {
+    return [];
+  }
+
+  return Object.values(error.errors || {})
+    .map((entry) => String(entry?.message || '').trim())
+    .filter(Boolean);
 }
 
 function sumAllowanceAmount(allowances = [], { taxableOnly = false } = {}) {
@@ -1070,8 +1108,12 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     }
 
     // Track salary changes
-    if (basicSalary !== undefined && Number(basicSalary) !== Number(profile.basicSalary)) {
-      profile.recordSalaryChange(Number(basicSalary), 'market_adjustment', adminId, adminName, 'Updated by HR');
+    if (basicSalary !== undefined) {
+      if (normalizedBasicSalary !== Number(profile.basicSalary)) {
+        profile.recordSalaryChange(normalizedBasicSalary, 'market_adjustment', adminId, adminName, 'Updated by HR');
+      } else {
+        profile.basicSalary = normalizedBasicSalary;
+      }
     }
 
     // Update other fields
@@ -1105,6 +1147,12 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     res.json({ success: true, profile, idpSync: syncedMember });
   } catch (err) {
     console.error('Update Profile Error:', err);
+    if (err?.name === 'ValidationError') {
+      return res.status(400).json({
+        error: 'Invalid payroll profile data',
+        details: extractValidationMessages(err)
+      });
+    }
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
@@ -1135,6 +1183,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       tags
     } = req.body || {};
     const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
+    const normalizedBasicSalary = Math.max(0, toNumber(basicSalary, 0));
 
     const existing = await PayrollProfile.findOne({ userId, organizationId });
     if (existing) {
@@ -1176,6 +1225,12 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
     res.status(201).json({ success: true, profile });
   } catch (err) {
     console.error('Create Profile Error:', err);
+    if (err?.name === 'ValidationError') {
+      return res.status(400).json({
+        error: 'Invalid payroll profile data',
+        details: extractValidationMessages(err)
+      });
+    }
     res.status(500).json({ error: 'Failed to create profile' });
   }
 });

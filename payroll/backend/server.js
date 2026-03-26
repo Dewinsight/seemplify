@@ -96,6 +96,7 @@ app.use('/api/compensation', require('./routes/compensation'));
 app.use('/api/payroll/reports', require('./routes/reports'));
 app.use('/api/payroll/salary-grades', require('./routes/salary-grades'));
 app.use('/api/payroll/currencies', require('./routes/currencies'));
+app.use('/api/currencies', require('./routes/currencies'));
 app.use('/api/payroll/tax', require('./routes/tax'));
 app.use('/api/webhooks', webhooksRouter);
 

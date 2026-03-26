@@ -12,7 +12,7 @@ export function usePayrollCurrencies() {
 
     const loadCurrencies = async () => {
       try {
-        const response = await api.get('/currencies');
+        const response = await api.get('/payroll/currencies');
         if (!cancelled) {
           setCurrencies(normalizePayrollCurrencies(response.data?.currencies || []));
         }
