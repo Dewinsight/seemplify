@@ -9,8 +9,8 @@ const PublicHelpPage = () => {
 
   const faqItems = [
     {
-      question: 'What is Mosaic Approver?',
-      answer: 'Mosaic Approver is an AI-powered initiative approval platform that helps organizations systematically evaluate, approve, and track projects and initiatives. It combines intelligent AI analysis with flexible workflow automation.'
+      question: 'What is Mosaic?',
+      answer: 'Mosaic is an AI-powered initiative approval platform that helps organizations systematically evaluate, approve, and track projects and initiatives. It combines intelligent AI analysis with flexible workflow automation.'
     },
     {
       question: 'How do I create an account?',
@@ -94,7 +94,7 @@ const PublicHelpPage = () => {
             How can we help?
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-            Find answers to common questions about Mosaic Approver
+            Find answers to common questions about Mosaic
           </p>
         </div>
 

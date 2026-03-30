@@ -4,11 +4,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import InitiativeIntake from '../components/InitiativeIntake';
 import { getUserDisplayName } from '../utils/userDisplay';
+import { hasAnyCapability } from '../utils/access';
 
 const Analyze: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { activeDepartment } = useAuth();
+    const { activeDepartment, activeOrganization } = useAuth();
     const editProjectId = searchParams.get('editProjectId');
 
     const [activeTab, setActiveTab] = useState<'view' | 'new'>('view');
@@ -21,6 +22,12 @@ const Analyze: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 5;
+    const canReviewProjects = hasAnyCapability(
+        activeOrganization,
+        ['projects.review.*', 'projects.override', 'dashboard.review'],
+        activeDepartment?._id || null
+    );
+    const submissionsLabel = canReviewProjects ? 'View All Initiatives' : 'My Submissions';
 
     // Enhanced Sort Handler
     const handleSort = (key: string) => {
@@ -212,7 +219,7 @@ const Analyze: React.FC = () => {
                                 flex: 1
                             }}
                         >
-                            View All Initiatives
+                            {submissionsLabel}
                         </button>
                         <button
                             onClick={() => navigate('/analyze?tab=new')}

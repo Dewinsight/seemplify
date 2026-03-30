@@ -13,7 +13,7 @@ const faqData: FAQItem[] = [
   // Getting Started
   {
     category: 'Getting Started',
-    question: 'How do I get started with Approver?',
+    question: 'How do I get started with Mosaic?',
     answer: 'After logging in, you can start by creating a new initiative. Click the "New Initiative" button on the Dashboard or Initiatives page. Fill in the required details including title, description, department, expected impact, and resource requirements, then submit for approval.'
   },
   {
@@ -60,8 +60,8 @@ const faqData: FAQItem[] = [
   },
   {
     category: 'Initiatives',
-    question: 'Can I use Approver without AI features?',
-    answer: 'Yes! Approver works without AI. You can submit and approve initiatives manually, use basic scoring, or skip AI analysis entirely. The system functions with or without AI capabilities.'
+    question: 'Can I use Mosaic without AI features?',
+    answer: 'Yes! Mosaic works without AI. You can submit and approve initiatives manually, use basic scoring, or skip AI analysis entirely. The system functions with or without AI capabilities.'
   },
   // Governance
   {
@@ -102,10 +102,10 @@ const understandContent = (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
     <section>
       <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text-primary)' }}>
-        What is Approver?
+        What is Mosaic?
       </h2>
       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '1rem' }}>
-        Approver is a comprehensive initiative approval and governance platform designed to help organizations 
+        Mosaic is a comprehensive initiative approval and governance platform designed to help organizations 
         systematically evaluate, approve, and track projects and initiatives. It combines intelligent AI-powered 
         analysis with flexible workflow automation to ensure every initiative gets the scrutiny it deserves while 
         maintaining efficiency.
@@ -159,7 +159,7 @@ const understandContent = (
       </h3>
       <div style={{ padding: '1.5rem', background: 'linear-gradient(135deg, rgba(155, 81, 224, 0.1) 0%, rgba(123, 63, 192, 0.05) 100%)', borderRadius: '12px', border: '1px solid rgba(155, 81, 224, 0.2)' }}>
         <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
-          Approver works as a central hub where initiatives flow through a structured lifecycle:
+          Mosaic works as a central hub where initiatives flow through a structured lifecycle:
         </p>
         <ol style={{ color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: '1.5rem' }}>
           <li><strong>Submission</strong> - Users submit initiatives with detailed information</li>
@@ -260,7 +260,7 @@ const rolesContent = (
         Roles & Permissions
       </h2>
       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '1rem' }}>
-        Approver uses a role-based access control (RBAC) system that grants permissions based on user roles. 
+        Mosaic uses a role-based access control (RBAC) system that grants permissions based on user roles. 
         This ensures users can only access features and data appropriate to their responsibilities.
       </p>
     </section>
@@ -307,7 +307,7 @@ const rolesContent = (
         Granular Permissions
       </h3>
       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: '1rem' }}>
-        Beyond core roles, Approver supports granular capability permissions:
+        Beyond core roles, Mosaic supports granular capability permissions:
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
         {[
@@ -345,7 +345,7 @@ const stepsContent = (
         Step-by-Step Usage Guide
       </h2>
       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '1rem' }}>
-        Follow this guide to get the most out of Approver for managing your initiatives.
+        Follow this guide to get the most out of Mosaic for managing your initiatives.
       </p>
     </section>
 
@@ -581,7 +581,7 @@ const aiContent = (
         AI-Powered Analysis
       </h2>
       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '1rem' }}>
-        Approver leverages artificial intelligence to provide objective, consistent analysis of initiatives. 
+        Mosaic leverages artificial intelligence to provide objective, consistent analysis of initiatives. 
         This helps decision-makers understand strengths, weaknesses, and risks before committing resources.
       </p>
     </section>
@@ -661,7 +661,7 @@ const downloadHelpGuideAsPDF = () => {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MOSAIC Approver – Help Guide</title>
+  <title>Mosaic – Help Guide</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; font-size: 13px; line-height: 1.6; }
@@ -694,15 +694,15 @@ const downloadHelpGuideAsPDF = () => {
   <div class="header">
     <div class="logo-grid"><span></span><span></span><span></span><span></span></div>
     <div class="header-text">
-      <h1>MOSAIC Approver</h1>
+      <h1>MOSAIC</h1>
       <p>Complete Help Guide &amp; Documentation</p>
     </div>
   </div>
 
   <!-- CHAPTER 1: OVERVIEW -->
   <div class="chapter">
-    <div class="chapter-title">1. Overview – What is Approver?</div>
-    <p>Approver is a comprehensive initiative approval and governance platform designed to help organizations systematically evaluate, approve, and track projects and initiatives. It combines intelligent AI-powered analysis with flexible workflow automation to ensure every initiative gets the scrutiny it deserves while maintaining efficiency.</p>
+    <div class="chapter-title">1. Overview – What is Mosaic?</div>
+    <p>Mosaic is a comprehensive initiative approval and governance platform designed to help organizations systematically evaluate, approve, and track projects and initiatives. It combines intelligent AI-powered analysis with flexible workflow automation to ensure every initiative gets the scrutiny it deserves while maintaining efficiency.</p>
     <h2>Core Problems We Solve</h2>
     <ul>
       <li><strong>Ad-hoc decision making</strong> – Standardized evaluation criteria ensure consistent decisions</li>
@@ -720,7 +720,7 @@ const downloadHelpGuideAsPDF = () => {
     </div>
     <h2>How It All Fits Together</h2>
     <div class="highlight">
-      <p>Approver works as a central hub where initiatives flow through a structured lifecycle:</p>
+      <p>Mosaic works as a central hub where initiatives flow through a structured lifecycle:</p>
       <ol>
         <li><strong>Submission</strong> – Users submit initiatives with detailed information</li>
         <li><strong>AI Analysis</strong> – The system analyzes the initiative against multiple criteria</li>
@@ -764,7 +764,7 @@ const downloadHelpGuideAsPDF = () => {
   <!-- CHAPTER 3: ROLES -->
   <div class="chapter">
     <div class="chapter-title">3. Roles &amp; Permissions</div>
-    <p>Approver uses a role-based access control (RBAC) system that grants permissions based on user roles. This ensures users can only access features and data appropriate to their responsibilities.</p>
+    <p>Mosaic uses a role-based access control (RBAC) system that grants permissions based on user roles. This ensures users can only access features and data appropriate to their responsibilities.</p>
     <h2>Core Roles</h2>
     <div class="card">
       <h4>Admin</h4>
@@ -797,7 +797,7 @@ const downloadHelpGuideAsPDF = () => {
   <!-- CHAPTER 4: AI ANALYSIS -->
   <div class="chapter">
     <div class="chapter-title">4. AI-Powered Analysis</div>
-    <p>Approver leverages artificial intelligence to provide objective, consistent analysis of initiatives. This helps decision-makers understand strengths, weaknesses, and risks before committing resources.</p>
+    <p>Mosaic leverages artificial intelligence to provide objective, consistent analysis of initiatives. This helps decision-makers understand strengths, weaknesses, and risks before committing resources.</p>
     <h2>How AI Analysis Works</h2>
     <div class="highlight">
       <ol>
@@ -825,7 +825,7 @@ const downloadHelpGuideAsPDF = () => {
   <!-- CHAPTER 5: STEP-BY-STEP -->
   <div class="chapter">
     <div class="chapter-title">5. Step-by-Step Usage Guide</div>
-    <p>Follow this guide to get the most out of Approver for managing your initiatives.</p>
+    <p>Follow this guide to get the most out of Mosaic for managing your initiatives.</p>
     <div class="step"><div class="step-num">1</div><div><h3>Set Up Your Organization</h3><p>Go to the <strong>Organization</strong> page from the sidebar. Upload your logo, configure settings, and create departments that align with your organizational structure.</p></div></div>
     <div class="step"><div class="step-num">2</div><div><h3>Invite Team Members</h3><p>Navigate to <strong>Invites</strong> in the sidebar. Click <strong>Send Invite</strong>, enter the user's email, assign to a department, set their role, and send. They'll receive an invitation email.</p></div></div>
     <div class="step"><div class="step-num">3</div><div><h3>Configure Governance Rules</h3><p>Go to <strong>Rules</strong> in the sidebar. Click <strong>Add Rule</strong> to create custom rules, set trigger conditions, define required approvals and approvers, and set auto-approval thresholds if applicable.</p></div></div>
@@ -841,7 +841,7 @@ const downloadHelpGuideAsPDF = () => {
     </div>
   </div>
 
-  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@approver.aiinigeria.com</div>
+  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@aiinnigeria.com</div>
 </body>
 </html>`;
 
@@ -876,7 +876,7 @@ const downloadFAQAsPDF = () => {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MOSAIC Approver – Help &amp; FAQ</title>
+  <title>Mosaic – Help &amp; FAQ</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; font-size: 13px; line-height: 1.6; }
@@ -903,12 +903,12 @@ const downloadFAQAsPDF = () => {
   <div class="header">
     <div class="logo-grid"><span></span><span></span><span></span><span></span></div>
     <div class="header-text">
-      <h1>MOSAIC Approver</h1>
+      <h1>MOSAIC</h1>
       <p>Help &amp; Frequently Asked Questions</p>
     </div>
   </div>
   ${categoryBlocks}
-  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@approver.aiinigeria.com</div>
+  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@aiinnigeria.com</div>
 </body>
 </html>`;
 
@@ -1345,7 +1345,7 @@ const HelpPage = () => {
           Help & Documentation
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>
-          Find answers and learn how Approver works
+          Find answers and learn how Mosaic works
         </p>
       </div>
 
@@ -1393,7 +1393,7 @@ const HelpPage = () => {
             Contact your administrator or the support team for additional help
           </p>
           <a
-            href="mailto:support@approver.aiinigeria.com"
+            href="mailto:support@aiinnigeria.com"
             style={{
               display: 'inline-flex',
               alignItems: 'center',

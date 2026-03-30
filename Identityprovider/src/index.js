@@ -8220,7 +8220,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
             </div>
 
             <div class="buttons">
-              <button class="btn btn-secondary" onclick="window.location.href='/organizations'">
+              <button class="btn btn-secondary" id="declineBtn" onclick="declineInvitation()">
                 Decline
               </button>
               <button class="btn btn-primary" id="acceptBtn" onclick="acceptInvitation()">
@@ -8233,29 +8233,67 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
         <script>
           async function acceptInvitation() {
             const btn = document.getElementById('acceptBtn');
+            const declineBtn = document.getElementById('declineBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>Joining...';
+            if (declineBtn) declineBtn.disabled = true;
 
             try {
-              const response = await fetch('/invitations/accept/do?token=${token}', {
+              const response = await fetch('/api/invitations/${token}/accept', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin'
               });
 
               if (response.ok) {
                 const data = await response.json();
-                window.location.href = data.redirectUrl || '/organizations';
+                window.location.href = '/organizations/' + data.organization.id + '/members?success=' + encodeURIComponent('Welcome to ' + data.organization.name + '!');
               } else {
                 const error = await response.json();
                 alert(error.error || 'Failed to join organization');
                 btn.disabled = false;
                 btn.innerHTML = 'Join Organization';
+                if (declineBtn) declineBtn.disabled = false;
               }
             } catch (error) {
               console.error('Error:', error);
               alert('Failed to join organization. Please try again.');
               btn.disabled = false;
               btn.innerHTML = 'Join Organization';
+              if (declineBtn) declineBtn.disabled = false;
+            }
+          }
+
+          async function declineInvitation() {
+            const btn = document.getElementById('declineBtn');
+            const acceptBtn = document.getElementById('acceptBtn');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Declining...';
+            if (acceptBtn) acceptBtn.disabled = true;
+
+            try {
+              const response = await fetch('/api/invitations/${token}/reject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin'
+              });
+
+              if (response.ok) {
+                window.location.href = '/organizations?success=' + encodeURIComponent('Invitation declined successfully');
+              } else {
+                const error = await response.json();
+                alert(error.error || 'Failed to decline invitation');
+                btn.disabled = false;
+                btn.innerHTML = 'Decline';
+                if (acceptBtn) acceptBtn.disabled = false;
+              }
+            } catch (error) {
+              console.error('Error:', error);
+              alert('Failed to decline invitation. Please try again.');
+              btn.disabled = false;
+              btn.innerHTML = 'Decline';
+              if (acceptBtn) acceptBtn.disabled = false;
             }
           }
         </script>

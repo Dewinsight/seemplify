@@ -9,7 +9,7 @@ class EmailService {
     constructor() {
         this.apiKey = process.env.BREVO_API_KEY;
         this.apiUrl = 'https://api.brevo.com/v3/smtp/email';
-        this.senderName = process.env.SENDER_NAME || 'Mosaic Approver';
+        this.senderName = process.env.SENDER_NAME || 'Mosaic';
         this.senderEmail = process.env.SENDER_EMAIL || null;
     }
 

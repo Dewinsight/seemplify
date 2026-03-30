@@ -13,6 +13,12 @@ const Dashboard: React.FC = () => {
 
     const [sortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
     const displayName = getUserDisplayName(user, 'there');
+    const canReviewProjects = hasAnyCapability(
+        activeOrganization,
+        ['projects.review.*', 'projects.override', 'dashboard.review'],
+        activeDepartment?._id || null
+    );
+    const submissionsLabel = canReviewProjects ? 'View All' : 'My Submissions';
 
     useEffect(() => {
         fetchData();
@@ -183,8 +189,8 @@ const Dashboard: React.FC = () => {
             <div className="dashboard-grid">
                 <div className="glass-panel" style={{ overflow: 'hidden' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        <h3 style={{ margin: 0 }}>Recent Initiatives</h3>
-                        <Link to="/analyze?tab=view" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textDecoration: 'none' }}>View All →</Link>
+                        <h3 style={{ margin: 0 }}>{canReviewProjects ? 'Recent Initiatives' : 'My Recent Submissions'}</h3>
+                        <Link to="/analyze?tab=view" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textDecoration: 'none' }}>{submissionsLabel} →</Link>
                     </div>
                     {recentProjects.length === 0 ? (
                         <p style={{ color: 'var(--text-secondary)' }}>No projects found. Start a new initiative!</p>

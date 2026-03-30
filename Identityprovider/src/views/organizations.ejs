@@ -324,7 +324,7 @@
       if (!confirm('Are you sure you want to decline this invitation?')) return;
 
       try {
-        const response = await fetch(`/api/invitations/${inviteId}/reject`, {
+        const response = await fetch(`/api/invitations/decline/${inviteId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin' // Include session cookies

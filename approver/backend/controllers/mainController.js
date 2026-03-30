@@ -58,6 +58,35 @@ const countApprovedReviewsForStage = (project, stageKey) => {
     return uniqueApprovers.size;
 };
 
+const PROJECT_REVIEW_VISIBILITY_CAPABILITIES = ['projects.review.*', 'projects.override', 'dashboard.review'];
+
+const buildProjectVisibilityQuery = (user, organizationId) => {
+    if (user?.isAdmin) {
+        return { organization: organizationId };
+    }
+
+    const reviewerDepartmentIds = getDepartmentsForCapabilities(
+        user,
+        PROJECT_REVIEW_VISIBILITY_CAPABILITIES,
+        user?.roleCatalog || {}
+    );
+
+    if (reviewerDepartmentIds.length === 0) {
+        return {
+            organization: organizationId,
+            requester: user?.id
+        };
+    }
+
+    return {
+        organization: organizationId,
+        $or: [
+            { requester: user?.id },
+            { department: { $in: reviewerDepartmentIds } }
+        ]
+    };
+};
+
 const getTierRouteLabel = (tierWorkflow) => {
     const stages = (tierWorkflow?.stages || [])
         .map(stage => stage.label || stage.stageKey)
@@ -1453,26 +1482,7 @@ exports.getAnalyzeJobStatus = async (req, res) => {
 
 exports.getProjects = async (req, res) => {
     try {
-        let query = { organization: req.organization };
-
-        // Admin sees all within org
-        if (req.user.isAdmin) {
-            // Just org filter
-        } else {
-            const approverDeptIds = getDepartmentsForCapabilities(
-                req.user,
-                ['projects.review.*', 'projects.override', 'dashboard.review'],
-                req.user.roleCatalog || {}
-            );
-
-            query = {
-                organization: req.organization,
-                $or: [
-                    { requester: req.user.id },
-                    { department: { $in: approverDeptIds } }
-                ]
-            };
-        }
+        const query = buildProjectVisibilityQuery(req.user, req.organization);
 
         // Filter by specific department if requested
         if (req.query.department) {
@@ -1551,7 +1561,11 @@ exports.overrideProject = async (req, res) => {
 exports.getProjectById = async (req, res) => {
     try {
         const projectId = req.params.id;
-        const project = await Project.findOne({ _id: projectId, organization: req.organization })
+        const projectQuery = {
+            ...buildProjectVisibilityQuery(req.user, req.organization),
+            _id: projectId
+        };
+        const project = await Project.findOne(projectQuery)
             .populate('requester', 'username firstName lastName department')
             .populate('department', 'name')
             .populate('approvalHistory.by', 'username firstName lastName');
@@ -1567,22 +1581,7 @@ exports.getProjectById = async (req, res) => {
 // Dashboard statistics for admin/approver view
 exports.getDashboardStats = async (req, res) => {
     try {
-        let query = { organization: req.organization };
-        if (!req.user.isAdmin) {
-            const approverDepts = getDepartmentsForCapabilities(
-                req.user,
-                ['projects.review.*', 'projects.override', 'dashboard.review'],
-                req.user.roleCatalog || {}
-            );
-
-            query = {
-                organization: req.organization,
-                $or: [
-                    { requester: req.user.id },
-                    { department: { $in: approverDepts } }
-                ]
-            };
-        }
+        const query = buildProjectVisibilityQuery(req.user, req.organization);
 
         // Filter by specific department if requested
         if (req.query.department) {
