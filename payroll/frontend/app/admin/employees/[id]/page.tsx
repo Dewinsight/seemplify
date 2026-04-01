@@ -1155,8 +1155,8 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     }
 
     return (
-        <div className="min-h-screen bg-zinc-950 text-zinc-200 p-8 pb-20">
-            <div className="max-w-4xl mx-auto">
+        <div className="min-h-screen bg-zinc-950 text-zinc-200 px-6 py-8 pb-20 xl:px-8">
+            <div className="mx-auto w-full max-w-7xl">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-8">
                     <div>
@@ -1191,7 +1191,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 gap-8 xl:grid-cols-[320px_minmax(0,1fr)]">
                     {/* Sidebar Info */}
                     <div className="space-y-6">
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
@@ -1340,7 +1340,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     </div>
 
                     {/* Main Form */}
-                    <div className="md:col-span-2 space-y-6">
+                    <div className="min-w-0 space-y-6">
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400">
