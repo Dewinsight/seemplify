@@ -50,6 +50,8 @@ DOKPLOY_TOKEN=github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKk
 | **payroll-frontend** | `DmqWaws_nZkMknN0PaukU` | payroll-frontend-natbov |
 | **marketing-site** | `U_Ct4s31IYEOuzTASkYd3` | marketing-site-web-ssx3uh |
 | **frappe-marketing** | `yMSZcZfu0x4ufvoMHucs5` | app-hack-optical-array-v4l5y5 |
+| **aiinmembers-backend** | `HiD2p6hW2jftUMU27JU3A` | app-input-1080p-protocol-u9vpz4 |
+| **skydd-waitlist** (`waitlist.skydd.ng`, repo `Skydd-Insure-Fintech-Platform---Fork---Fork---Fork---Fork`) | `qUfO-Cvz7C1JijqNzpOVk` | app-parse-cross-platform-driver-9l5vc3 |
 
 ### Development Applications
 
@@ -78,6 +80,7 @@ DOKPLOY_TOKEN=github-actions-2026yJfCpQwusWxkVlwhfbFDhkyLzLZrJfEBhBSBcRdgaYfDpKk
 | Project Name | Project ID |
 |--------------|------------|
 | **seemplify** | `jSrhrIiOyn0eH02aRSIFY` |
+| **skydd** | `IoM6Z0BmgxgwJjgXq5OIK` |
 
 ---
 
@@ -102,6 +105,11 @@ PAYROLL_BACKEND_APP_ID=fCXCiEFV3luBmNyUOo1wD
 PAYROLL_FRONTEND_APP_ID=DmqWaws_nZkMknN0PaukU
 MARKETING_SITE_APP_ID=U_Ct4s31IYEOuzTASkYd3
 FRAPPE_MARKETING_APP_ID=yMSZcZfu0x4ufvoMHucs5
+# AI In Members (repo: michaelegbo/aiinmembers — set only on that repository)
+AIINMEMBERS_BACKEND_APP_ID=HiD2p6hW2jftUMU27JU3A
+
+# Skydd waitlist (repo: michaelegbo/Skydd-Insure-Fintech-Platform---Fork---Fork---Fork---Fork — set only on that repository)
+SKYDD_WAITLIST_APP_ID=qUfO-Cvz7C1JijqNzpOVk
 ```
 
 ### Required Secrets for Development
