@@ -841,7 +841,7 @@ const downloadHelpGuideAsPDF = () => {
     </div>
   </div>
 
-  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@aiinnigeria.com</div>
+  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
 </body>
 </html>`;
 
@@ -908,7 +908,7 @@ const downloadFAQAsPDF = () => {
     </div>
   </div>
   ${categoryBlocks}
-  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} · support@aiinnigeria.com</div>
+  <div class="footer">Generated ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
 </body>
 </html>`;
 
@@ -1376,7 +1376,7 @@ const HelpPage = () => {
       {/* Content */}
       {renderContent()}
 
-      {/* Contact Support */}
+      {/* Additional Help */}
       {activeTab === 'faq' && (
         <div style={{
           marginTop: '3rem',
@@ -1389,30 +1389,9 @@ const HelpPage = () => {
           <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
             Still have questions?
           </h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            Contact your administrator or the support team for additional help
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 0 }}>
+            Reach out to your administrator for help with access, workflows, or submission questions.
           </p>
-          <a
-            href="mailto:support@aiinnigeria.com"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.75rem 1.5rem',
-              background: 'var(--brand-primary)',
-              color: 'white',
-              borderRadius: '8px',
-              textDecoration: 'none',
-              fontWeight: 600,
-              fontSize: '0.9rem'
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-              <polyline points="22,6 12,13 2,6" />
-            </svg>
-            Contact Support
-          </a>
         </div>
       )}
     </div>

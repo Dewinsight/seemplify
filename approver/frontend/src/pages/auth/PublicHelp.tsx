@@ -33,8 +33,8 @@ const PublicHelpPage = () => {
       answer: 'Yes! You can submit and approve initiatives manually. All core features (workflows, rules, tracking) work with or without AI.'
     },
     {
-      question: 'How do I contact support?',
-      answer: 'Email us at support@aiinnigeria.com for any questions or issues. Our team is happy to help!'
+      question: 'How do I get help?',
+      answer: 'Reach out to your organization administrator for help with access, setup, or account issues.'
     }
   ];
 
@@ -253,26 +253,9 @@ const PublicHelpPage = () => {
           <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
             Still have questions?
           </h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            Contact our support team
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 0 }}>
+            Reach out to your organization administrator for help with access or account issues.
           </p>
-          <a
-            href="mailto:support@aiinnigeria.com"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.75rem 1.5rem',
-              background: 'var(--brand-primary, #9B51E0)',
-              color: 'white',
-              borderRadius: '8px',
-              textDecoration: 'none',
-              fontWeight: 600,
-              fontSize: '0.9rem'
-            }}
-          >
-            Contact Support
-          </a>
         </div>
       </div>
 
