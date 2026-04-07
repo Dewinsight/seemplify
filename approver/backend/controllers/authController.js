@@ -6,6 +6,7 @@ const Role = require('../models/Role');
 const emailService = require('../services/EmailService');
 const { ensureGovernanceConfigForOrganization } = require('../services/governanceConfigService');
 const { buildRoleCatalog, sanitizePermissions, collectUserCapabilities } = require('../utils/access');
+const { clearAuthCookie, setAuthCookie } = require('../utils/authSession');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -18,6 +19,14 @@ const normalizeName = (value) => (typeof value === 'string' ? value.trim() : '')
 const hasCompletedProfile = (user) => {
     return Boolean(normalizeName(user?.firstName) && normalizeName(user?.lastName));
 };
+
+const buildAuthPayload = (user) => ({
+    id: user._id,
+    username: user.username,
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    email: user.email
+});
 
 const enrichMemberships = async (memberships) => {
     const orgIds = Array.from(new Set(
@@ -75,6 +84,20 @@ const enrichMemberships = async (memberships) => {
             }))
         };
     });
+};
+
+const buildSessionResponse = async (user) => {
+    const memberships = await UserOrganization.find({ user: user._id })
+        .populate('organization', 'name slug logo logoDark logoLight logoBackground logoMode')
+        .populate('permissions.department', 'name');
+
+    const organizations = await enrichMemberships(memberships);
+
+    return {
+        user: buildAuthPayload(user),
+        organizations,
+        needsOnboarding: organizations.length === 0 || !hasCompletedProfile(user)
+    };
 };
 
 // --- Registration: simple (username, email, password only) ---
@@ -221,13 +244,7 @@ exports.login = async (req, res) => {
             .populate('permissions.department', 'name');
 
         // JWT payload = identity only (no org — active org comes via X-Organization-Id header)
-        const payload = {
-            id: user._id,
-            username: user.username,
-            firstName: user.firstName || '',
-            lastName: user.lastName || '',
-            email: user.email
-        };
+        const payload = buildAuthPayload(user);
 
         const token = jwt.sign(
             payload,
@@ -235,18 +252,36 @@ exports.login = async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        // Transform memberships for frontend with dynamic role/capability metadata
-        const organizations = await enrichMemberships(memberships);
+        const session = await buildSessionResponse(user);
+        setAuthCookie(res, token);
 
         res.json({
             token,
-            user: payload,
-            organizations,
-            needsOnboarding: organizations.length === 0 || !hasCompletedProfile(user)
+            ...session
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+};
+
+exports.getSession = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            clearAuthCookie(res);
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const session = await buildSessionResponse(user);
+        res.json(session);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.logout = async (req, res) => {
+    clearAuthCookie(res);
+    res.json({ message: 'Logged out successfully' });
 };
 
 exports.seedAdmin = async (req, res) => {

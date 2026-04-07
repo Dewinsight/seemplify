@@ -18,8 +18,8 @@ const Login: React.FC = () => {
 
         try {
             const response = await api.post('/auth/login', { email, password });
-            const { token, user, organizations, needsOnboarding } = response.data;
-            login(token, user, organizations || []);
+            const { user, organizations, needsOnboarding } = response.data;
+            login(user, organizations || []);
 
             if (needsOnboarding) {
                 navigate('/setup');

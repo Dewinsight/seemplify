@@ -4,6 +4,7 @@ import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { getUserDisplayName } from '../utils/userDisplay';
 import { hasAnyCapability } from '../utils/access';
+import { getSafeExternalUrl } from '../utils/urlSafety';
 
 interface RuleAnalysis {
     ruleName: string;
@@ -266,6 +267,7 @@ const ProjectDetail: React.FC = () => {
     const isPendingExecutive = activeStageKey === 'Executive';
     const ruleAnalyses = project.analysisResult?.rulesAnalysis || [];
     const rulesPassEquivalentCount = ruleAnalyses.filter((rule) => isRulePassEquivalent(rule.status)).length;
+    const safeRepoUrl = getSafeExternalUrl(project.repoUrl);
 
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
@@ -478,9 +480,9 @@ const ProjectDetail: React.FC = () => {
                     <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                         <h4 style={{ margin: '0 0 0.5rem 0' }}>Description</h4>
                         <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{project.description}</p>
-                        {project.repoUrl && (
+                        {safeRepoUrl && (
                             <div style={{ marginTop: '0.5rem' }}>
-                                <a href={project.repoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sterling-gold)' }}>View Repository →</a>
+                                <a href={safeRepoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sterling-gold)' }}>View Repository →</a>
                             </div>
                         )}
                     </div>

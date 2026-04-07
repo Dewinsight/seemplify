@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const UserOrganization = require('../models/UserOrganization');
 const Role = require('../models/Role');
 const { ensureGovernanceConfigForOrganization } = require('../services/governanceConfigService');
+const { extractTokenFromRequest } = require('../utils/authSession');
 const {
     buildRoleCatalog,
     sanitizePermissions,
@@ -11,15 +12,14 @@ const {
 } = require('../utils/access');
 
 const verifyToken = (req, res, next) => {
-    const token = req.headers['authorization'];
+    const token = extractTokenFromRequest(req);
 
     if (!token) {
         return res.status(403).json({ error: 'No token provided' });
     }
 
     try {
-        const bearer = token.split(' ')[1]; // Bearer <token>
-        const decoded = jwt.verify(bearer, process.env.JWT_SECRET || 'default_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
         req.user = decoded;
         next();
     } catch (error) {
@@ -104,12 +104,11 @@ const injectOrgContext = async (req, res, next) => {
 
 // Optional token - parses token if present but doesn't require it
 const optionalToken = (req, res, next) => {
-    const token = req.headers['authorization'];
+    const token = extractTokenFromRequest(req);
     if (!token) return next();
 
     try {
-        const bearer = token.split(' ')[1];
-        const decoded = jwt.verify(bearer, process.env.JWT_SECRET || 'default_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
         req.user = decoded;
     } catch (error) {
         // Token invalid - continue without user context

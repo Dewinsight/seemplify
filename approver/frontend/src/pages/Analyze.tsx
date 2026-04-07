@@ -87,19 +87,26 @@ const Analyze: React.FC = () => {
         return sortableItems;
     }, [projects, sortConfig]);
 
+    const toSafeCsvCell = (value: unknown) => {
+        const text = value == null ? '' : String(value);
+        const escaped = text.replace(/"/g, '""');
+        const guarded = /^[\t\r ]*[=+\-@]/.test(escaped) ? `'${escaped}` : escaped;
+        return `"${guarded}"`;
+    };
+
     const handleDownload = () => {
         const headers = ['Project Name', 'Requester', 'Department', 'Status', 'Rule Pass %', 'Priority Score', 'Tier', 'Date'];
         const csvContent = [
             headers.join(','),
             ...sortedProjects.map(p => [
-                `"${p.name}"`,
-                `"${getUserDisplayName(p.requester, 'Unknown')}"`,
-                `"${p.department?.name || 'General'}"`,
-                `"${p.approvalStatus}"`,
-                p.score,
-                (typeof p.priorityScore === 'number' ? p.priorityScore.toFixed(2) : 'N/A'),
-                p.tier || 'N/A',
-                `"${new Date(p.createdAt).toLocaleDateString()}"`
+                toSafeCsvCell(p.name),
+                toSafeCsvCell(getUserDisplayName(p.requester, 'Unknown')),
+                toSafeCsvCell(p.department?.name || 'General'),
+                toSafeCsvCell(p.approvalStatus),
+                toSafeCsvCell(p.score),
+                toSafeCsvCell(typeof p.priorityScore === 'number' ? p.priorityScore.toFixed(2) : 'N/A'),
+                toSafeCsvCell(p.tier || 'N/A'),
+                toSafeCsvCell(new Date(p.createdAt).toLocaleDateString())
             ].join(','))
         ].join('\n');
 
@@ -113,6 +120,7 @@ const Analyze: React.FC = () => {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         }
     };
 

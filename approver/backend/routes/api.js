@@ -13,6 +13,8 @@ router.post('/auth/register', authController.register);
 router.post('/auth/verify', authController.verifyOtp);
 router.post('/auth/resend-otp', authController.resendOtp);
 router.post('/auth/login', authController.login);
+router.get('/auth/session', verifyToken, authController.getSession);
+router.post('/auth/logout', authController.logout);
 router.post('/auth/seed-admin', authController.seedAdmin);
 router.post('/auth/forgot-password', authController.forgotPassword);
 router.post('/auth/reset-password', authController.resetPassword);

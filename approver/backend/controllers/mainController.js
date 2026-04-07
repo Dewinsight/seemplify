@@ -87,6 +87,30 @@ const buildProjectVisibilityQuery = (user, organizationId) => {
     };
 };
 
+const normalizeOptionalHttpUrl = (value) => {
+    if (value == null) return '';
+
+    const trimmed = String(value).trim();
+    if (!trimmed) return '';
+
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(trimmed);
+    } catch (error) {
+        const invalidUrlError = new Error('Repository URL must be a valid http or https URL.');
+        invalidUrlError.status = 400;
+        throw invalidUrlError;
+    }
+
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        const invalidProtocolError = new Error('Repository URL must use http or https.');
+        invalidProtocolError.status = 400;
+        throw invalidProtocolError;
+    }
+
+    return parsedUrl.toString();
+};
+
 const getTierRouteLabel = (tierWorkflow) => {
     const stages = (tierWorkflow?.stages || [])
         .map(stage => stage.label || stage.stageKey)
@@ -658,7 +682,8 @@ const analyzeProjectPipeline = async ({
     onProgress,
     existingProject = null
 }) => {
-    const { name, description, repoUrl, formData } = payload;
+    const { name, description, repoUrl: rawRepoUrl, formData } = payload;
+    const repoUrl = normalizeOptionalHttpUrl(rawRepoUrl);
     const isResubmission = Boolean(existingProject);
     const department = await resolveDepartmentForAnalysis({
         requestedDepartment: payload.department,

@@ -1,5 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import api from '../api';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import api, {
+    clearLegacySessionStorage,
+    getPersistedActiveOrganizationId,
+    setPersistedActiveOrganizationId
+} from '../api';
 import { hasCompletedNameProfile } from '../utils/userDisplay';
 import type { RoleDefinition } from '../utils/access';
 
@@ -9,14 +13,14 @@ interface OrgPermission {
 }
 
 interface OrgMembership {
-    _id: string;       // organization _id
+    _id: string;
     name: string;
     slug: string;
-    logo?: string;     // path to uploaded logo (used when logoMode is 'all')
-    logoDark?: string; // logo for dark theme
-    logoLight?: string; // logo for light theme
-    logoBackground?: string;  // 'transparent' or hex color
-    logoMode?: 'dark' | 'light' | 'system' | 'all';  // when to show logo
+    logo?: string;
+    logoDark?: string;
+    logoLight?: string;
+    logoBackground?: string;
+    logoMode?: 'dark' | 'light' | 'system' | 'all';
     isAdmin: boolean;
     permissions: OrgPermission[];
     capabilities?: string[];
@@ -36,7 +40,7 @@ interface AuthContextType {
     organizations: OrgMembership[];
     activeOrganization: OrgMembership | null;
     needsOnboarding: boolean;
-    login: (token: string, user: User, organizations: OrgMembership[]) => void;
+    login: (user: User, organizations: OrgMembership[]) => void;
     logout: () => void;
     switchOrganization: (org: OrgMembership) => void;
     refreshOrganizations: () => Promise<OrgMembership[]>;
@@ -47,7 +51,67 @@ interface AuthContextType {
     switchDepartment: (dept: { _id: string; name: string } | null) => void;
 }
 
+const ACTIVE_DEPARTMENT_KEY = 'activeDepartment';
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const clearPersistedSessionState = () => {
+    clearLegacySessionStorage();
+    setPersistedActiveOrganizationId(null);
+    localStorage.removeItem(ACTIVE_DEPARTMENT_KEY);
+};
+
+const readStoredDepartment = () => {
+    const raw = localStorage.getItem(ACTIVE_DEPARTMENT_KEY);
+    if (!raw) return null;
+
+    try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed._id === 'string' && typeof parsed.name === 'string'
+            ? parsed
+            : null;
+    } catch (error) {
+        localStorage.removeItem(ACTIVE_DEPARTMENT_KEY);
+        return null;
+    }
+};
+
+const persistDepartment = (dept: { _id: string; name: string } | null) => {
+    if (dept) {
+        localStorage.setItem(ACTIVE_DEPARTMENT_KEY, JSON.stringify(dept));
+    } else {
+        localStorage.removeItem(ACTIVE_DEPARTMENT_KEY);
+    }
+};
+
+const selectActiveOrganization = (
+    orgs: OrgMembership[],
+    preferredOrganizationId: string | null
+) => {
+    if (orgs.length === 0) return null;
+    if (!preferredOrganizationId) return orgs[0];
+    return orgs.find((org) => org._id === preferredOrganizationId) || orgs[0];
+};
+
+const resolveActiveDepartment = (
+    org: OrgMembership | null,
+    preferredDepartment: { _id: string; name: string } | null,
+    fallbackToFirst: boolean
+) => {
+    if (!org) return null;
+
+    if (preferredDepartment) {
+        if (org.isAdmin) return preferredDepartment;
+        const matchingDepartment = org.permissions
+            ?.map((permission) => permission.department)
+            .find((department) => department?._id === preferredDepartment._id);
+        if (matchingDepartment) return matchingDepartment;
+    }
+
+    if (!fallbackToFirst) return null;
+
+    const firstDepartment = org.permissions?.[0]?.department;
+    return firstDepartment && typeof firstDepartment === 'object' ? firstDepartment : null;
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -59,81 +123,77 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const needsOnboarding = !!user && (!hasCompletedNameProfile(user) || organizations.length === 0);
 
     useEffect(() => {
-        const storedUser = localStorage.getItem('user');
-        const token = localStorage.getItem('token');
-        const storedOrgs = localStorage.getItem('organizations');
-        const storedActiveOrg = localStorage.getItem('activeOrganization');
-        const storedDept = localStorage.getItem('activeDepartment');
+        let cancelled = false;
 
-        if (storedUser && token) {
-            const parsedUser = JSON.parse(storedUser);
-            setUser(parsedUser);
-            api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        const bootstrapSession = async () => {
+            const preferredOrganizationId = getPersistedActiveOrganizationId();
+            const preferredDepartment = readStoredDepartment();
 
-            if (storedOrgs) {
-                const parsedOrgs: OrgMembership[] = JSON.parse(storedOrgs);
-                setOrganizations(parsedOrgs);
+            clearLegacySessionStorage();
 
-                // Restore active org
-                if (storedActiveOrg) {
-                    const parsedActiveOrg: OrgMembership = JSON.parse(storedActiveOrg);
-                    // Make sure active org still exists in the list (might have been removed)
-                    const stillValid = parsedOrgs.find(o => o._id === parsedActiveOrg._id);
-                    if (stillValid) {
-                        setActiveOrganization(stillValid);
-                    } else if (parsedOrgs.length > 0) {
-                        setActiveOrganization(parsedOrgs[0]);
-                        localStorage.setItem('activeOrganization', JSON.stringify(parsedOrgs[0]));
-                    }
-                } else if (parsedOrgs.length > 0) {
-                    setActiveOrganization(parsedOrgs[0]);
-                    localStorage.setItem('activeOrganization', JSON.stringify(parsedOrgs[0]));
-                }
+            try {
+                const response = await api.get('/auth/session');
+                if (cancelled) return;
+
+                const sessionUser: User | null = response.data?.user || null;
+                const orgs: OrgMembership[] = Array.isArray(response.data?.organizations)
+                    ? response.data.organizations
+                    : [];
+                const nextActiveOrganization = selectActiveOrganization(orgs, preferredOrganizationId);
+                const nextActiveDepartment = resolveActiveDepartment(
+                    nextActiveOrganization,
+                    preferredDepartment,
+                    false
+                );
+
+                setUser(sessionUser);
+                setOrganizations(orgs);
+                setActiveOrganization(nextActiveOrganization);
+                setPersistedActiveOrganizationId(nextActiveOrganization?._id || null);
+                setActiveDepartment(nextActiveDepartment);
+                persistDepartment(nextActiveDepartment);
+            } catch (error) {
+                if (cancelled) return;
+                clearPersistedSessionState();
+                setUser(null);
+                setOrganizations([]);
+                setActiveOrganization(null);
+                setActiveDepartment(null);
+            } finally {
+                if (!cancelled) setLoading(false);
             }
+        };
 
-            // Restore active department
-            if (storedDept) {
-                setActiveDepartment(JSON.parse(storedDept));
-            }
-        }
-        setLoading(false);
+        void bootstrapSession();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const login = (token: string, userData: User, orgs: OrgMembership[]) => {
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(userData));
-        localStorage.setItem('organizations', JSON.stringify(orgs));
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    const login = (userData: User, orgs: OrgMembership[]) => {
+        clearLegacySessionStorage();
         setUser(userData);
         setOrganizations(orgs);
 
-        // Set default active org
         if (orgs.length > 0) {
-            setActiveOrganization(orgs[0]);
-            localStorage.setItem('activeOrganization', JSON.stringify(orgs[0]));
-
-            // Set default department from first org's permissions
-            if (orgs[0].permissions && orgs[0].permissions.length > 0) {
-                const firstDept = orgs[0].permissions[0].department;
-                if (typeof firstDept === 'object' && firstDept.name) {
-                    setActiveDepartment(firstDept);
-                    localStorage.setItem('activeDepartment', JSON.stringify(firstDept));
-                }
-            }
+            const nextActiveOrganization = orgs[0];
+            const nextActiveDepartment = resolveActiveDepartment(nextActiveOrganization, null, true);
+            setActiveOrganization(nextActiveOrganization);
+            setPersistedActiveOrganizationId(nextActiveOrganization._id);
+            setActiveDepartment(nextActiveDepartment);
+            persistDepartment(nextActiveDepartment);
         } else {
             setActiveOrganization(null);
-            localStorage.removeItem('activeOrganization');
-            localStorage.removeItem('activeDepartment');
+            setPersistedActiveOrganizationId(null);
+            setActiveDepartment(null);
+            persistDepartment(null);
         }
     };
 
     const logout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        localStorage.removeItem('organizations');
-        localStorage.removeItem('activeOrganization');
-        localStorage.removeItem('activeDepartment');
-        delete api.defaults.headers.common['Authorization'];
+        void api.post('/auth/logout').catch(() => {});
+        clearPersistedSessionState();
         setUser(null);
         setOrganizations([]);
         setActiveOrganization(null);
@@ -141,53 +201,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const switchOrganization = (org: OrgMembership) => {
+        const nextActiveDepartment = resolveActiveDepartment(org, null, true);
         setActiveOrganization(org);
-        localStorage.setItem('activeOrganization', JSON.stringify(org));
-
-        // Reset department when switching org
-        setActiveDepartment(null);
-        localStorage.removeItem('activeDepartment');
-
-        // Auto-select first department from new org's permissions
-        if (org.permissions && org.permissions.length > 0) {
-            const firstDept = org.permissions[0].department;
-            if (typeof firstDept === 'object' && firstDept.name) {
-                setActiveDepartment(firstDept);
-                localStorage.setItem('activeDepartment', JSON.stringify(firstDept));
-            }
-        }
+        setPersistedActiveOrganizationId(org._id);
+        setActiveDepartment(nextActiveDepartment);
+        persistDepartment(nextActiveDepartment);
     };
 
     const refreshOrganizations = async (): Promise<OrgMembership[]> => {
         try {
             const res = await api.get('/organizations/my');
-            const orgs: OrgMembership[] = res.data;
+            const orgs: OrgMembership[] = Array.isArray(res.data) ? res.data : [];
             setOrganizations(orgs);
-            localStorage.setItem('organizations', JSON.stringify(orgs));
 
-            // If no active org but we now have orgs, set the first one
-            if (!activeOrganization && orgs.length > 0) {
-                setActiveOrganization(orgs[0]);
-                localStorage.setItem('activeOrganization', JSON.stringify(orgs[0]));
-            }
-            // If active org still exists, refresh it with latest metadata (roles, logos, permissions, etc.)
-            if (activeOrganization) {
-                const refreshedActive = orgs.find(o => o._id === activeOrganization._id);
-                if (refreshedActive) {
-                    setActiveOrganization(refreshedActive);
-                    localStorage.setItem('activeOrganization', JSON.stringify(refreshedActive));
-                }
-            }
-            // If active org was removed, reset to first
-            if (activeOrganization && !orgs.find(o => o._id === activeOrganization._id)) {
-                if (orgs.length > 0) {
-                    setActiveOrganization(orgs[0]);
-                    localStorage.setItem('activeOrganization', JSON.stringify(orgs[0]));
-                } else {
-                    setActiveOrganization(null);
-                    localStorage.removeItem('activeOrganization');
-                }
-            }
+            const preferredOrganizationId = activeOrganization?._id || getPersistedActiveOrganizationId();
+            const nextActiveOrganization = selectActiveOrganization(orgs, preferredOrganizationId);
+            const nextActiveDepartment = resolveActiveDepartment(
+                nextActiveOrganization,
+                activeDepartment,
+                false
+            );
+
+            setActiveOrganization(nextActiveOrganization);
+            setPersistedActiveOrganizationId(nextActiveOrganization?._id || null);
+            setActiveDepartment(nextActiveDepartment);
+            persistDepartment(nextActiveDepartment);
+
             return orgs;
         } catch (error) {
             console.error('Failed to refresh organizations:', error);
@@ -197,16 +236,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updateUserProfile = (nextUser: User) => {
         setUser(nextUser);
-        localStorage.setItem('user', JSON.stringify(nextUser));
     };
 
     const switchDepartment = (dept: { _id: string; name: string } | null) => {
         setActiveDepartment(dept);
-        if (dept) {
-            localStorage.setItem('activeDepartment', JSON.stringify(dept));
-        } else {
-            localStorage.removeItem('activeDepartment');
-        }
+        persistDepartment(dept);
     };
 
     return (
