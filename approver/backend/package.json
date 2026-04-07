@@ -20,7 +20,7 @@
         "migrate:logo-assets:from-api": "node scripts/backfillLogoAssetsFromApi.js"
     },
     "dependencies": {
-        "axios": "^1.13.2",
+        "axios": "^1.14.0",
         "bcryptjs": "^3.0.3",
         "cors": "^2.8.5",
         "dotenv": "^16.3.1",
@@ -29,6 +29,9 @@
         "mongoose": "^8.0.3",
         "multer": "^2.0.2",
         "openai": "^4.24.1"
+    },
+    "overrides": {
+        "axios": "^1.14.0"
     },
     "devDependencies": {
         "nodemon": "^3.0.2"
