@@ -347,4 +347,53 @@ export const deleteComment = async (candidateId: string, commentId: string): Pro
 // For now, this assumes it's accessible or we can redefine it here if needed.
 // export type { CandidateFormValues }; // Re-export if defined elsewhere and imported here
 // Or define a similar type here if not exported from page.tsx
-export type { CandidateData }; // Exporting for use in the page component
+// Bulk upload types and API
+export interface BulkUploadResponse {
+  msg: string;
+  batchId: string;
+  totalFiles: number;
+  statusUrl: string;
+}
+
+export interface BulkUploadStatus {
+  batchId: string;
+  totalFiles: number;
+  completed: number;
+  successful: number;
+  failed: number;
+  processing: number;
+  results: Array<{ fileName: string; candidateId: string; candidateName: string; success: true }>;
+  errors: Array<{ fileName: string; error: string; success: false }>;
+  startedAt: string;
+  completedAt: string | null;
+  state: 'processing' | 'completed';
+}
+
+export const bulkUploadCVs = async (files: File[]): Promise<BulkUploadResponse> => {
+  const token = localStorage.getItem('jwt');
+  const formData = new FormData();
+  files.forEach((file) => formData.append('resumes', file));
+
+  const response = await apiRequest('/api/bulk-upload/cv', {
+    method: 'POST',
+    headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err: any = await response.json().catch(() => ({ msg: 'Bulk upload failed' }));
+    throw new Error(err.msg || err.error || 'Bulk upload failed');
+  }
+  return response.json();
+};
+
+export const getBulkUploadStatus = async (batchId: string): Promise<BulkUploadStatus> => {
+  const response = await apiRequest(`/api/bulk-upload/status/${batchId}`, { method: 'GET' });
+  if (!response.ok) {
+    const err: any = await response.json().catch(() => ({ msg: 'Status check failed' }));
+    throw new Error(err.msg || 'Status check failed');
+  }
+  return response.json();
+};
+
+export type { CandidateData };

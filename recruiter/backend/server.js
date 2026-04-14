@@ -273,6 +273,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/user')); // User profile routes
 // REMOVED global multer middleware - handled at route level for better control
 app.use('/api/candidates', require('./routes/candidate')); // File upload handled in route
+app.use('/api/bulk-upload', require('./routes/bulkUpload')); // Bulk CV upload with BullMQ
 app.use('/api/jobs', require('./routes/job')); // Job routes
 app.use('/api/feedback-forms', require('./routes/feedbackForm')); // Feedback form templates and custom fields
 app.use('/api/embeddings', require('./routes/embeddingRoutes')); // Embedding management routes
@@ -362,9 +363,18 @@ app.get('/api/health', (req, res) => {
   res.status(health.healthy ? 200 : 503).json(health);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 WebSocket available at ws://localhost:${PORT}/ws/assistant`);
   console.log(`📊 Background services status:`, backgroundServiceManager.getStatus());
   console.log(`🔥 Session middleware applied selectively to prevent infinite loops`);
+
+  // Initialize BullMQ worker for bulk CV uploads
+  try {
+    const bulkUploadService = require('./services/bulkUploadService');
+    await bulkUploadService.initQueue();
+    console.log('📦 BullMQ bulk upload queue initialized');
+  } catch (err) {
+    console.warn('⚠️ BullMQ init failed (non-fatal, bulk upload will init on first use):', err.message);
+  }
 });
