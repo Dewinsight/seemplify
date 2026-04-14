@@ -24,7 +24,8 @@ connection.on('connect', () => {
 });
 
 const QUEUE_NAME = 'bulk-cv-upload';
-const CONCURRENCY = parseInt(process.env.BULK_UPLOAD_CONCURRENCY || '5', 10);
+/** Concurrency only; do not use BullMQ limiter here — it unnecessarily caps throughput vs Azure limits */
+const CONCURRENCY = parseInt(process.env.BULK_UPLOAD_CONCURRENCY || '8', 10);
 
 let queue = null;
 let worker = null;
@@ -228,7 +229,6 @@ async function initQueue() {
   }, {
     connection,
     concurrency: CONCURRENCY,
-    limiter: { max: CONCURRENCY, duration: 1000 },
   });
 
   worker.on('completed', (job, result) => {
@@ -268,10 +268,35 @@ async function addBulkUploadJobs(batchId, files, organizationId, userId) {
   console.log(`📦 Queued ${jobs.length} CV processing jobs for batch ${batchId}`);
 }
 
+async function shutdownQueue() {
+  try {
+    if (worker) {
+      await worker.close();
+      worker = null;
+    }
+    if (queueEvents) {
+      await queueEvents.close();
+      queueEvents = null;
+    }
+    if (queue) {
+      await queue.close();
+      queue = null;
+    }
+    if (connection) {
+      try {
+        await connection.quit();
+      } catch (_) { /* already closed */ }
+    }
+  } catch (e) {
+    console.warn('⚠️ bulkUploadService shutdownQueue:', e.message);
+  }
+}
+
 module.exports = {
   initQueue,
   addBulkUploadJobs,
   initBatchStatus,
   getBatchStatus,
+  shutdownQueue,
   QUEUE_NAME,
 };

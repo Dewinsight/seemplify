@@ -548,17 +548,16 @@ exports.checkEmbeddingStatus = async (req, res) => {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
-    console.log(`Candidate found, checking Pinecone for: ${id}`);
-    // Check both database flag and Pinecone existence
-    const existsInPinecone = await embeddingService.checkEmbeddingExists(id);
-    console.log(`Pinecone check result: ${existsInPinecone}`);
+    console.log(`Candidate found, checking vector store for: ${id}`);
+    const existsInVectorStore = await embeddingService.checkEmbeddingExists(id);
+    console.log(`Vector store check result: ${existsInVectorStore}`);
 
     const response = {
       candidateId: id,
       isEmbedded: candidate.isEmbedded,
       embeddingCreatedAt: candidate.embeddingCreatedAt,
-      existsInPinecone: existsInPinecone,
-      needsEmbedding: !candidate.isEmbedded || !existsInPinecone
+      existsInVectorStore: existsInVectorStore,
+      needsEmbedding: !candidate.isEmbedded || !existsInVectorStore
     };
 
     console.log(`Embedding status response:`, response);
@@ -925,10 +924,10 @@ exports.deleteCandidate = async (req, res) => {
 
     console.log(`🗑️ Deleting candidate: ${candidate.firstName} ${candidate.lastName} (${req.params.id})`);
 
-    // Delete embedding from Pinecone first
+    // Delete embedding from vector store first
     try {
       await embeddingService.deleteEmbedding(req.params.id);
-      console.log(`✅ Embedding deleted from Pinecone for candidate: ${req.params.id}`);
+      console.log(`✅ Embedding deleted from vector store for candidate: ${req.params.id}`);
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete embedding for candidate ${req.params.id}:`, embeddingError.message);
       // Continue with deletion even if embedding deletion fails

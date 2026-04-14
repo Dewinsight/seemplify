@@ -362,7 +362,7 @@ exports.deleteJob = async (req, res) => {
     
     try {
       await embeddingService.deleteEmbedding(req.params.id, embeddingService.jobIndexName);
-      console.log(`✅ Job embedding deleted from Pinecone for job: ${req.params.id}`);
+      console.log(`✅ Job embedding deleted from vector store for job: ${req.params.id}`);
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete job embedding for ${req.params.id}:`, embeddingError.message);
     }
@@ -500,8 +500,13 @@ exports.getJobEmbeddingStatus = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
-    const pineconeExists = await embeddingService.checkEmbeddingExists(job._id.toString(), embeddingService.jobIndexName);
-    res.json({ jobId: job._id, isEmbedded: job.isEmbedded && pineconeExists, embeddingCreatedAt: job.embeddingCreatedAt, pineconeExists });
+    const vectorIndexExists = await embeddingService.checkEmbeddingExists(job._id.toString(), embeddingService.jobIndexName);
+    res.json({
+      jobId: job._id,
+      isEmbedded: job.isEmbedded && vectorIndexExists,
+      embeddingCreatedAt: job.embeddingCreatedAt,
+      vectorIndexExists,
+    });
   } catch (error) {
     console.error('❌ Error checking job embedding status:', error);
     res.status(500).json({ msg: 'Server error checking embedding status', error: error.message });

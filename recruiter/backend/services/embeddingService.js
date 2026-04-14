@@ -1,27 +1,17 @@
 const axios = require('axios');
-const { Pinecone } = require('@pinecone-database/pinecone');
 const rankingService = require('./rankingService');
 
 class EmbeddingService {
   constructor() {
-    this.useWeaviate = process.env.USE_WEAVIATE === 'true';
-
-    this.pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY,
-    });
     this.candidateIndexName = 'candidates';
     this.jobIndexName = 'jobs';
-
-    if (this.useWeaviate) {
-      try {
-        this.weaviateService = require('./weaviateService');
-        console.log('🔀 EmbeddingService: Weaviate enabled for candidate operations');
-      } catch (err) {
-        console.error('❌ Failed to load weaviateService, falling back to Pinecone:', err.message);
-        this.useWeaviate = false;
-      }
-    } else {
-      console.log('📌 EmbeddingService: Using Pinecone for all operations');
+    this.useWeaviate = true;
+    try {
+      this.weaviateService = require('./weaviateService');
+      console.log('📊 EmbeddingService: Weaviate (sole vector store)');
+    } catch (err) {
+      console.error('❌ weaviateService failed to load:', err.message);
+      throw new Error('Weaviate is required. Set WEAVIATE_HOST, WEAVIATE_SCHEME, and WEAVIATE_API_KEY.');
     }
   }
 
@@ -489,12 +479,12 @@ class EmbeddingService {
   }
 
   /**
-   * Store embedding in vector database (Weaviate for candidates, Pinecone for jobs)
+   * Store embedding in Weaviate (candidates and jobs)
    */
   async storeEmbedding(entityId, embedding, metadata, indexName = this.candidateIndexName) {
     const RetryHelper = require('../utils/retryHelper');
 
-    if (this.useWeaviate && indexName === this.candidateIndexName) {
+    if (indexName === this.candidateIndexName) {
       const storeOp = async () => {
         await this.weaviateService.storeCandidateEmbedding(entityId, embedding, metadata);
         return true;
@@ -510,7 +500,7 @@ class EmbeddingService {
       }
     }
 
-    if (this.useWeaviate && indexName === this.jobIndexName) {
+    if (indexName === this.jobIndexName) {
       const storeOp = async () => {
         await this.weaviateService.storeJobEmbedding(entityId, embedding, metadata);
         return true;
@@ -526,39 +516,7 @@ class EmbeddingService {
       }
     }
 
-    const storeOperation = async () => {
-      const index = this.pinecone.index(indexName);
-      
-      await index.upsert([
-        {
-          id: entityId,
-          values: embedding,
-          metadata: {
-            ...metadata,
-            createdAt: new Date().toISOString()
-          }
-        }
-      ]);
-
-      const verifyResult = await index.fetch([entityId]);
-      if (!verifyResult.records || !verifyResult.records[entityId]) {
-        throw new Error('Embedding verification failed - not found after upsert');
-      }
-
-      return true;
-    };
-
-    try {
-      return await RetryHelper.withRetry(storeOperation, {
-        maxRetries: 3,
-        delay: 1000,
-        backoffMultiplier: 2,
-        operation: `Pinecone storage for ${entityId}`
-      });
-    } catch (error) {
-      console.error('Error storing embedding in Pinecone after retries:', error);
-      throw new Error(`Failed to store embedding in Pinecone: ${error.message}`);
-    }
+    throw new Error(`Unknown vector index name: ${indexName}`);
   }
 
   /**
@@ -566,16 +524,13 @@ class EmbeddingService {
    */
   async checkEmbeddingExists(entityId, indexName = this.candidateIndexName) {
     try {
-      if (this.useWeaviate && indexName === this.candidateIndexName) {
+      if (indexName === this.candidateIndexName) {
         return await this.weaviateService.checkCandidateExists(entityId);
       }
-      if (this.useWeaviate && indexName === this.jobIndexName) {
+      if (indexName === this.jobIndexName) {
         return await this.weaviateService.checkJobExists(entityId);
       }
-
-      const index = this.pinecone.index(indexName);
-      const result = await index.fetch([entityId]);
-      return result.records && Object.keys(result.records).length > 0;
+      return false;
     } catch (error) {
       console.error('Error checking embedding existence:', error);
       return false;
@@ -587,16 +542,13 @@ class EmbeddingService {
    */
   async deleteEmbedding(entityId, indexName = this.candidateIndexName) {
     try {
-      if (this.useWeaviate && indexName === this.candidateIndexName) {
+      if (indexName === this.candidateIndexName) {
         return await this.weaviateService.deleteCandidate(entityId);
       }
-      if (this.useWeaviate && indexName === this.jobIndexName) {
+      if (indexName === this.jobIndexName) {
         return await this.weaviateService.deleteJob(entityId);
       }
-
-      const index = this.pinecone.index(indexName);
-      await index.deleteOne(entityId);
-      return true;
+      throw new Error(`Unknown vector index name: ${indexName}`);
     } catch (error) {
       console.error('Error deleting embedding:', error);
       throw new Error('Failed to delete embedding');
@@ -722,12 +674,7 @@ class EmbeddingService {
         additionalSectionsCount: candidate.additionalSections ? Object.keys(candidate.additionalSections).length : 0,
         additionalSectionNames: candidate.additionalSections ? Object.keys(candidate.additionalSections) : [],
         
-        // Smart data storage - Store only ESSENTIAL data in Pinecone metadata
-        // Note: Pinecone has 40KB metadata limit per vector
-        // Full candidate data remains in MongoDB - fetch when needed for detailed views
-        
-        // Store only the most critical complex data that's useful for matching/filtering
-        // These are carefully selected to stay under the 40KB limit while providing rich context
+        // Summary fields for vector metadata (full CV remains in MongoDB)
         
         // Essential work history (most important for matching)
         jobHistory_summary: JSON.stringify((workExp.jobHistory || []).slice(0, 3).map(job => ({
@@ -781,8 +728,10 @@ class EmbeddingService {
       };
 
       const metadataSize = JSON.stringify(metadata).length;
-      const maxSize = 40960; // 40KB Pinecone limit (Weaviate has no limit)
-      
+      if (metadataSize > 512000) {
+        console.warn(`⚠️ Large embedding metadata: ${metadataSize} bytes (Weaviate stores fullMetadata)`);
+      }
+
       console.log('📊 Embedding metadata created:', {
         totalYearsExp: metadata.totalYearsExp,
         companiesCount: metadata.companiesWorkedAt.length,
@@ -791,17 +740,8 @@ class EmbeddingService {
         hasLeadershipExp: metadata.hasLeadershipExp,
         dataCompleteness: metadata.dataCompleteness,
         metadataSize: metadataSize,
-        vectorStore: this.useWeaviate ? 'weaviate' : 'pinecone',
+        vectorStore: 'weaviate',
       });
-
-      if (!this.useWeaviate) {
-        if (metadataSize > maxSize * 0.8) {
-          console.warn(`⚠️ Metadata size is ${metadataSize} bytes (${Math.round((metadataSize / maxSize) * 100)}% of Pinecone limit).`);
-        }
-        if (metadataSize > maxSize) {
-          throw new Error(`Metadata size (${metadataSize} bytes) exceeds Pinecone limit (${maxSize} bytes). Cannot store embedding.`);
-        }
-      }
 
       // Store in vector database
       await this.storeEmbedding(candidate._id.toString(), embedding, metadata, this.candidateIndexName);
@@ -932,58 +872,37 @@ class EmbeddingService {
     try {
       const queryEmbedding = await this.generateEmbedding(queryText);
 
-      if (this.useWeaviate) {
-        console.log(`🔀 Searching candidates via Weaviate (topK=${topK})...`);
-        const weaviateResults = await this.weaviateService.searchSimilarCandidates(queryEmbedding, organizationId, topK);
+      console.log(`🔀 Searching candidates via Weaviate (topK=${topK})...`);
+      const weaviateResults = await this.weaviateService.searchSimilarCandidates(queryEmbedding, organizationId, topK);
 
-        const normalized = weaviateResults.map(r => {
-          const distance = r._additional?.distance ?? 0;
-          const score = 1 - distance;
-          return {
-            id: r.candidateId,
-            score: score,
-            metadata: {
-              candidateId: r.candidateId,
-              organizationId: r.organizationId,
-              firstName: r.firstName || '',
-              lastName: r.lastName || '',
-              name: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
-              position: r.position || '',
-              skills: r.skills || [],
-              totalYearsExp: r.totalYearsExperience || 0,
-              experience: r.totalYearsExperience || 0,
-              location: r.location || '',
-              email: r.email || '',
-              aiSummary: r.aiSummary || '',
-              strengths: r.strengths || [],
-              hasAIAnalysis: !!(r.aiSummary),
-              dataCompleteness: 80,
-            },
-          };
-        });
-
-        console.log(`🔍 Weaviate returned ${normalized.length} candidates ${organizationId ? 'in organization' : 'globally'}`);
-        return normalized;
-      }
-
-      const index = this.pinecone.index(this.candidateIndexName);
-      const queryOptions = {
-        vector: queryEmbedding,
-        topK: topK,
-        includeMetadata: true
-      };
-
-      if (organizationId) {
-        queryOptions.filter = {
-          organizationId: { $eq: organizationId }
+      const normalized = weaviateResults.map(r => {
+        const distance = r._additional?.distance ?? 0;
+        const score = 1 - distance;
+        return {
+          id: r.candidateId,
+          score: score,
+          metadata: {
+            candidateId: r.candidateId,
+            organizationId: r.organizationId,
+            firstName: r.firstName || '',
+            lastName: r.lastName || '',
+            name: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
+            position: r.position || '',
+            skills: r.skills || [],
+            totalYearsExp: r.totalYearsExperience || 0,
+            experience: r.totalYearsExperience || 0,
+            location: r.location || '',
+            email: r.email || '',
+            aiSummary: r.aiSummary || '',
+            strengths: r.strengths || [],
+            hasAIAnalysis: !!(r.aiSummary),
+            dataCompleteness: 80,
+          },
         };
-        console.log(`🏢 Filtering candidates by organization: ${organizationId}`);
-      }
+      });
 
-      const searchResults = await index.query(queryOptions);
-      
-      console.log(`🔍 Found ${searchResults.matches?.length || 0} candidates ${organizationId ? 'in organization' : 'globally'}`);
-      return searchResults.matches || [];
+      console.log(`🔍 Weaviate returned ${normalized.length} candidates ${organizationId ? 'in organization' : 'globally'}`);
+      return normalized;
     } catch (error) {
       console.error('Error searching similar candidates:', error);
       throw new Error('Failed to search similar candidates');
@@ -1114,7 +1033,6 @@ class EmbeddingService {
         status: job.status || ''
       };
 
-      // Store in Pinecone
       await this.storeEmbedding(job._id.toString(), embedding, metadata, this.jobIndexName);
       
       console.log(`Successfully created embedding for job: ${job._id}`);
@@ -1474,19 +1392,12 @@ class EmbeddingService {
     try {
       const startTime = Date.now();
       
-      let candidateRecords;
-      if (this.useWeaviate) {
-        const weaviateRecords = await this.weaviateService.batchFetchCandidates(candidateIds);
-        candidateRecords = weaviateRecords.map(r => ({
-          id: r.id,
-          values: r.values,
-          metadata: r.metadata,
-        }));
-      } else {
-        const index = this.pinecone.index(this.candidateIndexName);
-        const fetchResult = await index.fetch(candidateIds);
-        candidateRecords = Object.values(fetchResult.records);
-      }
+      const weaviateRecords = await this.weaviateService.batchFetchCandidates(candidateIds);
+      const candidateRecords = weaviateRecords.map(r => ({
+        id: r.id,
+        values: r.values,
+        metadata: r.metadata,
+      }));
 
       if (candidateRecords.length === 0) {
         return [];
@@ -2547,9 +2458,9 @@ class EmbeddingService {
   }
 
   /**
-   * Parse JSON metadata field from Pinecone (with error handling)
+   * Parse JSON metadata field from vector store (with error handling)
    * Use this to retrieve complex objects stored as JSON strings
-   * @param {Object} metadata - Pinecone metadata object
+   * @param {Object} metadata - Vector metadata object
    * @param {string} fieldName - Name of the JSON field to parse
    * @param {*} defaultValue - Default value if parsing fails (default: null)
    * @returns {*} Parsed object or default value
@@ -2575,10 +2486,10 @@ class EmbeddingService {
   }
 
   /**
-   * Parse all available fields from Pinecone metadata
+   * Parse all available fields from vector metadata
    * Returns a candidate-like object with essential data from summaries
    * Note: For complete data, fetch from MongoDB using candidateId
-   * @param {Object} metadata - Pinecone metadata object
+   * @param {Object} metadata - Vector metadata object
    * @returns {Object} Parsed candidate data (summary version)
    */
   parseCompleteMetadata(metadata) {

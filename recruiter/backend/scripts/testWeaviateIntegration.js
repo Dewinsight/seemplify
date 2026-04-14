@@ -30,12 +30,12 @@ async function runTests() {
     const embeddingService = require('../services/embeddingService');
     const weaviateService = require('../services/weaviateService');
 
-    // ── Test 1: Weaviate flag enabled ──
+    // ── Test 1: Weaviate-only embedding service ──
     console.log('── Test 1: Configuration ──');
-    if (embeddingService.useWeaviate) {
-      pass('USE_WEAVIATE is enabled');
+    if (embeddingService.weaviateService && embeddingService.useWeaviate) {
+      pass('EmbeddingService uses Weaviate');
     } else {
-      fail('USE_WEAVIATE is NOT enabled', 'env var missing or false');
+      fail('Weaviate not wired in EmbeddingService');
     }
 
     // ── Test 2: Weaviate connection ──

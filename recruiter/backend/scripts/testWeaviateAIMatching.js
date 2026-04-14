@@ -19,7 +19,7 @@ async function testAIMatching() {
 
     // Check which vector DB is active
     console.log('📊 Current Configuration:');
-    console.log(`  - Vector DB: ${process.env.USE_WEAVIATE === 'true' ? '✨ Weaviate' : '📌 Pinecone'}`);
+    console.log('  - Vector DB: ✨ Weaviate');
     console.log(`  - Weaviate Host: ${process.env.WEAVIATE_HOST || 'Not set'}`);
     console.log('');
 
@@ -120,7 +120,7 @@ async function testAIMatching() {
     
     console.log(`✅ Found ${searchMatches.length} candidates`);
     searchMatches.forEach((match, i) => {
-      // Handle both Weaviate and Pinecone response formats
+      // Weaviate response format
       const name = match.firstName 
         ? `${match.firstName} ${match.lastName}` 
         : match.metadata?.name || 'Unknown';
@@ -146,7 +146,7 @@ async function testAIMatching() {
     console.log('  ✅ Rank candidates by IDs (shortlist)');
     console.log('  ✅ Search similar candidates by query');
     console.log('');
-    console.log(`Vector DB: ${process.env.USE_WEAVIATE === 'true' ? '✨ Weaviate' : '📌 Pinecone'}`);
+    console.log('Vector DB: ✨ Weaviate');
     console.log('');
     console.log('🎉 AI Matching is working correctly!');
 

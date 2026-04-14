@@ -263,7 +263,7 @@ export const checkEmbeddingStatus = async (candidateId: string): Promise<{
   candidateId: string;
   isEmbedded: boolean;
   embeddingCreatedAt?: string;
-  existsInPinecone: boolean;
+  existsInVectorStore: boolean;
   needsEmbedding: boolean;
 }> => {
   const response = await apiRequest(`/api/candidates/${candidateId}/embedding-status`, {

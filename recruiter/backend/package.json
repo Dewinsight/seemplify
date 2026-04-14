@@ -7,7 +7,6 @@
     "@azure/openai": "^2.0.0",
     "@langchain/core": "^0.3.58",
     "@langchain/openai": "^0.5.13",
-    "@pinecone-database/pinecone": "^6.1.0",
     "axios": "^1.14.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.3",
@@ -65,11 +64,11 @@
     "pm2:restart": "pm2 restart ecosystem.config.js",
     "pm2:logs": "pm2 logs",
     "pm2:status": "pm2 status",
-    "setup-pinecone": "node scripts/setupPinecone.js",
     "cleanup-sessions": "node scripts/sessionCleanup.js",
     "test-email": "node scripts/test-email.js",
     "test-questions": "node scripts/testInterviewQuestions.js",
-    "compare-cv-models": "node scripts/compareCvExtractionModels.js"
+    "compare-cv-models": "node scripts/compareCvExtractionModels.js",
+    "test:bulk-pipeline": "node scripts/testBulkPipeline.js"
   },
   "keywords": [],
   "author": "",

@@ -74,14 +74,14 @@ export function CandidateEmbeddingCard({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {embeddingStatus.isEmbedded && embeddingStatus.existsInPinecone ? (
+            {embeddingStatus.isEmbedded && embeddingStatus.existsInVectorStore ? (
               <CheckCircle className="h-5 w-5 text-green-600" />
             ) : (
               <XCircle className="h-5 w-5 text-red-600" />
             )}
             <div>
               <p className="text-sm font-medium">
-                {embeddingStatus.isEmbedded && embeddingStatus.existsInPinecone 
+                {embeddingStatus.isEmbedded && embeddingStatus.existsInVectorStore 
                   ? "Embedded & Searchable" 
                   : "Not Embedded"}
               </p>
@@ -180,7 +180,7 @@ export function CandidateEmbeddingCard({
         
         <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
           <p className="mb-1"><strong>Database:</strong> {embeddingStatus.isEmbedded ? "✓ Flagged" : "✗ Not flagged"}</p>
-          <p><strong>Pinecone:</strong> {embeddingStatus.existsInPinecone ? "✓ Stored" : "✗ Not stored"}</p>
+          <p><strong>Vector index:</strong> {embeddingStatus.existsInVectorStore ? "✓ Stored" : "✗ Not stored"}</p>
         </div>
       </div>
     )

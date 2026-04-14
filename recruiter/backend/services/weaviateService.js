@@ -444,7 +444,7 @@ class WeaviateService {
             .do();
           
           if (result) {
-            // Transform to Pinecone-like format for compatibility
+            // Normalize to embeddingService match shape
             results.push({
               id: result.properties.candidateId, // Original MongoDB ID
               values: result.vector,
