@@ -119,7 +119,7 @@ class WeaviateService {
         .withClassName('Candidate')
         .withNearVector({ vector: queryEmbedding })
         .withLimit(topK)
-        .withFields('candidateId organizationId firstName lastName position skills totalYearsExperience _additional { distance certainty }');
+        .withFields('candidateId organizationId firstName lastName email position skills totalYearsExperience aiSummary strengths location _additional { distance certainty }');
 
       // Add organization filter if provided
       if (organizationId) {
