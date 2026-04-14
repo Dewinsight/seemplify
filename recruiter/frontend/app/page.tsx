@@ -82,7 +82,7 @@ export default function LandingPage() {
               <li><ActiveLink href="#features">Features</ActiveLink></li>
               <li><ActiveLink href="#ai-matching">AI Matching</ActiveLink></li>
               <li><ActiveLink href="#how-it-works">How It Works</ActiveLink></li>
-              <li><ActiveLink href="#ats-comparison">Why SmartHR</ActiveLink></li>
+              <li><ActiveLink href="#ats-comparison">Why {brand.name}</ActiveLink></li>
               <li><ActiveLink href="#workflow">Workflow</ActiveLink></li>
               <li><ActiveLink href="#interview-tech">Interview Tech</ActiveLink></li>
               <li><ActiveLink href="#pricing">Pricing</ActiveLink></li>
@@ -186,7 +186,7 @@ export default function LandingPage() {
                         className="block py-3 text-lg text-slate-300 hover:text-white transition-colors border-b border-white/10"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
-                        Why SmartHR
+                        Why {brand.name}
                       </a>
                     </li>
                     <li>
@@ -316,7 +316,7 @@ export default function LandingPage() {
             <div className="relative z-10 rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
               <Image 
                 src="https://images.unsplash.com/photo-1531545514256-b1400bc00f31?auto=format&fit=crop&q=80" 
-                alt="HR professionals working with SmartHR platform"
+                alt={`HR professionals working with ${brand.name} platform`}
                 width={600}
                 height={400}
                 className="w-full object-cover rounded-2xl"
@@ -406,7 +406,7 @@ export default function LandingPage() {
               Intelligent HR Solutions
             </motion.span>
             <h2 className="text-4xl md:text-5xl lg:text-6xl font-black mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-100 to-purple-100 leading-tight">
-              Why Choose SmartHR?
+              Why Choose {brand.name}?
             </h2>
             <p className="text-slate-300 text-xl md:text-2xl max-w-4xl mx-auto leading-relaxed">
               Our comprehensive platform combines <span className="text-white font-semibold">cutting-edge AI</span> with powerful tools
@@ -693,7 +693,7 @@ export default function LandingPage() {
                 <div>
                   <div className="font-semibold text-white mb-1">Industry-Leading Results</div>
                   <p className="text-slate-300 text-sm">
-                    "SmartHR's AI matching technology reduced our time-to-hire by 62% while improving candidate quality."
+                    {`"${brand.name}'s AI matching technology reduced our time-to-hire by 62% while improving candidate quality."`}
                     <span className="block mt-2 text-blue-400">— Sarah Johnson, Head of Talent Acquisition</span>
                   </p>
                 </div>
@@ -1050,7 +1050,7 @@ export default function LandingPage() {
         </div>
         
         <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between">
-          <p className="text-slate-300 text-sm">© 2025 SmartHR. All rights reserved.</p>
+          <p className="text-slate-300 text-sm">{brand.footerText || `© 2025 ${brand.name}. All rights reserved.`}</p>
           <div className="flex items-center space-x-4 mt-4 md:mt-0">
             <div className="flex items-center space-x-2 text-slate-400 text-xs">
               <Shield className="w-3 h-3" />

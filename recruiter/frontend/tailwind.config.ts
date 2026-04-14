@@ -12,6 +12,7 @@ const config = {
   safelist: [
     // Multi-brand system colors
     'from-blue-400', 'to-purple-500', 'bg-green-400',   // SmartHR
+    'from-teal-500', 'to-cyan-600', 'bg-teal-400',      // Jetstone
     'from-orange-400', 'to-red-500', 'bg-amber-400',    // Producive
     // Metro gradient classes - 3 color scheme
     'from-indigo-500', 'to-indigo-600', // Primary

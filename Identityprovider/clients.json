@@ -76,6 +76,7 @@
         "https://api-dev.seemplifyai.com",
         "https://auth-dev.seemplifyai.com",
         "https://smarthr.aiinnigeria.com",
+        "https://jetstone.aiinnigeria.com",
         "https://*.smarthr.com"
       ],
       "response_types": [

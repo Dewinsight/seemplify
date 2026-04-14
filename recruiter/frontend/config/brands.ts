@@ -11,7 +11,13 @@ export interface BrandConfig {
     secondary: string;
   };
   gradient: string;
-  patterns: string[]; // Domain patterns to match
+  patterns: string[];
+  logo?: string;
+  secondaryLogo?: string;
+  useImageLogo?: boolean;
+  footerText?: string;
+  loginHeading?: string;
+  loginSubheading?: string;
 }
 
 export const BRANDS: Record<string, BrandConfig> = {
@@ -19,7 +25,7 @@ export const BRANDS: Record<string, BrandConfig> = {
     id: 'smarthr',
     name: 'SmartHR',
     shortName: 'HR',
-    tagline: '✨ AI-Powered Recruitment',
+    tagline: 'AI-Powered Recruitment',
     colors: {
       from: 'from-blue-400',
       to: 'to-purple-500',
@@ -28,13 +34,37 @@ export const BRANDS: Record<string, BrandConfig> = {
       secondary: '#a855f7',
     },
     gradient: 'from-blue-400 to-purple-500',
-    patterns: ['smarthr', 'localhost', '127.0.0.1'],
+    patterns: ['smarthr', 'localhost', '127.0.0.1', 'app.seemplifyai', 'app-dev.seemplifyai'],
+    footerText: '© 2025 SmartHR. All rights reserved.',
+    loginHeading: 'SmartHR',
+    loginSubheading: 'AI-Powered Recruitment',
+  },
+  jetstone: {
+    id: 'jetstone',
+    name: 'Jetstone Education',
+    shortName: 'JE',
+    tagline: 'Akwa Ibom State Recruitment Portal',
+    colors: {
+      from: 'from-teal-500',
+      to: 'to-cyan-600',
+      pulse: 'bg-teal-400',
+      primary: '#0d9488',
+      secondary: '#0891b2',
+    },
+    gradient: 'from-teal-500 to-cyan-600',
+    patterns: ['jetstone'],
+    logo: '/jetstone-logo.png',
+    secondaryLogo: '/jetstone-akwaibom-logo.png',
+    useImageLogo: true,
+    footerText: '© 2025 Jetstone Education. All rights reserved.',
+    loginHeading: 'Jetstone Education',
+    loginSubheading: 'Akwa Ibom State Recruitment Portal',
   },
   producive: {
     id: 'producive',
     name: 'Producive',
     shortName: 'PV',
-    tagline: '⚡ Productivity Unleashed',
+    tagline: 'Productivity Unleashed',
     colors: {
       from: 'from-orange-400',
       to: 'to-red-500',
@@ -44,6 +74,9 @@ export const BRANDS: Record<string, BrandConfig> = {
     },
     gradient: 'from-orange-400 to-red-500',
     patterns: ['producive', 'productive'],
+    footerText: '© 2025 Producive. All rights reserved.',
+    loginHeading: 'Producive',
+    loginSubheading: 'Productivity Unleashed',
   },
 };
 

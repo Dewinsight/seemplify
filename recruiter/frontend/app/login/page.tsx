@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { oidcConfig } from "@/config/oidc.config";
@@ -25,10 +26,12 @@ import {
   Users,
   BarChart3
 } from "lucide-react";
+import { useBrandConfig } from "@/context/BrandContext";
 
 export default function LoginPage() {
   const { toast } = useToast();
   const auth = useAuth();
+  const brand = useBrandConfig();
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessingOIDC, setIsProcessingOIDC] = useState(false);
@@ -133,7 +136,7 @@ export default function LoginPage() {
               transition={{ delay: 0.4 }}
               className="text-slate-300 text-sm"
             >
-              Securely logging you into SmartHR...
+              Securely logging you into {brand.name}...
             </motion.p>
 
             <motion.div
@@ -181,15 +184,24 @@ export default function LoginPage() {
           {/* Logo and Brand */}
           <div className="mb-6 lg:mb-8 xl:mb-12">
             <div className="flex items-center mb-6">
-              <div className="relative">
-                <div className="w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center shadow-2xl">
-                  <span className="font-extrabold text-white text-base lg:text-lg xl:text-xl tracking-tighter">HR</span>
+              {brand.useImageLogo && brand.logo ? (
+                <div className="flex items-center gap-4">
+                  <Image src={brand.logo} alt={brand.name} width={56} height={56} className="rounded-xl object-contain w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14" />
+                  {brand.secondaryLogo && (
+                    <Image src={brand.secondaryLogo} alt={`${brand.name} partner`} width={56} height={56} className="rounded-xl object-contain w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14" />
+                  )}
                 </div>
-                <div className="absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 bg-green-400 rounded-full border-2 border-slate-900 animate-pulse"></div>
-              </div>
+              ) : (
+                <div className="relative">
+                  <div className={`w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
+                    <span className="font-extrabold text-white text-base lg:text-lg xl:text-xl tracking-tighter">{brand.shortName}</span>
+                  </div>
+                  <div className={`absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 ${brand.colors.pulse} rounded-full border-2 border-slate-900 animate-pulse`}></div>
+                </div>
+              )}
               <div className="ml-3 lg:ml-4">
-                <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-white">SmartHR</h1>
-                <p className="text-slate-300 text-xs lg:text-sm">AI-Powered Recruitment</p>
+                <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-white">{brand.loginHeading || brand.name}</h1>
+                <p className="text-slate-300 text-xs lg:text-sm">{brand.loginSubheading || brand.tagline}</p>
               </div>
             </div>
             
@@ -248,9 +260,18 @@ export default function LoginPage() {
           <div className="w-full max-w-md">
             {/* Mobile Logo */}
             <div className="lg:hidden flex justify-center mb-8">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center shadow-2xl">
-                <span className="font-extrabold text-white text-xl tracking-tighter">HR</span>
-              </div>
+              {brand.useImageLogo && brand.logo ? (
+                <div className="flex items-center gap-3">
+                  <Image src={brand.logo} alt={brand.name} width={56} height={56} className="rounded-xl object-contain" />
+                  {brand.secondaryLogo && (
+                    <Image src={brand.secondaryLogo} alt={`${brand.name} partner`} width={56} height={56} className="rounded-xl object-contain" />
+                  )}
+                </div>
+              ) : (
+                <div className={`w-14 h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
+                  <span className="font-extrabold text-white text-xl tracking-tighter">{brand.shortName}</span>
+                </div>
+              )}
             </div>
 
             {/* Floating Particles */}
@@ -310,7 +331,7 @@ export default function LoginPage() {
                     transition={{ delay: 0.4, duration: 0.5 }}
                   >
                     <CardDescription className="text-slate-300 text-base">
-                      Sign in to your SmartHR account
+                      Sign in to your {brand.name} account
                     </CardDescription>
                   </motion.div>
                 </CardHeader>
@@ -454,7 +475,7 @@ export default function LoginPage() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold leading-5">Open App Hub</span>
-                  <span className="block truncate text-xs text-slate-300">View all SmartHR apps and tools</span>
+                  <span className="block truncate text-xs text-slate-300">View all {brand.name} apps and tools</span>
                 </span>
                 <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-white" />
               </motion.a>

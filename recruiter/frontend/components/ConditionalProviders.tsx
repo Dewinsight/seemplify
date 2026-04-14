@@ -6,6 +6,7 @@ import { UserProvider } from '@/context/UserContext';
 import { OrganizationProvider } from '@/context/OrganizationContext';
 import { TutorialProvider } from '@/context/TutorialContext';
 import { BrandProvider } from '@/context/BrandContext';
+import BrandTitle from '@/components/BrandTitle';
 import { TutorialRenderer } from '@/components/tutorial/TutorialRenderer';
 import AppShell from '@/components/AppShell';
 import { InactivityWarning } from '@/components/InactivityWarning';
@@ -21,15 +22,15 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
 
   console.log('🔀 ConditionalProviders:', { pathname, isAdminRoute, isPublicRoute });
 
-  // For admin and public routes, skip all the regular providers and just render children
+  // BrandProvider always wraps everything so branding is available on every route
   if (isAdminRoute || isPublicRoute) {
     console.log('🚀 Admin or Public route detected - skipping regular providers');
-    return <>{children}</>;
+    return <BrandProvider><BrandTitle />{children}</BrandProvider>;
   }
 
-  // For regular routes, use all the providers and AppShell
   return (
     <BrandProvider>
+      <BrandTitle />
       <AuthProvider>
         <UserProvider>
           <OrganizationProvider>

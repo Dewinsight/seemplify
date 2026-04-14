@@ -6,8 +6,10 @@ import {
   ClipboardList, Clock, Users, Zap, Check, X, Share2 
 } from 'lucide-react';
 import Image from 'next/image';
+import { useBrandConfig } from '@/context/BrandContext';
 
 export default function AtsComparisonSection() {
+  const brand = useBrandConfig();
   const comparisonPoints = [
     {
       title: "Resume Analysis",
@@ -109,7 +111,7 @@ export default function AtsComparisonSection() {
           Beyond Traditional ATS Systems
         </h2>
         <p className="text-slate-300 text-lg max-w-3xl mx-auto">
-          SmartHR revolutionizes candidate matching with advanced AI and vector search technology, 
+          {brand.name} revolutionizes candidate matching with advanced AI and vector search technology, 
           going far beyond what traditional Applicant Tracking Systems can offer.
         </p>
       </motion.div>
@@ -186,7 +188,7 @@ export default function AtsComparisonSection() {
                     }}
                   />
                 </div>
-                <h3 className="text-xl font-bold text-white">SmartHR</h3>
+                <h3 className="text-xl font-bold text-white">{brand.name}</h3>
                 <div className="ml-auto bg-green-400/20 text-green-400 px-3 py-1 rounded-full text-sm font-medium border border-green-400/30 shadow-sm shadow-green-400/10">
                   Next-Gen Solution
                 </div>

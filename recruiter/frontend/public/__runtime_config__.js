@@ -5,6 +5,9 @@
   var isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
   var isDev = hostname.includes('-dev') || hostname.includes('.dev.') || isLocal;
 
+  // White-label domains that proxy to the same production backend
+  var isWhiteLabel = hostname.includes('jetstone.aiinnigeria.com');
+
   var apiBase = isDev ? 'https://api-dev.seemplifyai.com' : 'https://api.seemplifyai.com';
   var wsBase = isDev ? 'wss://api-dev.seemplifyai.com' : 'wss://api.seemplifyai.com';
   var idpBase = isDev ? 'https://auth-dev.seemplifyai.com' : 'https://auth.seemplifyai.com';
@@ -14,6 +17,13 @@
     apiBase = 'http://localhost:5001';
     wsBase = 'ws://localhost:5001';
     idpBase = 'http://localhost:4000';
+  }
+
+  // White-label domains use production backend
+  if (isWhiteLabel) {
+    apiBase = 'https://api.seemplifyai.com';
+    wsBase = 'wss://api.seemplifyai.com';
+    idpBase = 'https://auth.seemplifyai.com';
   }
 
   window.__RUNTIME_CONFIG__ = {
@@ -27,6 +37,7 @@
   console.log('Runtime config loaded:', {
     hostname: hostname,
     isDev: isDev,
+    isWhiteLabel: isWhiteLabel,
     apiBase: apiBase,
     idpBase: idpBase
   });

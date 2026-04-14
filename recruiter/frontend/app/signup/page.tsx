@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { oidcConfig } from "@/config/oidc.config";
 import { getApiBaseUrl } from "@/utils/env";
@@ -21,8 +22,10 @@ import {
   Users,
   Zap
 } from "lucide-react";
+import { useBrandConfig } from "@/context/BrandContext";
 
 export default function SignupPage() {
+  const brand = useBrandConfig();
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
@@ -72,15 +75,24 @@ export default function SignupPage() {
           {/* Logo and Brand */}
           <div className="mb-6 lg:mb-8 xl:mb-12">
             <div className="flex items-center mb-6">
-              <div className="relative">
-                <div className="w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br from-blue-400 to-purple-500 rounded-xl flex items-center justify-center shadow-2xl">
-                  <span className="font-extrabold text-white text-base lg:text-lg xl:text-xl tracking-tighter">HR</span>
+              {brand.useImageLogo && brand.logo ? (
+                <div className="flex items-center gap-4">
+                  <Image src={brand.logo} alt={brand.name} width={56} height={56} className="rounded-xl object-contain w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14" />
+                  {brand.secondaryLogo && (
+                    <Image src={brand.secondaryLogo} alt={`${brand.name} partner`} width={56} height={56} className="rounded-xl object-contain w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14" />
+                  )}
                 </div>
-                <div className="absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 bg-green-400 rounded-full border-2 border-slate-900 animate-pulse"></div>
-              </div>
+              ) : (
+                <div className="relative">
+                  <div className={`w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
+                    <span className="font-extrabold text-white text-base lg:text-lg xl:text-xl tracking-tighter">{brand.shortName}</span>
+                  </div>
+                  <div className={`absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 ${brand.colors.pulse} rounded-full border-2 border-slate-900 animate-pulse`}></div>
+                </div>
+              )}
               <div className="ml-3 lg:ml-4">
-                <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-white">SmartHR</h1>
-                <p className="text-slate-300 text-xs lg:text-sm">AI-Powered Recruitment</p>
+                <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-white">{brand.loginHeading || brand.name}</h1>
+                <p className="text-slate-300 text-xs lg:text-sm">{brand.loginSubheading || brand.tagline}</p>
               </div>
             </div>
             
@@ -199,7 +211,7 @@ export default function SignupPage() {
                     transition={{ delay: 0.4, duration: 0.5 }}
                   >
                     <CardDescription className="text-slate-300 text-base">
-                      Sign up for your SmartHR account
+                      Sign up for your {brand.name} account
           </CardDescription>
                   </motion.div>
         </CardHeader>
