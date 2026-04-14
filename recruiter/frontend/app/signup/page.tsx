@@ -29,6 +29,11 @@ export default function SignupPage() {
   const authShell =
     brand.authShellClass ?? 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900';
   const jet = brand.id === 'jetstone';
+  const textColor = jet ? 'text-slate-800' : 'text-white';
+  const textMuted = jet ? 'text-slate-600' : 'text-slate-300';
+  const cardBg = jet ? 'bg-white/60 border-slate-200/50 shadow-xl' : 'bg-white/15 border-white/30 shadow-2xl';
+  const featureBg = jet ? 'bg-white/40 border-slate-200/50 hover:bg-white/60' : 'bg-white/5 border-white/10 hover:bg-white/10';
+  const linkBg = jet ? 'bg-white/50 border-slate-200/50 hover:bg-white/80 hover:border-slate-300/50' : 'bg-white/10 border-white/20 hover:bg-white/20 hover:border-white/30';
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
@@ -87,25 +92,25 @@ export default function SignupPage() {
               ) : (
                 <div className="relative">
                   <div className={`w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
-                    <span className="font-extrabold text-white text-base lg:text-lg xl:text-xl tracking-tighter">{brand.shortName}</span>
+                    <span className={`font-extrabold text-base lg:text-lg xl:text-xl tracking-tighter ${textColor}`}>{brand.shortName}</span>
                   </div>
                   <div className={`absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 ${brand.colors.pulse} rounded-full border-2 border-slate-900 animate-pulse`}></div>
                 </div>
               )}
               <div className="ml-3 lg:ml-4">
-                <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-white">{brand.loginHeading || brand.name}</h1>
-                <p className="text-slate-300 text-xs lg:text-sm">{brand.loginSubheading || brand.tagline}</p>
+                <h1 className={`text-xl lg:text-2xl xl:text-3xl font-bold ${textColor}`}>{brand.loginHeading || brand.name}</h1>
+                <p className={`text-xs lg:text-sm ${textMuted}`}>{brand.loginSubheading || brand.tagline}</p>
               </div>
             </div>
             
             <div className="max-w-md">
-              <h2 className="text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-bold text-white mb-3 lg:mb-4 leading-tight">
+              <h2 className={`text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-bold mb-3 lg:mb-4 leading-tight ${textColor}`}>
                 Join our
                 <span className={`block bg-clip-text text-transparent ${jet ? 'bg-gradient-to-r from-teal-300 via-cyan-300 to-sky-300' : 'bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400'}`}>
                   smart platform
                 </span>
               </h2>
-              <p className="text-slate-300 text-sm lg:text-base xl:text-lg leading-relaxed">
+              <p className={`text-sm lg:text-base xl:text-lg leading-relaxed ${textMuted}`}>
                 Create your account and start transforming your hiring process today.
               </p>
             </div>
@@ -132,14 +137,14 @@ export default function SignupPage() {
             ].map((feature, index) => (
               <div 
                 key={index} 
-                className="flex items-center p-2 lg:p-3 xl:p-4 bg-white/5 backdrop-blur-sm rounded-lg lg:rounded-xl border border-white/10 hover:bg-white/10 transition-all duration-300 group"
+                className={`flex items-center p-2 lg:p-3 xl:p-4 backdrop-blur-sm rounded-lg lg:rounded-xl transition-all duration-300 group ${featureBg}`}
               >
                 <div className={`flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300 ${jet ? 'bg-gradient-to-br from-teal-400 to-cyan-600' : 'bg-gradient-to-br from-blue-400 to-purple-500'}`}>
                   {feature.icon}
                 </div>
                 <div className="ml-2 lg:ml-3 xl:ml-4">
-                  <h3 className="text-white font-semibold text-sm lg:text-base">{feature.title}</h3>
-                  <p className="text-slate-300 text-xs lg:text-sm">{feature.description}</p>
+                  <h3 className={`font-semibold text-sm lg:text-base ${textColor}`}>{feature.title}</h3>
+                  <p className={`text-xs lg:text-sm ${textMuted}`}>{feature.description}</p>
                 </div>
               </div>
             ))}
@@ -148,7 +153,7 @@ export default function SignupPage() {
           {/* Desktop Secondary Logo */}
           {brand.secondaryLogo && (
             <div className="absolute bottom-8 left-8 xl:bottom-12 xl:left-12 flex items-center gap-3 opacity-80">
-              <span className="text-slate-400 text-sm font-medium">In partnership with</span>
+              <span className={`text-sm font-medium ${textMuted}`}>In partnership with</span>
               <Image src={brand.secondaryLogo} alt="Partner Logo" width={48} height={48} className="object-contain" />
             </div>
           )}
@@ -165,7 +170,7 @@ export default function SignupPage() {
                 </div>
               ) : (
                 <div className={`w-14 h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
-                  <span className="font-extrabold text-white text-xl tracking-tighter">{brand.shortName}</span>
+                  <span className={`font-extrabold text-xl tracking-tighter ${textColor}`}>{brand.shortName}</span>
                 </div>
               )}
             </div>
@@ -201,7 +206,7 @@ export default function SignupPage() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ duration: 0.5, type: "spring", stiffness: 100 }}
             >
-              <Card className="bg-white/15 backdrop-blur-2xl border-white/30 shadow-2xl overflow-hidden relative">
+              <Card className={`backdrop-blur-2xl overflow-hidden relative ${cardBg}`}>
                 {/* Subtle Animated Border */}
                 <div className={`absolute inset-0 rounded-lg animate-pulse opacity-30 ${jet ? 'bg-gradient-to-r from-teal-500/15 via-cyan-500/15 to-sky-500/10' : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10'}`}></div>
                 
@@ -211,7 +216,7 @@ export default function SignupPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2, duration: 0.5 }}
                   >
-                    <CardTitle className="text-2xl font-bold text-white flex items-center justify-center gap-2">
+                    <CardTitle className={`text-2xl font-bold flex items-center justify-center gap-2 ${textColor}`}>
                       Create Account
                       <motion.div
                         animate={{ rotate: [0, 10, 0] }}
@@ -226,7 +231,7 @@ export default function SignupPage() {
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.4, duration: 0.5 }}
                   >
-                    <CardDescription className="text-slate-300 text-base">
+                    <CardDescription className={`text-base ${textMuted}`}>
                       Sign up for your {brand.name} account
           </CardDescription>
                   </motion.div>
@@ -241,7 +246,7 @@ export default function SignupPage() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.6, duration: 0.5 }}
                     >
-                      <p className="text-slate-300 text-sm">
+                      <p className={`text-sm ${textMuted}`}>
                         Create your account securely using {oidcConfig.providerName}
                       </p>
                     </motion.div>
@@ -275,7 +280,7 @@ export default function SignupPage() {
                           </Button>
                         </motion.div>
 
-                        <p className="mt-6 text-center text-sm text-slate-300">
+                        <p className={`mt-6 text-center text-sm ${textMuted}`}>
                           Already have an account?{" "}
                           <Link
                             href="/login"

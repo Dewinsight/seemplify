@@ -11,6 +11,7 @@ import "../styles/workflow-reactflow.css"
 import "./input-zoom-fix.css"
 import "./ios-zoom-fix.css"
 import "./login-responsive-fix.css"
+import "./jetstone-theme.css"
 
 import { ConfigThemeProvider } from "@/components/env-theme-provider"
 import { Toaster } from "@/components/ui/toaster"

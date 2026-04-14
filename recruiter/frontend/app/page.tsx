@@ -101,7 +101,7 @@ export default function LandingPage() {
             </Button>
             <Button 
               size="sm"
-              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
+              className={`text-white border-0 ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'}`}
               onClick={() => router.push('/signup')}
             >
               Sign Up
@@ -231,7 +231,7 @@ export default function LandingPage() {
                       Login
                     </Button>
                     <Button 
-                      className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
+                      className={`w-full text-white border-0 ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'}`}
                       onClick={() => {
                         setIsMobileMenuOpen(false);
                         router.push('/signup');
@@ -260,7 +260,7 @@ export default function LandingPage() {
           >
             <h2 className="text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black leading-[1.1] tracking-tight">
               Transform Your
-              <span className="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent animate-gradient">
+              <span className={`block bg-clip-text text-transparent animate-gradient ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-600 via-cyan-600 to-sky-600' : 'bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400'}`}>
                 Hiring Process
               </span>
             </h2>
@@ -282,7 +282,7 @@ export default function LandingPage() {
             transition={{ duration: 0.8, delay: 0.2, ease: [0.21, 0.47, 0.32, 0.98] }}
           >
             <Button 
-              className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white border-0 h-14 px-8 text-lg font-semibold shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 transition-all duration-300"
+              className={`text-white border-0 h-14 px-8 text-lg font-semibold shadow-2xl transition-all duration-300 ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-500 via-cyan-500 to-sky-500 hover:from-teal-600 hover:via-cyan-600 hover:to-sky-600 shadow-teal-500/50 hover:shadow-teal-500/70' : 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 shadow-purple-500/50 hover:shadow-purple-500/70'}`}
               onClick={() => router.push('/signup')}
               onMouseEnter={() => setIsHovering(true)}
               onMouseLeave={() => setIsHovering(false)}
@@ -405,7 +405,7 @@ export default function LandingPage() {
               <Sparkles className="w-4 h-4 mr-2" />
               Intelligent HR Solutions
             </motion.span>
-            <h2 className="text-4xl md:text-5xl lg:text-6xl font-black mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-100 to-purple-100 leading-tight">
+            <h2 className={`text-4xl md:text-5xl lg:text-6xl font-black mb-6 bg-clip-text text-transparent leading-tight ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-900 via-cyan-800 to-teal-900' : 'bg-gradient-to-r from-white via-blue-100 to-purple-100'}`}>
               Why Choose {brand.name}?
             </h2>
             <p className="text-slate-300 text-xl md:text-2xl max-w-4xl mx-auto leading-relaxed">
@@ -632,7 +632,7 @@ export default function LandingPage() {
               Advanced Technology
             </span>
             <h2 className="text-3xl md:text-4xl font-bold mb-6">
-              Real-Time <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">AI Matching</span> Technology
+              Real-Time <span className={`text-transparent bg-clip-text ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-600 to-cyan-600' : 'bg-gradient-to-r from-blue-400 to-purple-500'}`}>AI Matching</span> Technology
             </h2>
             <p className="text-slate-300 text-lg mb-8">
               Our proprietary AI algorithms analyze thousands of data points to identify the perfect candidates for your open positions, 
@@ -738,7 +738,7 @@ export default function LandingPage() {
             <Calendar className="w-4 h-4 mr-2" />
             Interview Technology
           </span>
-          <h2 className="text-3xl md:text-5xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white to-purple-200">
+          <h2 className={`text-3xl md:text-5xl font-bold mb-6 bg-clip-text text-transparent ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-900 to-cyan-800' : 'bg-gradient-to-r from-white to-purple-200'}`}>
             Smart Interview Management
           </h2>
           <p className="text-slate-300 text-lg max-w-3xl mx-auto">
@@ -936,7 +936,7 @@ export default function LandingPage() {
             
             <div className="flex flex-col items-center text-center gap-8 relative z-10">
               <div className="space-y-6 max-w-3xl">
-                <h2 className="text-4xl md:text-5xl lg:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-100 to-purple-100">
+                <h2 className={`text-4xl md:text-5xl lg:text-6xl font-black bg-clip-text text-transparent ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-900 via-cyan-800 to-teal-900' : 'bg-gradient-to-r from-white via-blue-100 to-purple-100'}`}>
                   Ready to Transform Your Hiring?
                 </h2>
                 <p className="text-slate-200 text-xl md:text-2xl leading-relaxed">
@@ -960,7 +960,7 @@ export default function LandingPage() {
               
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
                 <Button 
-                  className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white border-0 h-14 px-10 text-lg font-semibold shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70"
+                  className={`text-white border-0 h-14 px-10 text-lg font-semibold shadow-2xl ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-500 via-cyan-500 to-sky-500 hover:from-teal-600 hover:via-cyan-600 hover:to-sky-600 shadow-teal-500/50 hover:shadow-teal-500/70' : 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 shadow-purple-500/50 hover:shadow-purple-500/70'}`}
                   onClick={() => router.push('/signup')}
                 >
                   Start Free Trial <ArrowRight className="ml-2 w-5 h-5" />

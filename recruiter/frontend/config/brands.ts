@@ -63,10 +63,10 @@ export const BRANDS: Record<string, BrandConfig> = {
     footerText: '© 2025 Jetstone Education. All rights reserved.',
     loginHeading: 'Jetstone Education',
     loginSubheading: 'Akwa Ibom State Recruitment Portal',
-    // Lighter teal/cyan shell to align with logo (less heavy than purple/slate-950)
+    // Lighter teal/cyan shell to align with logo
     landingRootClass:
-      'min-h-screen bg-gradient-to-br from-slate-800 via-teal-800 to-cyan-800 text-white overflow-x-hidden relative',
-    authShellClass: 'bg-gradient-to-br from-slate-800 via-teal-900 to-cyan-900',
+      'min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme',
+    authShellClass: 'bg-gradient-to-br from-teal-50 via-cyan-50 to-white jetstone-light-theme',
   },
   producive: {
     id: 'producive',
