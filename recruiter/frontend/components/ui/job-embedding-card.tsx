@@ -181,9 +181,9 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     } else {
       newExpanded.add(candidateId)
 
-      // Lazy-load explanation in vector-ranked mode
+      // Lazy-load explanation when missing (vector-ranked, or full-analysis rows without embedded explanation)
       const match = matchingCandidates.find(m => m.candidateId === candidateId)
-      if (matchMode === 'vector-ranked' && !match?.explanation && !lazyExplanations[candidateId]) {
+      if (!match?.explanation && !lazyExplanations[candidateId]) {
         setLoadingExplanations(prev => new Set(prev).add(candidateId))
         try {
           const result = await jobEmbeddingService.getCandidateExplanation(jobId, candidateId)
@@ -518,6 +518,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
           setEnrichmentId(null)
           setEnrichmentStarting(false)
+          setEnrichmentStatus(null)
           toast({
             title: "Enrichment complete",
             description: `Ranked ${status.enrichCount} candidates with AI enrichment.`,
@@ -772,16 +773,44 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                     </select>
                   </div>
 
-                  <div className="flex-1 text-xs text-muted-foreground">
+                  <div className="flex-1 space-y-1 text-xs text-muted-foreground">
                     {enrichmentLoadingEstimate ? (
                       <span className="inline-flex items-center gap-1">
                         <Loader2 className="h-3 w-3 animate-spin" />
-                        Estimating credits and time...
+                        Calculating credits and time...
                       </span>
                     ) : enrichmentEstimate ? (
-                      <span>
-                        This run uses <strong>{enrichmentEstimate.totalCredits}</strong> credits and takes about <strong>{formatDuration(enrichmentEstimate.estimatedSeconds)}</strong>.
-                      </span>
+                      <>
+                        <div>
+                          <strong>{enrichmentEstimate.batchCount}</strong> batch{enrichmentEstimate.batchCount !== 1 ? 'es' : ''} (up to{' '}
+                          <strong>{enrichmentEstimate.batchSize}</strong> candidates each) ×{' '}
+                          <strong>{enrichmentEstimate.costPerBatch}</strong> credit{enrichmentEstimate.costPerBatch !== 1 ? 's' : ''} per batch ={' '}
+                          <strong>{enrichmentEstimate.totalCredits}</strong> credits total.
+                        </div>
+                        <div>
+                          ~<strong>{formatDuration(enrichmentEstimate.estimatedSeconds)}</strong> estimated run time.
+                          {' '}
+                          {Number.isFinite(enrichmentEstimate.availableCredits) && (
+                            <span>
+                              Balance: <strong>{enrichmentEstimate.availableCredits}</strong>
+                              {enrichmentEstimate.remainingCreditsAfter != null && (
+                                <> → <strong>{enrichmentEstimate.remainingCreditsAfter}</strong> after this run</>
+                              )}
+                              .
+                            </span>
+                          )}
+                        </div>
+                        {!enrichmentEstimate.hasEnoughCredits && enrichmentEstimate.totalCredits > 0 && (
+                          <div className="text-amber-700 dark:text-amber-400 font-medium">
+                            Not enough credits for this run. Add credits or choose fewer candidates.
+                          </div>
+                        )}
+                        {enrichmentEstimate.totalCredits === 0 && (
+                          <div className="text-emerald-700 dark:text-emerald-400">
+                            No per-batch credit charge for AI matching on your current plan.
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <span>Estimate unavailable.</span>
                     )}
@@ -790,7 +819,12 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                   <Button
                     size="sm"
                     onClick={handleStartEnrichment}
-                    disabled={enrichmentStarting || isEnrichmentProcessing || enrichOptions.length === 0}
+                    disabled={
+                      enrichmentStarting ||
+                      isEnrichmentProcessing ||
+                      enrichOptions.length === 0 ||
+                      (!!enrichmentEstimate && !enrichmentEstimate.hasEnoughCredits && enrichmentEstimate.totalCredits > 0)
+                    }
                     className="h-8 px-3 text-xs whitespace-nowrap"
                   >
                     {enrichmentStarting || isEnrichmentProcessing ? (
@@ -1027,8 +1061,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   <span className="sm:inline hidden">View</span>
                                 </Button>
                                 
-                                {(explanation || matchMode === 'vector-ranked') && (
-                                  <Button
+                                <Button
                                     variant="ghost"
                                     size="sm"
                                     type="button"
@@ -1061,7 +1094,6 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                       )}
                                     </span>
                                   </Button>
-                                )}
                               </div>
                             </div>
                           </div>

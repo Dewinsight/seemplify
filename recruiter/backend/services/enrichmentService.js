@@ -129,11 +129,36 @@ function normalizeCandidateForGpt(match) {
 function mapResultsByCandidateId(results) {
   const mapped = new Map();
   for (const result of results || []) {
-    const candidateId = result?.candidate?._id || result?.candidate?.id;
-    if (!candidateId) continue;
-    mapped.set(String(candidateId), result);
+    const c = result?.candidate;
+    const rawId = c?._id ?? c?.id;
+    if (rawId == null) continue;
+    const asString = String(rawId);
+    mapped.set(asString, result);
+    if (typeof rawId === 'object' && typeof rawId.toString === 'function') {
+      const alt = rawId.toString();
+      if (alt && alt !== asString) mapped.set(alt, result);
+    }
   }
   return mapped;
+}
+
+function getGptResultForMatch(resultById, match) {
+  const candidates = [
+    match?.candidateId,
+    match?.candidate?._id,
+    match?.candidate?.id,
+  ].filter((id) => id != null);
+  for (const id of candidates) {
+    const key = String(id);
+    const hit = resultById.get(key);
+    if (hit) return hit;
+    if (typeof id === 'object' && typeof id.toString === 'function') {
+      const alt = id.toString();
+      const hitAlt = resultById.get(alt);
+      if (hitAlt) return hitAlt;
+    }
+  }
+  return undefined;
 }
 
 function sortByRelevance(matches) {
@@ -316,12 +341,14 @@ async function processEnrichmentBatch(job) {
 
   const enrichedMatches = [];
   for (const match of originalMatches) {
-    const key = String(match.candidateId);
-    const result = resultById.get(key);
+    const result = getGptResultForMatch(resultById, match);
     if (!result) continue;
+
+    const cid = String(match.candidateId ?? match.candidate?._id ?? match.candidate?.id ?? '');
 
     enrichedMatches.push({
       ...match,
+      candidateId: cid || match.candidateId,
       similarity: result.relevanceScore,
       relevanceScore: result.relevanceScore,
       similarityPercentage: Math.round((result.relevanceScore || 0) * 100),

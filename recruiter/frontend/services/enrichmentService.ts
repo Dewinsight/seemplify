@@ -8,6 +8,8 @@ export interface EnrichmentEstimateResponse {
   costPerBatch: number
   totalCredits: number
   availableCredits: number
+  /** Balance after this run (null if unlimited / unknown) */
+  remainingCreditsAfter: number | null
   hasEnoughCredits: boolean
   estimatedSeconds: number
   estimatedMinutes: number

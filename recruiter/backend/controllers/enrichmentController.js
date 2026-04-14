@@ -58,6 +58,10 @@ exports.getEstimate = async (req, res) => {
     const costPerBatch = resolveBatchCost(creditCheck);
     const totalCredits = batchCount * costPerBatch;
     const remaining = Number.isFinite(creditCheck.remaining) ? creditCheck.remaining : Infinity;
+    const remainingAfter =
+      Number.isFinite(remaining) && Number.isFinite(totalCredits)
+        ? Math.max(0, remaining - totalCredits)
+        : null;
 
     return res.json({
       jobId,
@@ -67,6 +71,7 @@ exports.getEstimate = async (req, res) => {
       costPerBatch,
       totalCredits,
       availableCredits: remaining,
+      remainingCreditsAfter: remainingAfter,
       hasEnoughCredits: remaining >= totalCredits,
       estimatedSeconds,
       estimatedMinutes: Number((estimatedSeconds / 60).toFixed(1)),
