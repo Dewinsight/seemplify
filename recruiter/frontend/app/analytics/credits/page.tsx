@@ -39,6 +39,11 @@ export default function CreditsAnalyticsPage() {
     }
   };
 
+  const formatMoneyPerCredit = (n: number) => {
+    if (!Number.isFinite(n) || n <= 0) return '0.00';
+    return n >= 0.01 ? n.toFixed(2) : n.toFixed(4);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-slate-900">
@@ -272,13 +277,13 @@ export default function CreditsAnalyticsPage() {
                     <div className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
                       ${pack.price}
                     </div>
-                    <p className="text-xs text-gray-600 dark:text-slate-400 mb-4">
-                      ${pack.pricePerCredit.toFixed(2)}/credit
+                    <p className="text-xs text-gray-700 dark:text-slate-300 mb-4">
+                      ${formatMoneyPerCredit(pack.pricePerCredit)}/credit
                     </p>
                     
-                    {pack.savings > 0 && (
-                      <div className="bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 text-xs px-2 py-1 rounded mb-4">
-                        Save ${pack.savings}
+                    {pack.bonusCredits > 0 && (
+                      <div className="bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs px-2 py-1 rounded mb-4">
+                        +{pack.bonusCredits} bonus credits
                       </div>
                     )}
                     

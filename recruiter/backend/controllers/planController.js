@@ -1,6 +1,9 @@
 const Plan = require('../models/Plan');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
+const { RECOMMENDED_CREDIT_COSTS } = require('../config/creditEconomics');
+
+const DEFAULT_CUSTOM_PLAN_TOTAL_CREDITS = 430;
 
 // Get all plans (with filter options)
 exports.getPlans = async (req, res) => {
@@ -135,17 +138,8 @@ exports.createPlan = async (req, res) => {
       features: features || [],
       limits: limits || {},
       credits: credits || {
-        totalCredits: 380,
-        creditCosts: {
-          createJob: 6,
-          uploadCandidate: 4,
-          scheduleInterview: 2,
-          aiMatching: 14,
-          generateQuestions: 7,
-          aiAnalysis: 12,
-          bulkUpload: 3,
-          reEmbed: 1
-        },
+        totalCredits: DEFAULT_CUSTOM_PLAN_TOTAL_CREDITS,
+        creditCosts: { ...RECOMMENDED_CREDIT_COSTS },
         rolloverEnabled: false,
         rolloverPercentage: 0
       },

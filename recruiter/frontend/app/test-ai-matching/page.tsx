@@ -33,7 +33,7 @@ export default function TestAIMatchingPage() {
   const [bulkSelecting, setBulkSelecting] = useState(false)
   const [selectedForBulkAdd, setSelectedForBulkAdd] = useState<Set<string>>(new Set())
   const [showRefreshDialog, setShowRefreshDialog] = useState(false)
-  const [aiMatchingCost, setAiMatchingCost] = useState<number>(14) // Fallback until API returns plan costs
+  const [aiMatchingCost, setAiMatchingCost] = useState<number>(16) // Fallback until API returns plan costs
 
   // Fetch credit costs on mount
   useEffect(() => {
@@ -41,7 +41,7 @@ export default function TestAIMatchingPage() {
       try {
         const creditStatus = await creditsService.getCreditStatus()
         if (creditStatus.success && creditStatus.credits.creditCosts) {
-          setAiMatchingCost(creditStatus.credits.creditCosts.aiMatching || 14)
+          setAiMatchingCost(creditStatus.credits.creditCosts.aiMatching || 16)
         }
       } catch (error) {
         console.error('Failed to fetch credit costs:', error)

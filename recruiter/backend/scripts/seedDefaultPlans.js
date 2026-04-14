@@ -1,10 +1,15 @@
 /**
  * Script to seed default subscription plans
  * Usage: node seedDefaultPlans.js
+ * Force overwrite price/credits/limits from this file for default plan codes:
+ *   node seedDefaultPlans.js --force-sync
  */
 
 const mongoose = require('mongoose');
 require('dotenv').config();
+
+const forceSync =
+  process.argv.includes('--force-sync') || process.env.FORCE_SYNC_DEFAULT_PLANS === '1';
 const Plan = require('../models/Plan');
 const {
   RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE,
@@ -142,17 +147,19 @@ async function seedDefaultPlans() {
         if (existingPlan) {
           console.log(`Updating existing default plan: ${planConfig.name}`);
           
-          // Update plan with latest default values but preserve custom modifications
           existingPlan.name = planConfig.name;
           existingPlan.features = planConfig.features;
-          existingPlan.isPublished = true; // Always ensure default plans are published
+          existingPlan.isPublished = true;
           existingPlan.isDefault = true;
           if (planConfig.credits) {
             existingPlan.credits = planConfig.credits;
           }
-          
-          // Only update price and limits if they haven't been customized
-          if (existingPlan.price === 0 || !existingPlan.limits) {
+
+          if (forceSync) {
+            existingPlan.price = planConfig.price;
+            existingPlan.limits = planConfig.limits;
+            console.log(`  (force-sync: price & limits overwritten from defaults)`);
+          } else if (existingPlan.price === 0 || !existingPlan.limits) {
             existingPlan.price = planConfig.price;
             existingPlan.limits = planConfig.limits;
           }

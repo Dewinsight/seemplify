@@ -49,13 +49,21 @@ export interface CreditTransaction {
 export interface CreditPack {
   id: string;
   name: string;
+  /** Total credits including bonus (matches API totalCredits) */
   credits: number;
+  bonusCredits?: number;
   price: number;
   currency: string;
   pricePerCredit: number;
+  /** Deprecated in UI: was misused for bonus credits as dollar "savings" */
   savings: number;
   bestFor: string;
   popular?: boolean;
+}
+
+function formatPricePerCredit(usd: number): number {
+  if (!Number.isFinite(usd) || usd <= 0) return 0;
+  return usd >= 0.01 ? Math.round(usd * 100) / 100 : Math.round(usd * 10000) / 10000;
 }
 
 const DEFAULT_CREDIT_COSTS = {
@@ -232,17 +240,27 @@ export const getCreditPacks = async (): Promise<{ success: boolean; packs: Credi
     
     // Map the API response to match the expected CreditPack interface
     if (data.success && data.creditPacks) {
-      const mappedPacks = data.creditPacks.map((pack: any) => ({
-        id: pack._id,
-        name: pack.name,
-        credits: pack.totalCredits,
-        price: pack.price,
-        currency: pack.currency,
-        pricePerCredit: parseFloat(pack.pricePerCredit),
-        savings: pack.bonusCredits || 0,
-        bestFor: pack.description || '',
-        popular: pack.isPopular
-      }));
+      const mappedPacks = data.creditPacks.map((pack: any) => {
+        const total = Number(pack.totalCredits) || 0;
+        const rawPpc =
+          typeof pack.pricePerCredit === 'number'
+            ? pack.pricePerCredit
+            : total > 0
+              ? Number(pack.price) / total
+              : 0;
+        return {
+          id: pack._id,
+          name: pack.name,
+          credits: total,
+          bonusCredits: pack.bonusCredits || 0,
+          price: pack.price,
+          currency: pack.currency,
+          pricePerCredit: formatPricePerCredit(rawPpc),
+          savings: 0,
+          bestFor: pack.description || '',
+          popular: pack.isPopular,
+        };
+      });
       return { success: true, packs: mappedPacks };
     }
     

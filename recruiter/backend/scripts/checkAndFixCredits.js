@@ -50,14 +50,14 @@ async function checkAndFix() {
         
         // Fix: Add default credits configuration
         plan.credits = {
-          totalCredits: 380,
+          totalCredits: 430,
           creditCosts: { ...RECOMMENDED_CREDIT_COSTS },
           rolloverEnabled: false,
           rolloverPercentage: 0
         };
         
         await plan.save();
-        console.log(`  ✅ Added credits configuration: 380 total credits`);
+        console.log(`  ✅ Added credits configuration: 430 total credits (Basic-equivalent default)`);
         plansFixed++;
       } else {
         console.log(`  ✅ Credits configured: ${plan.credits.totalCredits} total credits`);

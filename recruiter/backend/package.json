@@ -72,7 +72,8 @@
     "test:llm": "node scripts/verifyLlmDeployment.js",
     "audit:credits": "node scripts/auditCreditEconomics.js",
     "apply:credits": "node scripts/applyCreditEconomics2026.js --dry-run",
-    "apply:credits:force": "node scripts/applyCreditEconomics2026.js --apply"
+    "apply:credits:force": "node scripts/applyCreditEconomics2026.js --apply",
+    "apply:credits:force:full": "node scripts/applyCreditEconomics2026.js --apply --replace-packs"
   },
   "keywords": [],
   "author": "",

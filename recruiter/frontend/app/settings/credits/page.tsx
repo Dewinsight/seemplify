@@ -181,6 +181,11 @@ export default function CreditsSettingsPage() {
     });
   };
 
+  const formatMoneyPerCredit = (n: number) => {
+    if (!Number.isFinite(n) || n <= 0) return '0.00';
+    return n >= 0.01 ? n.toFixed(2) : n.toFixed(4);
+  };
+
   if (!currentOrganization) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -528,17 +533,22 @@ export default function CreditsSettingsPage() {
                     <CardContent className="space-y-4">
                       <div className="flex items-baseline gap-2">
                         <span className="text-3xl font-bold text-gray-900 dark:text-white">${pack.price}</span>
-                        <span className="text-gray-500 dark:text-gray-400">for {pack.credits} credits</span>
+                        <span className="text-gray-600 dark:text-gray-300">
+                          for {pack.credits} credits
+                          {pack.bonusCredits ? ` (${pack.credits - pack.bonusCredits} + ${pack.bonusCredits} bonus)` : ''}
+                        </span>
                       </div>
-                      <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                      <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
                         <div className="flex justify-between">
                           <span>Price per credit:</span>
-                          <span className="font-medium">${pack.pricePerCredit.toFixed(2)}</span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            ${formatMoneyPerCredit(pack.pricePerCredit)}
+                          </span>
                         </div>
-                        {pack.savings > 0 && (
-                          <div className="flex justify-between text-green-600 dark:text-green-400">
-                            <span>You save:</span>
-                            <span className="font-medium">${pack.savings}</span>
+                        {pack.bonusCredits > 0 && (
+                          <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                            <span>Bonus credits:</span>
+                            <span className="font-medium">+{pack.bonusCredits}</span>
                           </div>
                         )}
                       </div>

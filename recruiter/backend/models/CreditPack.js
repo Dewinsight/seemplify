@@ -73,9 +73,10 @@ CreditPackSchema.pre('save', function(next) {
   next();
 });
 
-// Virtual for price per credit
+// Virtual for price per credit (numeric; format in UI — two decimals rounds tiny $/credit to 0.00)
 CreditPackSchema.virtual('pricePerCredit').get(function() {
-  return this.totalCredits > 0 ? (this.price / this.totalCredits).toFixed(2) : 0;
+  if (!this.totalCredits || this.totalCredits <= 0) return 0;
+  return this.price / this.totalCredits;
 });
 
 // Method to convert to public JSON

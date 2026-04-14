@@ -13,6 +13,7 @@ const {
   RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE,
   RECOMMENDED_PLAN_LIST_PRICES_USD,
   RECOMMENDED_CREDIT_PACKS,
+  LEGACY_PLAN_CODE_ECONOMICS_MAP,
 } = require('../config/creditEconomics');
 
 const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
@@ -55,7 +56,14 @@ async function main() {
         console.log(`  list price: DB=${p.price} recommended=${recPrice}`);
       }
     } else {
-      console.log('  (no fixed recommendation for this code — custom plan?)');
+      const mapped = LEGACY_PLAN_CODE_ECONOMICS_MAP?.[code];
+      if (mapped) {
+        const recCredits = RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE[mapped];
+        const recPrice = RECOMMENDED_PLAN_LIST_PRICES_USD[mapped];
+        console.log(`  legacy alias: economics should match "${mapped}" (price $${recPrice}, monthly ${recCredits}) — run applyCreditEconomics2026.js --apply`);
+      } else {
+        console.log('  (no fixed recommendation for this code — custom plan?)');
+      }
     }
     console.log('');
   }

@@ -1,51 +1,164 @@
 /**
- * Credit economics (2026) — ties abstract "credits" to Azure model COGS heuristics.
+ * Credit economics — ties "credits" to modeled Azure AI COGS + target margin.
  *
- * Research (verify on your Azure invoice; rates vary by region/commitment):
- * - Llama 3.3 70B Instruct (Azure AI / Foundry): ~$0.71 / 1M input + ~$0.71 / 1M output tokens (typical PAYG).
- * - text-embedding-3-large: ~$0.13–0.143 / 1M input tokens (embeddings are cheap vs chat).
+ * ## Online research (verify against your Azure invoice; PAYG varies by region/commitment)
+ * - **Llama 3.3 70B Instruct** on Azure AI / Foundry: commonly cited **~$0.71 / 1M input**
+ *   and **~$0.71 / 1M output** tokens (e.g. third-party aggregators and calculators aligned
+ *   with Azure AI; Microsoft lists model-specific pricing on Foundry pricing pages).
+ * - **text-embedding-3-large** (Azure OpenAI): **~$0.13 / 1M input** tokens (order-of-magnitude;
+ *   exact tier depends on product SKU).
  *
- * Heuristic USD per user-facing action (rough order-of-magnitude for budgeting):
- * - aiMatching (full analysis, top ≤100 + batch LLM): high token count → highest cost.
- * - aiAnalysis (interview transcript): long input → high.
- * - generateQuestions: medium.
- * - createJob / uploadCandidate (CV JD parsing): medium.
- * - bulkUpload: medium per batch.
- * - scheduleInterview: mostly app logic → low.
- * - reEmbed: embeddings only → very low (still ≥1 credit so metering works).
+ * Vector DB / Weaviate hosting is excluded from per-credit COGS here (as requested).
  *
- * We express costs as integer credits using a single scale where the heaviest ops
- * (aiMatching) set the top of the range. Adjust RECOMMENDED_CREDIT_COSTS together
- * with monthly allowances and pack pricing — do not change one in isolation.
+ * ## Method
+ * 1. Estimate **input/output/embedding tokens** per user-facing action (P50–P75 load;
+ *    worst cases like huge CVs may exceed this — that is intentional buffer in estimates).
+ * 2. **COGS_USD** = Llama cost + embedding cost for that operation.
+ * 3. **Target gross margin** on modeled AI COGS: **100%** ⇒ billable value = **COGS × 2**.
+ * 4. Choose a **credit peg** (USD per credit) so integer credits are readable and the
+ *    heaviest operation (AI matching **per batch of 10** candidates, one LLM call) lands
+ *    in a sensible range.
+ * 5. **credits** = max(1, ceil((COGS × 2) / CREDIT_VALUE_PEG_USD)).
+ *
+ * **aiMatching** is charged **per enrichment batch** (10 candidates) in addition to any
+ * separate matching endpoint usage — aligns with one batched LLM JSON call in `gptAnalysisService`.
  */
 
-/** @type {Record<string, number>} */
-const RECOMMENDED_CREDIT_COSTS = {
-  createJob: 6,
-  uploadCandidate: 4,
-  scheduleInterview: 2,
-  aiMatching: 14,
-  generateQuestions: 7,
-  aiAnalysis: 12,
-  bulkUpload: 3,
-  reEmbed: 1,
+/** @type {{ usdPerMillionInput: number; usdPerMillionOutput: number }} */
+const AZURE_LLAMA_3_3_70B_INSTRUCT = {
+  usdPerMillionInput: 0.71,
+  usdPerMillionOutput: 0.71,
 };
 
+/** text-embedding-3-large (order-of-magnitude; confirm on your embedding deployment) */
+const AZURE_TEXT_EMBEDDING_3_LARGE = {
+  usdPerMillionInput: 0.13,
+};
+
+/** Revenue multiple on modeled COGS (100% margin ⇒ 2×) */
+const TARGET_GROSS_MARGIN_ON_MODELED_COGS = 1.0;
+
 /**
- * Monthly credits included per subscription plan code (organization plans).
- * Chosen so higher tiers scale super-linearly vs price (enterprise value).
+ * USD represented by one credit for pricing math (derived from anchor operation below).
+ * Chosen so batch AI matching ≈ 16 credits after rounding.
+ */
+const CREDIT_VALUE_PEG_USD = 0.00175;
+
+function llamaCostUsd(inputTokens, outputTokens) {
+  const inCost = (inputTokens / 1e6) * AZURE_LLAMA_3_3_70B_INSTRUCT.usdPerMillionInput;
+  const outCost = (outputTokens / 1e6) * AZURE_LLAMA_3_3_70B_INSTRUCT.usdPerMillionOutput;
+  return inCost + outCost;
+}
+
+function embedCostUsd(inputTokens) {
+  return (inputTokens / 1e6) * AZURE_TEXT_EMBEDDING_3_LARGE.usdPerMillionInput;
+}
+
+function creditsFromModeledCogs(cogsUsd) {
+  const billable = cogsUsd * (1 + TARGET_GROSS_MARGIN_ON_MODELED_COGS);
+  return Math.max(1, Math.ceil(billable / CREDIT_VALUE_PEG_USD));
+}
+
+/**
+ * Token assumptions (rough, documented). Tune from production `usage` logs when available.
+ * @type {Record<string, { llmIn: number; llmOut: number; embedIn: number; note?: string }>}
+ */
+const OPERATION_TOKEN_ASSUMPTIONS = {
+  createJob: {
+    llmIn: 3200,
+    llmOut: 1200,
+    embedIn: 6000,
+    note: 'JD text + structured parse; embeddings for job text',
+  },
+  uploadCandidate: {
+    llmIn: 7000,
+    llmOut: 2200,
+    embedIn: 10000,
+    note: 'CV text extraction/summary; resume + sections embedded',
+  },
+  scheduleInterview: {
+    llmIn: 900,
+    llmOut: 350,
+    embedIn: 0,
+    note: 'light LLM copy / slot text if used',
+  },
+  /** One BullMQ enrichment batch = up to 10 candidates, one batched JSON completion */
+  aiMatching: {
+    llmIn: 14500,
+    llmOut: 4000,
+    embedIn: 0,
+    note: 'batchAnalyzeCandidates — single call per 10 candidates',
+  },
+  generateQuestions: {
+    llmIn: 6500,
+    llmOut: 4000,
+    embedIn: 0,
+    note: 'interview question generation',
+  },
+  aiAnalysis: {
+    llmIn: 17000,
+    llmOut: 3500,
+    embedIn: 0,
+    note: 'long transcript / multi-segment interview analysis',
+  },
+  bulkUpload: {
+    llmIn: 4000,
+    llmOut: 1200,
+    embedIn: 8000,
+    note: 'per bulk batch — CSV row normalization + chunk embed',
+  },
+  reEmbed: {
+    llmIn: 0,
+    llmOut: 0,
+    embedIn: 20000,
+    note: 're-embed only; no chat',
+  },
+};
+
+function deriveCreditCostsFromModel() {
+  const out = {};
+  for (const [action, est] of Object.entries(OPERATION_TOKEN_ASSUMPTIONS)) {
+    const cogs = llamaCostUsd(est.llmIn, est.llmOut) + embedCostUsd(est.embedIn);
+    out[action] = creditsFromModeledCogs(cogs);
+  }
+  return out;
+}
+
+// Integer credits used by app + DB seeds (must stay in sync with deriveCreditCostsFromModel)
+const RECOMMENDED_CREDIT_COSTS = {
+  createJob: 5,
+  uploadCandidate: 9,
+  scheduleInterview: 2,
+  aiMatching: 16,
+  generateQuestions: 9,
+  aiAnalysis: 17,
+  bulkUpload: 6,
+  reEmbed: 3,
+};
+
+(function assertDerivedMatchesStatic() {
+  const derived = deriveCreditCostsFromModel();
+  const keys = Object.keys(RECOMMENDED_CREDIT_COSTS);
+  for (const k of keys) {
+    if (derived[k] !== RECOMMENDED_CREDIT_COSTS[k]) {
+      throw new Error(
+        `creditEconomics: RECOMMENDED_CREDIT_COSTS.${k}=${RECOMMENDED_CREDIT_COSTS[k]} but model derives ${derived[k]} — update the static table or assumptions.`
+      );
+    }
+  }
+})();
+
+/**
+ * Monthly credits: scaled so tiers stay usable after aiMatching per-batch increase
+ * (~26 batches on Basic at 16 credits ≈ same ballpark as old 380 @ 14).
  */
 const RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE = {
-  /** ~8–9 full AI match runs at 14 credits each; tune for marketing */
-  free: 120,
-  basic: 380,
-  pro: 880,
-  enterprise: 3200,
+  free: 130,
+  basic: 430,
+  pro: 1000,
+  enterprise: 3600,
 };
 
-/**
- * Suggested list prices (USD / month) — marketing; stored on Plan.price
- */
 const RECOMMENDED_PLAN_LIST_PRICES_USD = {
   free: 0,
   basic: 49,
@@ -54,8 +167,8 @@ const RECOMMENDED_PLAN_LIST_PRICES_USD = {
 };
 
 /**
- * Extra credit packs — total credits (incl. bonus) and list price.
- * Price/credit improves with volume (typical SaaS ladder).
+ * Extra credit packs — list price ladder (marketing / self-serve).
+ * $/credit improves with volume; verify against your target gross margin on blended AI usage.
  */
 const RECOMMENDED_CREDIT_PACKS = [
   {
@@ -63,15 +176,15 @@ const RECOMMENDED_CREDIT_PACKS = [
     code: 'starter-100',
     credits: 100,
     bonusCredits: 0,
-    price: 42,
+    price: 44,
     currency: 'USD',
     description: 'Top-up credits for occasional AI usage',
     displayOrder: 1,
     isPopular: false,
     features: [
       '100 credits',
-      '~7 AI match runs (full analysis) or mix of other actions',
-      'Best for topping up occasionally',
+      '~6 full AI enrichment batches (10 candidates each) at current rates',
+      'Mix with uploads, jobs, and interview AI as needed',
     ],
   },
   {
@@ -86,8 +199,8 @@ const RECOMMENDED_CREDIT_PACKS = [
     isPopular: true,
     features: [
       '250 credits + 30 bonus (280 total)',
-      '~20 AI match runs at current rates',
-      '10%+ bonus vs Starter',
+      '~17 enrichment batches at current rates',
+      'Bonus credits improve effective $/credit',
     ],
   },
   {
@@ -138,9 +251,30 @@ const RECOMMENDED_CREDIT_PACKS = [
   },
 ];
 
+/**
+ * Legacy plan `code` values sometimes used in older DBs (screenshots: GOLD, DIAMOND).
+ * Values are canonical `RECOMMENDED_*` keys to copy economics from (does not rename plans).
+ */
+const LEGACY_PLAN_CODE_ECONOMICS_MAP = {
+  gold: 'pro',
+  diamond: 'enterprise',
+  silver: 'basic',
+  bronze: 'free',
+};
+
 module.exports = {
+  AZURE_LLAMA_3_3_70B_INSTRUCT,
+  AZURE_TEXT_EMBEDDING_3_LARGE,
+  TARGET_GROSS_MARGIN_ON_MODELED_COGS,
+  CREDIT_VALUE_PEG_USD,
+  OPERATION_TOKEN_ASSUMPTIONS,
   RECOMMENDED_CREDIT_COSTS,
   RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE,
   RECOMMENDED_PLAN_LIST_PRICES_USD,
   RECOMMENDED_CREDIT_PACKS,
+  LEGACY_PLAN_CODE_ECONOMICS_MAP,
+  llamaCostUsd,
+  embedCostUsd,
+  creditsFromModeledCogs,
+  deriveCreditCostsFromModel,
 };
