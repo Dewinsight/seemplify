@@ -7,12 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
 import { Loader2, Users, CheckCircle, XCircle, RefreshCw, User, Mail, Phone, MapPin, ChevronDown, ChevronUp, MessageSquare, AlertTriangle, ThumbsUp, Target, ExternalLink, UserPlus, Brain, Zap, Clock, Search } from "lucide-react"
 import { HRLogo } from "@/components/ui/HRLogo"
 import { toast } from "@/components/ui/use-toast"
 import jobEmbeddingService from "@/services/jobEmbeddingService"
-import { addCandidateToShortlist } from "@/services/jobService"
+import { addCandidateToShortlist, bulkAddToShortlist } from "@/services/jobService"
 import * as aiMatchCacheService from "@/services/aiMatchCacheService"
 import {
   getEnrichmentEstimate,
@@ -139,6 +140,8 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [expandedCandidates, setExpandedCandidates] = useState<Set<string>>(new Set())
   const [addingToPipeline, setAddingToPipeline] = useState<Set<string>>(new Set())
+  const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set())
+  const [bulkAddingToShortlist, setBulkAddingToShortlist] = useState(false)
   const [optimisticShortlisted, setOptimisticShortlisted] = useState<Set<string>>(new Set())
   const [fromCache, setFromCache] = useState(false)
   const [cacheAge, setCacheAge] = useState<Date | null>(null)
@@ -196,6 +199,74 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     setExpandedCandidates(newExpanded)
   }
 
+  const getEligibleCandidateIds = () => {
+    const eligible = matchingCandidates
+      .map((match) => match.candidateId)
+      .filter((candidateId) => {
+        const isAlreadyInPipeline = pipelineCandidateIds.includes(candidateId)
+        const isAlreadyInShortlist = shortlistCandidateIds.includes(candidateId) || optimisticShortlisted.has(candidateId)
+        return !isAlreadyInPipeline && !isAlreadyInShortlist
+      })
+    return eligible
+  }
+
+  const toggleCandidateSelection = (candidateId: string) => {
+    setSelectedCandidates((prev) => {
+      const next = new Set(prev)
+      if (next.has(candidateId)) {
+        next.delete(candidateId)
+      } else {
+        next.add(candidateId)
+      }
+      return next
+    })
+  }
+
+  const handleSelectAllEligible = () => {
+    const eligible = getEligibleCandidateIds()
+    setSelectedCandidates(new Set(eligible))
+  }
+
+  const handleClearSelection = () => {
+    setSelectedCandidates(new Set())
+  }
+
+  const handleBulkAddToShortlist = async () => {
+    const selected = Array.from(selectedCandidates)
+    if (selected.length === 0) return
+
+    try {
+      setBulkAddingToShortlist(true)
+      const result = await bulkAddToShortlist(jobId, selected)
+
+      if (result.added?.length) {
+        setOptimisticShortlisted((prev) => {
+          const next = new Set(prev)
+          result.added.forEach((id) => next.add(id))
+          return next
+        })
+      }
+
+      setSelectedCandidates(new Set())
+      toast({
+        title: "Candidates added to shortlist",
+        description: `${result.addedCount} added, ${result.skippedCount} skipped.`,
+      })
+
+      if (onCandidateAdded) {
+        onCandidateAdded()
+      }
+    } catch (error: any) {
+      toast({
+        title: "Bulk add failed",
+        description: error.message || "Failed to bulk add candidates to shortlist",
+        variant: "destructive",
+      })
+    } finally {
+      setBulkAddingToShortlist(false)
+    }
+  }
+
   const navigateToCandidate = (candidateId: string) => {
     router.push(`/candidates/${candidateId}?from=job-ai-matching&jobId=${jobId}`)
   }
@@ -227,6 +298,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       setLoadingMatches(true)
       setLazyExplanations({})
       setExpandedCandidates(new Set())
+      setSelectedCandidates(new Set())
       setEnrichmentId(null)
       setEnrichmentStatus(null)
       setEnrichmentEstimate(null)
@@ -369,6 +441,24 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       return changed ? next : prev
     })
   }, [shortlistCandidateIds])
+
+  useEffect(() => {
+    // Keep selection clean as candidates become ineligible.
+    const eligible = new Set(getEligibleCandidateIds())
+    setSelectedCandidates((prev) => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (eligible.has(id)) {
+          next.add(id)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [matchingCandidates, pipelineCandidateIds, shortlistCandidateIds, optimisticShortlisted])
 
   useEffect(() => {
     fetchEmbeddingStatus()
@@ -616,6 +706,48 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                 </select>
               </div>
             </div>
+            {selectedCandidates.size > 0 && (
+              <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50/80 dark:bg-green-950/20 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="text-xs text-green-800 dark:text-green-300">
+                  {selectedCandidates.size} analysed candidate{selectedCandidates.size !== 1 ? 's' : ''} selected
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={handleSelectAllEligible}
+                    disabled={bulkAddingToShortlist}
+                  >
+                    Select All Eligible
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-xs"
+                    onClick={handleClearSelection}
+                    disabled={bulkAddingToShortlist}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs bg-green-600 hover:bg-green-700"
+                    onClick={handleBulkAddToShortlist}
+                    disabled={bulkAddingToShortlist}
+                  >
+                    {bulkAddingToShortlist ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>Add Selected to Shortlist</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
             {matchMode === 'vector-ranked' && matchingCandidates.length > 0 && (
               <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-3 space-y-3">
                 <div className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
@@ -723,6 +855,8 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                   const isAddingThisCandidate = addingToPipeline.has(match.candidateId)
                   const isAlreadyInPipeline = pipelineCandidateIds.includes(match.candidateId)
                   const isAlreadyInShortlist = shortlistCandidateIds.includes(match.candidateId) || optimisticShortlisted.has(match.candidateId)
+                  const canSelect = !isAlreadyInPipeline && !isAlreadyInShortlist
+                  const isSelected = selectedCandidates.has(match.candidateId)
                   
                   return (
                     <div
@@ -739,6 +873,20 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                       <div className="p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-3 flex-1">
+                            <div
+                              className="pt-1"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                              }}
+                            >
+                              <Checkbox
+                                checked={isSelected}
+                                disabled={!canSelect || bulkAddingToShortlist}
+                                onCheckedChange={() => toggleCandidateSelection(match.candidateId)}
+                                aria-label={`Select ${match.candidate.name}`}
+                              />
+                            </div>
                             <Avatar className="h-10 w-10">
                               <AvatarFallback className="bg-purple-100 text-purple-700">
                                 {match.candidate.name.split(' ').map(n => n[0]).join('').toUpperCase()}
