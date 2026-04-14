@@ -536,8 +536,8 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   variant="outline" 
                                   className="bg-purple-50 text-purple-700 border-purple-200 text-xs"
                                 >
-                                  <span className="hidden sm:inline">{Math.round(match.relevanceScore * 100)}% Relevance</span>
-                                  <span className="sm:hidden">{Math.round(match.relevanceScore * 100)}%</span>
+                                  <span className="hidden sm:inline">{Math.round((match.relevanceScore ?? match.similarity ?? 0) * 100)}% Relevance</span>
+                                  <span className="sm:hidden">{Math.round((match.relevanceScore ?? match.similarity ?? 0) * 100)}%</span>
                                 </Badge>
                                 {explanation && (
                                   <Badge 
@@ -602,7 +602,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                           
                           <div className="ml-4 flex flex-col items-end gap-2">
                             <Progress
-                              value={match.relevanceScore * 100}
+                              value={(match.relevanceScore ?? match.similarity ?? 0) * 100}
                               className="w-20 h-2"
                             />
                             

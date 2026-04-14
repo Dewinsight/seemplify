@@ -636,8 +636,8 @@ exports.getCandidateExplanation = async (req, res) => {
               strengthsCount: (result.gptAnalysis.technicalStrengths || []).length,
               flagsCount: (result.gptAnalysis.skillGaps || []).length,
             },
-            matchStrength: result.relevanceScore >= 0.8 ? 'Excellent Match' : result.relevanceScore >= 0.7 ? 'Strong Match' : result.relevanceScore >= 0.6 ? 'Good Match' : 'Moderate Match',
-            overallScore: Math.round(result.relevanceScore * 100),
+            matchStrength: (result.relevanceScore || 0) >= 0.9 ? 'Excellent Match' : (result.relevanceScore || 0) >= 0.8 ? 'Strong Match' : (result.relevanceScore || 0) >= 0.7 ? 'Good Match' : (result.relevanceScore || 0) >= 0.6 ? 'Moderate Match' : (result.relevanceScore || 0) >= 0.5 ? 'Weak Match' : 'Poor Match',
+            overallScore: Math.round((result.relevanceScore || 0) * 100),
             gptEnhanced: {
               skillMatchPercentage: result.gptAnalysis.skillMatchPercentage,
               experienceFit: result.gptAnalysis.experienceFit,
