@@ -527,32 +527,156 @@ exports.createJobEmbedding = async (req, res) => {
 exports.getMatchingCandidates = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const { topK = 10, includeExplanations = 'true' } = req.query;
+    const topK = parseInt(req.query.topK) || 10;
+    const includeExplanations = req.query.includeExplanations !== 'false';
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
-    
-    const matchResult = includeExplanations === 'true' 
-      ? await embeddingService.findMatchingCandidatesWithExplanation(job, parseInt(topK))
-      : await embeddingService.findMatchingCandidatesForJob(job, parseInt(topK));
-    
-    // Both functions now return object with matches array and cache metadata
+
+    const LARGE_SCALE_THRESHOLD = 100;
+    const isLargeScale = topK > LARGE_SCALE_THRESHOLD;
+
+    let matchResult;
+    if (isLargeScale || !includeExplanations) {
+      console.log(`🔍 Large-scale vector-only matching: topK=${topK} for job ${job.title}`);
+      matchResult = await embeddingService.findMatchingCandidatesForJob(job, topK, { skipCache: topK > 500 });
+    } else {
+      matchResult = await embeddingService.findMatchingCandidatesWithExplanation(job, topK);
+    }
+
     const matches = matchResult.matches || (Array.isArray(matchResult) ? matchResult : []);
     const fromCache = matchResult.fromCache || false;
     const cacheAge = matchResult.cacheAge || null;
     const cacheAgeMinutes = matchResult.cacheAgeMinutes || null;
-    
+
     res.json({
       jobId: job._id,
       jobTitle: job.title,
       matchCount: matches.length,
-      matches: matches.map(m => ({ ...m, similarityPercentage: Math.round(m.similarity * 100) })),
+      matches: matches.map(m => ({ ...m, similarityPercentage: Math.round((m.similarity || 0) * 100) })),
       fromCache,
       cacheAge,
-      cacheAgeMinutes
+      cacheAgeMinutes,
+      mode: isLargeScale ? 'vector-ranked' : 'full-analysis',
+      explanationsIncluded: !isLargeScale && includeExplanations,
     });
   } catch (error) {
     console.error('❌ Error getting matching candidates:', error);
     res.status(500).json({ msg: 'Server error finding matching candidates', error: error.message });
+  }
+};
+
+exports.getCandidateExplanation = async (req, res) => {
+  try {
+    const organizationId = req.user.currentOrganization;
+    const { jobId, candidateId } = req.params;
+
+    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    if (!job) return res.status(404).json({ msg: 'Job not found' });
+
+    const Candidate = require('../models/Candidate');
+    const candidate = await Candidate.findOne({ _id: candidateId, organization: organizationId });
+    if (!candidate) return res.status(404).json({ msg: 'Candidate not found' });
+
+    const gptAnalysisService = require('../services/gptAnalysisService');
+
+    if (gptAnalysisService.isEnabled) {
+      const candidateSkills = Array.isArray(candidate.skills)
+        ? candidate.skills
+        : (candidate.skills ? candidate.skills.split(',').map(s => s.trim()) : []);
+
+      const candidateObj = {
+        _id: candidate._id.toString(),
+        id: candidate._id.toString(),
+        name: `${candidate.firstName} ${candidate.lastName}`.trim(),
+        skills: candidateSkills,
+        experience: candidate.workExperience?.totalYearsExperience || 0,
+        location: candidate.location || '',
+        currentRole: candidate.position || '',
+        education: candidate.education || '',
+        bio: candidate.aiAnalysis?.summary || '',
+      };
+
+      const gptResults = await gptAnalysisService.batchAnalyzeCandidates(job, [candidateObj]);
+      const result = gptResults[0];
+
+      if (result) {
+        return res.json({
+          candidateId,
+          jobId,
+          explanation: {
+            skillsMatch: {
+              matchedSkills: result.gptAnalysis.technicalStrengths || [],
+              missingSkills: result.gptAnalysis.skillGaps || [],
+              bonusSkills: result.gptAnalysis.transferableSkills || [],
+              matchPercentage: result.gptAnalysis.skillMatchPercentage || 0,
+              totalRequired: (job.skills || []).length,
+              totalMatched: (result.gptAnalysis.technicalStrengths || []).length,
+            },
+            experienceMatch: {
+              isMatch: result.gptAnalysis.experienceFit >= 6,
+              required: job.experience || 0,
+              candidate: candidateObj.experience,
+              difference: candidateObj.experience - (job.experience || 0),
+              category: result.gptAnalysis.experienceFit >= 8 ? 'Strong' : result.gptAnalysis.experienceFit >= 6 ? 'Good' : 'Below',
+            },
+            aiInsights: {
+              hasAIAnalysis: true,
+              summary: result.gptAnalysis.explanation,
+              strengths: result.gptAnalysis.technicalStrengths || [],
+              potentialFlags: result.gptAnalysis.skillGaps || [],
+              strengthsCount: (result.gptAnalysis.technicalStrengths || []).length,
+              flagsCount: (result.gptAnalysis.skillGaps || []).length,
+            },
+            matchStrength: result.relevanceScore >= 0.8 ? 'Excellent Match' : result.relevanceScore >= 0.7 ? 'Strong Match' : result.relevanceScore >= 0.6 ? 'Good Match' : 'Moderate Match',
+            overallScore: Math.round(result.relevanceScore * 100),
+            gptEnhanced: {
+              skillMatchPercentage: result.gptAnalysis.skillMatchPercentage,
+              experienceFit: result.gptAnalysis.experienceFit,
+              culturalAlignment: result.gptAnalysis.culturalAlignment,
+              growthPotential: result.gptAnalysis.growthPotential,
+              interviewFocus: result.gptAnalysis.interviewFocus,
+              confidenceScore: result.gptAnalysis.confidenceScore,
+              contextualExplanation: result.gptAnalysis.explanation,
+            },
+            reasons: [
+              result.gptAnalysis.explanation,
+              ...(result.gptAnalysis.technicalStrengths || []).slice(0, 3).map(s => `Strong in ${s}`),
+            ].filter(Boolean).slice(0, 5),
+            concerns: [
+              ...(result.gptAnalysis.skillGaps || []).slice(0, 2).map(g => `Missing: ${g}`),
+            ].filter(Boolean).slice(0, 3),
+          },
+        });
+      }
+    }
+
+    const explanation = await embeddingService.generateMatchExplanation(job, {
+      candidateId,
+      similarity: 0,
+      metadata: {
+        skills: candidate.skills,
+        experience: candidate.experience,
+        location: candidate.location,
+        totalYearsExp: candidate.workExperience?.totalYearsExperience || 0,
+        aiSummary: candidate.aiAnalysis?.summary || '',
+        aiStrengths: candidate.aiAnalysis?.strengths || [],
+        aiFlags: candidate.aiAnalysis?.potentialFlags || [],
+        hasAIAnalysis: !!candidate.aiAnalysis?.summary,
+        dataCompleteness: 70,
+      },
+      candidate: {
+        name: `${candidate.firstName} ${candidate.lastName}`,
+        position: candidate.position,
+        experience: candidate.experience,
+        skills: candidate.skills,
+        location: candidate.location,
+      },
+    });
+
+    res.json({ candidateId, jobId, explanation });
+  } catch (error) {
+    console.error('❌ Error generating candidate explanation:', error);
+    res.status(500).json({ msg: 'Failed to generate explanation', error: error.message });
   }
 };
 

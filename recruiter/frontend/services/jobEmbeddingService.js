@@ -66,6 +66,7 @@ class JobEmbeddingService {
 
   /**
    * Get matching candidates for a job
+   * For topK > 100, uses vector-only mode (no AI explanations upfront)
    */
   async getMatchingCandidates(jobId, topK = 10) {
     try {
@@ -85,6 +86,29 @@ class JobEmbeddingService {
       return await response.json();
     } catch (error) {
       console.error('Error getting matching candidates:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get on-demand AI explanation for a single candidate match
+   */
+  async getCandidateExplanation(jobId, candidateId) {
+    try {
+      const response = await apiRequest(`/api/jobs/${jobId}/candidate/${candidateId}/explanation`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({
+          message: `HTTP error! status: ${response.status}`,
+        }));
+        throw error;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting candidate explanation:', error);
       throw error;
     }
   }

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
-import { Loader2, Users, CheckCircle, XCircle, RefreshCw, User, Mail, Phone, MapPin, ChevronDown, ChevronUp, MessageSquare, AlertTriangle, ThumbsUp, Target, ExternalLink, UserPlus, Brain, Zap, Clock } from "lucide-react"
+import { Loader2, Users, CheckCircle, XCircle, RefreshCw, User, Mail, Phone, MapPin, ChevronDown, ChevronUp, MessageSquare, AlertTriangle, ThumbsUp, Target, ExternalLink, UserPlus, Brain, Zap, Clock, Search } from "lucide-react"
 import { HRLogo } from "@/components/ui/HRLogo"
 import { toast } from "@/components/ui/use-toast"
 import jobEmbeddingService from "@/services/jobEmbeddingService"
@@ -120,6 +120,8 @@ interface MatchingCandidate {
   }
 }
 
+const TOP_K_OPTIONS = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
+
 export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds = [], shortlistCandidateIds = [] }: JobEmbeddingCardProps) {
   const router = useRouter()
   const [embeddingStatus, setEmbeddingStatus] = useState<any>(null)
@@ -129,21 +131,40 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [expandedCandidates, setExpandedCandidates] = useState<Set<string>>(new Set())
   const [addingToPipeline, setAddingToPipeline] = useState<Set<string>>(new Set())
-  // Optimistic UI for shortlist adds so the user sees instant feedback without waiting on parent refresh.
   const [optimisticShortlisted, setOptimisticShortlisted] = useState<Set<string>>(new Set())
   const [fromCache, setFromCache] = useState(false)
   const [cacheAge, setCacheAge] = useState<Date | null>(null)
   const [invalidatingCache, setInvalidatingCache] = useState(false)
   
-  // Credit error handling
+  // Large-scale matching state
+  const [topK, setTopK] = useState(10)
+  const [matchMode, setMatchMode] = useState<'full-analysis' | 'vector-ranked'>('full-analysis')
+  const [loadingExplanations, setLoadingExplanations] = useState<Set<string>>(new Set())
+  const [lazyExplanations, setLazyExplanations] = useState<Record<string, any>>({})
+  
   const { creditError, showCreditDialog, setShowCreditDialog, handleError: handleCreditError, clearError } = useCreditError()
 
-  const toggleExplanation = (candidateId: string) => {
+  const toggleExplanation = async (candidateId: string) => {
     const newExpanded = new Set(expandedCandidates)
     if (newExpanded.has(candidateId)) {
       newExpanded.delete(candidateId)
     } else {
       newExpanded.add(candidateId)
+
+      // Lazy-load explanation in vector-ranked mode
+      const match = matchingCandidates.find(m => m.candidateId === candidateId)
+      if (matchMode === 'vector-ranked' && !match?.explanation && !lazyExplanations[candidateId]) {
+        setLoadingExplanations(prev => new Set(prev).add(candidateId))
+        try {
+          const result = await jobEmbeddingService.getCandidateExplanation(jobId, candidateId)
+          setLazyExplanations(prev => ({ ...prev, [candidateId]: result.explanation }))
+        } catch (err: any) {
+          console.error('Failed to load explanation:', err)
+          toast({ title: "Error", description: "Could not load AI analysis", variant: "destructive" })
+        } finally {
+          setLoadingExplanations(prev => { const s = new Set(prev); s.delete(candidateId); return s })
+        }
+      }
     }
     setExpandedCandidates(newExpanded)
   }
@@ -173,13 +194,16 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     }
   }
 
-  const fetchMatchingCandidates = async () => {
+  const fetchMatchingCandidates = async (requestedTopK?: number) => {
+    const k = requestedTopK ?? topK
     try {
       setLoadingMatches(true)
-      const response = await jobEmbeddingService.getMatchingCandidates(jobId, 10)
+      setLazyExplanations({})
+      setExpandedCandidates(new Set())
+      const response = await jobEmbeddingService.getMatchingCandidates(jobId, k)
       setMatchingCandidates(response.matches || [])
+      setMatchMode(response.mode || (k > 100 ? 'vector-ranked' : 'full-analysis'))
       
-      // Capture cache metadata
       setFromCache(response.fromCache || false)
       setCacheAge(response.cacheAge || null)
       
@@ -188,17 +212,9 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       }
     } catch (error: any) {
       console.error('Error fetching matching candidates:', error)
-      
-      // Check if it's a credit error
       const isCreditError = handleCreditError(error)
-      
       if (!isCreditError) {
-        // Show generic error for non-credit errors
-        toast({
-          title: "Error",
-          description: error.message || "Failed to fetch matching candidates",
-          variant: "destructive",
-        })
+        toast({ title: "Error", description: error.message || "Failed to fetch matching candidates", variant: "destructive" })
       }
     } finally {
       setLoadingMatches(false)
@@ -440,11 +456,41 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
         {/* Matching Candidates */}
         {embeddingStatus?.isEmbedded && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-purple-600" />
-              <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Top Matching Candidates</h3>
-              <Badge variant="secondary">{matchingCandidates.length} found</Badge>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-2 flex-1">
+                <Users className="h-5 w-5 text-purple-600" />
+                <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">Top Matching Candidates</h3>
+                <Badge variant="secondary">{matchingCandidates.length} found</Badge>
+                {matchMode === 'vector-ranked' && (
+                  <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                    <Zap className="h-3 w-3 mr-1" />Vector Ranked
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Show top:</span>
+                <select
+                  value={topK}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value)
+                    setTopK(val)
+                    fetchMatchingCandidates(val)
+                  }}
+                  disabled={loadingMatches}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  {TOP_K_OPTIONS.map(n => (
+                    <option key={n} value={n}>{n.toLocaleString()} candidates</option>
+                  ))}
+                </select>
+              </div>
             </div>
+            {matchMode === 'vector-ranked' && matchingCandidates.length > 0 && (
+              <div className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 flex items-center gap-2">
+                <Brain className="h-4 w-4 shrink-0" />
+                <span>Large-scale mode: Candidates ranked by vector similarity. Click <strong>&quot;Why?&quot;</strong> on any candidate to generate a detailed AI explanation on demand.</span>
+              </div>
+            )}
             
             {loadingMatches ? (
               <div className="flex items-center justify-center py-8">
@@ -454,7 +500,8 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
               <div className="space-y-3">
                 {matchingCandidates.map((match, index) => {
                   const isExpanded = expandedCandidates.has(match.candidateId)
-                  const explanation = match.explanation
+                  const explanation = match.explanation || lazyExplanations[match.candidateId] || null
+                  const isLoadingExplanation = loadingExplanations.has(match.candidateId)
                   const isAddingThisCandidate = addingToPipeline.has(match.candidateId)
                   const isAlreadyInPipeline = pipelineCandidateIds.includes(match.candidateId)
                   const isAlreadyInShortlist = shortlistCandidateIds.includes(match.candidateId) || optimisticShortlisted.has(match.candidateId)
@@ -614,11 +661,12 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   <span className="sm:inline hidden">View</span>
                                 </Button>
                                 
-                                {explanation && (
+                                {(explanation || matchMode === 'vector-ranked') && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     type="button"
+                                    disabled={isLoadingExplanation}
                                     onClick={(e) => {
                                       e.preventDefault()
                                       e.stopPropagation()
@@ -626,9 +674,13 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                     }}
                                     className="h-8 px-2 text-xs flex-1"
                                   >
-                                    <MessageSquare className="h-3 w-3 mr-1 sm:mr-0" />
+                                    {isLoadingExplanation ? (
+                                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    ) : (
+                                      <MessageSquare className="h-3 w-3 mr-1 sm:mr-0" />
+                                    )}
                                     <span className="sm:inline hidden">
-                                      Why?
+                                      {isLoadingExplanation ? 'Analyzing...' : 'Why?'}
                                       {isExpanded ? (
                                         <ChevronUp className="h-3 w-3 ml-1 inline" />
                                       ) : (
@@ -650,8 +702,15 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                         </div>
                       </div>
 
+                      {/* Loading explanation spinner */}
+                      {isExpanded && isLoadingExplanation && (
+                        <div className="border-t border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 p-8 flex flex-col items-center gap-3">
+                          <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+                          <p className="text-sm text-muted-foreground">Generating AI analysis for this candidate...</p>
+                        </div>
+                      )}
                       {/* Expanded explanation */}
-                      {isExpanded && explanation && (
+                      {isExpanded && explanation && !isLoadingExplanation && (
                         <div className="border-t border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 p-4 space-y-4">
                           {/* Enhanced Reasons */}
                           {explanation.reasons && explanation.reasons.length > 0 && (

@@ -467,6 +467,7 @@ router.delete('/:id', authMiddleware, requireOrganization, jobController.deleteJ
 router.get('/:id/embedding-status', authMiddleware, requireOrganization, jobController.getJobEmbeddingStatus);
 router.post('/:id/create-embedding', authMiddleware, requireOrganization, requireCredits('reEmbed', 'job'), deductCredits, jobController.createJobEmbedding);
 router.get('/:id/matching-candidates', authMiddleware, requireOrganization, requireCredits('aiMatching', 'matching'), deductCredits, jobController.getMatchingCandidates);
+router.get('/:jobId/candidate/:candidateId/explanation', authMiddleware, requireOrganization, jobController.getCandidateExplanation);
 
 // Shortlist routes - IMPORTANT: Specific routes MUST come before generic ones
 // Bulk shortlist operations (most specific first)
