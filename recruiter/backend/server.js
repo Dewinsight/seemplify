@@ -300,6 +300,7 @@ app.use('/api/notifications', require('./routes/notifications')); // Notificatio
 app.use('/api/pipeline', require('./routes/pipelineBatch')); // Pipeline batch operations routes
 app.use('/api/candidate-emails', require('./routes/candidateEmails')); // Candidate email notification routes
 app.use('/api/candidate-shortlists', require('./routes/candidateShortlists')); // Candidate shortlist information routes
+app.use('/api/enrichment', require('./routes/enrichment')); // Background enrichment and ranking routes
 app.use('/api/subscription', require('./routes/subscription')); // Subscription upgrade request routes
 app.use('/api/plans', require('./routes/plan')); // Subscription plan management routes
 app.use('/api/credits', require('./routes/credits')); // Credits management routes
@@ -376,5 +377,14 @@ server.listen(PORT, async () => {
     console.log('📦 BullMQ bulk upload queue initialized');
   } catch (err) {
     console.warn('⚠️ BullMQ init failed (non-fatal, bulk upload will init on first use):', err.message);
+  }
+
+  // Initialize BullMQ worker for enrichment ranking
+  try {
+    const enrichmentService = require('./services/enrichmentService');
+    await enrichmentService.initQueue();
+    console.log('📈 BullMQ enrichment queue initialized');
+  } catch (err) {
+    console.warn('⚠️ Enrichment queue init failed (non-fatal, enrichment will init on first use):', err.message);
   }
 });

@@ -14,6 +14,14 @@ import { toast } from "@/components/ui/use-toast"
 import jobEmbeddingService from "@/services/jobEmbeddingService"
 import { addCandidateToShortlist } from "@/services/jobService"
 import * as aiMatchCacheService from "@/services/aiMatchCacheService"
+import {
+  getEnrichmentEstimate,
+  getEnrichmentResults,
+  getEnrichmentStatus,
+  startEnrichment,
+  type EnrichmentEstimateResponse,
+  type EnrichmentStatusResponse,
+} from "@/services/enrichmentService"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
 
@@ -141,8 +149,27 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
   const [matchMode, setMatchMode] = useState<'full-analysis' | 'vector-ranked'>('full-analysis')
   const [loadingExplanations, setLoadingExplanations] = useState<Set<string>>(new Set())
   const [lazyExplanations, setLazyExplanations] = useState<Record<string, any>>({})
+  const [enrichCount, setEnrichCount] = useState(50)
+  const [enrichmentEstimate, setEnrichmentEstimate] = useState<EnrichmentEstimateResponse | null>(null)
+  const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatusResponse | null>(null)
+  const [enrichmentId, setEnrichmentId] = useState<string | null>(null)
+  const [enrichmentLoadingEstimate, setEnrichmentLoadingEstimate] = useState(false)
+  const [enrichmentStarting, setEnrichmentStarting] = useState(false)
   
-  const { creditError, showCreditDialog, setShowCreditDialog, handleError: handleCreditError, clearError } = useCreditError()
+  const { creditError, showCreditDialog, setShowCreditDialog, handleError: handleCreditError } = useCreditError()
+
+  const isEnrichmentProcessing = enrichmentStatus?.state === 'processing'
+  const selectedEnrichCount = Math.min(enrichCount, matchingCandidates.length || enrichCount)
+  const enrichOptions = [50, 100, 250, matchingCandidates.length]
+    .filter((n, idx, arr) => n > 0 && n <= matchingCandidates.length && arr.indexOf(n) === idx)
+    .sort((a, b) => a - b)
+
+  const formatDuration = (seconds: number | null | undefined) => {
+    if (!seconds || seconds <= 0) return '0s'
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+  }
 
   const toggleExplanation = async (candidateId: string) => {
     const newExpanded = new Set(expandedCandidates)
@@ -200,6 +227,10 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
       setLoadingMatches(true)
       setLazyExplanations({})
       setExpandedCandidates(new Set())
+      setEnrichmentId(null)
+      setEnrichmentStatus(null)
+      setEnrichmentEstimate(null)
+      setEnrichmentStarting(false)
       const response = await jobEmbeddingService.getMatchingCandidates(jobId, k)
       setMatchingCandidates(response.matches || [])
       setMatchMode(response.mode || (k > 100 ? 'vector-ranked' : 'full-analysis'))
@@ -343,6 +374,106 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     fetchEmbeddingStatus()
   }, [jobId])
 
+  useEffect(() => {
+    if (matchMode !== 'vector-ranked' || matchingCandidates.length === 0) return
+    if (!enrichOptions.length) return
+    if (!enrichOptions.includes(enrichCount)) {
+      setEnrichCount(enrichOptions[0])
+    }
+  }, [matchMode, matchingCandidates.length, enrichOptions, enrichCount])
+
+  useEffect(() => {
+    const loadEstimate = async () => {
+      if (matchMode !== 'vector-ranked' || matchingCandidates.length === 0) {
+        setEnrichmentEstimate(null)
+        return
+      }
+
+      try {
+        setEnrichmentLoadingEstimate(true)
+        const estimate = await getEnrichmentEstimate(jobId, selectedEnrichCount)
+        setEnrichmentEstimate(estimate)
+      } catch (error: any) {
+        console.error('Error loading enrichment estimate:', error)
+        setEnrichmentEstimate(null)
+      } finally {
+        setEnrichmentLoadingEstimate(false)
+      }
+    }
+
+    loadEstimate()
+  }, [jobId, matchMode, matchingCandidates.length, selectedEnrichCount])
+
+  useEffect(() => {
+    if (!enrichmentId) return
+
+    const poll = async () => {
+      try {
+        const status = await getEnrichmentStatus(enrichmentId)
+        setEnrichmentStatus(status)
+
+        if (status.state === 'completed') {
+          let rankedMatches = status.rankedMatches || []
+          if (!rankedMatches.length) {
+            const results = await getEnrichmentResults(enrichmentId)
+            rankedMatches = results.rankedMatches || []
+          }
+
+          if (rankedMatches.length > 0) {
+            setMatchingCandidates(rankedMatches)
+            setMatchMode('full-analysis')
+            setLazyExplanations({})
+            setExpandedCandidates(new Set())
+          }
+
+          setEnrichmentId(null)
+          setEnrichmentStarting(false)
+          toast({
+            title: "Enrichment complete",
+            description: `Ranked ${status.enrichCount} candidates with AI enrichment.`,
+          })
+        } else if (status.state === 'failed') {
+          setEnrichmentId(null)
+          setEnrichmentStarting(false)
+          toast({
+            title: "Enrichment failed",
+            description: status.errors?.[0]?.error || "Failed to enrich and rank candidates.",
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        console.error('Error polling enrichment status:', error)
+      }
+    }
+
+    poll()
+    const intervalId = setInterval(poll, 2000)
+    return () => clearInterval(intervalId)
+  }, [enrichmentId])
+
+  const handleStartEnrichment = async () => {
+    try {
+      setEnrichmentStarting(true)
+      const response = await startEnrichment(jobId, selectedEnrichCount, matchingCandidates)
+      setEnrichmentId(response.enrichmentId)
+      setEnrichmentStatus(null)
+      toast({
+        title: "Enrichment started",
+        description: `Analyzing top ${selectedEnrichCount} candidates in the background.`,
+      })
+    } catch (error: any) {
+      setEnrichmentStarting(false)
+      const isCreditError = handleCreditError(error)
+      if (!isCreditError) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to start enrichment",
+          variant: "destructive",
+        })
+      }
+    }
+  }
+
   if (loading) {
     return (
       <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
@@ -476,7 +607,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                     setTopK(val)
                     fetchMatchingCandidates(val)
                   }}
-                  disabled={loadingMatches}
+                  disabled={loadingMatches || enrichmentStarting || isEnrichmentProcessing}
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   {TOP_K_OPTIONS.map(n => (
@@ -486,15 +617,102 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
               </div>
             </div>
             {matchMode === 'vector-ranked' && matchingCandidates.length > 0 && (
-              <div className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 flex items-center gap-2">
-                <Brain className="h-4 w-4 shrink-0" />
-                <span>Large-scale mode: Candidates ranked by vector similarity. Click <strong>&quot;Why?&quot;</strong> on any candidate to generate a detailed AI explanation on demand.</span>
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-3 space-y-3">
+                <div className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
+                  <Brain className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>Large-scale mode is vector-ranked. Enrich selected candidates with GPT for higher-accuracy ranking and full match analysis.</span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Enrich scope</label>
+                    <select
+                      value={selectedEnrichCount}
+                      onChange={(e) => setEnrichCount(parseInt(e.target.value))}
+                      disabled={enrichmentStarting || isEnrichmentProcessing}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      {enrichOptions.map((count) => (
+                        <option key={count} value={count}>
+                          Top {count.toLocaleString()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex-1 text-xs text-muted-foreground">
+                    {enrichmentLoadingEstimate ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Estimating credits and time...
+                      </span>
+                    ) : enrichmentEstimate ? (
+                      <span>
+                        This run uses <strong>{enrichmentEstimate.totalCredits}</strong> credits and takes about <strong>{formatDuration(enrichmentEstimate.estimatedSeconds)}</strong>.
+                      </span>
+                    ) : (
+                      <span>Estimate unavailable.</span>
+                    )}
+                  </div>
+
+                  <Button
+                    size="sm"
+                    onClick={handleStartEnrichment}
+                    disabled={enrichmentStarting || isEnrichmentProcessing || enrichOptions.length === 0}
+                    className="h-8 px-3 text-xs whitespace-nowrap"
+                  >
+                    {enrichmentStarting || isEnrichmentProcessing ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        Enriching...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-3 w-3 mr-1" />
+                        Enrich & Rank
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
             
             {loadingMatches ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="animate-spin h-6 w-6 text-primary" />
+              </div>
+            ) : isEnrichmentProcessing && enrichmentStatus ? (
+              <div className="space-y-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/20 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    <span className="text-sm font-medium text-blue-800 dark:text-blue-300">Background enrichment in progress</span>
+                  </div>
+                  <Badge variant="secondary">{enrichmentStatus.progressPercent}%</Badge>
+                </div>
+                <Progress value={enrichmentStatus.progressPercent} className="h-2" />
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                  <div className="rounded bg-white dark:bg-slate-800 p-2">
+                    <div className="font-semibold">{enrichmentStatus.completedCandidates}/{enrichmentStatus.enrichCount}</div>
+                    <div className="text-muted-foreground">Processed</div>
+                  </div>
+                  <div className="rounded bg-white dark:bg-slate-800 p-2">
+                    <div className="font-semibold">{enrichmentStatus.successfulCandidates}</div>
+                    <div className="text-muted-foreground">Successful</div>
+                  </div>
+                  <div className="rounded bg-white dark:bg-slate-800 p-2">
+                    <div className="font-semibold">{enrichmentStatus.failedCandidates}</div>
+                    <div className="text-muted-foreground">Failed</div>
+                  </div>
+                  <div className="rounded bg-white dark:bg-slate-800 p-2">
+                    <div className="font-semibold">{formatDuration(enrichmentStatus.elapsedSeconds)}</div>
+                    <div className="text-muted-foreground">Elapsed</div>
+                  </div>
+                  <div className="rounded bg-white dark:bg-slate-800 p-2">
+                    <div className="font-semibold">{formatDuration(enrichmentStatus.etaSeconds)}</div>
+                    <div className="text-muted-foreground">ETA</div>
+                  </div>
+                </div>
               </div>
             ) : matchingCandidates.length > 0 ? (
               <div className="space-y-3">
