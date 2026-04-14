@@ -97,10 +97,12 @@ export default function SignupPage() {
                   <div className={`absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 ${brand.colors.pulse} rounded-full border-2 border-slate-900 animate-pulse`}></div>
                 </div>
               )}
-              <div className="ml-3 lg:ml-4">
-                <h1 className={`text-xl lg:text-2xl xl:text-3xl font-bold ${textColor}`}>{brand.loginHeading || brand.name}</h1>
-                <p className={`text-xs lg:text-sm ${textMuted}`}>{brand.loginSubheading || brand.tagline}</p>
-              </div>
+              {!(brand.useImageLogo && brand.logo) && (
+                <div className="ml-3 lg:ml-4">
+                  <h1 className={`text-xl lg:text-2xl xl:text-3xl font-bold ${textColor}`}>{brand.loginHeading || brand.name}</h1>
+                  <p className={`text-xs lg:text-sm ${textMuted}`}>{brand.loginSubheading || brand.tagline}</p>
+                </div>
+              )}
             </div>
             
             <div className="max-w-md">

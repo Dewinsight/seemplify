@@ -61,8 +61,6 @@ export const BRANDS: Record<string, BrandConfig> = {
     secondaryLogo: '/jetstone-akwaibom-logo.png',
     useImageLogo: true,
     footerText: '© 2025 Jetstone Education. All rights reserved.',
-    loginHeading: 'Jetstone Education',
-    loginSubheading: 'Akwa Ibom State Recruitment Portal',
     // Lighter teal/cyan shell to align with logo
     landingRootClass:
       'min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme',
