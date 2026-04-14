@@ -227,14 +227,18 @@ const deductCredits = (req, res, next) => {
     });
     
     if (req.creditsAction && statusCode >= 200 && statusCode < 300) {
-      // Skip credit deduction if result is from cache (no AI computation cost)
-      // This applies to both basic matching and matching reports with insights
-      // Check for fromCache === true (strict equality to avoid type coercion issues)
-      if (req.creditsAction.action === 'aiMatching' && data?.fromCache === true) {
-        console.log(`💳 ✅ SKIPPING credit deduction for ${req.creditsAction.action} - result from cache (no AI computation)`);
-        if (data.insights) {
-          console.log(`   ✅ Includes cached GPT insights - no credits charged`);
-        }
+      // aiMatching: `fromCache` only means vector similarity was served from cache.
+      // findMatchingCandidatesWithExplanation still runs GPT on those matches — that must be charged.
+      // Skip only when we did not run the explanation/GPT pass (vector-only response).
+      const skipAiMatchingForVectorCacheOnly =
+        req.creditsAction.action === 'aiMatching' &&
+        data?.fromCache === true &&
+        data?.explanationsIncluded !== true;
+
+      if (skipAiMatchingForVectorCacheOnly) {
+        console.log(
+          `💳 ✅ SKIPPING credit deduction for ${req.creditsAction.action} — vector matches from cache, no GPT explanation pass (explanationsIncluded=${data?.explanationsIncluded})`
+        );
         return originalJson(data);
       }
       
