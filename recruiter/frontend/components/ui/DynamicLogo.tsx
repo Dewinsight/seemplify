@@ -23,21 +23,21 @@ export const DynamicLogo = ({
   const sizeClasses = {
     sm: {
       container: "w-8 h-8",
-      imgSize: 32,
+      imgHeight: 32,
       text: "text-xs",
       pulse: "w-2.5 h-2.5",
       nameText: "text-lg",
     },
     md: {
       container: "w-10 h-10",
-      imgSize: 40,
+      imgHeight: 40,
       text: "text-sm",
       pulse: "w-3 h-3",
       nameText: "text-xl",
     },
     lg: {
       container: "w-12 h-12",
-      imgSize: 48,
+      imgHeight: 48,
       text: "text-base",
       pulse: "w-3.5 h-3.5",
       nameText: "text-2xl",
@@ -53,9 +53,10 @@ export const DynamicLogo = ({
           <Image
             src={brand.logo}
             alt={brand.name}
-            width={selectedSize.imgSize}
-            height={selectedSize.imgSize}
-            className={cn("rounded-xl object-contain", selectedSize.container)}
+            width={200}
+            height={selectedSize.imgHeight}
+            className="object-contain w-auto"
+            style={{ height: `${selectedSize.imgHeight}px` }}
           />
         ) : (
           <div
@@ -112,22 +113,23 @@ export const DynamicLogoIcon = ({
   const brand = useBrandConfig();
 
   const sizeClasses = {
-    sm: { container: "w-8 h-8", imgSize: 32, text: "text-xs", pulse: "w-2.5 h-2.5" },
-    md: { container: "w-10 h-10", imgSize: 40, text: "text-sm", pulse: "w-3 h-3" },
-    lg: { container: "w-12 h-12", imgSize: 48, text: "text-base", pulse: "w-3.5 h-3.5" },
+    sm: { container: "w-8 h-8", imgHeight: 32, text: "text-xs", pulse: "w-2.5 h-2.5" },
+    md: { container: "w-10 h-10", imgHeight: 40, text: "text-sm", pulse: "w-3 h-3" },
+    lg: { container: "w-12 h-12", imgHeight: 48, text: "text-base", pulse: "w-3.5 h-3.5" },
   };
 
   const selectedSize = sizeClasses[size];
 
   if (brand.useImageLogo && brand.logo) {
     return (
-      <div className={cn("relative", className)}>
+      <div className={cn("relative flex items-center", className)}>
         <Image
           src={brand.logo}
           alt={brand.name}
-          width={selectedSize.imgSize}
-          height={selectedSize.imgSize}
-          className={cn("rounded-xl object-contain", selectedSize.container)}
+          width={200}
+          height={selectedSize.imgHeight}
+          className="object-contain w-auto"
+          style={{ height: `${selectedSize.imgHeight}px` }}
         />
       </div>
     );

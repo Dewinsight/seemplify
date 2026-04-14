@@ -180,16 +180,13 @@ export default function LoginPage() {
 
       <div className="relative z-10 flex h-screen">
         {/* Left Side - Brand & Features */}
-        <div className="hidden lg:flex lg:w-1/2 flex-col justify-center p-6 lg:p-8 xl:p-12 2xl:p-16">
+        <div className="hidden lg:flex lg:w-1/2 flex-col justify-center p-6 lg:p-8 xl:p-12 2xl:p-16 relative">
           {/* Logo and Brand */}
           <div className="mb-6 lg:mb-8 xl:mb-12">
             <div className="flex items-center mb-6">
               {brand.useImageLogo && brand.logo ? (
-                <div className="flex items-center gap-4">
-                  <Image src={brand.logo} alt={brand.name} width={56} height={56} className="rounded-xl object-contain w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14" />
-                  {brand.secondaryLogo && (
-                    <Image src={brand.secondaryLogo} alt={`${brand.name} partner`} width={56} height={56} className="rounded-xl object-contain w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14" />
-                  )}
+                <div className="flex items-center">
+                  <Image src={brand.logo} alt={brand.name} width={240} height={56} className="object-contain h-10 lg:h-12 xl:h-14 w-auto" />
                 </div>
               ) : (
                 <div className="relative">
@@ -252,7 +249,13 @@ export default function LoginPage() {
             ))}
           </div>
 
-
+          {/* Desktop Secondary Logo */}
+          {brand.secondaryLogo && (
+            <div className="absolute bottom-8 left-8 xl:bottom-12 xl:left-12 flex items-center gap-3 opacity-80">
+              <span className="text-slate-400 text-sm font-medium">In partnership with</span>
+              <Image src={brand.secondaryLogo} alt="Partner Logo" width={48} height={48} className="object-contain" />
+            </div>
+          )}
         </div>
 
         {/* Right Side - Login Form */}
@@ -261,11 +264,8 @@ export default function LoginPage() {
             {/* Mobile Logo */}
             <div className="lg:hidden flex justify-center mb-8">
               {brand.useImageLogo && brand.logo ? (
-                <div className="flex items-center gap-3">
-                  <Image src={brand.logo} alt={brand.name} width={56} height={56} className="rounded-xl object-contain" />
-                  {brand.secondaryLogo && (
-                    <Image src={brand.secondaryLogo} alt={`${brand.name} partner`} width={56} height={56} className="rounded-xl object-contain" />
-                  )}
+                <div className="flex items-center">
+                  <Image src={brand.logo} alt={brand.name} width={200} height={48} className="object-contain h-12 w-auto" />
                 </div>
               ) : (
                 <div className={`w-14 h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
@@ -506,6 +506,19 @@ export default function LoginPage() {
                 Your data is protected with enterprise-grade security
               </motion.span>
             </motion.div>
+
+            {/* Mobile Secondary Logo */}
+            {brand.secondaryLogo && (
+              <motion.div 
+                className="lg:hidden mt-10 flex flex-col items-center justify-center gap-2 opacity-80"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 2.0, duration: 0.5 }}
+              >
+                <span className="text-slate-400 text-xs font-medium">In partnership with</span>
+                <Image src={brand.secondaryLogo} alt="Partner Logo" width={40} height={40} className="object-contain" />
+              </motion.div>
+            )}
           </div>
         </div>
       </div>
