@@ -3,7 +3,7 @@ const User = require('../models/User');
 const Organization = require('../models/Organization');
 const { RECOMMENDED_CREDIT_COSTS } = require('../config/creditEconomics');
 
-const DEFAULT_CUSTOM_PLAN_TOTAL_CREDITS = 430;
+const DEFAULT_CUSTOM_PLAN_TOTAL_CREDITS = 2000;
 
 // Get all plans (with filter options)
 exports.getPlans = async (req, res) => {

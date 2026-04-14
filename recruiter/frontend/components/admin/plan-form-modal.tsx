@@ -92,15 +92,15 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
       apiCallsLimit: ''      // For organization plans
     },
     credits: {
-      totalCredits: 430,
+      totalCredits: 2000,
       creditCosts: {
-        createJob: 5,
-        uploadCandidate: 9,
+        createJob: 4,
+        uploadCandidate: 7,
         scheduleInterview: 2,
-        aiMatching: 16,
-        generateQuestions: 9,
-        aiAnalysis: 17,
-        bulkUpload: 6,
+        aiMatching: 11,
+        generateQuestions: 6,
+        aiAnalysis: 12,
+        bulkUpload: 5,
         reEmbed: 3
       },
       rolloverEnabled: false,
@@ -137,15 +137,15 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
           apiCallsLimit: ''      // For organization plans
         },
         credits: {
-          totalCredits: 430,
+          totalCredits: 2000,
           creditCosts: {
-            createJob: 5,
-            uploadCandidate: 9,
+            createJob: 4,
+            uploadCandidate: 7,
             scheduleInterview: 2,
-            aiMatching: 16,
-            generateQuestions: 9,
-            aiAnalysis: 17,
-            bulkUpload: 6,
+            aiMatching: 11,
+            generateQuestions: 6,
+            aiAnalysis: 12,
+            bulkUpload: 5,
             reEmbed: 3
           },
           rolloverEnabled: false,
@@ -514,7 +514,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                       name="credits.totalCredits"
                       type="number"
                       placeholder="100"
-                      value={formData.credits?.totalCredits || 430}
+                      value={formData.credits?.totalCredits || 2000}
                       onChange={handleNumberInputChange}
                     />
                     <p className="text-xs text-gray-500 mt-1">
@@ -533,7 +533,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           name="credits.creditCosts.createJob"
                           type="number"
                           className="h-8"
-                          value={formData.credits?.creditCosts?.createJob || 5}
+                          value={formData.credits?.creditCosts?.createJob || 4}
                           onChange={handleNumberInputChange}
                         />
                       </div>
@@ -545,7 +545,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           name="credits.creditCosts.uploadCandidate"
                           type="number"
                           className="h-8"
-                          value={formData.credits?.creditCosts?.uploadCandidate || 9}
+                          value={formData.credits?.creditCosts?.uploadCandidate || 7}
                           onChange={handleNumberInputChange}
                         />
                       </div>
@@ -569,7 +569,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           name="credits.creditCosts.aiMatching"
                           type="number"
                           className="h-8"
-                          value={formData.credits?.creditCosts?.aiMatching || 16}
+                          value={formData.credits?.creditCosts?.aiMatching || 11}
                           onChange={handleNumberInputChange}
                         />
                       </div>
@@ -581,7 +581,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           name="credits.creditCosts.generateQuestions"
                           type="number"
                           className="h-8"
-                          value={formData.credits?.creditCosts?.generateQuestions || 9}
+                          value={formData.credits?.creditCosts?.generateQuestions || 6}
                           onChange={handleNumberInputChange}
                         />
                       </div>
@@ -593,7 +593,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           name="credits.creditCosts.aiAnalysis"
                           type="number"
                           className="h-8"
-                          value={formData.credits?.creditCosts?.aiAnalysis || 17}
+                          value={formData.credits?.creditCosts?.aiAnalysis || 12}
                           onChange={handleNumberInputChange}
                         />
                       </div>
@@ -605,7 +605,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           name="credits.creditCosts.bulkUpload"
                           type="number"
                           className="h-8"
-                          value={formData.credits?.creditCosts?.bulkUpload || 6}
+                          value={formData.credits?.creditCosts?.bulkUpload || 5}
                           onChange={handleNumberInputChange}
                         />
                       </div>
@@ -633,15 +633,15 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           ...formData,
                           credits: {
                             ...(formData.credits || {
-                              totalCredits: 430,
+                              totalCredits: 2000,
                               creditCosts: {
-                                createJob: 5,
-                                uploadCandidate: 9,
+                                createJob: 4,
+                                uploadCandidate: 7,
                                 scheduleInterview: 2,
-                                aiMatching: 16,
-                                generateQuestions: 9,
-                                aiAnalysis: 17,
-                                bulkUpload: 6,
+                                aiMatching: 11,
+                                generateQuestions: 6,
+                                aiAnalysis: 12,
+                                bulkUpload: 5,
                                 reEmbed: 3
                               },
                               rolloverPercentage: 0

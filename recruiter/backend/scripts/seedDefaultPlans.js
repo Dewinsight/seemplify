@@ -34,7 +34,7 @@ mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI)
     process.exit(1);
   });
 
-// Default plans configuration
+// Default plans — list prices $100 → $5,000 / mo (see creditEconomics.js)
 const defaultPlans = [
   {
     name: 'Free',
@@ -50,7 +50,7 @@ const defaultPlans = [
     ],
     limits: {
       memberLimit: 3,
-      storageLimit: 100, // 100MB
+      storageLimit: 100,
       apiCallsLimit: 100
     },
     displayOrder: 1,
@@ -58,7 +58,7 @@ const defaultPlans = [
     isPublished: true
   },
   {
-    name: 'Basic',
+    name: 'Starter',
     code: 'basic',
     price: RECOMMENDED_PLAN_LIST_PRICES_USD.basic,
     billingCycle: 'monthly',
@@ -72,7 +72,7 @@ const defaultPlans = [
     ],
     limits: {
       memberLimit: 10,
-      storageLimit: 1024, // 1GB
+      storageLimit: 1024,
       apiCallsLimit: 500
     },
     displayOrder: 2,
@@ -96,10 +96,52 @@ const defaultPlans = [
     ],
     limits: {
       memberLimit: 25,
-      storageLimit: 5120, // 5GB
+      storageLimit: 5120,
       apiCallsLimit: 2000
     },
     displayOrder: 3,
+    isDefault: true,
+    isPublished: true
+  },
+  {
+    name: 'Business',
+    code: 'business',
+    price: RECOMMENDED_PLAN_LIST_PRICES_USD.business,
+    billingCycle: 'monthly',
+    credits: planCredits('business'),
+    features: [
+      { name: 'Everything in Professional' },
+      { name: 'Higher monthly AI credits' },
+      { name: 'Priority email support' },
+      { name: 'Expanded storage' }
+    ],
+    limits: {
+      memberLimit: 50,
+      storageLimit: 20480,
+      apiCallsLimit: 10000
+    },
+    displayOrder: 4,
+    isDefault: true,
+    isPublished: true
+  },
+  {
+    name: 'Premium',
+    code: 'premium',
+    price: RECOMMENDED_PLAN_LIST_PRICES_USD.premium,
+    billingCycle: 'monthly',
+    credits: planCredits('premium'),
+    features: [
+      { name: 'Everything in Business' },
+      { name: 'Large monthly AI credit pool' },
+      { name: 'Priority support' },
+      { name: 'Advanced analytics' }
+    ],
+    limits: {
+      memberLimit: 150,
+      storageLimit: 102400,
+      apiCallsLimit: 50000
+    },
+    displayOrder: 5,
     isDefault: true,
     isPublished: true
   },
@@ -113,10 +155,10 @@ const defaultPlans = [
       { name: 'Unlimited Candidates' },
       { name: 'Unlimited Job Postings' },
       { name: 'Unlimited Team Members' },
-      { name: 'Priority Support' },
+      { name: 'Maximum monthly AI credits' },
+      { name: 'Dedicated support' },
       { name: 'Custom Branding' },
       { name: 'API Access' },
-      { name: 'Advanced Analytics' },
       { name: 'Custom Integrations' },
       { name: 'Dedicated Account Manager' }
     ],
@@ -125,7 +167,7 @@ const defaultPlans = [
       storageLimit: 'unlimited',
       apiCallsLimit: 'unlimited'
     },
-    displayOrder: 4,
+    displayOrder: 6,
     isDefault: true,
     isPublished: true
   }

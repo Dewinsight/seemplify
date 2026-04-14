@@ -63,16 +63,16 @@ const PlanSchema = new mongoose.Schema({
       type: Number,
       required: true,
       min: 0,
-      default: 430
+      default: 2000
     },
     creditCosts: {
-      createJob: { type: Number, default: 5, min: 0 },
-      uploadCandidate: { type: Number, default: 9, min: 0 },
+      createJob: { type: Number, default: 4, min: 0 },
+      uploadCandidate: { type: Number, default: 7, min: 0 },
       scheduleInterview: { type: Number, default: 2, min: 0 },
-      aiMatching: { type: Number, default: 16, min: 0 },
-      generateQuestions: { type: Number, default: 9, min: 0 },
-      aiAnalysis: { type: Number, default: 17, min: 0 },
-      bulkUpload: { type: Number, default: 6, min: 0 },
+      aiMatching: { type: Number, default: 11, min: 0 },
+      generateQuestions: { type: Number, default: 6, min: 0 },
+      aiAnalysis: { type: Number, default: 12, min: 0 },
+      bulkUpload: { type: Number, default: 5, min: 0 },
       reEmbed: { type: Number, default: 3, min: 0 }
     },
     rolloverEnabled: {
