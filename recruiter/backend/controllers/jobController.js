@@ -557,7 +557,11 @@ exports.getMatchingCandidates = async (req, res) => {
       jobId: job._id,
       jobTitle: job.title,
       matchCount: matches.length,
-      matches: matches.map(m => ({ ...m, similarityPercentage: Math.round((m.similarity || 0) * 100) })),
+      matches: matches.map(m => ({
+        ...m,
+        relevanceScore: m.relevanceScore ?? m.similarity ?? 0,
+        similarityPercentage: Math.round((m.similarity || 0) * 100),
+      })),
       fromCache,
       cacheAge,
       cacheAgeMinutes,

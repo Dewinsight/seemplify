@@ -5,6 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const { promisify } = require('util');
 const unlinkAsync = promisify(fs.unlink);
+const CloudinaryUploadService = require('./cloudinaryUploadService');
+const cloudinaryUploadService = new CloudinaryUploadService();
 
 const REDIS_HOST = process.env.REDIS_HOST || 'dokploy-redis';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
@@ -109,7 +111,6 @@ async function initQueue() {
       await job.updateProgress(10);
 
       const cvParsingService = require('./cvParsingService');
-      const cloudinaryUploadService = require('./cloudinaryUploadService');
       const RetryHelper = require('../utils/retryHelper');
       const Candidate = require('../models/Candidate');
       const embeddingService = require('./embeddingService');

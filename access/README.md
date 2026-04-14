@@ -26,6 +26,7 @@ The ACCESS-GUIDE.md includes URLs, CLI commands, credential locations, and troub
 | Dokploy API | ACCESS-GUIDE.md Section 1 or DOKPLOY-API-CREDENTIALS-COMPLETE.md |
 | Cloudflare DNS | ACCESS-GUIDE.md Section 2 |
 | Azure VM (SSH) | ACCESS-GUIDE.md Section 3 or SERVER-ACCESS.md |
+| **Azure budget VM** (separate dev box) | **[azure-budget-vm/](./azure-budget-vm/README.md)** — keys + docs |
 | GitHub Repository | ACCESS-GUIDE.md Section 4 or GITHUB-SECRETS-SETUP-GUIDE.md |
 
 ---
@@ -44,6 +45,7 @@ The ACCESS-GUIDE.md includes URLs, CLI commands, credential locations, and troub
 || **GITHUB-SECRETS-SETUP-GUIDE.md** | GitHub Actions secrets configuration |
 || **CREDENTIALS-UPDATE-SUMMARY.md** | Credentials update history |
 || **CLOUDFLARE-API-ISSUE.md** | Cloudflare API troubleshooting |
+|| **azure-budget-vm/** | Budget Azure Linux VM: SSH keys + [AZURE-BUDGET-VM-ACCESS.md](./azure-budget-vm/AZURE-BUDGET-VM-ACCESS.md) |
 
 ---
 
