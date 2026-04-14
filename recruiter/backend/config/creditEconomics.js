@@ -257,7 +257,9 @@ const RECOMMENDED_CREDIT_PACKS = [
  */
 const LEGACY_PLAN_CODE_ECONOMICS_MAP = {
   gold: 'pro',
+  gld: 'pro',
   diamond: 'enterprise',
+  dmd: 'enterprise',
   silver: 'basic',
   bronze: 'free',
 };
