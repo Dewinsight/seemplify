@@ -1,62 +1,6 @@
 const { OpenAI } = require('openai');
 const crypto = require('crypto');
-
-function parseAzureConfigFromEndpoint(endpointUrl) {
-  if (!endpointUrl || typeof endpointUrl !== 'string') {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(endpointUrl);
-    const pathParts = parsed.pathname.split('/').filter(Boolean);
-    const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
-    const deployment = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
-
-    return {
-      endpoint: `${parsed.protocol}//${parsed.host}`,
-      deployment,
-      apiVersion: parsed.searchParams.get('api-version') || null
-    };
-  } catch (_error) {
-    return null;
-  }
-}
-
-function resolveModelRuntimeConfig() {
-  const endpointInput =
-    process.env.LLAMA_AZURE_ENDPOINT ||
-    process.env.azure_openai_url ||
-    process.env.AZURE_OPENAI_ENDPOINT;
-
-  const parsedEndpoint = parseAzureConfigFromEndpoint(endpointInput);
-
-  const deployment =
-    process.env.LLAMA_AZURE_DEPLOYMENT ||
-    process.env.GPT_MODEL ||
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
-    process.env.azure_openai_model ||
-    parsedEndpoint?.deployment ||
-    'Llama-3.3-70B-Instruct';
-
-  const endpoint = parsedEndpoint?.endpoint || process.env.AZURE_OPENAI_ENDPOINT;
-  const apiVersion =
-    process.env.LLAMA_AZURE_API_VERSION ||
-    process.env.AZURE_OPENAI_API_VERSION ||
-    parsedEndpoint?.apiVersion ||
-    '2024-05-01-preview';
-
-  const apiKey =
-    process.env.LLAMA_AZURE_API_KEY ||
-    process.env.AZURE_OPENAI_API_KEY ||
-    process.env.azure_openai_key;
-
-  return {
-    apiKey,
-    endpoint,
-    deployment,
-    apiVersion
-  };
-}
+const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 
 class GPTAnalysisCache {
   constructor() {
@@ -209,7 +153,7 @@ class GPTAnalysisCache {
 
 class GPTAnalysisService {
   constructor() {
-    const runtimeConfig = resolveModelRuntimeConfig();
+    const runtimeConfig = resolveLlmRuntimeConfig();
 
     const {
       apiKey,

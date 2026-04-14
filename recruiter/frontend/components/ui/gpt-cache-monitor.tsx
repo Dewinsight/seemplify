@@ -105,7 +105,7 @@ export function GPTCacheMonitor() {
           </Button>
         </CardTitle>
         <CardDescription className="text-blue-100">
-          Real-time monitoring of GPT-4.1 analysis caching performance
+          Real-time monitoring of LLM batch-analysis cache performance
         </CardDescription>
       </CardHeader>
 

@@ -1,0 +1,89 @@
+/**
+ * Single source of truth for Azure-hosted chat/completions (Llama 3.3 70B or GPT-* deployments).
+ * All LLM call sites should use this resolver so job chat, matching analysis, and LangChain stay aligned.
+ *
+ * Primary env (see docs/llama-env-vars.txt):
+ *   LLAMA_AZURE_ENDPOINT, LLAMA_AZURE_DEPLOYMENT, LLAMA_AZURE_API_KEY, LLAMA_AZURE_API_VERSION
+ * Fallbacks: azure_openai_*, AZURE_OPENAI_*, GPT_MODEL
+ */
+
+const DEFAULT_DEPLOYMENT = 'Llama-3.3-70B-Instruct';
+
+function parseAzureEndpointUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
+    const deploymentFromPath = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
+    const apiVersion = parsed.searchParams.get('api-version');
+
+    return {
+      endpoint: `${parsed.protocol}//${parsed.host}`,
+      deploymentFromPath,
+      apiVersion,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+/**
+ * @returns {{
+ *   endpoint: string | undefined,
+ *   deployment: string,
+ *   modelName: string,
+ *   apiKey: string | undefined,
+ *   apiVersion: string,
+ *   urlBasedConfig: ReturnType<typeof parseAzureEndpointUrl> | null
+ * }}
+ */
+function resolveLlmRuntimeConfig() {
+  const urlBasedConfig =
+    parseAzureEndpointUrl(process.env.LLAMA_AZURE_ENDPOINT) ||
+    parseAzureEndpointUrl(process.env.azure_openai_url) ||
+    parseAzureEndpointUrl(process.env.AZURE_OPENAI_ENDPOINT);
+
+  const endpoint =
+    process.env.LLAMA_AZURE_BASE_ENDPOINT ||
+    urlBasedConfig?.endpoint ||
+    process.env.AZURE_OPENAI_ENDPOINT;
+
+  const deployment =
+    process.env.LLAMA_AZURE_DEPLOYMENT ||
+    process.env.GPT_MODEL ||
+    process.env.azure_openai_model ||
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+    urlBasedConfig?.deploymentFromPath ||
+    DEFAULT_DEPLOYMENT;
+
+  const apiKey =
+    process.env.LLAMA_AZURE_API_KEY ||
+    process.env.azure_openai_key ||
+    process.env.AZURE_OPENAI_API_KEY ||
+    process.env.AZURE_GPT4O_API_KEY;
+
+  const apiVersion =
+    process.env.LLAMA_AZURE_API_VERSION ||
+    process.env.AZURE_OPENAI_API_VERSION ||
+    urlBasedConfig?.apiVersion ||
+    '2024-05-01-preview';
+
+  return {
+    endpoint,
+    deployment,
+    modelName: deployment,
+    apiKey,
+    apiVersion,
+    urlBasedConfig,
+  };
+}
+
+module.exports = {
+  DEFAULT_DEPLOYMENT,
+  parseAzureEndpointUrl,
+  resolveLlmRuntimeConfig,
+};

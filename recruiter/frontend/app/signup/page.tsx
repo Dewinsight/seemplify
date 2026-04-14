@@ -26,6 +26,9 @@ import { useBrandConfig } from "@/context/BrandContext";
 
 export default function SignupPage() {
   const brand = useBrandConfig();
+  const authShell =
+    brand.authShellClass ?? 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900';
+  const jet = brand.id === 'jetstone';
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
@@ -43,19 +46,21 @@ export default function SignupPage() {
 
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
+    <div className={`h-screen ${authShell} relative overflow-hidden`}>
       {/* Animated Background Elements */}
       <div 
         className="absolute inset-0 opacity-30"
         style={{
-          background: `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
+          background: jet
+            ? `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(45, 212, 191, 0.18), transparent 42%)`
+            : `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
         }}
       />
       
       {/* Floating Orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-      <div className="absolute top-3/4 left-1/3 w-64 h-64 bg-pink-500/20 rounded-full blur-3xl animate-pulse delay-2000"></div>
+      <div className={`absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse ${jet ? 'bg-teal-400/22' : 'bg-blue-500/20'}`}></div>
+      <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse delay-1000 ${jet ? 'bg-cyan-400/20' : 'bg-purple-500/20'}`}></div>
+      <div className={`absolute top-3/4 left-1/3 w-64 h-64 rounded-full blur-3xl animate-pulse delay-2000 ${jet ? 'bg-emerald-400/18' : 'bg-pink-500/20'}`}></div>
 
       {/* Grid Pattern Overlay */}
       <div 
@@ -96,7 +101,7 @@ export default function SignupPage() {
             <div className="max-w-md">
               <h2 className="text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-bold text-white mb-3 lg:mb-4 leading-tight">
                 Join our
-                <span className="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                <span className={`block bg-clip-text text-transparent ${jet ? 'bg-gradient-to-r from-teal-300 via-cyan-300 to-sky-300' : 'bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400'}`}>
                   smart platform
                 </span>
               </h2>
@@ -129,7 +134,7 @@ export default function SignupPage() {
                 key={index} 
                 className="flex items-center p-2 lg:p-3 xl:p-4 bg-white/5 backdrop-blur-sm rounded-lg lg:rounded-xl border border-white/10 hover:bg-white/10 transition-all duration-300 group"
               >
-                <div className="flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300">
+                <div className={`flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300 ${jet ? 'bg-gradient-to-br from-teal-400 to-cyan-600' : 'bg-gradient-to-br from-blue-400 to-purple-500'}`}>
                   {feature.icon}
                 </div>
                 <div className="ml-2 lg:ml-3 xl:ml-4">
@@ -170,7 +175,7 @@ export default function SignupPage() {
               {Array.from({ length: 20 }).map((_, i) => (
                 <motion.div
                   key={i}
-                  className="absolute w-1 h-1 bg-blue-400/30 rounded-full"
+                  className={`absolute w-1 h-1 rounded-full ${jet ? 'bg-teal-300/40' : 'bg-blue-400/30'}`}
                   initial={{ 
                     x: Math.random() * 400, 
                     y: Math.random() * 600,
@@ -198,7 +203,7 @@ export default function SignupPage() {
             >
               <Card className="bg-white/15 backdrop-blur-2xl border-white/30 shadow-2xl overflow-hidden relative">
                 {/* Subtle Animated Border */}
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-lg animate-pulse opacity-30"></div>
+                <div className={`absolute inset-0 rounded-lg animate-pulse opacity-30 ${jet ? 'bg-gradient-to-r from-teal-500/15 via-cyan-500/15 to-sky-500/10' : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10'}`}></div>
                 
                 <CardHeader className="space-y-1 text-center pb-6 relative z-10">
                   <motion.div
@@ -257,7 +262,7 @@ export default function SignupPage() {
                         >
                           <Button
                             type="button"
-                            className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white py-6 rounded-lg font-medium text-base flex items-center justify-center gap-2 transition-all duration-300 border-0 shadow-lg hover:shadow-xl"
+                            className={`w-full text-white py-6 rounded-lg font-medium text-base flex items-center justify-center gap-2 transition-all duration-300 border-0 shadow-lg hover:shadow-xl ${jet ? 'bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'}`}
                             disabled={isLoading}
                             onClick={() => {
                               const base = getApiBaseUrl()
@@ -274,7 +279,7 @@ export default function SignupPage() {
                           Already have an account?{" "}
                           <Link
                             href="/login"
-                            className="font-medium text-blue-400 hover:text-blue-300 transition-colors"
+                            className={`font-medium transition-colors ${jet ? 'text-teal-300 hover:text-teal-200' : 'text-blue-400 hover:text-blue-300'}`}
                           >
                             Sign In
                           </Link>

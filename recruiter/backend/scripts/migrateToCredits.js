@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 const Organization = require('../models/Organization');
 const Plan = require('../models/Plan');
 const config = require('../config/db');
+const { RECOMMENDED_CREDIT_COSTS } = require('../config/creditEconomics');
 
 // Connect to MongoDB
 mongoose.connect(config.mongoURI, {
@@ -45,16 +46,7 @@ async function migrateOrganizations() {
         
         plan.credits = {
           totalCredits,
-          creditCosts: {
-            createJob: 5,
-            uploadCandidate: 3,
-            scheduleInterview: 2,
-            aiMatching: 10,
-            generateQuestions: 5,
-            aiAnalysis: 8,
-            bulkUpload: 2,
-            reEmbed: 1
-          },
+          creditCosts: { ...RECOMMENDED_CREDIT_COSTS },
           rolloverEnabled: false,
           rolloverPercentage: 0
         };

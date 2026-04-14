@@ -1,6 +1,7 @@
 const InterviewQuestion = require('../models/InterviewQuestion');
 const Job = require('../models/Job');
 const AzureOpenAIService = require('./azureOpenAIService');
+const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 class InterviewService {
@@ -612,7 +613,7 @@ ADDITIONAL CONTEXT:
           isAIGenerated: true,
           aiGenerationMetadata: {
             generatedAt: new Date(),
-            model: process.env.LLAMA_AZURE_DEPLOYMENT || process.env.azure_openai_model || 'Llama-3.3-70B-Instruct',
+            model: resolveLlmRuntimeConfig().modelName,
             confidence: 0.9,
             questionType: type
           },

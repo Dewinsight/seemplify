@@ -1,6 +1,8 @@
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
 const AzureOpenAIService = require('../services/azureOpenAIService');
+const gptAnalysisService = require('../services/gptAnalysisService');
+const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 const memoryService = require('../services/memoryService');
 const chatMessageService = require('../services/chatMessageService');
 const AIToolExecutor = require('../services/aiToolExecutor');
@@ -1493,17 +1495,30 @@ exports.testConnection = async (req, res) => {
     
     const result = await azureOpenAIService.testConnection();
     
+    const runtime = resolveLlmRuntimeConfig();
     if (result.success) {
       res.json({
         msg: 'AI model connection successful',
         model: azureOpenAIService.modelName,
-        response: result.response
+        provider: 'azure-openai',
+        defaultDeployment: runtime.deployment,
+        matchingAnalysis: {
+          enabled: gptAnalysisService.isEnabled,
+          model: gptAnalysisService.modelName,
+        },
+        response: result.response,
       });
     } else {
       res.status(500).json({
         msg: 'AI model connection failed',
         model: azureOpenAIService.modelName,
-        error: result.error
+        provider: 'azure-openai',
+        defaultDeployment: runtime.deployment,
+        matchingAnalysis: {
+          enabled: gptAnalysisService.isEnabled,
+          model: gptAnalysisService.modelName,
+        },
+        error: result.error,
       });
     }
 

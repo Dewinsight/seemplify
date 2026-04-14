@@ -32,6 +32,9 @@ export default function LoginPage() {
   const { toast } = useToast();
   const auth = useAuth();
   const brand = useBrandConfig();
+  const authShell =
+    brand.authShellClass ?? 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900';
+  const jet = brand.id === 'jetstone';
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessingOIDC, setIsProcessingOIDC] = useState(false);
@@ -94,10 +97,10 @@ export default function LoginPage() {
   // Show OIDC processing loader
   if (isProcessingOIDC) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden flex items-center justify-center">
+      <div className={`min-h-screen ${authShell} relative overflow-hidden flex items-center justify-center`}>
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse pointer-events-none"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000 pointer-events-none"></div>
+        <div className={`absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse pointer-events-none ${jet ? 'bg-teal-400/22' : 'bg-blue-500/20'}`}></div>
+        <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse delay-1000 pointer-events-none ${jet ? 'bg-cyan-400/20' : 'bg-purple-500/20'}`}></div>
 
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
@@ -117,8 +120,8 @@ export default function LoginPage() {
               }}
               className="w-24 h-24 mx-auto mb-6 relative"
             >
-              <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full opacity-20 blur-xl"></div>
-              <div className="absolute inset-2 border-4 border-transparent border-t-blue-400 border-r-purple-400 rounded-full"></div>
+              <div className={`absolute inset-0 rounded-full opacity-20 blur-xl ${jet ? 'bg-gradient-to-tr from-teal-400 to-cyan-500' : 'bg-gradient-to-tr from-blue-500 to-purple-500'}`}></div>
+              <div className={`absolute inset-2 border-4 border-transparent rounded-full ${jet ? 'border-t-teal-300 border-r-cyan-400' : 'border-t-blue-400 border-r-purple-400'}`}></div>
             </motion.div>
 
             <motion.h2
@@ -143,7 +146,7 @@ export default function LoginPage() {
               initial={{ scaleX: 0 }}
               animate={{ scaleX: 1 }}
               transition={{ delay: 0.6, duration: 1.5 }}
-              className="mt-6 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full origin-left"
+              className={`mt-6 h-1 rounded-full origin-left ${jet ? 'bg-gradient-to-r from-teal-400 to-cyan-500' : 'bg-gradient-to-r from-blue-500 to-purple-500'}`}
             ></motion.div>
           </div>
         </motion.div>
@@ -152,19 +155,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
+    <div className={`h-screen ${authShell} relative overflow-hidden`}>
       {/* Animated Background Elements */}
       <div 
         className="absolute inset-0 opacity-30"
         style={{
-          background: `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
+          background: jet
+            ? `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(45, 212, 191, 0.18), transparent 42%)`
+            : `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
         }}
       />
       
       {/* Floating Orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-      <div className="absolute top-3/4 left-1/3 w-64 h-64 bg-pink-500/20 rounded-full blur-3xl animate-pulse delay-2000"></div>
+      <div className={`absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse ${jet ? 'bg-teal-400/22' : 'bg-blue-500/20'}`}></div>
+      <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse delay-1000 ${jet ? 'bg-cyan-400/20' : 'bg-purple-500/20'}`}></div>
+      <div className={`absolute top-3/4 left-1/3 w-64 h-64 rounded-full blur-3xl animate-pulse delay-2000 ${jet ? 'bg-emerald-400/18' : 'bg-pink-500/20'}`}></div>
 
       {/* Grid Pattern Overlay */}
       <div 
@@ -205,7 +210,7 @@ export default function LoginPage() {
             <div className="max-w-md">
               <h2 className="text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-bold text-white mb-3 lg:mb-4 leading-tight">
                 Transform your
-                <span className="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                <span className={`block bg-clip-text text-transparent ${jet ? 'bg-gradient-to-r from-teal-300 via-cyan-300 to-sky-300' : 'bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400'}`}>
                   hiring process
                 </span>
               </h2>
@@ -238,7 +243,7 @@ export default function LoginPage() {
                 key={index} 
                 className="flex items-center p-2 lg:p-3 xl:p-4 bg-white/5 backdrop-blur-sm rounded-lg lg:rounded-xl border border-white/10 hover:bg-white/10 transition-all duration-300 group"
               >
-                <div className="flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300">
+                <div className={`flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300 ${jet ? 'bg-gradient-to-br from-teal-400 to-cyan-600' : 'bg-gradient-to-br from-blue-400 to-purple-500'}`}>
                   {feature.icon}
                 </div>
                 <div className="ml-2 lg:ml-3 xl:ml-4">
@@ -279,7 +284,7 @@ export default function LoginPage() {
               {Array.from({ length: 20 }).map((_, i) => (
                 <motion.div
                   key={i}
-                  className="absolute w-1 h-1 bg-blue-400/30 rounded-full"
+                  className={`absolute w-1 h-1 rounded-full ${jet ? 'bg-teal-300/40' : 'bg-blue-400/30'}`}
                   initial={{ 
                     x: Math.random() * 400, 
                     y: Math.random() * 600,
@@ -307,7 +312,7 @@ export default function LoginPage() {
             >
               <Card className="bg-white/15 backdrop-blur-2xl border-white/30 shadow-2xl overflow-hidden relative">
                 {/* Subtle Animated Border */}
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 rounded-lg animate-pulse opacity-30"></div>
+                <div className={`absolute inset-0 rounded-lg animate-pulse opacity-30 ${jet ? 'bg-gradient-to-r from-teal-500/15 via-cyan-500/15 to-sky-500/10' : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10'}`}></div>
                 
                 <CardHeader className="space-y-1 text-center pb-6 relative z-10">
                   <motion.div
@@ -367,7 +372,7 @@ export default function LoginPage() {
                           <Button
                             type="button"
                             size="lg"
-                            className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold h-12 rounded-xl transition-all duration-300 shadow-lg hover:shadow-2xl border-0 focus:ring-2 focus:ring-blue-400/50 focus:outline-none"
+                            className={`w-full text-white font-semibold h-12 rounded-xl transition-all duration-300 shadow-lg hover:shadow-2xl border-0 focus:outline-none ${jet ? 'bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 focus:ring-2 focus:ring-teal-400/50' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 focus:ring-2 focus:ring-blue-400/50'}`}
                             onClick={() => {
                               const base = getApiBaseUrl()
                               const returnTo = encodeURIComponent(window.location.href)
@@ -407,7 +412,7 @@ export default function LoginPage() {
               >
                 {/* Animated background gradient */}
                 <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                  className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${jet ? 'bg-gradient-to-r from-teal-500/12 to-cyan-500/12' : 'bg-gradient-to-r from-blue-500/10 to-purple-500/10'}`}
                   animate={{
                     backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
                   }}
@@ -468,9 +473,9 @@ export default function LoginPage() {
                 href={getIdpBaseUrl()}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex w-full items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-left text-white shadow-lg shadow-black/10 transition-all hover:border-white/30 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                className={`group flex w-full items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-left text-white shadow-lg shadow-black/10 transition-all hover:border-white/30 hover:bg-white/15 focus:outline-none ${jet ? 'focus:ring-2 focus:ring-teal-400/45' : 'focus:ring-2 focus:ring-blue-400/50'}`}
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-500/30 ring-1 ring-white/15">
+                <span className={`flex h-10 w-10 items-center justify-center rounded-xl ring-1 ring-white/15 ${jet ? 'bg-gradient-to-br from-teal-500/35 to-cyan-500/35' : 'bg-gradient-to-br from-blue-500/30 to-purple-500/30'}`}>
                   <LayoutGrid className="h-5 w-5 text-white" />
                 </span>
                 <span className="min-w-0 flex-1">

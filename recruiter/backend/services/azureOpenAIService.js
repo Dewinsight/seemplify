@@ -1,66 +1,5 @@
 const { AzureOpenAI } = require("openai");
-
-function parseAzureEndpointUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(rawUrl);
-    const pathParts = parsed.pathname.split('/').filter(Boolean);
-    const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
-    const deploymentFromPath = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
-    const apiVersion = parsed.searchParams.get('api-version');
-
-    return {
-      endpoint: `${parsed.protocol}//${parsed.host}`,
-      deploymentFromPath,
-      apiVersion
-    };
-  } catch (_error) {
-    return null;
-  }
-}
-
-function resolveAzureModelConfig() {
-  const urlBasedConfig =
-    parseAzureEndpointUrl(process.env.LLAMA_AZURE_ENDPOINT) ||
-    parseAzureEndpointUrl(process.env.azure_openai_url) ||
-    parseAzureEndpointUrl(process.env.AZURE_OPENAI_ENDPOINT);
-
-  const endpoint =
-    process.env.LLAMA_AZURE_BASE_ENDPOINT ||
-    urlBasedConfig?.endpoint ||
-    process.env.AZURE_OPENAI_ENDPOINT;
-
-  const deployment =
-    process.env.LLAMA_AZURE_DEPLOYMENT ||
-    process.env.azure_openai_model ||
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
-    process.env.GPT_MODEL ||
-    urlBasedConfig?.deploymentFromPath ||
-    'Llama-3.3-70B-Instruct';
-
-  const apiKey =
-    process.env.LLAMA_AZURE_API_KEY ||
-    process.env.azure_openai_key ||
-    process.env.AZURE_OPENAI_API_KEY ||
-    process.env.AZURE_GPT4O_API_KEY;
-
-  const apiVersion =
-    process.env.LLAMA_AZURE_API_VERSION ||
-    process.env.AZURE_OPENAI_API_VERSION ||
-    urlBasedConfig?.apiVersion ||
-    '2024-05-01-preview';
-
-  return {
-    endpoint,
-    deployment,
-    modelName: deployment,
-    apiKey,
-    apiVersion
-  };
-}
+const { resolveLlmRuntimeConfig } = require("../config/llmRuntimeConfig");
 
 class AzureOpenAIService {
   constructor() {
@@ -76,7 +15,7 @@ class AzureOpenAIService {
     // - Chat Titles: 0.7 (creative but focused titles)
     // - Bias Analysis: 0.3 (conservative for consistency)
     
-    const config = resolveAzureModelConfig();
+    const config = resolveLlmRuntimeConfig();
     const { endpoint, apiKey, deployment, apiVersion, modelName } = config;
 
     if (!endpoint || !apiKey || !deployment) {

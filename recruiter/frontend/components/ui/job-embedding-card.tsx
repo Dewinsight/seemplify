@@ -116,7 +116,7 @@ interface MatchingCandidate {
     // Legacy fields for backward compatibility
     topReasons?: string[]
     potentialConcerns?: string[]
-    // GPT-4.1 Enhanced insights
+    // LLM-enhanced insights (deployment from server env, e.g. Llama 3.3 70B)
     gptEnhanced?: {
       skillMatchPercentage: number
       experienceFit: number
@@ -592,13 +592,13 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
           {/* Show GPT status indicator */}
           {matchingCandidates.length > 0 && matchingCandidates[0]?.explanation?.gptEnhanced && (
             <Badge className="bg-purple-400 hover:bg-purple-400 text-purple-900 text-xs">
-              🧠 GPT-4.1 Enhanced
+              🧠 AI-enhanced matching
             </Badge>
           )}
         </CardTitle>
         <CardDescription className="text-purple-100">
           {matchingCandidates.length > 0 && matchingCandidates[0]?.explanation?.gptEnhanced 
-            ? "Advanced GPT-4.1 analysis with contextual insights and interview recommendations"
+            ? "Advanced LLM analysis with contextual insights and interview recommendations"
             : "Find the best candidates using AI-powered semantic matching"
           }
         </CardDescription>
@@ -1311,12 +1311,12 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                             </div>
                           )}
 
-                          {/* GPT-4.1 Enhanced Insights */}
+                          {/* LLM-enhanced insights */}
                           {explanation.gptEnhanced && (
                             <div className="space-y-3 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-700">
                               <h5 className="font-semibold text-purple-800 dark:text-purple-300 flex items-center gap-2 text-sm">
                                 <Brain className="h-4 w-4" />
-                                🧠 GPT-4.1 Enhanced Analysis
+                                🧠 AI-enhanced analysis
                                 <Badge variant="outline" className="bg-purple-100 text-purple-700 text-xs">
                                   {explanation.gptEnhanced.confidenceScore}/10 confidence
                                 </Badge>

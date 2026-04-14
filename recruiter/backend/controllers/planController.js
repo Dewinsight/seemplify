@@ -135,15 +135,15 @@ exports.createPlan = async (req, res) => {
       features: features || [],
       limits: limits || {},
       credits: credits || {
-        totalCredits: 100,
+        totalCredits: 380,
         creditCosts: {
-          createJob: 5,
-          uploadCandidate: 3,
+          createJob: 6,
+          uploadCandidate: 4,
           scheduleInterview: 2,
-          aiMatching: 10,
-          generateQuestions: 5,
-          aiAnalysis: 8,
-          bulkUpload: 2,
+          aiMatching: 14,
+          generateQuestions: 7,
+          aiAnalysis: 12,
+          bulkUpload: 3,
           reEmbed: 1
         },
         rolloverEnabled: false,

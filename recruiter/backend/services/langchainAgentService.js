@@ -1,4 +1,5 @@
 require('dotenv').config(); // Load .env from current directory (backend/)
+const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 const { ChatOpenAI, AzureChatOpenAI } = require('@langchain/openai');
 const { AgentExecutor, createToolCallingAgent } = require('langchain/agents');
 const { ChatPromptTemplate, MessagesPlaceholder } = require('@langchain/core/prompts');
@@ -31,22 +32,11 @@ function getOpenAIModel() {
   }
 
   const instanceName = parsedUrl.hostname.split('.')[0];
-  const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
-  const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
-  const deploymentFromPath = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
-
-  const deploymentName =
-    process.env.LLAMA_AZURE_DEPLOYMENT ||
-    process.env.azure_openai_model ||
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
-    process.env.GPT_MODEL ||
-    deploymentFromPath ||
-    'Llama-3.3-70B-Instruct';
-
+  const shared = resolveLlmRuntimeConfig();
+  const deploymentName = shared.deployment;
   const apiVersion =
-    process.env.LLAMA_AZURE_API_VERSION ||
-    process.env.AZURE_OPENAI_API_VERSION ||
     parsedUrl.searchParams.get('api-version') ||
+    shared.apiVersion ||
     '2024-05-01-preview';
 
   console.log('🔧 Configuring Azure OpenAI for LangChain:');

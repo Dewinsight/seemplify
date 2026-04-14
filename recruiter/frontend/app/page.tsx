@@ -53,8 +53,12 @@ export default function LandingPage() {
     return () => clearInterval(timer);
   }, []);
 
+  const rootShellClass =
+    brand.landingRootClass ??
+    'min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white overflow-x-hidden relative';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white overflow-x-hidden relative">
+    <div className={rootShellClass}>
       {/* Scroll Progress Indicator */}
       <ScrollProgress />
       
@@ -70,10 +74,6 @@ export default function LandingPage() {
           {/* Dynamic Logo */}
           <div className="flex items-center">
             <DynamicLogoIcon size="md" />
-            <div className="ml-3">
-              <h1 className="text-xl font-heading font-bold text-white">{brand.name}</h1>
-              <p className="text-slate-300 text-xs hidden sm:block font-medium">{brand.tagline}</p>
-            </div>
           </div>
           
           {/* Desktop Navigation Links */}

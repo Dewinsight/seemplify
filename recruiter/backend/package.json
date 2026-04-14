@@ -68,7 +68,11 @@
     "test-email": "node scripts/test-email.js",
     "test-questions": "node scripts/testInterviewQuestions.js",
     "compare-cv-models": "node scripts/compareCvExtractionModels.js",
-    "test:bulk-pipeline": "node scripts/testBulkPipeline.js"
+    "test:bulk-pipeline": "node scripts/testBulkPipeline.js",
+    "test:llm": "node scripts/verifyLlmDeployment.js",
+    "audit:credits": "node scripts/auditCreditEconomics.js",
+    "apply:credits": "node scripts/applyCreditEconomics2026.js --dry-run",
+    "apply:credits:force": "node scripts/applyCreditEconomics2026.js --apply"
   },
   "keywords": [],
   "author": "",

@@ -12,6 +12,7 @@
 const mongoose = require('mongoose');
 const Organization = require('../models/Organization');
 const Plan = require('../models/Plan');
+const { RECOMMENDED_CREDIT_COSTS } = require('../config/creditEconomics');
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
 // Connect to MongoDB
@@ -49,23 +50,14 @@ async function checkAndFix() {
         
         // Fix: Add default credits configuration
         plan.credits = {
-          totalCredits: 200, // Default 200 credits
-          creditCosts: {
-            createJob: 5,
-            uploadCandidate: 3,
-            scheduleInterview: 2,
-            aiMatching: 10,
-            generateQuestions: 5,
-            aiAnalysis: 8,
-            bulkUpload: 2,
-            reEmbed: 1
-          },
+          totalCredits: 380,
+          creditCosts: { ...RECOMMENDED_CREDIT_COSTS },
           rolloverEnabled: false,
           rolloverPercentage: 0
         };
         
         await plan.save();
-        console.log(`  ✅ Added credits configuration: 200 total credits`);
+        console.log(`  ✅ Added credits configuration: 380 total credits`);
         plansFixed++;
       } else {
         console.log(`  ✅ Credits configured: ${plan.credits.totalCredits} total credits`);

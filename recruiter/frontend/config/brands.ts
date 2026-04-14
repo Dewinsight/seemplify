@@ -18,6 +18,10 @@ export interface BrandConfig {
   footerText?: string;
   loginHeading?: string;
   loginSubheading?: string;
+  /** Full Tailwind className for marketing homepage root (optional; default purple/slate) */
+  landingRootClass?: string;
+  /** Full-page gradient for login/signup shells — use without h-screen prefix in code */
+  authShellClass?: string;
 }
 
 export const BRANDS: Record<string, BrandConfig> = {
@@ -59,6 +63,10 @@ export const BRANDS: Record<string, BrandConfig> = {
     footerText: '© 2025 Jetstone Education. All rights reserved.',
     loginHeading: 'Jetstone Education',
     loginSubheading: 'Akwa Ibom State Recruitment Portal',
+    // Lighter teal/cyan shell to align with logo (less heavy than purple/slate-950)
+    landingRootClass:
+      'min-h-screen bg-gradient-to-br from-slate-800 via-teal-800 to-cyan-800 text-white overflow-x-hidden relative',
+    authShellClass: 'bg-gradient-to-br from-slate-800 via-teal-900 to-cyan-900',
   },
   producive: {
     id: 'producive',

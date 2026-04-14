@@ -10,6 +10,7 @@ const gptAnalysisService = require('../services/gptAnalysisService');
 const websocketService = require('../services/websocketService');
 const RetryHelper = require('../utils/retryHelper');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
+const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 
 // Promisify fs.unlink for deleting temporary files
 const unlinkAsync = util.promisify(fs.unlink);
@@ -1141,7 +1142,7 @@ exports.getCacheStats = async (req, res) => {
 // Get AI matching system status and configuration
 exports.getGPTStatus = async (req, res) => {
   try {
-    const activeModel = process.env.LLAMA_AZURE_DEPLOYMENT || process.env.GPT_MODEL || process.env.azure_openai_model || 'Llama-3.3-70B-Instruct';
+    const activeModel = resolveLlmRuntimeConfig().modelName;
     const activeToggle = process.env.ENABLE_LLM_MATCHING ?? process.env.ENABLE_GPT_MATCHING;
 
     res.json({

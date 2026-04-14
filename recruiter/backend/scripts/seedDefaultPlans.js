@@ -6,9 +6,23 @@
 const mongoose = require('mongoose');
 require('dotenv').config();
 const Plan = require('../models/Plan');
+const {
+  RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE,
+  RECOMMENDED_CREDIT_COSTS,
+  RECOMMENDED_PLAN_LIST_PRICES_USD,
+} = require('../config/creditEconomics');
+
+function planCredits(code) {
+  return {
+    totalCredits: RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE[code] ?? 80,
+    creditCosts: { ...RECOMMENDED_CREDIT_COSTS },
+    rolloverEnabled: false,
+    rolloverPercentage: 0,
+  };
+}
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected...'))
   .catch(err => {
     console.error('MongoDB connection error:', err);
@@ -20,8 +34,9 @@ const defaultPlans = [
   {
     name: 'Free',
     code: 'free',
-    price: 0,
+    price: RECOMMENDED_PLAN_LIST_PRICES_USD.free,
     billingCycle: 'monthly',
+    credits: planCredits('free'),
     features: [
       { name: 'Basic Candidate Management' },
       { name: 'Limited Job Postings (5)' },
@@ -40,8 +55,9 @@ const defaultPlans = [
   {
     name: 'Basic',
     code: 'basic',
-    price: 49,
+    price: RECOMMENDED_PLAN_LIST_PRICES_USD.basic,
     billingCycle: 'monthly',
+    credits: planCredits('basic'),
     features: [
       { name: 'Enhanced Candidate Management' },
       { name: 'Up to 15 Job Postings' },
@@ -61,8 +77,9 @@ const defaultPlans = [
   {
     name: 'Professional',
     code: 'pro',
-    price: 99,
+    price: RECOMMENDED_PLAN_LIST_PRICES_USD.pro,
     billingCycle: 'monthly',
+    credits: planCredits('pro'),
     features: [
       { name: 'Advanced Candidate Management' },
       { name: 'Up to 50 Job Postings' },
@@ -84,8 +101,9 @@ const defaultPlans = [
   {
     name: 'Enterprise',
     code: 'enterprise',
-    price: 299,
+    price: RECOMMENDED_PLAN_LIST_PRICES_USD.enterprise,
     billingCycle: 'monthly',
+    credits: planCredits('enterprise'),
     features: [
       { name: 'Unlimited Candidates' },
       { name: 'Unlimited Job Postings' },
@@ -129,6 +147,9 @@ async function seedDefaultPlans() {
           existingPlan.features = planConfig.features;
           existingPlan.isPublished = true; // Always ensure default plans are published
           existingPlan.isDefault = true;
+          if (planConfig.credits) {
+            existingPlan.credits = planConfig.credits;
+          }
           
           // Only update price and limits if they haven't been customized
           if (existingPlan.price === 0 || !existingPlan.limits) {

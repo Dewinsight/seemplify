@@ -2,6 +2,7 @@ const Interview = require('../models/Interview');
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
 const AzureOpenAIService = require('./azureOpenAIService');
+const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 const embeddingService = require('./embeddingService');
 const transcriptSegmentationService = require('./transcriptSegmentationService');
 
@@ -43,7 +44,7 @@ class AIInterviewAnalysisService {
       interview.aiAnalysis = {
         analyzed: true,
         analyzedAt: new Date(),
-        modelVersion: process.env.LLAMA_AZURE_DEPLOYMENT || process.env.azure_openai_model || 'Llama-3.3-70B-Instruct',
+        modelVersion: resolveLlmRuntimeConfig().modelName,
         insights: analysis.insights,
         comparativeAnalysis
       };
