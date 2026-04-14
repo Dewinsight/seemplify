@@ -35,6 +35,8 @@ async function setupWeaviateSchemas() {
         { name: 'lastName', dataType: ['string'], indexInverted: true },
         { name: 'email', dataType: ['string'], indexInverted: true },
         { name: 'position', dataType: ['string'], indexInverted: true },
+        { name: 'location', dataType: ['string'], indexInverted: true },
+        { name: 'phone', dataType: ['string'] },
         
         // Resume content (searchable)
         { name: 'resumeText', dataType: ['text'], description: 'Full resume text', indexInverted: true },

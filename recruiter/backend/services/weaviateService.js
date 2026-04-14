@@ -45,7 +45,9 @@ class WeaviateService {
       lastName: metadata.lastName || '',
       email: metadata.email || '',
       position: metadata.position || '',
-      resumeText: (metadata.resumeText || '').substring(0, 50000), // Limit to 50k chars
+      location: metadata.location || '',
+      phone: metadata.phone || '',
+      resumeText: (metadata.resumeText || '').substring(0, 50000),
       coverLetter: (metadata.coverLetter || '').substring(0, 10000),
       skills: Array.isArray(metadata.skills) ? metadata.skills : [],
       totalYearsExperience: metadata.totalYearsExperience || 0,
