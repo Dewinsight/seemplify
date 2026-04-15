@@ -26,12 +26,18 @@ import BackToTop from '@/components/ui/BackToTop';
 import HowItWorksSection from '@/components/sections/HowItWorksSection';
 import { DynamicLogoIcon } from '@/components/ui/DynamicLogo';
 import { useBrandConfig } from '@/context/BrandContext';
+import JetstonePortalPage from '@/components/JetstonePortalPage';
 
 export default function LandingPage() {
   const router = useRouter();
   const [isHovering, setIsHovering] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const brand = useBrandConfig(); // Get current brand
+
+  // Render government career portal for Jetstone — not the SaaS marketing page
+  if (brand.id === 'jetstone') {
+    return <JetstonePortalPage />;
+  }
   
   // Initialize smooth scrolling
   useSmoothScroll();

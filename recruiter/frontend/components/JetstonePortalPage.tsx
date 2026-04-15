@@ -1,0 +1,526 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import Image from 'next/image';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ArrowRight, Shield, Users, FileCheck, CheckCircle, Calendar,
+  Briefcase, GraduationCap, Star, Menu, X, MapPin, Phone, Mail,
+  Award, ChevronRight, Building2, UserCheck, ClipboardList
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import ScrollReveal from '@/components/animations/ScrollReveal';
+import GradientMesh from '@/components/backgrounds/GradientMesh';
+import StickyHeader from '@/components/StickyHeader';
+import ScrollProgress from '@/components/ui/ScrollProgress';
+import BackToTop from '@/components/ui/BackToTop';
+
+const btnPrimary = 'bg-gradient-to-r from-green-700 to-green-900 hover:from-green-800 hover:to-green-950 text-white border-0 shadow-lg';
+const btnOutline = 'bg-white/50 border border-green-300 text-green-900 hover:bg-white/80';
+const sealRing = 'ring-4 ring-green-200/60 shadow-xl';
+
+export default function JetstonePortalPage() {
+  const router = useRouter();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const navLinks = [
+    { href: '#about', label: 'About' },
+    { href: '#vacancies', label: 'Vacancies' },
+    { href: '#how-to-apply', label: 'How to Apply' },
+    { href: '#values', label: 'Our Values' },
+    { href: '#contact', label: 'Contact' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-amber-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme">
+      <ScrollProgress />
+      <GradientMesh />
+      <BackToTop />
+
+      {/* ── Header ── */}
+      <StickyHeader>
+        <div className="container mx-auto px-4 flex justify-between items-center">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-full overflow-hidden bg-white flex-shrink-0 ${sealRing}`}>
+              <Image src="/akwa-ibom-seal.png" alt="Akwa Ibom State" width={40} height={40} className="object-cover w-full h-full" />
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-xs font-bold text-green-900 leading-tight">Govt. of Akwa Ibom State</p>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-slate-500">Powered by</span>
+                <Image src="/jetstone-logo.png" alt="Jetstone Education" width={64} height={14} className="object-contain h-3 w-auto" />
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Nav */}
+          <nav className="hidden lg:flex items-center gap-6">
+            {navLinks.map((link) => (
+              <a key={link.href} href={link.href} className="text-sm font-medium text-slate-600 hover:text-green-800 transition-colors">
+                {link.label}
+              </a>
+            ))}
+          </nav>
+
+          {/* Desktop Actions */}
+          <div className="hidden md:flex gap-3">
+            <Button variant="outline" size="sm" className={btnOutline} onClick={() => router.push('/login')}>
+              Portal Sign In
+            </Button>
+          </div>
+
+          {/* Mobile hamburger */}
+          <button
+            className="lg:hidden p-2 text-slate-700 hover:bg-green-100 rounded-lg"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          >
+            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
+
+        {/* Mobile Menu */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden"
+                onClick={() => setIsMobileMenuOpen(false)}
+              />
+              <motion.div
+                initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed top-0 right-0 bottom-0 w-72 bg-white z-50 shadow-2xl border-l border-green-100"
+              >
+                <div className="flex justify-end p-4">
+                  <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 hover:bg-green-50 rounded-lg">
+                    <X className="w-5 h-5 text-slate-600" />
+                  </button>
+                </div>
+                <nav className="px-6 space-y-2 pb-6">
+                  {navLinks.map((link) => (
+                    <a key={link.href} href={link.href}
+                      className="flex items-center gap-2 py-3 text-slate-700 font-medium border-b border-green-50 hover:text-green-800"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <ChevronRight className="w-4 h-4 text-green-500" />
+                      {link.label}
+                    </a>
+                  ))}
+                  <Button className={`w-full mt-6 ${btnPrimary}`} onClick={() => { setIsMobileMenuOpen(false); router.push('/login'); }}>
+                    Portal Sign In
+                  </Button>
+                </nav>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      </StickyHeader>
+
+      <div className="h-24" />
+
+      {/* ── HERO ── */}
+      <section id="hero" className="relative z-10 container mx-auto px-4 py-16 md:py-24 lg:py-28 flex flex-col lg:flex-row items-center gap-12">
+        {/* Left: text */}
+        <div className="lg:w-1/2 space-y-7">
+          {/* State badge */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+            className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5"
+          >
+            <div className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0">
+              <Image src="/akwa-ibom-seal.png" alt="" width={20} height={20} className="object-cover w-full h-full" />
+            </div>
+            <span className="text-green-800 text-xs font-semibold tracking-wide uppercase">Official Recruitment Portal</span>
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.1 }}
+            className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black leading-[1.08] tracking-tight text-slate-900"
+          >
+            Serve the{' '}
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600">
+              Land of Promise
+            </span>
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.2 }}
+            className="text-lg md:text-xl text-slate-600 max-w-xl leading-relaxed"
+          >
+            The Government of Akwa Ibom State is committed to transparent, merit-based recruitment across all
+            ministries, departments, and agencies. Explore opportunities to serve your state.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.3 }}
+            className="flex flex-wrap gap-4"
+          >
+            <Button className={`h-13 px-8 text-base font-semibold ${btnPrimary}`} onClick={() => router.push('/login')}>
+              Access Portal <ArrowRight className="ml-2 w-5 h-5" />
+            </Button>
+            <Button variant="outline" className={`h-13 px-8 text-base font-semibold ${btnOutline}`} onClick={() => { const el = document.getElementById('how-to-apply'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
+              How to Apply
+            </Button>
+          </motion.div>
+
+          {/* Quick stats */}
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+            className="flex flex-wrap gap-6 pt-2"
+          >
+            {[
+              { label: 'State Agencies', value: '40+' },
+              { label: 'Open Categories', value: '12' },
+              { label: 'Equal Opportunity', value: '100%' },
+            ].map((s) => (
+              <div key={s.label} className="text-center">
+                <div className="text-2xl font-black text-green-800">{s.value}</div>
+                <div className="text-xs text-slate-500 font-medium">{s.label}</div>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+
+        {/* Right: Governor's photo */}
+        <motion.div
+          className="lg:w-1/2 flex justify-center"
+          initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8, delay: 0.3 }}
+        >
+          <div className="relative max-w-md w-full">
+            {/* Main image */}
+            <div className="relative z-10 rounded-3xl overflow-hidden border-4 border-green-200 shadow-2xl">
+              <Image
+                src="/governor-umo-eno.png"
+                alt="Governor Umo Eno — Akwa Ibom State"
+                width={540}
+                height={620}
+                className="w-full object-cover object-top"
+                priority
+              />
+              {/* Name overlay */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-green-950/90 to-transparent p-6">
+                <p className="text-white font-black text-xl">His Excellency</p>
+                <p className="text-amber-300 font-bold text-lg">Gov. Umo Eno</p>
+                <p className="text-green-300 text-sm">Governor, Akwa Ibom State</p>
+              </div>
+            </div>
+
+            {/* Floating seal */}
+            <div className={`absolute -top-5 -right-5 w-20 h-20 rounded-full overflow-hidden bg-white ${sealRing} z-20`}>
+              <Image src="/akwa-ibom-seal.png" alt="Akwa Ibom State Seal" width={80} height={80} className="object-cover w-full h-full" />
+            </div>
+
+            {/* Floating quote card */}
+            <motion.div
+              className="absolute -bottom-8 -left-6 bg-white border border-green-100 rounded-2xl shadow-xl p-4 max-w-[220px] z-20"
+              initial={{ opacity: 0, y: 20, rotate: -3 }} animate={{ opacity: 1, y: 0, rotate: -3 }}
+              transition={{ delay: 1, duration: 0.5 }}
+            >
+              <div className="flex gap-1 mb-2">
+                {[...Array(5)].map((_, i) => <Star key={i} className="w-3 h-3 text-amber-400 fill-amber-400" />)}
+              </div>
+              <p className="text-xs text-slate-700 italic leading-relaxed">
+                "A transparent and merit-driven Akwa Ibom for all."
+              </p>
+              <p className="text-[10px] text-green-700 font-semibold mt-1">— Gov. Umo Eno</p>
+            </motion.div>
+          </div>
+        </motion.div>
+      </section>
+
+      {/* ── GOVERNOR'S MESSAGE ── */}
+      <section id="about" className="relative z-10 py-20 md:py-28 bg-gradient-to-r from-green-900 via-green-800 to-green-900">
+        <div className="container mx-auto px-4">
+          <ScrollReveal>
+            <div className="max-w-4xl mx-auto text-center">
+              <div className="flex justify-center mb-6">
+                <div className={`w-16 h-16 rounded-full overflow-hidden bg-white ${sealRing}`}>
+                  <Image src="/akwa-ibom-seal.png" alt="" width={64} height={64} className="object-cover w-full h-full" />
+                </div>
+              </div>
+              <div className="inline-flex items-center gap-2 bg-amber-400/20 border border-amber-400/30 rounded-full px-4 py-1.5 mb-6">
+                <Award className="w-4 h-4 text-amber-300" />
+                <span className="text-amber-200 text-xs font-semibold uppercase tracking-wide">Governor's Message</span>
+              </div>
+              <blockquote className="text-2xl md:text-3xl lg:text-4xl font-bold text-white leading-relaxed mb-8 italic">
+                "We are building a state where every qualified Akwa Ibom citizen has a fair chance to serve
+                and contribute to our collective progress. This portal is our commitment to that promise."
+              </blockquote>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-amber-400/50 shadow-lg">
+                  <Image src="/governor-umo-eno.png" alt="Governor Umo Eno" width={48} height={48} className="object-cover object-top w-full h-full" />
+                </div>
+                <p className="text-amber-300 font-bold text-lg">His Excellency, Governor Umo Eno</p>
+                <p className="text-green-300 text-sm">Executive Governor, Akwa Ibom State</p>
+              </div>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ── VACANCIES / CATEGORIES ── */}
+      <section id="vacancies" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
+        <ScrollReveal>
+          <div className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5 mb-5">
+              <Briefcase className="w-4 h-4 text-green-700" />
+              <span className="text-green-800 text-xs font-semibold uppercase tracking-wide">Open Opportunities</span>
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
+              Current Vacancy{' '}
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">Categories</span>
+            </h2>
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              Positions span across ministries, parastatals, and agencies of Akwa Ibom State Government.
+              All recruitments follow merit-based selection with equal opportunity for all.
+            </p>
+          </div>
+        </ScrollReveal>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[
+            { icon: <GraduationCap className="w-6 h-6" />, title: 'Education & Research', desc: 'Teachers, lecturers, curriculum developers across state schools and tertiary institutions.', count: '120+ roles', color: 'from-blue-500 to-indigo-500' },
+            { icon: <Building2 className="w-6 h-6" />, title: 'Civil Service & Admin', desc: 'Administrative officers, public servants across ministries and government agencies.', count: '80+ roles', color: 'from-green-600 to-emerald-500' },
+            { icon: <Shield className="w-6 h-6" />, title: 'Security & Law', desc: 'Compliance officers, legal practitioners, and enforcement personnel.', count: '45+ roles', color: 'from-amber-500 to-orange-500' },
+            { icon: <FileCheck className="w-6 h-6" />, title: 'Finance & Audit', desc: 'Accountants, internal auditors, revenue officers for state financial agencies.', count: '60+ roles', color: 'from-purple-500 to-pink-500' },
+            { icon: <ClipboardList className="w-6 h-6" />, title: 'Health & Social Services', desc: 'Doctors, nurses, social welfare officers for hospitals and community services.', count: '90+ roles', color: 'from-rose-500 to-red-500' },
+            { icon: <Users className="w-6 h-6" />, title: 'Engineering & Technology', desc: 'Civil, electrical, and ICT professionals driving state infrastructure projects.', count: '70+ roles', color: 'from-teal-500 to-cyan-500' },
+          ].map((cat, i) => (
+            <ScrollReveal key={i} delay={i * 0.08}>
+              <motion.div
+                className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all duration-300 group cursor-pointer"
+                whileHover={{ y: -4 }}
+                onClick={() => router.push('/login')}
+              >
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${cat.color} flex items-center justify-center text-white mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
+                  {cat.icon}
+                </div>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="text-lg font-bold text-slate-900">{cat.title}</h3>
+                  <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-100 rounded-full px-2.5 py-0.5 whitespace-nowrap ml-2">{cat.count}</span>
+                </div>
+                <p className="text-slate-500 text-sm leading-relaxed mb-4">{cat.desc}</p>
+                <div className="flex items-center text-green-700 text-sm font-semibold group-hover:gap-2 transition-all">
+                  View positions <ChevronRight className="w-4 h-4 ml-1" />
+                </div>
+              </motion.div>
+            </ScrollReveal>
+          ))}
+        </div>
+
+        <div className="text-center mt-10">
+          <Button className={`h-12 px-10 text-base font-semibold ${btnPrimary}`} onClick={() => router.push('/login')}>
+            View All Vacancies <ArrowRight className="ml-2 w-5 h-5" />
+          </Button>
+        </div>
+      </section>
+
+      {/* ── HOW TO APPLY ── */}
+      <section id="how-to-apply" className="relative z-10 bg-gradient-to-br from-slate-50 to-green-50/60 py-20 md:py-28 border-y border-green-100">
+        <div className="container mx-auto px-4">
+          <ScrollReveal>
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center gap-2 bg-amber-100 border border-amber-200 rounded-full px-4 py-1.5 mb-5">
+                <ClipboardList className="w-4 h-4 text-amber-700" />
+                <span className="text-amber-800 text-xs font-semibold uppercase tracking-wide">Application Process</span>
+              </div>
+              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
+                How to{' '}
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-green-700">Apply</span>
+              </h2>
+              <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+                Our streamlined process ensures every applicant is treated fairly and efficiently.
+              </p>
+            </div>
+          </ScrollReveal>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 relative">
+            {/* Connector line (desktop) */}
+            <div className="hidden lg:block absolute top-14 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-green-200 via-amber-200 to-green-200 z-0" />
+
+            {[
+              { step: '01', title: 'Create Account', desc: 'Register on the portal with your NIN and email address.', icon: <UserCheck className="w-7 h-7" />, color: 'from-green-600 to-emerald-500' },
+              { step: '02', title: 'Browse Vacancies', desc: 'Search open positions by ministry, location, or qualification.', icon: <Briefcase className="w-7 h-7" />, color: 'from-amber-500 to-orange-500' },
+              { step: '03', title: 'Submit Application', desc: 'Complete your profile, upload credentials, and apply online.', icon: <FileCheck className="w-7 h-7" />, color: 'from-blue-500 to-indigo-500' },
+              { step: '04', title: 'AI Screening & Interview', desc: 'Our AI ranks applications; shortlisted candidates are invited for interview.', icon: <Calendar className="w-7 h-7" />, color: 'from-purple-500 to-pink-500' },
+            ].map((step, i) => (
+              <ScrollReveal key={i} delay={i * 0.1}>
+                <div className="relative z-10 flex flex-col items-center text-center">
+                  <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${step.color} flex items-center justify-center text-white shadow-xl mb-4`}>
+                    {step.icon}
+                  </div>
+                  <span className="text-xs font-black text-slate-300 mb-1 tracking-widest">STEP {step.step}</span>
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">{step.title}</h3>
+                  <p className="text-slate-500 text-sm leading-relaxed">{step.desc}</p>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── VALUES ── */}
+      <section id="values" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
+        <ScrollReveal>
+          <div className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5 mb-5">
+              <Star className="w-4 h-4 text-green-700" />
+              <span className="text-green-800 text-xs font-semibold uppercase tracking-wide">Our Commitment</span>
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
+              Built on{' '}
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">Integrity</span>
+            </h2>
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              Every recruitment process under the Akwa Ibom State Government is guided by these core principles.
+            </p>
+          </div>
+        </ScrollReveal>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {[
+            {
+              icon: <Shield className="w-8 h-8" />,
+              title: 'Transparency',
+              desc: 'All selection criteria, timelines, and results are published openly. No hidden processes or closed-door decisions.',
+              color: 'from-green-700 to-emerald-600',
+              bg: 'from-green-50 to-emerald-50',
+              border: 'border-green-100',
+            },
+            {
+              icon: <Award className="w-8 h-8" />,
+              title: 'Merit-Based Selection',
+              desc: 'Candidates are assessed solely on qualifications, skills, and competency. Background, connections, or patronage play no role.',
+              color: 'from-amber-600 to-orange-500',
+              bg: 'from-amber-50 to-orange-50',
+              border: 'border-amber-100',
+            },
+            {
+              icon: <Users className="w-8 h-8" />,
+              title: 'Equal Opportunity',
+              desc: 'Applications are welcome from all qualified residents regardless of gender, religion, local government, or disability status.',
+              color: 'from-blue-600 to-indigo-500',
+              bg: 'from-blue-50 to-indigo-50',
+              border: 'border-blue-100',
+            },
+          ].map((v, i) => (
+            <ScrollReveal key={i} delay={i * 0.1}>
+              <div className={`bg-gradient-to-br ${v.bg} border ${v.border} rounded-2xl p-8 h-full`}>
+                <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${v.color} flex items-center justify-center text-white shadow-lg mb-5`}>
+                  {v.icon}
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-3">{v.title}</h3>
+                <p className="text-slate-600 leading-relaxed">{v.desc}</p>
+              </div>
+            </ScrollReveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ── CTA BANNER ── */}
+      <section className="relative z-10 py-20 bg-gradient-to-r from-green-900 via-green-800 to-green-900">
+        <div className="container mx-auto px-4">
+          <ScrollReveal>
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+              <div className="flex items-center gap-6">
+                <div className={`w-16 h-16 rounded-full overflow-hidden bg-white flex-shrink-0 ${sealRing}`}>
+                  <Image src="/akwa-ibom-seal.png" alt="Akwa Ibom State" width={64} height={64} className="object-cover w-full h-full" />
+                </div>
+                <div>
+                  <h2 className="text-2xl md:text-3xl font-black text-white mb-2">
+                    Ready to Serve Akwa Ibom State?
+                  </h2>
+                  <p className="text-green-200 text-base md:text-lg">
+                    Log in or create your account to explore open vacancies and submit your application today.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
+                <Button
+                  className="bg-amber-400 hover:bg-amber-300 text-green-950 border-0 font-bold h-12 px-8 text-base shadow-lg"
+                  onClick={() => router.push('/login')}
+                >
+                  Access Portal <ArrowRight className="ml-2 w-5 h-5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-white/40 text-white hover:bg-white/10 h-12 px-8 text-base"
+                  onClick={() => { const el = document.getElementById('how-to-apply'); el?.scrollIntoView({ behavior: 'smooth' }); }}
+                >
+                  Learn More
+                </Button>
+              </div>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ── CONTACT ── */}
+      <section id="contact" className="relative z-10 container mx-auto px-4 py-20">
+        <ScrollReveal>
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-3">Contact & Support</h2>
+            <p className="text-slate-500 text-lg">Reach the Recruitment Services team for assistance.</p>
+          </div>
+        </ScrollReveal>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
+          {[
+            { icon: <MapPin className="w-6 h-6 text-green-700" />, title: 'Address', detail: 'Government House, Uyo, Akwa Ibom State, Nigeria' },
+            { icon: <Phone className="w-6 h-6 text-green-700" />, title: 'Phone', detail: '+234 (0) 800 AKWA IBOM' },
+            { icon: <Mail className="w-6 h-6 text-green-700" />, title: 'Email', detail: 'recruitment@akwaibomstate.gov.ng' },
+          ].map((c, i) => (
+            <div key={i} className="flex flex-col items-center text-center bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
+              <div className="w-12 h-12 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center mb-3">
+                {c.icon}
+              </div>
+              <p className="font-semibold text-slate-800 mb-1">{c.title}</p>
+              <p className="text-slate-500 text-sm">{c.detail}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer className="relative z-10 bg-green-950 text-white py-12 mt-8">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full overflow-hidden bg-white ring-2 ring-amber-400/50">
+                <Image src="/akwa-ibom-seal.png" alt="" width={48} height={48} className="object-cover w-full h-full" />
+              </div>
+              <div>
+                <p className="font-bold text-amber-300">Government of Akwa Ibom State</p>
+                <p className="text-green-400 text-xs">The Land of Promise · Nigeria</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-6 text-sm">
+              <Link href="/public/jobs" className="text-green-300 hover:text-white transition-colors">Browse Jobs</Link>
+              <Link href="/login" className="text-green-300 hover:text-white transition-colors">Portal Login</Link>
+              <Link href="/privacy" className="text-green-300 hover:text-white transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="text-green-300 hover:text-white transition-colors">Terms of Use</Link>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-green-400">
+              <span>Powered by</span>
+              <Image src="/jetstone-logo.png" alt="Jetstone Education" width={80} height={18} className="object-contain h-4 w-auto brightness-200 opacity-70" />
+            </div>
+          </div>
+
+          <div className="border-t border-green-800/60 mt-8 pt-6 text-center">
+            <p className="text-green-400 text-xs">
+              © {new Date().getFullYear()} Government of Akwa Ibom State. Powered by Jetstone Education. All rights reserved.
+            </p>
+            <p className="text-green-600 text-xs mt-1">
+              This is the official recruitment portal of the Akwa Ibom State Government. All applications are subject to verification.
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
