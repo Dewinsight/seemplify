@@ -1,13 +1,13 @@
 /**
- * Single source of truth for Azure-hosted chat/completions (Llama 3.3 70B or GPT-* deployments).
+ * Single source of truth for Azure-hosted chat/completions (gpt-4.1 or other deployments).
  * All LLM call sites should use this resolver so job chat, matching analysis, and LangChain stay aligned.
  *
- * Primary env (see docs/llama-env-vars.txt):
+ * Primary env vars (in priority order):
  *   LLAMA_AZURE_ENDPOINT, LLAMA_AZURE_DEPLOYMENT, LLAMA_AZURE_API_KEY, LLAMA_AZURE_API_VERSION
  * Fallbacks: azure_openai_*, AZURE_OPENAI_*, GPT_MODEL
  */
 
-const DEFAULT_DEPLOYMENT = 'Llama-3.3-70B-Instruct';
+const DEFAULT_DEPLOYMENT = 'gpt-4.1';
 
 function parseAzureEndpointUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') {
@@ -52,12 +52,15 @@ function resolveLlmRuntimeConfig() {
     urlBasedConfig?.endpoint ||
     process.env.AZURE_OPENAI_ENDPOINT;
 
+  // Resolution priority: explicit deployment vars → URL-derived deployment → azure_openai_model → default
+  // NOTE: GPT_MODEL and AZURE_OPENAI_DEPLOYMENT_NAME are checked AFTER azure_openai_model so that
+  // a properly-set azure_openai_url (which encodes the real deployment) takes precedence.
   const deployment =
     process.env.LLAMA_AZURE_DEPLOYMENT ||
-    process.env.GPT_MODEL ||
     process.env.azure_openai_model ||
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
     urlBasedConfig?.deploymentFromPath ||
+    process.env.GPT_MODEL ||
+    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
     DEFAULT_DEPLOYMENT;
 
   const apiKey =
@@ -68,9 +71,9 @@ function resolveLlmRuntimeConfig() {
 
   const apiVersion =
     process.env.LLAMA_AZURE_API_VERSION ||
-    process.env.AZURE_OPENAI_API_VERSION ||
     urlBasedConfig?.apiVersion ||
-    '2024-05-01-preview';
+    process.env.AZURE_OPENAI_API_VERSION ||
+    '2025-01-01-preview';
 
   return {
     endpoint,
