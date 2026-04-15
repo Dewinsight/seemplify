@@ -1,79 +1,61 @@
 /**
- * Single source of truth for Azure-hosted chat/completions (Llama 3.3 70B or GPT-* deployments).
- * All LLM call sites should use this resolver so job chat, matching analysis, and LangChain stay aligned.
+ * Single source of truth for the Azure-hosted Llama 3.3 70B deployment.
+ * All LLM call sites import resolveLlmRuntimeConfig() from here.
  *
- * Primary env vars (in priority order):
- *   LLAMA_AZURE_ENDPOINT, LLAMA_AZURE_DEPLOYMENT, LLAMA_AZURE_API_KEY, LLAMA_AZURE_API_VERSION
- * Fallbacks: azure_openai_*, AZURE_OPENAI_*, GPT_MODEL
+ * Required env vars:
+ *   LLAMA_AZURE_ENDPOINT  – full chat-completions URL
+ *                           e.g. https://<resource>.cognitiveservices.azure.com/openai/deployments/Llama-3.3-70B-Instruct/chat/completions?api-version=2024-05-01-preview
+ *   LLAMA_AZURE_API_KEY   – Azure API key for that resource
+ *
+ * Optional overrides:
+ *   LLAMA_AZURE_DEPLOYMENT   – deployment name (parsed from LLAMA_AZURE_ENDPOINT if omitted)
+ *   LLAMA_AZURE_API_VERSION  – api-version (parsed from LLAMA_AZURE_ENDPOINT if omitted)
  */
 
 const DEFAULT_DEPLOYMENT = 'Llama-3.3-70B-Instruct';
+const DEFAULT_API_VERSION = '2024-05-01-preview';
 
 function parseAzureEndpointUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') {
-    return null;
-  }
-
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
   try {
     const parsed = new URL(rawUrl);
-    const pathParts = parsed.pathname.split('/').filter(Boolean);
-    const deploymentsIndex = pathParts.findIndex((part) => part.toLowerCase() === 'deployments');
-    const deploymentFromPath = deploymentsIndex !== -1 ? pathParts[deploymentsIndex + 1] : null;
-    const apiVersion = parsed.searchParams.get('api-version');
-
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const idx = parts.findIndex((p) => p.toLowerCase() === 'deployments');
     return {
       endpoint: `${parsed.protocol}//${parsed.host}`,
-      deploymentFromPath,
-      apiVersion,
+      deploymentFromPath: idx !== -1 ? parts[idx + 1] : null,
+      apiVersion: parsed.searchParams.get('api-version'),
     };
-  } catch (_error) {
+  } catch {
     return null;
   }
 }
 
-/**
- * @returns {{
- *   endpoint: string | undefined,
- *   deployment: string,
- *   modelName: string,
- *   apiKey: string | undefined,
- *   apiVersion: string,
- *   urlBasedConfig: ReturnType<typeof parseAzureEndpointUrl> | null
- * }}
- */
 function resolveLlmRuntimeConfig() {
-  const urlBasedConfig =
-    parseAzureEndpointUrl(process.env.LLAMA_AZURE_ENDPOINT) ||
-    parseAzureEndpointUrl(process.env.azure_openai_url) ||
-    parseAzureEndpointUrl(process.env.AZURE_OPENAI_ENDPOINT);
+  const urlParsed = parseAzureEndpointUrl(process.env.LLAMA_AZURE_ENDPOINT);
 
   const endpoint =
-    process.env.LLAMA_AZURE_BASE_ENDPOINT ||
-    urlBasedConfig?.endpoint ||
-    process.env.AZURE_OPENAI_ENDPOINT;
+    urlParsed?.endpoint ||
+    process.env.LLAMA_AZURE_BASE_ENDPOINT;
 
-  // Resolution priority: explicit deployment vars → URL-derived deployment → azure_openai_model → default
-  // NOTE: GPT_MODEL and AZURE_OPENAI_DEPLOYMENT_NAME are checked AFTER azure_openai_model so that
-  // a properly-set azure_openai_url (which encodes the real deployment) takes precedence.
   const deployment =
     process.env.LLAMA_AZURE_DEPLOYMENT ||
-    process.env.azure_openai_model ||
-    urlBasedConfig?.deploymentFromPath ||
-    process.env.GPT_MODEL ||
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+    urlParsed?.deploymentFromPath ||
     DEFAULT_DEPLOYMENT;
 
   const apiKey =
-    process.env.LLAMA_AZURE_API_KEY ||
-    process.env.azure_openai_key ||
-    process.env.AZURE_OPENAI_API_KEY ||
-    process.env.AZURE_GPT4O_API_KEY;
+    process.env.LLAMA_AZURE_API_KEY;
 
   const apiVersion =
     process.env.LLAMA_AZURE_API_VERSION ||
-    urlBasedConfig?.apiVersion ||
-    process.env.AZURE_OPENAI_API_VERSION ||
-    '2025-01-01-preview';
+    urlParsed?.apiVersion ||
+    DEFAULT_API_VERSION;
+
+  if (!endpoint || !apiKey) {
+    console.warn(
+      '⚠️  LLM config incomplete — LLAMA_AZURE_ENDPOINT and/or LLAMA_AZURE_API_KEY not set.'
+    );
+  }
 
   return {
     endpoint,
@@ -81,7 +63,7 @@ function resolveLlmRuntimeConfig() {
     modelName: deployment,
     apiKey,
     apiVersion,
-    urlBasedConfig,
+    urlBasedConfig: urlParsed,
   };
 }
 
