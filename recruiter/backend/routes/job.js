@@ -40,6 +40,7 @@ router.get('/public', async (req, res) => {
       type,
       remote,
       company,
+      orgName,
       sort = 'createdAt',
       order = 'desc',
       page = 1,
@@ -91,6 +92,15 @@ router.get('/public', async (req, res) => {
     if (company) {
       const companies = company.split(',').map(c => c.trim());
       query.organization = { $in: companies };
+    }
+
+    // orgName filter — case-insensitive partial match on organization name
+    if (orgName) {
+      const Organization = require('../models/Organization');
+      const matchedOrgs = await Organization.find({
+        name: { $regex: orgName, $options: 'i' }
+      }).select('_id');
+      query.organization = { $in: matchedOrgs.map(o => o._id) };
     }
 
     // Pagination
