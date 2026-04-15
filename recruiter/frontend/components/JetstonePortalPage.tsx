@@ -136,8 +136,8 @@ export default function JetstonePortalPage() {
           </nav>
 
           <div className="hidden md:flex gap-3">
-            <Button variant="outline" size="sm" className={btnOutline} onClick={() => scrollTo('vacancies')}>
-              View Vacancies
+            <Button variant="outline" size="sm" className={btnOutline} onClick={() => window.location.href = '/login'}>
+              Manage Applicants
             </Button>
           </div>
 
@@ -169,8 +169,8 @@ export default function JetstonePortalPage() {
                       {link.label}
                     </a>
                   ))}
-                  <Button className={`w-full mt-6 ${btnPrimary}`} onClick={() => { setIsMobileMenuOpen(false); scrollTo('vacancies'); }}>
-                    View Vacancies
+                  <Button className={`w-full mt-6 ${btnPrimary}`} onClick={() => { setIsMobileMenuOpen(false); window.location.href = '/login'; }}>
+                    Manage Applicants
                   </Button>
                 </nav>
               </motion.div>
