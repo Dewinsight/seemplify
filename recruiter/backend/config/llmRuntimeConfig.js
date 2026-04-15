@@ -36,19 +36,27 @@ function resolveLlmRuntimeConfig() {
 
   const endpoint =
     urlParsed?.endpoint ||
-    process.env.LLAMA_AZURE_BASE_ENDPOINT;
+    process.env.LLAMA_AZURE_BASE_ENDPOINT ||
+    parseAzureEndpointUrl(process.env.azure_openai_url)?.endpoint ||
+    process.env.AZURE_OPENAI_ENDPOINT;
 
   const deployment =
     process.env.LLAMA_AZURE_DEPLOYMENT ||
     urlParsed?.deploymentFromPath ||
+    process.env.azure_openai_model ||
+    parseAzureEndpointUrl(process.env.azure_openai_url)?.deploymentFromPath ||
     DEFAULT_DEPLOYMENT;
 
   const apiKey =
-    process.env.LLAMA_AZURE_API_KEY;
+    process.env.LLAMA_AZURE_API_KEY ||
+    process.env.azure_openai_key ||
+    process.env.AZURE_OPENAI_API_KEY;
 
   const apiVersion =
     process.env.LLAMA_AZURE_API_VERSION ||
     urlParsed?.apiVersion ||
+    parseAzureEndpointUrl(process.env.azure_openai_url)?.apiVersion ||
+    process.env.AZURE_OPENAI_API_VERSION ||
     DEFAULT_API_VERSION;
 
   if (!endpoint || !apiKey) {
