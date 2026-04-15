@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight, Shield, Users, FileCheck, Calendar,
   Briefcase, Star, Menu, X, MapPin, Phone, Mail,
-  Award, ChevronRight, Building2, UserCheck, ClipboardList,
+  Award, ChevronRight, Building2, ClipboardList,
   Loader2, Clock, Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -41,7 +40,6 @@ const btnOutline = 'bg-white/50 border border-green-300 text-green-900 hover:bg-
 const sealRing = 'ring-4 ring-green-200/60 shadow-xl';
 
 export default function JetstonePortalPage() {
-  const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Live jobs from Akwa Ibom org
@@ -137,8 +135,11 @@ export default function JetstonePortalPage() {
 
           {/* Desktop Actions */}
           <div className="hidden md:flex gap-3">
-            <Button variant="outline" size="sm" className={btnOutline} onClick={() => router.push('/login')}>
-              Portal Sign In
+            <Button
+              variant="outline" size="sm" className={btnOutline}
+              onClick={() => { const el = document.getElementById('vacancies'); el?.scrollIntoView({ behavior: 'smooth' }); }}
+            >
+              View Vacancies
             </Button>
           </div>
 
@@ -180,8 +181,8 @@ export default function JetstonePortalPage() {
                       {link.label}
                     </a>
                   ))}
-                  <Button className={`w-full mt-6 ${btnPrimary}`} onClick={() => { setIsMobileMenuOpen(false); router.push('/login'); }}>
-                    Portal Sign In
+                  <Button className={`w-full mt-6 ${btnPrimary}`} onClick={() => { setIsMobileMenuOpen(false); const el = document.getElementById('vacancies'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
+                    View Vacancies
                   </Button>
                 </nav>
               </motion.div>
@@ -229,8 +230,8 @@ export default function JetstonePortalPage() {
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.3 }}
             className="flex flex-wrap gap-4"
           >
-            <Button className={`h-13 px-8 text-base font-semibold ${btnPrimary}`} onClick={() => router.push('/login')}>
-              Access Portal <ArrowRight className="ml-2 w-5 h-5" />
+            <Button className={`h-13 px-8 text-base font-semibold ${btnPrimary}`} onClick={() => { const el = document.getElementById('vacancies'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
+              Browse Vacancies <ArrowRight className="ml-2 w-5 h-5" />
             </Button>
             <Button variant="outline" className={`h-13 px-8 text-base font-semibold ${btnOutline}`} onClick={() => { const el = document.getElementById('how-to-apply'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
               How to Apply
@@ -488,8 +489,8 @@ export default function JetstonePortalPage() {
         )}
 
         <div className="text-center mt-10">
-          <Button className={`h-12 px-10 text-base font-semibold ${btnPrimary}`} onClick={() => router.push('/login')}>
-            Sign In to Apply <ArrowRight className="ml-2 w-5 h-5" />
+          <Button className={`h-12 px-10 text-base font-semibold ${btnPrimary}`} onClick={() => { const el = document.getElementById('how-to-apply'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
+            How to Apply <ArrowRight className="ml-2 w-5 h-5" />
           </Button>
         </div>
       </section>
@@ -610,23 +611,23 @@ export default function JetstonePortalPage() {
                     Ready to Serve Akwa Ibom State?
                   </h2>
                   <p className="text-green-200 text-base md:text-lg">
-                    Log in or create your account to explore open vacancies and submit your application today.
+                    Browse open vacancies and submit your application directly online — no account needed.
                   </p>
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
                 <Button
                   className="bg-amber-400 hover:bg-amber-300 text-green-950 border-0 font-bold h-12 px-8 text-base shadow-lg"
-                  onClick={() => router.push('/login')}
+                  onClick={() => { const el = document.getElementById('vacancies'); el?.scrollIntoView({ behavior: 'smooth' }); }}
                 >
-                  Access Portal <ArrowRight className="ml-2 w-5 h-5" />
+                  Browse Vacancies <ArrowRight className="ml-2 w-5 h-5" />
                 </Button>
                 <Button
                   variant="outline"
                   className="border-white/40 text-white hover:bg-white/10 h-12 px-8 text-base"
                   onClick={() => { const el = document.getElementById('how-to-apply'); el?.scrollIntoView({ behavior: 'smooth' }); }}
                 >
-                  Learn More
+                  How to Apply
                 </Button>
               </div>
             </div>
@@ -675,7 +676,6 @@ export default function JetstonePortalPage() {
 
             <div className="flex flex-wrap justify-center gap-6 text-sm">
               <Link href="/public/jobs" className="text-green-300 hover:text-white transition-colors">Browse Jobs</Link>
-              <Link href="/login" className="text-green-300 hover:text-white transition-colors">Portal Login</Link>
               <Link href="/privacy" className="text-green-300 hover:text-white transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="text-green-300 hover:text-white transition-colors">Terms of Use</Link>
             </div>
