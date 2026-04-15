@@ -1,5 +1,5 @@
 /**
- * Single source of truth for Azure-hosted chat/completions (gpt-4.1 or other deployments).
+ * Single source of truth for Azure-hosted chat/completions (Llama 3.3 70B or GPT-* deployments).
  * All LLM call sites should use this resolver so job chat, matching analysis, and LangChain stay aligned.
  *
  * Primary env vars (in priority order):
@@ -7,7 +7,7 @@
  * Fallbacks: azure_openai_*, AZURE_OPENAI_*, GPT_MODEL
  */
 
-const DEFAULT_DEPLOYMENT = 'gpt-4.1';
+const DEFAULT_DEPLOYMENT = 'Llama-3.3-70B-Instruct';
 
 function parseAzureEndpointUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') {
