@@ -14,77 +14,42 @@ export const GradientMesh: React.FC<GradientMeshProps> = ({ className }) => {
 
   return (
     <div className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`}>
-      {/* Gradient Orbs — teal/cyan for Jetstone; blue/purple default */}
+      {/* Gradient Orbs — green/amber for Jetstone; blue/purple default */}
       <motion.div
         className={
           jet
-            ? 'absolute top-0 left-1/4 w-96 h-96 bg-teal-400/25 rounded-full blur-3xl'
+            ? 'absolute top-0 left-1/4 w-96 h-96 bg-green-500/22 rounded-full blur-3xl'
             : 'absolute top-0 left-1/4 w-96 h-96 bg-blue-500/30 rounded-full blur-3xl'
         }
-        animate={{
-          scale: [1, 1.2, 1],
-          x: [0, 50, 0],
-          y: [0, 30, 0],
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+        animate={{ scale: [1, 1.2, 1], x: [0, 50, 0], y: [0, 30, 0] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       />
-      
       <motion.div
         className={
           jet
-            ? 'absolute top-1/3 right-1/4 w-96 h-96 bg-cyan-400/25 rounded-full blur-3xl'
+            ? 'absolute top-1/3 right-1/4 w-96 h-96 bg-amber-400/22 rounded-full blur-3xl'
             : 'absolute top-1/3 right-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl'
         }
-        animate={{
-          scale: [1, 1.3, 1],
-          x: [0, -30, 0],
-          y: [0, 50, 0],
-        }}
-        transition={{
-          duration: 10,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+        animate={{ scale: [1, 1.3, 1], x: [0, -30, 0], y: [0, 50, 0] }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
       />
-      
       <motion.div
         className={
           jet
-            ? 'absolute bottom-1/4 left-1/3 w-96 h-96 bg-emerald-400/20 rounded-full blur-3xl'
+            ? 'absolute bottom-1/4 left-1/3 w-96 h-96 bg-yellow-400/16 rounded-full blur-3xl'
             : 'absolute bottom-1/4 left-1/3 w-96 h-96 bg-pink-500/20 rounded-full blur-3xl'
         }
-        animate={{
-          scale: [1, 1.1, 1],
-          x: [0, 40, 0],
-          y: [0, -40, 0],
-        }}
-        transition={{
-          duration: 12,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+        animate={{ scale: [1, 1.1, 1], x: [0, 40, 0], y: [0, -40, 0] }}
+        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
       />
-      
       <motion.div
         className={
           jet
-            ? 'absolute top-2/3 right-1/3 w-80 h-80 bg-sky-400/22 rounded-full blur-3xl'
+            ? 'absolute top-2/3 right-1/3 w-80 h-80 bg-green-700/14 rounded-full blur-3xl'
             : 'absolute top-2/3 right-1/3 w-80 h-80 bg-cyan-500/20 rounded-full blur-3xl'
         }
-        animate={{
-          scale: [1, 1.25, 1],
-          x: [0, -50, 0],
-          y: [0, -30, 0],
-        }}
-        transition={{
-          duration: 9,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
+        animate={{ scale: [1, 1.25, 1], x: [0, -50, 0], y: [0, -30, 0] }}
+        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
       />
       
       {/* Grid Overlay */}

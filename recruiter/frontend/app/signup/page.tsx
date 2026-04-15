@@ -34,6 +34,14 @@ export default function SignupPage() {
   const cardBg = jet ? 'bg-white/60 border-slate-200/50 shadow-xl' : 'bg-white/15 border-white/30 shadow-2xl';
   const featureBg = jet ? 'bg-white/40 border-slate-200/50 hover:bg-white/60' : 'bg-white/5 border-white/10 hover:bg-white/10';
   const linkBg = jet ? 'bg-white/50 border-slate-200/50 hover:bg-white/80 hover:border-slate-300/50' : 'bg-white/10 border-white/20 hover:bg-white/20 hover:border-white/30';
+  const accentGrad = jet ? 'from-green-600 to-amber-600' : 'from-blue-400 via-purple-400 to-pink-400';
+  const btnGrad = jet ? 'bg-gradient-to-r from-green-700 to-green-900 hover:from-green-800 hover:to-green-950 focus:ring-2 focus:ring-green-400/50' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 focus:ring-2 focus:ring-blue-400/50';
+  const iconGrad = jet ? 'bg-gradient-to-br from-green-500 to-amber-600' : 'bg-gradient-to-br from-blue-400 to-purple-500';
+  const orb1 = jet ? 'bg-green-500/18' : 'bg-blue-500/20';
+  const orb2 = jet ? 'bg-amber-400/18' : 'bg-purple-500/20';
+  const orb3 = jet ? 'bg-yellow-400/14' : 'bg-pink-500/20';
+  const particleColor = jet ? 'bg-green-400/40' : 'bg-blue-400/30';
+  const mouseGlowColor = jet ? 'rgba(21,128,61,0.14)' : 'rgba(59,130,246,0.15)';
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
@@ -56,16 +64,14 @@ export default function SignupPage() {
       <div 
         className="absolute inset-0 opacity-30"
         style={{
-          background: jet
-            ? `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(45, 212, 191, 0.18), transparent 42%)`
-            : `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
+          background: `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, ${mouseGlowColor}, transparent ${jet ? '42%' : '40%'})`
         }}
       />
       
       {/* Floating Orbs */}
-      <div className={`absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse ${jet ? 'bg-teal-400/22' : 'bg-blue-500/20'}`}></div>
-      <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse delay-1000 ${jet ? 'bg-cyan-400/20' : 'bg-purple-500/20'}`}></div>
-      <div className={`absolute top-3/4 left-1/3 w-64 h-64 rounded-full blur-3xl animate-pulse delay-2000 ${jet ? 'bg-emerald-400/18' : 'bg-pink-500/20'}`}></div>
+      <div className={`absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse ${orb1}`}></div>
+      <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse delay-1000 ${orb2}`}></div>
+      <div className={`absolute top-3/4 left-1/3 w-64 h-64 rounded-full blur-3xl animate-pulse delay-2000 ${orb3}`}></div>
 
       {/* Grid Pattern Overlay */}
       <div 
@@ -84,31 +90,49 @@ export default function SignupPage() {
         <div className="hidden lg:flex lg:w-1/2 flex-col justify-center p-6 lg:p-8 xl:p-12 2xl:p-16 relative">
           {/* Logo and Brand */}
           <div className="mb-6 lg:mb-8 xl:mb-12">
-            <div className="flex items-center mb-6">
-              {brand.useImageLogo && brand.logo ? (
-                <div className="flex items-center">
-                  <Image src={brand.logo} alt={brand.name} width={240} height={56} className="object-contain h-10 lg:h-12 xl:h-14 w-auto" />
+            {jet ? (
+              <div className="flex items-center gap-4 mb-6">
+                <div className="flex-shrink-0 w-20 h-20 lg:w-24 lg:h-24 xl:w-28 xl:h-28 rounded-full overflow-hidden ring-4 ring-green-200 shadow-xl bg-white">
+                  <Image src="/akwa-ibom-seal.png" alt="Government of Akwa Ibom State" width={112} height={112} className="object-cover w-full h-full" />
                 </div>
-              ) : (
-                <div className="relative">
-                  <div className={`w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
-                    <span className={`font-extrabold text-base lg:text-lg xl:text-xl tracking-tighter ${textColor}`}>{brand.shortName}</span>
+                <div>
+                  <h1 className="text-base lg:text-lg xl:text-xl font-extrabold text-green-900 leading-tight">
+                    Govt. of Akwa Ibom State
+                  </h1>
+                  <p className="text-[11px] lg:text-xs text-green-700/70 mb-2">The Land of Promise · Nigeria</p>
+                  <div className="flex items-center gap-2 bg-white/60 border border-green-100 rounded-lg px-2 py-1">
+                    <span className="text-[10px] lg:text-xs text-slate-500 whitespace-nowrap">Powered by</span>
+                    <Image src="/jetstone-logo.png" alt="Jetstone Education" width={100} height={22} className="object-contain h-4 lg:h-5 w-auto" />
                   </div>
-                  <div className={`absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 ${brand.colors.pulse} rounded-full border-2 border-slate-900 animate-pulse`}></div>
                 </div>
-              )}
-              {!(brand.useImageLogo && brand.logo) && (
-                <div className="ml-3 lg:ml-4">
-                  <h1 className={`text-xl lg:text-2xl xl:text-3xl font-bold ${textColor}`}>{brand.loginHeading || brand.name}</h1>
-                  <p className={`text-xs lg:text-sm ${textMuted}`}>{brand.loginSubheading || brand.tagline}</p>
-                </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="flex items-center mb-6">
+                {brand.useImageLogo && brand.logo ? (
+                  <div className="flex items-center">
+                    <Image src={brand.logo} alt={brand.name} width={240} height={56} className="object-contain h-10 lg:h-12 xl:h-14 w-auto" />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className={`w-10 h-10 lg:w-12 lg:h-12 xl:w-14 xl:h-14 bg-gradient-to-br ${brand.gradient} rounded-xl flex items-center justify-center shadow-2xl`}>
+                      <span className="font-extrabold text-base lg:text-lg xl:text-xl tracking-tighter text-white">{brand.shortName}</span>
+                    </div>
+                    <div className={`absolute -top-1 -right-1 w-3 h-3 lg:w-4 lg:h-4 ${brand.colors.pulse} rounded-full border-2 border-slate-900 animate-pulse`}></div>
+                  </div>
+                )}
+                {!(brand.useImageLogo && brand.logo) && (
+                  <div className="ml-3 lg:ml-4">
+                    <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-white">{brand.loginHeading || brand.name}</h1>
+                    <p className="text-xs lg:text-sm text-slate-300">{brand.loginSubheading || brand.tagline}</p>
+                  </div>
+                )}
+              </div>
+            )}
             
             <div className="max-w-md">
               <h2 className={`text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-bold mb-3 lg:mb-4 leading-tight ${textColor}`}>
                 Join our
-                <span className={`block bg-clip-text text-transparent ${jet ? 'bg-gradient-to-r from-teal-300 via-cyan-300 to-sky-300' : 'bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400'}`}>
+                <span className={`block bg-clip-text text-transparent bg-gradient-to-r ${accentGrad}`}>
                   smart platform
                 </span>
               </h2>
@@ -141,7 +165,7 @@ export default function SignupPage() {
                 key={index} 
                 className={`flex items-center p-2 lg:p-3 xl:p-4 backdrop-blur-sm rounded-lg lg:rounded-xl transition-all duration-300 group ${featureBg}`}
               >
-                <div className={`flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300 ${jet ? 'bg-gradient-to-br from-teal-400 to-cyan-600' : 'bg-gradient-to-br from-blue-400 to-purple-500'}`}>
+                <div className={`flex-shrink-0 w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 rounded-lg flex items-center justify-center text-white group-hover:scale-110 transition-transform duration-300 ${iconGrad}`}>
                   {feature.icon}
                 </div>
                 <div className="ml-2 lg:ml-3 xl:ml-4">
@@ -153,7 +177,8 @@ export default function SignupPage() {
           </div>
 
           {/* Desktop Secondary Logo */}
-          {brand.secondaryLogo && (
+          {/* Desktop Secondary Logo — hide for Jetstone */}
+          {brand.secondaryLogo && !jet && (
             <div className="absolute bottom-8 left-8 xl:bottom-12 xl:left-12 flex items-center gap-3 opacity-80">
               <span className={`text-sm font-medium ${textMuted}`}>In partnership with</span>
               <Image src={brand.secondaryLogo} alt="Partner Logo" width={48} height={48} className="object-contain" />
@@ -182,7 +207,7 @@ export default function SignupPage() {
               {Array.from({ length: 20 }).map((_, i) => (
                 <motion.div
                   key={i}
-                  className={`absolute w-1 h-1 rounded-full ${jet ? 'bg-teal-300/40' : 'bg-blue-400/30'}`}
+                  className={`absolute w-1 h-1 rounded-full ${particleColor}`}
                   initial={{ 
                     x: Math.random() * 400, 
                     y: Math.random() * 600,
@@ -210,7 +235,7 @@ export default function SignupPage() {
             >
               <Card className={`backdrop-blur-2xl overflow-hidden relative ${cardBg}`}>
                 {/* Subtle Animated Border */}
-                <div className={`absolute inset-0 rounded-lg animate-pulse opacity-30 ${jet ? 'bg-gradient-to-r from-teal-500/15 via-cyan-500/15 to-sky-500/10' : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10'}`}></div>
+                <div className={`absolute inset-0 rounded-lg animate-pulse opacity-30 ${jet ? 'bg-gradient-to-r from-green-500/12 via-amber-500/12 to-yellow-500/10' : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10'}`}></div>
                 
                 <CardHeader className="space-y-1 text-center pb-6 relative z-10">
                   <motion.div
@@ -269,7 +294,7 @@ export default function SignupPage() {
                         >
                           <Button
                             type="button"
-                            className={`w-full text-white py-6 rounded-lg font-medium text-base flex items-center justify-center gap-2 transition-all duration-300 border-0 shadow-lg hover:shadow-xl ${jet ? 'bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'}`}
+                            className={`w-full text-white py-6 rounded-lg font-medium text-base flex items-center justify-center gap-2 transition-all duration-300 border-0 shadow-lg hover:shadow-xl ${btnGrad}`}
                             disabled={isLoading}
                             onClick={() => {
                               const base = getApiBaseUrl()
@@ -286,7 +311,7 @@ export default function SignupPage() {
                           Already have an account?{" "}
                           <Link
                             href="/login"
-                            className={`font-medium transition-colors ${jet ? 'text-teal-300 hover:text-teal-200' : 'text-blue-400 hover:text-blue-300'}`}
+                            className={`font-medium transition-colors ${jet ? 'text-green-700 hover:text-green-600' : 'text-blue-400 hover:text-blue-300'}`}
                           >
                             Sign In
                           </Link>
@@ -298,8 +323,8 @@ export default function SignupPage() {
               </Card>
             </motion.div>
 
-            {/* Mobile Secondary Logo */}
-            {brand.secondaryLogo && (
+            {/* Mobile Secondary Logo — hide for Jetstone */}
+            {brand.secondaryLogo && !jet && (
               <motion.div 
                 className="lg:hidden mt-10 flex flex-col items-center justify-center gap-2 opacity-80"
                 initial={{ opacity: 0 }}

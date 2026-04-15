@@ -3,6 +3,10 @@ export interface BrandConfig {
   name: string;
   shortName: string;
   tagline: string;
+  /** Sub-brand name displayed below/after the primary name (e.g. "Jetstone Education") */
+  subBrandName?: string;
+  /** Sub-brand tagline/descriptor */
+  subBrandTagline?: string;
   colors: {
     from: string;
     to: string;
@@ -45,26 +49,27 @@ export const BRANDS: Record<string, BrandConfig> = {
   },
   jetstone: {
     id: 'jetstone',
-    name: 'Jetstone Education',
-    shortName: 'JE',
-    tagline: 'Akwa Ibom State Recruitment Portal',
+    name: 'Govt. of Akwa Ibom State',
+    shortName: 'AKS',
+    tagline: 'The Land of Promise · Nigeria',
+    subBrandName: 'Jetstone Education',
+    subBrandTagline: 'Recruitment Portal',
     colors: {
-      from: 'from-teal-500',
-      to: 'to-cyan-600',
-      pulse: 'bg-teal-400',
-      primary: '#0d9488',
-      secondary: '#0891b2',
+      from: 'from-green-700',
+      to: 'to-amber-600',
+      pulse: 'bg-amber-400',
+      primary: '#15803d',
+      secondary: '#d97706',
     },
-    gradient: 'from-teal-500 to-cyan-600',
+    gradient: 'from-green-700 to-amber-600',
     patterns: ['jetstone'],
-    logo: '/jetstone-logo.png',
-    secondaryLogo: '/jetstone-akwaibom-logo.png',
+    logo: '/akwa-ibom-seal.png',
+    secondaryLogo: '/jetstone-logo.png',
     useImageLogo: true,
     footerText: '© 2025 Jetstone Education. All rights reserved.',
-    // Lighter teal/cyan shell to align with logo
     landingRootClass:
-      'min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme',
-    authShellClass: 'bg-gradient-to-br from-teal-50 via-cyan-50 to-white jetstone-light-theme',
+      'min-h-screen bg-gradient-to-br from-green-50 via-amber-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme',
+    authShellClass: 'bg-gradient-to-br from-green-50 via-amber-50 to-white jetstone-light-theme',
   },
   producive: {
     id: 'producive',

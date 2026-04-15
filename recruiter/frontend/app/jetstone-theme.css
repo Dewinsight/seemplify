@@ -20,6 +20,12 @@
 .jetstone-light-theme .bg-teal-500 .text-white,
 .jetstone-light-theme .bg-cyan-600.text-white,
 .jetstone-light-theme .bg-cyan-600 .text-white,
+.jetstone-light-theme .bg-green-700.text-white,
+.jetstone-light-theme .bg-green-700 .text-white,
+.jetstone-light-theme .bg-green-800.text-white,
+.jetstone-light-theme .bg-green-800 .text-white,
+.jetstone-light-theme .bg-green-900.text-white,
+.jetstone-light-theme .bg-green-900 .text-white,
 .jetstone-light-theme .bg-blue-500.text-white,
 .jetstone-light-theme .bg-blue-500 .text-white,
 .jetstone-light-theme .bg-purple-600.text-white,
@@ -81,6 +87,11 @@
 .jetstone-light-theme .bg-teal-950\/88 {
   background-color: rgba(255, 255, 255, 0.9) !important;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Green-themed background fix for scrolled header */
+.jetstone-light-theme .bg-white\/90 {
+  background-color: rgba(255, 255, 255, 0.94) !important;
 }
 
 /* Fix for hover states */

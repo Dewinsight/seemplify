@@ -13,7 +13,7 @@ const StickyHeader = ({ children }: StickyHeaderProps) => {
   const brand = useBrandConfig();
   const scrolledBg =
     brand.id === 'jetstone'
-      ? 'py-3 bg-teal-950/88 backdrop-blur-md shadow-lg border-b border-teal-500/10'
+      ? 'py-3 bg-white/90 backdrop-blur-md shadow-md border-b border-green-200/60'
       : 'py-3 bg-slate-900/90 backdrop-blur-md shadow-lg';
 
   useEffect(() => {
