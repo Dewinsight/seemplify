@@ -34,19 +34,15 @@ export default function LandingPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const brand = useBrandConfig(); // Get current brand
 
-  // Render government career portal for Jetstone — not the SaaS marketing page
-  if (brand.id === 'jetstone') {
-    return <JetstonePortalPage />;
-  }
-  
-  // Initialize smooth scrolling
+  // Initialize smooth scrolling (must run every render — same order as SaaS landing)
   useSmoothScroll();
 
-  // Typing animation for tagline
+  // Typing animation for tagline (SaaS landing only; hooks must run before any early return)
   const [typedText, setTypedText] = useState('');
   const fullText = 'Leverage AI-driven insights to find the perfect candidates faster than ever before.';
-  
+
   useEffect(() => {
+    if (brand.id === 'jetstone') return;
     let index = 0;
     const timer = setInterval(() => {
       if (index <= fullText.length) {
@@ -57,7 +53,12 @@ export default function LandingPage() {
       }
     }, 30);
     return () => clearInterval(timer);
-  }, []);
+  }, [brand.id]);
+
+  // Render government career portal for Jetstone — not the SaaS marketing page
+  if (brand.id === 'jetstone') {
+    return <JetstonePortalPage />;
+  }
 
   const rootShellClass =
     brand.landingRootClass ??
