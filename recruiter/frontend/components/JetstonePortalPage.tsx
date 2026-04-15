@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight, Shield, Users, FileCheck, Calendar,
   Briefcase, Star, Menu, X, MapPin, Phone, Mail,
-  Award, ChevronRight, Building2, ClipboardList,
+  Award, ChevronRight, Building2, UserCheck, ClipboardList,
   Loader2, Clock, Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
