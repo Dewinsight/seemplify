@@ -6,10 +6,8 @@ import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight, Shield, Users, Star, Menu, X, MapPin, Phone, Mail,
-  Award, UserCheck, ClipboardList,
-  BrainCircuit, Zap, Check,
-  BarChart3, Cpu, MessageSquareText, CheckCircle2,
-  Leaf, Home, Target, GraduationCap, LogIn, LayoutDashboard, Building2, ChevronRight
+  Award,
+  Leaf, Home, Target, GraduationCap, LogIn, Building2, ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ScrollReveal from '@/components/animations/ScrollReveal';
@@ -31,7 +29,6 @@ export default function JetstonePortalPage() {
     { href: '#arise-agenda', label: 'ARISE Agenda' },
     { href: '#ai-approach', label: 'Our Approach' },
     { href: '#hiring-journey', label: 'Hiring Journey' },
-    { href: '#recruiter-workflow', label: 'For Recruiters' },
   ];
 
   const scrollTo = (id: string) => {
@@ -296,48 +293,6 @@ export default function JetstonePortalPage() {
         <WorkflowSection />
       </div>
 
-      {/* ── RECRUITER WORKFLOW ── */}
-      <section id="recruiter-workflow" className="relative z-10 bg-gradient-to-br from-slate-50 via-white to-green-50/80 py-20 md:py-28 border-y border-green-200/80">
-        <div className="container mx-auto px-4">
-          <ScrollReveal>
-            <div className="text-center mb-14">
-              <div className="inline-flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-full px-4 py-1.5 mb-5">
-                <ClipboardList className="w-4 h-4 text-amber-800" />
-                <span className="text-amber-900 text-xs font-semibold uppercase tracking-wide">For hiring teams</span>
-              </div>
-              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
-                Manage applicants{' '}
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-green-700">with confidence</span>
-              </h2>
-              <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-                Recruiters and administrators use this portal to run structured, fair programmes — from intake to shortlist and appointment.
-              </p>
-            </div>
-          </ScrollReveal>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 relative">
-            <div className="hidden lg:block absolute top-14 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-green-200 via-amber-200 to-green-200 z-0" />
-            {[
-              { step: '01', title: 'Secure sign-in', desc: 'Authorized recruiters and admins access the dashboard with role-based permissions.', icon: <LogIn className="w-7 h-7" />, color: 'from-green-600 to-emerald-500' },
-              { step: '02', title: 'Applicant intake', desc: 'Review submissions, documents, and eligibility in one place with full audit trails.', icon: <LayoutDashboard className="w-7 h-7" />, color: 'from-amber-500 to-orange-500' },
-              { step: '03', title: 'Objective screening', desc: 'Use AI-assisted, merit-based scoring and shortlists — consistent criteria for every candidate.', icon: <BrainCircuit className="w-7 h-7" />, color: 'from-blue-500 to-indigo-500' },
-              { step: '04', title: 'Pipeline to decision', desc: 'Move candidates through stages, schedule panels, collect feedback, and record outcomes transparently.', icon: <UserCheck className="w-7 h-7" />, color: 'from-purple-500 to-pink-500' },
-            ].map((step, i) => (
-              <ScrollReveal key={i} delay={i * 0.1}>
-                <div className="relative z-10 flex flex-col items-center text-center">
-                  <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${step.color} flex items-center justify-center text-white shadow-xl mb-4`}>
-                    {step.icon}
-                  </div>
-                  <span className="text-xs font-black text-slate-500 mb-1 tracking-widest">STEP {step.step}</span>
-                  <h3 className="text-lg font-bold text-slate-900 mb-2">{step.title}</h3>
-                  <p className="text-slate-600 text-sm leading-relaxed">{step.desc}</p>
-                </div>
-              </ScrollReveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── VALUES ── */}
       <section id="values" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
         <ScrollReveal>
@@ -418,10 +373,6 @@ export default function JetstonePortalPage() {
                 <Button className="bg-amber-400 hover:bg-amber-300 text-green-950 border-0 font-bold h-12 px-8 text-base shadow-lg"
                   onClick={() => { window.location.href = '/login'; }}>
                   Manage applicants <ArrowRight className="ml-2 w-5 h-5" />
-                </Button>
-                <Button variant="outline" className="border-white/40 text-white hover:bg-white/10 h-12 px-8 text-base"
-                  onClick={() => scrollTo('recruiter-workflow')}>
-                  Recruiter workflow
                 </Button>
               </div>
             </div>
