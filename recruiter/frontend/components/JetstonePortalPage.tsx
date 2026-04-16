@@ -265,32 +265,47 @@ export default function JetstonePortalPage() {
       </section>
 
       {/* ── GOVERNOR'S MESSAGE ── */}
-      <section id="about" className="relative z-10 py-20 md:py-28 bg-gradient-to-r from-green-900 via-green-800 to-green-900">
+      <section id="about" className="relative z-10 pt-20 md:pt-28 pb-0 bg-gradient-to-r from-green-900 via-green-800 to-green-900 overflow-hidden">
         <div className="container mx-auto px-4">
-          <ScrollReveal>
-            <div className="max-w-4xl mx-auto text-center">
-              <div className="flex justify-center mb-6">
-                <div className={`w-16 h-16 rounded-full overflow-hidden bg-white ${sealRing}`}>
-                  <Image src="/akwa-ibom-seal.png" alt="" width={64} height={64} className="object-cover w-full h-full" />
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
+            <div className="lg:w-3/5 text-center lg:text-left pb-20 md:pb-28">
+              <ScrollReveal>
+                <div className="flex justify-center lg:justify-start mb-6">
+                  <div className={`w-16 h-16 rounded-full overflow-hidden bg-white ${sealRing}`}>
+                    <Image src="/akwa-ibom-seal.png" alt="" width={64} height={64} className="object-cover w-full h-full" />
+                  </div>
                 </div>
-              </div>
-              <div className="inline-flex items-center gap-2 bg-amber-400/20 border border-amber-400/30 rounded-full px-4 py-1.5 mb-6">
-                <Award className="w-4 h-4 text-amber-300" />
-                <span className="text-amber-200 text-xs font-semibold uppercase tracking-wide">Governor's Message</span>
-              </div>
-              <blockquote className="text-2xl md:text-3xl lg:text-4xl font-bold text-white leading-relaxed mb-8 italic">
-                "We are building a state where every qualified Akwa Ibom citizen has a fair chance to serve
-                and contribute to our collective progress. This portal is our commitment to that promise."
-              </blockquote>
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-amber-400/50 shadow-lg">
-                  <Image src="/governor-umo-eno.png" alt="Governor Umo Eno" width={48} height={48} className="object-cover object-top w-full h-full" />
+                <div className="inline-flex items-center gap-2 bg-amber-400/20 border border-amber-400/30 rounded-full px-4 py-1.5 mb-6">
+                  <Award className="w-4 h-4 text-amber-300" />
+                  <span className="text-amber-200 text-xs font-semibold uppercase tracking-wide">Governor's Message</span>
                 </div>
-                <p className="text-amber-300 font-bold text-lg">His Excellency, Governor Umo Eno</p>
-                <p className="text-green-300 text-sm">Executive Governor, Akwa Ibom State</p>
-              </div>
+                <blockquote className="text-2xl md:text-3xl lg:text-4xl font-bold text-white leading-relaxed mb-8 italic">
+                  "We are building a state where every qualified Akwa Ibom citizen has a fair chance to serve
+                  and contribute to our collective progress. This portal is our commitment to that promise."
+                </blockquote>
+                <div className="flex flex-col items-center lg:items-start gap-1">
+                  <p className="text-amber-300 font-bold text-xl">His Excellency, Governor Umo Eno</p>
+                  <p className="text-green-300 text-base">Executive Governor, Akwa Ibom State</p>
+                </div>
+              </ScrollReveal>
             </div>
-          </ScrollReveal>
+            
+            <div className="lg:w-2/5 relative flex justify-center lg:justify-end self-end">
+              <ScrollReveal delay={0.2}>
+                <div className="relative z-10 w-[320px] md:w-[420px] lg:w-[480px] bottom-0 -mb-2">
+                  <Image 
+                    src="/governor-umo-eno-thumbs.png" 
+                    alt="Governor Umo Eno" 
+                    width={480} 
+                    height={600} 
+                    className="w-full h-auto object-contain drop-shadow-2xl" 
+                  />
+                  {/* Subtle glow behind the governor */}
+                  <div className="absolute inset-0 bg-amber-500/20 blur-[100px] rounded-full -z-10"></div>
+                </div>
+              </ScrollReveal>
+            </div>
+          </div>
         </div>
       </section>
 
