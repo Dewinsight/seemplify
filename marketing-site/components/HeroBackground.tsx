@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 
 const gridStyle = {
@@ -10,16 +11,24 @@ const gridStyle = {
   WebkitMaskImage: 'linear-gradient(to top, transparent 0%, black 45%, transparent 100%)',
 }
 
+const defaultRadials =
+  'radial-gradient(circle at 20% 15%, rgba(56,189,248,0.18), transparent 55%), radial-gradient(circle at 80% 0%, rgba(16,185,129,0.16), transparent 50%), radial-gradient(circle at 60% 70%, rgba(99,102,241,0.12), transparent 55%)'
+
+const akwaRadials =
+  'radial-gradient(circle at 20% 15%, rgba(21,128,61,0.20), transparent 55%), radial-gradient(circle at 80% 0%, rgba(217,119,6,0.18), transparent 50%), radial-gradient(circle at 60% 70%, rgba(16,185,129,0.16), transparent 55%)'
+
 export default function HeroBackground() {
+  const [isAkwa, setIsAkwa] = useState(false)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('akwaibom')) setIsAkwa(true)
+  }, [])
+
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      <div className="absolute inset-0 bg-[#f7f7fb] dark:bg-[#020205]" />
+      <div className={`absolute inset-0 ${isAkwa ? 'bg-gradient-to-br from-green-50 via-amber-50/30 to-white' : 'bg-[#f7f7fb]'} dark:bg-[#020205]`} />
       <div
         className="absolute inset-0 opacity-80 dark:hidden"
-        style={{
-          background:
-            'radial-gradient(circle at 20% 15%, rgba(56,189,248,0.18), transparent 55%), radial-gradient(circle at 80% 0%, rgba(16,185,129,0.16), transparent 50%), radial-gradient(circle at 60% 70%, rgba(99,102,241,0.12), transparent 55%)',
-        }}
+        style={{ background: isAkwa ? akwaRadials : defaultRadials }}
       />
 
       <motion.div

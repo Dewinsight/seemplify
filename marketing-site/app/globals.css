@@ -186,3 +186,25 @@ body {
   mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
 }
+
+/* Akwa Ibom State green/amber theme overrides */
+.akwaibom-theme {
+  --accent: 21 128 61;
+  --aurora-violet: rgba(21, 128, 61, 0.35);
+  --aurora-cyan: rgba(217, 119, 6, 0.28);
+  --aurora-emerald: rgba(16, 185, 129, 0.32);
+}
+
+.akwaibom-theme .gradient-text-primary {
+  background: linear-gradient(135deg, #15803d 0%, #b45309 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.akwaibom-theme.dark .gradient-text-primary {
+  background: linear-gradient(135deg, #4ade80 0%, #fbbf24 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

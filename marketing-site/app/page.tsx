@@ -24,6 +24,7 @@ import {
   type SeoMarket,
 } from './seo-markets'
 import { absoluteUrl, idpUrl, siteConfig, getSiteConfig } from './site-config'
+import AkwaIbomHomePage from '@/components/AkwaIbomHomePage'
 
 const MARKET_COOKIE = 'seemplify-market'
 
@@ -621,6 +622,7 @@ export default function HomePage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
+  const isAkwaIbom = hostname.includes('akwaibom')
   const config = getSiteConfig(hostname)
   const IDP_LOGIN_URL = idpUrl('/', hostname)
   const IDP_SIGNUP_URL = idpUrl('/signup', hostname)
@@ -668,6 +670,8 @@ export default function HomePage() {
     ]
       : primaryMarkets
     : primaryMarkets
+
+  if (isAkwaIbom) return <AkwaIbomHomePage />
 
   return (
     <div className="relative min-h-screen bg-[#f7f7fb] text-zinc-900 dark:bg-[#020205] dark:text-white">
