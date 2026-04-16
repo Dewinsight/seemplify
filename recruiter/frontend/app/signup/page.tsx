@@ -98,7 +98,7 @@ export default function SignupPage() {
                     alt="Government of Akwa Ibom State · ARISE"
                     width={280}
                     height={80}
-                    className="h-14 w-auto max-w-[min(100%,320px)] object-contain lg:h-16 xl:h-[4.5rem]"
+                    className="h-14 w-auto max-w-[min(100%,320px)] bg-transparent object-contain lg:h-16 xl:h-[4.5rem]"
                   />
                 </div>
                 <div>
@@ -204,7 +204,7 @@ export default function SignupPage() {
                     alt="Government of Akwa Ibom State · ARISE"
                     width={260}
                     height={72}
-                    className="h-12 w-auto max-w-[280px] object-contain"
+                    className="h-12 w-auto max-w-[280px] bg-transparent object-contain"
                   />
                 </div>
               ) : brand.useImageLogo && brand.logo ? (

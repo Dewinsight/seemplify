@@ -208,7 +208,7 @@ export default function LoginPage() {
                     alt="Government of Akwa Ibom State · ARISE"
                     width={280}
                     height={80}
-                    className="h-14 w-auto max-w-[min(100%,320px)] object-contain lg:h-16 xl:h-[4.5rem]"
+                    className="h-14 w-auto max-w-[min(100%,320px)] bg-transparent object-contain lg:h-16 xl:h-[4.5rem]"
                   />
                 </div>
                 <div>
@@ -320,7 +320,7 @@ export default function LoginPage() {
                       alt="Government of Akwa Ibom State · ARISE"
                       width={220}
                       height={56}
-                      className="h-10 w-auto max-w-[220px] object-contain"
+                      className="h-10 w-auto max-w-[220px] bg-transparent object-contain"
                     />
                   </div>
                   <div>
