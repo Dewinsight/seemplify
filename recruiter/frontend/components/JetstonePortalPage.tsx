@@ -10,6 +10,7 @@ import {
   Award, ChevronRight, Building2, UserCheck, ClipboardList,
   Loader2, Clock, Search, BrainCircuit, Zap, Check,
   BarChart3, Filter, Cpu, MessageSquareText, CheckCircle2,
+  Leaf, Home, Target, GraduationCap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -97,10 +98,10 @@ export default function JetstonePortalPage() {
 
   const navLinks = [
     { href: '#about', label: 'About' },
+    { href: '#arise-agenda', label: 'ARISE Agenda' },
     { href: '#ai-approach', label: 'Our Approach' },
     { href: '#hiring-journey', label: 'Hiring Journey' },
     { href: '#vacancies', label: 'Vacancies' },
-    { href: '#contact', label: 'Contact' },
   ];
 
   const scrollTo = (id: string) => {
@@ -306,6 +307,47 @@ export default function JetstonePortalPage() {
               </ScrollReveal>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── ARISE AGENDA ── */}
+      <section id="arise-agenda" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
+        <ScrollReveal>
+          <div className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5 mb-5">
+              <Target className="w-4 h-4 text-green-700" />
+              <span className="text-green-800 text-xs font-semibold uppercase tracking-wide">Strategic Vision</span>
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
+              Driving the{' '}
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">ARISE Agenda</span>
+            </h2>
+            <p className="text-slate-500 text-lg max-w-3xl mx-auto">
+              Our recruitment drive focuses on assembling the brightest minds to execute His Excellency's strategic vision for Akwa Ibom State across five core pillars.
+            </p>
+          </div>
+        </ScrollReveal>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+          {[
+            { letter: 'A', title: 'Agricultural Revolution', icon: <Leaf className="w-8 h-8" />, color: 'from-green-600 to-green-500', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700' },
+            { letter: 'R', title: 'Rural Development', icon: <Home className="w-8 h-8" />, color: 'from-amber-500 to-yellow-500', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700' },
+            { letter: 'I', title: 'Infrastructural Maintenance & Industrial Advancement', icon: <Building2 className="w-8 h-8" />, color: 'from-orange-600 to-red-500', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700' },
+            { letter: 'S', title: 'Security Management', icon: <Shield className="w-8 h-8" />, color: 'from-emerald-700 to-green-600', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700' },
+            { letter: 'E', title: 'Educational Advancement & Entrepreneurship', icon: <GraduationCap className="w-8 h-8" />, color: 'from-red-700 to-rose-600', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' },
+          ].map((pillar, i) => (
+            <ScrollReveal key={i} delay={i * 0.1}>
+              <div className={`${pillar.bg} border ${pillar.border} rounded-2xl p-6 h-full flex flex-col items-center text-center transition-all duration-300 hover:shadow-lg hover:-translate-y-1`}>
+                <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${pillar.color} flex items-center justify-center text-white shadow-md mb-4 relative`}>
+                  <span className="text-2xl font-black">{pillar.letter}</span>
+                </div>
+                <h3 className={`font-bold ${pillar.text} mb-3 leading-snug`}>{pillar.title}</h3>
+                <div className={`mt-auto w-12 h-12 rounded-full bg-white/60 flex items-center justify-center ${pillar.text}`}>
+                  {pillar.icon}
+                </div>
+              </div>
+            </ScrollReveal>
+          ))}
         </div>
       </section>
 
