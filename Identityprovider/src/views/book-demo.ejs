@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Book a Demo - Seemplify</title>
+  <title>Book a Demo - <%= brand.name %></title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
@@ -241,7 +241,7 @@
           <span>Back to sign in</span>
         </a>
         <div class="demo-kicker">Book a Demo</div>
-        <h1 class="demo-title">See Seemplify in action.</h1>
+        <h1 class="demo-title">See <%= brand.name %> in action.</h1>
         <p class="demo-copy">
           Tell us a bit about your team and what you want to solve. We will review your request and get back to you soon
           to schedule the walkthrough.
@@ -265,7 +265,7 @@
             <div class="demo-highlight-icon">3</div>
             <div>
               <div class="demo-highlight-title">Get a follow-up from the team</div>
-              <div class="demo-highlight-copy">Your request is sent directly to the Seemplify admin queue and email notifications go out immediately.</div>
+              <div class="demo-highlight-copy">Your request is sent directly to the <%= brand.name %> admin queue and email notifications go out immediately.</div>
             </div>
           </div>
         </div>

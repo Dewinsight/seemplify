@@ -37,14 +37,8 @@
 
 <!-- Top Navigation -->
 <nav class="top-nav">
-  <a href="https://seemplifyai.com" class="top-nav-brand">
-    <img
-      src="https://seemplifyai.com/images/seemplifylogo.png"
-      alt="Seemplify"
-      width="148"
-      height="62"
-      class="seemplify-wordmark seemplify-wordmark--nav"
-    />
+  <a href="<%- brand.name === 'Akwa Ibom State' ? 'https://akwaibom.aiinnigeria.com' : 'https://seemplifyai.com' %>" class="top-nav-brand">
+    <%- brand.navLogoHtml %>
   </a>
   <!-- Mobile Nav Toggle Label -->
   <label for="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Toggle navigation">

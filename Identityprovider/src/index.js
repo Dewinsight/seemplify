@@ -505,6 +505,57 @@ const seemplifyNavLogoImg = `
   />
 `
 
+function getIdpBrand(req) {
+  const host = (req.headers['x-forwarded-host'] || req.hostname || '').toLowerCase()
+  if (host.includes('akwa') || host.includes('ibom')) {
+    const logoUrl = 'https://akwaibom.aiinnigeria.com/logoakwa.png'
+    const logoHtml = `
+      <img
+        src="${logoUrl}"
+        alt="Akwa Ibom State"
+        width="148"
+        height="62"
+        loading="eager"
+        decoding="async"
+        class="seemplify-wordmark"
+        style="display:block;width:auto;max-width:100%;height:40px;"
+      />
+    `
+    const navLogoHtml = `
+      <img
+        src="${logoUrl}"
+        alt="Akwa Ibom State"
+        width="148"
+        height="62"
+        loading="eager"
+        decoding="async"
+        class="seemplify-wordmark seemplify-wordmark--nav"
+        style="display:block;width:auto;max-width:100%;height:34px;"
+      />
+    `
+    return {
+      name: 'Akwa Ibom State',
+      logoHtml,
+      navLogoHtml,
+      themeClass: 'jetstone-light-theme',
+      cssVars: `
+        :root {
+          --brand: #15803d;
+          --brand-2: #d97706;
+          --brand-hover: #166534;
+        }
+      `
+    }
+  }
+  return {
+    name: 'Seemplify',
+    logoHtml: seemplifyMarkSvg,
+    navLogoHtml: seemplifyNavLogoImg,
+    themeClass: '',
+    cssVars: ''
+  }
+}
+
 // Production environment detection
 const isProduction = process.env.NODE_ENV === 'production'
 
@@ -957,6 +1008,12 @@ app.use((req, res, next) => {
 app.use(express.static(join(__dirname, 'public'), {
   maxAge: isProduction ? '7d' : 0
 }))
+
+// Make brand info available to all EJS templates
+app.use((req, res, next) => {
+  res.locals.brand = getIdpBrand(req)
+  next()
+})
 app.use('/vendor/pdfjs', express.static(join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'build')))
 
 // Session middleware for organization management routes
@@ -1094,13 +1151,14 @@ app.get('/interaction/:uid', async (req, res) => {
       session_expired: 'Session expired. Please try again.'
     }
     const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
+    const brand = getIdpBrand(req)
 
     // Return HTML login form
     res.send(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Seemplify - Sign in</title>
+        <title>${brand.name} - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link rel="stylesheet" href="/css/idp-theme.css?v=5">
         <link rel="stylesheet" href="/css/login.css?v=5">
@@ -1108,9 +1166,10 @@ app.get('/interaction/:uid', async (req, res) => {
         <style>
           body { visibility: hidden; }
           body.light, body.dark, [data-theme] body { visibility: visible; }
+          ${brand.cssVars}
         </style>
       </head>
-      <body>
+      <body class="${brand.themeClass}">
         <div class="grid-overlay"></div>
 
         <!-- Theme Toggle -->
@@ -1145,8 +1204,8 @@ app.get('/interaction/:uid', async (req, res) => {
 
             <div class="login-form-inner">
               <div class="login-brand">
-                <div class="brand-mark">${seemplifyMarkSvg}</div>
-                <span class="login-brand-name">Seemplify</span>
+                <div class="brand-mark">${brand.logoHtml}</div>
+                <span class="login-brand-name">${brand.name}</span>
               </div>
 
               <h1 class="login-heading">Welcome back</h1>
@@ -1233,7 +1292,7 @@ app.get('/interaction/:uid', async (req, res) => {
               </h2>
 
               <p class="marketing-desc">
-                Seemplify gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
+                ${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
               </p>
 
               <div class="feature-cards">
@@ -1487,12 +1546,13 @@ app.get('/signup/:uid', async (req, res) => {
   }
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
   const hiddenAttributionInputs = buildHiddenAttributionInputs(req.query)
+  const brand = getIdpBrand(req)
 
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Seemplify - Create account</title>
+      <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=5">
       <link rel="stylesheet" href="/css/login.css?v=5">
@@ -1500,9 +1560,10 @@ app.get('/signup/:uid', async (req, res) => {
       <style>
         body { visibility: hidden; }
         body.light, body.dark, [data-theme] body { visibility: visible; }
+        ${brand.cssVars}
       </style>
     </head>
-    <body>
+    <body class="${brand.themeClass}">
       <div class="grid-overlay"></div>
 
       <!-- Theme Toggle -->
@@ -3625,7 +3686,7 @@ app.get('/login', async (req, res) => {
     }
   }
 
-  res.send(renderHubLoginPage(errorMsg, returnTo, pendingInviteInfo))
+  res.send(renderHubLoginPage(req, errorMsg, returnTo, pendingInviteInfo))
 })
 
 // Hub Login Handler
@@ -3703,7 +3764,7 @@ app.get('/signup', async (req, res) => {
   }
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
 
-  res.send(renderHubSignupPage(errorMsg, req.query))
+  res.send(renderHubSignupPage(req, errorMsg, req.query))
 })
 
 // Hub Signup Handler
@@ -8861,7 +8922,8 @@ function renderHubPage(account, apps, organizations = []) {
 }
 
 // Hub Login Page Renderer
-function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
+function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = null) {
+  const brand = getIdpBrand(req)
   const inviteBanner = pendingInviteInfo ? `
     <div style="
       background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15));
@@ -8904,13 +8966,16 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>Seemplify - Sign in</title>
+      <title>${brand.name} - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=5">
       <link rel="stylesheet" href="/css/login.css?v=5">
       <script src="/js/theme.js?v=5"></script>
+      <style>
+        ${brand.cssVars}
+      </style>
     </head>
-    <body>
+    <body class="${brand.themeClass}">
       <div class="grid-overlay"></div>
 
       <!-- Theme Toggle -->
@@ -8945,8 +9010,8 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
 
           <div class="login-form-inner">
             <div class="login-brand">
-              <div class="brand-mark">${seemplifyMarkSvg}</div>
-              <span class="login-brand-name">Seemplify</span>
+              <div class="brand-mark">${brand.logoHtml}</div>
+              <span class="login-brand-name">${brand.name}</span>
             </div>
 
             <h1 class="login-heading">Welcome back</h1>
@@ -9023,7 +9088,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
             </h2>
 
             <p class="marketing-desc">
-              Seemplify gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
+              ${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
             </p>
 
             <div class="feature-cards">
@@ -9157,13 +9222,14 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
 }
 
 // Hub Signup Page Renderer
-function renderHubSignupPage(errorMsg, attributionValues = {}) {
+function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
+  const brand = getIdpBrand(req)
   const hiddenAttributionInputs = buildHiddenAttributionInputs(attributionValues)
   return `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Seemplify - Create account</title>
+      <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=5">
       <link rel="stylesheet" href="/css/login.css?v=5">
@@ -9188,10 +9254,11 @@ function renderHubSignupPage(errorMsg, attributionValues = {}) {
         .btn { width: 100%; margin-top: 6px; }
         @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
         @media (max-width: 640px) { .card { padding: 22px; } }
+        ${brand.cssVars}
       </style>
       <script src="/js/theme.js?v=3"></script>
     </head>
-    <body>
+    <body class="${brand.themeClass}">
       <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
         <div class="theme-dropdown">
           <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
@@ -9222,11 +9289,11 @@ function renderHubSignupPage(errorMsg, attributionValues = {}) {
         <div class="card intro">
           <span class="pill">AIIN Identity / New account</span>
           <h1>Create your AIIN identity</h1>
-          <p>Aligned with the SmartHR dashboard aesthetic for a seamless move between login, hub, and apps.</p>
+          <p>Aligned with the ${brand.name} dashboard aesthetic for a seamless move between login, hub, and apps.</p>
           <div class="list">
             <div class="list-item"><span class="dot"></span>SSO-ready hub credentials</div>
             <div class="list-item"><span class="dot"></span>Adaptive MFA and session continuity</div>
-            <div class="list-item"><span class="dot"></span>Instant access to SmartHR and connected tools</div>
+            <div class="list-item"><span class="dot"></span>Instant access to ${brand.name} and connected tools</div>
           </div>
         </div>
 
@@ -9238,7 +9305,7 @@ function renderHubSignupPage(errorMsg, attributionValues = {}) {
               <p class="hint">One account for the hub and all connected apps.</p>
             </div>
             <div class="brand-mark">
-              ${seemplifyMarkSvg}
+              ${brand.logoHtml}
             </div>
           </div>
 
