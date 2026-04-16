@@ -310,7 +310,7 @@ export default function JetstonePortalPage() {
       </section>
 
       {/* ── CTA BANNER ── */}
-      <section className="relative z-10 py-20 bg-gradient-to-r from-green-900 via-green-800 to-green-900">
+      <section className="relative z-10 py-20 bg-gradient-to-r from-green-900 via-green-800 to-green-900 jetstone-cta-banner">
         <div className="container mx-auto px-4">
           <ScrollReveal>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
@@ -328,10 +328,13 @@ export default function JetstonePortalPage() {
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
-                <Button className="bg-amber-400 hover:bg-amber-300 text-green-950 border-0 font-bold h-12 px-8 text-base shadow-lg"
-                  onClick={() => { window.location.href = '/login'; }}>
-                  Manage applicants <ArrowRight className="ml-2 w-5 h-5" />
-                </Button>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-400 px-8 py-3 text-base font-bold text-green-950 shadow-lg transition-colors hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 focus-visible:ring-offset-2 focus-visible:ring-offset-green-900"
+                >
+                  Manage applicants
+                  <ArrowRight className="h-5 w-5 shrink-0" aria-hidden />
+                </Link>
               </div>
             </div>
           </ScrollReveal>

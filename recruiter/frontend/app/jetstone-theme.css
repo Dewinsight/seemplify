@@ -106,3 +106,8 @@
 .jetstone-light-theme .hover\:bg-white\/20:hover {
   background-color: rgba(0, 0, 0, 0.1) !important;
 }
+
+/* Solid green CTA band: keep headline/subcopy readable on gradient (avoid global .text-white remap) */
+.jetstone-light-theme .jetstone-cta-banner h2.text-white {
+  color: #ffffff !important;
+}
