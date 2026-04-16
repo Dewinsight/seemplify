@@ -52,6 +52,41 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
     }
   };
 
+  const solidAccentBg = (color: string) => {
+    switch (color) {
+      case 'blue': return 'bg-blue-500';
+      case 'purple': return 'bg-purple-500';
+      case 'indigo': return 'bg-indigo-500';
+      case 'cyan': return 'bg-cyan-500';
+      case 'emerald': return 'bg-emerald-600';
+      case 'amber': return 'bg-amber-500';
+      case 'green': return 'bg-green-600';
+      default: return 'bg-blue-500';
+    }
+  };
+
+  const solidAccentText = (color: string) => {
+    switch (color) {
+      case 'blue': return 'text-blue-600';
+      case 'purple': return 'text-purple-600';
+      case 'indigo': return 'text-indigo-600';
+      case 'cyan': return 'text-cyan-600';
+      case 'emerald': return 'text-emerald-700';
+      case 'amber': return 'text-amber-700';
+      case 'green': return 'text-green-700';
+      default: return 'text-blue-600';
+    }
+  };
+
+  const barFillClass = jet ? solidAccentBg(step.color) : getColorClass(step.color, 'bg');
+  const accentTextClass = jet ? solidAccentText(step.color) : getColorClass(step.color, 'text');
+  const pvTitle = jet ? 'text-slate-800' : 'text-white';
+  const pvMuted = jet ? 'text-slate-600' : 'text-slate-400';
+  const pvSub = jet ? 'text-slate-500' : 'text-slate-400';
+  const pvStrong = jet ? 'text-slate-900 font-semibold' : 'text-white';
+  const pvCard = jet ? 'border border-slate-200 rounded bg-slate-50' : 'border border-white/10 rounded bg-slate-900/50';
+  const pvLine = jet ? 'bg-slate-200' : 'bg-white/10';
+
   // Select the appropriate icon component based on the feature icon string
   const getFeatureIcon = (iconName: string) => {
     switch (iconName) {
@@ -101,7 +136,7 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
       className={
         jet
           ? 'bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden'
-          : `bg-white/5 backdrop-blur-sm rounded-xl border ${getColorClass('border', 'border')} overflow-hidden`
+          : `bg-white/5 backdrop-blur-sm rounded-xl border ${getColorClass(step.color, 'border')} overflow-hidden`
       }
       variants={cardVariants}
       initial="hidden"
@@ -110,8 +145,8 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
       <div className={`p-4 sm:p-6 pb-6 sm:pb-8`}>
         {/* Step number */}
         <div className="flex items-center mb-3 sm:mb-4">
-          <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full ${getColorClass('bg', 'bg')} flex items-center justify-center mr-2 sm:mr-3`}>
-            <span className={`text-sm sm:text-base font-bold ${getColorClass('text', 'text')}`}>{step.id}</span>
+          <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full ${getColorClass(step.color, 'bg')} flex items-center justify-center mr-2 sm:mr-3`}>
+            <span className={`text-sm sm:text-base font-bold ${getColorClass(step.color, 'text')}`}>{step.id}</span>
           </div>
           <h3 className={`text-lg sm:text-xl font-bold ${jet ? 'text-slate-900' : 'text-white'}`}>{step.title}</h3>
         </div>
@@ -147,7 +182,7 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
               animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -10 }}
               transition={{ duration: 0.3, delay: 0.3 + (idx * 0.1) }}
             >
-              <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full ${getColorClass('bg', 'bg')} flex items-center justify-center mr-2 sm:mr-3 flex-shrink-0`}>
+              <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full ${getColorClass(step.color, 'bg')} flex items-center justify-center mr-2 sm:mr-3 flex-shrink-0`}>
                 {getFeatureIcon(feature.icon)}
               </div>
               <span className={`text-sm sm:text-base ${jet ? 'text-slate-800' : 'text-white'}`}>{feature.text}</span>
@@ -157,49 +192,55 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
         
         {/* Realistic UI Preview based on step */}
         <motion.div 
-          className="relative h-32 sm:h-40 md:h-48 rounded-lg overflow-hidden border border-white/10"
+          className={`relative h-32 sm:h-40 md:h-48 rounded-lg overflow-hidden border ${jet ? 'border-slate-200' : 'border-white/10'}`}
           initial={{ opacity: 0, y: 20 }}
           animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
           transition={{ duration: 0.5, delay: 0.6 }}
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-900/70 to-gray-900/50 p-3">
+          <div
+            className={
+              jet
+                ? 'absolute inset-0 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-3'
+                : 'absolute inset-0 bg-gradient-to-br from-gray-900/70 to-gray-900/50 p-3'
+            }
+          >
             {/* Step-specific UI previews */}
             {step.id === 1 && (
               <div className="h-full flex flex-col">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs font-medium text-white">Resume Upload</div>
-                  <div className={`text-xs ${getColorClass('text', 'text')}`}>AI Processing</div>
+                  <div className={`text-xs font-medium ${pvTitle}`}>Resume Upload</div>
+                  <div className={`text-xs ${accentTextClass}`}>AI Processing</div>
                 </div>
-                <div className="flex-1 flex items-center justify-center border border-white/10 rounded bg-slate-900/50 p-2">
+                <div className={`flex-1 flex items-center justify-center ${pvCard} p-2`}>
                   <div className="space-y-1 w-full">
-                    <div className="h-1 bg-white/10 w-3/4 rounded-full"></div>
-                    <div className="h-1 bg-white/10 w-full rounded-full"></div>
-                    <div className="h-1 bg-white/10 w-2/3 rounded-full"></div>
+                    <div className={`h-1 ${pvLine} w-3/4 rounded-full`}></div>
+                    <div className={`h-1 ${pvLine} w-full rounded-full`}></div>
+                    <div className={`h-1 ${pvLine} w-2/3 rounded-full`}></div>
                     <div className="flex justify-end mt-2">
-                      <div className={`h-4 w-4 rounded-full ${getColorClass('bg', 'bg')} animate-pulse`}></div>
+                      <div className={`h-4 w-4 rounded-full ${barFillClass} animate-pulse`}></div>
                     </div>
                   </div>
                 </div>
                 <div className="mt-2 flex justify-between items-center">
-                  <div className="text-xs text-slate-400">Parsing documents</div>
-                  <div className="text-xs text-white">3/5</div>
+                  <div className={`text-xs ${pvMuted}`}>Parsing documents</div>
+                  <div className={`text-xs ${pvStrong}`}>3/5</div>
                 </div>
               </div>
             )}
             
             {step.id === 2 && (
               <div className="h-full flex flex-col">
-                <div className="text-xs font-medium text-white mb-2">AI Matching Score</div>
+                <div className={`text-xs font-medium mb-2 ${pvTitle}`}>AI Matching Score</div>
                 <div className="flex-1 flex space-x-1">
                   {[85, 72, 93, 68, 91].map((score, i) => (
                     <div key={i} className="flex-1 flex flex-col justify-end">
                       <div className="h-full flex flex-col justify-end">
                         <div 
-                          className={`w-full ${getColorClass('bg', 'bg')} rounded-sm`} 
+                          className={`w-full ${barFillClass} rounded-sm`} 
                           style={{height: `${score}%`}}
                         ></div>
                       </div>
-                      <div className="text-center text-[8px] text-slate-400 mt-1">{score}%</div>
+                      <div className={`text-center text-[8px] mt-1 ${pvMuted}`}>{score}%</div>
                     </div>
                   ))}
                 </div>
@@ -208,12 +249,12 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
             
             {step.id === 3 && (
               <div className="h-full flex flex-col">
-                <div className="text-xs font-medium text-white mb-2">Pipeline Stages</div>
+                <div className={`text-xs font-medium mb-2 ${pvTitle}`}>Pipeline Stages</div>
                 <div className="flex-1 grid grid-cols-4 gap-1">
                   {['Applied', 'Shortlist', 'Interview', 'Offer'].map((stage, i) => (
-                    <div key={i} className={`border ${i === 1 ? getColorClass('border', 'border') : 'border-white/10'} rounded p-1 flex flex-col`}>
-                      <div className="text-[8px] text-center text-slate-400">{stage}</div>
-                      <div className={`text-center text-[10px] ${i === 1 ? 'text-white' : 'text-slate-400'} mt-auto`}>{[12, 8, 4, 2][i]}</div>
+                    <div key={i} className={`rounded p-1 flex flex-col border ${i === 1 ? getColorClass(step.color, 'border') : jet ? 'border-slate-200' : 'border-white/10'}`}>
+                      <div className={`text-[8px] text-center ${pvSub}`}>{stage}</div>
+                      <div className={`text-center text-[10px] mt-auto ${i === 1 ? pvStrong : pvSub}`}>{[12, 8, 4, 2][i]}</div>
                     </div>
                   ))}
                 </div>
@@ -222,18 +263,18 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
             
             {step.id === 4 && (
               <div className="h-full flex flex-col">
-                <div className="text-xs font-medium text-white mb-2">Interview Schedule</div>
-                <div className="flex-1 flex border border-white/10 rounded bg-slate-900/50">
-                  <div className="w-1/4 border-r border-white/10 p-1">
-                    <div className="text-[8px] text-slate-400">Today</div>
-                    <div className="text-[9px] text-white mt-1">09:00</div>
-                    <div className="text-[9px] text-white mt-1">11:30</div>
-                    <div className="text-[9px] text-white mt-1">14:00</div>
+                <div className={`text-xs font-medium mb-2 ${pvTitle}`}>Interview Schedule</div>
+                <div className={`flex-1 flex border rounded ${pvCard}`}>
+                  <div className={`w-1/4 border-r p-1 ${jet ? 'border-slate-200' : 'border-white/10'}`}>
+                    <div className={`text-[8px] ${pvSub}`}>Today</div>
+                    <div className={`text-[9px] mt-1 ${pvStrong}`}>09:00</div>
+                    <div className={`text-[9px] mt-1 ${pvStrong}`}>11:30</div>
+                    <div className={`text-[9px] mt-1 ${pvStrong}`}>14:00</div>
                   </div>
                   <div className="flex-1 p-1">
-                    <div className={`rounded mt-3 px-1 py-0.5 text-[8px] ${getColorClass('bg', 'bg')} text-white`}>Technical Interview</div>
-                    <div className="rounded mt-3 px-1 py-0.5 text-[8px] bg-indigo-500/30 text-white">HR Interview</div>
-                    <div className="rounded mt-3 px-1 py-0.5 text-[8px] bg-green-500/30 text-white">Final Round</div>
+                    <div className={`rounded mt-3 px-1 py-0.5 text-[8px] text-white ${jet ? solidAccentBg(step.color) : getColorClass(step.color, 'bg')}`}>Technical Interview</div>
+                    <div className={`rounded mt-3 px-1 py-0.5 text-[8px] ${jet ? 'bg-indigo-100 text-indigo-800' : 'bg-indigo-500/30 text-white'}`}>HR Interview</div>
+                    <div className={`rounded mt-3 px-1 py-0.5 text-[8px] ${jet ? 'bg-emerald-100 text-emerald-800' : 'bg-green-500/30 text-white'}`}>Final Round</div>
                   </div>
                 </div>
               </div>
@@ -241,77 +282,77 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
             
             {step.id === 5 && (
               <div className="h-full flex flex-col">
-                <div className="text-xs font-medium text-white mb-2">AI Notetaker</div>
-                <div className="flex-1 border border-white/10 rounded bg-slate-900/50 p-2">
+                <div className={`text-xs font-medium mb-2 ${pvTitle}`}>AI Notetaker</div>
+                <div className={`flex-1 border rounded p-2 ${pvCard}`}>
                   <div className="space-y-1">
-                    <div className="h-1 bg-white/20 w-full rounded-full"></div>
-                    <div className="h-1 bg-white/15 w-5/6 rounded-full"></div>
-                    <div className="h-1 bg-white/10 w-full rounded-full"></div>
-                    <div className="h-1 bg-white/20 w-4/5 rounded-full"></div>
-                    <div className="h-1 bg-white/15 w-full rounded-full"></div>
-                    <div className="mt-2 text-[8px] text-white bg-blue-500/20 rounded px-1 py-0.5 w-fit">Key Insight</div>
+                    <div className={`h-1 w-full rounded-full ${jet ? 'bg-slate-300' : 'bg-white/20'}`}></div>
+                    <div className={`h-1 w-5/6 rounded-full ${jet ? 'bg-slate-200' : 'bg-white/15'}`}></div>
+                    <div className={`h-1 w-full rounded-full ${pvLine}`}></div>
+                    <div className={`h-1 w-4/5 rounded-full ${jet ? 'bg-slate-300' : 'bg-white/20'}`}></div>
+                    <div className={`h-1 w-full rounded-full ${jet ? 'bg-slate-200' : 'bg-white/15'}`}></div>
+                    <div className={`mt-2 text-[8px] rounded px-1 py-0.5 w-fit ${jet ? 'bg-blue-100 text-blue-800' : 'text-white bg-blue-500/20'}`}>Key Insight</div>
                   </div>
                 </div>
                 <div className="mt-1 flex justify-between items-center">
-                  <div className="text-[8px] text-slate-400">Live transcription</div>
-                  <div className={`text-[8px] ${getColorClass('text', 'text')}`}>10:23</div>
+                  <div className={`text-[8px] ${pvSub}`}>Live transcription</div>
+                  <div className={`text-[8px] ${accentTextClass}`}>10:23</div>
                 </div>
               </div>
             )}
             
             {step.id === 6 && (
               <div className="h-full flex flex-col">
-                <div className="text-xs font-medium text-white mb-2">Feedback Collection</div>
+                <div className={`text-xs font-medium mb-2 ${pvTitle}`}>Feedback Collection</div>
                 <div className="flex-1 grid grid-cols-3 gap-1">
                   {['Technical', 'Communication', 'Culture'].map((category, i) => (
-                    <div key={i} className="border border-white/10 rounded p-1 flex flex-col">
-                      <div className="text-[8px] text-slate-400">{category}</div>
+                    <div key={i} className={`border rounded p-1 flex flex-col ${jet ? 'border-slate-200 bg-white/60' : 'border-white/10'}`}>
+                      <div className={`text-[8px] ${pvSub}`}>{category}</div>
                       <div className="flex mt-1 justify-center">
                         {[...Array(5)].map((_, starIndex) => (
                           <div key={starIndex} 
-                            className={`w-1.5 h-1.5 mx-0.5 rounded-full ${starIndex < [4, 3, 5][i] ? getColorClass('bg', 'bg') : 'bg-white/10'}`}
+                            className={`w-1.5 h-1.5 mx-0.5 rounded-full ${starIndex < [4, 3, 5][i] ? barFillClass : jet ? 'bg-slate-200' : 'bg-white/10'}`}
                           ></div>
                         ))}
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="border border-white/10 rounded mt-1 p-1">
-                  <div className="text-[8px] text-slate-400">Comments</div>
-                  <div className="h-1 bg-white/10 w-full rounded-full mt-1"></div>
+                <div className={`border rounded mt-1 p-1 ${jet ? 'border-slate-200 bg-white/60' : 'border-white/10'}`}>
+                  <div className={`text-[8px] ${pvSub}`}>Comments</div>
+                  <div className={`h-1 w-full rounded-full mt-1 ${pvLine}`}></div>
                 </div>
               </div>
             )}
             
             {step.id === 7 && (
               <div className="h-full flex flex-col">
-                <div className="text-xs font-medium text-white mb-2">Analytics Dashboard</div>
-                <div className="flex-1 border border-white/10 rounded bg-slate-900/50 p-1">
+                <div className={`text-xs font-medium mb-2 ${pvTitle}`}>Analytics Dashboard</div>
+                <div className={`flex-1 border rounded p-1 ${pvCard}`}>
                   <div className="flex h-1/2">
-                    <div className="w-1/2 border-r border-white/10 p-1">
-                      <div className="text-[7px] text-slate-400">Top Candidates</div>
+                    <div className={`w-1/2 border-r p-1 ${jet ? 'border-slate-200' : 'border-white/10'}`}>
+                      <div className={`text-[7px] ${pvSub}`}>Top Candidates</div>
                       <div className="flex items-center">
-                        <div className={`w-1 h-1 rounded-full ${getColorClass('bg', 'bg')} mr-1`}></div>
-                        <div className="h-1 bg-white/20 w-full rounded-full"></div>
+                        <div className={`w-1 h-1 rounded-full ${barFillClass} mr-1`}></div>
+                        <div className={`h-1 w-full rounded-full ${jet ? 'bg-slate-200' : 'bg-white/20'}`}></div>
                       </div>
                       <div className="flex items-center mt-0.5">
-                        <div className="w-1 h-1 rounded-full bg-indigo-500/50 mr-1"></div>
-                        <div className="h-1 bg-white/20 w-4/5 rounded-full"></div>
+                        <div className={`w-1 h-1 rounded-full mr-1 ${jet ? 'bg-indigo-500' : 'bg-indigo-500/50'}`}></div>
+                        <div className={`h-1 w-4/5 rounded-full ${jet ? 'bg-slate-200' : 'bg-white/20'}`}></div>
                       </div>
                     </div>
                     <div className="w-1/2 p-1">
-                      <div className="text-[7px] text-slate-400">Time to Hire</div>
+                      <div className={`text-[7px] ${pvSub}`}>Time to Hire</div>
                       <div className="flex justify-center items-end h-2/3 space-x-0.5">
                         {[...Array(7)].map((_, i) => (
-                          <div key={i} className={`w-1 ${getColorClass('bg', 'bg')} opacity-50`} style={{height: `${30 + (i * 10)}%`}}></div>
+                          <div key={i} className={`w-1 ${jet ? solidAccentBg(step.color) : `${getColorClass(step.color, 'bg')} opacity-50`}`} style={{height: `${30 + (i * 10)}%`}}></div>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <div className="h-1/2 pt-1 border-t border-white/10 mt-1">
-                    <div className="text-[7px] text-slate-400">Onboarding Progress</div>
-                    <div className="w-full bg-white/10 h-1.5 rounded-full mt-1">
-                      <div className={`h-full ${getColorClass('bg', 'bg')} rounded-full`} style={{width: '75%'}}></div>
+                  <div className={`h-1/2 pt-1 border-t mt-1 ${jet ? 'border-slate-200' : 'border-white/10'}`}>
+                    <div className={`text-[7px] ${pvSub}`}>Onboarding Progress</div>
+                    <div className={`w-full h-1.5 rounded-full mt-1 ${jet ? 'bg-slate-200' : 'bg-white/10'}`}>
+                      <div className={`h-full ${barFillClass} rounded-full`} style={{width: '75%'}}></div>
                     </div>
                   </div>
                 </div>
