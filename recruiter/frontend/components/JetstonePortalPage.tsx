@@ -203,8 +203,8 @@ export default function JetstonePortalPage() {
         </motion.div>
       </section>
 
-      {/* ── GOVERNOR'S MESSAGE ── (black bg matches portrait matte so edges blend) */}
-      <section id="about" className="relative z-10 pt-20 md:pt-28 pb-0 bg-black overflow-hidden">
+      {/* ── GOVERNOR'S MESSAGE ── Akwa Ibom green; transparent PNG/WebP portrait */}
+      <section id="about" className="relative z-10 pt-20 md:pt-28 pb-0 overflow-hidden bg-gradient-to-br from-green-950 via-green-900 to-emerald-950">
         <div className="container mx-auto px-4">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
             <div className="lg:w-3/5 text-center lg:text-left pb-20 md:pb-28">
@@ -216,13 +216,13 @@ export default function JetstonePortalPage() {
                   <Award className="w-4 h-4 text-amber-300" />
                   <span className="text-amber-200 text-xs font-semibold uppercase tracking-wide">Governor's Message</span>
                 </div>
-                <blockquote className="text-2xl md:text-3xl lg:text-4xl font-bold text-white leading-relaxed mb-8 italic">
+                <blockquote className="text-2xl md:text-3xl lg:text-4xl font-bold leading-relaxed mb-8 italic text-white drop-shadow-sm">
                   "We are building a state where every qualified Akwa Ibom citizen has a fair chance to serve
                   and contribute to our collective progress. This portal is our commitment to that promise."
                 </blockquote>
                 <div className="flex flex-col items-center lg:items-start gap-1">
-                  <p className="text-amber-300 font-bold text-xl">His Excellency, Governor Umo Eno</p>
-                  <p className="text-green-200/90 text-base">Executive Governor, Akwa Ibom State</p>
+                  <p className="text-xl font-bold text-amber-200">His Excellency, Governor Umo Eno</p>
+                  <p className="text-base text-green-100">Executive Governor, Akwa Ibom State</p>
                 </div>
               </ScrollReveal>
             </div>
@@ -230,12 +230,13 @@ export default function JetstonePortalPage() {
             <div className="lg:w-2/5 relative flex justify-center lg:justify-end self-end">
               <ScrollReveal delay={0.2}>
                 <div className="relative z-10 w-[320px] md:w-[420px] lg:w-[480px] bottom-0 -mb-2">
-                  <Image 
-                    src="/governor-umo-eno-thumbs.png" 
-                    alt="Governor Umo Eno" 
-                    width={480} 
-                    height={600} 
-                    className="w-full h-auto object-contain" 
+                  <Image
+                    src="/pueiii1.webp"
+                    alt="Governor Umo Eno"
+                    width={480}
+                    height={600}
+                    className="h-auto w-full object-contain object-bottom"
+                    sizes="(max-width: 1024px) 90vw, 480px"
                   />
                 </div>
               </ScrollReveal>
