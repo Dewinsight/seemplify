@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { oidcConfig } from "@/config/oidc.config";
+import { getOidcDisplayConfig } from "@/config/oidc.config";
 import { getApiBaseUrl } from "@/utils/env";
 import {
   Card,
@@ -26,6 +26,7 @@ import { useBrandConfig } from "@/context/BrandContext";
 
 export default function SignupPage() {
   const brand = useBrandConfig();
+  const oidcConfig = getOidcDisplayConfig(brand.id);
   const authShell =
     brand.authShellClass ?? 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900';
   const jet = brand.id === 'jetstone';

@@ -53,6 +53,15 @@ function getDefaultsForHostname(hostname: string): {
     };
   }
 
+  const isAkwaIbom = hostname.includes('ibom') || hostname.includes('akwa') || hostname.includes('jetstone');
+  if (isAkwaIbom) {
+    return {
+      apiBase: 'https://api.seemplifyai.com',
+      wsBase: 'wss://api.seemplifyai.com',
+      idpBase: 'https://akwa.aiinnigeria.com',
+    };
+  }
+
   return {
     apiBase: 'https://api.seemplifyai.com',
     wsBase: 'wss://api.seemplifyai.com',

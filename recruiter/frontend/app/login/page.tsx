@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { oidcConfig } from "@/config/oidc.config";
+import { getOidcDisplayConfig } from "@/config/oidc.config";
 import { getApiBaseUrl, getIdpBaseUrl } from "@/utils/env";
 import {
   Card,
@@ -32,6 +32,7 @@ export default function LoginPage() {
   const { toast } = useToast();
   const auth = useAuth();
   const brand = useBrandConfig();
+  const oidcConfig = getOidcDisplayConfig(brand.id);
   const authShell =
     brand.authShellClass ?? 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900';
   const jet = brand.id === 'jetstone';

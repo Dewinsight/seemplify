@@ -36,6 +36,7 @@ export const akwaIbomConfig = {
   shortName: 'AKS',
   url: 'https://akwaibom.aiinnigeria.com',
   idpBaseUrl: 'https://akwa.aiinnigeria.com',
+  appUrl: 'https://ibom.aiinnigeria.com',
   title: 'Akwa Ibom State — Human Resource Management Portal',
   description: 'Official Akwa Ibom State government Human Resource Management Portal. Fair, transparent public-sector hiring powered by Jetstone Education.',
   ogImage: '/logoakwa.png',

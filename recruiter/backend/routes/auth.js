@@ -19,6 +19,20 @@ let cachedIssuerUrl = null;
 let cachedIssuerExpiry = null;
 const ISSUER_CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
 
+const AKWA_IBOM_IDP = 'https://akwa.aiinnigeria.com';
+
+function resolveIssuerUrl(req) {
+  const defaultIssuer = process.env.OIDC_ISSUER;
+  const returnTo = req.query.returnTo || req.headers['referer'] || req.headers['origin'] || '';
+  try {
+    const origin = new URL(returnTo);
+    if (origin.hostname.includes('ibom') || origin.hostname.includes('akwa') || origin.hostname.includes('jetstone')) {
+      return AKWA_IBOM_IDP;
+    }
+  } catch (_) {}
+  return defaultIssuer;
+}
+
 /**
  * Get cached OIDC issuer or discover it
  * This avoids the expensive network call to /.well-known/openid-configuration on every request
@@ -468,8 +482,7 @@ router.get('/oidc/start', async (req, res) => {
       referer: req.headers['referer']
     });
 
-    // Validate required environment variables
-    const issuerUrl = process.env.OIDC_ISSUER;
+    const issuerUrl = resolveIssuerUrl(req);
     if (!issuerUrl) {
       return res.status(500).json({ msg: 'OIDC_ISSUER not configured' });
     }
@@ -480,19 +493,16 @@ router.get('/oidc/start', async (req, res) => {
       return res.status(500).json({ msg: 'OIDC client credentials not configured' });
     }
 
-    // Dynamically determine callback URL from request
     const protocol = req.protocol;
     const host = req.get('host');
     const callbackPath = '/api/auth/oidc/callback';
     const redirectUri = `${protocol}://${host}${callbackPath}`;
 
-    // Get returnTo from query parameter or headers
     const returnTo = req.query.returnTo || req.headers['referer'] || req.headers['origin'];
     if (!returnTo) {
       return res.status(400).json({ msg: 'returnTo parameter required' });
     }
 
-    // Use cached issuer to avoid expensive discovery on every request
     const issuer = await getCachedIssuer(issuerUrl);
     const client = new issuer.Client({
       client_id: clientId,
@@ -508,7 +518,8 @@ router.get('/oidc/start', async (req, res) => {
     const statePayload = {
       nonce: generators.nonce(),
       random: generators.state(),
-      returnTo: returnTo
+      returnTo: returnTo,
+      issuerUrl: issuerUrl,
     };
 
     // Sign state with JWT for security
@@ -578,25 +589,17 @@ router.get('/oidc/callback', async (req, res) => {
       });
     }
 
-    // Validate required environment variables
-    const issuerUrl = process.env.OIDC_ISSUER;
-    if (!issuerUrl) {
-      return res.status(500).json({ msg: 'OIDC_ISSUER not configured' });
-    }
-
     const clientId = process.env.OIDC_CLIENT_ID;
     const clientSecret = process.env.OIDC_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
       return res.status(500).json({ msg: 'OIDC client credentials not configured' });
     }
 
-    // Dynamically determine callback URL from request
     const protocol = req.protocol;
     const host = req.get('host');
     const callbackPath = '/api/auth/oidc/callback';
     const redirectUri = `${protocol}://${host}${callbackPath}`;
 
-    // Decode state JWT to extract returnTo and nonce
     const stateCookie = req.cookies['oidc_state'];
     if (!stateCookie) {
       return res.status(400).json({ msg: 'Missing state cookie' });
@@ -609,7 +612,11 @@ router.get('/oidc/callback', async (req, res) => {
       return res.status(400).json({ msg: 'Invalid or expired state' });
     }
 
-    // Use cached issuer to avoid expensive discovery on every request
+    const issuerUrl = statePayload.issuerUrl || process.env.OIDC_ISSUER;
+    if (!issuerUrl) {
+      return res.status(500).json({ msg: 'OIDC_ISSUER not configured' });
+    }
+
     const issuer = await getCachedIssuer(issuerUrl);
     const client = new issuer.Client({
       client_id: clientId,
