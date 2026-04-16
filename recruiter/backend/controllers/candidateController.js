@@ -238,7 +238,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       // Store AI analysis results
       parsedData: extractedFields || {},
       aiAnalysis: aiAnalysis || {},
-      workExperience: cvParsingResult.workExperience || [],
+      ...(cvParsingResult.workExperience ? { workExperience: cvParsingResult.workExperience } : {}),
 
       // Store complete structured data for comprehensive candidate profiles
       educationHistory: extractedFields.educationHistory || [],

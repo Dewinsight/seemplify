@@ -224,8 +224,8 @@ class AzureOpenAIService {
           CRITICAL ANTI-HALLUCINATION RULES:
           1. ONLY extract information that is EXPLICITLY present in the CV text provided
           2. NEVER invent, generate, or hallucinate names, emails, phone numbers, or any other information
-          3. If the CV text appears empty or contains minimal content, return mostly N/A values
-          4. If you cannot find a field in the CV, use "N/A" - DO NOT make up data
+          3. If the CV text appears empty or contains minimal content, return mostly N/A/null values
+          4. If you cannot find a string field, use "N/A"; for number fields, use null - DO NOT make up data
           5. Every piece of extracted data MUST come directly from the CV text
           
           Your goal is to extract ALL information from the CV, including both standard labeled sections and any unique/unlabeled sections.
@@ -402,9 +402,9 @@ class AzureOpenAIService {
           - fullCVData (object containing ALL extracted information in structured format)
           
           IMPORTANT RULES:
-          - If a field is not found in the CV, use "N/A" for strings, empty array [] for arrays, or empty object {} for objects
+          - If a field is not found in the CV, use "N/A" for strings, null for numbers, empty array [] for arrays, or empty object {} for objects
           - NEVER make up or invent information that is not in the CV text
-          - If the CV text is minimal or unclear, return minimal extracted data with mostly N/A values
+          - If the CV text is minimal or unclear, return minimal extracted data with mostly N/A/null values
           - For arrays (education, certifications, etc.), include ALL instances found in the CV
           - Extract complete details - don't summarize or skip information that EXISTS in the CV
           - For unlabeled sections (e.g., a section titled "Side Projects" or "Research Experience"), add them to additionalSections
@@ -413,7 +413,7 @@ class AzureOpenAIService {
         },
         { 
           role: "user", 
-          content: `Analyze the following CV text and extract information. ONLY extract what is explicitly present. If the CV text is empty or minimal, return N/A values. DO NOT invent names or other information. 
+          content: `Analyze the following CV text and extract information. ONLY extract what is explicitly present. If the CV text is empty or minimal, return N/A for strings and null for numbers. DO NOT invent names or other information. 
 
 CV text:
 

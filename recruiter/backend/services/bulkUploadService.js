@@ -166,7 +166,7 @@ async function initQueue() {
         cloudinaryResourceType: cloudinaryResult.resourceType,
         parsedData: extractedFields,
         aiAnalysis,
-        workExperience: cvParsingResult.workExperience || [],
+        ...(cvParsingResult.workExperience ? { workExperience: cvParsingResult.workExperience } : {}),
         educationHistory: extractedFields.educationHistory || [],
         certifications: extractedFields.certifications || [],
         languages: extractedFields.languages || [],

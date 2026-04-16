@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { normalizeNumericValue } = require('../utils/normalizeCvExtraction');
 
 const CandidateSchema = new mongoose.Schema({
   firstName: {
@@ -108,7 +109,10 @@ const CandidateSchema = new mongoose.Schema({
   // Enhanced work experience analysis
   workExperience: {
     experienceSummary: String,
-    totalYearsExperience: Number,
+    totalYearsExperience: {
+      type: Number,
+      set: normalizeNumericValue,
+    },
     careerProgression: String,
     jobHistory: [{
       company: String,

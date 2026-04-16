@@ -2,6 +2,7 @@ const fs = require('fs');
 const Tesseract = require('tesseract.js');
 const mammoth = require('mammoth');
 const AzureOpenAIService = require('./azureOpenAIService');
+const { normalizeCvExtractedFields } = require('../utils/normalizeCvExtraction');
 
 // ✅ UPGRADED: Using PDF.js instead of pdf-parse for better text extraction
 // Note: pdfjs-dist uses ES modules, so we need dynamic import
@@ -134,6 +135,7 @@ class CVParsingService {
       
       // Step 2: Analyze with Azure OpenAI
       const aiAnalysisResult = await this.azureOpenAIService.analyzeCV(resumeText);
+      const extractedFields = normalizeCvExtractedFields(aiAnalysisResult.extractedFields || {});
       
       console.log('✅ CV parsing and AI analysis completed');
       
@@ -145,8 +147,8 @@ class CVParsingService {
           strengths: aiAnalysisResult.strengths || [],
           potentialFlags: aiAnalysisResult.potentialFlags || [],
         },
-        workExperience: aiAnalysisResult.extractedFields?.workExperience || null,
-        extractedFields: aiAnalysisResult.extractedFields || {},
+        workExperience: extractedFields.workExperience || null,
+        extractedFields,
         parseSuccess: resumeText.length > 0,
         aiSuccess: aiAnalysisResult.success
       };
