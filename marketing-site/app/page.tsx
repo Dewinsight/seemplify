@@ -537,59 +537,61 @@ const modules: ModuleCardProps[] = [
   },
 ]
 
-const homeStructuredData = {
-  '@context': 'https://schema.org',
-  '@graph': [
-    {
-      '@type': 'Organization',
-      name: siteConfig.name,
-      url: siteConfig.url,
-      logo: absoluteUrl('/images/seemplifylogo.png'),
-      email: siteConfig.contactEmail,
-      areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
-        '@type': 'Country',
-        name: country,
-      })),
-    },
-    {
-      '@type': 'WebSite',
-      name: siteConfig.name,
-      url: siteConfig.url,
-      description: siteConfig.description,
-    },
-    {
-      '@type': 'SoftwareApplication',
-      name: siteConfig.name,
-      applicationCategory: 'BusinessApplication',
-      applicationSubCategory: 'Human Resources Software',
-      operatingSystem: 'Web',
-      url: siteConfig.url,
-      description: siteConfig.description,
-      areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
-        '@type': 'Country',
-        name: country,
-      })),
-      featureList: [
-        'Recruiting workflow automation',
-        'Digital onboarding',
-        'Leave management',
-        'Performance management',
-        'Time and attendance',
-        'Payroll operations',
-      ],
-    },
-    {
-      '@type': 'FAQPage',
-      mainEntity: homeFaqs.map((faq) => ({
-        '@type': 'Question',
-        name: faq.question,
-        acceptedAnswer: {
-          '@type': 'Answer',
-          text: faq.answer,
-        },
-      })),
-    },
-  ],
+function getHomeStructuredData(config: any, hostname: string) {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        name: config.name,
+        url: config.url,
+        logo: absoluteUrl(config.ogImage, hostname),
+        email: config.contactEmail,
+        areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
+          '@type': 'Country',
+          name: country,
+        })),
+      },
+      {
+        '@type': 'WebSite',
+        name: config.name,
+        url: config.url,
+        description: config.description,
+      },
+      {
+        '@type': 'SoftwareApplication',
+        name: config.name,
+        applicationCategory: 'BusinessApplication',
+        applicationSubCategory: 'Human Resources Software',
+        operatingSystem: 'Web',
+        url: config.url,
+        description: config.description,
+        areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
+          '@type': 'Country',
+          name: country,
+        })),
+        featureList: [
+          'Recruiting workflow automation',
+          'Digital onboarding',
+          'Leave management',
+          'Performance management',
+          'Time and attendance',
+          'Payroll operations',
+        ],
+      },
+      {
+        '@type': 'FAQPage',
+        mainEntity: homeFaqs.map((faq) => ({
+          '@type': 'Question',
+          name: faq.question,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: faq.answer,
+          },
+        })),
+      },
+    ],
+  }
 }
 
 function getCookieValue(cookieName: string) {
@@ -669,7 +671,7 @@ export default function HomePage() {
 
   return (
     <div className="relative min-h-screen bg-[#f7f7fb] text-zinc-900 dark:bg-[#020205] dark:text-white">
-      <JsonLd data={homeStructuredData} />
+      <JsonLd data={getHomeStructuredData(config, hostname)} />
       <BookDemoModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
       <div className="bg-noise" />
       <HeroBackground />
