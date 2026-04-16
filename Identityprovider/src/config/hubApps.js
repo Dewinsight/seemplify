@@ -285,11 +285,24 @@ const productionApps = [
 
 /**
  * Get all hub apps based on current environment
+ * @param {object} [options] - Options
+ * @param {boolean} [options.isAkwaIbom] - If true, override SmartHR URL to ibom.aiinnigeria.com
  * @returns {Array} Array of app configurations
  */
-export function getHubApps() {
+export function getHubApps(options = {}) {
   const apps = isProduction ? productionApps : developmentApps
-  return apps.filter(app => app.isActive).sort((a, b) => a.order - b.order)
+  let filtered = apps.filter(app => app.isActive).sort((a, b) => a.order - b.order)
+
+  if (options.isAkwaIbom) {
+    filtered = filtered.map(app => {
+      if (app.appId === 'smarthr') {
+        return { ...app, name: 'HR Portal', url: 'https://ibom.aiinnigeria.com', description: 'Akwa Ibom State Human Resource Management' }
+      }
+      return app
+    })
+  }
+
+  return filtered
 }
 
 /**

@@ -3540,8 +3540,9 @@ app.get('/', async (req, res) => {
       appIdSet
     )
 
-    // Get all active apps and add iconSvg for the template
-    let apps = getHubApps().map(app => ({
+    const hubBrand = getIdpBrand(req)
+    const isAkwaIbomHub = hubBrand.name === 'Akwa Ibom State'
+    let apps = getHubApps({ isAkwaIbom: isAkwaIbomHub }).map(app => ({
       ...app,
       iconSvg: getAppIcon(app.icon)
     }))
@@ -4251,7 +4252,11 @@ app.get('/launch/:appId', async (req, res) => {
         apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001'
     }
 
-    const frontendUrl = app.url
+    const launchBrand = getIdpBrand(req)
+    let frontendUrl = app.url
+    if (launchBrand.name === 'Akwa Ibom State' && app.appId === 'smarthr') {
+      frontendUrl = 'https://ibom.aiinnigeria.com'
+    }
     const redirectUrl = `${apiUrl}/api/auth/oidc/start?` + new URLSearchParams({
       idp_initiated: 'true',
       hub_token: ssoToken,
