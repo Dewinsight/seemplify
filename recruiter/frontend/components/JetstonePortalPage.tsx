@@ -1,22 +1,42 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight, Shield, Users, FileCheck, Calendar,
   Briefcase, Star, Menu, X, MapPin, Phone, Mail,
-  Award, ChevronRight, UserCheck, ClipboardList,
-  BrainCircuit, Zap, Check,
+  Award, ChevronRight, Building2, UserCheck, ClipboardList,
+  Loader2, Clock, Search, BrainCircuit, Zap, Check,
   BarChart3, Filter, Cpu, MessageSquareText, CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import ScrollReveal from '@/components/animations/ScrollReveal';
 import GradientMesh from '@/components/backgrounds/GradientMesh';
 import StickyHeader from '@/components/StickyHeader';
 import ScrollProgress from '@/components/ui/ScrollProgress';
 import BackToTop from '@/components/ui/BackToTop';
+import { apiRequest } from '@/services/apiConfig';
+import AtsComparisonSection from '@/components/AtsComparisonSection';
+import WorkflowSection from '@/components/WorkflowSection';
+
+interface Job {
+  _id: string;
+  title: string;
+  department?: { _id: string; name: string } | string;
+  location: string;
+  type: string;
+  level?: string;
+  description?: string;
+  salary?: { min?: number; max?: number; currency?: string };
+  remote: boolean;
+  openings?: number;
+  createdAt: string;
+  organization: { _id: string; name: string; logo?: string };
+}
 
 const btnPrimary = 'bg-gradient-to-r from-green-700 to-green-900 hover:from-green-800 hover:to-green-950 text-white border-0 shadow-lg';
 const btnOutline = 'bg-white/50 border border-green-300 text-green-900 hover:bg-white/80';
@@ -25,11 +45,61 @@ const sealRing = 'ring-4 ring-green-200/60 shadow-xl';
 export default function JetstonePortalPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Live jobs from Akwa Ibom org
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobTotal, setJobTotal] = useState(0);
+  const [jobPage, setJobPage] = useState(1);
+  const [jobPages, setJobPages] = useState(1);
+  const [jobSearch, setJobSearch] = useState('');
+  const [jobSearchInput, setJobSearchInput] = useState('');
+
+  useEffect(() => {
+    const fetchAkwaIbomJobs = async () => {
+      setJobsLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.append('orgName', 'akwa ibom');
+        params.append('page', jobPage.toString());
+        params.append('limit', '9');
+        if (jobSearch) params.append('search', jobSearch);
+        const res = await apiRequest(`/api/jobs/public?${params}`);
+        if (!res.ok) throw new Error('fetch failed');
+        const data = await res.json();
+        setJobs(data.jobs ?? []);
+        setJobTotal(data.pagination?.total ?? 0);
+        setJobPages(data.pagination?.pages ?? 1);
+      } catch {
+        setJobs([]);
+      } finally {
+        setJobsLoading(false);
+      }
+    };
+    fetchAkwaIbomJobs();
+  }, [jobPage, jobSearch]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setJobSearch(jobSearchInput);
+      setJobPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [jobSearchInput]);
+
+  const getRelativeTime = (date: string) => {
+    const days = Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days} days ago`;
+    if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+    return `${Math.floor(days / 30)} months ago`;
+  };
+
   const navLinks = [
     { href: '#about', label: 'About' },
     { href: '#ai-approach', label: 'Our Approach' },
     { href: '#hiring-journey', label: 'Hiring Journey' },
-    { href: '#how-to-apply', label: 'How to Apply' },
+    { href: '#vacancies', label: 'Vacancies' },
     { href: '#contact', label: 'Contact' },
   ];
 
@@ -144,8 +214,8 @@ export default function JetstonePortalPage() {
             <Button className={`h-13 px-8 text-base font-semibold ${btnPrimary}`} onClick={() => scrollTo('ai-approach')}>
               Our Approach <ArrowRight className="ml-2 w-5 h-5" />
             </Button>
-            <Button variant="outline" className={`h-13 px-8 text-base font-semibold ${btnOutline}`} onClick={() => scrollTo('how-to-apply')}>
-              How to Apply
+            <Button variant="outline" className={`h-13 px-8 text-base font-semibold ${btnOutline}`} onClick={() => scrollTo('vacancies')}>
+              Browse Vacancies
             </Button>
           </motion.div>
 
@@ -225,253 +295,151 @@ export default function JetstonePortalPage() {
       </section>
 
       {/* ── AI APPROACH (Beyond Traditional Recruitment) ── */}
-      <section id="ai-approach" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
+      <div id="ai-approach" className="relative z-10 bg-white">
+        <AtsComparisonSection />
+      </div>
+
+      {/* ── STREAMLINED HIRING JOURNEY ── */}
+      <div id="hiring-journey" className="relative z-10 bg-slate-50">
+        <WorkflowSection />
+      </div>
+
+      {/* ── VACANCIES / LIVE JOBS ── */}
+      <section id="vacancies" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
         <ScrollReveal>
-          <div className="text-center mb-14">
+          <div className="text-center mb-10">
             <div className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5 mb-5">
-              <BrainCircuit className="w-4 h-4 text-green-700" />
-              <span className="text-green-800 text-xs font-semibold uppercase tracking-wide">Smarter Recruitment</span>
+              <Briefcase className="w-4 h-4 text-green-700" />
+              <span className="text-green-800 text-xs font-semibold uppercase tracking-wide">Open Opportunities</span>
             </div>
             <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
-              Beyond Traditional{' '}
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">Hiring Practices</span>
+              Current{' '}
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">Vacancies</span>
             </h2>
-            <p className="text-slate-500 text-lg max-w-3xl mx-auto">
-              Akwa Ibom State is replacing outdated, manual hiring with AI-powered candidate matching —
-              ensuring every position is filled on merit, not connections.
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              Live positions from Akwa Ibom State Government ministries, parastatals, and agencies.
+              All recruitments follow merit-based selection with equal opportunity for all.
             </p>
           </div>
         </ScrollReveal>
 
-        {/* Side-by-side comparison — light theme */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-          {/* AI-Powered side */}
-          <ScrollReveal delay={0.1}>
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-3xl p-8 h-full">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-green-600 to-emerald-500 flex items-center justify-center shadow-lg">
-                  <Cpu className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-green-900">AI-Powered Recruitment</h3>
-                  <span className="text-xs font-semibold text-green-600 bg-green-100 border border-green-200 rounded-full px-2 py-0.5">Akwa Ibom Today</span>
-                </div>
-              </div>
-              <ul className="space-y-3 mb-6">
-                {[
-                  'Semantic AI analyses every CV for skills, potential, and fit',
-                  'Vector search finds best candidates regardless of keyword phrasing',
-                  'Bias-free: initial screening is anonymised — no names, no connections',
-                  'Instant ranking of thousands of applications in seconds',
-                  'AI learns from each hiring cycle to improve future selections',
-                  'Full audit trail: every decision recorded and reviewable',
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-green-100 border border-green-300 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-3 h-3 text-green-700" />
-                    </div>
-                    <span className="text-slate-700 text-sm leading-relaxed">{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="bg-white border border-green-200 rounded-xl p-4">
-                <p className="text-sm font-semibold text-green-800 mb-1">Result for Akwa Ibom</p>
-                <p className="text-slate-600 text-sm">Best-qualified candidates in every ministry — on merit, every time.</p>
-              </div>
-            </div>
-          </ScrollReveal>
-
-          {/* Old way side */}
-          <ScrollReveal delay={0.2}>
-            <div className="bg-gradient-to-br from-slate-50 to-slate-100 border-2 border-slate-200 rounded-3xl p-8 h-full">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-11 h-11 rounded-xl bg-slate-300 flex items-center justify-center">
-                  <ClipboardList className="w-5 h-5 text-slate-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-600">Traditional Hiring</h3>
-                  <span className="text-xs font-semibold text-slate-500 bg-slate-200 rounded-full px-2 py-0.5">The Old Way</span>
-                </div>
-              </div>
-              <ul className="space-y-3 mb-6">
-                {[
-                  'Manual CV review — slow, inconsistent, and prone to human bias',
-                  'Keyword matching misses qualified candidates',
-                  'Nepotism and connections influence shortlisting',
-                  'Weeks to process large applicant volumes',
-                  'No feedback loop — same mistakes repeated each cycle',
-                  'No transparency: applicants never know why they were rejected',
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <X className="w-3 h-3 text-slate-500" />
-                    </div>
-                    <span className="text-slate-500 text-sm leading-relaxed">{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <p className="text-sm font-semibold text-slate-600 mb-1">Result</p>
-                <p className="text-slate-500 text-sm">Missed talent, longer hiring times, and public distrust.</p>
-              </div>
-            </div>
-          </ScrollReveal>
+        {/* Search bar */}
+        <div className="max-w-xl mx-auto mb-8 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <Input
+            placeholder="Search vacancies…"
+            value={jobSearchInput}
+            onChange={(e) => setJobSearchInput(e.target.value)}
+            className="pl-10 h-11 bg-white border-slate-200 focus:border-green-400 shadow-sm"
+          />
         </div>
 
-        {/* 4-pillar AI advantage cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
-            {
-              icon: <BrainCircuit className="w-6 h-6" />,
-              title: 'Deep CV Analysis',
-              desc: 'AI extracts implicit skills and potential from unstructured data — not just keywords.',
-              color: 'from-green-600 to-emerald-500',
-              bg: 'bg-green-50 border-green-100',
-            },
-            {
-              icon: <Filter className="w-6 h-6" />,
-              title: 'Bias-Free Screening',
-              desc: 'Anonymised initial screening removes unconscious bias from the shortlisting stage.',
-              color: 'from-amber-500 to-orange-500',
-              bg: 'bg-amber-50 border-amber-100',
-            },
-            {
-              icon: <Zap className="w-6 h-6" />,
-              title: 'Real-Time Ranking',
-              desc: 'Thousands of applications ranked instantly — no more weeks-long manual review.',
-              color: 'from-blue-500 to-indigo-500',
-              bg: 'bg-blue-50 border-blue-100',
-            },
-            {
-              icon: <BarChart3 className="w-6 h-6" />,
-              title: 'Full Audit Trail',
-              desc: 'Every decision is logged and reviewable — complete accountability for all stakeholders.',
-              color: 'from-purple-500 to-pink-500',
-              bg: 'bg-purple-50 border-purple-100',
-            },
-          ].map((card, i) => (
-            <ScrollReveal key={i} delay={i * 0.08}>
-              <motion.div whileHover={{ y: -4 }} className={`${card.bg} border rounded-2xl p-6 h-full transition-all duration-300 hover:shadow-lg`}>
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${card.color} flex items-center justify-center text-white shadow-md mb-4`}>
-                  {card.icon}
-                </div>
-                <h3 className="font-bold text-slate-900 mb-2">{card.title}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{card.desc}</p>
-              </motion.div>
-            </ScrollReveal>
-          ))}
-        </div>
-      </section>
+        {!jobsLoading && (
+          <p className="text-center text-sm text-slate-500 mb-8">
+            {jobTotal === 0 ? 'No vacancies found' : `${jobTotal} open position${jobTotal !== 1 ? 's' : ''}`}
+          </p>
+        )}
 
-      {/* ── STREAMLINED HIRING JOURNEY ── */}
-      <section id="hiring-journey" className="relative z-10 bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 py-20 md:py-28">
-        <div className="container mx-auto px-4">
-          <ScrollReveal>
-            <div className="text-center mb-14">
-              <div className="inline-flex items-center gap-2 bg-amber-400/20 border border-amber-400/30 rounded-full px-4 py-1.5 mb-5">
-                <Zap className="w-4 h-4 text-amber-300" />
-                <span className="text-amber-200 text-xs font-semibold uppercase tracking-wide">End-to-End Process</span>
-              </div>
-              <h2 className="text-3xl md:text-5xl font-black text-white mb-4">
-                Streamlined{' '}
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-300 to-yellow-300">Hiring Journey</span>
-              </h2>
-              <p className="text-green-200 text-lg max-w-3xl mx-auto">
-                From publishing a vacancy to onboarding the right candidate — every step is powered by AI,
-                documented transparently, and managed from a single platform.
-              </p>
-            </div>
-          </ScrollReveal>
-
-          <div className="relative">
-            {/* Connector line desktop */}
-            <div className="hidden lg:block absolute top-10 left-[6%] right-[6%] h-0.5 bg-gradient-to-r from-green-600/40 via-amber-400/60 to-green-600/40 z-0" />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                {
-                  step: '01',
-                  icon: <FileCheck className="w-6 h-6" />,
-                  title: 'Post Vacancy',
-                  desc: 'Ministries publish job openings with AI-assisted job description generation and standardised criteria.',
-                  color: 'from-green-500 to-emerald-400',
-                },
-                {
-                  step: '02',
-                  icon: <BrainCircuit className="w-6 h-6" />,
-                  title: 'AI Screening',
-                  desc: 'Every application is semantically analysed. AI ranks candidates by true merit — skills, experience, and potential.',
-                  color: 'from-amber-500 to-orange-400',
-                },
-                {
-                  step: '03',
-                  icon: <Users className="w-6 h-6" />,
-                  title: 'Shortlisting & Pipeline',
-                  desc: 'Shortlisted candidates move through custom pipeline stages with automated progression and notifications.',
-                  color: 'from-blue-400 to-indigo-500',
-                },
-                {
-                  step: '04',
-                  icon: <Calendar className="w-6 h-6" />,
-                  title: 'Interview Scheduling',
-                  desc: 'Automated calendar coordination across teams. Candidates receive instant scheduling confirmations.',
-                  color: 'from-purple-400 to-pink-500',
-                },
-              ].map((s, i) => (
-                <ScrollReveal key={i} delay={i * 0.1}>
-                  <div className="relative z-10 flex flex-col items-center text-center">
-                    <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${s.color} flex items-center justify-center text-white shadow-xl mb-4 relative`}>
-                      {s.icon}
-                      <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-amber-400 text-green-950 text-[10px] font-black flex items-center justify-center">
-                        {s.step}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-white mb-2">{s.title}</h3>
-                    <p className="text-green-200 text-sm leading-relaxed">{s.desc}</p>
-                  </div>
-                </ScrollReveal>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-              {[
-                {
-                  step: '05',
-                  icon: <MessageSquareText className="w-6 h-6" />,
-                  title: 'AI Interview Assistance',
-                  desc: 'Real-time AI notetaking, transcription, and structured evaluation forms ensure consistent assessment across all panels.',
-                  color: 'from-teal-500 to-cyan-400',
-                },
-                {
-                  step: '06',
-                  icon: <BarChart3 className="w-6 h-6" />,
-                  title: 'Structured Feedback',
-                  desc: 'Standardised feedback collected from every interviewer and aggregated into clear, comparable scores.',
-                  color: 'from-rose-500 to-red-400',
-                },
-                {
-                  step: '07',
-                  icon: <CheckCircle2 className="w-6 h-6" />,
-                  title: 'Decision & Appointment',
-                  desc: 'Data-driven final selection with full comparison dashboard. Appointment letters generated and audit trail preserved.',
-                  color: 'from-green-600 to-emerald-500',
-                },
-              ].map((s, i) => (
-                <ScrollReveal key={i} delay={(i + 4) * 0.1}>
-                  <div className="relative z-10 flex flex-col items-center text-center">
-                    <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${s.color} flex items-center justify-center text-white shadow-xl mb-4 relative`}>
-                      {s.icon}
-                      <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-amber-400 text-green-950 text-[10px] font-black flex items-center justify-center">
-                        {s.step}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-white mb-2">{s.title}</h3>
-                    <p className="text-green-200 text-sm leading-relaxed">{s.desc}</p>
-                  </div>
-                </ScrollReveal>
-              ))}
-            </div>
+        {jobsLoading && (
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-10 h-10 animate-spin text-green-600" />
           </div>
+        )}
+
+        {!jobsLoading && jobs.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {jobs.map((job, i) => (
+              <ScrollReveal key={job._id} delay={i * 0.05}>
+                <Link href={`/public/jobs/${job._id}`} className="block h-full">
+                  <motion.div
+                    className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all duration-300 group cursor-pointer flex flex-col h-full"
+                    whileHover={{ y: -4 }}>
+                    <div className="flex items-start gap-3 mb-4">
+                      {job.organization.logo ? (
+                        <img src={job.organization.logo} alt={job.organization.name} className="w-11 h-11 rounded-xl object-cover border border-slate-100 flex-shrink-0" />
+                      ) : (
+                        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-green-600 to-emerald-500 flex items-center justify-center flex-shrink-0 shadow-md">
+                          <Building2 className="w-5 h-5 text-white" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-slate-900 text-base leading-snug line-clamp-2 group-hover:text-green-800 transition-colors">
+                          {job.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5 truncate">{job.organization.name}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-600 flex items-center gap-1">
+                        <MapPin className="w-2.5 h-2.5" />
+                        {job.remote ? 'Remote' : job.location || 'Akwa Ibom'}
+                      </Badge>
+                      {job.type && (
+                        <Badge variant="outline" className="text-[11px] border-green-200 text-green-700">{job.type}</Badge>
+                      )}
+                      {job.level && (
+                        <Badge variant="outline" className="text-[11px] border-amber-200 text-amber-700">{job.level}</Badge>
+                      )}
+                      {job.department && (
+                        <Badge variant="outline" className="text-[11px] border-blue-200 text-blue-700 truncate max-w-[130px]">
+                          {typeof job.department === 'string' ? job.department : job.department.name}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {job.description && (
+                      <p className="text-slate-500 text-xs leading-relaxed line-clamp-2 mb-4 flex-1">{job.description}</p>
+                    )}
+
+                    <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-50">
+                      <span className="text-xs text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />{getRelativeTime(job.createdAt)}
+                      </span>
+                      <span className="text-xs font-semibold text-green-700 flex items-center gap-0.5 group-hover:gap-1.5 transition-all">
+                        Apply <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </motion.div>
+                </Link>
+              </ScrollReveal>
+            ))}
+          </div>
+        )}
+
+        {!jobsLoading && jobs.length === 0 && (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 border border-green-100 flex items-center justify-center">
+              <Briefcase className="w-8 h-8 text-green-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700 mb-1">No vacancies found</h3>
+            <p className="text-slate-500 text-sm">
+              {jobSearch ? 'Try a different search term.' : 'New positions will appear here as they open.'}
+            </p>
+            {jobSearch && (
+              <Button variant="outline" size="sm" className="mt-4 border-green-200 text-green-700" onClick={() => setJobSearchInput('')}>
+                Clear Search
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!jobsLoading && jobPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-10">
+            <Button variant="outline" size="sm" disabled={jobPage === 1}
+              onClick={() => setJobPage(p => Math.max(1, p - 1))}
+              className="border-green-200 text-green-800 hover:bg-green-50">Previous</Button>
+            <span className="text-sm text-slate-500">Page {jobPage} of {jobPages}</span>
+            <Button variant="outline" size="sm" disabled={jobPage === jobPages}
+              onClick={() => setJobPage(p => Math.min(jobPages, p + 1))}
+              className="border-green-200 text-green-800 hover:bg-green-50">Next</Button>
+          </div>
+        )}
+
+        <div className="text-center mt-10">
+          <Button className={`h-12 px-10 text-base font-semibold ${btnPrimary}`} onClick={() => scrollTo('how-to-apply')}>
+            How to Apply <ArrowRight className="ml-2 w-5 h-5" />
+          </Button>
         </div>
       </section>
 
@@ -589,14 +557,14 @@ export default function JetstonePortalPage() {
                     Ready to Serve Akwa Ibom State?
                   </h2>
                   <p className="text-green-200 text-base md:text-lg">
-                    Learn how our AI-powered process ensures every Akwa Ibom citizen gets a fair chance.
+                    Browse open vacancies and submit your application directly online — no account needed.
                   </p>
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
                 <Button className="bg-amber-400 hover:bg-amber-300 text-green-950 border-0 font-bold h-12 px-8 text-base shadow-lg"
-                  onClick={() => scrollTo('ai-approach')}>
-                  Our AI Approach <ArrowRight className="ml-2 w-5 h-5" />
+                  onClick={() => scrollTo('vacancies')}>
+                  Browse Vacancies <ArrowRight className="ml-2 w-5 h-5" />
                 </Button>
                 <Button variant="outline" className="border-white/40 text-white hover:bg-white/10 h-12 px-8 text-base"
                   onClick={() => scrollTo('how-to-apply')}>
@@ -648,6 +616,7 @@ export default function JetstonePortalPage() {
             </div>
 
             <div className="flex flex-wrap justify-center gap-6 text-sm">
+              <Link href="/public/jobs" className="text-green-300 hover:text-white transition-colors">Browse Jobs</Link>
               <Link href="/privacy" className="text-green-300 hover:text-white transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="text-green-300 hover:text-white transition-colors">Terms of Use</Link>
             </div>
