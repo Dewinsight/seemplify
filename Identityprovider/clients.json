@@ -61,7 +61,10 @@
         "http://127.0.0.1:5001/api/auth/oidc/callback",
         "https://api.seemplifyai.com/api/auth/oidc/callback",
         "https://api-dev.seemplifyai.com/api/auth/oidc/callback",
-        "https://*.smarthr.com/api/auth/oidc/callback"
+        "https://*.smarthr.com/api/auth/oidc/callback",
+        "https://ibom.aiinnigeria.com/api/auth/oidc/callback",
+        "https://akwaibom.aiinnigeria.com/api/auth/oidc/callback",
+        "https://akwa.aiinnigeria.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
         "http://localhost:5000",
@@ -78,6 +81,8 @@
         "https://smarthr.aiinnigeria.com",
         "https://jetstone.aiinnigeria.com",
         "https://akwaibom.aiinnigeria.com",
+        "https://ibom.aiinnigeria.com",
+        "https://akwa.aiinnigeria.com",
         "https://*.smarthr.com"
       ],
       "response_types": [

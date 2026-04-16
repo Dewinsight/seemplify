@@ -59,7 +59,7 @@ export const BRANDS: Record<string, BrandConfig> = {
     shortName: 'AKS',
     tagline: 'The Land of Promise · Nigeria',
     subBrandName: 'Jetstone Education',
-    subBrandTagline: 'Recruitment Portal',
+    subBrandTagline: 'Human Resource Management Portal',
     colors: {
       from: 'from-green-700',
       to: 'to-amber-600',
@@ -68,10 +68,10 @@ export const BRANDS: Record<string, BrandConfig> = {
       secondary: '#d97706',
     },
     gradient: 'from-green-700 to-amber-600',
-    patterns: ['jetstone', 'akwaibom', 'aiinnigeria'],
-    metaTitle: 'Akwa Ibom State — Recruitment Portal',
+    patterns: ['jetstone', 'akwaibom', 'aiinnigeria', 'ibom.aiinnigeria.com'],
+    metaTitle: 'Akwa Ibom State — Human Resource Management Portal',
     metaDescription:
-      'Official Akwa Ibom State government recruitment portal. Fair, transparent public-sector hiring powered by Jetstone Education.',
+      'Official Akwa Ibom State government Human Resource Management Portal. Fair, transparent public-sector hiring powered by Jetstone Education.',
     logo: '/logoakwa.png',
     secondaryLogo: '/jetstone-logo.png',
     useImageLogo: true,

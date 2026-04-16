@@ -23,10 +23,8 @@ import {
   primaryMarkets,
   type SeoMarket,
 } from './seo-markets'
-import { absoluteUrl, idpUrl, siteConfig } from './site-config'
+import { absoluteUrl, idpUrl, siteConfig, getSiteConfig } from './site-config'
 
-const IDP_LOGIN_URL = idpUrl('/')
-const IDP_SIGNUP_URL = idpUrl('/signup')
 const MARKET_COOKIE = 'seemplify-market'
 
 type ModuleCardProps = {
@@ -612,12 +610,18 @@ export default function HomePage() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [personalizedMarket, setPersonalizedMarket] = useState<SeoMarket | null>(null)
+  const [hostname, setHostname] = useState('')
 
   useEffect(() => {
+    setHostname(window.location.hostname)
     const handleScroll = () => setIsScrolled(window.scrollY > 20)
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
+
+  const config = getSiteConfig(hostname)
+  const IDP_LOGIN_URL = idpUrl('/', hostname)
+  const IDP_SIGNUP_URL = idpUrl('/signup', hostname)
 
   useEffect(() => {
     const marketSlug = getCookieValue(MARKET_COOKIE)

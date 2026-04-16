@@ -10,7 +10,11 @@ const TRACKING_ENDPOINT = idpUrl('/api/public/marketing/visit')
 function shouldDecorate(url: string) {
   try {
     const parsed = new URL(url, window.location.origin)
-    return parsed.hostname === 'auth.seemplifyai.com' || parsed.hostname.endsWith('.seemplifyai.com')
+    return (
+      parsed.hostname === 'auth.seemplifyai.com' ||
+      parsed.hostname.endsWith('.seemplifyai.com') ||
+      parsed.hostname.endsWith('.aiinnigeria.com')
+    )
   } catch {
     return false
   }

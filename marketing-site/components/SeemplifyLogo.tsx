@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 
 interface SeemplifyLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
@@ -30,6 +31,14 @@ function LogoImage({
   className: string
   priority: boolean
 }) {
+  const [isAkwa, setIsAkwa] = useState(false)
+
+  useEffect(() => {
+    if (window.location.hostname.includes('akwa') || window.location.hostname.includes('ibom')) {
+      setIsAkwa(true)
+    }
+  }, [])
+
   return (
     <motion.div
       className={className}
@@ -38,11 +47,11 @@ function LogoImage({
       animate={animated ? { opacity: 1, y: 0 } : undefined}
       transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       role="img"
-      aria-label="Seemplify"
+      aria-label={isAkwa ? "Akwa Ibom State" : "Seemplify"}
     >
       <Image
-        src="/images/seemplifylogo.png"
-        alt="Seemplify"
+        src={isAkwa ? "/logoakwa.png" : "/images/seemplifylogo.png"}
+        alt={isAkwa ? "Akwa Ibom State" : "Seemplify"}
         width={1229}
         height={512}
         className="h-full w-full object-contain"

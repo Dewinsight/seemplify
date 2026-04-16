@@ -31,10 +31,31 @@ export const siteConfig = {
   ],
 } as const
 
-export function absoluteUrl(path = '/') {
-  return new URL(path, `${siteConfig.url}/`).toString()
+export const akwaIbomConfig = {
+  name: 'Akwa Ibom State',
+  shortName: 'AKS',
+  url: 'https://akwaibom.aiinnigeria.com',
+  idpBaseUrl: 'https://akwa.aiinnigeria.com',
+  title: 'Akwa Ibom State — Human Resource Management Portal',
+  description: 'Official Akwa Ibom State government Human Resource Management Portal. Fair, transparent public-sector hiring powered by Jetstone Education.',
+  ogImage: '/logoakwa.png',
+  contactEmail: 'recruitment@akwaibomstate.gov.ng',
+  keywords: ['Akwa Ibom', 'Human Resource Management', 'Recruitment', 'State Government', 'Nigeria'],
+} as const
+
+export function getSiteConfig(host?: string) {
+  if (host && (host.includes('akwaibom.aiinnigeria.com') || host.includes('akwaibom'))) {
+    return akwaIbomConfig
+  }
+  return siteConfig
 }
 
-export function idpUrl(path = '/') {
-  return new URL(path, `${siteConfig.idpBaseUrl}/`).toString()
+export function absoluteUrl(path = '/', host?: string) {
+  const config = getSiteConfig(host)
+  return new URL(path, `${config.url}/`).toString()
+}
+
+export function idpUrl(path = '/', host?: string) {
+  const config = getSiteConfig(host)
+  return new URL(path, `${config.idpBaseUrl}/`).toString()
 }

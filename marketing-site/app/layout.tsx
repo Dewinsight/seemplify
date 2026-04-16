@@ -1,77 +1,84 @@
 import type { Metadata, Viewport } from 'next'
+import { headers } from 'next/headers'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
-import { siteConfig } from './site-config'
+import { getSiteConfig } from './site-config'
 
 const inter = Inter({ subsets: ['latin'] })
 
-export const metadata: Metadata = {
-  metadataBase: new URL(siteConfig.url),
-  applicationName: siteConfig.name,
-  title: {
-    default: siteConfig.title,
-    template: `%s | ${siteConfig.name}`,
-  },
-  description: siteConfig.description,
-  keywords: [...siteConfig.keywords],
-  referrer: 'origin-when-cross-origin',
-  creator: siteConfig.name,
-  publisher: siteConfig.name,
-  category: 'business software',
-  formatDetection: {
-    email: false,
-    address: false,
-    telephone: false,
-  },
-  alternates: {
-    canonical: '/',
-    languages: {
-      en: '/',
-      'en-NG': '/',
-      'en-GH': '/',
-      'en-KE': '/',
-      'en-ZA': '/',
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers()
+  const host = (h.get('x-forwarded-host') ?? h.get('host') ?? '').toLowerCase()
+  const config = getSiteConfig(host)
+
+  return {
+    metadataBase: new URL(config.url),
+    applicationName: config.name,
+    title: {
+      default: config.title,
+      template: `%s | ${config.name}`,
     },
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
+    description: config.description,
+    keywords: [...config.keywords],
+    referrer: 'origin-when-cross-origin',
+    creator: config.name,
+    publisher: config.name,
+    category: 'business software',
+    formatDetection: {
+      email: false,
+      address: false,
+      telephone: false,
+    },
+    alternates: {
+      canonical: '/',
+      languages: {
+        en: '/',
+        'en-NG': '/',
+        'en-GH': '/',
+        'en-KE': '/',
+        'en-ZA': '/',
+      },
+    },
+    robots: {
       index: true,
       follow: true,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-      'max-video-preview': -1,
-    },
-  },
-  openGraph: {
-    title: siteConfig.title,
-    description: siteConfig.description,
-    type: 'website',
-    url: siteConfig.url,
-    siteName: siteConfig.name,
-    images: [
-      {
-        url: siteConfig.ogImage,
-        width: 1200,
-        height: 630,
-        alt: 'Seemplify HR software for African teams',
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+        'max-video-preview': -1,
       },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: siteConfig.title,
-    description: siteConfig.description,
-    images: [siteConfig.ogImage],
-  },
-  manifest: '/manifest.webmanifest',
-  icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon.ico',
-    apple: '/favicon.ico',
-  },
+    },
+    openGraph: {
+      title: config.title,
+      description: config.description,
+      type: 'website',
+      url: config.url,
+      siteName: config.name,
+      images: [
+        {
+          url: config.ogImage,
+          width: 1200,
+          height: 630,
+          alt: `${config.name} HR software`,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: config.title,
+      description: config.description,
+      images: [config.ogImage],
+    },
+    manifest: '/manifest.webmanifest',
+    icons: {
+      icon: '/favicon.ico',
+      shortcut: '/favicon.ico',
+      apple: '/favicon.ico',
+    },
+  }
 }
 
 export const viewport: Viewport = {

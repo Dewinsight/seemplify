@@ -125,7 +125,7 @@ export default function JetstonePortalPage() {
             <div className="flex h-8 flex-shrink-0 items-center">
               <Image src="/logoakwa.png" alt="" width={160} height={40} className="h-8 w-auto max-w-[180px] bg-transparent object-contain" />
             </div>
-            <span className="text-green-900 text-xs font-semibold tracking-wide uppercase">Official recruiter portal</span>
+            <span className="text-green-900 text-xs font-semibold tracking-wide uppercase">Official Human Resource Management Portal</span>
           </motion.div>
 
           <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.1 }}
@@ -140,7 +140,7 @@ export default function JetstonePortalPage() {
             className="text-lg md:text-xl text-slate-700 max-w-xl leading-relaxed">
             Hiring teams use this portal to manage applicants end to end — structured intake,
             objective AI-assisted screening, clear pipelines, and auditable decisions — so
-            public sector recruitment stays fair, fast, and transparent.
+            public sector human resource management stays fair, fast, and transparent.
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.3 }}
@@ -241,7 +241,7 @@ export default function JetstonePortalPage() {
         </div>
       </section>
 
-      {/* ── AI APPROACH (Beyond Traditional Recruitment) ── */}
+      {/* ── AI APPROACH (Beyond Traditional HR Management) ── */}
       <div id="ai-approach" className="relative z-10 bg-white">
         <AtsComparisonSection />
       </div>
@@ -320,7 +320,7 @@ export default function JetstonePortalPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl md:text-3xl font-black text-white mb-2">
-                    Run recruitment programmes with clarity
+                    Run HR programmes with clarity
                   </h2>
                   <p className="text-green-100 text-base md:text-lg">
                     Sign in to review applicants, manage pipelines, and keep every stage fair and accountable.
@@ -346,7 +346,7 @@ export default function JetstonePortalPage() {
         <ScrollReveal>
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-3">Contact & Support</h2>
-            <p className="text-slate-600 text-lg">Reach the recruitment services team for administrator and technical assistance.</p>
+            <p className="text-slate-600 text-lg">Reach the human resources team for administrator and technical assistance.</p>
           </div>
         </ScrollReveal>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
@@ -381,7 +381,7 @@ export default function JetstonePortalPage() {
             </div>
 
             <div className="flex flex-wrap justify-center gap-6 text-sm">
-              <Link href="/login" className="text-green-200 hover:text-white transition-colors">Recruiter sign-in</Link>
+              <Link href="/login" className="text-green-200 hover:text-white transition-colors">HR sign-in</Link>
               <Link href="/privacy" className="text-green-300 hover:text-white transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="text-green-300 hover:text-white transition-colors">Terms of Use</Link>
             </div>
@@ -397,7 +397,7 @@ export default function JetstonePortalPage() {
               © {new Date().getFullYear()} Government of Akwa Ibom State. Powered by Jetstone Education. All rights reserved.
             </p>
             <p className="text-green-600 text-xs mt-1">
-              This is the official recruitment portal of the Akwa Ibom State Government. All applications are subject to verification.
+              This is the official Human Resource Management Portal of the Akwa Ibom State Government. All applications are subject to verification.
             </p>
           </div>
         </div>
