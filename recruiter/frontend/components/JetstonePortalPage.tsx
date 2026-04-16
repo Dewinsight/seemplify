@@ -1,107 +1,38 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowRight, Shield, Users, FileCheck, Calendar,
-  Briefcase, Star, Menu, X, MapPin, Phone, Mail,
-  Award, ChevronRight, Building2, UserCheck, ClipboardList,
-  Loader2, Clock, Search, BrainCircuit, Zap, Check,
-  BarChart3, Filter, Cpu, MessageSquareText, CheckCircle2,
-  Leaf, Home, Target, GraduationCap
+  ArrowRight, Shield, Users, Star, Menu, X, MapPin, Phone, Mail,
+  Award, UserCheck, ClipboardList,
+  BrainCircuit, Zap, Check,
+  BarChart3, Cpu, MessageSquareText, CheckCircle2,
+  Leaf, Home, Target, GraduationCap, LogIn, LayoutDashboard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import ScrollReveal from '@/components/animations/ScrollReveal';
 import GradientMesh from '@/components/backgrounds/GradientMesh';
 import StickyHeader from '@/components/StickyHeader';
 import ScrollProgress from '@/components/ui/ScrollProgress';
 import BackToTop from '@/components/ui/BackToTop';
-import { apiRequest } from '@/services/apiConfig';
 import AtsComparisonSection from '@/components/AtsComparisonSection';
 import WorkflowSection from '@/components/WorkflowSection';
 
-interface Job {
-  _id: string;
-  title: string;
-  department?: { _id: string; name: string } | string;
-  location: string;
-  type: string;
-  level?: string;
-  description?: string;
-  salary?: { min?: number; max?: number; currency?: string };
-  remote: boolean;
-  openings?: number;
-  createdAt: string;
-  organization: { _id: string; name: string; logo?: string };
-}
-
 const btnPrimary = 'bg-gradient-to-r from-green-700 to-green-900 hover:from-green-800 hover:to-green-950 text-white border-0 shadow-lg';
-const btnOutline = 'bg-white/50 border border-green-300 text-green-900 hover:bg-white/80';
+const btnOutline = 'bg-white border border-green-400 text-green-950 hover:bg-green-50/90 shadow-sm';
 const sealRing = 'ring-4 ring-green-200/60 shadow-xl';
 
 export default function JetstonePortalPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  // Live jobs from Akwa Ibom org
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [jobsLoading, setJobsLoading] = useState(true);
-  const [jobTotal, setJobTotal] = useState(0);
-  const [jobPage, setJobPage] = useState(1);
-  const [jobPages, setJobPages] = useState(1);
-  const [jobSearch, setJobSearch] = useState('');
-  const [jobSearchInput, setJobSearchInput] = useState('');
-
-  useEffect(() => {
-    const fetchAkwaIbomJobs = async () => {
-      setJobsLoading(true);
-      try {
-        const params = new URLSearchParams();
-        params.append('orgName', 'akwa ibom');
-        params.append('page', jobPage.toString());
-        params.append('limit', '9');
-        if (jobSearch) params.append('search', jobSearch);
-        const res = await apiRequest(`/api/jobs/public?${params}`);
-        if (!res.ok) throw new Error('fetch failed');
-        const data = await res.json();
-        setJobs(data.jobs ?? []);
-        setJobTotal(data.pagination?.total ?? 0);
-        setJobPages(data.pagination?.pages ?? 1);
-      } catch {
-        setJobs([]);
-      } finally {
-        setJobsLoading(false);
-      }
-    };
-    fetchAkwaIbomJobs();
-  }, [jobPage, jobSearch]);
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setJobSearch(jobSearchInput);
-      setJobPage(1);
-    }, 400);
-    return () => clearTimeout(t);
-  }, [jobSearchInput]);
-
-  const getRelativeTime = (date: string) => {
-    const days = Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-    if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
-    return `${Math.floor(days / 30)} months ago`;
-  };
 
   const navLinks = [
     { href: '#about', label: 'About' },
     { href: '#arise-agenda', label: 'ARISE Agenda' },
     { href: '#ai-approach', label: 'Our Approach' },
     { href: '#hiring-journey', label: 'Hiring Journey' },
-    { href: '#vacancies', label: 'Vacancies' },
+    { href: '#recruiter-workflow', label: 'For Recruiters' },
   ];
 
   const scrollTo = (id: string) => {
@@ -132,7 +63,7 @@ export default function JetstonePortalPage() {
 
           <nav className="hidden lg:flex items-center gap-6">
             {navLinks.map((link) => (
-              <a key={link.href} href={link.href} className="text-sm font-medium text-slate-600 hover:text-green-800 transition-colors">
+              <a key={link.href} href={link.href} className="text-sm font-medium text-slate-700 hover:text-green-800 transition-colors">
                 {link.label}
               </a>
             ))}
@@ -192,7 +123,7 @@ export default function JetstonePortalPage() {
             <div className="h-8 rounded-md overflow-hidden bg-black flex-shrink-0 flex items-center px-2">
               <Image src="/akwa-arise-combined-logo.png" alt="" width={140} height={36} className="object-contain h-7 w-auto max-w-[160px]" />
             </div>
-            <span className="text-green-800 text-xs font-semibold tracking-wide uppercase">Official AI-Powered Recruitment Portal</span>
+            <span className="text-green-900 text-xs font-semibold tracking-wide uppercase">Official recruiter portal</span>
           </motion.div>
 
           <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.1 }}
@@ -204,10 +135,10 @@ export default function JetstonePortalPage() {
           </motion.h1>
 
           <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.2 }}
-            className="text-lg md:text-xl text-slate-600 max-w-xl leading-relaxed">
-            The Government of Akwa Ibom State is transforming public sector recruitment with
-            AI-powered matching, bias-free screening, and a fully transparent hiring process —
-            ensuring the best candidates serve the Land of Promise.
+            className="text-lg md:text-xl text-slate-700 max-w-xl leading-relaxed">
+            Hiring teams use this portal to manage applicants end to end — structured intake,
+            objective AI-assisted screening, clear pipelines, and auditable decisions — so
+            public sector recruitment stays fair, fast, and transparent.
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.3 }}
@@ -215,17 +146,18 @@ export default function JetstonePortalPage() {
             <Button className={`h-13 px-8 text-base font-semibold ${btnPrimary}`} onClick={() => scrollTo('ai-approach')}>
               Our Approach <ArrowRight className="ml-2 w-5 h-5" />
             </Button>
-            <Button variant="outline" className={`h-13 px-8 text-base font-semibold ${btnOutline}`} onClick={() => scrollTo('vacancies')}>
-              Browse Vacancies
+            <Button variant="outline" className={`h-13 px-8 text-base font-semibold ${btnOutline}`} onClick={() => { window.location.href = '/login'; }}>
+              <LogIn className="mr-2 w-5 h-5" />
+              Manage applicants
             </Button>
           </motion.div>
 
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
             className="flex flex-wrap gap-6 pt-2">
             {[
-              { label: 'State Agencies', value: '40+' },
-              { label: 'AI Screened', value: '100%' },
-              { label: 'Bias Eliminated', value: '✓' },
+              { label: 'Agency programs', value: '40+' },
+              { label: 'Pipeline visibility', value: '100%' },
+              { label: 'Audit-ready', value: '✓' },
             ].map((s) => (
               <div key={s.label} className="text-center">
                 <div className="text-2xl font-black text-green-800">{s.value}</div>
@@ -320,8 +252,8 @@ export default function JetstonePortalPage() {
               Driving the{' '}
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">ARISE Agenda</span>
             </h2>
-            <p className="text-slate-500 text-lg max-w-3xl mx-auto">
-              Our recruitment drive focuses on assembling the brightest minds to execute His Excellency's strategic vision for Akwa Ibom State across five core pillars.
+            <p className="text-slate-600 text-lg max-w-3xl mx-auto">
+              Hiring and workforce programs align with His Excellency&apos;s strategic vision for Akwa Ibom State across five core pillars.
             </p>
           </div>
         </ScrollReveal>
@@ -335,12 +267,12 @@ export default function JetstonePortalPage() {
             { letter: 'E', title: 'Educational Advancement & Entrepreneurship', icon: <GraduationCap className="w-8 h-8" />, color: 'from-red-700 to-rose-600', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' },
           ].map((pillar, i) => (
             <ScrollReveal key={i} delay={i * 0.1}>
-              <div className={`${pillar.bg} border ${pillar.border} rounded-2xl p-6 h-full flex flex-col items-center text-center transition-all duration-300 hover:shadow-lg hover:-translate-y-1`}>
+              <div className={`${pillar.bg} border ${pillar.border} rounded-2xl p-6 h-full flex flex-col items-center text-center transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 shadow-sm`}>
                 <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${pillar.color} flex items-center justify-center text-white shadow-md mb-4 relative`}>
                   <span className="text-2xl font-black">{pillar.letter}</span>
                 </div>
                 <h3 className={`font-bold ${pillar.text} mb-3 leading-snug`}>{pillar.title}</h3>
-                <div className={`mt-auto w-12 h-12 rounded-full bg-white/60 flex items-center justify-center ${pillar.text}`}>
+                <div className={`mt-auto w-12 h-12 rounded-full bg-white border border-slate-200/80 flex items-center justify-center ${pillar.text} shadow-sm`}>
                   {pillar.icon}
                 </div>
               </div>
@@ -359,160 +291,21 @@ export default function JetstonePortalPage() {
         <WorkflowSection />
       </div>
 
-      {/* ── VACANCIES / LIVE JOBS ── */}
-      <section id="vacancies" className="relative z-10 container mx-auto px-4 py-20 md:py-28">
-        <ScrollReveal>
-          <div className="text-center mb-10">
-            <div className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5 mb-5">
-              <Briefcase className="w-4 h-4 text-green-700" />
-              <span className="text-green-800 text-xs font-semibold uppercase tracking-wide">Open Opportunities</span>
-            </div>
-            <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
-              Current{' '}
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">Vacancies</span>
-            </h2>
-            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
-              Live positions from Akwa Ibom State Government ministries, parastatals, and agencies.
-              All recruitments follow merit-based selection with equal opportunity for all.
-            </p>
-          </div>
-        </ScrollReveal>
-
-        {/* Search bar */}
-        <div className="max-w-xl mx-auto mb-8 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <Input
-            placeholder="Search vacancies…"
-            value={jobSearchInput}
-            onChange={(e) => setJobSearchInput(e.target.value)}
-            className="pl-10 h-11 bg-white border-slate-200 focus:border-green-400 shadow-sm"
-          />
-        </div>
-
-        {!jobsLoading && (
-          <p className="text-center text-sm text-slate-500 mb-8">
-            {jobTotal === 0 ? 'No vacancies found' : `${jobTotal} open position${jobTotal !== 1 ? 's' : ''}`}
-          </p>
-        )}
-
-        {jobsLoading && (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-10 h-10 animate-spin text-green-600" />
-          </div>
-        )}
-
-        {!jobsLoading && jobs.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {jobs.map((job, i) => (
-              <ScrollReveal key={job._id} delay={i * 0.05}>
-                <Link href={`/public/jobs/${job._id}`} className="block h-full">
-                  <motion.div
-                    className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all duration-300 group cursor-pointer flex flex-col h-full"
-                    whileHover={{ y: -4 }}>
-                    <div className="flex items-start gap-3 mb-4">
-                      {job.organization.logo ? (
-                        <img src={job.organization.logo} alt={job.organization.name} className="w-11 h-11 rounded-xl object-cover border border-slate-100 flex-shrink-0" />
-                      ) : (
-                        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-green-600 to-emerald-500 flex items-center justify-center flex-shrink-0 shadow-md">
-                          <Building2 className="w-5 h-5 text-white" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-slate-900 text-base leading-snug line-clamp-2 group-hover:text-green-800 transition-colors">
-                          {job.title}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">{job.organization.name}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-600 flex items-center gap-1">
-                        <MapPin className="w-2.5 h-2.5" />
-                        {job.remote ? 'Remote' : job.location || 'Akwa Ibom'}
-                      </Badge>
-                      {job.type && (
-                        <Badge variant="outline" className="text-[11px] border-green-200 text-green-700">{job.type}</Badge>
-                      )}
-                      {job.level && (
-                        <Badge variant="outline" className="text-[11px] border-amber-200 text-amber-700">{job.level}</Badge>
-                      )}
-                      {job.department && (
-                        <Badge variant="outline" className="text-[11px] border-blue-200 text-blue-700 truncate max-w-[130px]">
-                          {typeof job.department === 'string' ? job.department : job.department.name}
-                        </Badge>
-                      )}
-                    </div>
-
-                    {job.description && (
-                      <p className="text-slate-500 text-xs leading-relaxed line-clamp-2 mb-4 flex-1">{job.description}</p>
-                    )}
-
-                    <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-50">
-                      <span className="text-xs text-slate-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />{getRelativeTime(job.createdAt)}
-                      </span>
-                      <span className="text-xs font-semibold text-green-700 flex items-center gap-0.5 group-hover:gap-1.5 transition-all">
-                        Apply <ChevronRight className="w-3.5 h-3.5" />
-                      </span>
-                    </div>
-                  </motion.div>
-                </Link>
-              </ScrollReveal>
-            ))}
-          </div>
-        )}
-
-        {!jobsLoading && jobs.length === 0 && (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 border border-green-100 flex items-center justify-center">
-              <Briefcase className="w-8 h-8 text-green-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-700 mb-1">No vacancies found</h3>
-            <p className="text-slate-500 text-sm">
-              {jobSearch ? 'Try a different search term.' : 'New positions will appear here as they open.'}
-            </p>
-            {jobSearch && (
-              <Button variant="outline" size="sm" className="mt-4 border-green-200 text-green-700" onClick={() => setJobSearchInput('')}>
-                Clear Search
-              </Button>
-            )}
-          </div>
-        )}
-
-        {!jobsLoading && jobPages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-10">
-            <Button variant="outline" size="sm" disabled={jobPage === 1}
-              onClick={() => setJobPage(p => Math.max(1, p - 1))}
-              className="border-green-200 text-green-800 hover:bg-green-50">Previous</Button>
-            <span className="text-sm text-slate-500">Page {jobPage} of {jobPages}</span>
-            <Button variant="outline" size="sm" disabled={jobPage === jobPages}
-              onClick={() => setJobPage(p => Math.min(jobPages, p + 1))}
-              className="border-green-200 text-green-800 hover:bg-green-50">Next</Button>
-          </div>
-        )}
-
-        <div className="text-center mt-10">
-          <Button className={`h-12 px-10 text-base font-semibold ${btnPrimary}`} onClick={() => scrollTo('how-to-apply')}>
-            How to Apply <ArrowRight className="ml-2 w-5 h-5" />
-          </Button>
-        </div>
-      </section>
-
-      {/* ── HOW TO APPLY ── */}
-      <section id="how-to-apply" className="relative z-10 bg-gradient-to-br from-slate-50 to-green-50/60 py-20 md:py-28 border-y border-green-100">
+      {/* ── RECRUITER WORKFLOW ── */}
+      <section id="recruiter-workflow" className="relative z-10 bg-gradient-to-br from-slate-50 via-white to-green-50/80 py-20 md:py-28 border-y border-green-200/80">
         <div className="container mx-auto px-4">
           <ScrollReveal>
             <div className="text-center mb-14">
-              <div className="inline-flex items-center gap-2 bg-amber-100 border border-amber-200 rounded-full px-4 py-1.5 mb-5">
-                <ClipboardList className="w-4 h-4 text-amber-700" />
-                <span className="text-amber-800 text-xs font-semibold uppercase tracking-wide">Application Process</span>
+              <div className="inline-flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-full px-4 py-1.5 mb-5">
+                <ClipboardList className="w-4 h-4 text-amber-800" />
+                <span className="text-amber-900 text-xs font-semibold uppercase tracking-wide">For hiring teams</span>
               </div>
               <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-4">
-                How to{' '}
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-green-700">Apply</span>
+                Manage applicants{' '}
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-green-700">with confidence</span>
               </h2>
-              <p className="text-slate-500 text-lg max-w-2xl mx-auto">
-                Our streamlined process ensures every applicant is treated fairly and efficiently.
+              <p className="text-slate-600 text-lg max-w-2xl mx-auto">
+                Recruiters and administrators use this portal to run structured, fair programmes — from intake to shortlist and appointment.
               </p>
             </div>
           </ScrollReveal>
@@ -520,19 +313,19 @@ export default function JetstonePortalPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 relative">
             <div className="hidden lg:block absolute top-14 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-green-200 via-amber-200 to-green-200 z-0" />
             {[
-              { step: '01', title: 'Browse Vacancies', desc: 'Explore open positions by ministry, location, or qualification — no account needed.', icon: <Briefcase className="w-7 h-7" />, color: 'from-green-600 to-emerald-500' },
-              { step: '02', title: 'Submit Application', desc: 'Complete your profile, upload credentials, and apply directly online.', icon: <FileCheck className="w-7 h-7" />, color: 'from-amber-500 to-orange-500' },
-              { step: '03', title: 'AI Screening', desc: 'Our AI objectively ranks all applications. Shortlisted candidates are notified automatically.', icon: <BrainCircuit className="w-7 h-7" />, color: 'from-blue-500 to-indigo-500' },
-              { step: '04', title: 'Interview & Appointment', desc: 'Shortlisted candidates are invited for structured interviews. Results are published transparently.', icon: <UserCheck className="w-7 h-7" />, color: 'from-purple-500 to-pink-500' },
+              { step: '01', title: 'Secure sign-in', desc: 'Authorized recruiters and admins access the dashboard with role-based permissions.', icon: <LogIn className="w-7 h-7" />, color: 'from-green-600 to-emerald-500' },
+              { step: '02', title: 'Applicant intake', desc: 'Review submissions, documents, and eligibility in one place with full audit trails.', icon: <LayoutDashboard className="w-7 h-7" />, color: 'from-amber-500 to-orange-500' },
+              { step: '03', title: 'Objective screening', desc: 'Use AI-assisted, merit-based scoring and shortlists — consistent criteria for every candidate.', icon: <BrainCircuit className="w-7 h-7" />, color: 'from-blue-500 to-indigo-500' },
+              { step: '04', title: 'Pipeline to decision', desc: 'Move candidates through stages, schedule panels, collect feedback, and record outcomes transparently.', icon: <UserCheck className="w-7 h-7" />, color: 'from-purple-500 to-pink-500' },
             ].map((step, i) => (
               <ScrollReveal key={i} delay={i * 0.1}>
                 <div className="relative z-10 flex flex-col items-center text-center">
                   <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${step.color} flex items-center justify-center text-white shadow-xl mb-4`}>
                     {step.icon}
                   </div>
-                  <span className="text-xs font-black text-slate-300 mb-1 tracking-widest">STEP {step.step}</span>
+                  <span className="text-xs font-black text-slate-500 mb-1 tracking-widest">STEP {step.step}</span>
                   <h3 className="text-lg font-bold text-slate-900 mb-2">{step.title}</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed">{step.desc}</p>
+                  <p className="text-slate-600 text-sm leading-relaxed">{step.desc}</p>
                 </div>
               </ScrollReveal>
             ))}
@@ -552,8 +345,8 @@ export default function JetstonePortalPage() {
               Built on{' '}
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-amber-700">Integrity</span>
             </h2>
-            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
-              Every recruitment process under the Akwa Ibom State Government is guided by these core principles.
+            <p className="text-slate-600 text-lg max-w-2xl mx-auto">
+              Principles that govern how hiring teams use this platform and serve the public.
             </p>
           </div>
         </ScrollReveal>
@@ -591,7 +384,7 @@ export default function JetstonePortalPage() {
                   {v.icon}
                 </div>
                 <h3 className="text-xl font-bold text-slate-900 mb-3">{v.title}</h3>
-                <p className="text-slate-600 leading-relaxed">{v.desc}</p>
+                <p className="text-slate-700 leading-relaxed">{v.desc}</p>
               </div>
             </ScrollReveal>
           ))}
@@ -609,21 +402,21 @@ export default function JetstonePortalPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl md:text-3xl font-black text-white mb-2">
-                    Ready to Serve Akwa Ibom State?
+                    Run recruitment programmes with clarity
                   </h2>
-                  <p className="text-green-200 text-base md:text-lg">
-                    Browse open vacancies and submit your application directly online — no account needed.
+                  <p className="text-green-100 text-base md:text-lg">
+                    Sign in to review applicants, manage pipelines, and keep every stage fair and accountable.
                   </p>
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
                 <Button className="bg-amber-400 hover:bg-amber-300 text-green-950 border-0 font-bold h-12 px-8 text-base shadow-lg"
-                  onClick={() => scrollTo('vacancies')}>
-                  Browse Vacancies <ArrowRight className="ml-2 w-5 h-5" />
+                  onClick={() => { window.location.href = '/login'; }}>
+                  Manage applicants <ArrowRight className="ml-2 w-5 h-5" />
                 </Button>
                 <Button variant="outline" className="border-white/40 text-white hover:bg-white/10 h-12 px-8 text-base"
-                  onClick={() => scrollTo('how-to-apply')}>
-                  How to Apply
+                  onClick={() => scrollTo('recruiter-workflow')}>
+                  Recruiter workflow
                 </Button>
               </div>
             </div>
@@ -636,7 +429,7 @@ export default function JetstonePortalPage() {
         <ScrollReveal>
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-3">Contact & Support</h2>
-            <p className="text-slate-500 text-lg">Reach the Recruitment Services team for assistance.</p>
+            <p className="text-slate-600 text-lg">Reach the recruitment services team for administrator and technical assistance.</p>
           </div>
         </ScrollReveal>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
@@ -645,12 +438,12 @@ export default function JetstonePortalPage() {
             { icon: <Phone className="w-6 h-6 text-green-700" />, title: 'Phone', detail: '+234 (0) 800 AKWA IBOM' },
             { icon: <Mail className="w-6 h-6 text-green-700" />, title: 'Email', detail: 'recruitment@akwaibomstate.gov.ng' },
           ].map((c, i) => (
-            <div key={i} className="flex flex-col items-center text-center bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
-              <div className="w-12 h-12 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center mb-3">
+            <div key={i} className="flex flex-col items-center text-center bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <div className="w-12 h-12 rounded-xl bg-green-50 border border-green-200 flex items-center justify-center mb-3">
                 {c.icon}
               </div>
-              <p className="font-semibold text-slate-800 mb-1">{c.title}</p>
-              <p className="text-slate-500 text-sm">{c.detail}</p>
+              <p className="font-semibold text-slate-900 mb-1">{c.title}</p>
+              <p className="text-slate-600 text-sm">{c.detail}</p>
             </div>
           ))}
         </div>
@@ -671,7 +464,7 @@ export default function JetstonePortalPage() {
             </div>
 
             <div className="flex flex-wrap justify-center gap-6 text-sm">
-              <Link href="/public/jobs" className="text-green-300 hover:text-white transition-colors">Browse Jobs</Link>
+              <Link href="/login" className="text-green-200 hover:text-white transition-colors">Recruiter sign-in</Link>
               <Link href="/privacy" className="text-green-300 hover:text-white transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="text-green-300 hover:text-white transition-colors">Terms of Use</Link>
             </div>

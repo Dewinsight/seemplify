@@ -188,9 +188,10 @@ export default function WorkflowSection() {
         <h2 className={`text-2xl sm:text-3xl md:text-5xl font-bold mb-4 sm:mb-6 bg-clip-text text-transparent ${isJetstone ? 'bg-gradient-to-r from-green-900 to-amber-800' : 'bg-gradient-to-r from-white to-blue-200'}`}>
           Streamlined Hiring Journey
         </h2>
-        <p className={`text-base sm:text-lg max-w-3xl mx-auto ${isJetstone ? 'text-slate-600' : 'text-slate-300'}`}>
-          Experience a seamless end-to-end recruitment process, from candidate sourcing 
-          to onboarding, powered by advanced technology at every step.
+        <p className={`text-base sm:text-lg max-w-3xl mx-auto ${isJetstone ? 'text-slate-700' : 'text-slate-300'}`}>
+          {isJetstone
+            ? 'Built for hiring teams: manage applicants from intake through screening, interviews, and decisions — with structured stages and full visibility.'
+            : 'Experience a seamless end-to-end recruitment process, from candidate sourcing to onboarding, powered by advanced technology at every step.'}
         </p>
       </motion.div>
 

@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import Image from 'next/image';
+import { useBrandConfig } from '@/context/BrandContext';
 import { 
   BrainCircuit, Files, Globe, Search, 
   ListChecks, Syringe, PanelLeft, CalendarCheck, 
@@ -33,6 +34,8 @@ interface WorkflowStepCardProps {
 export default function WorkflowStepCard({ step, alignment, index }: WorkflowStepCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, margin: "-100px 0px" });
+  const brand = useBrandConfig();
+  const jet = brand.id === 'jetstone';
 
   // Get the appropriate color class based on the step's color property
   const getColorClass = (color: string, type: 'bg' | 'text' | 'border') => {
@@ -95,7 +98,11 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
   return (
     <motion.div
       ref={ref}
-      className={`bg-white/5 backdrop-blur-sm rounded-xl border ${getColorClass('border', 'border')} overflow-hidden`}
+      className={
+        jet
+          ? 'bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden'
+          : `bg-white/5 backdrop-blur-sm rounded-xl border ${getColorClass('border', 'border')} overflow-hidden`
+      }
       variants={cardVariants}
       initial="hidden"
       animate={isInView ? "visible" : "hidden"}
@@ -106,26 +113,26 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
           <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full ${getColorClass('bg', 'bg')} flex items-center justify-center mr-2 sm:mr-3`}>
             <span className={`text-sm sm:text-base font-bold ${getColorClass('text', 'text')}`}>{step.id}</span>
           </div>
-          <h3 className="text-lg sm:text-xl font-bold text-white">{step.title}</h3>
+          <h3 className={`text-lg sm:text-xl font-bold ${jet ? 'text-slate-900' : 'text-white'}`}>{step.title}</h3>
         </div>
         
         {/* Step description */}
-        <p className="text-slate-300 text-sm sm:text-base mb-4 sm:mb-6">{step.description}</p>
+        <p className={`text-sm sm:text-base mb-4 sm:mb-6 ${jet ? 'text-slate-600' : 'text-slate-300'}`}>{step.description}</p>
         
         {/* Platform integration badges - Conditionally show based on step */}
         {step.id === 4 && (
           <div className="flex flex-wrap gap-2 sm:gap-3 mb-6">
-            <div className="flex items-center bg-white/10 rounded-full px-2 sm:px-3 py-1 sm:py-1.5">
-              <Chrome className="w-3 h-3 sm:w-4 sm:h-4 text-white mr-1 sm:mr-2" />
-              <span className="text-xs sm:text-sm text-white">Google Meet</span>
+            <div className={`flex items-center rounded-full px-2 sm:px-3 py-1 sm:py-1.5 ${jet ? 'bg-slate-100 border border-slate-200' : 'bg-white/10'}`}>
+              <Chrome className={`w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 ${jet ? 'text-slate-600' : 'text-white'}`} />
+              <span className={`text-xs sm:text-sm ${jet ? 'text-slate-700' : 'text-white'}`}>Google Meet</span>
             </div>
-            <div className="flex items-center bg-white/10 rounded-full px-2 sm:px-3 py-1 sm:py-1.5">
-              <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 text-white mr-1 sm:mr-2" />
-              <span className="text-xs sm:text-sm text-white">MS Teams</span>
+            <div className={`flex items-center rounded-full px-2 sm:px-3 py-1 sm:py-1.5 ${jet ? 'bg-slate-100 border border-slate-200' : 'bg-white/10'}`}>
+              <MessageSquare className={`w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 ${jet ? 'text-slate-600' : 'text-white'}`} />
+              <span className={`text-xs sm:text-sm ${jet ? 'text-slate-700' : 'text-white'}`}>MS Teams</span>
             </div>
-            <div className="flex items-center bg-white/10 rounded-full px-2 sm:px-3 py-1 sm:py-1.5">
-              <Video className="w-3 h-3 sm:w-4 sm:h-4 text-white mr-1 sm:mr-2" />
-              <span className="text-xs sm:text-sm text-white">Zoom</span>
+            <div className={`flex items-center rounded-full px-2 sm:px-3 py-1 sm:py-1.5 ${jet ? 'bg-slate-100 border border-slate-200' : 'bg-white/10'}`}>
+              <Video className={`w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 ${jet ? 'text-slate-600' : 'text-white'}`} />
+              <span className={`text-xs sm:text-sm ${jet ? 'text-slate-700' : 'text-white'}`}>Zoom</span>
             </div>
           </div>
         )}
@@ -143,7 +150,7 @@ export default function WorkflowStepCard({ step, alignment, index }: WorkflowSte
               <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full ${getColorClass('bg', 'bg')} flex items-center justify-center mr-2 sm:mr-3 flex-shrink-0`}>
                 {getFeatureIcon(feature.icon)}
               </div>
-              <span className="text-white text-sm sm:text-base">{feature.text}</span>
+              <span className={`text-sm sm:text-base ${jet ? 'text-slate-800' : 'text-white'}`}>{feature.text}</span>
             </motion.li>
           ))}
         </ul>

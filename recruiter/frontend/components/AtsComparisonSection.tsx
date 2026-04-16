@@ -111,9 +111,10 @@ export default function AtsComparisonSection() {
         <h2 className={`text-3xl md:text-5xl font-bold mb-6 bg-clip-text text-transparent ${isJetstone ? 'bg-gradient-to-r from-green-900 to-amber-800' : 'bg-gradient-to-r from-white to-blue-200'}`}>
           Beyond Traditional ATS Systems
         </h2>
-        <p className={`text-lg max-w-3xl mx-auto ${isJetstone ? 'text-slate-600' : 'text-slate-300'}`}>
-          {brand.name} revolutionizes candidate matching with advanced AI and vector search technology, 
-          going far beyond what traditional Applicant Tracking Systems can offer.
+        <p className={`text-lg max-w-3xl mx-auto ${isJetstone ? 'text-slate-700' : 'text-slate-300'}`}>
+          {isJetstone
+            ? 'Hiring teams get modern AI and structured workflows so applicant review is faster, fairer, and easier to defend than legacy ATS tools.'
+            : `${brand.name} revolutionizes candidate matching with advanced AI and vector search technology, going far beyond what traditional Applicant Tracking Systems can offer.`}
         </p>
       </motion.div>
 
@@ -328,11 +329,11 @@ export default function AtsComparisonSection() {
               </div>
               
               <div className="flex items-center mb-6 relative z-10">
-                <div className="w-10 h-10 bg-slate-700 rounded-lg flex items-center justify-center shadow-lg mr-3 border border-slate-600/50">
-                  <span className="font-medium text-slate-300 text-sm">ATS</span>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shadow-lg mr-3 border ${isJetstone ? 'bg-slate-200 border-slate-300' : 'bg-slate-700 border-slate-600/50'}`}>
+                  <span className={`font-medium text-sm ${isJetstone ? 'text-slate-700' : 'text-slate-300'}`}>ATS</span>
                 </div>
-                <h3 className="text-xl font-bold text-slate-300">Traditional ATS</h3>
-                <div className="ml-auto bg-slate-700 text-slate-400 px-3 py-1 rounded-full text-sm font-medium border border-slate-600/50">
+                <h3 className={`text-xl font-bold ${isJetstone ? 'text-slate-800' : 'text-slate-300'}`}>Traditional ATS</h3>
+                <div className={`ml-auto px-3 py-1 rounded-full text-sm font-medium border ${isJetstone ? 'bg-slate-100 text-slate-600 border-slate-300' : 'bg-slate-700 text-slate-400 border-slate-600/50'}`}>
                   Legacy System
                 </div>
               </div>
@@ -446,15 +447,15 @@ export default function AtsComparisonSection() {
                     viewport={{ once: true }}
                     transition={{ delay: 0.2 + (index * 0.1) }}
                   >
-                    <X className="w-5 h-5 text-red-400 mt-0.5 mr-3 flex-shrink-0" />
-                    <span className="text-slate-400 text-sm">{limitation}</span>
+                    <X className="w-5 h-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+                    <span className={`text-sm ${isJetstone ? 'text-slate-600' : 'text-slate-400'}`}>{limitation}</span>
                   </motion.li>
                 ))}
               </ul>
 
-              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                <div className="font-medium text-slate-400 mb-1">Result:</div>
-                <div className="text-slate-300">Missed talent, longer time-to-hire, higher costs</div>
+              <div className={isJetstone ? 'bg-slate-100 rounded-lg p-4 border border-slate-200' : 'bg-slate-800/50 rounded-lg p-4 border border-slate-700'}>
+                <div className={`font-medium mb-1 ${isJetstone ? 'text-slate-700' : 'text-slate-400'}`}>Result:</div>
+                <div className={isJetstone ? 'text-slate-800' : 'text-slate-300'}>Missed talent, longer time-to-hire, higher costs</div>
               </div>
             </motion.div>
           </div>
@@ -463,13 +464,15 @@ export default function AtsComparisonSection() {
 
       {/* Detailed comparison points */}
       <div className="space-y-8 mt-16">
-        <h3 className="text-2xl font-bold text-center mb-8">Feature by Feature Comparison</h3>
+        <h3 className={`text-2xl font-bold text-center mb-8 ${isJetstone ? 'text-slate-900' : 'text-white'}`}>Feature by Feature Comparison</h3>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {comparisonPoints.map((point, idx) => (
             <motion.div 
               key={idx}
-              className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden relative"
+              className={isJetstone
+                ? 'bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden relative'
+                : 'bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden relative'}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -521,10 +524,10 @@ export default function AtsComparisonSection() {
                     )}
                   </svg>
                 </div>
-                <h4 className="text-lg font-semibold relative z-10">{point.title}</h4>
+                <h4 className={`text-lg font-semibold relative z-10 ${isJetstone ? 'text-slate-900' : 'text-white'}`}>{point.title}</h4>
               </div>
               
-              <div className="grid grid-cols-2 divide-x divide-white/10">
+              <div className={`grid grid-cols-2 divide-x ${isJetstone ? 'divide-slate-200' : 'divide-white/10'}`}>
                 {/* SmartHR Side - Enhanced */}
                 <div className="p-4 space-y-3 relative">
                   {/* Subtle background pattern */}
@@ -558,14 +561,14 @@ export default function AtsComparisonSection() {
                       </div>
                     </div>
                     <div>
-                      <div className="font-medium text-white">{point.smarthr.feature}</div>
-                      <div className="text-xs text-slate-300 mt-1">{point.smarthr.description}</div>
+                      <div className={`font-medium ${isJetstone ? 'text-slate-900' : 'text-white'}`}>{point.smarthr.feature}</div>
+                      <div className={`text-xs mt-1 ${isJetstone ? 'text-slate-600' : 'text-slate-300'}`}>{point.smarthr.description}</div>
                     </div>
                   </div>
                 </div>
                 
                 {/* Traditional ATS Side - Enhanced */}
-                <div className="p-4 space-y-3 bg-slate-900/30 relative">
+                <div className={`p-4 space-y-3 relative ${isJetstone ? 'bg-slate-50' : 'bg-slate-900/30'}`}>
                   {/* Grid background pattern */}
                   <div className="absolute inset-0 opacity-5">
                     <svg width="100%" height="100%">
@@ -585,8 +588,8 @@ export default function AtsComparisonSection() {
                       </div>
                     </div>
                     <div>
-                      <div className="font-medium text-slate-300">{point.traditional.feature}</div>
-                      <div className="text-xs text-slate-400 mt-1">{point.traditional.description}</div>
+                      <div className={`font-medium ${isJetstone ? 'text-slate-800' : 'text-slate-300'}`}>{point.traditional.feature}</div>
+                      <div className={`text-xs mt-1 ${isJetstone ? 'text-slate-600' : 'text-slate-400'}`}>{point.traditional.description}</div>
                     </div>
                   </div>
                 </div>

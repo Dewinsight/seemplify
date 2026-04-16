@@ -9,6 +9,7 @@ import {
   BarChart, ClipboardCheck, FileStack, AreaChart, 
   ArrowDownToLine, Chrome, MessageSquare, Video
 } from 'lucide-react';
+import { useBrandConfig } from '@/context/BrandContext';
 
 interface WorkflowNodeData {
   id: number;
@@ -67,8 +68,16 @@ const getColorClass = (color: string, type: 'bg' | 'text' | 'border') => {
 };
 
 export default function WorkflowNode({ data }: WorkflowNodeProps) {
+  const brand = useBrandConfig();
+  const jet = brand.id === 'jetstone';
   return (
-    <div className={`bg-white/5 backdrop-blur-sm rounded-xl border ${getColorClass(data.color, 'border')} overflow-hidden w-full max-w-[500px]`}>
+    <div
+      className={
+        jet
+          ? 'bg-white border border-slate-200 shadow-lg rounded-xl overflow-hidden w-full max-w-[500px]'
+          : `bg-white/5 backdrop-blur-sm rounded-xl border ${getColorClass(data.color, 'border')} overflow-hidden w-full max-w-[500px]`
+      }
+    >
       {/* Connection handles */}
       <Handle type="target" position={Position.Top} className="w-3 h-3 !bg-blue-400 !border-2 !border-white" />
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-purple-400 !border-2 !border-white" />
@@ -79,26 +88,26 @@ export default function WorkflowNode({ data }: WorkflowNodeProps) {
           <div className={`w-8 h-8 rounded-full ${getColorClass(data.color, 'bg')} flex items-center justify-center mr-3`}>
             <span className={`font-bold ${getColorClass(data.color, 'text')}`}>{data.id}</span>
           </div>
-          <h3 className="text-xl font-bold text-white">{data.title}</h3>
+          <h3 className={`text-xl font-bold ${jet ? 'text-slate-900' : 'text-white'}`}>{data.title}</h3>
         </div>
         
         {/* Step description */}
-        <p className="text-slate-300 text-sm mb-4">{data.description}</p>
+        <p className={`text-sm mb-4 ${jet ? 'text-slate-600' : 'text-slate-300'}`}>{data.description}</p>
         
         {/* Platform integration badges - for step 4 */}
         {data.id === 4 && (
           <div className="flex flex-wrap gap-2 mb-4">
-            <div className="flex items-center bg-white/10 rounded-full px-2 py-1">
-              <Chrome className="w-3 h-3 text-white mr-1" />
-              <span className="text-xs text-white">Google Meet</span>
+            <div className={`flex items-center rounded-full px-2 py-1 ${jet ? 'bg-slate-100 border border-slate-200' : 'bg-white/10'}`}>
+              <Chrome className={`w-3 h-3 mr-1 ${jet ? 'text-slate-600' : 'text-white'}`} />
+              <span className={`text-xs ${jet ? 'text-slate-700' : 'text-white'}`}>Google Meet</span>
             </div>
-            <div className="flex items-center bg-white/10 rounded-full px-2 py-1">
-              <MessageSquare className="w-3 h-3 text-white mr-1" />
-              <span className="text-xs text-white">MS Teams</span>
+            <div className={`flex items-center rounded-full px-2 py-1 ${jet ? 'bg-slate-100 border border-slate-200' : 'bg-white/10'}`}>
+              <MessageSquare className={`w-3 h-3 mr-1 ${jet ? 'text-slate-600' : 'text-white'}`} />
+              <span className={`text-xs ${jet ? 'text-slate-700' : 'text-white'}`}>MS Teams</span>
             </div>
-            <div className="flex items-center bg-white/10 rounded-full px-2 py-1">
-              <Video className="w-3 h-3 text-white mr-1" />
-              <span className="text-xs text-white">Zoom</span>
+            <div className={`flex items-center rounded-full px-2 py-1 ${jet ? 'bg-slate-100 border border-slate-200' : 'bg-white/10'}`}>
+              <Video className={`w-3 h-3 mr-1 ${jet ? 'text-slate-600' : 'text-white'}`} />
+              <span className={`text-xs ${jet ? 'text-slate-700' : 'text-white'}`}>Zoom</span>
             </div>
           </div>
         )}
@@ -110,7 +119,7 @@ export default function WorkflowNode({ data }: WorkflowNodeProps) {
               <div className={`w-5 h-5 rounded-full ${getColorClass(data.color, 'bg')} flex items-center justify-center mr-2 flex-shrink-0`}>
                 {getFeatureIcon(feature.icon)}
               </div>
-              <span className="text-white text-sm">{feature.text}</span>
+              <span className={`text-sm ${jet ? 'text-slate-800' : 'text-white'}`}>{feature.text}</span>
             </li>
           ))}
         </ul>
