@@ -9,7 +9,7 @@ import {
   Award, UserCheck, ClipboardList,
   BrainCircuit, Zap, Check,
   BarChart3, Cpu, MessageSquareText, CheckCircle2,
-  Leaf, Home, Target, GraduationCap, LogIn, LayoutDashboard
+  Leaf, Home, Target, GraduationCap, LogIn, LayoutDashboard, Building2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ScrollReveal from '@/components/animations/ScrollReveal';
