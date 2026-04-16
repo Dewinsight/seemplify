@@ -1,6 +1,9 @@
 // RootLayout is a Server Component by default, metadata can be exported here.
 import type React from "react"
+import type { Metadata } from "next"
+import { headers } from "next/headers"
 import { Inter } from "next/font/google"
+import { detectBrandFromHostname } from "@/config/brands"
 import "./globals.css"
 import "./responsive-fixes.css"
 import "../styles/metro-layout.css"
@@ -23,10 +26,29 @@ import Script from 'next/script'
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata = {
-  title: "SMART HR",
-  description: "Intelligent HR Management System",
-    generator: 'v0.dev'
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers()
+  const host = (h.get("x-forwarded-host") ?? h.get("host") ?? "").toLowerCase()
+  const brand = detectBrandFromHostname(host)
+  const title = brand.metaTitle ?? brand.name
+  const description = brand.metaDescription ?? brand.tagline
+
+  return {
+    title,
+    description,
+    generator: "v0.dev",
+    openGraph: {
+      title,
+      description,
+      siteName: brand.name,
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+    },
+  }
 }
 
 export default function RootLayout({

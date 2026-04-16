@@ -7,8 +7,8 @@ export default function BrandTitle() {
   const brand = useBrandConfig();
 
   useEffect(() => {
-    document.title = brand.name;
-  }, [brand.name]);
+    document.title = brand.metaTitle ?? brand.name;
+  }, [brand.metaTitle, brand.name]);
 
   return null;
 }

@@ -26,6 +26,10 @@ export interface BrandConfig {
   landingRootClass?: string;
   /** Full-page gradient for login/signup shells — use without h-screen prefix in code */
   authShellClass?: string;
+  /** `<title>` and default `og:title` for link previews (defaults to `name`) */
+  metaTitle?: string;
+  /** Meta / Open Graph description (defaults to `tagline`) */
+  metaDescription?: string;
 }
 
 export const BRANDS: Record<string, BrandConfig> = {
@@ -43,6 +47,8 @@ export const BRANDS: Record<string, BrandConfig> = {
     },
     gradient: 'from-blue-400 to-purple-500',
     patterns: ['smarthr', 'localhost', '127.0.0.1', 'app.seemplifyai', 'app-dev.seemplifyai'],
+    metaTitle: 'SmartHR',
+    metaDescription: 'Intelligent HR Management System',
     footerText: '© 2025 SmartHR. All rights reserved.',
     loginHeading: 'SmartHR',
     loginSubheading: 'AI-Powered Recruitment',
@@ -62,7 +68,10 @@ export const BRANDS: Record<string, BrandConfig> = {
       secondary: '#d97706',
     },
     gradient: 'from-green-700 to-amber-600',
-    patterns: ['jetstone', 'akwaibom'],
+    patterns: ['jetstone', 'akwaibom', 'aiinnigeria'],
+    metaTitle: 'Akwa Ibom State — Recruitment Portal',
+    metaDescription:
+      'Official Akwa Ibom State government recruitment portal. Fair, transparent public-sector hiring powered by Jetstone Education.',
     logo: '/logoakwa.png',
     secondaryLogo: '/jetstone-logo.png',
     useImageLogo: true,
@@ -103,8 +112,8 @@ export const getBrandById = (id: string): BrandConfig => {
 export const detectBrandFromHostname = (hostname: string): BrandConfig => {
   const lowerHostname = hostname.toLowerCase();
   
-  // Check environment variable override first
-  if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_BRAND) {
+  // Env override (SSR + client): use on Akwa Ibom / Jetstone deploys
+  if (process.env.NEXT_PUBLIC_BRAND) {
     const envBrand = BRANDS[process.env.NEXT_PUBLIC_BRAND];
     if (envBrand) return envBrand;
   }
