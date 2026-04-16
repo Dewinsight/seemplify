@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { motion, useScroll, useTransform, useInView } from 'framer-motion';
+import { useRef, useMemo } from 'react';
+import { motion, useInView } from 'framer-motion';
 import { 
   FileUp, BrainCircuit, Filter, Calendar, Video, Mic,
-  MessageSquareText, BarChart3, CheckCircle2, ArrowRight
+  MessageSquareText, CheckCircle2
 } from 'lucide-react';
-import Image from 'next/image';
 import WorkflowStepCard from './WorkflowStepCard';
 import WorkflowNode from './WorkflowNode';
-import { ReactFlow, Controls, Background, MarkerType, Edge, Node } from '@xyflow/react';
+import { ReactFlow, Background, MarkerType, Edge, Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useBrandConfig } from '@/context/BrandContext';
 
@@ -20,21 +19,12 @@ export default function WorkflowSection() {
   // Intersection observer for section entrance animation
   const sectionRef = useRef<HTMLElement>(null);
   const isInView = useInView(sectionRef, { once: true, margin: "-100px 0px" });
-  
-  // Get scroll progress for this section to animate the connection line with improved sensitivity
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ["start 95%", "85% end"]
-  });
-  
-  // Calculate the path drawing progress based on scroll position - improved range to show full path
-  const pathLength = useTransform(scrollYProgress, [0.05, 0.8], [0, 1]);
-  
+
   // Define node types for ReactFlow
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNode }), []);
   
-  // Define the workflow steps
-  const workflowSteps = [
+  // Define the workflow steps (memoized so ReactFlow nodes/edges stay in sync with brand copy)
+  const workflowSteps = useMemo(() => [
     {
       id: 1,
       title: isJetstone ? "Candidate Sourcing" : "Candidate Sourcing",
@@ -126,7 +116,7 @@ export default function WorkflowSection() {
       ],
       image: "/workflow/decision.png",
     },
-  ];
+  ], [isJetstone]);
   
   // Create ReactFlow nodes from workflow steps with improved positioning
   const nodes: Node[] = useMemo(() => 
@@ -141,7 +131,7 @@ export default function WorkflowSection() {
       draggable: false,
       selectable: false,
     })),
-    []
+    [workflowSteps]
   );
   
   // Create ReactFlow edges to connect the steps
@@ -151,7 +141,8 @@ export default function WorkflowSection() {
       source: `step-${step.id}`,
       target: `step-${workflowSteps[idx + 1].id}`,
       type: 'smoothstep',
-      animated: true,
+      /* Dash animation on 6 edges runs continuously and costs GPU; keep edges static for smoother scroll */
+      animated: false,
       style: {
         strokeWidth: 3,
         stroke: isJetstone ? `rgba(16, 185, 129, 0.6)` : `rgba(139, 92, 246, 0.6)`, // Green or Purple color

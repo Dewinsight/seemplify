@@ -208,7 +208,6 @@ export default function WorkflowNode({ data }: WorkflowNodeProps) {
                 <div className={`text-xs ${pvMuted}`}>Parsing documents</div>
                 <motion.div 
                   className={`text-xs ${pvStrong}`}
-                  key={Math.random()}
                   animate={{ opacity: [1, 0.5, 1] }}
                   transition={{ duration: 2, repeat: Infinity }}
                 >
