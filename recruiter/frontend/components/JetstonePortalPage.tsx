@@ -265,8 +265,8 @@ export default function JetstonePortalPage() {
         </motion.div>
       </section>
 
-      {/* ── GOVERNOR'S MESSAGE ── */}
-      <section id="about" className="relative z-10 pt-20 md:pt-28 pb-0 bg-gradient-to-r from-green-900 via-green-800 to-green-900 overflow-hidden">
+      {/* ── GOVERNOR'S MESSAGE ── (black bg matches portrait matte so edges blend) */}
+      <section id="about" className="relative z-10 pt-20 md:pt-28 pb-0 bg-black overflow-hidden">
         <div className="container mx-auto px-4">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
             <div className="lg:w-3/5 text-center lg:text-left pb-20 md:pb-28">
@@ -286,7 +286,7 @@ export default function JetstonePortalPage() {
                 </blockquote>
                 <div className="flex flex-col items-center lg:items-start gap-1">
                   <p className="text-amber-300 font-bold text-xl">His Excellency, Governor Umo Eno</p>
-                  <p className="text-green-300 text-base">Executive Governor, Akwa Ibom State</p>
+                  <p className="text-green-200/90 text-base">Executive Governor, Akwa Ibom State</p>
                 </div>
               </ScrollReveal>
             </div>
@@ -299,10 +299,8 @@ export default function JetstonePortalPage() {
                     alt="Governor Umo Eno" 
                     width={480} 
                     height={600} 
-                    className="w-full h-auto object-contain drop-shadow-2xl" 
+                    className="w-full h-auto object-contain" 
                   />
-                  {/* Subtle glow behind the governor */}
-                  <div className="absolute inset-0 bg-amber-500/20 blur-[100px] rounded-full -z-10"></div>
                 </div>
               </ScrollReveal>
             </div>
