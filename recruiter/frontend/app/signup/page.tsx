@@ -94,7 +94,7 @@ export default function SignupPage() {
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex flex-shrink-0 items-center">
                   <Image
-                    src="/akwa-arise-combined-logo.png"
+                    src="/logoakwa.png"
                     alt="Government of Akwa Ibom State · ARISE"
                     width={280}
                     height={80}
@@ -200,7 +200,7 @@ export default function SignupPage() {
               {jet ? (
                 <div className="flex items-center justify-center">
                   <Image
-                    src="/akwa-arise-combined-logo.png"
+                    src="/logoakwa.png"
                     alt="Government of Akwa Ibom State · ARISE"
                     width={260}
                     height={72}

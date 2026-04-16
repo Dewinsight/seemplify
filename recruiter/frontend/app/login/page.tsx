@@ -204,7 +204,7 @@ export default function LoginPage() {
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex flex-shrink-0 items-center">
                   <Image
-                    src="/akwa-arise-combined-logo.png"
+                    src="/logoakwa.png"
                     alt="Government of Akwa Ibom State · ARISE"
                     width={280}
                     height={80}
@@ -316,7 +316,7 @@ export default function LoginPage() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-shrink-0 items-center">
                     <Image
-                      src="/akwa-arise-combined-logo.png"
+                      src="/logoakwa.png"
                       alt="Government of Akwa Ibom State · ARISE"
                       width={220}
                       height={56}
