@@ -208,3 +208,18 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* Noise overlay must sit behind page content; default z-50 hid footer & lower sections */
+.akwaibom-theme .bg-noise {
+  z-index: 1;
+}
+
+.akwaibom-theme main {
+  position: relative;
+  z-index: 10;
+}
+
+.akwaibom-theme .akwa-footer {
+  position: relative;
+  z-index: 20;
+}
