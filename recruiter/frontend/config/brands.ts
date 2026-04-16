@@ -63,7 +63,7 @@ export const BRANDS: Record<string, BrandConfig> = {
     },
     gradient: 'from-green-700 to-amber-600',
     patterns: ['jetstone', 'akwaibom'],
-    logo: '/akwa-ibom-seal.png',
+    logo: '/akwa-arise-combined-logo.png',
     secondaryLogo: '/jetstone-logo.png',
     useImageLogo: true,
     footerText: '© 2025 Jetstone Education. All rights reserved.',

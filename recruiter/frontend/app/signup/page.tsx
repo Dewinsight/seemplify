@@ -92,8 +92,14 @@ export default function SignupPage() {
           <div className="mb-6 lg:mb-8 xl:mb-12">
             {jet ? (
               <div className="flex items-center gap-4 mb-6">
-                <div className="flex-shrink-0 w-20 h-20 lg:w-24 lg:h-24 xl:w-28 xl:h-28 rounded-full overflow-hidden ring-4 ring-green-200 shadow-xl bg-white">
-                  <Image src="/akwa-ibom-seal.png" alt="Government of Akwa Ibom State" width={112} height={112} className="object-cover w-full h-full" />
+                <div className="flex-shrink-0 rounded-xl overflow-hidden ring-4 ring-green-200 shadow-xl bg-black px-3 py-2">
+                  <Image
+                    src="/akwa-arise-combined-logo.png"
+                    alt="Government of Akwa Ibom State · ARISE"
+                    width={280}
+                    height={80}
+                    className="object-contain h-14 lg:h-16 xl:h-[4.5rem] w-auto max-w-[min(100%,320px)]"
+                  />
                 </div>
                 <div>
                   <h1 className="text-base lg:text-lg xl:text-xl font-extrabold text-green-900 leading-tight">
@@ -191,7 +197,17 @@ export default function SignupPage() {
           <div className="w-full max-w-md">
             {/* Mobile Logo */}
             <div className="lg:hidden flex justify-center mb-8">
-              {brand.useImageLogo && brand.logo ? (
+              {jet ? (
+                <div className="rounded-xl overflow-hidden ring-2 ring-green-200 shadow-lg bg-black px-3 py-2">
+                  <Image
+                    src="/akwa-arise-combined-logo.png"
+                    alt="Government of Akwa Ibom State · ARISE"
+                    width={240}
+                    height={64}
+                    className="object-contain h-12 w-auto max-w-[280px]"
+                  />
+                </div>
+              ) : brand.useImageLogo && brand.logo ? (
                 <div className="flex items-center">
                   <Image src={brand.logo} alt={brand.name} width={200} height={48} className="object-contain h-12 w-auto" />
                 </div>

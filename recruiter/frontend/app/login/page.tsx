@@ -200,15 +200,15 @@ export default function LoginPage() {
           {/* Logo and Brand */}
           <div className="mb-6 lg:mb-8 xl:mb-12">
             {jet ? (
-              /* Jetstone: Akwa Ibom State seal (dominant) + Jetstone sub-brand */
+              /* Jetstone: state seal + ARISE combined mark + Jetstone sub-brand */
               <div className="flex items-center gap-4 mb-6">
-                <div className="flex-shrink-0 w-20 h-20 lg:w-24 lg:h-24 xl:w-28 xl:h-28 rounded-full overflow-hidden ring-4 ring-green-200 shadow-xl bg-white">
+                <div className="flex-shrink-0 rounded-xl overflow-hidden ring-4 ring-green-200 shadow-xl bg-black px-3 py-2">
                   <Image
-                    src="/akwa-ibom-seal.png"
-                    alt="Government of Akwa Ibom State"
-                    width={112}
-                    height={112}
-                    className="object-cover w-full h-full"
+                    src="/akwa-arise-combined-logo.png"
+                    alt="Government of Akwa Ibom State · ARISE"
+                    width={280}
+                    height={80}
+                    className="object-contain h-14 lg:h-16 xl:h-[4.5rem] w-auto max-w-[min(100%,320px)]"
                   />
                 </div>
                 <div>
@@ -314,8 +314,14 @@ export default function LoginPage() {
             <div className="lg:hidden flex flex-col items-center mb-8 gap-3">
               {jet ? (
                 <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-full overflow-hidden ring-4 ring-green-200 shadow-lg bg-white flex-shrink-0">
-                    <Image src="/akwa-ibom-seal.png" alt="Government of Akwa Ibom State" width={56} height={56} className="object-cover w-full h-full" />
+                  <div className="rounded-lg overflow-hidden ring-2 ring-green-200 shadow-lg bg-black px-2 py-1.5 flex-shrink-0">
+                    <Image
+                      src="/akwa-arise-combined-logo.png"
+                      alt="Government of Akwa Ibom State · ARISE"
+                      width={200}
+                      height={52}
+                      className="object-contain h-10 w-auto max-w-[220px]"
+                    />
                   </div>
                   <div>
                     <p className="text-sm font-bold text-green-900 leading-tight">Govt. of Akwa Ibom State</p>

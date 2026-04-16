@@ -118,8 +118,8 @@ export default function JetstonePortalPage() {
       <StickyHeader>
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`h-10 rounded-lg overflow-hidden bg-white flex-shrink-0 flex items-center px-2 py-1 ${sealRing}`}>
-              <Image src="/aks-arise-logo.png" alt="Akwa Ibom State" width={120} height={40} className="object-contain h-full w-auto" />
+            <div className={`h-10 rounded-lg overflow-hidden bg-black flex-shrink-0 flex items-center px-2 py-1 ${sealRing}`}>
+              <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={120} height={40} className="object-contain h-full w-auto" />
             </div>
             <div className="hidden sm:block">
               <p className="text-xs font-bold text-green-900 leading-tight">Govt. of Akwa Ibom State</p>
@@ -189,8 +189,8 @@ export default function JetstonePortalPage() {
         <div className="lg:w-1/2 space-y-7">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
             className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5">
-            <div className="h-5 overflow-hidden flex-shrink-0 flex items-center">
-              <Image src="/aks-arise-logo.png" alt="" width={60} height={20} className="object-contain h-full w-auto" />
+            <div className="h-8 rounded-md overflow-hidden bg-black flex-shrink-0 flex items-center px-2">
+              <Image src="/akwa-arise-combined-logo.png" alt="" width={140} height={36} className="object-contain h-7 w-auto max-w-[160px]" />
             </div>
             <span className="text-green-800 text-xs font-semibold tracking-wide uppercase">Official AI-Powered Recruitment Portal</span>
           </motion.div>
@@ -247,8 +247,8 @@ export default function JetstonePortalPage() {
                 <p className="text-green-300 text-sm">Governor, Akwa Ibom State</p>
               </div>
             </div>
-            <div className={`absolute -top-5 -right-5 h-16 rounded-xl overflow-hidden bg-white ${sealRing} z-20 flex items-center px-3 py-2`}>
-              <Image src="/aks-arise-logo.png" alt="Akwa Ibom State" width={140} height={64} className="object-contain h-full w-auto" />
+            <div className={`absolute -top-5 -right-5 h-16 rounded-xl overflow-hidden bg-black ${sealRing} z-20 flex items-center px-3 py-2`}>
+              <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={140} height={64} className="object-contain h-full w-auto" />
             </div>
             <motion.div className="absolute -bottom-8 -left-6 bg-white border border-green-100 rounded-2xl shadow-xl p-4 max-w-[220px] z-20"
               initial={{ opacity: 0, y: 20, rotate: -3 }} animate={{ opacity: 1, y: 0, rotate: -3 }}
@@ -272,8 +272,8 @@ export default function JetstonePortalPage() {
             <div className="lg:w-3/5 text-center lg:text-left pb-20 md:pb-28">
               <ScrollReveal>
                 <div className="flex justify-center lg:justify-start mb-6">
-                  <div className={`h-16 rounded-xl overflow-hidden bg-white ${sealRing} flex items-center px-4 py-2`}>
-                    <Image src="/aks-arise-logo.png" alt="" width={160} height={64} className="object-contain h-full w-auto" />
+                  <div className={`h-16 rounded-xl overflow-hidden bg-black ${sealRing} flex items-center px-4 py-2`}>
+                    <Image src="/akwa-arise-combined-logo.png" alt="" width={160} height={64} className="object-contain h-full w-auto" />
                   </div>
                 </div>
                 <div className="inline-flex items-center gap-2 bg-amber-400/20 border border-amber-400/30 rounded-full px-4 py-1.5 mb-6">
@@ -604,8 +604,8 @@ export default function JetstonePortalPage() {
           <ScrollReveal>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
               <div className="flex items-center gap-6">
-                <div className={`h-16 rounded-xl overflow-hidden bg-white flex-shrink-0 flex items-center px-4 py-2 ${sealRing}`}>
-                  <Image src="/aks-arise-logo.png" alt="Akwa Ibom State" width={160} height={64} className="object-contain h-full w-auto" />
+                <div className={`h-16 rounded-xl overflow-hidden bg-black flex-shrink-0 flex items-center px-4 py-2 ${sealRing}`}>
+                  <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={160} height={64} className="object-contain h-full w-auto" />
                 </div>
                 <div>
                   <h2 className="text-2xl md:text-3xl font-black text-white mb-2">
@@ -661,8 +661,8 @@ export default function JetstonePortalPage() {
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="h-12 rounded-xl overflow-hidden bg-white ring-2 ring-amber-400/50 flex items-center px-3 py-1.5">
-                <Image src="/aks-arise-logo.png" alt="" width={120} height={48} className="object-contain h-full w-auto" />
+              <div className="h-12 rounded-xl overflow-hidden bg-black ring-2 ring-amber-400/50 flex items-center px-3 py-1.5">
+                <Image src="/akwa-arise-combined-logo.png" alt="" width={120} height={48} className="object-contain h-full w-auto" />
               </div>
               <div>
                 <p className="font-bold text-amber-300">Government of Akwa Ibom State</p>
