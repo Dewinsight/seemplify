@@ -102,6 +102,7 @@ const corsOptions = {
       'https://thesmarthr.netlify.app',
       'https://smarthr.aiinnigeria.com',
       'https://jetstone.aiinnigeria.com',
+      'https://akwaibom.aiinnigeria.com',
       'https://smarthrhandover-dev.sterling.ng',
       'smarthrhandover-dev.sterling.ng',
       'https://producive.com',

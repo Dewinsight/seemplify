@@ -6,7 +6,7 @@
   var isDev = hostname.includes('-dev') || hostname.includes('.dev.') || isLocal;
 
   // White-label domains that proxy to the same production backend
-  var isWhiteLabel = hostname.includes('jetstone.aiinnigeria.com');
+  var isWhiteLabel = hostname.includes('jetstone.aiinnigeria.com') || hostname.includes('akwaibom.aiinnigeria.com');
 
   var apiBase = isDev ? 'https://api-dev.seemplifyai.com' : 'https://api.seemplifyai.com';
   var wsBase = isDev ? 'wss://api-dev.seemplifyai.com' : 'wss://api.seemplifyai.com';

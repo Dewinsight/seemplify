@@ -62,7 +62,7 @@ export const BRANDS: Record<string, BrandConfig> = {
       secondary: '#d97706',
     },
     gradient: 'from-green-700 to-amber-600',
-    patterns: ['jetstone'],
+    patterns: ['jetstone', 'akwaibom'],
     logo: '/akwa-ibom-seal.png',
     secondaryLogo: '/jetstone-logo.png',
     useImageLogo: true,
