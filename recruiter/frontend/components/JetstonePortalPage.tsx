@@ -9,7 +9,7 @@ import {
   Award, UserCheck, ClipboardList,
   BrainCircuit, Zap, Check,
   BarChart3, Cpu, MessageSquareText, CheckCircle2,
-  Leaf, Home, Target, GraduationCap, LogIn, LayoutDashboard, Building2
+  Leaf, Home, Target, GraduationCap, LogIn, LayoutDashboard, Building2, ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ScrollReveal from '@/components/animations/ScrollReveal';
@@ -22,7 +22,6 @@ import WorkflowSection from '@/components/WorkflowSection';
 
 const btnPrimary = 'bg-gradient-to-r from-green-700 to-green-900 hover:from-green-800 hover:to-green-950 text-white border-0 shadow-lg';
 const btnOutline = 'bg-white border border-green-400 text-green-950 hover:bg-green-50/90 shadow-sm';
-const sealRing = 'ring-4 ring-green-200/60 shadow-xl';
 
 export default function JetstonePortalPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -49,8 +48,8 @@ export default function JetstonePortalPage() {
       <StickyHeader>
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className={`h-10 rounded-lg overflow-hidden bg-black flex-shrink-0 flex items-center px-2 py-1 ${sealRing}`}>
-              <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={120} height={40} className="object-contain h-full w-auto" />
+            <div className="flex h-10 flex-shrink-0 items-center">
+              <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={200} height={48} className="object-contain h-10 w-auto max-w-[200px]" priority />
             </div>
             <div className="hidden sm:block">
               <p className="text-xs font-bold text-green-900 leading-tight">Govt. of Akwa Ibom State</p>
@@ -120,8 +119,8 @@ export default function JetstonePortalPage() {
         <div className="lg:w-1/2 space-y-7">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
             className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5">
-            <div className="h-8 rounded-md overflow-hidden bg-black flex-shrink-0 flex items-center px-2">
-              <Image src="/akwa-arise-combined-logo.png" alt="" width={140} height={36} className="object-contain h-7 w-auto max-w-[160px]" />
+            <div className="flex h-8 flex-shrink-0 items-center">
+              <Image src="/akwa-arise-combined-logo.png" alt="" width={160} height={40} className="object-contain h-8 w-auto max-w-[180px]" />
             </div>
             <span className="text-green-900 text-xs font-semibold tracking-wide uppercase">Official recruiter portal</span>
           </motion.div>
@@ -179,8 +178,8 @@ export default function JetstonePortalPage() {
                 <p className="text-green-300 text-sm">Governor, Akwa Ibom State</p>
               </div>
             </div>
-            <div className={`absolute -top-5 -right-5 h-16 rounded-xl overflow-hidden bg-black ${sealRing} z-20 flex items-center px-3 py-2`}>
-              <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={140} height={64} className="object-contain h-full w-auto" />
+            <div className="absolute -top-5 -right-5 z-20 flex h-16 items-center drop-shadow-md">
+              <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={180} height={56} className="object-contain h-14 w-auto max-w-[200px]" />
             </div>
             <motion.div className="absolute -bottom-8 -left-6 bg-white border border-green-100 rounded-2xl shadow-xl p-4 max-w-[220px] z-20"
               initial={{ opacity: 0, y: 20, rotate: -3 }} animate={{ opacity: 1, y: 0, rotate: -3 }}
@@ -203,10 +202,8 @@ export default function JetstonePortalPage() {
           <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
             <div className="lg:w-3/5 text-center lg:text-left pb-20 md:pb-28">
               <ScrollReveal>
-                <div className="flex justify-center lg:justify-start mb-6">
-                  <div className={`h-16 rounded-xl overflow-hidden bg-black ${sealRing} flex items-center px-4 py-2`}>
-                    <Image src="/akwa-arise-combined-logo.png" alt="" width={160} height={64} className="object-contain h-full w-auto" />
-                  </div>
+                <div className="mb-6 flex justify-center lg:justify-start">
+                  <Image src="/akwa-arise-combined-logo.png" alt="" width={280} height={80} className="h-16 w-auto max-w-[min(100%,320px)] object-contain md:h-20" />
                 </div>
                 <div className="inline-flex items-center gap-2 bg-amber-400/20 border border-amber-400/30 rounded-full px-4 py-1.5 mb-6">
                   <Award className="w-4 h-4 text-amber-300" />
@@ -397,8 +394,8 @@ export default function JetstonePortalPage() {
           <ScrollReveal>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
               <div className="flex items-center gap-6">
-                <div className={`h-16 rounded-xl overflow-hidden bg-black flex-shrink-0 flex items-center px-4 py-2 ${sealRing}`}>
-                  <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={160} height={64} className="object-contain h-full w-auto" />
+                <div className="flex h-16 flex-shrink-0 items-center">
+                  <Image src="/akwa-arise-combined-logo.png" alt="Akwa Ibom State" width={220} height={72} className="object-contain h-14 w-auto max-w-[220px] md:h-16" />
                 </div>
                 <div>
                   <h2 className="text-2xl md:text-3xl font-black text-white mb-2">
@@ -454,8 +451,8 @@ export default function JetstonePortalPage() {
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="h-12 rounded-xl overflow-hidden bg-black ring-2 ring-amber-400/50 flex items-center px-3 py-1.5">
-                <Image src="/akwa-arise-combined-logo.png" alt="" width={120} height={48} className="object-contain h-full w-auto" />
+              <div className="flex h-12 flex-shrink-0 items-center">
+                <Image src="/akwa-arise-combined-logo.png" alt="" width={200} height={56} className="object-contain h-10 w-auto max-w-[200px] md:h-12" />
               </div>
               <div>
                 <p className="font-bold text-amber-300">Government of Akwa Ibom State</p>

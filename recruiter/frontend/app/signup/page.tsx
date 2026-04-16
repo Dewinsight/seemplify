@@ -92,13 +92,13 @@ export default function SignupPage() {
           <div className="mb-6 lg:mb-8 xl:mb-12">
             {jet ? (
               <div className="flex items-center gap-4 mb-6">
-                <div className="flex-shrink-0 rounded-xl overflow-hidden ring-4 ring-green-200 shadow-xl bg-black px-3 py-2">
+                <div className="flex flex-shrink-0 items-center">
                   <Image
                     src="/akwa-arise-combined-logo.png"
                     alt="Government of Akwa Ibom State · ARISE"
                     width={280}
                     height={80}
-                    className="object-contain h-14 lg:h-16 xl:h-[4.5rem] w-auto max-w-[min(100%,320px)]"
+                    className="h-14 w-auto max-w-[min(100%,320px)] object-contain lg:h-16 xl:h-[4.5rem]"
                   />
                 </div>
                 <div>
@@ -198,13 +198,13 @@ export default function SignupPage() {
             {/* Mobile Logo */}
             <div className="lg:hidden flex justify-center mb-8">
               {jet ? (
-                <div className="rounded-xl overflow-hidden ring-2 ring-green-200 shadow-lg bg-black px-3 py-2">
+                <div className="flex items-center justify-center">
                   <Image
                     src="/akwa-arise-combined-logo.png"
                     alt="Government of Akwa Ibom State · ARISE"
-                    width={240}
-                    height={64}
-                    className="object-contain h-12 w-auto max-w-[280px]"
+                    width={260}
+                    height={72}
+                    className="h-12 w-auto max-w-[280px] object-contain"
                   />
                 </div>
               ) : brand.useImageLogo && brand.logo ? (

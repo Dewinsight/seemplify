@@ -202,13 +202,13 @@ export default function LoginPage() {
             {jet ? (
               /* Jetstone: state seal + ARISE combined mark + Jetstone sub-brand */
               <div className="flex items-center gap-4 mb-6">
-                <div className="flex-shrink-0 rounded-xl overflow-hidden ring-4 ring-green-200 shadow-xl bg-black px-3 py-2">
+                <div className="flex flex-shrink-0 items-center">
                   <Image
                     src="/akwa-arise-combined-logo.png"
                     alt="Government of Akwa Ibom State · ARISE"
                     width={280}
                     height={80}
-                    className="object-contain h-14 lg:h-16 xl:h-[4.5rem] w-auto max-w-[min(100%,320px)]"
+                    className="h-14 w-auto max-w-[min(100%,320px)] object-contain lg:h-16 xl:h-[4.5rem]"
                   />
                 </div>
                 <div>
@@ -314,13 +314,13 @@ export default function LoginPage() {
             <div className="lg:hidden flex flex-col items-center mb-8 gap-3">
               {jet ? (
                 <div className="flex items-center gap-3">
-                  <div className="rounded-lg overflow-hidden ring-2 ring-green-200 shadow-lg bg-black px-2 py-1.5 flex-shrink-0">
+                  <div className="flex flex-shrink-0 items-center">
                     <Image
                       src="/akwa-arise-combined-logo.png"
                       alt="Government of Akwa Ibom State · ARISE"
-                      width={200}
-                      height={52}
-                      className="object-contain h-10 w-auto max-w-[220px]"
+                      width={220}
+                      height={56}
+                      className="h-10 w-auto max-w-[220px] object-contain"
                     />
                   </div>
                   <div>
