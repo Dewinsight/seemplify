@@ -153,18 +153,13 @@ export default function AkwaIbomHomePage() {
         <nav className="container mx-auto flex items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3">
             <SeemplifyLogo size="sm" animated={false} />
-            <div className="hidden sm:block">
-              <p className="text-[10px] font-bold leading-tight text-green-950">Govt. of Akwa Ibom State</p>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] text-slate-600">Powered by</span>
-                <Image
-                  src="/jetstone-logo.png"
-                  alt="Jetstone Education"
-                  width={64}
-                  height={14}
-                  className="h-3 w-auto object-contain"
-                />
-              </div>
+            <div className="hidden border-l border-green-200 pl-3 sm:block">
+              <p className="text-[11px] font-extrabold uppercase leading-tight tracking-wide text-green-950">
+                Office of the Head of Service
+              </p>
+              <p className="text-[10px] font-semibold text-green-800/75">
+                Government of Akwa Ibom State
+              </p>
             </div>
           </Link>
 
@@ -599,7 +594,7 @@ export default function AkwaIbomHomePage() {
               <p className="font-semibold text-amber-200">Government of Akwa Ibom State</p>
               <p className="text-sm text-green-300/90">The Land of Promise · Nigeria</p>
               <p className="max-w-xs text-sm leading-relaxed text-green-200/85">
-                Official Human Resource Management Portal — powered by Jetstone Education on the Seemplify platform.
+                Official Human Resource Management Portal of the Office of the Head of Service.
               </p>
             </div>
             <div>
@@ -655,9 +650,8 @@ export default function AkwaIbomHomePage() {
           </div>
           <div className="mt-12 border-t border-green-800/70 pt-8 text-center">
             <p className="text-xs leading-relaxed text-green-400/95">
-              © {new Date().getFullYear()} Jetstone Education · Official Human Resource Management Portal of the Akwa
-              Ibom State Government. Seemplify is a registered platform; other states and tenants retain default
-              branding.
+              © {new Date().getFullYear()} Government of Akwa Ibom State. Official Human Resource Management Portal.
+              All rights reserved.
             </p>
           </div>
         </div>
