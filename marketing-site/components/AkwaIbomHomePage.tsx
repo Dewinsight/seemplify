@@ -155,10 +155,10 @@ export default function AkwaIbomHomePage() {
             <SeemplifyLogo size="sm" animated={false} />
             <div className="hidden border-l border-green-200 pl-3 sm:block">
               <p className="text-[11px] font-extrabold uppercase leading-tight tracking-wide text-green-950">
-                Office of the Head of Service
+                Government of Akwa Ibom State
               </p>
               <p className="text-[10px] font-semibold text-green-800/75">
-                Government of Akwa Ibom State
+                Office of the Head of Service
               </p>
             </div>
           </Link>
@@ -209,16 +209,18 @@ export default function AkwaIbomHomePage() {
                   {...fadeUp(0.1)}
                   className="font-display text-4xl font-black leading-[1.08] tracking-tight text-slate-900 md:text-5xl lg:text-6xl xl:text-7xl"
                 >
-                  Fair. Transparent.{' '}
+                  ARISE WORKFORCE…{' '}
                   <span className="bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600 bg-clip-text text-transparent">
-                    AI-Driven.
+                    Building a Digital, AI-driven Workforce of the Golden Era!
                   </span>
                 </motion.h1>
 
                 <motion.p {...fadeUp(0.2)} className="max-w-xl text-lg leading-relaxed text-slate-700">
-                  The official Human Resource Management Portal for Akwa Ibom State — recruitment, workforce
-                  operations, payroll, learning, and governance in one accountable stack. The same Seemplify
-                  engine your teams trust, branded for the State.
+                  Under the leadership of His Excellency Governor Umo Eno PhD and the ARISE Agenda, the Akwa
+                  Ibom State Government is advancing a more efficient, responsive, and people-centred public
+                  service. As part of this commitment, we proudly introduce AKS-HRMS — the Akwa Ibom State
+                  Human Resource Management System, a core pillar of the ARISE Workforce Agenda designed to
+                  strengthen Human Capital Development and accelerate the digitalization of the Civil Service.
                 </motion.p>
 
                 <motion.div {...fadeUp(0.25)} className="flex flex-wrap gap-3">
@@ -269,16 +271,17 @@ export default function AkwaIbomHomePage() {
               >
                 <div className="relative z-10 overflow-hidden rounded-3xl border-4 border-green-200 shadow-2xl shadow-green-900/10">
                   <Image
-                    src="/governor-umo-eno.png"
-                    alt="Governor Umo Eno — Akwa Ibom State"
+                    src="/mrs-elsie-anietie-peters.png"
+                    alt="Mrs. Elsie Anietie Peters — Head of Civil Service, Akwa Ibom State"
                     width={540}
                     height={620}
                     className="w-full object-cover object-top"
                     priority
                   />
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-green-950/95 to-transparent p-6">
-                    <p className="text-xl font-black text-white">His Excellency</p>
-                    <p className="text-lg font-bold text-amber-300">Gov. Umo Eno</p>
+                    <p className="text-xl font-black text-white">Mrs. Elsie Anietie Peters</p>
+                    <p className="text-lg font-bold text-amber-300">Head of Civil Service</p>
+                    <p className="text-sm font-semibold text-green-200">Akwa Ibom State</p>
                   </div>
                 </div>
                 <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-gradient-to-br from-green-200/50 via-amber-100/40 to-transparent blur-2xl" />
