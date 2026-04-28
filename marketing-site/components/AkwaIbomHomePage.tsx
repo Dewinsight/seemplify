@@ -599,6 +599,23 @@ export default function AkwaIbomHomePage() {
               <p className="max-w-xs text-sm leading-relaxed text-green-200/85">
                 Official Human Resource Management Portal of the Office of the Head of Service.
               </p>
+              <div className="pt-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-green-300/70">
+                  Technical partner
+                </p>
+                <div className="inline-flex flex-col items-start">
+                  <Image
+                    src="/jetstone-consulting-white.png"
+                    alt="Jetstone Consulting"
+                    width={180}
+                    height={48}
+                    className="h-8 w-auto object-contain"
+                  />
+                  <span className="mt-1 text-xs font-semibold uppercase tracking-[0.28em] text-white/85">
+                    Consulting
+                  </span>
+                </div>
+              </div>
             </div>
             <div>
               <p className="mb-4 text-xs font-bold uppercase tracking-wider text-amber-200/90">On this page</p>
