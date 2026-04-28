@@ -47,19 +47,20 @@ export default function JetstonePortalPage() {
             <div className="flex h-14 shrink-0 items-center md:h-16">
               <Image
                 src="/logoakwa.png"
-                alt="Akwa Ibom State"
+                alt="Government of Akwa Ibom State"
                 width={360}
                 height={80}
-                className="h-14 w-auto max-w-[min(55vw,320px)] bg-transparent object-contain md:h-16 md:max-w-[360px]"
+                className="h-12 w-auto max-w-[min(42vw,260px)] bg-transparent object-contain md:h-14 md:max-w-[280px]"
                 priority
               />
             </div>
-            <div className="hidden sm:block">
-              <p className="text-xs font-bold text-green-900 leading-tight">Govt. of Akwa Ibom State</p>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] text-slate-500">Powered by</span>
-                <Image src="/jetstone-logo.png" alt="Jetstone Education" width={64} height={14} className="object-contain h-3 w-auto" />
-              </div>
+            <div className="hidden sm:block border-l border-green-200 pl-3">
+              <p className="text-[11px] font-extrabold uppercase tracking-wide text-green-950 leading-tight">
+                Office of the Head of Service
+              </p>
+              <p className="text-[10px] font-semibold text-green-800/75">
+                Government of Akwa Ibom State
+              </p>
             </div>
           </div>
 
@@ -385,16 +386,11 @@ export default function JetstonePortalPage() {
               <Link href="/privacy" className="text-green-300 hover:text-white transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="text-green-300 hover:text-white transition-colors">Terms of Use</Link>
             </div>
-
-            <div className="flex items-center gap-2 text-xs text-green-400">
-              <span>Powered by</span>
-              <Image src="/jetstone-logo.png" alt="Jetstone Education" width={80} height={18} className="object-contain h-4 w-auto brightness-200 opacity-70" />
-            </div>
           </div>
 
           <div className="border-t border-green-800/60 mt-8 pt-6 text-center">
             <p className="text-green-400 text-xs">
-              © {new Date().getFullYear()} Government of Akwa Ibom State. Powered by Jetstone Education. All rights reserved.
+              © {new Date().getFullYear()} Government of Akwa Ibom State. All rights reserved.
             </p>
             <p className="text-green-600 text-xs mt-1">
               This is the official Human Resource Management Portal of the Akwa Ibom State Government. All applications are subject to verification.
