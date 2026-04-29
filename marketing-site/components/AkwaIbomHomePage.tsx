@@ -321,20 +321,10 @@ export default function AkwaIbomHomePage() {
               />
               {/* Name plate */}
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-green-950/95 via-green-950/50 to-transparent px-6 py-6 sm:py-8">
-                <div className="flex items-end gap-4">
-                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full ring-2 ring-amber-400/70 shadow-lg">
-                    <Image
-                      src="/akwa-ibom-seal.png"
-                      alt=""
-                      width={44} height={44}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-base font-black text-white leading-tight">Mrs. Elsie Anietie Peters</p>
-                    <p className="text-sm font-bold text-amber-400">Head of Civil Service</p>
-                    <p className="text-xs text-green-300">Akwa Ibom State</p>
-                  </div>
+                <div>
+                  <p className="text-base font-black text-white leading-tight">Mrs. Elsie Anietie Peters</p>
+                  <p className="text-sm font-bold text-amber-400">Head of Civil Service</p>
+                  <p className="text-xs text-green-300">Akwa Ibom State</p>
                 </div>
               </div>
 
