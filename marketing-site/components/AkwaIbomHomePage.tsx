@@ -190,129 +190,196 @@ export default function AkwaIbomHomePage() {
       </header>
 
       <main className="relative z-10">
-        {/* ── HERO ── */}
-        <section className="relative overflow-hidden pt-32 pb-24">
-          <div className="container relative z-10 mx-auto max-w-7xl px-6">
-            <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-              <div className="max-w-2xl space-y-7">
+        {/* ══════════════════════════════════════════════════
+            HERO  — full-bleed split panel
+        ══════════════════════════════════════════════════ */}
+        <section className="relative overflow-hidden">
+          {/* mt-[72px] accounts for fixed header height */}
+          <div className="mt-[72px] flex min-h-[90vh] flex-col lg:flex-row">
+
+            {/* ── LEFT: deep government green ── */}
+            <div
+              className="relative flex flex-col justify-center px-6 py-14 sm:px-10 lg:w-[58%] lg:px-14 xl:px-20 lg:py-20"
+              style={{ background: 'linear-gradient(135deg,#052e16 0%,#14532d 55%,#166534 100%)' }}
+            >
+              {/* Diagonal stripe watermark */}
+              <div
+                aria-hidden
+                className="absolute inset-0 opacity-[0.04]"
+                style={{
+                  backgroundImage:
+                    'repeating-linear-gradient(45deg,#fff 0,#fff 1px,transparent 0,transparent 50%)',
+                  backgroundSize: '18px 18px',
+                }}
+              />
+
+              <div className="relative z-10 max-w-xl">
+                {/* Badge */}
                 <motion.div
                   {...fadeUp(0)}
-                  className="inline-flex items-center gap-2 rounded-full border border-green-200/80 bg-white/90 px-4 py-2 shadow-sm"
+                  className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5"
                 >
-                  <span className="w-2 h-2 rounded-full bg-green-600 shrink-0" />
-                  <span className="text-xs font-semibold uppercase tracking-wide text-green-900">
+                  <Image
+                    src="/logoakwa.png"
+                    alt=""
+                    width={80} height={24}
+                    className="h-5 w-auto object-contain"
+                  />
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-white/90 sm:text-xs">
                     Official HR Management Portal
                   </span>
                 </motion.div>
 
+                {/* Headline */}
                 <motion.h1
                   {...fadeUp(0.1)}
-                  className="font-display text-3xl font-black leading-[1.1] tracking-tight text-slate-900 sm:text-4xl md:text-4xl lg:text-5xl xl:text-5xl"
+                  className="font-display text-4xl font-black leading-[1.07] tracking-tight text-white sm:text-5xl lg:text-5xl xl:text-6xl"
                 >
-                  ARISE WORKFORCE…
-                  <span className="mt-1 block text-2xl sm:text-3xl md:text-3xl lg:text-4xl xl:text-4xl font-black bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600 bg-clip-text text-transparent leading-snug">
-                    Building a Digital, AI-driven Workforce of the Golden Era!
-                  </span>
+                  ARISE
+                  <span className="text-amber-400"> WORKFORCE</span>
                 </motion.h1>
 
-                <motion.p {...fadeUp(0.2)} className="max-w-xl text-sm sm:text-base md:text-lg leading-relaxed text-slate-700">
-                  Under the leadership of His Excellency Governor Umo Eno PhD and the ARISE Agenda, the Akwa
-                  Ibom State Government is advancing a more efficient, responsive, and people-centred public
-                  service. As part of this commitment, we proudly introduce AKS-HRMS — the Akwa Ibom State
-                  Human Resource Management System, a core pillar of the ARISE Workforce Agenda designed to
-                  strengthen Human Capital Development and accelerate the digitalization of the Civil Service.
+                <motion.p
+                  {...fadeUp(0.17)}
+                  className="mt-1 text-lg font-bold leading-snug text-green-200 sm:text-xl lg:text-xl xl:text-2xl"
+                >
+                  Building a Digital, AI-driven<br className="hidden sm:block" />
+                  Workforce of the Golden Era!
                 </motion.p>
 
-                <motion.div {...fadeUp(0.25)} className="flex flex-wrap gap-3">
-                  {['Full HR suite', 'Agency programmes', 'Audit-ready'].map((tag) => (
+                {/* Body copy */}
+                <motion.p
+                  {...fadeUp(0.24)}
+                  className="mt-5 max-w-md text-sm leading-relaxed text-green-100/80 sm:text-base"
+                >
+                  Under His Excellency Governor Umo Eno PhD and the ARISE Agenda, AKS-HRMS is the
+                  digital backbone of Akwa Ibom's civil service — combining AI, transparency, and
+                  accountability to recruit, develop, and retain the state's workforce.
+                </motion.p>
+
+                {/* Tags */}
+                <motion.div {...fadeUp(0.3)} className="mt-5 flex flex-wrap gap-2">
+                  {['Full HR suite', 'AI-assisted', 'Audit-ready', '40+ Agencies'].map((tag) => (
                     <span
                       key={tag}
-                      className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-green-900"
+                      className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90"
                     >
                       {tag}
                     </span>
                   ))}
                 </motion.div>
 
-                <motion.div {...fadeUp(0.3)} className="flex flex-wrap gap-4">
+                {/* CTAs */}
+                <motion.div {...fadeUp(0.36)} className="mt-7 flex flex-wrap gap-3">
                   <Link
                     href={`${APP_URL}/login`}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-gradient-to-r from-green-700 to-green-900 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-green-900/20 transition-colors duration-200 hover:from-green-800 hover:to-green-950"
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-amber-400 px-7 py-3 text-sm font-bold text-green-950 shadow-lg transition-colors duration-200 hover:bg-amber-300"
                   >
-                    Open HR portal <ArrowRight className="h-5 w-5" aria-hidden />
+                    Open HR portal <ArrowRight className="h-4 w-4" aria-hidden />
                   </Link>
                   <Link
                     href={IDP_URL}
-                    className="inline-flex cursor-pointer items-center rounded-full border-2 border-green-400/80 bg-white px-8 py-3.5 text-base font-semibold text-green-950 transition-colors duration-200 hover:bg-green-50"
+                    className="inline-flex cursor-pointer items-center rounded-full border border-white/30 bg-transparent px-7 py-3 text-sm font-semibold text-white transition-colors duration-200 hover:bg-white/10"
                   >
                     State sign-in (IDP)
                   </Link>
                 </motion.div>
 
-                <motion.div {...fadeUp(0.5)} className="flex flex-wrap gap-6 pt-2">
+                {/* Stats */}
+                <motion.div
+                  {...fadeUp(0.5)}
+                  className="mt-9 flex flex-wrap gap-7 border-t border-white/10 pt-7"
+                >
                   {[
-                    { label: 'Agency programmes', value: '40+' },
-                    { label: 'Pipeline visibility', value: '100%' },
-                    { label: 'Human in the loop', value: '✓' },
+                    { value: '40+', label: 'Agency programmes' },
+                    { value: '100%', label: 'Pipeline visibility' },
+                    { value: '✓', label: 'Human in the loop' },
                   ].map((s) => (
-                    <div key={s.label} className="text-center">
-                      <div className="text-2xl font-black text-green-900">{s.value}</div>
-                      <div className="text-xs font-medium text-slate-600">{s.label}</div>
+                    <div key={s.label}>
+                      <div className="text-2xl font-black text-amber-400">{s.value}</div>
+                      <div className="text-xs font-medium text-green-300">{s.label}</div>
                     </div>
                   ))}
                 </motion.div>
               </div>
+            </div>
 
-              <motion.div
-                initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.3 }}
-                className="relative mx-auto w-full max-w-md"
-              >
-                <div className="relative z-10 overflow-hidden rounded-3xl border-4 border-green-200 shadow-2xl shadow-green-900/10">
-                  <Image
-                    src="/mrs-elsie-anietie-peters.png"
-                    alt="Mrs. Elsie Anietie Peters — Head of Civil Service, Akwa Ibom State"
-                    width={540}
-                    height={620}
-                    className="w-full object-cover object-top"
-                    priority
-                  />
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-green-950/95 to-transparent p-6">
-                    <p className="text-xl font-black text-white">Mrs. Elsie Anietie Peters</p>
-                    <p className="text-lg font-bold text-amber-300">Head of Civil Service</p>
-                    <p className="text-sm font-semibold text-green-200">Akwa Ibom State</p>
+            {/* ── RIGHT: photo panel ── */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.8, delay: 0.25 }}
+              className="relative min-h-[360px] sm:min-h-[440px] lg:min-h-0 lg:w-[42%]"
+            >
+              <Image
+                src="/mrs-elsie-anietie-peters.png"
+                alt="Mrs. Elsie Anietie Peters — Head of Civil Service, Akwa Ibom State"
+                fill
+                className="object-cover object-top"
+                priority
+                sizes="(max-width:1024px) 100vw, 42vw"
+              />
+              {/* Name plate */}
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-green-950/95 via-green-950/50 to-transparent px-6 py-6 sm:py-8">
+                <div className="flex items-end gap-4">
+                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full ring-2 ring-amber-400/70 shadow-lg">
+                    <Image
+                      src="/akwa-ibom-seal.png"
+                      alt=""
+                      width={44} height={44}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-base font-black text-white leading-tight">Mrs. Elsie Anietie Peters</p>
+                    <p className="text-sm font-bold text-amber-400">Head of Civil Service</p>
+                    <p className="text-xs text-green-300">Akwa Ibom State</p>
                   </div>
                 </div>
-                <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-gradient-to-br from-green-200/50 via-amber-100/40 to-transparent blur-2xl" />
+              </div>
+
+              {/* Floating quote — desktop only */}
+              <motion.div
+                initial={{ opacity: 0, y: -12, rotate: 2 }}
+                animate={{ opacity: 1, y: 0, rotate: 2 }}
+                transition={{ delay: 1.1, duration: 0.5 }}
+                className="absolute top-8 right-6 hidden max-w-[190px] rounded-2xl border border-white/20 bg-white/95 p-4 shadow-xl backdrop-blur-sm lg:block"
+              >
+                <Sparkles className="mb-2 h-4 w-4 text-amber-500" aria-hidden />
+                <p className="text-[11px] italic leading-snug text-slate-700">
+                  "A merit-driven civil service that delivers for every Akwa Ibom citizen."
+                </p>
+                <p className="mt-1.5 text-[10px] font-bold text-green-700">— AKS-HRMS Mission</p>
               </motion.div>
-            </div>
+            </motion.div>
+          </div>
+
+          {/* ── AMBER TICKER ── */}
+          <div className="overflow-hidden bg-amber-400 py-2.5">
+            {reduceMotion ? (
+              <p className="px-6 text-center text-xs font-bold uppercase tracking-widest text-green-950">
+                {MARQUEE_PARTS.join(' · ')}
+              </p>
+            ) : (
+              <motion.div
+                className="flex whitespace-nowrap"
+                animate={{ x: ['0%', '-50%'] }}
+                transition={{ duration: 36, repeat: Infinity, ease: 'linear' }}
+              >
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <span key={i} className="mx-8 text-xs font-bold uppercase tracking-widest text-green-950">
+                    {MARQUEE_PARTS.map((p, j) => (
+                      <span key={j}>
+                        <span className="mx-3 inline-block h-1.5 w-1.5 rounded-full bg-green-800 align-middle" />
+                        {p}
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </motion.div>
+            )}
           </div>
         </section>
-
-        {/* ── MARQUEE ── */}
-        <div className="border-y border-green-200/50 bg-gradient-to-r from-green-50 via-white to-amber-50/40 py-5">
-          {reduceMotion ? (
-            <p className="px-6 text-center font-display text-lg font-bold text-green-900 md:text-xl">
-              {MARQUEE_PARTS.join(' · ')}
-            </p>
-          ) : (
-            <motion.div
-              className="flex whitespace-nowrap"
-              animate={{ x: ['0%', '-50%'] }}
-              transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
-            >
-              {Array.from({ length: 8 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="mx-10 font-display text-2xl font-bold tracking-tight text-green-900 md:text-3xl"
-                >
-                  {MARQUEE_PARTS.join(' · ')} ·{' '}
-                </span>
-              ))}
-            </motion.div>
-          )}
-        </div>
 
         {/* ── PLATFORM (full Seemplify HR suite) ── */}
         <section id="services" className="relative py-24">
