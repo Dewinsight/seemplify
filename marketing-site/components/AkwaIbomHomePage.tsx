@@ -315,7 +315,7 @@ export default function AkwaIbomHomePage() {
                 src="/mrs-elsie-anietie-peters.png"
                 alt="Mrs. Elsie Anietie Peters — Head of Civil Service, Akwa Ibom State"
                 fill
-                className="object-cover object-top"
+                className="object-contain object-bottom bg-[#c9a84c]"
                 priority
                 sizes="(max-width:1024px) 100vw, 42vw"
               />
