@@ -207,15 +207,15 @@ export default function AkwaIbomHomePage() {
 
                 <motion.h1
                   {...fadeUp(0.1)}
-                  className="font-display text-4xl font-black leading-[1.08] tracking-tight text-slate-900 md:text-5xl lg:text-6xl xl:text-7xl"
+                  className="font-display text-3xl font-black leading-[1.1] tracking-tight text-slate-900 sm:text-4xl md:text-4xl lg:text-5xl xl:text-5xl"
                 >
-                  ARISE WORKFORCE…{' '}
-                  <span className="bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600 bg-clip-text text-transparent">
+                  ARISE WORKFORCE…
+                  <span className="mt-1 block text-2xl sm:text-3xl md:text-3xl lg:text-4xl xl:text-4xl font-black bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600 bg-clip-text text-transparent leading-snug">
                     Building a Digital, AI-driven Workforce of the Golden Era!
                   </span>
                 </motion.h1>
 
-                <motion.p {...fadeUp(0.2)} className="max-w-xl text-lg leading-relaxed text-slate-700">
+                <motion.p {...fadeUp(0.2)} className="max-w-xl text-sm sm:text-base md:text-lg leading-relaxed text-slate-700">
                   Under the leadership of His Excellency Governor Umo Eno PhD and the ARISE Agenda, the Akwa
                   Ibom State Government is advancing a more efficient, responsive, and people-centred public
                   service. As part of this commitment, we proudly introduce AKS-HRMS — the Akwa Ibom State
