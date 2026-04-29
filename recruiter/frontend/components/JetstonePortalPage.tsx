@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ScrollReveal from '@/components/animations/ScrollReveal';
-import GradientMesh from '@/components/backgrounds/GradientMesh';
 import StickyHeader from '@/components/StickyHeader';
 import ScrollProgress from '@/components/ui/ScrollProgress';
 import BackToTop from '@/components/ui/BackToTop';
@@ -35,9 +34,14 @@ export default function JetstonePortalPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-amber-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme">
+    // Solid-colour base so iOS Safari never bleeds dark GradientMesh orbs through
+    <div className="min-h-screen bg-[#f0faf4] text-slate-900 overflow-x-hidden relative jetstone-light-theme">
+      {/* Subtle static decorative blobs — no animated blurs that break on iOS */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-0 overflow-hidden">
+        <div style={{ background: 'radial-gradient(ellipse 70% 55% at 15% 20%, rgba(134,239,172,0.22), transparent)' }} className="absolute inset-0" />
+        <div style={{ background: 'radial-gradient(ellipse 60% 50% at 85% 75%, rgba(251,191,36,0.14), transparent)' }} className="absolute inset-0" />
+      </div>
       <ScrollProgress />
-      <GradientMesh />
       <BackToTop />
 
       {/* ── Header ── */}
@@ -119,80 +123,120 @@ export default function JetstonePortalPage() {
       <div className="h-24" />
 
       {/* ── HERO ── */}
-      <section id="hero" className="relative z-10 container mx-auto px-4 py-16 md:py-24 lg:py-28 flex flex-col lg:flex-row items-center gap-12">
-        <div className="lg:w-1/2 space-y-7">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-4 py-1.5">
-            <div className="flex h-8 flex-shrink-0 items-center">
-              <Image src="/logoakwa.png" alt="" width={160} height={40} className="h-8 w-auto max-w-[180px] bg-transparent object-contain" />
-            </div>
-            <span className="text-green-900 text-xs font-semibold tracking-wide uppercase">Official Human Resource Management Portal</span>
+      <section id="hero" className="relative z-10 container mx-auto px-4 pt-10 pb-16 md:pt-16 md:pb-24 lg:pt-20 lg:pb-28 flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
+
+        {/* ── Left: text ── */}
+        <div className="w-full lg:w-1/2 space-y-5 md:space-y-6 text-center lg:text-left">
+
+          {/* Badge — no logo inside to keep it tight on mobile */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }}
+            className="inline-flex items-center gap-2 bg-green-100 border border-green-200 rounded-full px-3.5 py-1.5">
+            <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+            <span className="text-green-900 text-[11px] sm:text-xs font-semibold tracking-wide uppercase leading-none">
+              Official HR Management Portal · Akwa Ibom State
+            </span>
           </motion.div>
 
-          <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.1 }}
-            className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black leading-[1.08] tracking-tight text-slate-900">
-            Fair. Transparent.{' '}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600">
+          {/* Heading — capped so it never overflows a phone */}
+          <motion.h1
+            initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1 }}
+            className="text-3xl sm:text-4xl md:text-4xl lg:text-5xl xl:text-5xl font-black leading-[1.12] tracking-tight text-slate-900 max-w-xl mx-auto lg:mx-0"
+          >
+            Transparent.{' '}Merit-Based.{' '}
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-700 via-amber-700 to-yellow-600 whitespace-nowrap">
               AI-Driven.
             </span>
           </motion.h1>
 
-          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.2 }}
-            className="text-lg md:text-xl text-slate-700 max-w-xl leading-relaxed">
-            Hiring teams use this portal to manage applicants end to end — structured intake,
-            objective AI-assisted screening, clear pipelines, and auditable decisions — so
-            public sector human resource management stays fair, fast, and transparent.
+          <motion.p
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.2 }}
+            className="text-base md:text-lg text-slate-600 max-w-lg mx-auto lg:mx-0 leading-relaxed"
+          >
+            Under the ARISE Agenda, Akwa Ibom State is building a merit-driven public service.
+            This portal helps HR teams manage applicants transparently — from intake to offer.
           </motion.p>
 
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.3 }}
-            className="flex flex-wrap gap-4">
-            <Button className={`h-13 px-8 text-base font-semibold ${btnPrimary}`} onClick={() => scrollTo('ai-approach')}>
-              Our Approach <ArrowRight className="ml-2 w-5 h-5" />
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.3 }}
+            className="flex flex-wrap justify-center lg:justify-start gap-3"
+          >
+            <Button
+              className={`h-11 px-6 text-sm font-semibold ${btnPrimary}`}
+              onClick={() => scrollTo('ai-approach')}
+            >
+              Our Approach <ArrowRight className="ml-1.5 w-4 h-4" />
             </Button>
-            <Button variant="outline" className={`h-13 px-8 text-base font-semibold ${btnOutline}`} onClick={() => { window.location.href = '/login'; }}>
-              <LogIn className="mr-2 w-5 h-5" />
-              Manage applicants
+            <Button
+              variant="outline"
+              className={`h-11 px-6 text-sm font-semibold ${btnOutline}`}
+              onClick={() => { window.location.href = '/login'; }}
+            >
+              <LogIn className="mr-1.5 w-4 h-4" />
+              HR Sign-in
             </Button>
           </motion.div>
 
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-            className="flex flex-wrap gap-6 pt-2">
+          {/* Stats row */}
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.55 }}
+            className="flex flex-wrap justify-center lg:justify-start gap-6 pt-1"
+          >
             {[
-              { label: 'Agency programs', value: '40+' },
+              { label: 'Agency programmes', value: '40+' },
               { label: 'Pipeline visibility', value: '100%' },
               { label: 'Audit-ready', value: '✓' },
             ].map((s) => (
-              <div key={s.label} className="text-center">
-                <div className="text-2xl font-black text-green-800">{s.value}</div>
-                <div className="text-xs text-slate-500 font-medium">{s.label}</div>
+              <div key={s.label} className="text-center lg:text-left">
+                <div className="text-xl font-black text-green-800">{s.value}</div>
+                <div className="text-xs text-slate-500">{s.label}</div>
               </div>
             ))}
           </motion.div>
         </div>
 
-        <motion.div className="lg:w-1/2 flex justify-center"
-          initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8, delay: 0.3 }}>
-          <div className="relative max-w-md w-full">
-            <div className="relative z-10 rounded-3xl overflow-hidden border-4 border-green-200 shadow-2xl">
-              <Image src="/governor-umo-eno.png" alt="Governor Umo Eno — Akwa Ibom State"
-                width={540} height={620} className="w-full object-cover object-top" priority />
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-green-950/90 to-transparent p-6">
-                <p className="text-white font-black text-xl">His Excellency</p>
-                <p className="text-amber-300 font-bold text-lg">Gov. Umo Eno</p>
-                <p className="text-green-300 text-sm">Governor, Akwa Ibom State</p>
+        {/* ── Right: Governor photo ── */}
+        <motion.div
+          className="w-full lg:w-1/2 flex justify-center"
+          initial={{ opacity: 0, scale: 0.93 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.75, delay: 0.25 }}
+        >
+          <div className="relative w-full max-w-[320px] sm:max-w-[380px] lg:max-w-[440px]">
+            {/* Photo card */}
+            <div className="relative z-10 rounded-2xl overflow-hidden border-4 border-green-200 shadow-xl">
+              <Image
+                src="/governor-umo-eno.png"
+                alt="Governor Umo Eno — Akwa Ibom State"
+                width={440} height={520}
+                className="w-full object-cover object-top"
+                priority
+              />
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-green-950/90 to-transparent px-5 py-4">
+                <p className="text-white font-black text-base leading-tight">His Excellency</p>
+                <p className="text-amber-300 font-bold text-sm">Gov. Umo Eno PhD</p>
+                <p className="text-green-300 text-xs">Executive Governor, Akwa Ibom State</p>
               </div>
             </div>
-            <div className="absolute -top-5 -right-5 z-20 flex h-16 items-center drop-shadow-md">
-              <Image src="/logoakwa.png" alt="Akwa Ibom State" width={180} height={56} className="h-14 w-auto max-w-[200px] bg-transparent object-contain" />
+
+            {/* Seal — top-right, sized to stay inside on mobile */}
+            <div className="absolute -top-4 -right-3 sm:-top-5 sm:-right-5 z-20 drop-shadow-md">
+              <Image
+                src="/logoakwa.png"
+                alt="Akwa Ibom State seal"
+                width={80} height={80}
+                className="h-14 w-14 sm:h-16 sm:w-16 object-contain bg-transparent"
+              />
             </div>
-            <motion.div className="absolute -bottom-8 -left-6 bg-white border border-green-100 rounded-2xl shadow-xl p-4 max-w-[220px] z-20"
-              initial={{ opacity: 0, y: 20, rotate: -3 }} animate={{ opacity: 1, y: 0, rotate: -3 }}
-              transition={{ delay: 1, duration: 0.5 }}>
-              <div className="flex gap-1 mb-2">
+
+            {/* Quote card — hidden on tiny screens to avoid overflow */}
+            <motion.div
+              className="hidden sm:block absolute -bottom-6 -left-4 lg:-bottom-8 lg:-left-6 bg-white border border-green-100 rounded-xl shadow-lg px-4 py-3 max-w-[190px] z-20"
+              initial={{ opacity: 0, y: 16, rotate: -2 }} animate={{ opacity: 1, y: 0, rotate: -2 }}
+              transition={{ delay: 0.9, duration: 0.45 }}
+            >
+              <div className="flex gap-0.5 mb-1.5">
                 {[...Array(5)].map((_, i) => <Star key={i} className="w-3 h-3 text-amber-400 fill-amber-400" />)}
               </div>
-              <p className="text-xs text-slate-700 italic leading-relaxed">
-                "A transparent and merit-driven Akwa Ibom for all."
+              <p className="text-xs text-slate-700 italic leading-snug">
+                "A transparent, merit-driven Akwa Ibom for all."
               </p>
               <p className="text-[10px] text-green-700 font-semibold mt-1">— Gov. Umo Eno</p>
             </motion.div>
