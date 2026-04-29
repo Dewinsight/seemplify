@@ -194,14 +194,9 @@ export default function JetstonePortalPage() {
               {/* Official badge */}
               <motion.div
                 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-                className="inline-flex items-center gap-2.5 mb-7 bg-white/10 border border-white/20 rounded-full px-4 py-1.5"
+                className="inline-flex items-center gap-2 mb-7 bg-white/10 border border-white/20 rounded-full px-4 py-1.5"
               >
-                <Image
-                  src="/akwa-ibom-seal.png"
-                  alt=""
-                  width={20} height={20}
-                  className="w-5 h-5 rounded-full object-cover shrink-0"
-                />
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
                 <span className="text-white/90 text-[11px] sm:text-xs font-semibold tracking-widest uppercase">
                   Official HR Management Portal
                 </span>
