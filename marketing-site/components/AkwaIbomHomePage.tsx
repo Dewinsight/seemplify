@@ -199,7 +199,7 @@ export default function AkwaIbomHomePage() {
                   {...fadeUp(0)}
                   className="inline-flex items-center gap-2 rounded-full border border-green-200/80 bg-white/90 px-4 py-2 shadow-sm"
                 >
-                  <Image src="/logoakwa.png" alt="" width={160} height={40} className="h-7 w-auto object-contain" />
+                  <span className="w-2 h-2 rounded-full bg-green-600 shrink-0" />
                   <span className="text-xs font-semibold uppercase tracking-wide text-green-900">
                     Official HR Management Portal
                   </span>
