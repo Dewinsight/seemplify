@@ -202,31 +202,23 @@ export default function LoginPage() {
           <div className="mb-6 lg:mb-8 xl:mb-12">
             {jet ? (
               /* Jetstone: state seal + ARISE combined mark + Jetstone sub-brand */
-              <div className="flex items-center gap-4 mb-6">
-                <div className="flex flex-shrink-0 items-center">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-12 shrink-0 items-center">
                   <Image
                     src="/logoakwa.png"
-                    alt="Government of Akwa Ibom State · ARISE"
+                    alt="Government of Akwa Ibom State"
                     width={280}
                     height={80}
-                    className="h-14 w-auto max-w-[min(100%,320px)] bg-transparent object-contain lg:h-16 xl:h-[4.5rem]"
+                    className="h-10 w-auto max-w-[220px] bg-transparent object-contain lg:h-12"
                   />
                 </div>
-                <div>
-                  <h1 className="text-base lg:text-lg xl:text-xl font-extrabold text-green-900 leading-tight">
-                    Govt. of Akwa Ibom State
-                  </h1>
-                  <p className="text-[11px] lg:text-xs text-green-700/70 mb-2">The Land of Promise · Nigeria</p>
-                  <div className="flex items-center gap-2 bg-white/60 border border-green-100 rounded-lg px-2 py-1">
-                    <span className="text-[10px] lg:text-xs text-slate-500 whitespace-nowrap">Powered by</span>
-                    <Image
-                      src="/jetstone-logo.png"
-                      alt="Jetstone Education"
-                      width={100}
-                      height={22}
-                      className="object-contain h-4 lg:h-5 w-auto"
-                    />
-                  </div>
+                <div className="hidden sm:block border-l border-green-200 pl-3">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-green-950 leading-tight">
+                    Office of the Head of Service
+                  </p>
+                  <p className="text-[10px] font-semibold text-green-800/75">
+                    Government of Akwa Ibom State
+                  </p>
                 </div>
               </div>
             ) : (
@@ -314,22 +306,21 @@ export default function LoginPage() {
             {/* Mobile Logo */}
             <div className="lg:hidden flex flex-col items-center mb-8 gap-3">
               {jet ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex flex-shrink-0 items-center">
-                    <Image
-                      src="/logoakwa.png"
-                      alt="Government of Akwa Ibom State · ARISE"
-                      width={220}
-                      height={56}
-                      className="h-10 w-auto max-w-[220px] bg-transparent object-contain"
-                    />
-                  </div>
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <Image
+                    src="/logoakwa.png"
+                    alt="Government of Akwa Ibom State"
+                    width={220}
+                    height={56}
+                    className="h-10 w-auto max-w-[200px] bg-transparent object-contain"
+                  />
                   <div>
-                    <p className="text-sm font-bold text-green-900 leading-tight">Govt. of Akwa Ibom State</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[10px] text-slate-500">Powered by</span>
-                      <Image src="/jetstone-logo.png" alt="Jetstone Education" width={80} height={18} className="object-contain h-4 w-auto" />
-                    </div>
+                    <p className="text-[10px] font-extrabold uppercase tracking-wide text-green-950 leading-tight">
+                      Office of the Head of Service
+                    </p>
+                    <p className="text-[9px] font-semibold text-green-800/75">
+                      Government of Akwa Ibom State
+                    </p>
                   </div>
                 </div>
               ) : brand.useImageLogo && brand.logo ? (

@@ -71,11 +71,11 @@ export const BRANDS: Record<string, BrandConfig> = {
     patterns: ['jetstone', 'akwaibom', 'aiinnigeria', 'ibom.aiinnigeria.com'],
     metaTitle: 'Akwa Ibom State — Human Resource Management Portal',
     metaDescription:
-      'Official Akwa Ibom State government Human Resource Management Portal. Fair, transparent public-sector hiring powered by Jetstone Education.',
+      'Official Akwa Ibom State government Human Resource Management Portal. Fair, transparent public-sector hiring.',
     logo: '/logoakwa.png',
     secondaryLogo: '/jetstone-logo.png',
     useImageLogo: true,
-    footerText: '© 2025 Jetstone Education. All rights reserved.',
+    footerText: '© 2025 Government of Akwa Ibom State. All rights reserved.',
     landingRootClass:
       'min-h-screen bg-gradient-to-br from-green-50 via-amber-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme',
     authShellClass: 'bg-gradient-to-br from-green-50 via-amber-50 to-white jetstone-light-theme',
