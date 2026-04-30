@@ -474,11 +474,16 @@ export default function AkwaIbomHomePage() {
                 <div className="relative overflow-hidden rounded-3xl border-2 border-amber-400/40 shadow-2xl shadow-black/30">
                   <Image
                     src="/mrs-elsie-anietie-peters.png"
-                    alt="Mrs. Elsie Anietie Peters — Head of Civil Service"
+                    alt="Mrs. Elsie Peters — Head of Civil Service"
                     width={540}
                     height={620}
                     className="w-full object-cover object-center"
                   />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-green-950/95 via-green-950/55 to-transparent px-6 pb-6 pt-16">
+                    <p className="text-lg font-black leading-tight text-white">Mrs. Elsie Peters</p>
+                    <p className="text-sm font-bold text-amber-300">Head of Civil Service</p>
+                    <p className="text-xs font-semibold text-green-200">Akwa Ibom State</p>
+                  </div>
                 </div>
               </div>
             </div>
