@@ -274,7 +274,7 @@ export default function JetstonePortalPage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8, delay: 0.2 }}
           >
             <Image
-              src="/governor-umo-eno.webp"
+              src="/governor-umo-eno-hd.png"
               alt="Governor Umo Eno PhD — Akwa Ibom State"
               fill
               className="object-cover object-center lg:object-top"
@@ -450,7 +450,7 @@ export default function JetstonePortalPage() {
                 </div>
                 <div className="mt-8 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-1">
                   <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-amber-400/60 shadow-lg shrink-0">
-                    <Image src="/governor-umo-eno.webp" alt="Governor Umo Eno" width={48} height={48} className="w-full h-full object-cover object-top" />
+                    <Image src="/governor-umo-eno-hd.png" alt="Governor Umo Eno" width={48} height={48} className="w-full h-full object-cover object-top" />
                   </div>
                   <div className="sm:ml-3 text-center sm:text-left">
                     <p className="font-bold text-amber-300">His Excellency, Governor Umo Eno PhD</p>
@@ -466,7 +466,7 @@ export default function JetstonePortalPage() {
                 <div className="relative max-w-[320px] sm:max-w-[360px] w-full">
                   <div className="rounded-3xl overflow-hidden border-4 border-green-700 shadow-2xl">
                     <Image
-                      src="/governor-umo-eno.webp"
+                      src="/governor-umo-eno-hd.png"
                       alt="Governor Umo Eno PhD"
                       width={360}
                       height={460}
