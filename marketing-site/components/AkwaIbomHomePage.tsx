@@ -315,7 +315,7 @@ export default function AkwaIbomHomePage() {
                 src="/governor-umo-eno-thumbs-up.png"
                 alt="Governor Umo Eno PhD — Akwa Ibom State"
                 fill
-                className="object-cover object-top bg-black"
+                className="object-cover object-top"
                 priority
                 sizes="(max-width:1024px) 100vw, 42vw"
               />
