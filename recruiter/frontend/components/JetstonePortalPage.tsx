@@ -215,7 +215,7 @@ export default function JetstonePortalPage() {
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 0.18 }}
                 className="text-lg sm:text-xl lg:text-xl font-bold text-green-200 mb-5 leading-snug"
               >
-                Building a Digital, AI-driven<br className="hidden sm:block" />
+                Building a Digital, AI-driven <br className="hidden sm:block" />
                 Workforce of the Golden Era
               </motion.p>
 

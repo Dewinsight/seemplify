@@ -243,7 +243,7 @@ export default function AkwaIbomHomePage() {
                   {...fadeUp(0.17)}
                   className="mt-1 text-lg font-bold leading-snug text-green-200 sm:text-xl lg:text-xl xl:text-2xl"
                 >
-                  Building a Digital, AI-driven<br className="hidden sm:block" />
+                  Building a Digital, AI-driven <br className="hidden sm:block" />
                   Workforce of the Golden Era!
                 </motion.p>
 
