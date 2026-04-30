@@ -544,6 +544,52 @@ function getIdpBrand(req) {
           --brand-2: #d97706;
           --brand-hover: #166534;
         }
+        .jetstone-light-theme .login-brand {
+          align-items: center;
+        }
+        .jetstone-light-theme .login-brand .brand-mark img {
+          height: 48px !important;
+        }
+        .jetstone-light-theme .login-brand-name {
+          display: none !important;
+        }
+        .jetstone-light-theme .marketing-pill {
+          background: rgba(21, 128, 61, 0.1) !important;
+          color: #15803d !important;
+          border-color: rgba(21, 128, 61, 0.2) !important;
+        }
+        .jetstone-light-theme .status-dot {
+          background: #15803d !important;
+          box-shadow: 0 0 0 4px rgba(21, 128, 61, 0.2) !important;
+        }
+        .jetstone-light-theme .marketing-heading .highlight {
+          background: linear-gradient(135deg, #15803d, #b45309, #854d0e) !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          background-clip: text !important;
+          background-size: 200% 200% !important;
+        }
+        .jetstone-light-theme .feature-icon--green {
+          background: rgba(21, 128, 61, 0.1) !important;
+          color: #15803d !important;
+        }
+        .jetstone-light-theme .feature-icon--amber {
+          background: rgba(217, 119, 6, 0.1) !important;
+          color: #d97706 !important;
+        }
+        .jetstone-light-theme .feature-icon--teal {
+          background: rgba(13, 148, 136, 0.1) !important;
+          color: #0d9488 !important;
+        }
+        .jetstone-light-theme .feature-card:hover .feature-icon--green {
+          background: rgba(21, 128, 61, 0.15) !important;
+        }
+        .jetstone-light-theme .feature-card:hover .feature-icon--amber {
+          background: rgba(217, 119, 6, 0.15) !important;
+        }
+        .jetstone-light-theme .feature-card:hover .feature-icon--teal {
+          background: rgba(13, 148, 136, 0.15) !important;
+        }
       `,
       marketing: {
         pill: 'Official State Government Portal',
