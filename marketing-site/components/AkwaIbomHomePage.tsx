@@ -312,10 +312,10 @@ export default function AkwaIbomHomePage() {
               className="relative min-h-[360px] sm:min-h-[440px] lg:min-h-0 lg:w-[42%]"
             >
               <Image
-                src="/governor-umo-eno.webp"
+                src="/governor-umo-eno-thumbs-up.png"
                 alt="Governor Umo Eno PhD — Akwa Ibom State"
                 fill
-                className="object-cover object-top"
+                className="object-cover object-top bg-black"
                 priority
                 sizes="(max-width:1024px) 100vw, 42vw"
               />
