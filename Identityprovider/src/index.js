@@ -544,7 +544,32 @@ function getIdpBrand(req) {
           --brand-2: #d97706;
           --brand-hover: #166534;
         }
-      `
+      `,
+      marketing: {
+        pill: 'Official State Government Portal',
+        heading: 'ARISE WORKFORCE,<br/><span class="highlight">Golden Era.</span>',
+        desc: 'Akwa Ibom State provides a unified platform to manage human resources, recruitment, and public service administration efficiently.',
+        features: [
+          {
+            title: 'Centralized Identity',
+            desc: 'One secure digital identity for HR, learning, and public service administration.',
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+            color: 'green'
+          },
+          {
+            title: 'Transparent Access',
+            desc: 'Secure role-based access for all state ministries, departments, and agencies.',
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+            color: 'amber'
+          },
+          {
+            title: 'Accountability',
+            desc: 'Audit-ready security and transparency at every step of public service management.',
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>',
+            color: 'teal'
+          }
+        ]
+      }
     }
   }
   return {
@@ -552,7 +577,32 @@ function getIdpBrand(req) {
     logoHtml: seemplifyMarkSvg,
     navLogoHtml: seemplifyNavLogoImg,
     themeClass: '',
-    cssVars: ''
+    cssVars: '',
+    marketing: {
+      pill: 'Enterprise-ready &bull; SOC 2 Ready',
+      heading: 'Your Workforce,<br/><span class="highlight">Supercharged.</span>',
+      desc: 'Seemplify gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.',
+      features: [
+        {
+          title: 'Single Sign-On',
+          desc: 'One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.',
+          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+          color: 'blue'
+        },
+        {
+          title: 'Instant Access',
+          desc: 'Adaptive MFA and session continuity for seamless, secure access across your tools.',
+          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+          color: 'purple'
+        },
+        {
+          title: 'Enterprise Security',
+          desc: 'SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.',
+          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>',
+          color: 'accent'
+        }
+      ]
+    }
   }
 }
 
@@ -1284,47 +1334,33 @@ app.get('/interaction/:uid', async (req, res) => {
             <div class="marketing-inner">
               <div class="marketing-pill">
                 <span class="status-dot"></span>
-                Enterprise-ready &bull; SOC 2 Ready
+                ${brand.marketing ? brand.marketing.pill : 'Enterprise-ready &bull; SOC 2 Ready'}
               </div>
 
               <h2 class="marketing-heading">
-                Your Workforce,<br/><span class="highlight">Supercharged.</span>
+                ${brand.marketing ? brand.marketing.heading : 'Your Workforce,<br/><span class="highlight">Supercharged.</span>'}
               </h2>
 
               <p class="marketing-desc">
-                ${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
+                ${brand.marketing ? brand.marketing.desc : `${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.`}
               </p>
 
               <div class="feature-cards">
+                ${(brand.marketing ? brand.marketing.features : [
+                  { title: 'Single Sign-On', desc: 'One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+                  { title: 'Instant Access', desc: 'Adaptive MFA and session continuity for seamless, secure access across your tools.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'purple' },
+                  { title: 'Enterprise Security', desc: 'SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'accent' }
+                ]).map(f => `
                 <div class="feature-card">
-                  <div class="feature-icon feature-icon--blue">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <div class="feature-icon feature-icon--${f.color}">
+                    ${f.icon}
                   </div>
                   <div>
-                    <div class="feature-title">Single Sign-On</div>
-                    <div class="feature-desc">One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.</div>
+                    <div class="feature-title">${f.title}</div>
+                    <div class="feature-desc">${f.desc}</div>
                   </div>
                 </div>
-
-                <div class="feature-card">
-                  <div class="feature-icon feature-icon--purple">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                  </div>
-                  <div>
-                    <div class="feature-title">Instant Access</div>
-                    <div class="feature-desc">Adaptive MFA and session continuity for seamless, secure access across your tools.</div>
-                  </div>
-                </div>
-
-                <div class="feature-card">
-                  <div class="feature-icon feature-icon--accent">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
-                  </div>
-                  <div>
-                    <div class="feature-title">Enterprise Security</div>
-                    <div class="feature-desc">SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.</div>
-                  </div>
-                </div>
+                `).join('')}
               </div>
             </div>
           </div>
@@ -1652,47 +1688,33 @@ app.get('/signup/:uid', async (req, res) => {
           <div class="marketing-inner">
             <div class="marketing-pill">
               <span class="status-dot"></span>
-              Enterprise-ready &bull; SOC 2 Ready
+              ${brand.marketing ? brand.marketing.pill : 'Enterprise-ready &bull; SOC 2 Ready'}
             </div>
 
             <h2 class="marketing-heading">
-              Start in minutes,<br/><span class="highlight">scale for years.</span>
+              ${brand.marketing ? brand.marketing.heading : 'Start in minutes,<br/><span class="highlight">scale for years.</span>'}
             </h2>
 
             <p class="marketing-desc">
-              Create your identity once. Launch SmartHR, LMS, Chat, and more via single sign-on with org-level controls.
+              ${brand.marketing ? brand.marketing.desc : 'Create your identity once. Launch SmartHR, LMS, Chat, and more via single sign-on with org-level controls.'}
             </p>
 
             <div class="feature-cards">
+              ${(brand.marketing ? brand.marketing.features : [
+                { title: 'SSO-Ready', desc: 'One account for the hub and all connected apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+                { title: 'Fast Onboarding', desc: 'Create teams, invite members, and control access from one place.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'purple' },
+                { title: 'Secure by Design', desc: 'Email verification + modern session handling across apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'accent' }
+              ]).map(f => `
               <div class="feature-card">
-                <div class="feature-icon feature-icon--blue">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <div class="feature-icon feature-icon--${f.color}">
+                  ${f.icon}
                 </div>
                 <div>
-                  <div class="feature-title">SSO-Ready</div>
-                  <div class="feature-desc">One account for the hub and all connected apps.</div>
+                  <div class="feature-title">${f.title}</div>
+                  <div class="feature-desc">${f.desc}</div>
                 </div>
               </div>
-
-              <div class="feature-card">
-                <div class="feature-icon feature-icon--purple">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                </div>
-                <div>
-                  <div class="feature-title">Fast Onboarding</div>
-                  <div class="feature-desc">Create teams, invite members, and control access from one place.</div>
-                </div>
-              </div>
-
-              <div class="feature-card">
-                <div class="feature-icon feature-icon--accent">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
-                </div>
-                <div>
-                  <div class="feature-title">Secure by Design</div>
-                  <div class="feature-desc">Email verification + modern session handling across apps.</div>
-                </div>
-              </div>
+              `).join('')}
             </div>
           </div>
         </div>
@@ -9085,54 +9107,33 @@ function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = nu
           <div class="marketing-inner">
             <div class="marketing-pill">
               <span class="status-dot"></span>
-              Enterprise-ready &bull; SOC 2 Ready
+              ${brand.marketing ? brand.marketing.pill : 'Enterprise-ready &bull; SOC 2 Ready'}
             </div>
 
             <h2 class="marketing-heading">
-              Your Workforce,<br/><span class="highlight">Supercharged.</span>
+              ${brand.marketing ? brand.marketing.heading : 'Your Workforce,<br/><span class="highlight">Supercharged.</span>'}
             </h2>
 
             <p class="marketing-desc">
-              ${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.
+              ${brand.marketing ? brand.marketing.desc : `${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.`}
             </p>
 
             <div class="feature-cards">
+              ${(brand.marketing ? brand.marketing.features : [
+                { title: 'Single Sign-On', desc: 'One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+                { title: 'Instant Access', desc: 'Adaptive MFA and session continuity for seamless, secure access across your tools.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'purple' },
+                { title: 'Enterprise Security', desc: 'SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'accent' }
+              ]).map(f => `
               <div class="feature-card">
-                <div class="feature-icon feature-icon--blue">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                  </svg>
+                <div class="feature-icon feature-icon--${f.color}">
+                  ${f.icon}
                 </div>
                 <div>
-                  <div class="feature-title">Single Sign-On</div>
-                  <div class="feature-desc">One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.</div>
+                  <div class="feature-title">${f.title}</div>
+                  <div class="feature-desc">${f.desc}</div>
                 </div>
               </div>
-
-              <div class="feature-card">
-                <div class="feature-icon feature-icon--purple">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-                  </svg>
-                </div>
-                <div>
-                  <div class="feature-title">Instant Access</div>
-                  <div class="feature-desc">Adaptive MFA and session continuity for seamless, secure access across your tools.</div>
-                </div>
-              </div>
-
-              <div class="feature-card">
-                <div class="feature-icon feature-icon--accent">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M9 12l2 2 4-4"/>
-                  </svg>
-                </div>
-                <div>
-                  <div class="feature-title">Enterprise Security</div>
-                  <div class="feature-desc">SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.</div>
-                </div>
-              </div>
+              `).join('')}
             </div>
           </div>
         </div>

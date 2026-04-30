@@ -312,26 +312,13 @@ export default function AkwaIbomHomePage() {
               className="relative min-h-[360px] sm:min-h-[440px] lg:min-h-0 lg:w-[42%]"
             >
               <Image
-                src="/mrs-elsie-anietie-peters.png"
-                alt="Mrs. Elsie Anietie Peters — Head of Civil Service, Akwa Ibom State"
+                src="/governor-umo-eno.png"
+                alt="Governor Umo Eno PhD — Akwa Ibom State"
                 fill
-                className="object-contain object-bottom bg-[#c9a84c]"
+                className="object-cover object-top"
                 priority
                 sizes="(max-width:1024px) 100vw, 42vw"
               />
-              {/* Floating quote — desktop only */}
-              <motion.div
-                initial={{ opacity: 0, y: -12, rotate: 2 }}
-                animate={{ opacity: 1, y: 0, rotate: 2 }}
-                transition={{ delay: 1.1, duration: 0.5 }}
-                className="absolute top-8 right-6 hidden max-w-[190px] rounded-2xl border border-white/20 bg-white/95 p-4 shadow-xl backdrop-blur-sm lg:block"
-              >
-                <Sparkles className="mb-2 h-4 w-4 text-amber-500" aria-hidden />
-                <p className="text-[11px] italic leading-snug text-slate-700">
-                  "A merit-driven civil service that delivers for every Akwa Ibom citizen."
-                </p>
-                <p className="mt-1.5 text-[10px] font-bold text-green-700">— AKS-HRMS Mission</p>
-              </motion.div>
             </motion.div>
           </div>
 
@@ -486,20 +473,12 @@ export default function AkwaIbomHomePage() {
               <div className="relative mx-auto max-w-md">
                 <div className="relative overflow-hidden rounded-3xl border-2 border-amber-400/40 shadow-2xl shadow-black/30">
                   <Image
-                    src="/governor-umo-eno-thumbs.png"
-                    alt="Governor Umo Eno"
+                    src="/mrs-elsie-anietie-peters.png"
+                    alt="Mrs. Elsie Anietie Peters — Head of Civil Service"
                     width={540}
                     height={620}
                     className="w-full object-cover object-center"
                   />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-green-950/95 via-green-950/40 to-transparent px-6 pb-6 pt-16">
-                    <p className="text-sm font-semibold uppercase tracking-wider text-amber-200">Leadership</p>
-                    <p className="text-lg font-bold text-white">Service delivery through accountable HR</p>
-                  </div>
-                </div>
-                <div className="absolute -bottom-6 -right-6 hidden max-w-[200px] rounded-2xl border border-white/20 bg-white/10 p-4 text-sm text-white backdrop-blur-md md:block">
-                  <Sparkles className="mb-2 h-5 w-5 text-amber-300" aria-hidden />
-                  One stack: recruiting, workforce, payroll, and learning — aligned to State programmes.
                 </div>
               </div>
             </div>
