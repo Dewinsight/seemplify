@@ -1,56 +1,22 @@
 const AzureOpenAIService = require('./azureOpenAIService');
 
-const DEFAULT_ACK = 'Thank you. I have captured that response. When you are ready, use the confirm button to move to the next question.';
 let azureOpenAIService;
-
-const TERM_CLARIFICATIONS = [
-  {
-    patterns: ['cross-functional agile team', 'cross functional agile team'],
-    explanation: 'A cross-functional Agile team means people from different disciplines, such as product, engineering, design, QA, operations, or business stakeholders, working together in short planning and delivery cycles.'
-  },
-  {
-    patterns: ['cross-functional', 'cross functional'],
-    explanation: 'Cross-functional means the work involved people from different roles or departments, not just one team or one skill set.'
-  },
-  {
-    patterns: ['agile team', 'agile'],
-    explanation: 'Agile refers to a way of working where a team plans, builds, reviews, and adjusts in short cycles instead of trying to define everything upfront.'
-  },
-  {
-    patterns: ['backlog', 'product backlog'],
-    explanation: 'A backlog is the prioritized list of product features, fixes, and tasks the team may work on next.'
-  },
-  {
-    patterns: ['prioritize', 'prioritise', 'prioritizing', 'prioritising'],
-    explanation: 'Prioritize means deciding which features or tasks should come first based on value, urgency, effort, dependencies, or risk.'
-  },
-  {
-    patterns: ['business goals', 'business goal'],
-    explanation: 'Business goals are the outcomes the company or team wanted, such as revenue growth, lower cost, faster delivery, customer retention, or operational efficiency.'
-  },
-  {
-    patterns: ['customer needs', 'customer need'],
-    explanation: 'Customer needs are the user problems, expectations, or pain points the product work was meant to solve.'
-  },
-  {
-    patterns: ['requirements', 'gather requirements', 'gathering requirements'],
-    explanation: 'Gathering requirements means finding out what users, stakeholders, and the business need before deciding what should be built.'
-  },
-  {
-    patterns: ['outcome', 'result'],
-    explanation: 'The outcome is what changed because of the work, such as a shipped feature, improved metric, customer feedback, reduced delay, or lesson learned.'
-  },
-  {
-    patterns: ['specific responsibilities', 'responsibilities'],
-    explanation: 'Your specific responsibilities are the parts you personally owned or influenced, separate from what the wider team did.'
-  }
-];
 
 function getAzureOpenAIService() {
   if (!azureOpenAIService) {
     azureOpenAIService = new AzureOpenAIService();
   }
   return azureOpenAIService;
+}
+
+class AIModelUnavailableError extends Error {
+  constructor(operation, cause) {
+    super(`AI model failed during ${operation}: ${cause?.message || 'empty model response'}`);
+    this.name = 'AIModelUnavailableError';
+    this.code = 'AI_MODEL_UNAVAILABLE';
+    this.statusCode = 503;
+    this.cause = cause;
+  }
 }
 
 function safeJsonParse(content) {
@@ -71,12 +37,12 @@ function truncate(value, max = 1600) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
-function normalizeText(value) {
-  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function longestPatternLength(item) {
-  return Math.max(...item.patterns.map((pattern) => pattern.length));
+function requireModelContent(result, operation) {
+  const content = String(result?.content || '').trim();
+  if (!content) {
+    throw new AIModelUnavailableError(operation);
+  }
+  return content;
 }
 
 class AIInterviewerService {
@@ -108,15 +74,12 @@ End by telling the candidate they can ask for clarification or answer when ready
         }
       ], { temperature: 0.45, maxTokens: 260 });
 
-      return result.content || this.fallbackQuestionIntro(question, questionNumber, interview.questionSnapshots.length);
+      return requireModelContent(result, 'question introduction');
     } catch (error) {
-      console.warn('AI question intro failed, using fallback:', error.message);
-      return this.fallbackQuestionIntro(question, questionNumber, interview.questionSnapshots.length);
+      console.warn('AI question intro failed:', error.message);
+      if (error.code === 'AI_MODEL_UNAVAILABLE') throw error;
+      throw new AIModelUnavailableError('question introduction', error);
     }
-  }
-
-  fallbackQuestionIntro(question, questionNumber, totalQuestions) {
-    return `Let's move into question ${questionNumber} of ${totalQuestions}. ${question.question}\n\nYou can ask me to clarify the question, or share your answer when you are ready.`;
   }
 
   isLikelyClarification(message) {
@@ -158,39 +121,12 @@ Keep the clarification brief, practical, and specific to the candidate's questio
         }
       ], { temperature: 0.35, maxTokens: 260 });
 
-      return result.content || this.buildContextualClarification({ question, candidateMessage });
+      return requireModelContent(result, 'question clarification');
     } catch (error) {
-      console.warn('AI clarification failed, using fallback:', error.message);
-      return this.buildContextualClarification({ question, candidateMessage });
+      console.warn('AI clarification failed:', error.message);
+      if (error.code === 'AI_MODEL_UNAVAILABLE') throw error;
+      throw new AIModelUnavailableError('question clarification', error);
     }
-  }
-
-  buildContextualClarification({ question, candidateMessage }) {
-    const questionText = String(question?.question || '').trim();
-    const askText = normalizeText(candidateMessage);
-    const normalizedQuestion = normalizeText(questionText);
-    const directMatches = TERM_CLARIFICATIONS.filter((item) =>
-      item.patterns.some((pattern) => askText.includes(pattern))
-    ).sort((a, b) => longestPatternLength(b) - longestPatternLength(a));
-
-    const inferredMatches = directMatches.length
-      ? directMatches.slice(0, 1)
-      : TERM_CLARIFICATIONS.filter((item) =>
-          item.patterns.some((pattern) => normalizedQuestion.includes(pattern))
-        )
-          .sort((a, b) => longestPatternLength(b) - longestPatternLength(a))
-          .slice(0, 1);
-
-    if (inferredMatches.length) {
-      const explanations = inferredMatches.map((item) => item.explanation).join(' ');
-      return `${explanations} For this question, choose one real example, explain what you personally did, how you made decisions, and what result came from the work.`;
-    }
-
-    if (questionText) {
-      return `This question is asking for one specific example from your experience. Break it down into the situation, what you were responsible for, the actions you took, and the outcome, without trying to give a perfect or theoretical answer.`;
-    }
-
-    return 'This question is asking you to explain your own experience and reasoning. Focus on a specific example, the actions you took, and the result.';
   }
 
   async acknowledgeAnswer({ interview, session, question, candidateMessage }) {
@@ -209,10 +145,11 @@ Tell the candidate to use the confirm button when ready to move on.`
         }
       ], { temperature: 0.35, maxTokens: 180 });
 
-      return result.content || DEFAULT_ACK;
+      return requireModelContent(result, 'answer acknowledgement');
     } catch (error) {
-      console.warn('AI acknowledgement failed, using fallback:', error.message);
-      return DEFAULT_ACK;
+      console.warn('AI acknowledgement failed:', error.message);
+      if (error.code === 'AI_MODEL_UNAVAILABLE') throw error;
+      throw new AIModelUnavailableError('answer acknowledgement', error);
     }
   }
 
@@ -229,8 +166,6 @@ Tell the candidate to use the confirm button when ready to move on.`
         timeSpentSeconds: answer?.timeSpentSeconds || 0
       };
     });
-
-    const fallback = this.buildFallbackScore(scoringQuestions);
 
     try {
       const result = await getAzureOpenAIService().chatCompletion([
@@ -264,51 +199,30 @@ Use the expected answer and scoring criteria only for scoring. Do not include hi
       });
 
       const parsed = safeJsonParse(result.content);
-      if (!parsed) return fallback;
+      if (!parsed) {
+        throw new AIModelUnavailableError('interview scoring', new Error('Invalid JSON model response'));
+      }
 
       return {
         overallScore: Math.max(0, Math.min(100, Number(parsed.overallScore) || 0)),
-        recommendation: parsed.recommendation || fallback.recommendation,
-        summary: parsed.summary || fallback.summary,
-        strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 6) : fallback.strengths,
-        concerns: Array.isArray(parsed.concerns) ? parsed.concerns.slice(0, 6) : fallback.concerns,
+        recommendation: parsed.recommendation || 'maybe',
+        summary: parsed.summary || '',
+        strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 6) : [],
+        concerns: Array.isArray(parsed.concerns) ? parsed.concerns.slice(0, 6) : [],
         questionScores: Array.isArray(parsed.questionScores)
           ? parsed.questionScores.map((item, index) => ({
               questionIndex: Number.isInteger(item.questionIndex) ? item.questionIndex : index,
               score: Math.max(1, Math.min(5, Number(item.score) || 1)),
               rationale: item.rationale || ''
             }))
-          : fallback.questionScores,
+          : [],
         raw: parsed
       };
     } catch (error) {
-      console.warn('AI scoring failed, using fallback:', error.message);
-      return {
-        ...fallback,
-        error: error.message
-      };
+      console.warn('AI scoring failed:', error.message);
+      if (error.code === 'AI_MODEL_UNAVAILABLE') throw error;
+      throw new AIModelUnavailableError('interview scoring', error);
     }
-  }
-
-  buildFallbackScore(scoringQuestions) {
-    const answered = scoringQuestions.filter((item) => item.answer && item.status === 'answered');
-    const completionRatio = scoringQuestions.length > 0 ? answered.length / scoringQuestions.length : 0;
-    const overallScore = Math.round(completionRatio * 60);
-
-    return {
-      overallScore,
-      recommendation: overallScore >= 70 ? 'yes' : overallScore >= 40 ? 'maybe' : 'no',
-      summary: answered.length
-        ? 'The candidate completed part of the interview. AI scoring was unavailable, so this fallback score is based on completion only.'
-        : 'The candidate did not provide enough completed answers for a meaningful score.',
-      strengths: answered.length ? ['Provided responses to one or more selected questions'] : [],
-      concerns: scoringQuestions.length !== answered.length ? ['Some questions were skipped, timed out, or left unanswered'] : [],
-      questionScores: scoringQuestions.map((item) => ({
-        questionIndex: item.questionIndex,
-        score: item.answer && item.status === 'answered' ? 3 : 1,
-        rationale: item.answer && item.status === 'answered' ? 'Answer captured; detailed AI scoring unavailable.' : 'No completed answer captured.'
-      }))
-    };
   }
 }
 

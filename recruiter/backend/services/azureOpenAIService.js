@@ -33,7 +33,7 @@ class AzureOpenAIService {
     console.log('   Model:', modelName);
     console.log('   Deployment:', deployment);
     console.log('   API Version:', apiVersion);
-    console.log('   API Key:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT SET');
+    console.log('   API Key configured:', apiKey ? 'yes' : 'no');
     
     this.client = new AzureOpenAI(options);
     this.modelName = modelName;

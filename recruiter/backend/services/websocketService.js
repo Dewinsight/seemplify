@@ -15,9 +15,15 @@ class WebSocketService {
    * @param {Object} server - HTTP server instance
    */
   initialize(server) {
-    this.wss = new WebSocket.Server({ 
-      server,
-      path: '/ws/assistant'
+    this.wss = new WebSocket.Server({ noServer: true });
+
+    server.on('upgrade', (req, socket, head) => {
+      const pathname = new URL(req.url, 'http://localhost').pathname;
+      if (pathname !== '/ws/assistant') return;
+
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
+        this.wss.emit('connection', ws, req);
+      });
     });
 
     this.wss.on('connection', (ws, req) => {
@@ -331,4 +337,4 @@ class WebSocketService {
 
 // Export singleton instance
 const websocketService = new WebSocketService();
-module.exports = websocketService; 
+module.exports = websocketService;

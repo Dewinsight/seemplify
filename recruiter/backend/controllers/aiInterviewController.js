@@ -14,6 +14,14 @@ const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
 
+function sendControllerError(res, error) {
+  const statusCode = Number(error.statusCode || error.status || 500);
+  res.status(statusCode).json({
+    error: error.code || 'SERVER_ERROR',
+    message: error.message
+  });
+}
+
 function getUserId(req) {
   return req.user?._id || req.user?.id || req.user?._doc?._id;
 }
@@ -697,7 +705,7 @@ exports.startPublicInterview = async (req, res) => {
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
     console.error('Start public AI interview error:', error);
-    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+    sendControllerError(res, error);
   }
 };
 
@@ -766,7 +774,7 @@ exports.sendPublicMessage = async (req, res) => {
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
     console.error('Public AI interview message error:', error);
-    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+    sendControllerError(res, error);
   }
 };
 
@@ -841,7 +849,7 @@ exports.confirmPublicQuestion = async (req, res) => {
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
     console.error('Public AI interview confirm error:', error);
-    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+    sendControllerError(res, error);
   }
 };
 
@@ -862,7 +870,7 @@ exports.timeoutPublicQuestion = async (req, res) => {
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
     console.error('Public AI interview timeout error:', error);
-    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+    sendControllerError(res, error);
   }
 };
 

@@ -165,9 +165,15 @@ class AIInterviewVoiceLiveService {
   initialize(server) {
     if (this.wss) return;
 
-    this.wss = new WebSocket.Server({
-      server,
-      path: '/ws/ai-interview-voice'
+    this.wss = new WebSocket.Server({ noServer: true });
+
+    server.on('upgrade', (req, socket, head) => {
+      const pathname = new URL(req.url, 'http://localhost').pathname;
+      if (pathname !== '/ws/ai-interview-voice') return;
+
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
+        this.wss.emit('connection', ws, req);
+      });
     });
 
     this.wss.on('connection', async (clientWs, req) => {
