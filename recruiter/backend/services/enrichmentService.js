@@ -5,25 +5,30 @@ const creditsService = require('./creditsService');
 const embeddingService = require('./embeddingService');
 const gptAnalysisService = require('./gptAnalysisService');
 
-const REDIS_HOST = process.env.REDIS_HOST || 'dokploy-redis';
+const REDIS_ENABLED = process.env.REDIS_ENABLED
+  ? process.env.REDIS_ENABLED !== 'false'
+  : process.env.NODE_ENV === 'production' || Boolean(process.env.REDIS_HOST);
+const REDIS_HOST = process.env.REDIS_HOST || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 const CONCURRENCY = parseInt(process.env.ENRICHMENT_CONCURRENCY || '2', 10);
 const BATCH_SIZE = 10;
 const QUEUE_NAME = 'candidate-enrichment';
 
-const connection = new IORedis(REDIS_PORT, REDIS_HOST, {
+const connection = REDIS_ENABLED ? new IORedis(REDIS_PORT, REDIS_HOST, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   lazyConnect: true,
-});
+}) : null;
 
-connection.on('error', (err) => {
-  console.error('❌ Enrichment Redis connection error:', err.message);
-});
+if (connection) {
+  connection.on('error', (err) => {
+    console.error('❌ Enrichment Redis connection error:', err.message);
+  });
 
-connection.on('connect', () => {
-  console.log('✅ Enrichment Redis connected');
-});
+  connection.on('connect', () => {
+    console.log('✅ Enrichment Redis connected');
+  });
+}
 
 let queue = null;
 let worker = null;
@@ -379,6 +384,10 @@ async function processEnrichmentBatch(job) {
 
 async function initQueue() {
   if (queue) return { queue, worker, queueEvents };
+
+  if (!REDIS_ENABLED) {
+    throw new Error('Enrichment Redis queue is disabled. Set REDIS_ENABLED=true and REDIS_HOST/REDIS_PORT to enable it locally.');
+  }
 
   try {
     await connection.connect();
