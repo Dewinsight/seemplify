@@ -21,6 +21,7 @@ import {
   Loader2,
   X,
   AlertTriangle,
+  Bot,
   Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -165,6 +166,12 @@ function JobCard({
                   <Link href={`/jobs/${job._id}`} className="flex items-center gap-2">
                     <Eye className="h-4 w-4" />
                     View Details
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/ai-interviews?jobId=${job._id}`} className="flex items-center gap-2">
+                    <Bot className="h-4 w-4" />
+                    Create AI Interview
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -780,6 +787,15 @@ function JobsInnerPage() {
                             >
                               <Eye className="h-4 w-4" />
                               View Details
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link 
+                              href={`/ai-interviews?jobId=${job._id}`}
+                              className="flex items-center gap-2 cursor-pointer text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+                            >
+                              <Bot className="h-4 w-4" />
+                              Create AI Interview
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>

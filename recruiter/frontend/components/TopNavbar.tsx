@@ -8,6 +8,7 @@ import {
   Users,
   Briefcase,
   Calendar,
+  Bot,
   Settings,
   Menu,
   LogOut,
@@ -51,6 +52,7 @@ const navigationItems = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
   { title: "Candidates", href: "/candidates", icon: Users },
   { title: "Jobs", href: "/jobs", icon: Briefcase },
+  { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
   { title: "Calendar", href: "/calendar", icon: Calendar },
 ];
 

@@ -72,6 +72,7 @@ const PlanSchema = new mongoose.Schema({
       aiMatching: { type: Number, default: 11, min: 0 },
       generateQuestions: { type: Number, default: 6, min: 0 },
       aiAnalysis: { type: Number, default: 12, min: 0 },
+      aiInterviewCandidate: { type: Number, default: 5, min: 0 },
       bulkUpload: { type: Number, default: 5, min: 0 },
       reEmbed: { type: Number, default: 3, min: 0 }
     },
@@ -145,4 +146,3 @@ PlanSchema.methods.toPublicJSON = function() {
 };
 
 module.exports = mongoose.model('Plan', PlanSchema);
-

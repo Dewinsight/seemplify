@@ -10,22 +10,27 @@ const cloudinaryUploadService = new CloudinaryUploadService();
 const CVParsingService = require('./cvParsingService');
 const cvParsingService = new CVParsingService();
 
-const REDIS_HOST = process.env.REDIS_HOST || 'dokploy-redis';
+const REDIS_ENABLED = process.env.REDIS_ENABLED
+  ? process.env.REDIS_ENABLED !== 'false'
+  : process.env.NODE_ENV === 'production' || Boolean(process.env.REDIS_HOST);
+const REDIS_HOST = process.env.REDIS_HOST || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 
-const connection = new IORedis(REDIS_PORT, REDIS_HOST, {
+const connection = REDIS_ENABLED ? new IORedis(REDIS_PORT, REDIS_HOST, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   lazyConnect: true,
-});
+}) : null;
 
-connection.on('error', (err) => {
-  console.error('❌ BullMQ Redis connection error:', err.message);
-});
+if (connection) {
+  connection.on('error', (err) => {
+    console.error('❌ BullMQ Redis connection error:', err.message);
+  });
 
-connection.on('connect', () => {
-  console.log('✅ BullMQ Redis connected');
-});
+  connection.on('connect', () => {
+    console.log('✅ BullMQ Redis connected');
+  });
+}
 
 const QUEUE_NAME = 'bulk-cv-upload';
 /** Concurrency only; do not use BullMQ limiter here — it unnecessarily caps throughput vs Azure limits */
@@ -96,6 +101,10 @@ function updateBatchFile(batchId, fileResult) {
 
 async function initQueue() {
   if (queue) return { queue, worker, queueEvents };
+
+  if (!REDIS_ENABLED) {
+    throw new Error('Bulk upload Redis queue is disabled. Set REDIS_ENABLED=true and REDIS_HOST/REDIS_PORT to enable it locally.');
+  }
 
   try {
     await connection.connect();

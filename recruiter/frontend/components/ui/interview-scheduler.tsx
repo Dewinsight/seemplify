@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Calendar, Clock, MapPin, Video, Phone, Users, AlertCircle, AlertTriangle, CheckCircle, RefreshCw, UserCheck, ExternalLink, X, Plus, Mail, UserPlus, Trash2, Copy, ChevronUp, ChevronDown, Loader2, MessageCircle } from 'lucide-react';
 import { InterviewQuestionSelector } from './interview-question-selector';
 import { Button } from './button';
@@ -126,6 +126,8 @@ export function InterviewScheduler({
   const [isVerifying, setIsVerifying] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+  const [activeAuthUrl, setActiveAuthUrl] = useState<string | null>(null);
+  const authWindowRef = useRef<Window | null>(null);
   const [skipAvailabilityCheck, setSkipAvailabilityCheck] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>('google');
   const [serverError, setServerError] = useState<string | null>(null);
@@ -628,7 +630,7 @@ export function InterviewScheduler({
   const checkCalendarStatus = async () => {
     if (!state.user?._id) {
       console.log('No user ID available for calendar status check');
-      return;
+      return null;
     }
     
     try {
@@ -645,8 +647,10 @@ export function InterviewScheduler({
       } else if (normalizedProvider.includes('google') || normalizedProvider.includes('gmail')) {
         setSelectedProvider('google');
       }
+      return status;
     } catch (error) {
       console.error('Failed to check calendar status:', error);
+      return null;
     }
   };
   
@@ -713,6 +717,7 @@ export function InterviewScheduler({
     
     try {
       const { authUrl } = await interviewService.connectCalendar(provider, forceAccountSelection);
+      setActiveAuthUrl(authUrl);
       
       // Open the auth window with specific parameters to help with postMessage communication
       const authWindow = window.open(
@@ -720,6 +725,7 @@ export function InterviewScheduler({
         'oauth_popup',
         'width=600,height=700,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no'
       );
+      authWindowRef.current = authWindow;
       
       if (!authWindow) {
         clearTimeout(safetyTimeout);
@@ -733,6 +739,7 @@ export function InterviewScheduler({
         console.log('🔄 Resetting connection states');
         setIsConnecting(false);
         setIsSwitchingAccount(false);
+        setActiveAuthUrl(null);
         clearTimeout(safetyTimeout);
       };
 
@@ -747,6 +754,7 @@ export function InterviewScheduler({
             isCompleted = true;
             clearInterval(checkClosed);
             resetStates();
+            authWindowRef.current = null;
             
             // Check status after window closes
             setTimeout(() => {
@@ -772,6 +780,7 @@ export function InterviewScheduler({
           } catch (e) {
             // Ignore errors
           }
+          authWindowRef.current = null;
         }
       }, 120000);
 
@@ -785,6 +794,8 @@ export function InterviewScheduler({
       );
       setIsConnecting(false);
       setIsSwitchingAccount(false);
+      setActiveAuthUrl(null);
+      authWindowRef.current = null;
     }
   };
 
@@ -3407,6 +3418,57 @@ export function InterviewScheduler({
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* OAuth Helper Panel */}
+          {(isConnecting || isSwitchingAccount) && (
+            <div className="fixed bottom-4 right-4 z-[12000] w-[380px] max-w-[calc(100vw-2rem)] rounded-lg border bg-white shadow-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 font-medium">
+                <ExternalLink className="h-4 w-4" />
+                Complete Calendar Authentication
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Continue in the popup window. If no popup appeared, open it again below.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (activeAuthUrl) {
+                      const reopened = window.open(
+                        activeAuthUrl,
+                        'oauth_popup',
+                        'width=600,height=700,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no'
+                      );
+                      if (reopened) {
+                        authWindowRef.current = reopened;
+                        reopened.focus();
+                      } else {
+                        toast.error('Popup was blocked. Please allow popups for this site.');
+                      }
+                    }
+                  }}
+                  disabled={!activeAuthUrl}
+                >
+                  Open Auth Window
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const status = await checkCalendarStatus();
+                    if ((status as any)?.connected) {
+                      setIsConnecting(false);
+                      setIsSwitchingAccount(false);
+                      setActiveAuthUrl(null);
+                      toast.success('Calendar connected successfully');
+                    } else {
+                      toast.info('Still waiting for authentication to complete');
+                    }
+                  }}
+                >
+                  I Completed
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Credit Error Dialog */}
           <CreditErrorDialog 

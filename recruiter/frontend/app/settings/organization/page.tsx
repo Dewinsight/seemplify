@@ -123,6 +123,7 @@ export default function OrganizationPage() {
       aiMatching: 'AI Matching',
       generateQuestions: 'Generate Questions',
       aiAnalysis: 'AI Analysis',
+      aiInterviewCandidate: 'AI Interview Candidate',
       bulkUpload: 'Bulk Upload',
       reEmbed: 'Re-embed',
       creditPurchase: 'Credit Purchase',

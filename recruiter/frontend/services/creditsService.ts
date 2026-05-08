@@ -18,6 +18,7 @@ export interface CreditStatus {
     aiMatching: number;
     generateQuestions: number;
     aiAnalysis: number;
+    aiInterviewCandidate: number;
     bulkUpload: number;
     reEmbed: number;
   };
@@ -73,6 +74,7 @@ const DEFAULT_CREDIT_COSTS = {
   aiMatching: 0,
   generateQuestions: 0,
   aiAnalysis: 0,
+  aiInterviewCandidate: 5,
   bulkUpload: 0,
   reEmbed: 0
 };
@@ -299,4 +301,3 @@ export default {
   getCreditPacks,
   purchaseCredits
 };
-

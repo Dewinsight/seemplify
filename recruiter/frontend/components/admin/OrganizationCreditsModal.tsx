@@ -286,6 +286,7 @@ export default function OrganizationCreditsModal({
       case 'aiMatching': return 'text-yellow-400';
       case 'generateQuestions': return 'text-pink-400';
       case 'aiAnalysis': return 'text-cyan-400';
+      case 'aiInterviewCandidate': return 'text-indigo-400';
       case 'creditPurchase': return 'text-green-500';
       case 'creditRefund': return 'text-blue-500';
       case 'cycleReset': return 'text-yellow-500';

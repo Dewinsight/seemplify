@@ -1,7 +1,7 @@
 import express from 'express'
 import { requireAdminAuth, requireSuperAdminAuth, auditLog, adminRateLimit } from '../middleware/adminAuth.js'
 import { Account } from '../models/Account.js'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 
 const router = express.Router()
 
