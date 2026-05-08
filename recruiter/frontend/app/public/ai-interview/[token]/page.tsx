@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
@@ -9,9 +9,12 @@ import {
   Clock,
   FileQuestion,
   Loader2,
+  Mic,
+  MicOff,
   Send,
   ShieldCheck,
   TimerReset,
+  Volume2,
   Workflow
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,6 +55,70 @@ function statusLabel(status?: string) {
   }
 }
 
+function waitForIceGatheringComplete(peerConnection: RTCPeerConnection) {
+  if (peerConnection.iceGatheringState === "complete") return Promise.resolve();
+
+  return new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(() => {
+      peerConnection.removeEventListener("icegatheringstatechange", onStateChange);
+      resolve();
+    }, 3000);
+
+    function onStateChange() {
+      if (peerConnection.iceGatheringState === "complete") {
+        window.clearTimeout(timeout);
+        peerConnection.removeEventListener("icegatheringstatechange", onStateChange);
+        resolve();
+      }
+    }
+
+    peerConnection.addEventListener("icegatheringstatechange", onStateChange);
+  });
+}
+
+function parseVoiceMessage(raw: MessageEvent["data"]) {
+  try {
+    return JSON.parse(typeof raw === "string" ? raw : raw.toString());
+  } catch {
+    return null;
+  }
+}
+
+function getVoiceTranscriptText(event: any) {
+  const candidates = [
+    event?.transcript,
+    event?.text,
+    event?.delta,
+    event?.item?.transcript,
+    event?.item?.formatted?.transcript,
+    event?.item?.content?.[0]?.transcript,
+    event?.item?.content?.[0]?.text,
+    event?.response?.output_text
+  ];
+
+  return candidates.find((value) => typeof value === "string" && value.trim())?.trim() || "";
+}
+
+function isCandidateTranscriptEvent(type?: string) {
+  return Boolean(type && type.includes("input_audio_transcription") && (type.endsWith(".completed") || type.endsWith(".done")));
+}
+
+function isAssistantTranscriptDoneEvent(type?: string) {
+  return [
+    "response.audio_transcript.done",
+    "response.output_text.done",
+    "response.text.done"
+  ].includes(type || "");
+}
+
+function isAssistantTranscriptDeltaEvent(type?: string) {
+  return [
+    "response.audio_transcript.delta",
+    "response.output_text.delta",
+    "response.text.delta"
+  ].includes(type || "");
+}
+
 export default function PublicAIInterviewPage() {
   const params = useParams();
   const token = params.token as string;
@@ -64,13 +131,25 @@ export default function PublicAIInterviewPage() {
   const [questionSeconds, setQuestionSeconds] = useState(0);
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [timeoutRunning, setTimeoutRunning] = useState(false);
+  const [voiceState, setVoiceState] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [voiceStatus, setVoiceStatus] = useState("Voice mode is off");
+  const [lastVoiceTranscript, setLastVoiceTranscript] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceWsRef = useRef<WebSocket | null>(null);
+  const voicePeerRef = useRef<RTCPeerConnection | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceDataChannelRef = useRef<RTCDataChannel | null>(null);
+  const assistantTranscriptBufferRef = useRef<Record<string, string>>({});
+  const recordedTranscriptKeysRef = useRef<Set<string>>(new Set());
+  const sessionRef = useRef<PublicAIInterviewState["session"] | null>(null);
 
   const session = state?.session;
   const interview = state?.interview;
   const questionCount = interview?.questionCount || 0;
   const currentIndex = session?.currentQuestionIndex || 0;
   const progress = questionCount > 0 ? ((currentIndex + (session?.status === "completed" ? 1 : 0)) / questionCount) * 100 : 0;
+  const voiceEnabled = Boolean(state?.voice?.enabled);
 
   const load = async () => {
     setLoading(true);
@@ -84,9 +163,239 @@ export default function PublicAIInterviewPage() {
     }
   };
 
+  const cleanupVoice = useCallback((status = "Voice mode is off") => {
+    voiceDataChannelRef.current?.close();
+    voiceDataChannelRef.current = null;
+
+    voicePeerRef.current?.close();
+    voicePeerRef.current = null;
+
+    voiceWsRef.current?.close();
+    voiceWsRef.current = null;
+
+    voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceStreamRef.current = null;
+
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
+
+    assistantTranscriptBufferRef.current = {};
+    setVoiceState("idle");
+    setVoiceStatus(status);
+  }, []);
+
+  const recordVoiceTranscript = useCallback(async (
+    role: "candidate" | "ai",
+    text: string,
+    messageType?: "clarification" | "acknowledgement" | "system"
+  ) => {
+    const cleaned = text.trim();
+    const activeSession = sessionRef.current;
+    if (!cleaned || !activeSession || activeSession.status !== "in_progress") return;
+
+    const key = `${role}:${activeSession.currentQuestionIndex}:${cleaned}`;
+    if (recordedTranscriptKeysRef.current.has(key)) return;
+    recordedTranscriptKeysRef.current.add(key);
+    setLastVoiceTranscript(cleaned);
+
+    try {
+      const data = await aiInterviewService.recordPublicVoiceTranscript(token, {
+        role,
+        message: cleaned,
+        messageType
+      });
+      setState(data);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save voice transcript");
+    }
+  }, [token]);
+
+  const handleVoiceEvent = useCallback((event: any) => {
+    const type = event?.type;
+    if (!type) return;
+
+    if (type === "voice.proxy.ready") {
+      setVoiceStatus("Voice mode is ready");
+      return;
+    }
+
+    if (type === "voice.error" || type === "error") {
+      setVoiceState("error");
+      setVoiceStatus(event?.message || event?.error?.message || "Voice mode failed");
+      return;
+    }
+
+    if (type === "session.updated") {
+      setVoiceStatus("Listening. Speak naturally when you are ready.");
+      return;
+    }
+
+    if (isCandidateTranscriptEvent(type)) {
+      const transcript = getVoiceTranscriptText(event);
+      if (transcript) {
+        void recordVoiceTranscript("candidate", transcript);
+      }
+      return;
+    }
+
+    if (isAssistantTranscriptDeltaEvent(type)) {
+      const id = event?.response_id || event?.item_id || "active";
+      const delta = getVoiceTranscriptText(event);
+      if (delta) {
+        assistantTranscriptBufferRef.current[id] = `${assistantTranscriptBufferRef.current[id] || ""}${delta}`;
+      }
+      return;
+    }
+
+    if (isAssistantTranscriptDoneEvent(type)) {
+      const id = event?.response_id || event?.item_id || "active";
+      const transcript = getVoiceTranscriptText(event) || assistantTranscriptBufferRef.current[id] || "";
+      delete assistantTranscriptBufferRef.current[id];
+      if (transcript) {
+        void recordVoiceTranscript("ai", transcript, "acknowledgement");
+      }
+    }
+  }, [recordVoiceTranscript]);
+
+  const disconnectVoice = useCallback(() => {
+    cleanupVoice("Voice mode is off");
+  }, [cleanupVoice]);
+
+  const connectVoice = useCallback(async () => {
+    if (!voiceEnabled) {
+      toast.error("Voice Live is not configured for this interview yet");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("This browser does not support microphone access");
+      return;
+    }
+
+    if (session?.status !== "in_progress") {
+      toast.error("Start the interview before enabling voice mode");
+      return;
+    }
+
+    cleanupVoice("Starting voice mode...");
+    setVoiceState("connecting");
+    setVoiceStatus("Connecting to Voice Live...");
+
+    try {
+      const ws = new WebSocket(aiInterviewService.getVoiceWebSocketUrl(token));
+      voiceWsRef.current = ws;
+
+      const proxyReady = new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error("Voice proxy did not become ready")), 15000);
+        ws.addEventListener("message", function onMessage(event) {
+          const payload = parseVoiceMessage(event.data);
+          if (payload?.type === "voice.proxy.ready") {
+            window.clearTimeout(timeout);
+            ws.removeEventListener("message", onMessage);
+            handleVoiceEvent(payload);
+            resolve();
+          } else if (payload?.type === "voice.error" || payload?.type === "error") {
+            window.clearTimeout(timeout);
+            ws.removeEventListener("message", onMessage);
+            reject(new Error(payload.message || payload.error?.message || "Voice proxy failed"));
+          }
+        });
+        ws.addEventListener("error", () => reject(new Error("Voice WebSocket failed")), { once: true });
+      });
+
+      ws.addEventListener("message", (event) => {
+        const payload = parseVoiceMessage(event.data);
+        if (payload) handleVoiceEvent(payload);
+      });
+
+      ws.addEventListener("close", () => {
+        if (voiceWsRef.current === ws) {
+          setVoiceState("idle");
+          setVoiceStatus("Voice connection closed");
+        }
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener("open", () => resolve(), { once: true });
+        ws.addEventListener("error", () => reject(new Error("Voice WebSocket failed")), { once: true });
+      });
+      await proxyReady;
+
+      const peerConnection = new RTCPeerConnection();
+      voicePeerRef.current = peerConnection;
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+      stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+
+      peerConnection.ontrack = (event) => {
+        if (!remoteAudioRef.current) return;
+        remoteAudioRef.current.srcObject = event.streams[0];
+        void remoteAudioRef.current.play().catch(() => undefined);
+      };
+
+      const dataChannel = peerConnection.createDataChannel("voice-live-events");
+      voiceDataChannelRef.current = dataChannel;
+      dataChannel.onmessage = (event) => {
+        const payload = parseVoiceMessage(event.data);
+        if (payload) handleVoiceEvent(payload);
+      };
+      dataChannel.onopen = () => setVoiceStatus("Listening. Speak naturally when you are ready.");
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      await waitForIceGatheringComplete(peerConnection);
+
+      const answerPromise = new Promise<string>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error("Voice Live did not return an SDP answer")), 15000);
+        ws.addEventListener("message", function onMessage(event) {
+          const payload = parseVoiceMessage(event.data);
+          if (payload?.type === "rtc.call.sdp.created" && payload.sdp_answer) {
+            window.clearTimeout(timeout);
+            ws.removeEventListener("message", onMessage);
+            resolve(payload.sdp_answer);
+          } else if (payload?.type === "voice.error" || payload?.type === "error") {
+            window.clearTimeout(timeout);
+            ws.removeEventListener("message", onMessage);
+            reject(new Error(payload.message || payload.error?.message || "Voice Live failed"));
+          }
+        });
+      });
+
+      ws.send(JSON.stringify({
+        type: "rtc.call.sdp.create",
+        sdp_offer: peerConnection.localDescription?.sdp
+      }));
+
+      const sdpAnswer = await answerPromise;
+      await peerConnection.setRemoteDescription({ type: "answer", sdp: sdpAnswer });
+      setVoiceState("connected");
+      setVoiceStatus("Voice mode is connected");
+
+      window.setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "voice.say_current_question" }));
+        }
+      }, 500);
+    } catch (error: any) {
+      cleanupVoice(error.message || "Voice mode failed");
+      setVoiceState("error");
+      toast.error(error.message || "Unable to start voice mode");
+    }
+  }, [cleanupVoice, handleVoiceEvent, session?.status, token, voiceEnabled]);
+
   useEffect(() => {
     load();
   }, [token]);
+
+  useEffect(() => {
+    sessionRef.current = session || null;
+  }, [session]);
+
+  useEffect(() => {
+    return () => cleanupVoice();
+  }, [cleanupVoice]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -117,6 +426,19 @@ export default function PublicAIInterviewPage() {
       .catch((error) => toast.error(error.message || "Question timeout failed"))
       .finally(() => setTimeoutRunning(false));
   }, [questionSeconds, state, timeoutRunning, token]);
+
+  useEffect(() => {
+    if (voiceState !== "connected") return;
+    const ws = voiceWsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN || session?.status !== "in_progress") return;
+
+    ws.send(JSON.stringify({ type: "voice.refresh_session" }));
+    window.setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "voice.say_current_question" }));
+      }
+    }, 500);
+  }, [currentIndex, session?.status, voiceState]);
 
   const answeredIndexes = useMemo(() => {
     return new Set((session?.answers || []).filter((answer) => answer.status !== "draft").map((answer) => answer.questionIndex));
@@ -219,6 +541,7 @@ export default function PublicAIInterviewPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70">
+      <audio ref={remoteAudioRef} autoPlay className="hidden" />
       <div className="mx-auto grid max-w-screen-2xl gap-5 p-4 md:p-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
           <div className="overflow-hidden rounded-2xl border-0 bg-slate-950 text-white shadow-xl">
@@ -296,6 +619,42 @@ export default function PublicAIInterviewPage() {
               })}
             </div>
           </div>
+
+          {session.status === "in_progress" && (
+            <div className="rounded-2xl border bg-white/95 p-4 shadow-lg shadow-slate-200/70">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                  <Volume2 className="h-4 w-4 text-emerald-600" />
+                  Voice mode
+                </div>
+                <Badge variant={voiceState === "connected" ? "default" : "secondary"} className={voiceState === "connected" ? "bg-emerald-600" : ""}>
+                  {voiceState === "connected" ? "Live" : voiceState === "connecting" ? "Connecting" : voiceEnabled ? "Ready" : "Off"}
+                </Badge>
+              </div>
+              <p className="text-xs leading-5 text-slate-600">{voiceStatus}</p>
+              {lastVoiceTranscript && (
+                <div className="mt-3 rounded-xl border bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                  <span className="font-medium text-slate-900">Last transcript:</span> {lastVoiceTranscript}
+                </div>
+              )}
+              <Button
+                type="button"
+                variant={voiceState === "connected" ? "outline" : "default"}
+                className={`mt-4 w-full ${voiceState === "connected" ? "" : "bg-slate-950 text-white hover:bg-slate-800"}`}
+                disabled={!voiceEnabled || voiceState === "connecting"}
+                onClick={voiceState === "connected" ? disconnectVoice : connectVoice}
+              >
+                {voiceState === "connecting" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : voiceState === "connected" ? (
+                  <MicOff className="mr-2 h-4 w-4" />
+                ) : (
+                  <Mic className="mr-2 h-4 w-4" />
+                )}
+                {voiceState === "connected" ? "End voice mode" : "Start voice mode"}
+              </Button>
+            </div>
+          )}
         </aside>
 
         <section className="min-h-[calc(100vh-48px)] overflow-hidden rounded-2xl border bg-white/95 shadow-xl shadow-slate-200/70">
@@ -364,7 +723,26 @@ export default function PublicAIInterviewPage() {
                     <div className="text-sm text-slate-300">Question {currentIndex + 1} of {questionCount}</div>
                     <h2 className="text-lg font-semibold">Interview Workspace</h2>
                   </div>
-                  <Badge className="w-fit border-white/20 bg-white/10 text-white">Confirm required to move on</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="w-fit border-white/20 bg-white/10 text-white">Confirm required to move on</Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={!voiceEnabled || voiceState === "connecting"}
+                      onClick={voiceState === "connected" ? disconnectVoice : connectVoice}
+                      className="bg-white text-slate-950 hover:bg-slate-100"
+                    >
+                      {voiceState === "connecting" ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : voiceState === "connected" ? (
+                        <MicOff className="mr-2 h-4 w-4" />
+                      ) : (
+                        <Mic className="mr-2 h-4 w-4" />
+                      )}
+                      {voiceState === "connected" ? "End voice" : "Voice"}
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -392,6 +770,18 @@ export default function PublicAIInterviewPage() {
               </div>
 
               <div className="border-t bg-white p-4">
+                {voiceState !== "idle" && (
+                  <div className={`mb-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                    voiceState === "connected"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : voiceState === "error"
+                        ? "border-red-200 bg-red-50 text-red-700"
+                        : "border-blue-200 bg-blue-50 text-blue-800"
+                  }`}>
+                    {voiceState === "connecting" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Volume2 className="h-3.5 w-3.5" />}
+                    <span>{voiceStatus}</span>
+                  </div>
+                )}
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
                   <Textarea
                     value={message}
@@ -416,7 +806,7 @@ export default function PublicAIInterviewPage() {
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  The interview will auto-move when the question timer reaches zero.
+                  The interview will auto-move when the question timer reaches zero. Voice answers are saved to the same transcript.
                 </p>
               </div>
             </div>

@@ -5,8 +5,10 @@ const { requireOrganization } = require('../middleware/organizationMiddleware');
 const aiInterviewController = require('../controllers/aiInterviewController');
 
 router.get('/public/:token', aiInterviewController.bootstrapPublicInterview);
+router.get('/public/:token/voice', aiInterviewController.getPublicVoiceStatus);
 router.post('/public/:token/start', aiInterviewController.startPublicInterview);
 router.post('/public/:token/message', aiInterviewController.sendPublicMessage);
+router.post('/public/:token/voice-transcript', aiInterviewController.recordPublicVoiceTranscript);
 router.post('/public/:token/confirm', aiInterviewController.confirmPublicQuestion);
 router.post('/public/:token/timeout', aiInterviewController.timeoutPublicQuestion);
 

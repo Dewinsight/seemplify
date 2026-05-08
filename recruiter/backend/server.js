@@ -9,6 +9,7 @@ const { sessionMiddleware } = require('./middleware/sessionMiddleware');
 const authMiddleware = require('./middleware/authMiddleware');
 const http = require('http');
 const websocketService = require('./services/websocketService');
+const aiInterviewVoiceLiveService = require('./services/aiInterviewVoiceLiveService');
 const grantVerificationScheduler = require('./scripts/grantVerificationScheduler');
 const interviewFeedbackEmailService = require('./services/interviewQuestionEmailService');
 const backgroundServiceManager = require('./services/backgroundServiceManager');
@@ -68,7 +69,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   
   // Permissions policy
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(self), camera=()');
   
   // Cache control for security
   if (req.url.includes('/api/')) {
@@ -339,6 +340,7 @@ const server = http.createServer(app);
 
 // Initialize WebSocket service
 websocketService.initialize(server);
+aiInterviewVoiceLiveService.initialize(server);
 
 // Start grant verification scheduler
 grantVerificationScheduler.start();

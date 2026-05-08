@@ -9,6 +9,7 @@ const Organization = require('../models/Organization');
 const creditsService = require('../services/creditsService');
 const aiInterviewerService = require('../services/aiInterviewerService');
 const aiInterviewEmailService = require('../services/aiInterviewEmailService');
+const aiInterviewVoiceLiveService = require('../services/aiInterviewVoiceLiveService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
@@ -43,6 +44,11 @@ function addMinutes(date, minutes) {
 
 function uniqueStrings(values) {
   return Array.from(new Set((values || []).map((value) => String(value)).filter(Boolean)));
+}
+
+function truncateText(value, max = 5000) {
+  const text = String(value || '').trim();
+  return text.length > max ? text.slice(0, max) : text;
 }
 
 function buildPublicState(session, interview) {
@@ -80,6 +86,7 @@ function buildPublicState(session, interview) {
       } : null
     },
     candidate: session.candidateSnapshot,
+    voice: aiInterviewVoiceLiveService.getPublicConfig(),
     job: session.job ? {
       id: session.job._id,
       title: session.job.title
@@ -614,6 +621,27 @@ exports.bootstrapPublicInterview = async (req, res) => {
   }
 };
 
+exports.getPublicVoiceStatus = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    res.json({
+      success: true,
+      voice: aiInterviewVoiceLiveService.getPublicConfig(),
+      canStart: session.status === 'in_progress'
+    });
+  } catch (error) {
+    console.error('Public AI interview voice status error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
 exports.startPublicInterview = async (req, res) => {
   try {
     const session = await findPublicSession(req.params.token);
@@ -738,6 +766,59 @@ exports.sendPublicMessage = async (req, res) => {
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
     console.error('Public AI interview message error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.recordPublicVoiceTranscript = async (req, res) => {
+  try {
+    const role = req.body?.role === 'ai' ? 'ai' : 'candidate';
+    const content = truncateText(req.body?.message || req.body?.content || '');
+    if (!content) {
+      return res.status(400).json({ error: 'EMPTY_MESSAGE', message: 'Transcript content is required' });
+    }
+
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ error: 'NOT_IN_PROGRESS', message: 'Interview is not in progress' });
+    }
+
+    if (role === 'candidate') {
+      const isClarification = aiInterviewerService.isLikelyClarification(content);
+      session.messages.push({
+        role: 'candidate',
+        content,
+        questionIndex: session.currentQuestionIndex,
+        messageType: isClarification ? 'clarification' : 'answer'
+      });
+
+      if (!isClarification) {
+        upsertDraftAnswer(session, interview, content);
+      }
+    } else {
+      const allowedTypes = new Set(['clarification', 'acknowledgement', 'system']);
+      const requestedType = String(req.body?.messageType || '').trim();
+      session.messages.push({
+        role: 'ai',
+        content,
+        questionIndex: session.currentQuestionIndex,
+        messageType: allowedTypes.has(requestedType) ? requestedType : 'acknowledgement'
+      });
+    }
+
+    session.lastActivityAt = new Date();
+    await session.save();
+
+    res.json({ success: true, ...buildPublicState(session, interview) });
+  } catch (error) {
+    console.error('Public AI interview voice transcript error:', error);
     res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
   }
 };

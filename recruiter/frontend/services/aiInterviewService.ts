@@ -1,4 +1,4 @@
-import { apiRequest } from './apiConfig';
+import { apiRequest, getCurrentWsBaseUrl } from './apiConfig';
 
 export interface AIInterviewQuestionSnapshot {
   questionId: string;
@@ -143,6 +143,11 @@ export interface PublicAIInterviewState {
     name: string;
     email: string;
   };
+  voice?: {
+    enabled: boolean;
+    model?: string;
+    voice?: string;
+  };
   job?: {
     id: string;
     title: string;
@@ -212,6 +217,12 @@ class AIInterviewService {
     return response.json();
   }
 
+  async getPublicVoiceStatus(token: string): Promise<{ success: boolean; voice: PublicAIInterviewState['voice']; canStart: boolean }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/voice`);
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
   async startPublic(token: string): Promise<PublicAIInterviewState> {
     const response = await apiRequest(`/api/ai-interviews/public/${token}/start`, { method: 'POST' });
     if (!response.ok) throw await parseError(response);
@@ -225,6 +236,23 @@ class AIInterviewService {
     });
     if (!response.ok) throw await parseError(response);
     return response.json();
+  }
+
+  async recordPublicVoiceTranscript(
+    token: string,
+    input: { role: 'candidate' | 'ai'; message: string; messageType?: 'clarification' | 'acknowledgement' | 'system' }
+  ): Promise<PublicAIInterviewState> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/voice-transcript`, {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  getVoiceWebSocketUrl(token: string): string {
+    const base = getCurrentWsBaseUrl().replace(/\/$/, '');
+    return `${base}/ws/ai-interview-voice?token=${encodeURIComponent(token)}`;
   }
 
   async confirmPublicQuestion(token: string): Promise<PublicAIInterviewState> {
