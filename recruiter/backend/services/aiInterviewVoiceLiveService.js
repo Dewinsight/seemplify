@@ -116,7 +116,7 @@ class AIInterviewVoiceLiveService {
     return {
       type: 'session.update',
       session: {
-        modalities: ['text', 'audio'],
+        modalities: ['audio'],
         instructions: this.buildInstructions(session, interview),
         input_audio_transcription: {
           model: 'azure-speech',
@@ -144,7 +144,7 @@ class AIInterviewVoiceLiveService {
     return {
       type: 'response.create',
       response: {
-        modalities: ['audio', 'text'],
+        modalities: ['audio'],
         instructions: [
           'Speak the following interviewer message naturally.',
           'Do not add a new question or extra assessment content.',
