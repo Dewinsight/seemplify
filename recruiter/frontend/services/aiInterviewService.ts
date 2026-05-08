@@ -69,6 +69,39 @@ export interface AIInterviewSession {
     chargedAt?: string;
     error?: string;
   };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AIInterviewScoringSummary {
+  scoredCount: number;
+  averageScore?: number | null;
+  topScore?: number | null;
+  topCandidate?: {
+    sessionId: string;
+    candidateName: string;
+    candidateEmail?: string;
+    score: number;
+    recommendation: string;
+    rank: number;
+    completedAt?: string;
+    answeredCount?: number;
+    concernCount?: number;
+    strengthCount?: number;
+  } | null;
+  recommendationCounts?: Record<string, number>;
+  rankings?: Array<{
+    sessionId: string;
+    candidateName: string;
+    candidateEmail?: string;
+    score: number;
+    recommendation: string;
+    rank: number;
+    completedAt?: string;
+    answeredCount?: number;
+    concernCount?: number;
+    strengthCount?: number;
+  }>;
 }
 
 export interface AIInterview {
@@ -97,6 +130,7 @@ export interface AIInterview {
     blocked: number;
     failed: number;
   };
+  scoringSummary?: AIInterviewScoringSummary;
   createdAt: string;
   updatedAt: string;
 }

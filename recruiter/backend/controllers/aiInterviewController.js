@@ -42,6 +42,47 @@ function createLegacyPublicLinkValue() {
   return `ai_${crypto.randomBytes(18).toString('base64url')}`;
 }
 
+function getSessionCandidateName(session) {
+  const snapshot = session.candidateSnapshot || {};
+  return snapshot.name || `${snapshot.firstName || ''} ${snapshot.lastName || ''}`.trim() || snapshot.email || 'Candidate';
+}
+
+function buildScoringSummary(sessions = []) {
+  const rankings = sessions
+    .filter((session) => session.scoring?.status === 'completed' && Number.isFinite(Number(session.scoring.overallScore)))
+    .map((session) => ({
+      sessionId: session._id,
+      candidateName: getSessionCandidateName(session),
+      candidateEmail: session.candidateSnapshot?.email,
+      score: Math.round(Number(session.scoring.overallScore)),
+      recommendation: session.scoring.recommendation || 'review',
+      completedAt: session.completedAt,
+      answeredCount: (session.answers || []).filter((answer) => answer.status === 'answered').length,
+      concernCount: session.scoring.concerns?.length || 0,
+      strengthCount: session.scoring.strengths?.length || 0
+    }))
+    .sort((a, b) => b.score - a.score || new Date(a.completedAt || 0) - new Date(b.completedAt || 0))
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+
+  const recommendationCounts = rankings.reduce((counts, item) => {
+    counts[item.recommendation] = (counts[item.recommendation] || 0) + 1;
+    return counts;
+  }, {});
+
+  const averageScore = rankings.length
+    ? Math.round(rankings.reduce((sum, item) => sum + item.score, 0) / rankings.length)
+    : null;
+
+  return {
+    scoredCount: rankings.length,
+    averageScore,
+    topScore: rankings[0]?.score ?? null,
+    topCandidate: rankings[0] || null,
+    recommendationCounts,
+    rankings
+  };
+}
+
 function getQuestionLimitMinutes(interview, question) {
   return Number(question?.timeLimit || interview.timers?.perQuestionMinutes || 10);
 }
@@ -476,7 +517,28 @@ exports.listAIInterviews = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(100);
 
-    res.json({ success: true, aiInterviews });
+    const interviewIds = aiInterviews.map((interview) => interview._id);
+    const sessions = await AIInterviewSession.find({
+      aiInterview: { $in: interviewIds },
+      organization: organizationId
+    })
+      .select('aiInterview candidateSnapshot status completedAt answers scoring')
+      .lean();
+    const sessionsByInterview = sessions.reduce((map, session) => {
+      const key = String(session.aiInterview);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(session);
+      return map;
+    }, new Map());
+
+    res.json({
+      success: true,
+      aiInterviews: aiInterviews.map((interview) => {
+        const item = interview.toObject();
+        item.scoringSummary = buildScoringSummary(sessionsByInterview.get(String(interview._id)) || []);
+        return item;
+      })
+    });
   } catch (error) {
     console.error('List AI interviews error:', error);
     res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
@@ -499,7 +561,10 @@ exports.getAIInterview = async (req, res) => {
       .populate('candidate', 'firstName lastName email status')
       .sort({ createdAt: 1 });
 
-    res.json({ success: true, aiInterview, sessions });
+    const aiInterviewObject = aiInterview.toObject();
+    aiInterviewObject.scoringSummary = buildScoringSummary(sessions);
+
+    res.json({ success: true, aiInterview: aiInterviewObject, sessions });
   } catch (error) {
     console.error('Get AI interview error:', error);
     res.status(500).json({ error: 'SERVER_ERROR', message: error.message });

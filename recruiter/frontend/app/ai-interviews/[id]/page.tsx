@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Bot, CheckCircle2, Clock, Loader2, Mail, RefreshCw, RotateCcw, Star, UserRound, XCircle } from "lucide-react";
+import { ArrowLeft, Award, Bot, CheckCircle2, Clock, Loader2, Mail, RefreshCw, RotateCcw, Star, Trophy, UserRound, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 import aiInterviewService, { type AIInterview, type AIInterviewSession } from "@/services/aiInterviewService";
 
 function formatDate(value?: string) {
@@ -37,6 +38,35 @@ function statusColor(status: string) {
   }
 }
 
+function getSessionScore(session?: AIInterviewSession) {
+  if (session?.scoring?.status !== "completed") return null;
+  const score = Number(session.scoring.overallScore);
+  return Number.isFinite(score) ? Math.round(score) : null;
+}
+
+function formatRecommendation(value?: string) {
+  if (!value) return "Review";
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function recommendationColor(value?: string) {
+  switch (value) {
+    case "strong_yes":
+    case "yes":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "maybe":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "no":
+    case "strong_no":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
+
 export default function AIInterviewDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -51,6 +81,28 @@ export default function AIInterviewDetailPage() {
     () => sessions.find((session) => session._id === selectedSessionId) || sessions[0],
     [sessions, selectedSessionId]
   );
+  const rankedSessions = useMemo(() => {
+    return sessions
+      .filter((session) => getSessionScore(session) !== null)
+      .sort((a, b) => (getSessionScore(b) || 0) - (getSessionScore(a) || 0));
+  }, [sessions]);
+  const orderedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      const aScore = getSessionScore(a);
+      const bScore = getSessionScore(b);
+      if (aScore !== null && bScore !== null) return bScore - aScore;
+      if (aScore !== null) return -1;
+      if (bScore !== null) return 1;
+      return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+    });
+  }, [sessions]);
+  const averageScore = useMemo(() => {
+    if (!rankedSessions.length) return null;
+    return Math.round(rankedSessions.reduce((sum, session) => sum + (getSessionScore(session) || 0), 0) / rankedSessions.length);
+  }, [rankedSessions]);
+  const selectedRank = selectedSession
+    ? rankedSessions.findIndex((session) => session._id === selectedSession._id) + 1
+    : 0;
 
   const load = async () => {
     setLoading(true);
@@ -58,7 +110,10 @@ export default function AIInterviewDetailPage() {
       const data = await aiInterviewService.get(id);
       setAIInterview(data.aiInterview);
       setSessions(data.sessions || []);
-      setSelectedSessionId((current) => current || data.sessions?.[0]?._id || null);
+      const bestSession = [...(data.sessions || [])]
+        .filter((session) => getSessionScore(session) !== null)
+        .sort((a, b) => (getSessionScore(b) || 0) - (getSessionScore(a) || 0))[0];
+      setSelectedSessionId((current) => current || bestSession?._id || data.sessions?.[0]?._id || null);
     } catch (error: any) {
       toast.error(error.message || "Failed to load AI interview");
     } finally {
@@ -151,7 +206,7 @@ export default function AIInterviewDetailPage() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <Card>
             <CardContent className="p-4">
               <div className="text-sm text-muted-foreground">Status</div>
@@ -176,7 +231,65 @@ export default function AIInterviewDetailPage() {
               <div className="text-xl font-semibold">{aiInterview.stats?.completed || 0}</div>
             </CardContent>
           </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-sm text-muted-foreground">Avg AI Score</div>
+              <div className="flex items-end gap-2">
+                <div className="text-xl font-semibold">{averageScore ?? "-"}</div>
+                <div className="pb-0.5 text-xs text-muted-foreground">{rankedSessions.length ? `${rankedSessions.length} scored` : "No scores"}</div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
+
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b bg-white">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Trophy className="h-4 w-4 text-violet-600" />
+              Candidate Ranking
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-5">
+            {rankedSessions.length ? (
+              <div className="space-y-3">
+                {rankedSessions.slice(0, 8).map((session, index) => {
+                  const score = getSessionScore(session) || 0;
+                  return (
+                    <button
+                      key={session._id}
+                      onClick={() => setSelectedSessionId(session._id)}
+                      className={`grid w-full gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-slate-50 md:grid-cols-[56px_minmax(0,1fr)_120px_150px] md:items-center ${
+                        selectedSession?._id === session._id ? "border-slate-950 bg-slate-50" : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-sm font-semibold text-white">
+                        #{index + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-950">{session.candidateSnapshot?.name}</div>
+                        <div className="truncate text-xs text-muted-foreground">{session.candidateSnapshot?.email}</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 text-lg font-semibold text-slate-950">
+                          <Star className="h-4 w-4 text-amber-500" />
+                          {score}
+                        </div>
+                        <Progress value={score} className="mt-1 h-1.5" />
+                      </div>
+                      <Badge variant="outline" className={`w-fit ${recommendationColor(session.scoring?.recommendation)}`}>
+                        {formatRecommendation(session.scoring?.recommendation)}
+                      </Badge>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <Alert>
+                <AlertDescription>Ranking appears when candidates complete the interview and Llama scoring finishes.</AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="grid gap-3 p-5 text-sm md:grid-cols-3">
@@ -201,33 +314,56 @@ export default function AIInterviewDetailPage() {
               <CardTitle className="text-base">Candidate Sessions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {sessions.map((session) => (
-                <button
-                  key={session._id}
-                  onClick={() => setSelectedSessionId(session._id)}
-                  className={`w-full rounded-md border bg-white p-3 text-left transition-colors hover:bg-slate-50 ${
-                    selectedSession?._id === session._id ? "border-slate-900" : "border-slate-200"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{session.candidateSnapshot?.name}</div>
-                      <div className="truncate text-xs text-muted-foreground">{session.candidateSnapshot?.email}</div>
+              {orderedSessions.map((session) => {
+                const score = getSessionScore(session);
+                const rank = rankedSessions.findIndex((item) => item._id === session._id) + 1;
+                return (
+                  <button
+                    key={session._id}
+                    onClick={() => setSelectedSessionId(session._id)}
+                    className={`w-full rounded-md border bg-white p-3 text-left transition-colors hover:bg-slate-50 ${
+                      selectedSession?._id === session._id ? "border-slate-900" : "border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          {rank > 0 && (
+                            <span className="rounded-md bg-slate-950 px-1.5 py-0.5 text-[10px] font-semibold text-white">#{rank}</span>
+                          )}
+                          <div className="truncate font-medium">{session.candidateSnapshot?.name}</div>
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">{session.candidateSnapshot?.email}</div>
+                      </div>
+                      <Badge className={statusColor(session.status)}>{session.status}</Badge>
                     </div>
-                    <Badge className={statusColor(session.status)}>{session.status}</Badge>
-                  </div>
-                  <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Mail className="h-3 w-3" />
-                      {session.email?.sentAt ? "sent" : `${session.email?.attempts || 0} attempts`}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" />
-                      {session.answers?.filter((answer) => answer.status === "answered").length || 0} answers
-                    </span>
-                  </div>
-                </button>
-              ))}
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {session.email?.sentAt ? "sent" : `${session.email?.attempts || 0} attempts`}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {session.answers?.filter((answer) => answer.status === "answered").length || 0} answers
+                      </span>
+                      {score !== null && (
+                        <span className="flex items-center gap-1 font-semibold text-slate-950">
+                          <Star className="h-3 w-3 text-amber-500" />
+                          {score}/100
+                        </span>
+                      )}
+                    </div>
+                    {score !== null && (
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <Progress value={score} className="h-1.5" />
+                        <Badge variant="outline" className={recommendationColor(session.scoring?.recommendation)}>
+                          {formatRecommendation(session.scoring?.recommendation)}
+                        </Badge>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </CardContent>
           </Card>
 
@@ -288,14 +424,29 @@ export default function AIInterviewDetailPage() {
                   <CardContent className="space-y-4">
                     {selectedSession.scoring?.status === "completed" ? (
                       <>
-                        <div className="flex items-center gap-4">
-                          <div className="text-4xl font-semibold">{selectedSession.scoring.overallScore ?? 0}</div>
-                          <div>
-                            <Badge>{selectedSession.scoring.recommendation || "review"}</Badge>
-                            <p className="mt-1 text-sm text-muted-foreground">Overall score out of 100</p>
+                        <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                          <div className="rounded-xl border bg-slate-50 p-4">
+                            <div className="flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              AI score
+                              {selectedRank > 0 && <span>Rank #{selectedRank}</span>}
+                            </div>
+                            <div className="mt-2 flex items-end gap-2">
+                              <div className="text-4xl font-semibold">{selectedSession.scoring.overallScore ?? 0}</div>
+                              <span className="pb-1 text-sm text-muted-foreground">/100</span>
+                            </div>
+                            <Progress value={Number(selectedSession.scoring.overallScore || 0)} className="mt-3 h-2" />
+                            <Badge variant="outline" className={`mt-3 ${recommendationColor(selectedSession.scoring.recommendation)}`}>
+                              {formatRecommendation(selectedSession.scoring.recommendation)}
+                            </Badge>
+                          </div>
+                          <div className="rounded-xl border bg-white p-4">
+                            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                              <Award className="h-4 w-4 text-violet-600" />
+                              Scoring summary
+                            </div>
+                            <p className="text-sm leading-6 text-slate-700">{selectedSession.scoring.summary}</p>
                           </div>
                         </div>
-                        <p className="text-sm leading-6">{selectedSession.scoring.summary}</p>
                         <div className="grid gap-4 md:grid-cols-2">
                           <div>
                             <h3 className="mb-2 text-sm font-medium">Strengths</h3>

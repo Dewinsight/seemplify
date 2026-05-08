@@ -12,11 +12,14 @@ import {
   Clock,
   FileQuestion,
   Loader2,
+  Medal,
   Plus,
   RefreshCw,
   Send,
   ShieldCheck,
+  Star,
   TimerReset,
+  Trophy,
   Users,
   Workflow
 } from "lucide-react";
@@ -68,6 +71,29 @@ function getDepartmentName(department: JobData["department"]) {
 
 function candidateName(candidate: any) {
   return `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim() || candidate.email || "Candidate";
+}
+
+function formatRecommendation(value?: string) {
+  if (!value) return "Review";
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function recommendationColor(value?: string) {
+  switch (value) {
+    case "strong_yes":
+    case "yes":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "maybe":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "no":
+    case "strong_no":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
 }
 
 export default function AIInterviewsPage() {
@@ -122,6 +148,27 @@ export default function AIInterviewsPage() {
     () => interviews.reduce((sum, interview) => sum + Number(interview.stats?.completed || 0), 0),
     [interviews]
   );
+  const scoredSessionCount = useMemo(
+    () => interviews.reduce((sum, interview) => sum + Number(interview.scoringSummary?.scoredCount || 0), 0),
+    [interviews]
+  );
+  const averageAIScore = useMemo(() => {
+    const weighted = interviews.reduce((sum, interview) => {
+      const count = Number(interview.scoringSummary?.scoredCount || 0);
+      const average = Number(interview.scoringSummary?.averageScore || 0);
+      return sum + count * average;
+    }, 0);
+    return scoredSessionCount > 0 ? Math.round(weighted / scoredSessionCount) : null;
+  }, [interviews, scoredSessionCount]);
+  const topRankedCandidate = useMemo(() => {
+    return interviews
+      .flatMap((interview) => (interview.scoringSummary?.rankings || []).map((ranking) => ({
+        ...ranking,
+        interviewTitle: interview.title,
+        jobTitle: interview.job?.title
+      })))
+      .sort((a, b) => b.score - a.score)[0];
+  }, [interviews]);
   const activeInterviews = useMemo(
     () => interviews.filter((interview) => interview.status === "active").length,
     [interviews]
@@ -293,7 +340,7 @@ export default function AIInterviewsPage() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-900/70 dark:bg-blue-950/30">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Active</span>
@@ -317,6 +364,16 @@ export default function AIInterviewsPage() {
               </div>
               <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{completedSessions}</div>
               <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">Candidate sessions submitted</p>
+            </div>
+            <div className="rounded-xl border border-violet-100 bg-violet-50/90 p-4 dark:border-violet-900/70 dark:bg-violet-950/30">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-violet-700 dark:text-violet-300">Avg AI Score</span>
+                <Trophy className="h-5 w-5 text-violet-600 dark:text-violet-300" />
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{averageAIScore ?? "-"}</div>
+              <p className="truncate text-xs text-violet-700/80 dark:text-violet-300/80">
+                {topRankedCandidate ? `Top: ${topRankedCandidate.candidateName}` : "No scored candidates yet"}
+              </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
               <div className="flex items-center justify-between">
@@ -697,6 +754,9 @@ export default function AIInterviewsPage() {
                   const completed = Number(interview.stats?.completed || 0);
                   const total = Number(interview.candidateCount || 0);
                   const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
+                  const scoringSummary = interview.scoringSummary;
+                  const rankings = scoringSummary?.rankings || [];
+                  const hasScores = Number(scoringSummary?.scoredCount || 0) > 0;
                   return (
                     <Link key={interview._id} href={`/ai-interviews/${interview._id}`}>
                       <Card className="h-full overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:bg-slate-900/90 dark:shadow-none">
@@ -723,6 +783,53 @@ export default function AIInterviewsPage() {
                               </div>
                               <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{completed}</div>
                             </div>
+                          </div>
+                          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+                            {hasScores ? (
+                              <div className="space-y-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      <Trophy className="h-3.5 w-3.5 text-violet-600" />
+                                      AI ranking
+                                    </div>
+                                    <div className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
+                                      Top: {scoringSummary?.topCandidate?.candidateName || "Candidate"}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-2xl font-bold text-slate-950 dark:text-white">{scoringSummary?.averageScore ?? "-"}</div>
+                                    <div className="text-xs text-muted-foreground">avg score</div>
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  {rankings.slice(0, 3).map((candidate) => (
+                                    <div key={candidate.sessionId} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs dark:bg-slate-900">
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-950 text-[11px] font-semibold text-white">
+                                          {candidate.rank}
+                                        </span>
+                                        <span className="truncate font-medium text-slate-800 dark:text-slate-100">{candidate.candidateName}</span>
+                                      </div>
+                                      <div className="flex shrink-0 items-center gap-2">
+                                        <Badge variant="outline" className={recommendationColor(candidate.recommendation)}>
+                                          {formatRecommendation(candidate.recommendation)}
+                                        </Badge>
+                                        <span className="flex items-center gap-1 font-semibold text-slate-950 dark:text-white">
+                                          <Star className="h-3.5 w-3.5 text-amber-500" />
+                                          {candidate.score}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                <Medal className="h-4 w-4 text-slate-400" />
+                                Ranking appears after candidates complete and Llama scoring finishes.
+                              </div>
+                            )}
                           </div>
                           <div className="mt-4 space-y-2">
                             <div className="flex items-center justify-between text-xs text-muted-foreground">
