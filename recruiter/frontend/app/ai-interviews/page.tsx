@@ -36,8 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { InterviewQuestionSelector } from "@/components/ui/interview-question-selector";
-import { getAllJobs, type JobData } from "@/services/jobService";
-import { getAllCandidates } from "@/services/candidateService";
+import { getAllJobs, getJobInterviewCandidates, type JobData } from "@/services/jobService";
 import interviewService from "@/services/interviewService";
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService";
 
@@ -104,6 +103,7 @@ export default function AIInterviewsPage() {
   const [jobs, setJobs] = useState<JobData[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState("");
@@ -190,14 +190,13 @@ export default function AIInterviewsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [interviewList, jobList, candidateList] = await Promise.all([
+      const [interviewList, jobList] = await Promise.all([
         aiInterviewService.list(),
-        getAllJobs({ limit: 200 }),
-        getAllCandidates(500)
+        getAllJobs({ limit: 200 })
       ]);
       setInterviews(interviewList);
       setJobs(jobList || []);
-      setCandidates(candidateList || []);
+      setCandidates([]);
     } catch (error: any) {
       toast.error(error.message || "Failed to load AI interviews");
     } finally {
@@ -208,6 +207,36 @@ export default function AIInterviewsPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    setSelectedCandidateIds([]);
+    setCandidateSearch("");
+
+    if (!form.jobId) {
+      setCandidates([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingCandidates(true);
+    getJobInterviewCandidates(form.jobId)
+      .then((candidateList) => {
+        if (!cancelled) setCandidates(candidateList || []);
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          setCandidates([]);
+          toast.error(error.message || "Failed to load candidates for this job");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCandidates(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.jobId]);
 
   useEffect(() => {
     if (presetAppliedRef.current || !presetJobId || !jobs.length) return;
@@ -594,7 +623,7 @@ export default function AIInterviewsPage() {
                           <Users className="h-4 w-4 text-blue-600" />
                           Candidates
                         </CardTitle>
-                        <CardDescription>{selectedCandidateIds.length} selected from {candidates.length} available</CardDescription>
+                        <CardDescription>{selectedCandidateIds.length} selected from {candidates.length} candidates for this job</CardDescription>
                       </div>
                       <Badge variant="outline">{selectedVisibleCount}/{filteredCandidateIds.length} visible</Badge>
                     </div>
@@ -618,7 +647,7 @@ export default function AIInterviewsPage() {
                             }
                           }}
                         />
-                        <span className="font-medium text-slate-900 dark:text-white">Select all visible candidates</span>
+                        <span className="font-medium text-slate-900 dark:text-white">Select all visible job candidates</span>
                       </label>
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={selectVisibleCandidates} disabled={!filteredCandidateIds.length}>
@@ -633,7 +662,17 @@ export default function AIInterviewsPage() {
                       </div>
                     </div>
                     <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                      {filteredCandidates.map((candidate) => {
+                      {loadingCandidates && (
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-950/40">
+                          Loading candidates for this job...
+                        </div>
+                      )}
+                      {!loadingCandidates && !form.jobId && (
+                        <Alert>
+                          <AlertDescription>Select a job to load eligible pipeline and shortlist candidates.</AlertDescription>
+                        </Alert>
+                      )}
+                      {!loadingCandidates && form.jobId && filteredCandidates.map((candidate) => {
                         const checked = selectedCandidateIds.includes(candidate._id);
                         const name = candidateName(candidate);
                         return (
@@ -653,9 +692,9 @@ export default function AIInterviewsPage() {
                           </label>
                         );
                       })}
-                      {!filteredCandidates.length && (
+                      {!loadingCandidates && form.jobId && !filteredCandidates.length && (
                         <Alert>
-                          <AlertDescription>No candidates found.</AlertDescription>
+                          <AlertDescription>No pipeline or shortlist candidates found for this job.</AlertDescription>
                         </Alert>
                       )}
                     </div>

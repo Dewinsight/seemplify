@@ -109,6 +109,7 @@ const AIInterviewSessionSchema = new mongoose.Schema({
     type: String,
     enum: [
       'pending_send',
+      'sending',
       'sent',
       'opened',
       'in_progress',
@@ -183,6 +184,11 @@ const AIInterviewSessionSchema = new mongoose.Schema({
       default: 0
     },
     chargedAt: Date,
+    refunded: {
+      type: Boolean,
+      default: false
+    },
+    refundedAt: Date,
     error: String
   }
 }, {

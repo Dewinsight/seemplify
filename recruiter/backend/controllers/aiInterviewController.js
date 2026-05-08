@@ -42,6 +42,24 @@ function createLegacyPublicLinkValue() {
   return `ai_${crypto.randomBytes(18).toString('base64url')}`;
 }
 
+function getCandidateIdFromJobEntry(entry) {
+  const candidate = entry?.candidate;
+  return String(candidate?._id || candidate || '');
+}
+
+function getJobInterviewCandidateIdSet(job) {
+  const ids = new Set();
+  (job.applicants || []).forEach((applicant) => {
+    const id = getCandidateIdFromJobEntry(applicant);
+    if (id) ids.add(id);
+  });
+  (job.shortlist || []).forEach((item) => {
+    const id = getCandidateIdFromJobEntry(item);
+    if (id) ids.add(id);
+  });
+  return ids;
+}
+
 function getSessionCandidateName(session) {
   const snapshot = session.candidateSnapshot || {};
   return snapshot.name || `${snapshot.firstName || ''} ${snapshot.lastName || ''}`.trim() || snapshot.email || 'Candidate';
@@ -389,6 +407,15 @@ exports.createAIInterview = async (req, res) => {
     const job = await Job.findOne({ _id: jobId, organization: organizationId });
     if (!job) {
       return res.status(404).json({ error: 'JOB_NOT_FOUND', message: 'Job not found for this organization' });
+    }
+
+    const jobCandidateIds = getJobInterviewCandidateIdSet(job);
+    const candidatesOutsideJob = uniqueCandidateIds.filter((id) => !jobCandidateIds.has(String(id)));
+    if (candidatesOutsideJob.length) {
+      return res.status(400).json({
+        error: 'INVALID_CANDIDATES',
+        message: 'AI interviews can only be sent to candidates in the selected job pipeline or shortlist'
+      });
     }
 
     const candidates = await Candidate.find({

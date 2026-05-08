@@ -128,10 +128,16 @@ class AIInterviewEmailService {
     const candidateEmail = session.candidateSnapshot?.email;
 
     if (!candidateEmail) {
-      session.status = 'email_failed';
-      session.email.lastError = 'Candidate email is missing';
-      session.email.attempts = (session.email.attempts || 0) + 1;
-      await session.save();
+      await AIInterviewSession.findOneAndUpdate(
+        { _id: session._id, status: 'pending_send' },
+        {
+          $set: {
+            status: 'email_failed',
+            'email.lastError': 'Candidate email is missing'
+          },
+          $inc: { 'email.attempts': 1 }
+        }
+      );
       return false;
     }
 
@@ -140,20 +146,40 @@ class AIInterviewEmailService {
       const creditCheck = await creditsService.checkSufficientCredits(organizationId, AI_INTERVIEW_ACTION);
       cost = Number(creditCheck.cost || interview.creditCostPerCandidate || 0);
       if (!creditCheck.allowed || (Number.isFinite(creditCheck.remaining) && creditCheck.remaining < cost)) {
-        session.status = 'credit_blocked';
-        session.credits.cost = cost;
-        session.credits.error = creditCheck.message || 'Insufficient credits';
-        await session.save();
+        await AIInterviewSession.findOneAndUpdate(
+          { _id: session._id, status: 'pending_send' },
+          {
+            $set: {
+              status: 'credit_blocked',
+              'credits.cost': cost,
+              'credits.error': creditCheck.message || 'Insufficient credits'
+            }
+          }
+        );
         return false;
       }
     }
 
     const { token, tokenHash } = createPublicToken();
     const interviewUrl = `${getFrontendUrl().replace(/\/$/, '')}/public/ai-interview/${token}`;
-    session.tokenHash = tokenHash;
-    session.tokenGeneratedAt = new Date();
-    session.email.lastError = undefined;
-    await session.save();
+    const claimedSession = await AIInterviewSession.findOneAndUpdate(
+      { _id: session._id, status: 'pending_send' },
+      {
+        $set: {
+          status: 'sending',
+          tokenHash,
+          tokenGeneratedAt: new Date(),
+          'email.lastError': undefined
+        },
+        $inc: { 'email.attempts': 1 }
+      },
+      { new: true }
+    );
+
+    if (!claimedSession) {
+      return false;
+    }
+    session = claimedSession;
 
     const organizationName =
       interview.organization?.name ||
@@ -163,7 +189,6 @@ class AIInterviewEmailService {
     const candidateName = session.candidateSnapshot?.name || candidateEmail;
 
     try {
-      session.email.attempts = (session.email.attempts || 0) + 1;
       const result = await emailService.sendEmail({
         to: candidateEmail,
         subject: `AI Interview Invitation - ${jobTitle}`,
