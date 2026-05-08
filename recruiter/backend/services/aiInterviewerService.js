@@ -89,12 +89,31 @@ End by telling the candidate they can ask for clarification or answer when ready
       'clarify',
       'explain',
       'what do you mean',
+      'what do they mean',
+      'what does',
+      'what does this mean',
+      'what does that mean',
+      'what does it mean',
+      "what's",
+      'whats',
+      'what is',
+      'what are',
+      'mean by',
+      'meaning of',
+      'define',
+      'definition',
       'more detail',
       'more details',
       'can you elaborate',
+      'elaborate',
       'example',
       'understand',
-      'rephrase'
+      'rephrase',
+      'break down',
+      'not sure',
+      "don't understand",
+      'do not understand',
+      'help me understand'
     ];
     return text.endsWith('?') || clarificationTerms.some((term) => text.includes(term));
   }
