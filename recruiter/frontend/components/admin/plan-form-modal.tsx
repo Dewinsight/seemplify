@@ -25,9 +25,9 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { apiRequest } from "@/services/apiConfig";
 
 interface PlanLimit {
-  memberLimit: number | string;       // For organization plans
-  storageLimit: number | string;      // For organization plans
-  apiCallsLimit: number | string;     // For organization plans
+  memberLimit: number | string | null | undefined;       // For organization plans
+  storageLimit: number | string | null | undefined;      // For organization plans
+  apiCallsLimit: number | string | null | undefined;     // For organization plans
 }
 
 interface PlanFeature {
@@ -42,6 +42,7 @@ interface PlanCreditCosts {
   aiMatching: number;
   generateQuestions: number;
   aiAnalysis: number;
+  aiInterviewCandidate: number;
   bulkUpload: number;
   reEmbed: number;
 }
@@ -66,7 +67,7 @@ interface Plan {
   trialDays: number;
   isPublished: boolean;
   displayOrder: number;
-  planType: 'organization'; // Only organization plans now
+  planType: 'user' | 'organization'; // Only organization plans are created, legacy user plans may still exist
   isCustom?: boolean;
 }
 
@@ -100,6 +101,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
         aiMatching: 11,
         generateQuestions: 6,
         aiAnalysis: 12,
+        aiInterviewCandidate: 5,
         bulkUpload: 5,
         reEmbed: 3
       },
@@ -145,6 +147,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
             aiMatching: 11,
             generateQuestions: 6,
             aiAnalysis: 12,
+            aiInterviewCandidate: 5,
             bulkUpload: 5,
             reEmbed: 3
           },
@@ -180,19 +183,34 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
 
   const handleNumberInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    if (name.includes('.')) {
-      const [section, field] = name.split('.');
+    const nextValue = value === '' ? '' : Number(value);
+    const path = name.split('.');
+
+    if (path.length === 3) {
+      const [section, group, field] = path;
       setFormData({
         ...formData,
         [section]: {
           ...(formData[section as keyof Plan] as object),
-          [field]: value === '' ? '' : Number(value)
+          [group]: {
+            ...((formData[section as keyof Plan] as any)?.[group] || {}),
+            [field]: nextValue
+          }
+        }
+      });
+    } else if (path.length === 2) {
+      const [section, field] = path;
+      setFormData({
+        ...formData,
+        [section]: {
+          ...(formData[section as keyof Plan] as object),
+          [field]: nextValue
         }
       });
     } else {
       setFormData({
         ...formData,
-        [name]: value === '' ? '' : Number(value)
+        [name]: nextValue
       });
     }
   };
@@ -463,7 +481,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                       name="limits.memberLimit"
                       type="number"
                       placeholder="Enter number (0 = unlimited)"
-                      value={formData.limits.memberLimit}
+                      value={formData.limits.memberLimit ?? ''}
                       onChange={handleNumberInputChange}
                     />
                     <p className="text-xs text-gray-500 mt-1">
@@ -478,7 +496,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                       name="limits.storageLimit"
                       type="number"
                       placeholder="Enter MB (0 = unlimited)"
-                      value={formData.limits.storageLimit}
+                      value={formData.limits.storageLimit ?? ''}
                       onChange={handleNumberInputChange}
                     />
                   </div>
@@ -490,7 +508,7 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                       name="limits.apiCallsLimit"
                       type="number"
                       placeholder="Enter number (0 = unlimited)"
-                      value={formData.limits.apiCallsLimit}
+                      value={formData.limits.apiCallsLimit ?? ''}
                       onChange={handleNumberInputChange}
                     />
                   </div>
@@ -597,6 +615,18 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                           onChange={handleNumberInputChange}
                         />
                       </div>
+
+                      <div>
+                        <Label htmlFor="credits.creditCosts.aiInterviewCandidate" className="text-xs">AI Interview Candidate</Label>
+                        <Input
+                          id="credits.creditCosts.aiInterviewCandidate"
+                          name="credits.creditCosts.aiInterviewCandidate"
+                          type="number"
+                          className="h-8"
+                          value={formData.credits?.creditCosts?.aiInterviewCandidate || 5}
+                          onChange={handleNumberInputChange}
+                        />
+                      </div>
                       
                       <div>
                         <Label htmlFor="credits.creditCosts.bulkUpload" className="text-xs">Bulk Upload (per item)</Label>
@@ -639,10 +669,11 @@ export default function PlanFormModal({ isOpen, onClose, plan, onSuccess }: Plan
                                 uploadCandidate: 7,
                                 scheduleInterview: 2,
                                 aiMatching: 11,
-                                generateQuestions: 6,
-                                aiAnalysis: 12,
-                                bulkUpload: 5,
-                                reEmbed: 3
+                              generateQuestions: 6,
+                              aiAnalysis: 12,
+                              aiInterviewCandidate: 5,
+                              bulkUpload: 5,
+                              reEmbed: 3
                               },
                               rolloverPercentage: 0
                             }),

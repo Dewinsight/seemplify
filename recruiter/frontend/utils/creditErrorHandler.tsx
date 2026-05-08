@@ -23,6 +23,7 @@ export const ACTION_NAMES: Record<string, string> = {
   aiMatching: "AI Matching",
   generateQuestions: "Generate Interview Questions",
   aiAnalysis: "AI Interview Analysis",
+  aiInterviewCandidate: "AI Interview Candidate",
   bulkUpload: "Bulk Job Upload",
   reEmbed: "Re-embed Job",
   bulkAnalysis: "Bulk AI Analysis"
@@ -36,6 +37,7 @@ export const ACTION_ICONS: Record<string, string> = {
   aiMatching: "🤖",
   generateQuestions: "❓",
   aiAnalysis: "🔍",
+  aiInterviewCandidate: "🤖",
   bulkUpload: "📦",
   reEmbed: "🔄",
   bulkAnalysis: "📊"

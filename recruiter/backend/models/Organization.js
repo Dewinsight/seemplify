@@ -155,7 +155,7 @@ const OrganizationSchema = new mongoose.Schema({
         action: {
           type: String,
           enum: ['createJob', 'uploadCandidate', 'scheduleInterview', 'aiMatching',
-            'generateQuestions', 'aiAnalysis', 'bulkUpload', 'reEmbed',
+            'generateQuestions', 'aiAnalysis', 'aiInterviewCandidate', 'bulkUpload', 'reEmbed',
             'creditPurchase', 'creditRefund', 'cycleReset'],
           required: true
         },
@@ -166,7 +166,7 @@ const OrganizationSchema = new mongoose.Schema({
         entityId: mongoose.Schema.Types.ObjectId,
         entityType: {
           type: String,
-          enum: ['job', 'candidate', 'interview', 'matching', 'question', 'analysis', 'system']
+          enum: ['job', 'candidate', 'interview', 'aiInterview', 'matching', 'question', 'analysis', 'system']
         },
         performedBy: {
           type: mongoose.Schema.Types.ObjectId,

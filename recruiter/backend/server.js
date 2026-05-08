@@ -14,6 +14,7 @@ const interviewFeedbackEmailService = require('./services/interviewQuestionEmail
 const backgroundServiceManager = require('./services/backgroundServiceManager');
 const multiCandidateRetryService = require('./services/multiCandidateRetryService');
 const interviewBotJoinService = require('./services/interviewBotJoinService');
+const aiInterviewEmailService = require('./services/aiInterviewEmailService');
 const { requestValidation } = require('./middleware/requestValidation');
 
 // Load environment variables
@@ -285,6 +286,7 @@ app.use('/api/trusted-devices', require('./routes/trustedDevices')); // Trusted 
 
 // NEW: Nylas integration routes
 app.use('/api/interviews', require('./routes/interview')); // Interview scheduling routes
+app.use('/api/ai-interviews', require('./routes/aiInterviews')); // Async AI Interviewer routes
 app.use('/api/interview-status', require('./routes/interviewStatus')); // Interview status management routes
 app.use('/api/interview-stages', require('./routes/interviewStages')); // Interview stages management routes
 app.use('/api/ai-analysis', require('./routes/aiAnalysis')); // AI interview analysis routes
@@ -350,6 +352,7 @@ const interviewStatusService = require('./services/interviewStatusService');
 
 // Register all background services
 backgroundServiceManager.register('interviewFeedbackEmail', interviewFeedbackEmailService);
+backgroundServiceManager.register('aiInterviewEmail', aiInterviewEmailService);
 backgroundServiceManager.register('interviewCompletion', interviewCompletionService);
 backgroundServiceManager.register('interviewStatus', interviewStatusService);
 backgroundServiceManager.register('interviewBotJoin', interviewBotJoinService);

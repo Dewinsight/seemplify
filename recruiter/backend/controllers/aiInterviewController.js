@@ -1,0 +1,791 @@
+const crypto = require('crypto');
+const mongoose = require('mongoose');
+const AIInterview = require('../models/AIInterview');
+const AIInterviewSession = require('../models/AIInterviewSession');
+const Candidate = require('../models/Candidate');
+const InterviewQuestion = require('../models/InterviewQuestion');
+const Job = require('../models/Job');
+const Organization = require('../models/Organization');
+const creditsService = require('../services/creditsService');
+const aiInterviewerService = require('../services/aiInterviewerService');
+const aiInterviewEmailService = require('../services/aiInterviewEmailService');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
+
+const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
+
+function getUserId(req) {
+  return req.user?._id || req.user?.id || req.user?._doc?._id;
+}
+
+function getOrganizationId(req) {
+  return req.user?.currentOrganization;
+}
+
+function isValidObjectId(value) {
+  return mongoose.Types.ObjectId.isValid(String(value));
+}
+
+function hashPublicToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+function createLegacyPublicLinkValue() {
+  return `ai_${crypto.randomBytes(18).toString('base64url')}`;
+}
+
+function getQuestionLimitMinutes(interview, question) {
+  return Number(question?.timeLimit || interview.timers?.perQuestionMinutes || 10);
+}
+
+function addMinutes(date, minutes) {
+  return new Date(date.getTime() + Number(minutes || 0) * 60 * 1000);
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set((values || []).map((value) => String(value)).filter(Boolean)));
+}
+
+function buildPublicState(session, interview) {
+  const currentQuestion = interview.questionSnapshots[session.currentQuestionIndex];
+  return {
+    session: {
+      id: session._id,
+      status: session.status,
+      currentQuestionIndex: session.currentQuestionIndex,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
+      questionDeadlineAt: session.questionDeadlineAt,
+      totalDeadlineAt: session.totalDeadlineAt,
+      messages: session.messages || [],
+      answers: (session.answers || []).map((answer) => ({
+        questionIndex: answer.questionIndex,
+        status: answer.status,
+        submittedAt: answer.submittedAt,
+        timeSpentSeconds: answer.timeSpentSeconds
+      })),
+      scoring: session.status === 'completed' ? session.scoring : undefined
+    },
+    interview: {
+      id: interview._id,
+      title: interview.title,
+      guidelines: interview.guidelines,
+      questionCount: interview.questionSnapshots.length,
+      timers: interview.timers,
+      schedule: interview.schedule,
+      currentQuestion: currentQuestion ? {
+        questionIndex: session.currentQuestionIndex,
+        type: currentQuestion.type,
+        difficulty: currentQuestion.difficulty,
+        timeLimit: getQuestionLimitMinutes(interview, currentQuestion)
+      } : null
+    },
+    candidate: session.candidateSnapshot,
+    job: session.job ? {
+      id: session.job._id,
+      title: session.job.title
+    } : undefined
+  };
+}
+
+async function syncInterviewStats(interviewId) {
+  const rows = await AIInterviewSession.aggregate([
+    { $match: { aiInterview: new mongoose.Types.ObjectId(String(interviewId)) } },
+    { $group: { _id: '$status', count: { $sum: 1 } } }
+  ]);
+
+  const counts = rows.reduce((acc, row) => {
+    acc[row._id] = row.count;
+    return acc;
+  }, {});
+
+  await AIInterview.findByIdAndUpdate(interviewId, {
+    stats: {
+      sent: counts.sent || 0,
+      opened: counts.opened || 0,
+      inProgress: counts.in_progress || 0,
+      completed: counts.completed || 0,
+      blocked: (counts.credit_blocked || 0) + (counts.credit_error || 0),
+      failed: counts.email_failed || 0
+    }
+  });
+}
+
+function upsertDraftAnswer(session, interview, answerText) {
+  const index = session.currentQuestionIndex;
+  const question = interview.questionSnapshots[index];
+  if (!question) return null;
+
+  let answer = session.answers.find((item) => item.questionIndex === index);
+  if (!answer) {
+    answer = session.answers.create({
+      questionIndex: index,
+      questionId: question.questionId,
+      question: question.question,
+      answer: '',
+      status: 'draft',
+      startedAt: session.questionStartedAt || new Date()
+    });
+    session.answers.push(answer);
+  }
+
+  const existing = answer.answer ? `${answer.answer}\n\n` : '';
+  answer.answer = `${existing}${answerText}`.trim();
+  answer.status = 'draft';
+  return answer;
+}
+
+function finalizeCurrentAnswer(session, interview, mode = 'answered') {
+  const now = new Date();
+  const index = session.currentQuestionIndex;
+  const question = interview.questionSnapshots[index];
+  if (!question) return null;
+
+  let answer = session.answers.find((item) => item.questionIndex === index);
+  if (!answer) {
+    answer = session.answers.create({
+      questionIndex: index,
+      questionId: question.questionId,
+      question: question.question,
+      answer: '',
+      status: 'draft',
+      startedAt: session.questionStartedAt || now
+    });
+    session.answers.push(answer);
+  }
+
+  const hasAnswer = Boolean(String(answer.answer || '').trim());
+  answer.status = mode === 'timeout' ? 'timeout' : (hasAnswer ? 'answered' : 'skipped');
+  answer.submittedAt = now;
+  const startedAt = answer.startedAt || session.questionStartedAt || now;
+  answer.timeSpentSeconds = Math.max(0, Math.round((now.getTime() - new Date(startedAt).getTime()) / 1000));
+  return answer;
+}
+
+async function completeSession(session, interview) {
+  if (session.status === 'completed') {
+    return session;
+  }
+
+  session.status = 'completed';
+  session.completedAt = new Date();
+  session.lastActivityAt = new Date();
+  session.messages.push({
+    role: 'ai',
+    content: 'That completes the interview. Thank you for taking the time to answer these questions.',
+    questionIndex: null,
+    messageType: 'transition'
+  });
+  session.scoring.status = 'processing';
+  await session.save();
+
+  try {
+    const score = await aiInterviewerService.scoreInterview({ interview, session });
+    session.scoring = {
+      status: 'completed',
+      overallScore: score.overallScore,
+      recommendation: score.recommendation,
+      summary: score.summary,
+      strengths: score.strengths,
+      concerns: score.concerns,
+      questionScores: score.questionScores,
+      raw: score.raw,
+      error: score.error,
+      scoredAt: new Date()
+    };
+  } catch (error) {
+    session.scoring.status = 'failed';
+    session.scoring.error = error.message;
+  }
+
+  await session.save();
+  await syncInterviewStats(interview._id);
+  return session;
+}
+
+async function advanceQuestion(session, interview, mode = 'answered') {
+  finalizeCurrentAnswer(session, interview, mode);
+
+  const nextIndex = session.currentQuestionIndex + 1;
+  if (nextIndex >= interview.questionSnapshots.length) {
+    return completeSession(session, interview);
+  }
+
+  const now = new Date();
+  const nextQuestion = interview.questionSnapshots[nextIndex];
+  session.currentQuestionIndex = nextIndex;
+  session.questionStartedAt = now;
+  session.questionDeadlineAt = addMinutes(now, getQuestionLimitMinutes(interview, nextQuestion));
+  session.lastActivityAt = now;
+  session.messages.push({
+    role: 'ai',
+    content: `Confirmed. We are moving to question ${nextIndex + 1} of ${interview.questionSnapshots.length}.`,
+    questionIndex: nextIndex,
+    messageType: 'transition'
+  });
+
+  const intro = await aiInterviewerService.introduceQuestion({
+    interview,
+    session,
+    question: nextQuestion,
+    questionNumber: nextIndex + 1
+  });
+
+  session.messages.push({
+    role: 'ai',
+    content: intro,
+    questionIndex: nextIndex,
+    messageType: 'question'
+  });
+
+  await session.save();
+  await syncInterviewStats(interview._id);
+  return session;
+}
+
+async function enforceDeadlines(session, interview) {
+  const now = new Date();
+
+  if (['completed', 'expired', 'cancelled'].includes(session.status)) {
+    return session;
+  }
+
+  if (new Date(interview.schedule.expiresAt) <= now) {
+    session.status = 'expired';
+    session.lastActivityAt = now;
+    await session.save();
+    await syncInterviewStats(interview._id);
+    return session;
+  }
+
+  if (session.status !== 'in_progress') {
+    return session;
+  }
+
+  if (session.totalDeadlineAt && new Date(session.totalDeadlineAt) <= now) {
+    finalizeCurrentAnswer(session, interview, 'timeout');
+    return completeSession(session, interview);
+  }
+
+  if (session.questionDeadlineAt && new Date(session.questionDeadlineAt) <= now) {
+    return advanceQuestion(session, interview, 'timeout');
+  }
+
+  return session;
+}
+
+async function findPublicSession(token) {
+  const tokenHash = hashPublicToken(token);
+  return AIInterviewSession.findOne({ tokenHash })
+    .populate({
+      path: 'aiInterview',
+      populate: [
+        { path: 'job', select: 'title description organization' },
+        { path: 'organization', select: 'name' }
+      ]
+    })
+    .populate('job', 'title description')
+    .populate('candidate', 'firstName lastName email');
+}
+
+exports.createAIInterview = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const userId = getUserId(req);
+    const {
+      title,
+      jobId,
+      candidateIds,
+      questionIds,
+      guidelines,
+      sendAt,
+      expiresAt,
+      perQuestionMinutes,
+      totalMinutes,
+      timezone
+    } = req.body;
+
+    if (!organizationId || !userId) {
+      return res.status(400).json({ error: 'ORGANIZATION_REQUIRED', message: 'Organization context is required' });
+    }
+
+    if (!isValidObjectId(jobId)) {
+      return res.status(400).json({ error: 'INVALID_JOB', message: 'A valid job is required' });
+    }
+
+    const uniqueCandidateIds = uniqueStrings(candidateIds);
+    const uniqueQuestionIds = uniqueStrings(questionIds);
+    if (!uniqueCandidateIds.length || !uniqueQuestionIds.length) {
+      return res.status(400).json({ error: 'MISSING_SELECTIONS', message: 'Select at least one candidate and one question' });
+    }
+
+    const scheduledSendAt = new Date(sendAt);
+    const scheduledExpiresAt = new Date(expiresAt);
+    if (Number.isNaN(scheduledSendAt.getTime()) || Number.isNaN(scheduledExpiresAt.getTime())) {
+      return res.status(400).json({ error: 'INVALID_SCHEDULE', message: 'Send time and expiry are required' });
+    }
+    if (scheduledExpiresAt <= new Date()) {
+      return res.status(400).json({ error: 'INVALID_EXPIRY', message: 'Expiry must be in the future' });
+    }
+    if (scheduledSendAt >= scheduledExpiresAt) {
+      return res.status(400).json({ error: 'INVALID_SCHEDULE', message: 'Send time must be before expiry' });
+    }
+
+    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    if (!job) {
+      return res.status(404).json({ error: 'JOB_NOT_FOUND', message: 'Job not found for this organization' });
+    }
+
+    const candidates = await Candidate.find({
+      _id: { $in: uniqueCandidateIds },
+      organization: organizationId
+    }).select('firstName lastName email organization');
+
+    if (candidates.length !== uniqueCandidateIds.length) {
+      return res.status(400).json({ error: 'INVALID_CANDIDATES', message: 'One or more candidates were not found in this organization' });
+    }
+
+    const questions = await InterviewQuestion.find({
+      _id: { $in: uniqueQuestionIds },
+      jobId,
+      isActive: true
+    });
+
+    if (questions.length !== uniqueQuestionIds.length) {
+      return res.status(400).json({ error: 'INVALID_QUESTIONS', message: 'One or more questions were not found for this job' });
+    }
+
+    const questionMap = new Map(questions.map((question) => [String(question._id), question]));
+    const questionSnapshots = uniqueQuestionIds.map((id, index) => {
+      const question = questionMap.get(String(id));
+      return {
+        questionId: question._id,
+        question: question.question,
+        type: question.type,
+        category: question.category,
+        difficulty: question.difficulty,
+        interviewStage: question.interviewStage,
+        order: index,
+        timeLimit: question.timeLimit,
+        expectedAnswer: question.expectedAnswer,
+        scoringCriteria: question.scoringCriteria || []
+      };
+    });
+
+    const creditCheck = await creditsService.checkSufficientCredits(organizationId, AI_INTERVIEW_ACTION);
+    const perCandidateCost = Number(creditCheck.cost || 0);
+    const totalRequired = perCandidateCost * candidates.length;
+    if (!creditCheck.allowed || (Number.isFinite(creditCheck.remaining) && creditCheck.remaining < totalRequired)) {
+      return res.status(402).json({
+        error: 'INSUFFICIENT_CREDITS',
+        message: `Insufficient credits. Required: ${totalRequired}, Available: ${creditCheck.remaining}`,
+        details: {
+          action: AI_INTERVIEW_ACTION,
+          required: totalRequired,
+          available: creditCheck.remaining,
+          perCandidateCost,
+          candidateCount: candidates.length
+        }
+      });
+    }
+
+    const aiInterview = await AIInterview.create({
+      organization: organizationId,
+      job: job._id,
+      createdBy: userId,
+      title: title?.trim() || `${decodeHtmlEntities(job.title)} AI Interview`,
+      publicLink: createLegacyPublicLinkValue(),
+      guidelines: guidelines?.trim() || '',
+      questionSnapshots,
+      timers: {
+        perQuestionMinutes: Math.max(1, Math.min(120, Number(perQuestionMinutes) || 10)),
+        totalMinutes: Math.max(1, Math.min(480, Number(totalMinutes) || Math.max(30, questionSnapshots.length * 10)))
+      },
+      schedule: {
+        sendAt: scheduledSendAt,
+        expiresAt: scheduledExpiresAt,
+        timezone: timezone || 'UTC'
+      },
+      candidateCount: candidates.length,
+      creditCostPerCandidate: perCandidateCost
+    });
+
+    const sessions = await AIInterviewSession.insertMany(candidates.map((candidate) => {
+      const name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email;
+      return {
+        aiInterview: aiInterview._id,
+        organization: organizationId,
+        job: job._id,
+        candidate: candidate._id,
+        createdBy: userId,
+        candidateSnapshot: {
+          firstName: candidate.firstName,
+          lastName: candidate.lastName,
+          name,
+          email: candidate.email
+        },
+        credits: {
+          cost: perCandidateCost
+        }
+      };
+    }));
+
+    await syncInterviewStats(aiInterview._id);
+
+    res.status(201).json({
+      success: true,
+      message: 'AI interview scheduled successfully',
+      aiInterview,
+      sessions,
+      creditPreview: {
+        perCandidateCost,
+        totalRequired
+      }
+    });
+  } catch (error) {
+    console.error('Create AI interview error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.listAIInterviews = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const { status, jobId } = req.query;
+    const query = { organization: organizationId };
+    if (status && status !== 'all') query.status = status;
+    if (jobId && isValidObjectId(jobId)) query.job = jobId;
+
+    const aiInterviews = await AIInterview.find(query)
+      .populate('job', 'title status')
+      .populate('createdBy', 'email profile')
+      .sort({ createdAt: -1 })
+      .limit(100);
+
+    res.json({ success: true, aiInterviews });
+  } catch (error) {
+    console.error('List AI interviews error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.getAIInterview = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const { id } = req.params;
+    const aiInterview = await AIInterview.findOne({ _id: id, organization: organizationId })
+      .populate('job', 'title status description')
+      .populate('createdBy', 'email profile');
+
+    if (!aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview not found' });
+    }
+
+    const sessions = await AIInterviewSession.find({ aiInterview: aiInterview._id, organization: organizationId })
+      .populate('candidate', 'firstName lastName email status')
+      .sort({ createdAt: 1 });
+
+    res.json({ success: true, aiInterview, sessions });
+  } catch (error) {
+    console.error('Get AI interview error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.getAIInterviewSession = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const { id, sessionId } = req.params;
+    const session = await AIInterviewSession.findOne({
+      _id: sessionId,
+      aiInterview: id,
+      organization: organizationId
+    })
+      .populate('aiInterview')
+      .populate('job', 'title status')
+      .populate('candidate', 'firstName lastName email status');
+
+    if (!session) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview session not found' });
+    }
+
+    res.json({ success: true, session });
+  } catch (error) {
+    console.error('Get AI interview session error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.cancelAIInterview = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const aiInterview = await AIInterview.findOne({ _id: id, organization: organizationId });
+
+    if (!aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview not found' });
+    }
+
+    aiInterview.status = 'cancelled';
+    aiInterview.cancelledAt = new Date();
+    aiInterview.cancelledBy = userId;
+    aiInterview.cancellationReason = req.body?.reason || '';
+    await aiInterview.save();
+
+    await AIInterviewSession.updateMany({
+      aiInterview: id,
+      organization: organizationId,
+      status: { $nin: ['completed', 'expired'] }
+    }, {
+      $set: { status: 'cancelled' }
+    });
+
+    await syncInterviewStats(id);
+    res.json({ success: true, message: 'AI interview cancelled' });
+  } catch (error) {
+    console.error('Cancel AI interview error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.resendAIInterviewSessions = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const { id } = req.params;
+    const { sessionIds } = req.body;
+    const aiInterview = await AIInterview.findOne({ _id: id, organization: organizationId });
+
+    if (!aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview not found' });
+    }
+
+    if (new Date(aiInterview.schedule.expiresAt) <= new Date()) {
+      return res.status(400).json({ error: 'EXPIRED', message: 'Cannot resend an expired AI interview' });
+    }
+
+    const query = {
+      aiInterview: id,
+      organization: organizationId,
+      status: { $in: ['sent', 'opened', 'email_failed', 'credit_blocked', 'credit_error'] }
+    };
+    if (Array.isArray(sessionIds) && sessionIds.length) {
+      query._id = { $in: sessionIds };
+    }
+
+    const result = await AIInterviewSession.updateMany(query, {
+      $set: {
+        status: 'pending_send',
+        tokenHash: null,
+        tokenGeneratedAt: null,
+        'email.lastError': null
+      }
+    });
+
+    await aiInterviewEmailService.checkAndSendInvites();
+    await syncInterviewStats(id);
+    res.json({ success: true, message: 'Sessions queued for resend', modifiedCount: result.modifiedCount });
+  } catch (error) {
+    console.error('Resend AI interview sessions error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.bootstrapPublicInterview = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status === 'sent') {
+      session.status = 'opened';
+      session.lastActivityAt = new Date();
+      await session.save();
+      await syncInterviewStats(interview._id);
+    }
+
+    res.json({ success: true, ...buildPublicState(session, interview) });
+  } catch (error) {
+    console.error('Bootstrap public AI interview error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.startPublicInterview = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (['completed', 'expired', 'cancelled'].includes(session.status)) {
+      return res.json({ success: true, ...buildPublicState(session, interview) });
+    }
+
+    if (!['sent', 'opened', 'in_progress'].includes(session.status)) {
+      return res.status(400).json({ error: 'NOT_READY', message: 'This interview link is not ready to start' });
+    }
+
+    if (session.status !== 'in_progress') {
+      const now = new Date();
+      const firstQuestion = interview.questionSnapshots[0];
+      session.status = 'in_progress';
+      session.startedAt = now;
+      session.lastActivityAt = now;
+      session.currentQuestionIndex = 0;
+      session.questionStartedAt = now;
+      session.questionDeadlineAt = addMinutes(now, getQuestionLimitMinutes(interview, firstQuestion));
+      session.totalDeadlineAt = addMinutes(now, interview.timers?.totalMinutes || 60);
+      session.messages.push({
+        role: 'ai',
+        content: `Hello ${session.candidateSnapshot?.firstName || ''}. Thanks for joining this AI interview. There are ${interview.questionSnapshots.length} questions, and I will guide you through them one at a time.`,
+        questionIndex: null,
+        messageType: 'greeting'
+      });
+
+      const intro = await aiInterviewerService.introduceQuestion({
+        interview,
+        session,
+        question: firstQuestion,
+        questionNumber: 1
+      });
+
+      session.messages.push({
+        role: 'ai',
+        content: intro,
+        questionIndex: 0,
+        messageType: 'question'
+      });
+      await session.save();
+      await syncInterviewStats(interview._id);
+    }
+
+    res.json({ success: true, ...buildPublicState(session, interview) });
+  } catch (error) {
+    console.error('Start public AI interview error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.sendPublicMessage = async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'EMPTY_MESSAGE', message: 'Message is required' });
+    }
+
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ error: 'NOT_IN_PROGRESS', message: 'Interview is not in progress' });
+    }
+
+    const currentQuestion = interview.questionSnapshots[session.currentQuestionIndex];
+    const candidateMessage = String(message).trim();
+    session.messages.push({
+      role: 'candidate',
+      content: candidateMessage,
+      questionIndex: session.currentQuestionIndex,
+      messageType: aiInterviewerService.isLikelyClarification(candidateMessage) ? 'clarification' : 'answer'
+    });
+
+    let aiReply;
+    if (aiInterviewerService.isLikelyClarification(candidateMessage)) {
+      aiReply = await aiInterviewerService.clarifyQuestion({
+        interview,
+        session,
+        question: currentQuestion,
+        questionNumber: session.currentQuestionIndex + 1,
+        candidateMessage
+      });
+      session.messages.push({
+        role: 'ai',
+        content: aiReply,
+        questionIndex: session.currentQuestionIndex,
+        messageType: 'clarification'
+      });
+    } else {
+      upsertDraftAnswer(session, interview, candidateMessage);
+      aiReply = await aiInterviewerService.acknowledgeAnswer({
+        interview,
+        session,
+        question: currentQuestion,
+        candidateMessage
+      });
+      session.messages.push({
+        role: 'ai',
+        content: aiReply,
+        questionIndex: session.currentQuestionIndex,
+        messageType: 'acknowledgement'
+      });
+    }
+
+    session.lastActivityAt = new Date();
+    await session.save();
+
+    res.json({ success: true, ...buildPublicState(session, interview) });
+  } catch (error) {
+    console.error('Public AI interview message error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.confirmPublicQuestion = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status !== 'in_progress') {
+      return res.json({ success: true, ...buildPublicState(session, interview) });
+    }
+
+    await advanceQuestion(session, interview, 'answered');
+    res.json({ success: true, ...buildPublicState(session, interview) });
+  } catch (error) {
+    console.error('Public AI interview confirm error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.timeoutPublicQuestion = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status === 'in_progress') {
+      await advanceQuestion(session, interview, 'timeout');
+    }
+
+    res.json({ success: true, ...buildPublicState(session, interview) });
+  } catch (error) {
+    console.error('Public AI interview timeout error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports._private = {
+  hashPublicToken,
+  syncInterviewStats
+};

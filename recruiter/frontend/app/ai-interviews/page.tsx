@@ -1,0 +1,762 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import {
+  AlertTriangle,
+  BarChart3,
+  Briefcase,
+  CalendarClock,
+  CheckCircle2,
+  Clock,
+  FileQuestion,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  TimerReset,
+  Users,
+  Workflow
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
+import { InterviewQuestionSelector } from "@/components/ui/interview-question-selector";
+import { getAllJobs, type JobData } from "@/services/jobService";
+import { getAllCandidates } from "@/services/candidateService";
+import interviewService from "@/services/interviewService";
+import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService";
+
+function toLocalInputValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function formatDate(value?: string) {
+  if (!value) return "Not set";
+  return new Date(value).toLocaleString();
+}
+
+function statusColor(status: string) {
+  switch (status) {
+    case "completed":
+      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+    case "active":
+      return "bg-blue-100 text-blue-800 border-blue-200";
+    case "cancelled":
+    case "expired":
+      return "bg-slate-100 text-slate-700 border-slate-200";
+    default:
+      return "bg-amber-100 text-amber-800 border-amber-200";
+  }
+}
+
+function getDepartmentName(department: JobData["department"]) {
+  return typeof department === "object" && department !== null ? department.name : department;
+}
+
+function candidateName(candidate: any) {
+  return `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim() || candidate.email || "Candidate";
+}
+
+export default function AIInterviewsPage() {
+  const searchParams = useSearchParams();
+  const presetJobId = searchParams.get("jobId") || "";
+  const presetAppliedRef = useRef(false);
+  const [interviews, setInterviews] = useState<AIInterview[]>([]);
+  const [jobs, setJobs] = useState<JobData[]>([]);
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [questionSelectorKey, setQuestionSelectorKey] = useState(0);
+
+  const [form, setForm] = useState({
+    title: "",
+    jobId: "",
+    guidelines: "Please answer each question with a specific example where possible. You can ask the interviewer to clarify a question before answering.",
+    sendAt: toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000)),
+    expiresAt: toLocalInputValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
+    perQuestionMinutes: 10,
+    totalMinutes: 45
+  });
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+
+  const selectedJob = jobs.find((job) => job._id === form.jobId);
+  const filteredCandidates = useMemo(() => {
+    const term = candidateSearch.toLowerCase().trim();
+    if (!term) return candidates;
+    return candidates.filter((candidate) => {
+      const name = candidateName(candidate).toLowerCase();
+      return name.includes(term) || String(candidate.email || "").toLowerCase().includes(term);
+    });
+  }, [candidates, candidateSearch]);
+  const filteredCandidateIds = useMemo(() => filteredCandidates.map((candidate) => candidate._id), [filteredCandidates]);
+  const selectedVisibleCount = useMemo(
+    () => filteredCandidateIds.filter((id) => selectedCandidateIds.includes(id)).length,
+    [filteredCandidateIds, selectedCandidateIds]
+  );
+  const allVisibleSelected = filteredCandidateIds.length > 0 && selectedVisibleCount === filteredCandidateIds.length;
+  const selectedCandidateRecords = useMemo(
+    () => candidates.filter((candidate) => selectedCandidateIds.includes(candidate._id)),
+    [candidates, selectedCandidateIds]
+  );
+  const totalCandidateSessions = useMemo(
+    () => interviews.reduce((sum, interview) => sum + Number(interview.candidateCount || 0), 0),
+    [interviews]
+  );
+  const completedSessions = useMemo(
+    () => interviews.reduce((sum, interview) => sum + Number(interview.stats?.completed || 0), 0),
+    [interviews]
+  );
+  const activeInterviews = useMemo(
+    () => interviews.filter((interview) => interview.status === "active").length,
+    [interviews]
+  );
+  const scheduledInterviews = useMemo(
+    () => interviews.filter((interview) => interview.status === "scheduled").length,
+    [interviews]
+  );
+  const createProgress = useMemo(() => {
+    const steps = [
+      Boolean(form.jobId),
+      selectedCandidateIds.length > 0,
+      selectedQuestionIds.length > 0,
+      Boolean(form.sendAt && form.expiresAt)
+    ];
+    return Math.round((steps.filter(Boolean).length / steps.length) * 100);
+  }, [form.jobId, form.sendAt, form.expiresAt, selectedCandidateIds.length, selectedQuestionIds.length]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [interviewList, jobList, candidateList] = await Promise.all([
+        aiInterviewService.list(),
+        getAllJobs({ limit: 200 }),
+        getAllCandidates(500)
+      ]);
+      setInterviews(interviewList);
+      setJobs(jobList || []);
+      setCandidates(candidateList || []);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load AI interviews");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (presetAppliedRef.current || !presetJobId || !jobs.length) return;
+
+    const presetJob = jobs.find((job) => job._id === presetJobId);
+    presetAppliedRef.current = true;
+
+    if (!presetJob) {
+      toast.error("The selected job was not found in this workspace");
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      jobId: presetJobId,
+      title: current.title || `${presetJob.title} AI Interview`
+    }));
+    setSelectedQuestionIds([]);
+    setQuestionSelectorKey((value) => value + 1);
+  }, [jobs, presetJobId]);
+
+  const toggleCandidate = (candidateId: string) => {
+    setSelectedCandidateIds((current) =>
+      current.includes(candidateId)
+        ? current.filter((id) => id !== candidateId)
+        : [...current, candidateId]
+    );
+  };
+
+  const selectVisibleCandidates = () => {
+    setSelectedCandidateIds((current) => Array.from(new Set([...current, ...filteredCandidateIds])));
+  };
+
+  const clearVisibleCandidates = () => {
+    setSelectedCandidateIds((current) => current.filter((id) => !filteredCandidateIds.includes(id)));
+  };
+
+  const generateQuestions = async () => {
+    if (!form.jobId) {
+      toast.error("Select a job before generating questions");
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const generated = await interviewService.generateQuestions(form.jobId, {
+        questionCount: 5,
+        difficulty: "medium",
+        includeTypes: ["technical", "behavioral", "situational"],
+        ensureDiversity: true
+      });
+      setSelectedQuestionIds(generated.map((question) => question._id));
+      setQuestionSelectorKey((value) => value + 1);
+      toast.success(`Generated ${generated.length} questions`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to generate questions");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!form.jobId || selectedCandidateIds.length === 0 || selectedQuestionIds.length === 0) {
+      toast.error("Select a job, at least one candidate, and at least one question");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await aiInterviewService.create({
+        title: form.title || `${selectedJob?.title || "Role"} AI Interview`,
+        jobId: form.jobId,
+        candidateIds: selectedCandidateIds,
+        questionIds: selectedQuestionIds,
+        guidelines: form.guidelines,
+        sendAt: new Date(form.sendAt).toISOString(),
+        expiresAt: new Date(form.expiresAt).toISOString(),
+        perQuestionMinutes: Number(form.perQuestionMinutes),
+        totalMinutes: Number(form.totalMinutes),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      });
+
+      toast.success("AI interview scheduled");
+      setSelectedCandidateIds([]);
+      setSelectedQuestionIds([]);
+      setForm((current) => ({
+        ...current,
+        title: "",
+        sendAt: toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000)),
+        expiresAt: toLocalInputValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
+      }));
+      await loadData();
+    } catch (error: any) {
+      toast.error(error.data?.message || error.message || "Failed to schedule AI interview");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div className="container max-w-screen-2xl space-y-6 py-6">
+        <div className="rounded-2xl border border-white/70 bg-white/85 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
+                <Workflow className="h-3.5 w-3.5" />
+                Structured candidate interview workflow
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-normal text-slate-950 dark:text-white md:text-3xl">AI Interviews</h1>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
+                  Schedule guided chat interviews, control the question set, and track candidate progress from one workspace.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {presetJobId && selectedJob && (
+                <Button asChild variant="outline" className="justify-start">
+                  <Link href={`/jobs/${selectedJob._id}`}>
+                    <Briefcase className="mr-2 h-4 w-4" />
+                    Back to job
+                  </Link>
+                </Button>
+              )}
+              <Button variant="outline" onClick={loadData} disabled={loading} className="justify-start">
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-900/70 dark:bg-blue-950/30">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Active</span>
+                <BarChart3 className="h-5 w-5 text-blue-600 dark:text-blue-300" />
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{activeInterviews}</div>
+              <p className="text-xs text-blue-700/80 dark:text-blue-300/80">Running interview batches</p>
+            </div>
+            <div className="rounded-xl border border-amber-100 bg-amber-50/90 p-4 dark:border-amber-900/70 dark:bg-amber-950/30">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-amber-700 dark:text-amber-300">Scheduled</span>
+                <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-300" />
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{scheduledInterviews}</div>
+              <p className="text-xs text-amber-700/80 dark:text-amber-300/80">Waiting for send time</p>
+            </div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/90 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/30">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Completed</span>
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{completedSessions}</div>
+              <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">Candidate sessions submitted</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Candidates</span>
+                <Users className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{totalCandidateSessions}</div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Total invited across interviews</p>
+            </div>
+          </div>
+        </div>
+
+        <Tabs defaultValue="create" className="space-y-6">
+          <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl border bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:w-[420px]">
+            <TabsTrigger value="create" className="rounded-lg py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-950">
+              <Plus className="mr-2 h-4 w-4" />
+              Create
+            </TabsTrigger>
+            <TabsTrigger value="interviews" className="rounded-lg py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-950">
+              <CalendarClock className="mr-2 h-4 w-4" />
+              Interviews
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="create" className="space-y-6">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div className="space-y-6">
+                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+                  <CardHeader className="border-b bg-slate-950 px-5 py-4 text-white dark:border-slate-800">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Briefcase className="h-4 w-4 text-emerald-300" />
+                          Interview Setup
+                        </CardTitle>
+                        <CardDescription className="mt-1 text-slate-300">
+                          Select the role, candidate instructions, and timing controls.
+                        </CardDescription>
+                      </div>
+                      <Badge className="w-fit border-white/20 bg-white/10 text-white">
+                        {createProgress}% ready
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-5 p-5">
+                    <div className="grid gap-3 md:grid-cols-4">
+                      {[
+                        { label: "Job", done: Boolean(form.jobId), icon: Briefcase },
+                        { label: "Candidates", done: selectedCandidateIds.length > 0, icon: Users },
+                        { label: "Questions", done: selectedQuestionIds.length > 0, icon: FileQuestion },
+                        { label: "Schedule", done: Boolean(form.sendAt && form.expiresAt), icon: CalendarClock }
+                      ].map((step, index) => {
+                        const StepIcon = step.icon;
+                        return (
+                          <div
+                            key={step.label}
+                            className={`flex items-center gap-3 rounded-xl border p-3 ${
+                              step.done
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                                : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            }`}
+                          >
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white">
+                              <StepIcon className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide">Step {index + 1}</div>
+                              <div className="truncate text-sm font-medium">{step.label}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <Progress value={createProgress} className="h-2" />
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Job</Label>
+                        <Select
+                          value={form.jobId}
+                          onValueChange={(jobId) => {
+                            setForm((current) => ({ ...current, jobId }));
+                            setSelectedQuestionIds([]);
+                            setQuestionSelectorKey((value) => value + 1);
+                          }}
+                        >
+                          <SelectTrigger className="bg-white dark:bg-slate-950">
+                            <SelectValue placeholder="Select job" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {jobs.map((job) => (
+                              <SelectItem key={job._id} value={job._id}>
+                                {job.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Title</Label>
+                        <Input
+                          value={form.title}
+                          onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                          placeholder={selectedJob ? `${selectedJob.title} AI Interview` : "AI Interview title"}
+                          className="bg-white dark:bg-slate-950"
+                        />
+                      </div>
+                    </div>
+
+                    {selectedJob && (
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/25">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-950 dark:text-white">{selectedJob.title}</div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
+                              <span>{getDepartmentName(selectedJob.department) || "Department not set"}</span>
+                              <span>{selectedJob.location || "Location not set"}</span>
+                              <span>{selectedJob.type || "Type not set"}</span>
+                            </div>
+                          </div>
+                          <Button asChild variant="outline" size="sm" className="w-fit bg-white/80 dark:bg-slate-900">
+                            <Link href={`/jobs/${selectedJob._id}`}>
+                              View job
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label>Candidate guidelines</Label>
+                      <Textarea
+                        rows={5}
+                        value={form.guidelines}
+                        onChange={(event) => setForm((current) => ({ ...current, guidelines: event.target.value }))}
+                        className="bg-white leading-6 dark:bg-slate-950"
+                      />
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="space-y-2">
+                        <Label>Send time</Label>
+                        <Input
+                          type="datetime-local"
+                          value={form.sendAt}
+                          onChange={(event) => setForm((current) => ({ ...current, sendAt: event.target.value }))}
+                          className="bg-white dark:bg-slate-950"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Deadline</Label>
+                        <Input
+                          type="datetime-local"
+                          value={form.expiresAt}
+                          onChange={(event) => setForm((current) => ({ ...current, expiresAt: event.target.value }))}
+                          className="bg-white dark:bg-slate-950"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Minutes per question</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={120}
+                          value={form.perQuestionMinutes}
+                          onChange={(event) => setForm((current) => ({ ...current, perQuestionMinutes: Number(event.target.value) }))}
+                          className="bg-white dark:bg-slate-950"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Total minutes</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={480}
+                          value={form.totalMinutes}
+                          onChange={(event) => setForm((current) => ({ ...current, totalMinutes: Number(event.target.value) }))}
+                          className="bg-white dark:bg-slate-950"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+                  <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
+                          <FileQuestion className="h-4 w-4 text-purple-600" />
+                          Question Set
+                        </CardTitle>
+                        <CardDescription>Choose existing questions or generate a fresh set for the selected job.</CardDescription>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={generateQuestions} disabled={!form.jobId || generating}>
+                        {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileQuestion className="mr-2 h-4 w-4" />}
+                        Generate
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-5">
+                    <InterviewQuestionSelector
+                      key={`${form.jobId}-${questionSelectorKey}`}
+                      jobId={form.jobId}
+                      selectedQuestionIds={selectedQuestionIds}
+                      onSelectionChange={setSelectedQuestionIds}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+
+              <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+                  <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
+                          <Users className="h-4 w-4 text-blue-600" />
+                          Candidates
+                        </CardTitle>
+                        <CardDescription>{selectedCandidateIds.length} selected from {candidates.length} available</CardDescription>
+                      </div>
+                      <Badge variant="outline">{selectedVisibleCount}/{filteredCandidateIds.length} visible</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 p-5">
+                    <Input
+                      placeholder="Search candidates"
+                      value={candidateSearch}
+                      onChange={(event) => setCandidateSearch(event.target.value)}
+                      className="bg-white dark:bg-slate-950"
+                    />
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950/60">
+                      <label className="flex cursor-pointer items-center gap-3">
+                        <Checkbox
+                          checked={allVisibleSelected ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              selectVisibleCandidates();
+                            } else {
+                              clearVisibleCandidates();
+                            }
+                          }}
+                        />
+                        <span className="font-medium text-slate-900 dark:text-white">Select all visible candidates</span>
+                      </label>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={selectVisibleCandidates} disabled={!filteredCandidateIds.length}>
+                          Select visible
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={clearVisibleCandidates} disabled={!selectedVisibleCount}>
+                          Clear visible
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setSelectedCandidateIds([])} disabled={!selectedCandidateIds.length}>
+                          Clear all
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                      {filteredCandidates.map((candidate) => {
+                        const checked = selectedCandidateIds.includes(candidate._id);
+                        const name = candidateName(candidate);
+                        return (
+                          <label
+                            key={candidate._id}
+                            className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition-colors ${
+                              checked
+                                ? "border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30"
+                                : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900"
+                            }`}
+                          >
+                            <Checkbox checked={checked} onCheckedChange={() => toggleCandidate(candidate._id)} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium text-slate-900 dark:text-white">{name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">{candidate.email}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                      {!filteredCandidates.length && (
+                        <Alert>
+                          <AlertDescription>No candidates found.</AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-300/60 dark:shadow-none">
+                  <CardHeader className="border-b border-white/10 px-5 py-4">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ShieldCheck className="h-4 w-4 text-emerald-300" />
+                      Schedule Summary
+                    </CardTitle>
+                    <CardDescription className="text-slate-300">Review the batch before creating candidate links.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 p-5 text-sm">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-slate-400">Candidates</div>
+                        <div className="mt-1 text-xl font-bold">{selectedCandidateIds.length}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-slate-400">Questions</div>
+                        <div className="mt-1 text-xl font-bold">{selectedQuestionIds.length}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-slate-400">Per question</div>
+                        <div className="mt-1 text-xl font-bold">{form.perQuestionMinutes}m</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <div className="text-slate-400">Credits</div>
+                        <div className="mt-1 text-xl font-bold">{selectedCandidateIds.length * 5}</div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-start gap-3">
+                        <Briefcase className="mt-0.5 h-4 w-4 text-blue-300" />
+                        <div className="min-w-0">
+                          <div className="text-xs text-slate-400">Job</div>
+                          <div className="truncate font-medium">{selectedJob?.title || "No job selected"}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Clock className="mt-0.5 h-4 w-4 text-amber-300" />
+                        <div className="min-w-0">
+                          <div className="text-xs text-slate-400">Send time</div>
+                          <div className="truncate font-medium">{formatDate(form.sendAt)}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <TimerReset className="mt-0.5 h-4 w-4 text-rose-300" />
+                        <div className="min-w-0">
+                          <div className="text-xs text-slate-400">Deadline</div>
+                          <div className="truncate font-medium">{formatDate(form.expiresAt)}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedCandidateRecords.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Selected candidates</div>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedCandidateRecords.slice(0, 6).map((candidate) => (
+                            <span key={candidate._id} className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-100">
+                              {candidateName(candidate)}
+                            </span>
+                          ))}
+                          {selectedCandidateRecords.length > 6 && (
+                            <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-100">
+                              +{selectedCandidateRecords.length - 6} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600" onClick={submit} disabled={saving}>
+                      {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                      Schedule AI Interview
+                    </Button>
+                  </CardContent>
+                </Card>
+              </aside>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="interviews">
+            {loading ? (
+              <div className="flex items-center gap-2 rounded-xl border bg-white p-5 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-900">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading AI interviews...
+              </div>
+            ) : interviews.length ? (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {interviews.map((interview) => {
+                  const completed = Number(interview.stats?.completed || 0);
+                  const total = Number(interview.candidateCount || 0);
+                  const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
+                  return (
+                    <Link key={interview._id} href={`/ai-interviews/${interview._id}`}>
+                      <Card className="h-full overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:bg-slate-900/90 dark:shadow-none">
+                        <CardContent className="p-5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h2 className="truncate text-base font-semibold text-slate-950 dark:text-white">{interview.title}</h2>
+                              <p className="truncate text-sm text-muted-foreground">{interview.job?.title || "Job"}</p>
+                            </div>
+                            <Badge className={statusColor(interview.status)}>{interview.status}</Badge>
+                          </div>
+                          <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Users className="h-4 w-4" />
+                                Candidates
+                              </div>
+                              <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{total}</div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <CheckCircle2 className="h-4 w-4" />
+                                Completed
+                              </div>
+                              <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{completed}</div>
+                            </div>
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>Completion</span>
+                              <span>{completion}%</span>
+                            </div>
+                            <Progress value={completion} className="h-2" />
+                          </div>
+                          <div className="mt-4 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                            <span className="flex items-center gap-2">
+                              <Clock className="h-4 w-4" />
+                              Sends {formatDate(interview.schedule?.sendAt)}
+                            </span>
+                            {(interview.stats?.failed || interview.stats?.blocked) ? (
+                              <span className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                                <AlertTriangle className="h-4 w-4" />
+                                Needs review
+                              </span>
+                            ) : null}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <Alert className="border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <AlertDescription>No AI interviews have been created yet.</AlertDescription>
+              </Alert>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}

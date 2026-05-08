@@ -49,6 +49,7 @@ interface PlanCreditCosts {
   aiMatching: number;
   generateQuestions: number;
   aiAnalysis: number;
+  aiInterviewCandidate: number;
   bulkUpload: number;
   reEmbed: number;
 }

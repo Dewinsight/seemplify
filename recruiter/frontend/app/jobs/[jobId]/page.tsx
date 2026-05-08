@@ -45,6 +45,7 @@ import {
   Trophy,
   BarChart3,
   Sparkles,
+  Bot,
 } from "lucide-react"
 import useMobile from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
@@ -969,6 +970,15 @@ function JobDetailInnerPage() {
         isExportingReport={isExportingReport}
         formatSalaryDisplay={formatSalaryDisplay}
       />
+      </div>
+
+      <div className="mx-auto flex w-full max-w-screen-2xl justify-end px-4 pt-4 sm:px-6 lg:px-8">
+        <Button asChild className="w-full sm:w-auto">
+          <Link href={`/ai-interviews?jobId=${jobData._id}`}>
+            <Bot className="mr-2 h-4 w-4" />
+            Create AI Interview
+          </Link>
+        </Button>
       </div>
 
       {/* Guided Tour Button moved into header actions */}

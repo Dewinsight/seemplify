@@ -99,6 +99,12 @@ const OPERATION_TOKEN_ASSUMPTIONS = {
     embedIn: 0,
     note: 'long transcript / multi-segment interview analysis',
   },
+  aiInterviewCandidate: {
+    llmIn: 5000,
+    llmOut: 3000,
+    embedIn: 0,
+    note: 'per candidate async AI interview conversation + scoring allowance',
+  },
   bulkUpload: {
     llmIn: 4000,
     llmOut: 1200,
@@ -130,6 +136,7 @@ const RECOMMENDED_CREDIT_COSTS = {
   aiMatching: 11,
   generateQuestions: 6,
   aiAnalysis: 12,
+  aiInterviewCandidate: 5,
   bulkUpload: 5,
   reEmbed: 3,
 };

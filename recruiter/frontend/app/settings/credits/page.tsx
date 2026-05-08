@@ -162,6 +162,7 @@ export default function CreditsSettingsPage() {
       aiMatching: 'AI Matching',
       generateQuestions: 'Generate Questions',
       aiAnalysis: 'AI Analysis',
+      aiInterviewCandidate: 'AI Interview Candidate',
       bulkUpload: 'Bulk Upload',
       reEmbed: 'Re-embed',
       creditPurchase: 'Credit Purchase',
@@ -545,7 +546,7 @@ export default function CreditsSettingsPage() {
                             ${formatMoneyPerCredit(pack.pricePerCredit)}
                           </span>
                         </div>
-                        {pack.bonusCredits > 0 && (
+                        {(pack.bonusCredits || 0) > 0 && (
                           <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
                             <span>Bonus credits:</span>
                             <span className="font-medium">+{pack.bonusCredits}</span>

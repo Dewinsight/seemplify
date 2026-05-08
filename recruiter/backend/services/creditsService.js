@@ -2,6 +2,10 @@ const Organization = require('../models/Organization');
 const Plan = require('../models/Plan');
 const mongoose = require('mongoose');
 
+const DEFAULT_ACTION_CREDIT_COSTS = {
+  aiInterviewCandidate: 5
+};
+
 class CreditsService {
   /**
    * Get organization's current credit status
@@ -126,7 +130,7 @@ class CreditsService {
       }
       
       const creditCosts = plan.credits?.creditCosts || {};
-      const cost = creditCosts[action] || 0;
+      const cost = creditCosts[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
 
       // If cost is 0 or plan has unlimited credits, allow action
       if (cost === 0 || plan?.credits?.totalCredits === 'unlimited') {
@@ -258,7 +262,7 @@ class CreditsService {
         console.warn(`⚠️ [${timestamp}] Unknown action '${action}'. Valid actions: ${validActions.join(', ')}`);
       }
       
-      const cost = plan?.credits?.creditCosts?.[action] || 0;
+      const cost = plan?.credits?.creditCosts?.[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
 
       // Skip if no cost
       if (cost === 0) {

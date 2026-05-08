@@ -17,6 +17,8 @@ secrets/
 *.secret
 *credentials*
 *token*
+!recruiter/frontend/app/public/ai-interview/\[token\]/
+!recruiter/frontend/app/public/ai-interview/\[token\]/page.tsx
 
 # Logs
 *.log
