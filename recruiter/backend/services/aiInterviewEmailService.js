@@ -28,15 +28,23 @@ function getFrontendUrl() {
     process.env.PUBLIC_APP_URL ||
     process.env.APP_BASE_URL;
 
-  if (configuredUrl) {
-    return configuredUrl;
+  if (!configuredUrl) {
+    throw new Error('AI_INTERVIEW_FRONTEND_URL or FRONTEND_URL must be set before sending AI interview invitations');
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://app.seemplifyai.com';
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(configuredUrl);
+  } catch (_) {
+    throw new Error('AI interview frontend URL must be a valid absolute URL');
   }
 
-  return 'http://localhost:5000';
+  const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+  if (localHosts.has(parsedUrl.hostname)) {
+    throw new Error('AI interview invitation links cannot use localhost. Set AI_INTERVIEW_FRONTEND_URL to the public app URL.');
+  }
+
+  return parsedUrl.origin;
 }
 
 function buildEmailHtml({ candidateName, organizationName, jobTitle, interviewTitle, questionCount, expiresAt, interviewUrl }) {
