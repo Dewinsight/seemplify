@@ -20,6 +20,31 @@ function isAzureVoice(voice) {
   return String(voice || '').includes('-') || String(voice || '').includes(':');
 }
 
+function parseNumber(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function parseInteger(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function parseBoolean(value, fallback) {
+  if (value == null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
+function parseLanguageList(value, fallback = ['en']) {
+  const languages = String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return languages.length ? languages : fallback;
+}
+
 function getCurrentQuestion(interview, session) {
   return interview.questionSnapshots?.[session.currentQuestionIndex] || null;
 }
@@ -62,7 +87,19 @@ class AIInterviewVoiceLiveService {
       apiVersion: process.env.AZURE_VOICELIVE_API_VERSION || '2025-10-01',
       callsApiVersion: process.env.AZURE_VOICELIVE_WEBRTC_API_VERSION || '2026-01-01-preview',
       model: process.env.AZURE_VOICELIVE_MODEL || 'gpt-realtime',
-      voice: process.env.AZURE_VOICELIVE_VOICE || 'en-US-Ava:DragonHDLatestNeural'
+      voice: process.env.AZURE_VOICELIVE_VOICE || 'en-US-Ava:DragonHDLatestNeural',
+      language: process.env.AZURE_VOICELIVE_LANGUAGE || 'en',
+      voiceLocale: process.env.AZURE_VOICELIVE_VOICE_LOCALE || 'en-US',
+      voiceRate: process.env.AZURE_VOICELIVE_VOICE_RATE || '1.0',
+      voiceTemperature: parseNumber(process.env.AZURE_VOICELIVE_VOICE_TEMPERATURE, 0.6, 0, 1),
+      vadThreshold: parseNumber(process.env.AZURE_VOICELIVE_VAD_THRESHOLD, 0.5, 0, 1),
+      vadPrefixPaddingMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_PREFIX_PADDING_MS, 300, 0, 2000),
+      vadSpeechDurationMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_SPEECH_DURATION_MS, 120, 40, 2000),
+      vadSilenceDurationMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_SILENCE_DURATION_MS, 800, 200, 3000),
+      vadRemoveFillerWords: parseBoolean(process.env.AZURE_VOICELIVE_REMOVE_FILLER_WORDS, true),
+      vadLanguages: parseLanguageList(process.env.AZURE_VOICELIVE_VAD_LANGUAGES, ['en']),
+      eouTimeoutMs: parseInteger(process.env.AZURE_VOICELIVE_EOU_TIMEOUT_MS, 1200, 200, 5000),
+      outputWordTimestamps: parseBoolean(process.env.AZURE_VOICELIVE_OUTPUT_WORD_TIMESTAMPS, true)
     };
   }
 
@@ -99,6 +136,9 @@ class AIInterviewVoiceLiveService {
       'The backend application controls the workflow, timers, active question, scoring, and when the interview moves forward.',
       'You must not move to another question, create new assessment questions, score the candidate, reveal rubrics, or reveal expected answers.',
       'Only discuss the current active question.',
+      'This interview is English-only. Speak English only.',
+      'Never translate, repeat, summarize, or continue in another language.',
+      'If the candidate speaks another language, respond in English and ask them to continue in English.',
       'If the candidate asks for clarification, clarify the current question briefly without answering it for them.',
       'If the candidate answers, acknowledge naturally and remind them to click the Confirm answer & move on button in the page when ready.',
       'Keep spoken replies concise and professional.',
@@ -120,18 +160,35 @@ class AIInterviewVoiceLiveService {
         instructions: this.buildInstructions(session, interview),
         input_audio_transcription: {
           model: 'azure-speech',
-          language: 'en'
+          language: config.language
         },
         turn_detection: {
           type: 'azure_semantic_vad',
-          silence_duration_ms: 700,
+          threshold: config.vadThreshold,
+          prefix_padding_ms: config.vadPrefixPaddingMs,
+          speech_duration_ms: config.vadSpeechDurationMs,
+          silence_duration_ms: config.vadSilenceDurationMs,
+          remove_filler_words: config.vadRemoveFillerWords,
+          languages: config.vadLanguages,
+          end_of_utterance_detection: {
+            model: 'semantic_detection_v1',
+            threshold_level: 'medium',
+            timeout_ms: config.eouTimeoutMs
+          },
           create_response: false,
           interrupt_response: false
         },
         input_audio_noise_reduction: { type: 'azure_deep_noise_suppression' },
         input_audio_echo_cancellation: { type: 'server_echo_cancellation' },
+        output_audio_timestamp_types: config.outputWordTimestamps ? ['word'] : undefined,
         voice: isAzureVoice(config.voice)
-          ? { type: 'azure-standard', name: config.voice, temperature: 0.7 }
+          ? {
+              type: 'azure-standard',
+              name: config.voice,
+              temperature: config.voiceTemperature,
+              locale: config.voiceLocale,
+              rate: config.voiceRate
+            }
           : config.voice
       }
     };
@@ -142,9 +199,9 @@ class AIInterviewVoiceLiveService {
     if (!prompt) return null;
 
     return this.buildSpeakText(prompt, [
-      'Speak the following interviewer message naturally.',
-      'Do not add a new question or extra assessment content.',
-      'End by reminding the candidate they may answer verbally or ask for clarification.'
+      'Read the following interviewer message exactly as written with natural pacing.',
+      'Speak English only. Never translate or switch languages.',
+      'Do not add reminders, summaries, translations, new questions, or extra assessment content.'
     ]);
   }
 
@@ -157,6 +214,9 @@ class AIInterviewVoiceLiveService {
       response: {
         modalities: ['audio'],
         instructions: [
+          'Speak English only.',
+          'Never translate, repeat, summarize, or continue in another language.',
+          'Read only the provided interviewer message and stop when it is complete.',
           ...(instructionLines.length ? instructionLines : [
             'Speak the following interviewer message naturally.',
             'Do not add new assessment content.'
@@ -293,8 +353,9 @@ class AIInterviewVoiceLiveService {
 
             if (message.type === 'voice.speak_text') {
               const speakEvent = this.buildSpeakText(message.text || message.content, [
-                'Speak the following interviewer message naturally and concisely.',
-                'Do not add a new question, score the candidate, or reveal rubrics.'
+                'Read the following interviewer message exactly as written with natural pacing.',
+                'Speak English only. Never translate or switch languages.',
+                'Do not add a new question, score the candidate, reveal rubrics, or add extra content.'
               ]);
               if (speakEvent && azureWs?.readyState === WebSocket.OPEN) {
                 this.sendJson(azureWs, speakEvent);

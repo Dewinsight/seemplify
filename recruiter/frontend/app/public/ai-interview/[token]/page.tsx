@@ -150,6 +150,14 @@ function isCandidateTranscriptEvent(type?: string) {
   return Boolean(type && type.includes("input_audio_transcription") && (type.endsWith(".completed") || type.endsWith(".done")));
 }
 
+function isCandidateTranscriptDeltaEvent(type?: string) {
+  return Boolean(type && type.includes("input_audio_transcription") && type.endsWith(".delta"));
+}
+
+function isCandidateTranscriptFailedEvent(type?: string) {
+  return Boolean(type && type.includes("input_audio_transcription") && type.endsWith(".failed"));
+}
+
 function isAssistantTranscriptDoneEvent(type?: string) {
   return [
     "response.audio_transcript.done",
@@ -168,6 +176,8 @@ function isAssistantTranscriptDeltaEvent(type?: string) {
 
 type VoiceMicState = "off" | "listening" | "paused" | "processing";
 type BrowserSpeechState = "checking" | "unavailable" | "off" | "listening";
+
+const USE_BROWSER_SPEECH_FALLBACK = false;
 
 type AssistantSpeechState = {
   active: boolean;
@@ -230,7 +240,7 @@ export default function PublicAIInterviewPage() {
   const [voiceMicState, setVoiceMicState] = useState<VoiceMicState>("off");
   const [lastVoiceTranscript, setLastVoiceTranscript] = useState("");
   const [voiceInputDraft, setVoiceInputDraft] = useState("");
-  const [browserSpeechState, setBrowserSpeechState] = useState<BrowserSpeechState>("checking");
+  const [, setBrowserSpeechState] = useState<BrowserSpeechState>("checking");
   const [assistantSpeech, setAssistantSpeech] = useState<AssistantSpeechState>({
     active: false,
     text: "",
@@ -259,6 +269,7 @@ export default function PublicAIInterviewPage() {
   const browserSpeechWantedRef = useRef(false);
   const browserSpeechRecognitionRef = useRef<any>(null);
   const browserSpeechRestartTimerRef = useRef<number | null>(null);
+  const voiceInputDraftRef = useRef("");
   const stateRef = useRef<PublicAIInterviewState | null>(null);
   const sessionRef = useRef<PublicAIInterviewState["session"] | null>(null);
 
@@ -292,7 +303,7 @@ export default function PublicAIInterviewPage() {
     : voiceMicState === "processing"
       ? "Processing"
       : assistantSpeech.active
-        ? "Mic muted"
+        ? "Muted while AI speaks"
         : "Unmute mic";
   const layoutStyle = {
     "--interview-rail-width": sidebarCollapsed ? "76px" : `${sidebarWidth}px`
@@ -309,6 +320,29 @@ export default function PublicAIInterviewPage() {
       setLoading(false);
     }
   };
+
+  const stopBrowserSpeechRecognition = useCallback((setOffState = true) => {
+    browserSpeechWantedRef.current = false;
+
+    if (browserSpeechRestartTimerRef.current) {
+      window.clearTimeout(browserSpeechRestartTimerRef.current);
+      browserSpeechRestartTimerRef.current = null;
+    }
+
+    try {
+      browserSpeechRecognitionRef.current?.stop?.();
+    } catch {
+      try {
+        browserSpeechRecognitionRef.current?.abort?.();
+      } catch {
+        // Ignore speech recognition cleanup errors.
+      }
+    }
+
+    if (setOffState) {
+      setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
+    }
+  }, []);
 
   const cleanupVoice = useCallback((status = "Voice mode is off") => {
     voiceDataChannelRef.current?.close();
@@ -332,17 +366,7 @@ export default function PublicAIInterviewPage() {
       assistantSpeechTimerRef.current = null;
     }
 
-    if (browserSpeechRestartTimerRef.current) {
-      window.clearTimeout(browserSpeechRestartTimerRef.current);
-      browserSpeechRestartTimerRef.current = null;
-    }
-
-    browserSpeechWantedRef.current = false;
-    try {
-      browserSpeechRecognitionRef.current?.abort?.();
-    } catch {
-      // Ignore browser speech cleanup errors.
-    }
+    stopBrowserSpeechRecognition(false);
 
     assistantTranscriptBufferRef.current = {};
     assistantSpeechTextRef.current = "";
@@ -355,9 +379,10 @@ export default function PublicAIInterviewPage() {
     setVoiceMicState("off");
     setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
     setAssistantSpeech({ active: false, text: "", progress: 0 });
+    voiceInputDraftRef.current = "";
     setVoiceInputDraft("");
     setVoiceStatus(status);
-  }, []);
+  }, [stopBrowserSpeechRecognition]);
 
   const setVoiceInputEnabled = useCallback((enabled: boolean) => {
     voiceStreamRef.current?.getAudioTracks().forEach((track) => {
@@ -382,10 +407,13 @@ export default function PublicAIInterviewPage() {
   }, [setVoiceInputEnabled]);
 
   const pauseCandidateMic = useCallback((state: Exclude<VoiceMicState, "listening">, status: string) => {
+    stopBrowserSpeechRecognition(true);
     setVoiceInputEnabled(false);
     setVoiceMicState(state);
+    voiceInputDraftRef.current = "";
+    setVoiceInputDraft("");
     setVoiceStatus(status);
-  }, [setVoiceInputEnabled]);
+  }, [setVoiceInputEnabled, stopBrowserSpeechRecognition]);
 
   const sendVoiceCommand = useCallback((payload: Record<string, unknown>) => {
     const ws = voiceWsRef.current;
@@ -539,6 +567,7 @@ export default function PublicAIInterviewPage() {
     if (recordedTranscriptKeysRef.current.has(key)) return;
     recordedTranscriptKeysRef.current.add(key);
     setLastVoiceTranscript(cleaned);
+    voiceInputDraftRef.current = "";
     setVoiceInputDraft("");
     setMessage(cleaned);
 
@@ -594,11 +623,32 @@ export default function PublicAIInterviewPage() {
 
     if (type === "input_audio_buffer.speech_stopped") {
       if (browserSpeechSupportedRef.current) {
-        setVoiceStatus("Finishing your transcript...");
+        setVoiceStatus("Listening for your transcript...");
       } else {
         voiceProcessingRef.current = true;
         pauseCandidateMic("processing", "Processing what you said...");
       }
+      return;
+    }
+
+    if (isCandidateTranscriptDeltaEvent(type)) {
+      const delta = getVoiceTranscriptText(event);
+      if (delta) {
+        const nextDraft = normalizeTranscriptText(`${voiceInputDraftRef.current} ${delta}`);
+        voiceInputDraftRef.current = nextDraft;
+        setVoiceInputDraft(nextDraft);
+        setMessage(nextDraft);
+        setVoiceStatus("Transcribing with Azure Speech...");
+      }
+      return;
+    }
+
+    if (isCandidateTranscriptFailedEvent(type)) {
+      voiceProcessingRef.current = false;
+      voiceInputDraftRef.current = "";
+      setVoiceInputDraft("");
+      setVoiceStatus("Azure Speech could not transcribe that. Please try again.");
+      resumeCandidateMic("I did not catch that. Please try again.");
       return;
     }
 
@@ -620,7 +670,7 @@ export default function PublicAIInterviewPage() {
     }
 
     if (isCandidateTranscriptEvent(type)) {
-      const transcript = getVoiceTranscriptText(event);
+      const transcript = getVoiceTranscriptText(event) || voiceInputDraftRef.current;
       if (transcript) {
         void handleCandidateVoiceTranscript(transcript);
       } else {
@@ -650,13 +700,9 @@ export default function PublicAIInterviewPage() {
 
     if (isAssistantTranscriptDoneEvent(type)) {
       const id = event?.response_id || event?.item_id || "active";
-      const transcript = getVoiceTranscriptText(event) || assistantTranscriptBufferRef.current[id] || "";
       delete assistantTranscriptBufferRef.current[id];
-      if (transcript) {
-        void recordAssistantVoiceTranscript(transcript);
-      }
     }
-  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, recordAssistantVoiceTranscript, resumeCandidateMic, startAssistantSpeechVisual]);
+  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic, startAssistantSpeechVisual]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -794,29 +840,6 @@ export default function PublicAIInterviewPage() {
     }
   }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, session, setVoiceInputEnabled, startAssistantSpeechVisual, token, voiceEnabled]);
 
-  const stopBrowserSpeechRecognition = useCallback((setOffState = true) => {
-    browserSpeechWantedRef.current = false;
-
-    if (browserSpeechRestartTimerRef.current) {
-      window.clearTimeout(browserSpeechRestartTimerRef.current);
-      browserSpeechRestartTimerRef.current = null;
-    }
-
-    try {
-      browserSpeechRecognitionRef.current?.stop?.();
-    } catch {
-      try {
-        browserSpeechRecognitionRef.current?.abort?.();
-      } catch {
-        // Ignore speech recognition cleanup errors.
-      }
-    }
-
-    if (setOffState) {
-      setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
-    }
-  }, []);
-
   const startBrowserSpeechRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -912,12 +935,12 @@ export default function PublicAIInterviewPage() {
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    browserSpeechSupportedRef.current = Boolean(SpeechRecognition);
-    setBrowserSpeechState(SpeechRecognition ? "off" : "unavailable");
+    browserSpeechSupportedRef.current = USE_BROWSER_SPEECH_FALLBACK && Boolean(SpeechRecognition);
+    setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
   }, []);
 
   useEffect(() => {
-    if (voiceState === "connected" && voiceMicState === "listening") {
+    if (USE_BROWSER_SPEECH_FALLBACK && voiceState === "connected" && voiceMicState === "listening") {
       startBrowserSpeechRecognition();
       return;
     }
@@ -1286,8 +1309,8 @@ export default function PublicAIInterviewPage() {
                       />
                     ))}
                   </div>
-                  <div className="max-h-24 overflow-y-auto rounded-lg bg-white/80 p-2 text-xs leading-5">
-                    {renderHighlightedSpeech(assistantSpeech.text, assistantHighlightedWords)}
+                  <div className="h-1.5 overflow-hidden rounded-full bg-emerald-100">
+                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
                   </div>
                 </div>
               )}
@@ -1300,9 +1323,7 @@ export default function PublicAIInterviewPage() {
                 <div className="mt-3 rounded-xl border bg-slate-50 p-3 text-xs leading-5 text-slate-600">
                   <span className="font-medium text-slate-900">Mic:</span>{" "}
                   {voiceMicState === "listening"
-                    ? browserSpeechState === "listening"
-                      ? "Open and transcribing. You can speak now."
-                      : "Open. You can speak now."
+                    ? "Open. Azure Speech is transcribing. You can speak now."
                     : voiceMicState === "paused"
                       ? "Paused while the interviewer speaks."
                       : voiceMicState === "processing"
@@ -1588,7 +1609,7 @@ export default function PublicAIInterviewPage() {
                         {chat.role === "candidate" ? "You" : "Interviewer"}
                       </div>
                       <div className="whitespace-pre-wrap">
-                        {chat.role === "ai" && assistantSpeech.active && assistantSpeech.text === chat.content.trim()
+                        {chat.role === "ai" && assistantSpeech.active && normalizeTranscriptText(assistantSpeech.text) === normalizeTranscriptText(chat.content || "")
                           ? renderHighlightedSpeech(chat.content, assistantHighlightedWords)
                           : chat.content}
                       </div>
@@ -1634,14 +1655,11 @@ export default function PublicAIInterviewPage() {
                     {assistantSpeech.active && (
                       <div className="mt-3 rounded-lg bg-white/80 p-3 text-slate-700">
                         <div className="mb-2 flex items-center justify-between gap-3">
-                          <span className="font-semibold text-emerald-900">AI reading this response</span>
+                          <span className="font-semibold text-emerald-900">AI is speaking. Your mic is muted.</span>
                           <span className="text-[11px] text-emerald-700">{Math.round(assistantSpeech.progress)}%</span>
                         </div>
-                        <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-emerald-100">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-emerald-100">
                           <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
-                        </div>
-                        <div className="max-h-24 overflow-y-auto text-sm leading-6">
-                          {renderHighlightedSpeech(assistantSpeech.text, assistantHighlightedWords)}
                         </div>
                       </div>
                     )}
