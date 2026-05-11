@@ -274,7 +274,11 @@ class AIInterviewService {
 
   async recordPublicVoiceTranscript(
     token: string,
-    input: { role: 'candidate' | 'ai'; message: string; messageType?: 'clarification' | 'acknowledgement' | 'system' }
+    input: {
+      role: 'candidate' | 'ai';
+      message: string;
+      messageType?: 'greeting' | 'question' | 'clarification' | 'acknowledgement' | 'transition' | 'system';
+    }
   ): Promise<PublicAIInterviewState> {
     const response = await apiRequest(`/api/ai-interviews/public/${token}/voice-transcript`, {
       method: 'POST',

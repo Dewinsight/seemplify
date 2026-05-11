@@ -118,6 +118,45 @@ function truncateText(value, max = 5000) {
   return text.length > max ? text.slice(0, max) : text;
 }
 
+function normalizeTranscriptText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function canonicalTranscriptText(value) {
+  return normalizeTranscriptText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function areEquivalentTranscriptTexts(left, right) {
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  return shorter.length >= 30 && longer.includes(shorter);
+}
+
+function hasEquivalentTranscriptMessage(session, { role, questionIndex, content }) {
+  const canonicalContent = canonicalTranscriptText(content);
+  if (!canonicalContent) return false;
+
+  const targetQuestionIndex = questionIndex == null ? null : Number(questionIndex);
+  return (session.messages || []).some((message) => {
+    if (message.role !== role) return false;
+
+    const messageQuestionIndex = message.questionIndex == null ? null : Number(message.questionIndex);
+    if (messageQuestionIndex !== targetQuestionIndex) return false;
+
+    const existingContent = canonicalTranscriptText(message.content);
+    if (!existingContent) return false;
+
+    return areEquivalentTranscriptTexts(existingContent, canonicalContent);
+  });
+}
+
 function buildPublicState(session, interview) {
   const currentQuestion = interview.questionSnapshots[session.currentQuestionIndex];
   return {
@@ -873,7 +912,7 @@ exports.sendPublicMessage = async (req, res) => {
 exports.recordPublicVoiceTranscript = async (req, res) => {
   try {
     const role = req.body?.role === 'ai' ? 'ai' : 'candidate';
-    const content = truncateText(req.body?.message || req.body?.content || '');
+    const content = normalizeTranscriptText(truncateText(req.body?.message || req.body?.content || ''));
     if (!content) {
       return res.status(400).json({ error: 'EMPTY_MESSAGE', message: 'Transcript content is required' });
     }
@@ -890,12 +929,17 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
       return res.status(400).json({ error: 'NOT_IN_PROGRESS', message: 'Interview is not in progress' });
     }
 
+    const questionIndex = session.currentQuestionIndex;
+    if (hasEquivalentTranscriptMessage(session, { role, questionIndex, content })) {
+      return res.json({ success: true, deduped: true, ...buildPublicState(session, interview) });
+    }
+
     if (role === 'candidate') {
       const isClarification = aiInterviewerService.isLikelyClarification(content);
       session.messages.push({
         role: 'candidate',
         content,
-        questionIndex: session.currentQuestionIndex,
+        questionIndex,
         messageType: isClarification ? 'clarification' : 'answer'
       });
 
@@ -903,12 +947,12 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
         upsertDraftAnswer(session, interview, content);
       }
     } else {
-      const allowedTypes = new Set(['clarification', 'acknowledgement', 'system']);
+      const allowedTypes = new Set(['greeting', 'question', 'clarification', 'acknowledgement', 'transition', 'system']);
       const requestedType = String(req.body?.messageType || '').trim();
       session.messages.push({
         role: 'ai',
         content,
-        questionIndex: session.currentQuestionIndex,
+        questionIndex,
         messageType: allowedTypes.has(requestedType) ? requestedType : 'acknowledgement'
       });
     }

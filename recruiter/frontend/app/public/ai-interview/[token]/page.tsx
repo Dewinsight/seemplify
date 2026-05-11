@@ -5,18 +5,24 @@ import { useParams } from "next/navigation";
 import {
   AlertCircle,
   Briefcase,
+  CalendarClock,
   CheckCircle2,
   Clock,
   FileQuestion,
   GripVertical,
+  Headphones,
+  Info,
+  ListChecks,
   Loader2,
   Mic,
   MicOff,
   PanelLeftClose,
   PanelLeftOpen,
+  Play,
   Send,
   ShieldCheck,
   TimerReset,
+  UserRound,
   Volume2,
   Workflow
 } from "lucide-react";
@@ -100,6 +106,44 @@ function getVoiceTranscriptText(event: any) {
   ];
 
   return candidates.find((value) => typeof value === "string" && value.trim())?.trim() || "";
+}
+
+function normalizeTranscriptText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function canonicalTranscriptText(value: string) {
+  return normalizeTranscriptText(value).toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function transcriptKey(role: "ai" | "candidate", questionIndex: number, text: string) {
+  return `${role}:${questionIndex}:${canonicalTranscriptText(text)}`;
+}
+
+function areEquivalentTranscriptTexts(left: string, right: string) {
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  return shorter.length >= 30 && longer.includes(shorter);
+}
+
+function hasEquivalentTranscriptMessage(
+  data: PublicAIInterviewState | null,
+  role: "ai" | "candidate",
+  questionIndex: number,
+  text: string
+) {
+  const normalized = canonicalTranscriptText(text);
+  if (!normalized) return false;
+
+  return Boolean(data?.session.messages?.some((message) => {
+    if (message.role !== role || message.questionIndex !== questionIndex) return false;
+    const existing = canonicalTranscriptText(message.content || "");
+    if (!existing) return false;
+    return areEquivalentTranscriptTexts(existing, normalized);
+  }));
 }
 
 function isCandidateTranscriptEvent(type?: string) {
@@ -218,12 +262,27 @@ export default function PublicAIInterviewPage() {
   const stateRef = useRef<PublicAIInterviewState | null>(null);
   const sessionRef = useRef<PublicAIInterviewState["session"] | null>(null);
 
+  const applyPublicState = useCallback((data: PublicAIInterviewState) => {
+    stateRef.current = data;
+    sessionRef.current = data.session;
+    setState(data);
+  }, []);
+
   const session = state?.session;
   const interview = state?.interview;
   const questionCount = interview?.questionCount || 0;
   const currentIndex = session?.currentQuestionIndex || 0;
-  const progress = questionCount > 0 ? ((currentIndex + (session?.status === "completed" ? 1 : 0)) / questionCount) * 100 : 0;
   const voiceEnabled = Boolean(state?.voice?.enabled);
+  const activeStep = session?.status === "completed"
+    ? questionCount
+    : session?.status === "in_progress"
+      ? currentIndex + 1
+      : 0;
+  const progress = questionCount > 0 ? (activeStep / questionCount) * 100 : 0;
+  const candidateName = state?.candidate?.name || [state?.candidate?.firstName, state?.candidate?.lastName].filter(Boolean).join(" ") || "Candidate";
+  const questionTimeLabel = `${interview?.timers.perQuestionMinutes || 0}m`;
+  const totalTimeLabel = `${interview?.timers.totalMinutes || 0}m`;
+  const voiceModeLabel = voiceEnabled ? "Voice and text" : "Text only";
   const assistantHighlightedWords = useMemo(
     () => getHighlightedWordCount(assistantSpeech.text, assistantSpeech.progress),
     [assistantSpeech.progress, assistantSpeech.text]
@@ -243,7 +302,7 @@ export default function PublicAIInterviewPage() {
     setLoading(true);
     try {
       const data = await aiInterviewService.bootstrapPublic(token);
-      setState(data);
+      applyPublicState(data);
     } catch (error: any) {
       toast.error(error.message || "Failed to load interview");
     } finally {
@@ -337,6 +396,37 @@ export default function PublicAIInterviewPage() {
     return false;
   }, []);
 
+  const recordAssistantVoiceTranscript = useCallback(async (
+    text: string,
+    messageType: "greeting" | "question" | "clarification" | "acknowledgement" | "transition" | "system" = "acknowledgement"
+  ) => {
+    const cleaned = normalizeTranscriptText(text);
+    const activeSession = sessionRef.current;
+    if (!cleaned || cleaned === "Interviewer is speaking..." || !activeSession || activeSession.status !== "in_progress") return;
+
+    const key = transcriptKey("ai", activeSession.currentQuestionIndex, cleaned);
+    if (recordedTranscriptKeysRef.current.has(key)) return;
+
+    if (hasEquivalentTranscriptMessage(stateRef.current, "ai", activeSession.currentQuestionIndex, cleaned)) {
+      recordedTranscriptKeysRef.current.add(key);
+      return;
+    }
+
+    recordedTranscriptKeysRef.current.add(key);
+
+    try {
+      const data = await aiInterviewService.recordPublicVoiceTranscript(token, {
+        role: "ai",
+        message: cleaned,
+        messageType
+      });
+      applyPublicState(data);
+    } catch (error) {
+      recordedTranscriptKeysRef.current.delete(key);
+      console.warn("Failed to save assistant voice transcript", error);
+    }
+  }, [applyPublicState, token]);
+
   const startAssistantSpeechVisual = useCallback((text: string) => {
     const cleaned = text.trim();
     if (!cleaned) return;
@@ -395,9 +485,16 @@ export default function PublicAIInterviewPage() {
     }, 900);
   }, []);
 
-  const speakVoiceText = useCallback((text: string) => {
-    const cleaned = text.trim();
+  const speakVoiceText = useCallback((
+    text: string,
+    options: { persist?: boolean; messageType?: "greeting" | "question" | "clarification" | "acknowledgement" | "transition" | "system" } = {}
+  ) => {
+    const cleaned = normalizeTranscriptText(text);
     if (!cleaned) return false;
+
+    if (options.persist !== false) {
+      void recordAssistantVoiceTranscript(cleaned, options.messageType);
+    }
 
     voiceAssistantSpeakingRef.current = true;
     pauseCandidateMic("paused", "Interviewer is speaking. Mic is paused.");
@@ -408,7 +505,7 @@ export default function PublicAIInterviewPage() {
       finishAssistantSpeechVisual();
     }
     return sent;
-  }, [finishAssistantSpeechVisual, pauseCandidateMic, sendVoiceCommand, startAssistantSpeechVisual]);
+  }, [finishAssistantSpeechVisual, pauseCandidateMic, recordAssistantVoiceTranscript, sendVoiceCommand, startAssistantSpeechVisual]);
 
   const toggleCandidateMic = useCallback(() => {
     if (voiceState !== "connected") return;
@@ -434,11 +531,11 @@ export default function PublicAIInterviewPage() {
   }, [pauseCandidateMic, resumeCandidateMic, voiceState]);
 
   const handleCandidateVoiceTranscript = useCallback(async (text: string) => {
-    const cleaned = text.trim();
+    const cleaned = normalizeTranscriptText(text);
     const activeSession = sessionRef.current;
     if (!cleaned || !activeSession || activeSession.status !== "in_progress") return;
 
-    const key = `candidate:${activeSession.currentQuestionIndex}:${cleaned}`;
+    const key = transcriptKey("candidate", activeSession.currentQuestionIndex, cleaned);
     if (recordedTranscriptKeysRef.current.has(key)) return;
     recordedTranscriptKeysRef.current.add(key);
     setLastVoiceTranscript(cleaned);
@@ -450,18 +547,19 @@ export default function PublicAIInterviewPage() {
 
     try {
       const data = await aiInterviewService.sendPublicMessage(token, cleaned);
-      setState(data);
+      applyPublicState(data);
       setMessage("");
 
       const reply = getLatestAiMessageContent(data);
-      if (!reply || !speakVoiceText(reply)) {
+      if (!reply || !speakVoiceText(reply, { persist: false })) {
         resumeCandidateMic();
       }
     } catch (error: any) {
+      recordedTranscriptKeysRef.current.delete(key);
       toast.error(error.message || "Failed to send voice response");
       resumeCandidateMic("I could not process that. Please try speaking again.");
     }
-  }, [pauseCandidateMic, resumeCandidateMic, speakVoiceText, token]);
+  }, [applyPublicState, pauseCandidateMic, resumeCandidateMic, speakVoiceText, token]);
 
   const handleVoiceEvent = useCallback((event: any) => {
     const type = event?.type;
@@ -552,9 +650,13 @@ export default function PublicAIInterviewPage() {
 
     if (isAssistantTranscriptDoneEvent(type)) {
       const id = event?.response_id || event?.item_id || "active";
+      const transcript = getVoiceTranscriptText(event) || assistantTranscriptBufferRef.current[id] || "";
       delete assistantTranscriptBufferRef.current[id];
+      if (transcript) {
+        void recordAssistantVoiceTranscript(transcript);
+      }
     }
-  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic, startAssistantSpeechVisual]);
+  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, recordAssistantVoiceTranscript, resumeCandidateMic, startAssistantSpeechVisual]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -884,10 +986,10 @@ export default function PublicAIInterviewPage() {
 
     setTimeoutRunning(true);
     aiInterviewService.timeoutPublicQuestion(token)
-      .then(setState)
+      .then(applyPublicState)
       .catch((error) => toast.error(error.message || "Question timeout failed"))
       .finally(() => setTimeoutRunning(false));
-  }, [questionSeconds, state, timeoutRunning, token]);
+  }, [applyPublicState, questionSeconds, state, timeoutRunning, token]);
 
   useEffect(() => {
     if (voiceState !== "connected") return;
@@ -914,7 +1016,7 @@ export default function PublicAIInterviewPage() {
     setStarting(true);
     try {
       const data = await aiInterviewService.startPublic(token);
-      setState(data);
+      applyPublicState(data);
       if (data.voice?.enabled) {
         void connectVoice(data);
       }
@@ -933,10 +1035,10 @@ export default function PublicAIInterviewPage() {
     setMessage("");
     try {
       const data = await aiInterviewService.sendPublicMessage(token, text);
-      setState(data);
+      applyPublicState(data);
       if (voiceState === "connected") {
         const reply = getLatestAiMessageContent(data);
-        if (reply) speakVoiceText(reply);
+        if (reply) speakVoiceText(reply, { persist: false });
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to send message");
@@ -950,7 +1052,7 @@ export default function PublicAIInterviewPage() {
     setConfirming(true);
     try {
       const data = await aiInterviewService.confirmPublicQuestion(token);
-      setState(data);
+      applyPublicState(data);
     } catch (error: any) {
       toast.error(error.message || "Failed to confirm answer");
     } finally {
@@ -1039,7 +1141,7 @@ export default function PublicAIInterviewPage() {
                   <Workflow className="h-5 w-5" />
                 </div>
                 <div className="text-center text-xs text-slate-300">
-                  <div className="font-semibold text-white">{Math.min(currentIndex + 1, questionCount)}</div>
+                  <div className="font-semibold text-white">{Math.min(activeStep, questionCount)}</div>
                   <div>/ {questionCount}</div>
                 </div>
                 <div className="h-28 w-2 overflow-hidden rounded-full bg-white/15">
@@ -1091,7 +1193,7 @@ export default function PublicAIInterviewPage() {
               <div>
                 <div className="mb-2 flex items-center justify-between text-sm">
                   <span className="text-slate-300">Progress</span>
-                  <span className="font-medium">{Math.min(currentIndex + 1, questionCount)} / {questionCount}</span>
+                  <span className="font-medium">{Math.min(activeStep, questionCount)} / {questionCount}</span>
                 </div>
                 <Progress value={Math.min(100, progress)} className="h-2" />
               </div>
@@ -1263,60 +1365,165 @@ export default function PublicAIInterviewPage() {
 
         <section className="min-w-0 min-h-[calc(100vh-24px)] overflow-hidden rounded-2xl border bg-white/95 shadow-xl shadow-slate-200/70 md:min-h-[calc(100vh-48px)]">
           {session.status !== "in_progress" ? (
-            <div className="mx-auto flex min-h-[calc(100vh-80px)] max-w-4xl flex-col justify-center p-5 md:p-8">
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-700">
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      Candidate guidelines
+            <div className="min-h-[calc(100vh-80px)] p-4 sm:p-6 lg:p-8">
+              <div className="mx-auto grid max-w-6xl gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+                  <div className="border-b bg-slate-950 px-5 py-5 text-white sm:px-7">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="mb-4 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Candidate briefing
+                          </span>
+                          <Badge className="border-white/15 bg-white/10 text-white">{statusLabel(session.status)}</Badge>
+                        </div>
+                        <p className="text-sm text-slate-300">Welcome, {candidateName}</p>
+                        <h2 className="mt-2 max-w-3xl text-3xl font-semibold tracking-normal sm:text-4xl">
+                          Get ready for your structured AI interview
+                        </h2>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                          You will answer one question at a time. You can ask for clarification, then confirm when you are ready to move forward.
+                        </p>
+                      </div>
+                      <div className="grid min-w-[220px] grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+                        <div>
+                          <div className="text-slate-400">Questions</div>
+                          <div className="text-2xl font-semibold">{questionCount}</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">Mode</div>
+                          <div className="text-base font-semibold">{voiceModeLabel}</div>
+                        </div>
+                      </div>
                     </div>
-                    <h2 className="text-2xl font-semibold text-slate-950">Before You Start</h2>
-                    <p className="mt-2 text-sm text-slate-600">
-                      Review the structure, timing, and guidelines before starting the interview.
+                  </div>
+
+                  <div className="space-y-5 p-5 sm:p-7">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {[
+                        { label: "Question time", value: questionTimeLabel, icon: Clock, tone: "blue" },
+                        { label: "Total window", value: totalTimeLabel, icon: TimerReset, tone: "emerald" },
+                        { label: "Progress", value: `${Math.min(activeStep, questionCount)} / ${questionCount}`, icon: Workflow, tone: "slate" }
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-2xl border bg-slate-50/80 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm text-slate-600">{item.label}</div>
+                            <item.icon className={`h-4 w-4 ${
+                              item.tone === "emerald" ? "text-emerald-600" : item.tone === "blue" ? "text-blue-600" : "text-slate-500"
+                            }`} />
+                          </div>
+                          <div className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl border bg-white p-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                            <ListChecks className="h-4 w-4 text-blue-600" />
+                            Interview flow
+                          </div>
+                          <p className="mt-2 text-sm leading-6 text-slate-600">
+                            Complete the steps in order. The confirm button is required unless the timer expires.
+                          </p>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 lg:max-w-xs">
+                          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, progress)}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-3 md:grid-cols-3">
+                        {[
+                          { title: "Read the brief", body: "Check the guidelines and timing before you begin.", icon: Info },
+                          { title: "Answer naturally", body: "Use the chat or voice mode for each question.", icon: Headphones },
+                          { title: "Confirm to continue", body: "Move forward only when your answer is ready.", icon: CheckCircle2 }
+                        ].map((step, index) => (
+                          <div key={step.title} className="rounded-2xl border bg-slate-50 p-4">
+                            <div className="mb-3 flex items-center justify-between">
+                              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-sm font-semibold text-slate-950 shadow-sm">
+                                {index + 1}
+                              </span>
+                              <step.icon className="h-4 w-4 text-slate-500" />
+                            </div>
+                            <div className="text-sm font-semibold text-slate-950">{step.title}</div>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">{step.body}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-950">
+                        <ShieldCheck className="h-4 w-4" />
+                        Guidelines from the recruiter
+                      </div>
+                      <div className="whitespace-pre-wrap text-sm leading-7 text-slate-800">
+                        {interview.guidelines || "Answer each question clearly and use specific examples where possible."}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-3xl border bg-white p-5 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                      <UserRound className="h-4 w-4 text-blue-600" />
+                      Session details
+                    </div>
+                    <div className="mt-4 space-y-3 text-sm">
+                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                        <span className="text-slate-600">Candidate</span>
+                        <span className="max-w-[160px] truncate font-medium text-slate-950">{candidateName}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                        <span className="text-slate-600">Role</span>
+                        <span className="max-w-[160px] truncate font-medium text-slate-950">{state.job?.title || "Role interview"}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                        <span className="text-slate-600">Input</span>
+                        <span className="font-medium text-slate-950">{voiceModeLabel}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border bg-white p-5 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                      <CalendarClock className="h-4 w-4 text-emerald-600" />
+                      Timing
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl border bg-slate-50 p-4">
+                        <div className="text-xs text-slate-500">Per question</div>
+                        <div className="mt-1 text-2xl font-semibold text-slate-950">{questionTimeLabel}</div>
+                      </div>
+                      <div className="rounded-2xl border bg-slate-50 p-4">
+                        <div className="text-xs text-slate-500">Total</div>
+                        <div className="mt-1 text-2xl font-semibold text-slate-950">{totalTimeLabel}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl bg-slate-950 p-5 text-white shadow-xl">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm text-slate-300">Ready to begin</div>
+                        <div className="mt-1 text-xl font-semibold">Start when you have a quiet space.</div>
+                      </div>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
+                        {voiceEnabled ? <Mic className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                      </span>
+                    </div>
+                    <Button className="mt-5 h-12 w-full bg-white text-slate-950 hover:bg-slate-100" onClick={start} disabled={starting}>
+                      {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : voiceEnabled ? <Mic className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                      {voiceEnabled ? "Start Interview & Turn Mic On" : "Start Interview"}
+                    </Button>
+                    <p className="mt-3 text-xs leading-5 text-slate-400">
+                      Your answers are saved to the transcript as you go. You can still type if voice is unavailable.
                     </p>
                   </div>
-                  <Badge className="w-fit bg-slate-950 text-white">{statusLabel(session.status)}</Badge>
                 </div>
-              </div>
-
-              <div className="mt-5 grid gap-4 md:grid-cols-3">
-                <div className="rounded-xl border bg-white p-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <FileQuestion className="h-4 w-4" />
-                    Questions
-                  </div>
-                  <div className="mt-1 text-2xl font-semibold text-slate-950">{questionCount}</div>
-                </div>
-                <div className="rounded-xl border bg-white p-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    Per question
-                  </div>
-                  <div className="mt-1 text-2xl font-semibold text-slate-950">{interview.timers.perQuestionMinutes}m</div>
-                </div>
-                <div className="rounded-xl border bg-white p-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <TimerReset className="h-4 w-4" />
-                    Total
-                  </div>
-                  <div className="mt-1 text-2xl font-semibold text-slate-950">{interview.timers.totalMinutes}m</div>
-                </div>
-              </div>
-
-              <div className="mt-5 whitespace-pre-wrap rounded-2xl border bg-slate-50 p-5 text-sm leading-6 text-slate-700">
-                {interview.guidelines || "Answer each question clearly and use specific examples where possible."}
-              </div>
-
-              <div className="mt-5 flex flex-col gap-3 rounded-2xl border bg-white p-4 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-blue-600" />
-                  <span>{state.job?.title || "Role interview"}</span>
-                </div>
-                <Button className="w-full bg-slate-950 text-white hover:bg-slate-800 md:w-auto" onClick={start} disabled={starting}>
-                  {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : voiceEnabled ? <Mic className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                  {voiceEnabled ? "Start Interview & Turn Mic On" : "Start Interview"}
-                </Button>
               </div>
             </div>
           ) : (
