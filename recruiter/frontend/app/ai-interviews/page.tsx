@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
   BarChart3,
@@ -1069,7 +1068,7 @@ export default function AIInterviewsPage() {
                         <div>
                           <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Candidate ranking</h3>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            All scored candidates for this job, highest Llama score first.
+                            All scored candidates for this job, highest Llama score first. Interview batches are grouped beside this ranking.
                           </p>
                         </div>
                         <Badge variant="outline" className="w-fit">
@@ -1123,6 +1122,69 @@ export default function AIInterviewsPage() {
                     </div>
 
                     <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <h3 className="text-base font-semibold text-slate-950 dark:text-white">Interview batches</h3>
+                            <p className="mt-1 text-xs text-muted-foreground">Included in this ranking</p>
+                          </div>
+                          <Badge variant="outline">{selectedJobRanking.interviews.length}</Badge>
+                        </div>
+                        <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                          {selectedJobRanking.interviews.map((interview) => {
+                            const completed = Number(interview.stats?.completed || 0);
+                            const total = Number(interview.candidateCount || 0);
+                            const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
+                            const scoringSummary = interview.scoringSummary;
+                            const rankings = scoringSummary?.rankings || [];
+                            const topCandidate = rankings[0];
+                            const hasScores = Number(scoringSummary?.scoredCount || 0) > 0;
+                            return (
+                              <Link
+                                key={interview._id}
+                                href={`/ai-interviews/${interview._id}`}
+                                className="group block rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:border-slate-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/50 dark:hover:bg-slate-950"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold text-slate-950 dark:text-white">{interview.title}</div>
+                                    <div className="mt-1 truncate text-xs text-muted-foreground">Sends {formatDate(interview.schedule?.sendAt)}</div>
+                                  </div>
+                                  <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-950 dark:group-hover:text-white" />
+                                </div>
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                  <Badge className={statusColor(interview.status)}>{interview.status}</Badge>
+                                  <Badge variant="outline">{completed}/{total} complete</Badge>
+                                  {hasScores ? (
+                                    <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
+                                      Avg {scoringSummary?.averageScore ?? "-"}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                {topCandidate ? (
+                                  <div className="mt-3 rounded-xl bg-white p-3 text-xs dark:bg-slate-900">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="truncate font-medium text-slate-700 dark:text-slate-200">Top: {topCandidate.candidateName}</span>
+                                      <span className="flex shrink-0 items-center gap-1 font-semibold text-slate-950 dark:text-white">
+                                        <Star className="h-3.5 w-3.5 text-amber-500" />
+                                        {topCandidate.score}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : null}
+                                <div className="mt-3 space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                                    <span>Batch completion</span>
+                                    <span>{completion}%</span>
+                                  </div>
+                                  <Progress value={completion} className="h-1.5" />
+                                </div>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       <div className="rounded-2xl border border-white/70 bg-white/90 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
                         <div className="flex items-center justify-between gap-3">
                           <div>
@@ -1179,127 +1241,6 @@ export default function AIInterviewsPage() {
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Interview batches</h3>
-                      <p className="text-sm text-muted-foreground">Open a batch for transcripts, per-candidate details, and score evidence.</p>
-                    </div>
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      {selectedJobRanking.interviews.map((interview) => {
-                        const completed = Number(interview.stats?.completed || 0);
-                        const total = Number(interview.candidateCount || 0);
-                        const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
-                        const scoringSummary = interview.scoringSummary;
-                        const rankings = scoringSummary?.rankings || [];
-                        const hasScores = Number(scoringSummary?.scoredCount || 0) > 0;
-                        const topCandidate = rankings[0];
-                        const priorityCount = rankings.filter((candidate) => candidate.score >= 85).length;
-                        const scoredCount = Number(scoringSummary?.scoredCount || 0);
-                        return (
-                          <Link key={interview._id} href={`/ai-interviews/${interview._id}`}>
-                            <Card className="h-full overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:bg-slate-900/90 dark:shadow-none">
-                              <CardContent className="p-5">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <h2 className="truncate text-base font-semibold text-slate-950 dark:text-white">{interview.title}</h2>
-                                    <p className="truncate text-sm text-muted-foreground">Sends {formatDate(interview.schedule?.sendAt)}</p>
-                                  </div>
-                                  <Badge className={statusColor(interview.status)}>{interview.status}</Badge>
-                                </div>
-                                <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-                                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
-                                    <div className="flex items-center gap-2 text-muted-foreground">
-                                      <Users className="h-4 w-4" />
-                                      Candidates
-                                    </div>
-                                    <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{total}</div>
-                                  </div>
-                                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
-                                    <div className="flex items-center gap-2 text-muted-foreground">
-                                      <CheckCircle2 className="h-4 w-4" />
-                                      Completed
-                                    </div>
-                                    <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{completed}</div>
-                                  </div>
-                                </div>
-                                <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/50">
-                                  {hasScores ? (
-                                    <div>
-                                      <div className="bg-slate-950 p-4 text-white">
-                                        <div className="flex items-start justify-between gap-3">
-                                          <div>
-                                            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-emerald-200">
-                                              <Trophy className="h-3.5 w-3.5" />
-                                              Batch snapshot
-                                            </div>
-                                            <div className="mt-1 max-w-[320px] truncate text-sm font-semibold">
-                                              Top: {topCandidate?.candidateName || "Candidate"}
-                                            </div>
-                                            <div className="mt-1 text-xs text-slate-400">
-                                              {scoredCount} scored - {priorityCount} priority
-                                            </div>
-                                          </div>
-                                          <div className="text-right">
-                                            <div className="text-3xl font-semibold">{scoringSummary?.averageScore ?? "-"}</div>
-                                            <div className="text-xs text-slate-400">avg score</div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      <div className="space-y-2 p-3">
-                                        {rankings.slice(0, 3).map((candidate) => (
-                                          <div key={candidate.sessionId} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
-                                            <div className="flex items-center justify-between gap-3">
-                                              <div className="flex min-w-0 items-center gap-2">
-                                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-[11px] font-semibold text-white">
-                                                  {candidate.rank}
-                                                </span>
-                                                <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{candidate.candidateName}</span>
-                                              </div>
-                                              <div className="flex shrink-0 items-center gap-2">
-                                                <Badge variant="outline" className={recommendationColor(candidate.recommendation)}>
-                                                  {formatRecommendation(candidate.recommendation)}
-                                                </Badge>
-                                                <span className="flex min-w-8 items-center justify-end gap-1 font-semibold text-slate-950 dark:text-white">
-                                                  <Star className="h-3.5 w-3.5 text-amber-500" />
-                                                  {candidate.score}
-                                                </span>
-                                              </div>
-                                            </div>
-                                            <div className="mt-2 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800">
-                                              <div className={`h-1.5 rounded-full ${scoreBand(candidate.score).barClassName}`} style={{ width: `${candidate.score}%` }} />
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
-                                      <Medal className="h-4 w-4 text-slate-400" />
-                                      Batch ranking appears after candidates complete and scoring finishes.
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="mt-4 space-y-2">
-                                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                    <span>Completion</span>
-                                    <span>{completion}%</span>
-                                  </div>
-                                  <Progress value={completion} className="h-2" />
-                                </div>
-                                {(interview.stats?.failed || interview.stats?.blocked) ? (
-                                  <div className="mt-4 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    Needs review
-                                  </div>
-                                ) : null}
-                              </CardContent>
-                            </Card>
-                          </Link>
-                        );
-                      })}
                     </div>
                   </div>
                 </div>
