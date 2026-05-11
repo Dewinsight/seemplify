@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
@@ -8,9 +8,12 @@ import {
   CheckCircle2,
   Clock,
   FileQuestion,
+  GripVertical,
   Loader2,
   Mic,
   MicOff,
+  PanelLeftClose,
+  PanelLeftOpen,
   Send,
   ShieldCheck,
   TimerReset,
@@ -145,6 +148,10 @@ export default function PublicAIInterviewPage() {
   const [voiceStatus, setVoiceStatus] = useState("Voice mode is off");
   const [voiceMicState, setVoiceMicState] = useState<VoiceMicState>("off");
   const [lastVoiceTranscript, setLastVoiceTranscript] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(340);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const layoutRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceWsRef = useRef<WebSocket | null>(null);
@@ -164,6 +171,9 @@ export default function PublicAIInterviewPage() {
   const currentIndex = session?.currentQuestionIndex || 0;
   const progress = questionCount > 0 ? ((currentIndex + (session?.status === "completed" ? 1 : 0)) / questionCount) * 100 : 0;
   const voiceEnabled = Boolean(state?.voice?.enabled);
+  const layoutStyle = {
+    "--interview-rail-width": sidebarCollapsed ? "76px" : `${sidebarWidth}px`
+  } as CSSProperties;
 
   const load = async () => {
     setLoading(true);
@@ -519,6 +529,33 @@ export default function PublicAIInterviewPage() {
   }, [cleanupVoice]);
 
   useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      const containerLeft = layoutRef.current?.getBoundingClientRect().left || 0;
+      const maxWidth = Math.min(520, Math.max(360, window.innerWidth * 0.44));
+      const nextWidth = Math.min(maxWidth, Math.max(280, event.clientX - containerLeft));
+      setSidebarWidth(Math.round(nextWidth));
+    };
+
+    const stopResize = () => setIsResizingSidebar(false);
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopResize, { once: true });
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopResize);
+    };
+  }, [isResizingSidebar]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [state?.session?.messages?.length]);
 
@@ -668,13 +705,69 @@ export default function PublicAIInterviewPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70">
       <audio ref={remoteAudioRef} autoPlay className="hidden" />
-      <div className="mx-auto grid max-w-screen-2xl gap-5 p-4 md:p-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+      <div
+        ref={layoutRef}
+        style={layoutStyle}
+        className="mx-auto grid max-w-screen-2xl gap-4 p-3 sm:p-4 md:p-6 xl:grid-cols-[var(--interview-rail-width)_12px_minmax(0,1fr)]"
+      >
+        <aside className={`space-y-4 xl:sticky xl:top-6 xl:max-h-[calc(100vh-48px)] xl:self-start xl:overflow-y-auto xl:pr-1 ${sidebarCollapsed ? "hidden xl:block" : ""}`}>
+          {sidebarCollapsed ? (
+            <div className="hidden overflow-hidden rounded-2xl border bg-slate-950 text-white shadow-xl xl:block">
+              <div className="flex flex-col items-center gap-4 p-3">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-10 w-10 text-white hover:bg-white/10 hover:text-white"
+                  onClick={() => setSidebarCollapsed(false)}
+                  aria-label="Expand interview panel"
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </Button>
+                <div className="h-px w-full bg-white/10" />
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-200">
+                  <Workflow className="h-5 w-5" />
+                </div>
+                <div className="text-center text-xs text-slate-300">
+                  <div className="font-semibold text-white">{Math.min(currentIndex + 1, questionCount)}</div>
+                  <div>/ {questionCount}</div>
+                </div>
+                <div className="h-28 w-2 overflow-hidden rounded-full bg-white/15">
+                  <div className="w-full rounded-full bg-emerald-300" style={{ height: `${Math.min(100, progress)}%` }} />
+                </div>
+                {session.status === "in_progress" && (
+                  <div className="space-y-3 text-center text-[11px] text-slate-300">
+                    <div>
+                      <Clock className="mx-auto mb-1 h-4 w-4" />
+                      <span className="font-semibold text-white">{formatSeconds(questionSeconds)}</span>
+                    </div>
+                    <div>
+                      <TimerReset className="mx-auto mb-1 h-4 w-4" />
+                      <span className="font-semibold text-white">{formatSeconds(totalSeconds)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="overflow-hidden rounded-2xl border-0 bg-slate-950 text-white shadow-xl">
             <div className="border-b border-white/10 p-5">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                <Workflow className="h-3.5 w-3.5" />
-                Candidate interview
+              <div className="flex items-start justify-between gap-3">
+                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
+                  <Workflow className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Candidate interview</span>
+                </div>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="hidden h-8 w-8 shrink-0 text-slate-300 hover:bg-white/10 hover:text-white xl:inline-flex"
+                  onClick={() => setSidebarCollapsed(true)}
+                  aria-label="Collapse interview panel"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </Button>
               </div>
               <h1 className="mt-3 text-xl font-semibold">{interview.title}</h1>
               <p className="mt-1 text-sm text-slate-300">{state.job?.title}</p>
@@ -807,9 +900,23 @@ export default function PublicAIInterviewPage() {
               )}
             </div>
           )}
+          </>
+          )}
         </aside>
 
-        <section className="min-h-[calc(100vh-48px)] overflow-hidden rounded-2xl border bg-white/95 shadow-xl shadow-slate-200/70">
+        <button
+          type="button"
+          aria-label="Resize interview panel"
+          className={`hidden h-[calc(100vh-48px)] cursor-col-resize items-center justify-center rounded-full border bg-white/80 text-slate-400 shadow-sm transition hover:border-slate-300 hover:bg-white hover:text-slate-700 xl:flex ${sidebarCollapsed ? "pointer-events-none opacity-0" : ""}`}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            setIsResizingSidebar(true);
+          }}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+
+        <section className="min-w-0 min-h-[calc(100vh-24px)] overflow-hidden rounded-2xl border bg-white/95 shadow-xl shadow-slate-200/70 md:min-h-[calc(100vh-48px)]">
           {session.status !== "in_progress" ? (
             <div className="mx-auto flex min-h-[calc(100vh-80px)] max-w-4xl flex-col justify-center p-5 md:p-8">
               <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5">
@@ -868,7 +975,7 @@ export default function PublicAIInterviewPage() {
               </div>
             </div>
           ) : (
-            <div className="flex h-[calc(100vh-48px)] flex-col">
+            <div className="flex h-[calc(100vh-24px)] min-h-[620px] flex-col md:h-[calc(100vh-48px)]">
               <div className="border-b bg-slate-950 p-4 text-white">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -876,6 +983,16 @@ export default function PublicAIInterviewPage() {
                     <h2 className="text-lg font-semibold">Interview Workspace</h2>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="secondary"
+                      className="bg-white text-slate-950 hover:bg-slate-100"
+                      onClick={() => setSidebarCollapsed((value) => !value)}
+                      aria-label={sidebarCollapsed ? "Show interview panel" : "Hide interview panel"}
+                    >
+                      {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                    </Button>
                     <Badge className="w-fit border-white/20 bg-white/10 text-white">Confirm required to move on</Badge>
                     <Button
                       type="button"
@@ -906,14 +1023,14 @@ export default function PublicAIInterviewPage() {
                 </div>
               </div>
 
-              <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-4 md:p-5">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50 p-3 sm:p-4 md:p-5">
                 {(session.messages || []).map((chat, index) => (
                   <div
                     key={chat._id || index}
                     className={`flex ${chat.role === "candidate" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
+                      className={`max-w-[min(88%,780px)] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
                         chat.role === "candidate"
                           ? "bg-slate-950 text-white"
                           : "border bg-white text-slate-900"
@@ -948,7 +1065,7 @@ export default function PublicAIInterviewPage() {
                     onChange={(event) => setMessage(event.target.value)}
                     placeholder="Type your answer or ask for clarification..."
                     rows={3}
-                    className="resize-none bg-slate-50"
+                    className="min-h-[92px] max-h-[240px] resize-y bg-slate-50"
                     onKeyDown={(event) => {
                       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                         event.preventDefault();
