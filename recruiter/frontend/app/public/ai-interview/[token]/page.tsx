@@ -640,6 +640,10 @@ export default function PublicAIInterviewPage() {
       activeTtsUrlRef.current = objectUrl;
       const audioEl: HTMLAudioElement = audio;
       audioEl.src = objectUrl;
+      // Force the browser to start loading the new resource. Some browsers
+      // are lazy about loading after a previous play ended, so without this
+      // explicit load() the subsequent play() can hang on canplay forever.
+      try { audioEl.load(); } catch { /* ignore */ }
 
       await new Promise<void>((resolve, reject) => {
         let settled = false;
@@ -715,13 +719,13 @@ export default function PublicAIInterviewPage() {
         // Always clear the speaking flag so the mic toggle is not stuck in
         // the "Interviewer is speaking. Mic is locked" branch.
         voiceAssistantSpeakingRef.current = false;
+        // Always surface the failure so we don't silently drop a message
+        // from the queue. The caller (speakPendingAiMessages) handles the
+        // final mic state once the whole queue has drained.
+        console.warn("Interviewer voice playback failed:", error?.message || error);
+        toast.error(error?.message || "Unable to play interviewer voice");
         if (options.resumeAfter !== false) {
           waitForCandidateMicPress("Interviewer voice could not play. Tap the mic or type to continue.");
-          toast.error(error?.message || "Unable to play interviewer voice");
-        } else {
-          // The caller (speakPendingAiMessages) will handle final mic state
-          // once the whole queue has drained.
-          console.warn("Interviewer voice playback failed:", error?.message || error);
         }
       }
       return false;
@@ -755,10 +759,12 @@ export default function PublicAIInterviewPage() {
           for (const item of pendingMessages) {
             spokenAiMessageKeysRef.current.add(item.key);
             attemptedAny = true;
+            console.debug("[ai-interview] speaking message", { key: item.key, length: item.content.length });
             const spoke = await speakVoiceText(item.content, {
               persist: false,
               resumeAfter: false
             });
+            console.debug("[ai-interview] speakVoiceText returned", { key: item.key, spoke });
             if (spoke) {
               spokeAny = true;
             }
