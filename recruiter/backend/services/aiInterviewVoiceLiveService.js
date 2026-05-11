@@ -41,6 +41,17 @@ function parseLanguageList(value, fallback = ['en']) {
   return languages.length ? languages : fallback;
 }
 
+function normalizeEnglishLanguage(value, fallback = 'en-US') {
+  const language = String(value || '').trim();
+  return /^en(?:-|$)/i.test(language) ? language : fallback;
+}
+
+function parseEnglishLanguageList(value, fallback = ['en-US']) {
+  const languages = parseLanguageList(value, fallback)
+    .filter((language) => /^en(?:-|$)/i.test(language));
+  return languages.length ? languages : fallback;
+}
+
 function getCurrentQuestion(interview, session) {
   return interview.questionSnapshots?.[session.currentQuestionIndex] || null;
 }
@@ -84,7 +95,7 @@ class AIInterviewVoiceLiveService {
       callsApiVersion: process.env.AZURE_VOICELIVE_WEBRTC_API_VERSION || '2026-01-01-preview',
       model: process.env.AZURE_VOICELIVE_MODEL || 'gpt-realtime',
       voice: process.env.AZURE_VOICELIVE_VOICE || 'en-US-Ava:DragonHDLatestNeural',
-      language: process.env.AZURE_VOICELIVE_LANGUAGE || 'en',
+      language: normalizeEnglishLanguage(process.env.AZURE_VOICELIVE_LANGUAGE || 'en-US'),
       voiceLocale: process.env.AZURE_VOICELIVE_VOICE_LOCALE || 'en-US',
       voiceRate: process.env.AZURE_VOICELIVE_VOICE_RATE || '1.0',
       voiceTemperature: parseNumber(process.env.AZURE_VOICELIVE_VOICE_TEMPERATURE, 0.6, 0, 1),
@@ -93,7 +104,7 @@ class AIInterviewVoiceLiveService {
       vadSpeechDurationMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_SPEECH_DURATION_MS, 120, 40, 2000),
       vadSilenceDurationMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_SILENCE_DURATION_MS, 800, 200, 3000),
       vadRemoveFillerWords: parseBoolean(process.env.AZURE_VOICELIVE_REMOVE_FILLER_WORDS, true),
-      vadLanguages: parseLanguageList(process.env.AZURE_VOICELIVE_VAD_LANGUAGES, ['en']),
+      vadLanguages: parseEnglishLanguageList(process.env.AZURE_VOICELIVE_VAD_LANGUAGES, ['en-US']),
       eouTimeoutMs: parseInteger(process.env.AZURE_VOICELIVE_EOU_TIMEOUT_MS, 1200, 200, 5000),
       outputWordTimestamps: parseBoolean(process.env.AZURE_VOICELIVE_OUTPUT_WORD_TIMESTAMPS, true)
     };

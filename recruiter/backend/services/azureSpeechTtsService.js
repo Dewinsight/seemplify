@@ -17,14 +17,28 @@ function normalizeEndpoint(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function isEnglishAzureVoice(value) {
+  const voice = String(value || '').trim();
+  return /^en-[A-Z]{2}-/i.test(voice) && !voice.includes(':');
+}
+
+function pickSpeechLanguage() {
+  const configured = process.env.AZURE_AI_INTERVIEW_SPEECH_LANGUAGE || process.env.AZURE_SPEECH_LANGUAGE || 'en-US';
+  return /^en(?:-|$)/i.test(String(configured).trim()) ? String(configured).trim() : 'en-US';
+}
+
 function pickSpeechVoice() {
-  if (process.env.AZURE_SPEECH_VOICE) {
-    return process.env.AZURE_SPEECH_VOICE;
+  if (isEnglishAzureVoice(process.env.AZURE_AI_INTERVIEW_SPEECH_VOICE)) {
+    return process.env.AZURE_AI_INTERVIEW_SPEECH_VOICE.trim();
+  }
+
+  if (isEnglishAzureVoice(process.env.AZURE_SPEECH_VOICE)) {
+    return process.env.AZURE_SPEECH_VOICE.trim();
   }
 
   const voiceLiveVoice = process.env.AZURE_VOICELIVE_VOICE || '';
-  if (voiceLiveVoice && !voiceLiveVoice.includes(':')) {
-    return voiceLiveVoice;
+  if (isEnglishAzureVoice(voiceLiveVoice)) {
+    return voiceLiveVoice.trim();
   }
 
   return 'en-US-AvaNeural';
@@ -40,7 +54,7 @@ class AzureSpeechTtsService {
     );
     const endpoint = normalizeEndpoint(process.env.AZURE_SPEECH_TTS_ENDPOINT);
     const apiKey = process.env.AZURE_SPEECH_KEY || process.env.AZURE_VOICELIVE_API_KEY;
-    const language = process.env.AZURE_SPEECH_LANGUAGE || 'en-US';
+    const language = pickSpeechLanguage();
 
     return {
       apiKey,

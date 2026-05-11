@@ -231,8 +231,6 @@ export default function PublicAIInterviewPage() {
   const [voiceState, setVoiceState] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [voiceStatus, setVoiceStatus] = useState("Voice mode is off");
   const [voiceMicState, setVoiceMicState] = useState<VoiceMicState>("off");
-  const [lastVoiceTranscript, setLastVoiceTranscript] = useState("");
-  const [voiceInputDraft, setVoiceInputDraft] = useState("");
   const [, setBrowserSpeechState] = useState<BrowserSpeechState>("checking");
   const [assistantSpeech, setAssistantSpeech] = useState<AssistantSpeechState>({
     active: false,
@@ -244,7 +242,6 @@ export default function PublicAIInterviewPage() {
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeTtsUrlRef = useRef("");
   const speechRequestIdRef = useRef(0);
@@ -270,7 +267,6 @@ export default function PublicAIInterviewPage() {
   const browserSpeechWantedRef = useRef(false);
   const browserSpeechRecognitionRef = useRef<any>(null);
   const browserSpeechRestartTimerRef = useRef<number | null>(null);
-  const voiceInputDraftRef = useRef("");
   const stateRef = useRef<PublicAIInterviewState | null>(null);
   const sessionRef = useRef<PublicAIInterviewState["session"] | null>(null);
 
@@ -304,8 +300,8 @@ export default function PublicAIInterviewPage() {
     : voiceMicState === "processing"
       ? "Processing"
       : assistantSpeech.active
-        ? "Muted while AI speaks"
-        : "Unmute mic";
+        ? (voiceMicWantedRef.current ? "Will listen next" : "Unmute after AI")
+        : "Speak now";
   const layoutStyle = {
     "--interview-rail-width": sidebarCollapsed ? "76px" : `${sidebarWidth}px`
   } as CSSProperties;
@@ -358,10 +354,6 @@ export default function PublicAIInterviewPage() {
     voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
     voiceStreamRef.current = null;
 
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = null;
-    }
-
     speechRequestIdRef.current += 1;
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
@@ -396,8 +388,6 @@ export default function PublicAIInterviewPage() {
     setVoiceMicState("off");
     setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
     setAssistantSpeech({ active: false, text: "", progress: 0 });
-    voiceInputDraftRef.current = "";
-    setVoiceInputDraft("");
     setVoiceStatus(status);
   }, [stopBrowserSpeechRecognition]);
 
@@ -460,8 +450,6 @@ export default function PublicAIInterviewPage() {
 
     voiceAssistantSpeakingRef.current = false;
     startVoiceTurn("listening");
-    voiceInputDraftRef.current = "";
-    setVoiceInputDraft("");
     setVoiceInputEnabled(true);
     setVoiceMicState("listening");
     setVoiceStatus(status);
@@ -471,7 +459,6 @@ export default function PublicAIInterviewPage() {
     state: Exclude<VoiceMicState, "listening">,
     status: string,
     options: {
-      clearDraft?: boolean;
       preserveCandidateTurn?: boolean;
       phase?: VoiceTurnPhase;
     } = {}
@@ -483,10 +470,6 @@ export default function PublicAIInterviewPage() {
       voiceTurnPhaseRef.current = options.phase || (state === "processing" ? "processing" : "off");
     } else {
       startVoiceTurn(options.phase || (state === "paused" ? "assistant_speaking" : "off"));
-    }
-    if (options.clearDraft !== false) {
-      voiceInputDraftRef.current = "";
-      setVoiceInputDraft("");
     }
     setVoiceStatus(status);
   }, [setVoiceInputEnabled, startVoiceTurn, stopBrowserSpeechRecognition]);
@@ -687,29 +670,48 @@ export default function PublicAIInterviewPage() {
     if (!data || data.session.status !== "in_progress") return false;
     if (speechQueueRunningRef.current) return true;
 
-    const pendingMessages = getSpeakableAiMessages(data)
-      .map((message) => ({ message, key: getAiMessageSpeakKey(message), content: message.content?.trim() || "" }))
-      .filter((item) => item.key && item.content && !spokenAiMessageKeysRef.current.has(item.key));
-
-    if (!pendingMessages.length) {
-      return voiceAssistantSpeakingRef.current || Boolean(assistantSpeechTextRef.current);
-    }
-
     speechQueueRunningRef.current = true;
     try {
       let spokeAny = false;
-      for (const [index, item] of pendingMessages.entries()) {
-        spokenAiMessageKeysRef.current.add(item.key);
-        const spoke = await speakVoiceText(item.content, {
-          persist: false,
-          resumeAfter: index === pendingMessages.length - 1
-        });
-        if (!spoke) {
-          spokenAiMessageKeysRef.current.delete(item.key);
-          return spokeAny;
+      let source: PublicAIInterviewState | null = data;
+
+      while (source?.session.status === "in_progress") {
+        const pendingMessages = getSpeakableAiMessages(source)
+          .map((message) => ({ message, key: getAiMessageSpeakKey(message), content: message.content?.trim() || "" }))
+          .filter((item) => item.key && item.content && !spokenAiMessageKeysRef.current.has(item.key));
+
+        if (!pendingMessages.length) break;
+
+        for (const [index, item] of pendingMessages.entries()) {
+          spokenAiMessageKeysRef.current.add(item.key);
+          const isLastKnownMessage = index === pendingMessages.length - 1;
+          const spoke = await speakVoiceText(item.content, {
+            persist: false,
+            resumeAfter: false
+          });
+          if (!spoke) {
+            spokenAiMessageKeysRef.current.delete(item.key);
+            return spokeAny;
+          }
+          spokeAny = true;
+
+          if (isLastKnownMessage) {
+            source = stateRef.current || source;
+          }
         }
-        spokeAny = true;
+
+        source = stateRef.current || source;
       }
+
+      if (spokeAny) {
+        voiceAssistantSpeakingRef.current = false;
+        resumeCandidateMic();
+      }
+
+      if (!spokeAny) {
+        return voiceAssistantSpeakingRef.current || Boolean(assistantSpeechTextRef.current);
+      }
+
       return spokeAny;
     } finally {
       speechQueueRunningRef.current = false;
@@ -751,10 +753,6 @@ export default function PublicAIInterviewPage() {
     candidateSpeechTurnEpochRef.current = 0;
     activeCandidateTurnEpochRef.current = 0;
     voiceTurnPhaseRef.current = "processing";
-    setLastVoiceTranscript(cleaned);
-    voiceInputDraftRef.current = "";
-    setVoiceInputDraft("");
-    setMessage(cleaned);
 
     voiceProcessingRef.current = true;
     pauseCandidateMic("processing", "Processing what you said...", { phase: "processing" });
@@ -806,7 +804,6 @@ export default function PublicAIInterviewPage() {
       voiceTurnPhaseRef.current = "listening";
       voiceProcessingRef.current = false;
       setVoiceStatus("Listening...");
-      setVoiceInputDraft("");
       return;
     }
 
@@ -817,7 +814,6 @@ export default function PublicAIInterviewPage() {
       } else {
         voiceProcessingRef.current = true;
         pauseCandidateMic("processing", "Processing what you said...", {
-          clearDraft: false,
           preserveCandidateTurn: true,
           phase: "processing"
         });
@@ -827,14 +823,7 @@ export default function PublicAIInterviewPage() {
 
     if (isCandidateTranscriptDeltaEvent(type)) {
       if (!isCurrentCandidateSpeechEvent()) return;
-      const delta = getVoiceTranscriptText(event);
-      if (delta) {
-        const nextDraft = normalizeTranscriptText(`${voiceInputDraftRef.current} ${delta}`);
-        voiceInputDraftRef.current = nextDraft;
-        setVoiceInputDraft(nextDraft);
-        setMessage(nextDraft);
-        setVoiceStatus("Transcribing with Azure Speech...");
-      }
+      setVoiceStatus("Transcribing with Azure Speech...");
       return;
     }
 
@@ -842,8 +831,6 @@ export default function PublicAIInterviewPage() {
       if (!isCurrentCandidateSpeechEvent()) return;
       voiceProcessingRef.current = false;
       candidateSpeechTurnEpochRef.current = 0;
-      voiceInputDraftRef.current = "";
-      setVoiceInputDraft("");
       setVoiceStatus("Azure Speech could not transcribe that. Please try again.");
       resumeCandidateMic("I did not catch that. Please try again.");
       return;
@@ -856,7 +843,7 @@ export default function PublicAIInterviewPage() {
 
     if (isCandidateTranscriptEvent(type)) {
       if (!isCurrentCandidateSpeechEvent()) return;
-      const transcript = getVoiceTranscriptText(event) || voiceInputDraftRef.current;
+      const transcript = getVoiceTranscriptText(event);
       if (transcript) {
         void handleCandidateVoiceTranscript(transcript);
       } else {
@@ -945,10 +932,8 @@ export default function PublicAIInterviewPage() {
       setVoiceMicState("paused");
       stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
 
-      peerConnection.ontrack = (event) => {
-        if (!remoteAudioRef.current) return;
-        remoteAudioRef.current.srcObject = event.streams[0];
-        void remoteAudioRef.current.play().catch(() => undefined);
+      peerConnection.ontrack = () => {
+        // Voice Live is used for Azure STT only. Interviewer audio is produced by Azure Speech TTS.
       };
 
       const dataChannel = peerConnection.createDataChannel("voice-live-events");
@@ -1023,22 +1008,13 @@ export default function PublicAIInterviewPage() {
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
-        let interimTranscript = "";
         let finalTranscript = "";
 
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
           const transcript = event.results[index]?.[0]?.transcript || "";
           if (event.results[index]?.isFinal) {
             finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
           }
-        }
-
-        const draft = (interimTranscript || finalTranscript).trim();
-        if (draft) {
-          setVoiceInputDraft(draft);
-          setMessage(draft);
         }
 
         if (finalTranscript.trim()) {
@@ -1300,7 +1276,6 @@ export default function PublicAIInterviewPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70">
-      <audio ref={remoteAudioRef} autoPlay className="hidden" />
       <audio ref={ttsAudioRef} preload="auto" className="hidden" />
       <div
         ref={layoutRef}
@@ -1476,26 +1451,16 @@ export default function PublicAIInterviewPage() {
                   </div>
                 </div>
               )}
-              {voiceInputDraft && voiceMicState === "listening" && (
-                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
-                  <span className="font-semibold">You are saying:</span> {voiceInputDraft}
-                </div>
-              )}
               {voiceState === "connected" && (
                 <div className="mt-3 rounded-xl border bg-slate-50 p-3 text-xs leading-5 text-slate-600">
                   <span className="font-medium text-slate-900">Mic:</span>{" "}
                   {voiceMicState === "listening"
-                    ? "Open. Azure Speech is transcribing. You can speak now."
+                    ? "Open. You can speak now."
                     : voiceMicState === "paused"
                       ? "Paused while the interviewer speaks."
                       : voiceMicState === "processing"
                         ? "Paused while your response is processed."
                         : "Off."}
-                </div>
-              )}
-              {lastVoiceTranscript && (
-                <div className="mt-3 rounded-xl border bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                  <span className="font-medium text-slate-900">Last transcript:</span> {lastVoiceTranscript}
                 </div>
               )}
               {voiceState === "connected" ? (
@@ -1797,8 +1762,23 @@ export default function PublicAIInterviewPage() {
                       </div>
                       {voiceState === "connected" && (
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline" className={voiceMicState === "listening" ? "border-emerald-200 bg-white text-emerald-700" : "border-slate-200 bg-white text-slate-700"}>
-                            {voiceMicState === "listening" ? "Mic open" : "Mic muted"}
+                          <Badge
+                            variant="outline"
+                            className={
+                              voiceMicState === "listening"
+                                ? "border-emerald-200 bg-white text-emerald-700"
+                                : voiceMicState === "processing"
+                                  ? "border-blue-200 bg-white text-blue-700"
+                                  : "border-slate-200 bg-white text-slate-700"
+                            }
+                          >
+                            {assistantSpeech.active
+                              ? "AI speaking"
+                              : voiceMicState === "listening"
+                                ? "Speak now"
+                                : voiceMicState === "processing"
+                                  ? "Processing"
+                                  : "Mic muted"}
                           </Badge>
                           <Button
                             type="button"
@@ -1823,11 +1803,6 @@ export default function PublicAIInterviewPage() {
                         <div className="h-1.5 overflow-hidden rounded-full bg-emerald-100">
                           <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
                         </div>
-                      </div>
-                    )}
-                    {voiceInputDraft && voiceMicState === "listening" && (
-                      <div className="mt-3 rounded-lg border border-blue-200 bg-white/80 p-3 text-blue-900">
-                        <span className="font-semibold">Live transcript:</span> {voiceInputDraft}
                       </div>
                     )}
                   </div>
