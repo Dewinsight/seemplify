@@ -159,6 +159,7 @@ function isCandidateTranscriptFailedEvent(type?: string) {
 }
 
 type VoiceMicState = "off" | "listening" | "paused" | "processing";
+type VoiceTurnPhase = "off" | "assistant_speaking" | "listening" | "processing";
 type BrowserSpeechState = "checking" | "unavailable" | "off" | "listening";
 
 const USE_BROWSER_SPEECH_FALLBACK = false;
@@ -261,6 +262,10 @@ export default function PublicAIInterviewPage() {
   const voiceMicWantedRef = useRef(false);
   const voiceAssistantSpeakingRef = useRef(false);
   const voiceProcessingRef = useRef(false);
+  const voiceTurnEpochRef = useRef(0);
+  const activeCandidateTurnEpochRef = useRef(0);
+  const candidateSpeechTurnEpochRef = useRef(0);
+  const voiceTurnPhaseRef = useRef<VoiceTurnPhase>("off");
   const browserSpeechSupportedRef = useRef(false);
   const browserSpeechWantedRef = useRef(false);
   const browserSpeechRecognitionRef = useRef<any>(null);
@@ -383,6 +388,10 @@ export default function PublicAIInterviewPage() {
     voiceMicWantedRef.current = false;
     voiceAssistantSpeakingRef.current = false;
     voiceProcessingRef.current = false;
+    voiceTurnEpochRef.current += 1;
+    activeCandidateTurnEpochRef.current = 0;
+    candidateSpeechTurnEpochRef.current = 0;
+    voiceTurnPhaseRef.current = "off";
     setVoiceState("idle");
     setVoiceMicState("off");
     setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
@@ -398,30 +407,89 @@ export default function PublicAIInterviewPage() {
     });
   }, []);
 
+  const startVoiceTurn = useCallback((phase: VoiceTurnPhase) => {
+    const nextEpoch = voiceTurnEpochRef.current + 1;
+    voiceTurnEpochRef.current = nextEpoch;
+    voiceTurnPhaseRef.current = phase;
+
+    if (phase === "listening") {
+      activeCandidateTurnEpochRef.current = nextEpoch;
+      candidateSpeechTurnEpochRef.current = 0;
+    } else if (phase !== "processing") {
+      activeCandidateTurnEpochRef.current = 0;
+      candidateSpeechTurnEpochRef.current = 0;
+    }
+
+    return nextEpoch;
+  }, []);
+
+  const isCandidateSpeechTurnActive = useCallback(() => {
+    return (
+      !voiceAssistantSpeakingRef.current &&
+      activeCandidateTurnEpochRef.current > 0 &&
+      ["listening", "processing"].includes(voiceTurnPhaseRef.current)
+    );
+  }, []);
+
+  const isCurrentCandidateSpeechEvent = useCallback(() => {
+    return (
+      isCandidateSpeechTurnActive() &&
+      candidateSpeechTurnEpochRef.current > 0 &&
+      candidateSpeechTurnEpochRef.current === activeCandidateTurnEpochRef.current
+    );
+  }, [isCandidateSpeechTurnActive]);
+
   const resumeCandidateMic = useCallback((status = "Listening. Speak naturally when you are ready.") => {
     voiceProcessingRef.current = false;
-    voiceAssistantSpeakingRef.current = false;
 
     if (voiceWsRef.current?.readyState !== WebSocket.OPEN || !voiceMicWantedRef.current) {
+      startVoiceTurn("off");
+      voiceAssistantSpeakingRef.current = false;
       setVoiceInputEnabled(false);
       setVoiceMicState("off");
       setVoiceStatus("Mic is off");
       return;
     }
 
+    if (voiceAssistantSpeakingRef.current || Boolean(assistantSpeechTextRef.current)) {
+      setVoiceInputEnabled(false);
+      setVoiceMicState("paused");
+      setVoiceStatus("Interviewer is speaking. Mic will reopen after the reply.");
+      return;
+    }
+
+    voiceAssistantSpeakingRef.current = false;
+    startVoiceTurn("listening");
+    voiceInputDraftRef.current = "";
+    setVoiceInputDraft("");
     setVoiceInputEnabled(true);
     setVoiceMicState("listening");
     setVoiceStatus(status);
-  }, [setVoiceInputEnabled]);
+  }, [setVoiceInputEnabled, startVoiceTurn]);
 
-  const pauseCandidateMic = useCallback((state: Exclude<VoiceMicState, "listening">, status: string) => {
+  const pauseCandidateMic = useCallback((
+    state: Exclude<VoiceMicState, "listening">,
+    status: string,
+    options: {
+      clearDraft?: boolean;
+      preserveCandidateTurn?: boolean;
+      phase?: VoiceTurnPhase;
+    } = {}
+  ) => {
     stopBrowserSpeechRecognition(true);
     setVoiceInputEnabled(false);
     setVoiceMicState(state);
-    voiceInputDraftRef.current = "";
-    setVoiceInputDraft("");
+    if (options.preserveCandidateTurn) {
+      voiceTurnPhaseRef.current = options.phase || (state === "processing" ? "processing" : "off");
+    } else {
+      startVoiceTurn(options.phase || (state === "paused" ? "assistant_speaking" : "off"));
+    }
+    if (options.clearDraft !== false) {
+      voiceInputDraftRef.current = "";
+      setVoiceInputDraft("");
+    }
     setVoiceStatus(status);
-  }, [setVoiceInputEnabled, stopBrowserSpeechRecognition]);
+  }, [setVoiceInputEnabled, startVoiceTurn, stopBrowserSpeechRecognition]);
 
   const recordAssistantVoiceTranscript = useCallback(async (
     text: string,
@@ -598,6 +666,7 @@ export default function PublicAIInterviewPage() {
       if (speechRequestIdRef.current !== requestId) return false;
       finishAssistantSpeechVisual();
       if (options.resumeAfter !== false) {
+        voiceAssistantSpeakingRef.current = false;
         resumeCandidateMic();
       } else {
         setVoiceStatus("Preparing next interviewer message...");
@@ -606,6 +675,7 @@ export default function PublicAIInterviewPage() {
     } catch (error: any) {
       if (speechRequestIdRef.current === requestId) {
         finishAssistantSpeechVisual();
+        voiceAssistantSpeakingRef.current = false;
         resumeCandidateMic("Interviewer voice could not play. You can continue by text or try voice again.");
         toast.error(error?.message || "Unable to play interviewer voice");
       }
@@ -673,17 +743,21 @@ export default function PublicAIInterviewPage() {
     const cleaned = normalizeTranscriptText(text);
     const activeSession = sessionRef.current;
     if (!cleaned || !activeSession || activeSession.status !== "in_progress") return;
+    if (voiceWsRef.current?.readyState === WebSocket.OPEN && !isCandidateSpeechTurnActive()) return;
 
     const key = transcriptKey("candidate", activeSession.currentQuestionIndex, cleaned);
     if (recordedTranscriptKeysRef.current.has(key)) return;
     recordedTranscriptKeysRef.current.add(key);
+    candidateSpeechTurnEpochRef.current = 0;
+    activeCandidateTurnEpochRef.current = 0;
+    voiceTurnPhaseRef.current = "processing";
     setLastVoiceTranscript(cleaned);
     voiceInputDraftRef.current = "";
     setVoiceInputDraft("");
     setMessage(cleaned);
 
     voiceProcessingRef.current = true;
-    pauseCandidateMic("processing", "Processing what you said...");
+    pauseCandidateMic("processing", "Processing what you said...", { phase: "processing" });
 
     try {
       const data = await aiInterviewService.sendPublicMessage(token, cleaned);
@@ -699,7 +773,7 @@ export default function PublicAIInterviewPage() {
       toast.error(error.message || "Failed to send voice response");
       resumeCandidateMic("I could not process that. Please try speaking again.");
     }
-  }, [applyPublicState, pauseCandidateMic, resumeCandidateMic, speakPendingAiMessages, token]);
+  }, [applyPublicState, isCandidateSpeechTurnActive, pauseCandidateMic, resumeCandidateMic, speakPendingAiMessages, token]);
 
   const handleVoiceEvent = useCallback((event: any) => {
     const type = event?.type;
@@ -727,24 +801,32 @@ export default function PublicAIInterviewPage() {
     }
 
     if (type === "input_audio_buffer.speech_started") {
-      if (!voiceAssistantSpeakingRef.current) {
-        setVoiceStatus("Listening...");
-        setVoiceInputDraft("");
-      }
+      if (!isCandidateSpeechTurnActive()) return;
+      candidateSpeechTurnEpochRef.current = activeCandidateTurnEpochRef.current;
+      voiceTurnPhaseRef.current = "listening";
+      voiceProcessingRef.current = false;
+      setVoiceStatus("Listening...");
+      setVoiceInputDraft("");
       return;
     }
 
     if (type === "input_audio_buffer.speech_stopped") {
+      if (!isCurrentCandidateSpeechEvent()) return;
       if (browserSpeechSupportedRef.current) {
         setVoiceStatus("Listening for your transcript...");
       } else {
         voiceProcessingRef.current = true;
-        pauseCandidateMic("processing", "Processing what you said...");
+        pauseCandidateMic("processing", "Processing what you said...", {
+          clearDraft: false,
+          preserveCandidateTurn: true,
+          phase: "processing"
+        });
       }
       return;
     }
 
     if (isCandidateTranscriptDeltaEvent(type)) {
+      if (!isCurrentCandidateSpeechEvent()) return;
       const delta = getVoiceTranscriptText(event);
       if (delta) {
         const nextDraft = normalizeTranscriptText(`${voiceInputDraftRef.current} ${delta}`);
@@ -757,7 +839,9 @@ export default function PublicAIInterviewPage() {
     }
 
     if (isCandidateTranscriptFailedEvent(type)) {
+      if (!isCurrentCandidateSpeechEvent()) return;
       voiceProcessingRef.current = false;
+      candidateSpeechTurnEpochRef.current = 0;
       voiceInputDraftRef.current = "";
       setVoiceInputDraft("");
       setVoiceStatus("Azure Speech could not transcribe that. Please try again.");
@@ -771,6 +855,7 @@ export default function PublicAIInterviewPage() {
     }
 
     if (isCandidateTranscriptEvent(type)) {
+      if (!isCurrentCandidateSpeechEvent()) return;
       const transcript = getVoiceTranscriptText(event) || voiceInputDraftRef.current;
       if (transcript) {
         void handleCandidateVoiceTranscript(transcript);
@@ -781,7 +866,7 @@ export default function PublicAIInterviewPage() {
     }
 
     if (type.startsWith("response.")) return;
-  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic]);
+  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, isCandidateSpeechTurnActive, isCurrentCandidateSpeechEvent, pauseCandidateMic, resumeCandidateMic]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -1418,7 +1503,7 @@ export default function PublicAIInterviewPage() {
                   <Button
                     type="button"
                     variant={voiceMicState === "listening" ? "outline" : "default"}
-                    disabled={assistantSpeech.active || voiceMicState === "processing"}
+                    disabled={voiceMicState === "processing"}
                     onClick={toggleCandidateMic}
                   >
                     {voiceMicState === "listening" ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
@@ -1648,7 +1733,7 @@ export default function PublicAIInterviewPage() {
                       type="button"
                       size="sm"
                       variant="secondary"
-                      disabled={!voiceEnabled || voiceState === "connecting" || (voiceState === "connected" && (assistantSpeech.active || voiceMicState === "processing"))}
+                      disabled={!voiceEnabled || voiceState === "connecting" || (voiceState === "connected" && voiceMicState === "processing")}
                       onClick={voiceState === "connected" ? toggleCandidateMic : () => connectVoice()}
                       className="bg-white text-slate-950 hover:bg-slate-100"
                     >
@@ -1719,7 +1804,7 @@ export default function PublicAIInterviewPage() {
                             type="button"
                             size="sm"
                             variant={voiceMicState === "listening" ? "outline" : "default"}
-                            disabled={assistantSpeech.active || voiceMicState === "processing"}
+                            disabled={voiceMicState === "processing"}
                             onClick={toggleCandidateMic}
                             className="h-8"
                           >
