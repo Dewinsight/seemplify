@@ -12,6 +12,7 @@ router.post('/public/:token/voice-transcript', aiInterviewController.recordPubli
 router.post('/public/:token/speech', aiInterviewController.synthesizePublicSpeech);
 router.post('/public/:token/confirm', aiInterviewController.confirmPublicQuestion);
 router.post('/public/:token/timeout', aiInterviewController.timeoutPublicQuestion);
+router.post('/public/:token/reset', aiInterviewController.resetPublicSession);
 
 router.use(authMiddleware);
 router.use(requireOrganization);

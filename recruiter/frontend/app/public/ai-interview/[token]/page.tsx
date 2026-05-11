@@ -1,7 +1,7 @@
 "use client";
 
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   Briefcase,
@@ -19,6 +19,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Play,
+  RotateCcw,
   Send,
   ShieldCheck,
   TimerReset,
@@ -217,9 +218,15 @@ function renderHighlightedSpeech(text: string, highlightedWordCount: number) {
 
 export default function PublicAIInterviewPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const token = params.token as string;
+  // When the page is opened with ?demo=1 we expose a "Reset interview" control
+  // so a single bookmarked interview can be tested over and over without
+  // creating a new candidate each time.
+  const demoMode = searchParams?.get("demo") === "1";
   const [state, setState] = useState<PublicAIInterviewState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resettingDemo, setResettingDemo] = useState(false);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -474,7 +481,11 @@ export default function PublicAIInterviewPage() {
   // Play exactly one TTS clip via the persistent audio element. Resolves on
   // 'ended', rejects on error/abort. Caller is responsible for updating phase
   // and the visible progress bar.
-  const playSpeechClip = useCallback(async (text: string, requestId: number) => {
+  const playSpeechClip = useCallback(async (
+    text: string,
+    requestId: number,
+    options: { messageId?: string } = {}
+  ) => {
     const cleaned = normalizeTranscriptText(text);
     if (!cleaned) return;
     const maybeAudio = ttsAudioRef.current;
@@ -488,7 +499,13 @@ export default function PublicAIInterviewPage() {
     try { audio.pause(); } catch { /* ignore */ }
 
     const previousUrl = activeTtsUrlRef.current;
-    const audioBlob = await aiInterviewService.synthesizePublicSpeech(token, cleaned);
+    // Prefer sending the message id so the backend can speak the exact stored
+    // content — bypasses the canonical-text approval check which had false
+    // negatives for some messages.
+    const audioBlob = await aiInterviewService.synthesizePublicSpeech(
+      token,
+      options.messageId ? { messageId: options.messageId, text: cleaned } : { text: cleaned }
+    );
     if (speechRequestIdRef.current !== requestId) return;
 
     const objectUrl = URL.createObjectURL(audioBlob);
@@ -595,7 +612,7 @@ export default function PublicAIInterviewPage() {
 
         try {
           console.debug("[ai-interview] speaking", { key: item.key });
-          await playSpeechClip(cleaned, requestId);
+          await playSpeechClip(cleaned, requestId, { messageId: item.message._id });
           console.debug("[ai-interview] spoken", { key: item.key });
         } catch (error: any) {
           console.warn("[ai-interview] playback failed", { key: item.key, error });
@@ -987,6 +1004,28 @@ export default function PublicAIInterviewPage() {
       toast.error(error.message || "Failed to start interview");
     } finally {
       setStarting(false);
+    }
+  };
+
+  // Reset this public session to a fresh "ready to start" state so the same
+  // demo URL can be replayed end to end. Only invoked when ?demo=1 is set.
+  const resetDemo = async () => {
+    if (!window.confirm("Reset this interview to a fresh state? All messages and answers in this session will be cleared.")) {
+      return;
+    }
+    setResettingDemo(true);
+    try {
+      cleanupVoice("Voice mode is off");
+      const data = await aiInterviewService.resetPublicSession(token);
+      applyPublicState(data);
+      spokenAiMessageKeysRef.current.clear();
+      recordedTranscriptKeysRef.current.clear();
+      setMessage("");
+      toast.success("Interview reset. Press Start to begin again.");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to reset interview");
+    } finally {
+      setResettingDemo(false);
     }
   };
 
@@ -1553,6 +1592,20 @@ export default function PublicAIInterviewPage() {
                       {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
                     </Button>
                     <Badge className="hidden w-fit border-white/20 bg-white/10 text-white sm:inline-flex">Confirm required to move on</Badge>
+                    {demoMode && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={resetDemo}
+                        disabled={resettingDemo}
+                        className="h-11 rounded-xl bg-amber-100 px-3 text-amber-900 hover:bg-amber-200 sm:px-4"
+                        title="Reset this demo interview"
+                      >
+                        {resettingDemo ? <Loader2 className="h-4 w-4 animate-spin sm:mr-2" /> : <RotateCcw className="h-4 w-4 sm:mr-2" />}
+                        <span className="hidden sm:inline">Reset demo</span>
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"

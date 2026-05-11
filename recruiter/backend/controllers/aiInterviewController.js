@@ -985,11 +985,6 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
 
 exports.synthesizePublicSpeech = async (req, res) => {
   try {
-    const content = normalizeTranscriptText(truncateText(req.body?.text || req.body?.message || '', 4000));
-    if (!content) {
-      return res.status(400).json({ error: 'EMPTY_SPEECH_TEXT', message: 'Speech text is required' });
-    }
-
     const session = await findPublicSession(req.params.token);
     if (!session || !session.aiInterview) {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
@@ -1002,11 +997,33 @@ exports.synthesizePublicSpeech = async (req, res) => {
       return res.status(400).json({ error: 'NOT_IN_PROGRESS', message: 'Interview is not in progress' });
     }
 
-    if (!isApprovedAssistantSpeech(session, content)) {
-      return res.status(403).json({
-        error: 'UNAPPROVED_SPEECH_TEXT',
-        message: 'Only approved interviewer messages can be synthesized.'
-      });
+    // Prefer messageId — pick up the exact stored content so canonical-text
+    // matching can never reject a legitimate playback request.
+    const rawMessageId = req.body?.messageId ? String(req.body.messageId).trim() : '';
+    let content = '';
+    if (rawMessageId) {
+      const message = session.messages.id(rawMessageId);
+      if (!message || message.role !== 'ai') {
+        return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: 'Interview message not found' });
+      }
+      content = normalizeTranscriptText(message.content || '');
+    }
+
+    // Fallback: accept raw text and approve it against the stored AI messages.
+    // Kept for older clients and one-off internal callers; preferred path is
+    // messageId because it is unambiguous.
+    if (!content) {
+      const candidate = normalizeTranscriptText(truncateText(req.body?.text || req.body?.message || '', 4000));
+      if (!candidate) {
+        return res.status(400).json({ error: 'EMPTY_SPEECH_TEXT', message: 'Speech text is required' });
+      }
+      if (!isApprovedAssistantSpeech(session, candidate)) {
+        return res.status(403).json({
+          error: 'UNAPPROVED_SPEECH_TEXT',
+          message: 'Only approved interviewer messages can be synthesized.'
+        });
+      }
+      content = candidate;
     }
 
     const speech = await azureSpeechTtsService.synthesize(content);
@@ -1062,6 +1079,49 @@ exports.timeoutPublicQuestion = async (req, res) => {
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
     console.error('Public AI interview timeout error:', error);
+    sendControllerError(res, error);
+  }
+};
+
+// Reset a public interview session back to a fresh "ready to start" state.
+// Used by the demo flow so a single bookmarked URL can be tested over and
+// over without provisioning a new candidate/interview each time.
+exports.resetPublicSession = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    session.status = 'sent';
+    session.currentQuestionIndex = 0;
+    session.startedAt = undefined;
+    session.completedAt = undefined;
+    session.lastActivityAt = new Date();
+    session.questionStartedAt = undefined;
+    session.questionDeadlineAt = undefined;
+    session.totalDeadlineAt = undefined;
+    session.messages = [];
+    session.answers = [];
+    session.scoring = {
+      status: 'pending',
+      overallScore: undefined,
+      recommendation: undefined,
+      summary: undefined,
+      strengths: [],
+      concerns: [],
+      questionScores: [],
+      raw: undefined,
+      error: undefined,
+      scoredAt: undefined
+    };
+
+    await session.save();
+    await syncInterviewStats(session.aiInterview._id);
+
+    res.json({ success: true, ...buildPublicState(session, session.aiInterview) });
+  } catch (error) {
+    console.error('Public AI interview reset error:', error);
     sendControllerError(res, error);
   }
 };

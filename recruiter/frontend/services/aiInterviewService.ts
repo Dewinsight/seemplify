@@ -288,10 +288,10 @@ class AIInterviewService {
     return response.json();
   }
 
-  async synthesizePublicSpeech(token: string, text: string): Promise<Blob> {
+  async synthesizePublicSpeech(token: string, input: { messageId?: string; text?: string }): Promise<Blob> {
     const response = await apiRequest(`/api/ai-interviews/public/${token}/speech`, {
       method: 'POST',
-      body: JSON.stringify({ text })
+      body: JSON.stringify(input)
     });
     if (!response.ok) throw await parseError(response);
     return response.blob();
@@ -310,6 +310,12 @@ class AIInterviewService {
 
   async timeoutPublicQuestion(token: string): Promise<PublicAIInterviewState> {
     const response = await apiRequest(`/api/ai-interviews/public/${token}/timeout`, { method: 'POST' });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async resetPublicSession(token: string): Promise<PublicAIInterviewState> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/reset`, { method: 'POST' });
     if (!response.ok) throw await parseError(response);
     return response.json();
   }
