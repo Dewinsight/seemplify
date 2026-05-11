@@ -622,64 +622,83 @@ export default function PublicAIInterviewPage() {
     const requestId = speechRequestIdRef.current + 1;
     speechRequestIdRef.current = requestId;
 
-    if (ttsAudioRef.current) {
-      ttsAudioRef.current.pause();
-      ttsAudioRef.current.removeAttribute("src");
-      ttsAudioRef.current.load();
+    // Stop any current playback but DO NOT call removeAttribute("src") or load().
+    // Resetting the element un-primes it on iOS Safari, causing subsequent
+    // audio.play() to silently fail and never fire 'ended'.
+    const audio = ttsAudioRef.current;
+    if (audio) {
+      try { audio.pause(); } catch { /* ignore */ }
     }
-    if (activeTtsUrlRef.current) {
-      URL.revokeObjectURL(activeTtsUrlRef.current);
-      activeTtsUrlRef.current = "";
-    }
+    const previousTtsUrl = activeTtsUrlRef.current;
 
     try {
       const audioBlob = await aiInterviewService.synthesizePublicSpeech(token, cleaned);
       if (speechRequestIdRef.current !== requestId) return false;
-
-      const audio = ttsAudioRef.current;
       if (!audio) return false;
 
       const objectUrl = URL.createObjectURL(audioBlob);
       activeTtsUrlRef.current = objectUrl;
-      audio.src = objectUrl;
-      audio.currentTime = 0;
+      const audioEl: HTMLAudioElement = audio;
+      audioEl.src = objectUrl;
 
       await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          audio.removeEventListener("ended", onEnded);
-          audio.removeEventListener("error", onError);
-          audio.removeEventListener("timeupdate", onTimeUpdate);
-        };
-
+        let settled = false;
         const onEnded = () => {
+          if (settled) return;
+          settled = true;
           cleanup();
           resolve();
         };
-
         const onError = () => {
+          if (settled) return;
+          settled = true;
           cleanup();
           reject(new Error("Unable to play interviewer audio."));
         };
-
         const onTimeUpdate = () => {
-          if (speechRequestIdRef.current !== requestId || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
-          const progress = Math.max(2, Math.min(99, Math.round((audio.currentTime / audio.duration) * 100)));
+          if (speechRequestIdRef.current !== requestId || !Number.isFinite(audioEl.duration) || audioEl.duration <= 0) return;
+          const progress = Math.max(2, Math.min(99, Math.round((audioEl.currentTime / audioEl.duration) * 100)));
           setAssistantSpeech((current) => (
             current.text === cleaned ? { ...current, active: true, progress } : current
           ));
         };
 
-        audio.addEventListener("ended", onEnded);
-        audio.addEventListener("error", onError);
-        audio.addEventListener("timeupdate", onTimeUpdate);
+        // Safety net: if the audio never reaches 'ended' (silent failure on
+        // some mobile browsers), give up after a generous timeout so the
+        // queue can recover and the mic does not stay stuck "paused".
+        const guardTimer = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error("Interviewer voice playback timed out."));
+        }, 120_000);
+
+        function cleanup() {
+          window.clearTimeout(guardTimer);
+          audioEl.removeEventListener("ended", onEnded);
+          audioEl.removeEventListener("error", onError);
+          audioEl.removeEventListener("timeupdate", onTimeUpdate);
+        }
+
+        audioEl.addEventListener("ended", onEnded);
+        audioEl.addEventListener("error", onError);
+        audioEl.addEventListener("timeupdate", onTimeUpdate);
 
         startAssistantSpeechVisual(cleaned, false);
         setVoiceStatus("Interviewer is speaking. Your mic is muted.");
-        audio.play().catch((error) => {
+        audioEl.play().catch((error) => {
+          if (settled) return;
+          settled = true;
           cleanup();
           reject(error);
         });
       });
+
+      // Revoke the old blob URL only after the new one has played, so the
+      // browser is never juggling a revoked URL as the active source.
+      if (previousTtsUrl && previousTtsUrl !== objectUrl) {
+        URL.revokeObjectURL(previousTtsUrl);
+      }
 
       if (speechRequestIdRef.current !== requestId) return false;
       finishAssistantSpeechVisual();
@@ -693,9 +712,17 @@ export default function PublicAIInterviewPage() {
     } catch (error: any) {
       if (speechRequestIdRef.current === requestId) {
         finishAssistantSpeechVisual();
+        // Always clear the speaking flag so the mic toggle is not stuck in
+        // the "Interviewer is speaking. Mic is locked" branch.
         voiceAssistantSpeakingRef.current = false;
-        waitForCandidateMicPress("Interviewer voice could not play. Tap the mic or type to continue.");
-        toast.error(error?.message || "Unable to play interviewer voice");
+        if (options.resumeAfter !== false) {
+          waitForCandidateMicPress("Interviewer voice could not play. Tap the mic or type to continue.");
+          toast.error(error?.message || "Unable to play interviewer voice");
+        } else {
+          // The caller (speakPendingAiMessages) will handle final mic state
+          // once the whole queue has drained.
+          console.warn("Interviewer voice playback failed:", error?.message || error);
+        }
       }
       return false;
     }
@@ -709,8 +736,9 @@ export default function PublicAIInterviewPage() {
     }
 
     speechQueueRunningRef.current = true;
+    let spokeAny = false;
+    let attemptedAny = false;
     try {
-      let spokeAny = false;
       let source: PublicAIInterviewState | null = data;
 
       do {
@@ -726,15 +754,18 @@ export default function PublicAIInterviewPage() {
 
           for (const item of pendingMessages) {
             spokenAiMessageKeysRef.current.add(item.key);
+            attemptedAny = true;
             const spoke = await speakVoiceText(item.content, {
               persist: false,
               resumeAfter: false
             });
-            if (!spoke) {
-              spokenAiMessageKeysRef.current.delete(item.key);
-              return spokeAny;
+            if (spoke) {
+              spokeAny = true;
             }
-            spokeAny = true;
+            // Either way (success or failure), keep the key marked so we
+            // don't infinitely retry a broken message. Continue to the next
+            // message so a single failure doesn't strand the rest of the
+            // transcript unspoken.
             source = stateRef.current || source;
           }
 
@@ -742,23 +773,45 @@ export default function PublicAIInterviewPage() {
         }
       } while (speechQueueDrainRequestedRef.current);
 
-      if (spokeAny) {
+      if (attemptedAny) {
         voiceAssistantSpeakingRef.current = false;
         waitForCandidateMicPress();
       }
 
-      if (!spokeAny) {
+      if (!spokeAny && !attemptedAny) {
         return voiceAssistantSpeakingRef.current || Boolean(assistantSpeechTextRef.current);
       }
 
       return spokeAny;
     } finally {
       speechQueueRunningRef.current = false;
+      // Final safety: if the queue exited without leaving any audio mid-play,
+      // make sure the speaking flag is cleared so a subsequent mic tap can
+      // start listening instead of being trapped in the "AI is speaking" branch.
+      if (!assistantSpeechTextRef.current) {
+        voiceAssistantSpeakingRef.current = false;
+      }
     }
   }, [speakVoiceText, waitForCandidateMicPress]);
 
   const toggleCandidateMic = useCallback(() => {
     if (voiceState !== "connected") return;
+
+    // Self-heal: if the speaking flag is stuck true but nothing is actually
+    // playing or queued, clear it so the click can put the mic into listen
+    // mode instead of looping back to "Interviewer is speaking".
+    const audio = ttsAudioRef.current;
+    const audioBusy = Boolean(audio && !audio.paused && !audio.ended);
+    if (
+      voiceAssistantSpeakingRef.current &&
+      !audioBusy &&
+      !assistantSpeechTextRef.current &&
+      !assistantSpeech.active &&
+      !speechQueueRunningRef.current
+    ) {
+      voiceAssistantSpeakingRef.current = false;
+    }
+
     const next = !voiceMicWantedRef.current;
     voiceMicWantedRef.current = next;
 
