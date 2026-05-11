@@ -128,10 +128,30 @@ class AzureSpeechTtsService {
         response.on('data', (chunk) => chunks.push(chunk));
         response.on('end', () => {
           const buffer = Buffer.concat(chunks);
+          const contentType = response.headers['content-type'] || 'audio/mpeg';
+
           if (response.statusCode >= 200 && response.statusCode < 300) {
+            // Azure occasionally returns a 200 with a non-audio body (HTML or
+            // JSON error pages from edge nodes). Treat that as a failure so
+            // the client never tries to "play" static.
+            if (!/^audio\//i.test(contentType)) {
+              const preview = buffer.toString('utf8').slice(0, 500);
+              const error = new Error(`Azure Speech returned non-audio content (${contentType}): ${preview}`);
+              error.statusCode = 502;
+              error.code = 'TTS_BAD_RESPONSE';
+              reject(error);
+              return;
+            }
+            if (buffer.length < 200) {
+              const error = new Error(`Azure Speech returned a suspiciously small response (${buffer.length} bytes).`);
+              error.statusCode = 502;
+              error.code = 'TTS_EMPTY_RESPONSE';
+              reject(error);
+              return;
+            }
             resolve({
               buffer,
-              contentType: response.headers['content-type'] || 'audio/mpeg',
+              contentType,
               outputFormat: config.outputFormat
             });
             return;

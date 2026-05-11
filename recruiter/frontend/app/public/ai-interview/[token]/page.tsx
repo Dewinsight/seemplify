@@ -508,6 +508,22 @@ export default function PublicAIInterviewPage() {
     );
     if (speechRequestIdRef.current !== requestId) return;
 
+    console.debug("[ai-interview] tts blob received", {
+      size: audioBlob.size,
+      type: audioBlob.type
+    });
+
+    // Defensive validation — if the server returned something that isn't
+    // audio (HTML/JSON edge errors or a truncated stream) we'd otherwise
+    // try to play it and the browser would emit garbled static. Surface
+    // the real problem instead.
+    if (!audioBlob.size) {
+      throw new Error("Interviewer voice response was empty.");
+    }
+    if (audioBlob.type && !/^audio\//i.test(audioBlob.type)) {
+      throw new Error(`Interviewer voice response was not audio (got ${audioBlob.type}).`);
+    }
+
     const objectUrl = URL.createObjectURL(audioBlob);
     activeTtsUrlRef.current = objectUrl;
     audio.src = objectUrl;
@@ -835,8 +851,18 @@ export default function PublicAIInterviewPage() {
       stream.getAudioTracks().forEach((track) => { track.enabled = false; });
       stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
 
-      peerConnection.ontrack = () => {
+      peerConnection.ontrack = (event) => {
         // Voice Live audio output is intentionally ignored; we use Azure TTS.
+        // Some browsers will still pipe an unattached remote audio track to
+        // the speakers (Chrome's "implicit playback" for an autoplaying
+        // remote stream). Defensively stop incoming audio tracks so the
+        // candidate never hears a stray Voice Live stream.
+        event.streams?.forEach((stream) => {
+          stream.getAudioTracks().forEach((track) => {
+            try { track.stop(); } catch { /* ignore */ }
+          });
+        });
+        event.track?.stop?.();
       };
 
       const dataChannel = peerConnection.createDataChannel("voice-live-events");

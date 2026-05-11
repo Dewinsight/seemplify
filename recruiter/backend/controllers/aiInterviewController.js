@@ -1026,7 +1026,19 @@ exports.synthesizePublicSpeech = async (req, res) => {
       content = candidate;
     }
 
+    console.log('[ai-interview/speech] synthesizing', {
+      token: req.params.token?.slice(0, 8),
+      messageId: rawMessageId || null,
+      length: content.length,
+      preview: content.slice(0, 80)
+    });
+
     const speech = await azureSpeechTtsService.synthesize(content);
+    console.log('[ai-interview/speech] synthesized', {
+      contentType: speech.contentType,
+      bytes: speech.buffer.length,
+      format: speech.outputFormat
+    });
     res.set({
       'Content-Type': speech.contentType,
       'Content-Length': speech.buffer.length,
