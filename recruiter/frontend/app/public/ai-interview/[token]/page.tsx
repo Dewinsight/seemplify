@@ -123,6 +123,20 @@ function isAssistantTranscriptDeltaEvent(type?: string) {
 }
 
 type VoiceMicState = "off" | "listening" | "paused" | "processing";
+type BrowserSpeechState = "checking" | "unavailable" | "off" | "listening";
+
+type AssistantSpeechState = {
+  active: boolean;
+  text: string;
+  progress: number;
+};
+
+declare global {
+  interface Window {
+    SpeechRecognition?: any;
+    webkitSpeechRecognition?: any;
+  }
+}
 
 function getLatestAiMessageContent(data: PublicAIInterviewState) {
   const currentIndex = data.session.currentQuestionIndex;
@@ -130,6 +144,29 @@ function getLatestAiMessageContent(data: PublicAIInterviewState) {
     .reverse()
     .find((chat) => chat.role === "ai" && chat.questionIndex === currentIndex)
     ?.content?.trim() || "";
+}
+
+function getHighlightedWordCount(text: string, progress: number) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 0;
+  return Math.max(1, Math.min(words.length, Math.ceil((Math.max(0, Math.min(100, progress)) / 100) * words.length)));
+}
+
+function renderHighlightedSpeech(text: string, highlightedWordCount: number) {
+  let wordIndex = 0;
+  return text.split(/(\s+)/).map((part, index) => {
+    if (!part.trim()) return part;
+    wordIndex += 1;
+    const isHighlighted = wordIndex <= highlightedWordCount;
+    return (
+      <span
+        key={`${part}-${index}`}
+        className={isHighlighted ? "rounded bg-emerald-100 px-0.5 text-emerald-950" : "text-slate-500"}
+      >
+        {part}
+      </span>
+    );
+  });
 }
 
 export default function PublicAIInterviewPage() {
@@ -148,6 +185,13 @@ export default function PublicAIInterviewPage() {
   const [voiceStatus, setVoiceStatus] = useState("Voice mode is off");
   const [voiceMicState, setVoiceMicState] = useState<VoiceMicState>("off");
   const [lastVoiceTranscript, setLastVoiceTranscript] = useState("");
+  const [voiceInputDraft, setVoiceInputDraft] = useState("");
+  const [browserSpeechState, setBrowserSpeechState] = useState<BrowserSpeechState>("checking");
+  const [assistantSpeech, setAssistantSpeech] = useState<AssistantSpeechState>({
+    active: false,
+    text: "",
+    progress: 0
+  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(340);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
@@ -159,10 +203,19 @@ export default function PublicAIInterviewPage() {
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceDataChannelRef = useRef<RTCDataChannel | null>(null);
   const assistantTranscriptBufferRef = useRef<Record<string, string>>({});
+  const assistantSpeechTimerRef = useRef<number | null>(null);
+  const assistantSpeechTextRef = useRef("");
+  const assistantSpeechStartedAtRef = useRef(0);
+  const assistantSpeechDurationRef = useRef(0);
   const recordedTranscriptKeysRef = useRef<Set<string>>(new Set());
   const voiceMicWantedRef = useRef(false);
   const voiceAssistantSpeakingRef = useRef(false);
   const voiceProcessingRef = useRef(false);
+  const browserSpeechSupportedRef = useRef(false);
+  const browserSpeechWantedRef = useRef(false);
+  const browserSpeechRecognitionRef = useRef<any>(null);
+  const browserSpeechRestartTimerRef = useRef<number | null>(null);
+  const stateRef = useRef<PublicAIInterviewState | null>(null);
   const sessionRef = useRef<PublicAIInterviewState["session"] | null>(null);
 
   const session = state?.session;
@@ -171,6 +224,17 @@ export default function PublicAIInterviewPage() {
   const currentIndex = session?.currentQuestionIndex || 0;
   const progress = questionCount > 0 ? ((currentIndex + (session?.status === "completed" ? 1 : 0)) / questionCount) * 100 : 0;
   const voiceEnabled = Boolean(state?.voice?.enabled);
+  const assistantHighlightedWords = useMemo(
+    () => getHighlightedWordCount(assistantSpeech.text, assistantSpeech.progress),
+    [assistantSpeech.progress, assistantSpeech.text]
+  );
+  const micControlLabel = voiceMicState === "listening"
+    ? "Mute mic"
+    : voiceMicState === "processing"
+      ? "Processing"
+      : assistantSpeech.active
+        ? "Mic muted"
+        : "Unmute mic";
   const layoutStyle = {
     "--interview-rail-width": sidebarCollapsed ? "76px" : `${sidebarWidth}px`
   } as CSSProperties;
@@ -204,12 +268,35 @@ export default function PublicAIInterviewPage() {
       remoteAudioRef.current.srcObject = null;
     }
 
+    if (assistantSpeechTimerRef.current) {
+      window.clearInterval(assistantSpeechTimerRef.current);
+      assistantSpeechTimerRef.current = null;
+    }
+
+    if (browserSpeechRestartTimerRef.current) {
+      window.clearTimeout(browserSpeechRestartTimerRef.current);
+      browserSpeechRestartTimerRef.current = null;
+    }
+
+    browserSpeechWantedRef.current = false;
+    try {
+      browserSpeechRecognitionRef.current?.abort?.();
+    } catch {
+      // Ignore browser speech cleanup errors.
+    }
+
     assistantTranscriptBufferRef.current = {};
+    assistantSpeechTextRef.current = "";
+    assistantSpeechStartedAtRef.current = 0;
+    assistantSpeechDurationRef.current = 0;
     voiceMicWantedRef.current = false;
     voiceAssistantSpeakingRef.current = false;
     voiceProcessingRef.current = false;
     setVoiceState("idle");
     setVoiceMicState("off");
+    setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
+    setAssistantSpeech({ active: false, text: "", progress: 0 });
+    setVoiceInputDraft("");
     setVoiceStatus(status);
   }, []);
 
@@ -250,14 +337,78 @@ export default function PublicAIInterviewPage() {
     return false;
   }, []);
 
+  const startAssistantSpeechVisual = useCallback((text: string) => {
+    const cleaned = text.trim();
+    if (!cleaned) return;
+
+    if (assistantSpeechTimerRef.current) {
+      window.clearInterval(assistantSpeechTimerRef.current);
+      assistantSpeechTimerRef.current = null;
+    }
+
+    const wordCount = cleaned.split(/\s+/).filter(Boolean).length;
+    const estimatedDuration = Math.min(45000, Math.max(2800, wordCount * 430));
+    assistantSpeechTextRef.current = cleaned;
+    assistantSpeechStartedAtRef.current = Date.now();
+    assistantSpeechDurationRef.current = estimatedDuration;
+    setAssistantSpeech({ active: true, text: cleaned, progress: 2 });
+
+    assistantSpeechTimerRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - assistantSpeechStartedAtRef.current;
+      const progress = Math.min(92, Math.round((elapsed / assistantSpeechDurationRef.current) * 100));
+      setAssistantSpeech((current) => (
+        current.active && current.text === assistantSpeechTextRef.current
+          ? { ...current, progress }
+          : current
+      ));
+    }, 180);
+  }, []);
+
+  const finishAssistantSpeechVisual = useCallback(() => {
+    if (assistantSpeechTimerRef.current) {
+      window.clearInterval(assistantSpeechTimerRef.current);
+      assistantSpeechTimerRef.current = null;
+    }
+
+    const spokenText = assistantSpeechTextRef.current;
+    if (!spokenText) {
+      setAssistantSpeech((current) => {
+        if (!current.active) return { active: false, text: "", progress: 0 };
+        const currentText = current.text;
+        window.setTimeout(() => {
+          setAssistantSpeech((latest) => (
+            latest.text === currentText ? { active: false, text: "", progress: 0 } : latest
+          ));
+        }, 900);
+        return { ...current, progress: 100 };
+      });
+      return;
+    }
+
+    setAssistantSpeech({ active: true, text: spokenText, progress: 100 });
+    assistantSpeechTextRef.current = "";
+
+    window.setTimeout(() => {
+      setAssistantSpeech((current) => (
+        current.text === spokenText ? { active: false, text: "", progress: 0 } : current
+      ));
+    }, 900);
+  }, []);
+
   const speakVoiceText = useCallback((text: string) => {
     const cleaned = text.trim();
     if (!cleaned) return false;
 
     voiceAssistantSpeakingRef.current = true;
     pauseCandidateMic("paused", "Interviewer is speaking. Mic is paused.");
-    return sendVoiceCommand({ type: "voice.speak_text", text: cleaned });
-  }, [pauseCandidateMic, sendVoiceCommand]);
+    const sent = sendVoiceCommand({ type: "voice.speak_text", text: cleaned });
+    if (sent) {
+      startAssistantSpeechVisual(cleaned);
+    } else {
+      finishAssistantSpeechVisual();
+    }
+    return sent;
+  }, [finishAssistantSpeechVisual, pauseCandidateMic, sendVoiceCommand, startAssistantSpeechVisual]);
 
   const toggleCandidateMic = useCallback(() => {
     if (voiceState !== "connected") return;
@@ -291,6 +442,8 @@ export default function PublicAIInterviewPage() {
     if (recordedTranscriptKeysRef.current.has(key)) return;
     recordedTranscriptKeysRef.current.add(key);
     setLastVoiceTranscript(cleaned);
+    setVoiceInputDraft("");
+    setMessage(cleaned);
 
     voiceProcessingRef.current = true;
     pauseCandidateMic("processing", "Processing what you said...");
@@ -298,6 +451,7 @@ export default function PublicAIInterviewPage() {
     try {
       const data = await aiInterviewService.sendPublicMessage(token, cleaned);
       setState(data);
+      setMessage("");
 
       const reply = getLatestAiMessageContent(data);
       if (!reply || !speakVoiceText(reply)) {
@@ -321,6 +475,7 @@ export default function PublicAIInterviewPage() {
     if (type === "voice.error" || type === "error") {
       setVoiceState("error");
       setVoiceStatus(event?.message || event?.error?.message || "Voice mode failed");
+      finishAssistantSpeechVisual();
       return;
     }
 
@@ -334,23 +489,32 @@ export default function PublicAIInterviewPage() {
     if (type === "input_audio_buffer.speech_started") {
       if (!voiceAssistantSpeakingRef.current) {
         setVoiceStatus("Listening...");
+        setVoiceInputDraft("");
       }
       return;
     }
 
     if (type === "input_audio_buffer.speech_stopped") {
-      voiceProcessingRef.current = true;
-      pauseCandidateMic("processing", "Processing what you said...");
+      if (browserSpeechSupportedRef.current) {
+        setVoiceStatus("Finishing your transcript...");
+      } else {
+        voiceProcessingRef.current = true;
+        pauseCandidateMic("processing", "Processing what you said...");
+      }
       return;
     }
 
     if (type === "response.created" || type === "response.audio.delta") {
       voiceAssistantSpeakingRef.current = true;
       pauseCandidateMic("paused", "Interviewer is speaking. Mic is paused.");
+      if (!assistantSpeechTextRef.current) {
+        startAssistantSpeechVisual("Interviewer is speaking...");
+      }
       return;
     }
 
     if (type === "response.audio.done" || type === "response.done") {
+      finishAssistantSpeechVisual();
       window.setTimeout(() => {
         resumeCandidateMic();
       }, 600);
@@ -372,6 +536,16 @@ export default function PublicAIInterviewPage() {
       const delta = getVoiceTranscriptText(event);
       if (delta) {
         assistantTranscriptBufferRef.current[id] = `${assistantTranscriptBufferRef.current[id] || ""}${delta}`;
+        const expectedText = assistantSpeechTextRef.current;
+        if (expectedText) {
+          const spokenLength = assistantTranscriptBufferRef.current[id].length;
+          const progress = Math.min(98, Math.round((spokenLength / Math.max(expectedText.length, 1)) * 100));
+          setAssistantSpeech((current) => (
+            current.active && current.text === expectedText
+              ? { ...current, progress: Math.max(current.progress, progress) }
+              : current
+          ));
+        }
       }
       return;
     }
@@ -380,7 +554,7 @@ export default function PublicAIInterviewPage() {
       const id = event?.response_id || event?.item_id || "active";
       delete assistantTranscriptBufferRef.current[id];
     }
-  }, [handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic]);
+  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic, startAssistantSpeechVisual]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -506,6 +680,8 @@ export default function PublicAIInterviewPage() {
 
       window.setTimeout(() => {
         if (ws.readyState === WebSocket.OPEN) {
+          const prompt = stateOverride ? getLatestAiMessageContent(stateOverride) : stateRef.current ? getLatestAiMessageContent(stateRef.current) : "";
+          if (prompt) startAssistantSpeechVisual(prompt);
           ws.send(JSON.stringify({ type: "voice.say_current_question" }));
         }
       }, 500);
@@ -514,15 +690,143 @@ export default function PublicAIInterviewPage() {
       setVoiceState("error");
       toast.error(error.message || "Unable to start voice mode");
     }
-  }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, session, setVoiceInputEnabled, token, voiceEnabled]);
+  }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, session, setVoiceInputEnabled, startAssistantSpeechVisual, token, voiceEnabled]);
+
+  const stopBrowserSpeechRecognition = useCallback((setOffState = true) => {
+    browserSpeechWantedRef.current = false;
+
+    if (browserSpeechRestartTimerRef.current) {
+      window.clearTimeout(browserSpeechRestartTimerRef.current);
+      browserSpeechRestartTimerRef.current = null;
+    }
+
+    try {
+      browserSpeechRecognitionRef.current?.stop?.();
+    } catch {
+      try {
+        browserSpeechRecognitionRef.current?.abort?.();
+      } catch {
+        // Ignore speech recognition cleanup errors.
+      }
+    }
+
+    if (setOffState) {
+      setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
+    }
+  }, []);
+
+  const startBrowserSpeechRecognition = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      browserSpeechSupportedRef.current = false;
+      setBrowserSpeechState("unavailable");
+      return false;
+    }
+
+    browserSpeechSupportedRef.current = true;
+    browserSpeechWantedRef.current = true;
+
+    if (!browserSpeechRecognitionRef.current) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event: any) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const transcript = event.results[index]?.[0]?.transcript || "";
+          if (event.results[index]?.isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        const draft = (interimTranscript || finalTranscript).trim();
+        if (draft) {
+          setVoiceInputDraft(draft);
+          setMessage(draft);
+        }
+
+        if (finalTranscript.trim()) {
+          void handleCandidateVoiceTranscript(finalTranscript.trim());
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        const error = String(event?.error || "");
+        if (["aborted", "no-speech"].includes(error)) return;
+        setVoiceStatus(error === "not-allowed" ? "Microphone permission was blocked." : "Speech recognition paused. You can keep speaking or type instead.");
+      };
+
+      recognition.onend = () => {
+        if (!browserSpeechWantedRef.current) {
+          setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
+          return;
+        }
+
+        if (
+          voiceWsRef.current?.readyState === WebSocket.OPEN &&
+          voiceMicWantedRef.current &&
+          !voiceAssistantSpeakingRef.current &&
+          !voiceProcessingRef.current
+        ) {
+          setBrowserSpeechState("listening");
+          browserSpeechRestartTimerRef.current = window.setTimeout(() => {
+            if (browserSpeechWantedRef.current) {
+              try {
+                recognition.start();
+              } catch {
+                // Browser may still be settling from the previous speech session.
+              }
+            }
+          }, 250);
+        } else {
+          setBrowserSpeechState(browserSpeechSupportedRef.current ? "off" : "unavailable");
+        }
+      };
+
+      browserSpeechRecognitionRef.current = recognition;
+    }
+
+    try {
+      browserSpeechRecognitionRef.current.start();
+      setBrowserSpeechState("listening");
+      return true;
+    } catch {
+      setBrowserSpeechState("listening");
+      return true;
+    }
+  }, [handleCandidateVoiceTranscript]);
 
   useEffect(() => {
     load();
   }, [token]);
 
   useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    browserSpeechSupportedRef.current = Boolean(SpeechRecognition);
+    setBrowserSpeechState(SpeechRecognition ? "off" : "unavailable");
+  }, []);
+
+  useEffect(() => {
+    if (voiceState === "connected" && voiceMicState === "listening") {
+      startBrowserSpeechRecognition();
+      return;
+    }
+
+    stopBrowserSpeechRecognition();
+  }, [startBrowserSpeechRecognition, stopBrowserSpeechRecognition, voiceMicState, voiceState]);
+
+  useEffect(() => {
+    stateRef.current = state;
     sessionRef.current = session || null;
-  }, [session]);
+  }, [session, state]);
 
   useEffect(() => {
     return () => cleanupVoice();
@@ -595,10 +899,12 @@ export default function PublicAIInterviewPage() {
       if (ws.readyState === WebSocket.OPEN) {
         voiceAssistantSpeakingRef.current = true;
         pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
+        const prompt = stateRef.current ? getLatestAiMessageContent(stateRef.current) : "";
+        if (prompt) startAssistantSpeechVisual(prompt);
         ws.send(JSON.stringify({ type: "voice.say_current_question" }));
       }
     }, 500);
-  }, [currentIndex, pauseCandidateMic, session?.status, voiceState]);
+  }, [currentIndex, pauseCandidateMic, session?.status, startAssistantSpeechVisual, voiceState]);
 
   const answeredIndexes = useMemo(() => {
     return new Set((session?.answers || []).filter((answer) => answer.status !== "draft").map((answer) => answer.questionIndex));
@@ -628,6 +934,10 @@ export default function PublicAIInterviewPage() {
     try {
       const data = await aiInterviewService.sendPublicMessage(token, text);
       setState(data);
+      if (voiceState === "connected") {
+        const reply = getLatestAiMessageContent(data);
+        if (reply) speakVoiceText(reply);
+      }
     } catch (error: any) {
       toast.error(error.message || "Failed to send message");
       setMessage(text);
@@ -851,11 +1161,46 @@ export default function PublicAIInterviewPage() {
                 </Badge>
               </div>
               <p className="text-xs leading-5 text-slate-600">{voiceStatus}</p>
+              {assistantSpeech.active && (
+                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-900">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                      </span>
+                      AI is speaking
+                    </div>
+                    <Badge variant="outline" className="border-emerald-200 bg-white text-emerald-700">Mic muted</Badge>
+                  </div>
+                  <div className="mb-2 flex h-7 items-end gap-1">
+                    {[0, 1, 2, 3, 4].map((bar) => (
+                      <span
+                        key={bar}
+                        className="w-1.5 rounded-full bg-emerald-500/80"
+                        style={{
+                          height: `${10 + ((bar * 7 + Math.round(assistantSpeech.progress)) % 18)}px`
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="max-h-24 overflow-y-auto rounded-lg bg-white/80 p-2 text-xs leading-5">
+                    {renderHighlightedSpeech(assistantSpeech.text, assistantHighlightedWords)}
+                  </div>
+                </div>
+              )}
+              {voiceInputDraft && voiceMicState === "listening" && (
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
+                  <span className="font-semibold">You are saying:</span> {voiceInputDraft}
+                </div>
+              )}
               {voiceState === "connected" && (
                 <div className="mt-3 rounded-xl border bg-slate-50 p-3 text-xs leading-5 text-slate-600">
                   <span className="font-medium text-slate-900">Mic:</span>{" "}
                   {voiceMicState === "listening"
-                    ? "Open. You can speak now."
+                    ? browserSpeechState === "listening"
+                      ? "Open and transcribing. You can speak now."
+                      : "Open. You can speak now."
                     : voiceMicState === "paused"
                       ? "Paused while the interviewer speaks."
                       : voiceMicState === "processing"
@@ -873,11 +1218,11 @@ export default function PublicAIInterviewPage() {
                   <Button
                     type="button"
                     variant={voiceMicState === "listening" ? "outline" : "default"}
-                    disabled={voiceMicState === "paused" || voiceMicState === "processing"}
+                    disabled={assistantSpeech.active || voiceMicState === "processing"}
                     onClick={toggleCandidateMic}
                   >
                     {voiceMicState === "listening" ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
-                    {voiceMicState === "listening" ? "Mute mic" : "Turn mic on"}
+                    {micControlLabel}
                   </Button>
                   <Button type="button" variant="outline" onClick={disconnectVoice}>
                     End voice
@@ -998,7 +1343,7 @@ export default function PublicAIInterviewPage() {
                       type="button"
                       size="sm"
                       variant="secondary"
-                      disabled={!voiceEnabled || voiceState === "connecting" || (voiceState === "connected" && (voiceMicState === "paused" || voiceMicState === "processing"))}
+                      disabled={!voiceEnabled || voiceState === "connecting" || (voiceState === "connected" && (assistantSpeech.active || voiceMicState === "processing"))}
                       onClick={voiceState === "connected" ? toggleCandidateMic : () => connectVoice()}
                       className="bg-white text-slate-950 hover:bg-slate-100"
                     >
@@ -1012,11 +1357,7 @@ export default function PublicAIInterviewPage() {
                       {voiceState === "connected"
                         ? voiceMicState === "listening"
                           ? "Mute mic"
-                          : voiceMicState === "paused"
-                            ? "AI speaking"
-                            : voiceMicState === "processing"
-                              ? "Processing"
-                              : "Turn mic on"
+                          : micControlLabel
                         : "Voice"}
                     </Button>
                   </div>
@@ -1039,7 +1380,11 @@ export default function PublicAIInterviewPage() {
                       <div className="mb-1 text-xs opacity-70">
                         {chat.role === "candidate" ? "You" : "Interviewer"}
                       </div>
-                      <div className="whitespace-pre-wrap">{chat.content}</div>
+                      <div className="whitespace-pre-wrap">
+                        {chat.role === "ai" && assistantSpeech.active && assistantSpeech.text === chat.content.trim()
+                          ? renderHighlightedSpeech(chat.content, assistantHighlightedWords)
+                          : chat.content}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1048,15 +1393,56 @@ export default function PublicAIInterviewPage() {
 
               <div className="border-t bg-white p-4">
                 {voiceState !== "idle" && (
-                  <div className={`mb-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                  <div className={`mb-3 rounded-xl border px-3 py-3 text-xs ${
                     voiceState === "connected"
                       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                       : voiceState === "error"
                         ? "border-red-200 bg-red-50 text-red-700"
                         : "border-blue-200 bg-blue-50 text-blue-800"
                   }`}>
-                    {voiceState === "connecting" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Volume2 className="h-3.5 w-3.5" />}
-                    <span>{voiceStatus}</span>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {voiceState === "connecting" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Volume2 className="h-3.5 w-3.5" />}
+                        <span className="truncate">{voiceStatus}</span>
+                      </div>
+                      {voiceState === "connected" && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className={voiceMicState === "listening" ? "border-emerald-200 bg-white text-emerald-700" : "border-slate-200 bg-white text-slate-700"}>
+                            {voiceMicState === "listening" ? "Mic open" : "Mic muted"}
+                          </Badge>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={voiceMicState === "listening" ? "outline" : "default"}
+                            disabled={assistantSpeech.active || voiceMicState === "processing"}
+                            onClick={toggleCandidateMic}
+                            className="h-8"
+                          >
+                            {voiceMicState === "listening" ? <MicOff className="mr-2 h-3.5 w-3.5" /> : <Mic className="mr-2 h-3.5 w-3.5" />}
+                            {micControlLabel}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    {assistantSpeech.active && (
+                      <div className="mt-3 rounded-lg bg-white/80 p-3 text-slate-700">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <span className="font-semibold text-emerald-900">AI reading this response</span>
+                          <span className="text-[11px] text-emerald-700">{Math.round(assistantSpeech.progress)}%</span>
+                        </div>
+                        <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-emerald-100">
+                          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
+                        </div>
+                        <div className="max-h-24 overflow-y-auto text-sm leading-6">
+                          {renderHighlightedSpeech(assistantSpeech.text, assistantHighlightedWords)}
+                        </div>
+                      </div>
+                    )}
+                    {voiceInputDraft && voiceMicState === "listening" && (
+                      <div className="mt-3 rounded-lg border border-blue-200 bg-white/80 p-3 text-blue-900">
+                        <span className="font-semibold">Live transcript:</span> {voiceInputDraft}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
