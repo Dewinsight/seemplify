@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowUpRight,
   BarChart3,
   Briefcase,
   CalendarClock,
@@ -95,6 +96,40 @@ function recommendationColor(value?: string) {
   }
 }
 
+function scoreBand(score?: number | null) {
+  const value = Number(score || 0);
+  if (value >= 85) {
+    return {
+      label: "Priority",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      barClassName: "bg-emerald-500",
+      textClassName: "text-emerald-700"
+    };
+  }
+  if (value >= 70) {
+    return {
+      label: "Strong review",
+      className: "border-blue-200 bg-blue-50 text-blue-700",
+      barClassName: "bg-blue-500",
+      textClassName: "text-blue-700"
+    };
+  }
+  if (value >= 55) {
+    return {
+      label: "Needs discussion",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      barClassName: "bg-amber-500",
+      textClassName: "text-amber-700"
+    };
+  }
+  return {
+    label: "Low fit",
+    className: "border-rose-200 bg-rose-50 text-rose-700",
+    barClassName: "bg-rose-500",
+    textClassName: "text-rose-700"
+  };
+}
+
 export default function AIInterviewsPage() {
   const searchParams = useSearchParams();
   const presetJobId = searchParams.get("jobId") || "";
@@ -108,6 +143,14 @@ export default function AIInterviewsPage() {
   const [generating, setGenerating] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState("");
   const [questionSelectorKey, setQuestionSelectorKey] = useState(0);
+  const [activeTab, setActiveTab] = useState("create");
+  const [lastScheduledInterview, setLastScheduledInterview] = useState<{
+    id: string;
+    title: string;
+    candidateCount: number;
+    sendAt: string;
+    expiresAt: string;
+  } | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -164,11 +207,30 @@ export default function AIInterviewsPage() {
     return interviews
       .flatMap((interview) => (interview.scoringSummary?.rankings || []).map((ranking) => ({
         ...ranking,
+        interviewId: interview._id,
         interviewTitle: interview.title,
         jobTitle: interview.job?.title
       })))
       .sort((a, b) => b.score - a.score)[0];
   }, [interviews]);
+  const allRankings = useMemo(() => {
+    return interviews
+      .flatMap((interview) => (interview.scoringSummary?.rankings || []).map((ranking) => ({
+        ...ranking,
+        interviewId: interview._id,
+        interviewTitle: interview.title,
+        jobTitle: interview.job?.title || "Job"
+      })))
+      .sort((a, b) => b.score - a.score);
+  }, [interviews]);
+  const rankingBands = useMemo(() => {
+    return [
+      { id: "priority", label: "Priority", count: allRankings.filter((item) => item.score >= 85).length, className: "bg-emerald-500" },
+      { id: "strong", label: "Strong review", count: allRankings.filter((item) => item.score >= 70 && item.score < 85).length, className: "bg-blue-500" },
+      { id: "discussion", label: "Needs discussion", count: allRankings.filter((item) => item.score >= 55 && item.score < 70).length, className: "bg-amber-500" },
+      { id: "low", label: "Low fit", count: allRankings.filter((item) => item.score < 55).length, className: "bg-rose-500" }
+    ];
+  }, [allRankings]);
   const activeInterviews = useMemo(
     () => interviews.filter((interview) => interview.status === "active").length,
     [interviews]
@@ -306,7 +368,7 @@ export default function AIInterviewsPage() {
 
     setSaving(true);
     try {
-      await aiInterviewService.create({
+      const result = await aiInterviewService.create({
         title: form.title || `${selectedJob?.title || "Role"} AI Interview`,
         jobId: form.jobId,
         candidateIds: selectedCandidateIds,
@@ -319,6 +381,14 @@ export default function AIInterviewsPage() {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       });
 
+      setLastScheduledInterview({
+        id: result.aiInterview._id,
+        title: result.aiInterview.title,
+        candidateCount: result.sessions?.length || selectedCandidateIds.length,
+        sendAt: result.aiInterview.schedule?.sendAt || new Date(form.sendAt).toISOString(),
+        expiresAt: result.aiInterview.schedule?.expiresAt || new Date(form.expiresAt).toISOString()
+      });
+      setActiveTab("interviews");
       toast.success("AI interview scheduled");
       setSelectedCandidateIds([]);
       setSelectedQuestionIds([]);
@@ -415,7 +485,147 @@ export default function AIInterviewsPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="create" className="space-y-6">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 shadow-xl shadow-slate-200/70 dark:shadow-none">
+            <div className="flex flex-col gap-4 border-b border-white/10 p-5 text-white lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
+                  <Trophy className="h-3.5 w-3.5" />
+                  All-candidate leaderboard
+                </div>
+                <h2 className="mt-3 text-xl font-semibold">Ranked candidates across AI interviews</h2>
+                <p className="mt-1 max-w-2xl text-sm text-slate-300">
+                  This board ranks every scored candidate from every AI interview batch, highest Llama score first.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-right sm:min-w-[320px]">
+                <div className="rounded-xl border border-white/10 bg-white/10 p-3">
+                  <div className="text-xs text-slate-300">Scored</div>
+                  <div className="text-2xl font-semibold">{allRankings.length}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/10 p-3">
+                  <div className="text-xs text-slate-300">Average</div>
+                  <div className="text-2xl font-semibold">{averageAIScore ?? "-"}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/10 p-3">
+                  <div className="text-xs text-slate-300">Priority</div>
+                  <div className="text-2xl font-semibold">{rankingBands[0]?.count || 0}</div>
+                </div>
+              </div>
+            </div>
+            <div className="p-5">
+              {allRankings.length ? (
+                <div className="max-h-[620px] space-y-2 overflow-y-auto pr-1">
+                  {allRankings.map((candidate, index) => {
+                    const band = scoreBand(candidate.score);
+                    return (
+                      <Link
+                        key={`${candidate.interviewId}-${candidate.sessionId}`}
+                        href={`/ai-interviews/${candidate.interviewId}`}
+                        className="group grid gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-3 transition-colors hover:bg-white/[0.1] md:grid-cols-[54px_minmax(0,1fr)_130px_150px_32px] md:items-center"
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-sm font-semibold text-slate-950">
+                          #{index + 1}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-white">{candidate.candidateName}</div>
+                          <div className="truncate text-xs text-slate-400">{candidate.jobTitle} - {candidate.interviewTitle}</div>
+                        </div>
+                        <div>
+                          <div className="mb-1 flex items-center justify-between text-xs">
+                            <span className="text-slate-400">Score</span>
+                            <span className="font-semibold text-white">{candidate.score}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/10">
+                            <div className={`h-2 rounded-full ${band.barClassName}`} style={{ width: `${candidate.score}%` }} />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 md:justify-end">
+                          <Badge variant="outline" className={band.className}>{band.label}</Badge>
+                          <Badge variant="outline" className={recommendationColor(candidate.recommendation)}>
+                            {formatRecommendation(candidate.recommendation)}
+                          </Badge>
+                        </div>
+                        <ArrowUpRight className="h-4 w-4 text-slate-500 transition-colors group-hover:text-white" />
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 text-sm text-slate-300">
+                  Rankings will appear here after candidates complete AI interviews and Llama scoring finishes.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/70 bg-white/90 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-950 dark:text-white">Score distribution</h2>
+                <p className="mt-1 text-xs text-muted-foreground">All scored candidate sessions</p>
+              </div>
+              <Medal className="h-5 w-5 text-violet-600" />
+            </div>
+            <div className="mt-5 space-y-4">
+              {rankingBands.map((band) => {
+                const percentage = allRankings.length ? Math.round((band.count / allRankings.length) * 100) : 0;
+                return (
+                  <div key={band.id}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700 dark:text-slate-200">{band.label}</span>
+                      <span className="text-muted-foreground">{band.count}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800">
+                      <div className={`h-2 rounded-full ${band.className}`} style={{ width: `${percentage}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {lastScheduledInterview && (
+          <Card className="border-emerald-200 bg-emerald-50/90 shadow-lg shadow-emerald-100/70 dark:border-emerald-900 dark:bg-emerald-950/30 dark:shadow-none">
+            <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="font-semibold text-emerald-950 dark:text-emerald-100">AI interview scheduled</div>
+                  <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200">
+                    {lastScheduledInterview.title} is queued for {lastScheduledInterview.candidateCount} candidate{lastScheduledInterview.candidateCount === 1 ? "" : "s"}.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-emerald-800 dark:text-emerald-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-1 dark:bg-white/10">
+                      <Clock className="h-3.5 w-3.5" />
+                      Sends {formatDate(lastScheduledInterview.sendAt)}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-1 dark:bg-white/10">
+                      <TimerReset className="h-3.5 w-3.5" />
+                      Deadline {formatDate(lastScheduledInterview.expiresAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button asChild className="bg-emerald-700 text-white hover:bg-emerald-800">
+                  <Link href={`/ai-interviews/${lastScheduledInterview.id}`}>
+                    Open interview
+                    <ArrowUpRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button type="button" variant="ghost" className="text-emerald-900 hover:text-emerald-950 dark:text-emerald-100" onClick={() => setLastScheduledInterview(null)}>
+                  Dismiss
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl border bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:w-[420px]">
             <TabsTrigger value="create" className="rounded-lg py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-950">
               <Plus className="mr-2 h-4 w-4" />
@@ -796,6 +1006,9 @@ export default function AIInterviewsPage() {
                   const scoringSummary = interview.scoringSummary;
                   const rankings = scoringSummary?.rankings || [];
                   const hasScores = Number(scoringSummary?.scoredCount || 0) > 0;
+                  const topCandidate = rankings[0];
+                  const priorityCount = rankings.filter((candidate) => candidate.score >= 85).length;
+                  const scoredCount = Number(scoringSummary?.scoredCount || 0);
                   return (
                     <Link key={interview._id} href={`/ai-interviews/${interview._id}`}>
                       <Card className="h-full overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:bg-slate-900/90 dark:shadow-none">
@@ -823,48 +1036,67 @@ export default function AIInterviewsPage() {
                               <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{completed}</div>
                             </div>
                           </div>
-                          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+                          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/50">
                             {hasScores ? (
-                              <div className="space-y-3">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                      <Trophy className="h-3.5 w-3.5 text-violet-600" />
-                                      AI ranking
+                              <div>
+                                <div className="bg-slate-950 p-4 text-white">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-emerald-200">
+                                        <Trophy className="h-3.5 w-3.5" />
+                                        Ranking snapshot
+                                      </div>
+                                      <div className="mt-1 max-w-[320px] truncate text-sm font-semibold">
+                                        Top: {topCandidate?.candidateName || "Candidate"}
+                                      </div>
+                                      <div className="mt-1 text-xs text-slate-400">
+                                        {scoredCount} scored - {priorityCount} priority
+                                      </div>
                                     </div>
-                                    <div className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
-                                      Top: {scoringSummary?.topCandidate?.candidateName || "Candidate"}
+                                    <div className="text-right">
+                                      <div className="text-3xl font-semibold">{scoringSummary?.averageScore ?? "-"}</div>
+                                      <div className="text-xs text-slate-400">avg score</div>
                                     </div>
-                                  </div>
-                                  <div className="text-right">
-                                    <div className="text-2xl font-bold text-slate-950 dark:text-white">{scoringSummary?.averageScore ?? "-"}</div>
-                                    <div className="text-xs text-muted-foreground">avg score</div>
                                   </div>
                                 </div>
-                                <div className="space-y-2">
+                                <div className="space-y-2 p-3">
                                   {rankings.slice(0, 3).map((candidate) => (
-                                    <div key={candidate.sessionId} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs dark:bg-slate-900">
-                                      <div className="flex min-w-0 items-center gap-2">
-                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-950 text-[11px] font-semibold text-white">
+                                    <div key={candidate.sessionId} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="flex min-w-0 items-center gap-2">
+                                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-[11px] font-semibold text-white">
                                           {candidate.rank}
-                                        </span>
-                                        <span className="truncate font-medium text-slate-800 dark:text-slate-100">{candidate.candidateName}</span>
+                                          </span>
+                                          <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{candidate.candidateName}</span>
+                                        </div>
+                                        <div className="flex shrink-0 items-center gap-2">
+                                          <Badge variant="outline" className={recommendationColor(candidate.recommendation)}>
+                                            {formatRecommendation(candidate.recommendation)}
+                                          </Badge>
+                                          <span className="flex min-w-8 items-center justify-end gap-1 font-semibold text-slate-950 dark:text-white">
+                                            <Star className="h-3.5 w-3.5 text-amber-500" />
+                                            {candidate.score}
+                                          </span>
+                                        </div>
                                       </div>
-                                      <div className="flex shrink-0 items-center gap-2">
-                                        <Badge variant="outline" className={recommendationColor(candidate.recommendation)}>
-                                          {formatRecommendation(candidate.recommendation)}
+                                      <div className="mt-2 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800">
+                                        <div className={`h-1.5 rounded-full ${scoreBand(candidate.score).barClassName}`} style={{ width: `${candidate.score}%` }} />
+                                      </div>
+                                      <div className="mt-2 flex justify-end">
+                                        <Badge variant="outline" className={scoreBand(candidate.score).className}>
+                                          {scoreBand(candidate.score).label}
                                         </Badge>
-                                        <span className="flex items-center gap-1 font-semibold text-slate-950 dark:text-white">
-                                          <Star className="h-3.5 w-3.5 text-amber-500" />
-                                          {candidate.score}
-                                        </span>
                                       </div>
                                     </div>
                                   ))}
+                                  <div className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                                    <span>Open full ranking, transcript, and score evidence</span>
+                                    <ArrowUpRight className="h-3.5 w-3.5" />
+                                  </div>
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
                                 <Medal className="h-4 w-4 text-slate-400" />
                                 Ranking appears after candidates complete and Llama scoring finishes.
                               </div>
