@@ -125,8 +125,8 @@ class AIInterviewVoiceLiveService {
         turn_detection: {
           type: 'azure_semantic_vad',
           silence_duration_ms: 700,
-          create_response: true,
-          interrupt_response: true
+          create_response: false,
+          interrupt_response: false
         },
         input_audio_noise_reduction: { type: 'azure_deep_noise_suppression' },
         input_audio_echo_cancellation: { type: 'server_echo_cancellation' },
@@ -141,16 +141,28 @@ class AIInterviewVoiceLiveService {
     const prompt = getLatestInterviewerPrompt(session);
     if (!prompt) return null;
 
+    return this.buildSpeakText(prompt, [
+      'Speak the following interviewer message naturally.',
+      'Do not add a new question or extra assessment content.',
+      'End by reminding the candidate they may answer verbally or ask for clarification.'
+    ]);
+  }
+
+  buildSpeakText(text, instructionLines = []) {
+    const content = String(text || '').trim();
+    if (!content) return null;
+
     return {
       type: 'response.create',
       response: {
         modalities: ['audio'],
         instructions: [
-          'Speak the following interviewer message naturally.',
-          'Do not add a new question or extra assessment content.',
-          'End by reminding the candidate they may answer verbally or ask for clarification.',
+          ...(instructionLines.length ? instructionLines : [
+            'Speak the following interviewer message naturally.',
+            'Do not add new assessment content.'
+          ]),
           '',
-          prompt
+          content
         ].join('\n')
       }
     };
@@ -273,6 +285,17 @@ class AIInterviewVoiceLiveService {
             if (message.type === 'voice.say_current_question') {
               session = await findPublicSession(token);
               const speakEvent = session ? this.buildSpeakCurrentQuestion(session) : null;
+              if (speakEvent && azureWs?.readyState === WebSocket.OPEN) {
+                this.sendJson(azureWs, speakEvent);
+              }
+              return;
+            }
+
+            if (message.type === 'voice.speak_text') {
+              const speakEvent = this.buildSpeakText(message.text || message.content, [
+                'Speak the following interviewer message naturally and concisely.',
+                'Do not add a new question, score the candidate, or reveal rubrics.'
+              ]);
               if (speakEvent && azureWs?.readyState === WebSocket.OPEN) {
                 this.sendJson(azureWs, speakEvent);
               }

@@ -119,6 +119,16 @@ function isAssistantTranscriptDeltaEvent(type?: string) {
   ].includes(type || "");
 }
 
+type VoiceMicState = "off" | "listening" | "paused" | "processing";
+
+function getLatestAiMessageContent(data: PublicAIInterviewState) {
+  const currentIndex = data.session.currentQuestionIndex;
+  return [...(data.session.messages || [])]
+    .reverse()
+    .find((chat) => chat.role === "ai" && chat.questionIndex === currentIndex)
+    ?.content?.trim() || "";
+}
+
 export default function PublicAIInterviewPage() {
   const params = useParams();
   const token = params.token as string;
@@ -133,6 +143,7 @@ export default function PublicAIInterviewPage() {
   const [timeoutRunning, setTimeoutRunning] = useState(false);
   const [voiceState, setVoiceState] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [voiceStatus, setVoiceStatus] = useState("Voice mode is off");
+  const [voiceMicState, setVoiceMicState] = useState<VoiceMicState>("off");
   const [lastVoiceTranscript, setLastVoiceTranscript] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -142,6 +153,9 @@ export default function PublicAIInterviewPage() {
   const voiceDataChannelRef = useRef<RTCDataChannel | null>(null);
   const assistantTranscriptBufferRef = useRef<Record<string, string>>({});
   const recordedTranscriptKeysRef = useRef<Set<string>>(new Set());
+  const voiceMicWantedRef = useRef(false);
+  const voiceAssistantSpeakingRef = useRef(false);
+  const voiceProcessingRef = useRef(false);
   const sessionRef = useRef<PublicAIInterviewState["session"] | null>(null);
 
   const session = state?.session;
@@ -181,35 +195,109 @@ export default function PublicAIInterviewPage() {
     }
 
     assistantTranscriptBufferRef.current = {};
+    voiceMicWantedRef.current = false;
+    voiceAssistantSpeakingRef.current = false;
+    voiceProcessingRef.current = false;
     setVoiceState("idle");
+    setVoiceMicState("off");
     setVoiceStatus(status);
   }, []);
 
-  const recordVoiceTranscript = useCallback(async (
-    role: "candidate" | "ai",
-    text: string,
-    messageType?: "clarification" | "acknowledgement" | "system"
-  ) => {
+  const setVoiceInputEnabled = useCallback((enabled: boolean) => {
+    voiceStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+  }, []);
+
+  const resumeCandidateMic = useCallback((status = "Listening. Speak naturally when you are ready.") => {
+    voiceProcessingRef.current = false;
+    voiceAssistantSpeakingRef.current = false;
+
+    if (voiceWsRef.current?.readyState !== WebSocket.OPEN || !voiceMicWantedRef.current) {
+      setVoiceInputEnabled(false);
+      setVoiceMicState("off");
+      setVoiceStatus("Mic is off");
+      return;
+    }
+
+    setVoiceInputEnabled(true);
+    setVoiceMicState("listening");
+    setVoiceStatus(status);
+  }, [setVoiceInputEnabled]);
+
+  const pauseCandidateMic = useCallback((state: Exclude<VoiceMicState, "listening">, status: string) => {
+    setVoiceInputEnabled(false);
+    setVoiceMicState(state);
+    setVoiceStatus(status);
+  }, [setVoiceInputEnabled]);
+
+  const sendVoiceCommand = useCallback((payload: Record<string, unknown>) => {
+    const ws = voiceWsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+      return true;
+    }
+    return false;
+  }, []);
+
+  const speakVoiceText = useCallback((text: string) => {
+    const cleaned = text.trim();
+    if (!cleaned) return false;
+
+    voiceAssistantSpeakingRef.current = true;
+    pauseCandidateMic("paused", "Interviewer is speaking. Mic is paused.");
+    return sendVoiceCommand({ type: "voice.speak_text", text: cleaned });
+  }, [pauseCandidateMic, sendVoiceCommand]);
+
+  const toggleCandidateMic = useCallback(() => {
+    if (voiceState !== "connected") return;
+    const next = !voiceMicWantedRef.current;
+    voiceMicWantedRef.current = next;
+
+    if (!next) {
+      pauseCandidateMic("off", "Mic is off");
+      return;
+    }
+
+    if (voiceAssistantSpeakingRef.current) {
+      pauseCandidateMic("paused", "Interviewer is speaking. Mic will reopen after the reply.");
+      return;
+    }
+
+    if (voiceProcessingRef.current) {
+      pauseCandidateMic("processing", "Processing what you said...");
+      return;
+    }
+
+    resumeCandidateMic();
+  }, [pauseCandidateMic, resumeCandidateMic, voiceState]);
+
+  const handleCandidateVoiceTranscript = useCallback(async (text: string) => {
     const cleaned = text.trim();
     const activeSession = sessionRef.current;
     if (!cleaned || !activeSession || activeSession.status !== "in_progress") return;
 
-    const key = `${role}:${activeSession.currentQuestionIndex}:${cleaned}`;
+    const key = `candidate:${activeSession.currentQuestionIndex}:${cleaned}`;
     if (recordedTranscriptKeysRef.current.has(key)) return;
     recordedTranscriptKeysRef.current.add(key);
     setLastVoiceTranscript(cleaned);
 
+    voiceProcessingRef.current = true;
+    pauseCandidateMic("processing", "Processing what you said...");
+
     try {
-      const data = await aiInterviewService.recordPublicVoiceTranscript(token, {
-        role,
-        message: cleaned,
-        messageType
-      });
+      const data = await aiInterviewService.sendPublicMessage(token, cleaned);
       setState(data);
+
+      const reply = getLatestAiMessageContent(data);
+      if (!reply || !speakVoiceText(reply)) {
+        resumeCandidateMic();
+      }
     } catch (error: any) {
-      toast.error(error.message || "Failed to save voice transcript");
+      toast.error(error.message || "Failed to send voice response");
+      resumeCandidateMic("I could not process that. Please try speaking again.");
     }
-  }, [token]);
+  }, [pauseCandidateMic, resumeCandidateMic, speakVoiceText, token]);
 
   const handleVoiceEvent = useCallback((event: any) => {
     const type = event?.type;
@@ -227,14 +315,44 @@ export default function PublicAIInterviewPage() {
     }
 
     if (type === "session.updated") {
-      setVoiceStatus("Listening. Speak naturally when you are ready.");
+      if (!voiceAssistantSpeakingRef.current && !voiceProcessingRef.current) {
+        resumeCandidateMic();
+      }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_started") {
+      if (!voiceAssistantSpeakingRef.current) {
+        setVoiceStatus("Listening...");
+      }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_stopped") {
+      voiceProcessingRef.current = true;
+      pauseCandidateMic("processing", "Processing what you said...");
+      return;
+    }
+
+    if (type === "response.created" || type === "response.audio.delta") {
+      voiceAssistantSpeakingRef.current = true;
+      pauseCandidateMic("paused", "Interviewer is speaking. Mic is paused.");
+      return;
+    }
+
+    if (type === "response.audio.done" || type === "response.done") {
+      window.setTimeout(() => {
+        resumeCandidateMic();
+      }, 600);
       return;
     }
 
     if (isCandidateTranscriptEvent(type)) {
       const transcript = getVoiceTranscriptText(event);
       if (transcript) {
-        void recordVoiceTranscript("candidate", transcript);
+        void handleCandidateVoiceTranscript(transcript);
+      } else {
+        resumeCandidateMic("I did not catch that. Please try again.");
       }
       return;
     }
@@ -250,20 +368,19 @@ export default function PublicAIInterviewPage() {
 
     if (isAssistantTranscriptDoneEvent(type)) {
       const id = event?.response_id || event?.item_id || "active";
-      const transcript = getVoiceTranscriptText(event) || assistantTranscriptBufferRef.current[id] || "";
       delete assistantTranscriptBufferRef.current[id];
-      if (transcript) {
-        void recordVoiceTranscript("ai", transcript, "acknowledgement");
-      }
     }
-  }, [recordVoiceTranscript]);
+  }, [handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
   }, [cleanupVoice]);
 
-  const connectVoice = useCallback(async () => {
-    if (!voiceEnabled) {
+  const connectVoice = useCallback(async (stateOverride?: PublicAIInterviewState) => {
+    const activeSession = stateOverride?.session || session;
+    const activeVoiceEnabled = Boolean(stateOverride?.voice?.enabled ?? voiceEnabled);
+
+    if (!activeVoiceEnabled) {
       toast.error("Voice Live is not configured for this interview yet");
       return;
     }
@@ -273,7 +390,7 @@ export default function PublicAIInterviewPage() {
       return;
     }
 
-    if (session?.status !== "in_progress") {
+    if (activeSession?.status !== "in_progress") {
       toast.error("Start the interview before enabling voice mode");
       return;
     }
@@ -327,6 +444,9 @@ export default function PublicAIInterviewPage() {
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       voiceStreamRef.current = stream;
+      voiceMicWantedRef.current = true;
+      setVoiceInputEnabled(false);
+      setVoiceMicState("paused");
       stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
 
       peerConnection.ontrack = (event) => {
@@ -341,7 +461,7 @@ export default function PublicAIInterviewPage() {
         const payload = parseVoiceMessage(event.data);
         if (payload) handleVoiceEvent(payload);
       };
-      dataChannel.onopen = () => setVoiceStatus("Listening. Speak naturally when you are ready.");
+      dataChannel.onopen = () => setVoiceStatus("Connected. The interviewer will speak first, then your mic will open.");
 
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
@@ -371,7 +491,8 @@ export default function PublicAIInterviewPage() {
       const sdpAnswer = await answerPromise;
       await peerConnection.setRemoteDescription({ type: "answer", sdp: sdpAnswer });
       setVoiceState("connected");
-      setVoiceStatus("Voice mode is connected");
+      voiceAssistantSpeakingRef.current = true;
+      pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
 
       window.setTimeout(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -383,7 +504,7 @@ export default function PublicAIInterviewPage() {
       setVoiceState("error");
       toast.error(error.message || "Unable to start voice mode");
     }
-  }, [cleanupVoice, handleVoiceEvent, session?.status, token, voiceEnabled]);
+  }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, session, setVoiceInputEnabled, token, voiceEnabled]);
 
   useEffect(() => {
     load();
@@ -435,10 +556,12 @@ export default function PublicAIInterviewPage() {
     ws.send(JSON.stringify({ type: "voice.refresh_session" }));
     window.setTimeout(() => {
       if (ws.readyState === WebSocket.OPEN) {
+        voiceAssistantSpeakingRef.current = true;
+        pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
         ws.send(JSON.stringify({ type: "voice.say_current_question" }));
       }
     }, 500);
-  }, [currentIndex, session?.status, voiceState]);
+  }, [currentIndex, pauseCandidateMic, session?.status, voiceState]);
 
   const answeredIndexes = useMemo(() => {
     return new Set((session?.answers || []).filter((answer) => answer.status !== "draft").map((answer) => answer.questionIndex));
@@ -449,6 +572,9 @@ export default function PublicAIInterviewPage() {
     try {
       const data = await aiInterviewService.startPublic(token);
       setState(data);
+      if (data.voice?.enabled) {
+        void connectVoice(data);
+      }
     } catch (error: any) {
       toast.error(error.message || "Failed to start interview");
     } finally {
@@ -632,27 +758,53 @@ export default function PublicAIInterviewPage() {
                 </Badge>
               </div>
               <p className="text-xs leading-5 text-slate-600">{voiceStatus}</p>
+              {voiceState === "connected" && (
+                <div className="mt-3 rounded-xl border bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                  <span className="font-medium text-slate-900">Mic:</span>{" "}
+                  {voiceMicState === "listening"
+                    ? "Open. You can speak now."
+                    : voiceMicState === "paused"
+                      ? "Paused while the interviewer speaks."
+                      : voiceMicState === "processing"
+                        ? "Paused while your response is processed."
+                        : "Off."}
+                </div>
+              )}
               {lastVoiceTranscript && (
                 <div className="mt-3 rounded-xl border bg-slate-50 p-3 text-xs leading-5 text-slate-600">
                   <span className="font-medium text-slate-900">Last transcript:</span> {lastVoiceTranscript}
                 </div>
               )}
-              <Button
-                type="button"
-                variant={voiceState === "connected" ? "outline" : "default"}
-                className={`mt-4 w-full ${voiceState === "connected" ? "" : "bg-slate-950 text-white hover:bg-slate-800"}`}
-                disabled={!voiceEnabled || voiceState === "connecting"}
-                onClick={voiceState === "connected" ? disconnectVoice : connectVoice}
-              >
-                {voiceState === "connecting" ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : voiceState === "connected" ? (
-                  <MicOff className="mr-2 h-4 w-4" />
-                ) : (
-                  <Mic className="mr-2 h-4 w-4" />
-                )}
-                {voiceState === "connected" ? "End voice mode" : "Start voice mode"}
-              </Button>
+              {voiceState === "connected" ? (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    variant={voiceMicState === "listening" ? "outline" : "default"}
+                    disabled={voiceMicState === "paused" || voiceMicState === "processing"}
+                    onClick={toggleCandidateMic}
+                  >
+                    {voiceMicState === "listening" ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
+                    {voiceMicState === "listening" ? "Mute mic" : "Turn mic on"}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={disconnectVoice}>
+                    End voice
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  className="mt-4 w-full bg-slate-950 text-white hover:bg-slate-800"
+                  disabled={!voiceEnabled || voiceState === "connecting"}
+                  onClick={() => connectVoice()}
+                >
+                  {voiceState === "connecting" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mic className="mr-2 h-4 w-4" />
+                  )}
+                  Start voice mode
+                </Button>
+              )}
             </div>
           )}
         </aside>
@@ -710,8 +862,8 @@ export default function PublicAIInterviewPage() {
                   <span>{state.job?.title || "Role interview"}</span>
                 </div>
                 <Button className="w-full bg-slate-950 text-white hover:bg-slate-800 md:w-auto" onClick={start} disabled={starting}>
-                  {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                  Start Interview
+                  {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : voiceEnabled ? <Mic className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                  {voiceEnabled ? "Start Interview & Turn Mic On" : "Start Interview"}
                 </Button>
               </div>
             </div>
@@ -729,18 +881,26 @@ export default function PublicAIInterviewPage() {
                       type="button"
                       size="sm"
                       variant="secondary"
-                      disabled={!voiceEnabled || voiceState === "connecting"}
-                      onClick={voiceState === "connected" ? disconnectVoice : connectVoice}
+                      disabled={!voiceEnabled || voiceState === "connecting" || (voiceState === "connected" && (voiceMicState === "paused" || voiceMicState === "processing"))}
+                      onClick={voiceState === "connected" ? toggleCandidateMic : () => connectVoice()}
                       className="bg-white text-slate-950 hover:bg-slate-100"
                     >
                       {voiceState === "connecting" ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : voiceState === "connected" ? (
+                      ) : voiceState === "connected" && voiceMicState === "listening" ? (
                         <MicOff className="mr-2 h-4 w-4" />
                       ) : (
                         <Mic className="mr-2 h-4 w-4" />
                       )}
-                      {voiceState === "connected" ? "End voice" : "Voice"}
+                      {voiceState === "connected"
+                        ? voiceMicState === "listening"
+                          ? "Mute mic"
+                          : voiceMicState === "paused"
+                            ? "AI speaking"
+                            : voiceMicState === "processing"
+                              ? "Processing"
+                              : "Turn mic on"
+                        : "Voice"}
                     </Button>
                   </div>
                 </div>
