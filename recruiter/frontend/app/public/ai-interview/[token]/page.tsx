@@ -24,7 +24,8 @@ import {
   TimerReset,
   UserRound,
   Volume2,
-  Workflow
+  Workflow,
+  X
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -300,7 +301,7 @@ export default function PublicAIInterviewPage() {
     : voiceMicState === "processing"
       ? "Processing"
       : assistantSpeech.active
-        ? (voiceMicWantedRef.current ? "Will listen next" : "Unmute after AI")
+        ? "AI speaking"
         : "Speak now";
   const layoutStyle = {
     "--interview-rail-width": sidebarCollapsed ? "76px" : `${sidebarWidth}px`
@@ -444,7 +445,7 @@ export default function PublicAIInterviewPage() {
     if (voiceAssistantSpeakingRef.current || Boolean(assistantSpeechTextRef.current)) {
       setVoiceInputEnabled(false);
       setVoiceMicState("paused");
-      setVoiceStatus("Interviewer is speaking. Mic will reopen after the reply.");
+      setVoiceStatus("Interviewer is speaking. Mic is locked.");
       return;
     }
 
@@ -452,6 +453,16 @@ export default function PublicAIInterviewPage() {
     startVoiceTurn("listening");
     setVoiceInputEnabled(true);
     setVoiceMicState("listening");
+    setVoiceStatus(status);
+  }, [setVoiceInputEnabled, startVoiceTurn]);
+
+  const waitForCandidateMicPress = useCallback((status = "Tap the mic when you are ready to speak.") => {
+    voiceProcessingRef.current = false;
+    voiceAssistantSpeakingRef.current = false;
+    voiceMicWantedRef.current = false;
+    setVoiceInputEnabled(false);
+    setVoiceMicState("off");
+    startVoiceTurn("off");
     setVoiceStatus(status);
   }, [setVoiceInputEnabled, startVoiceTurn]);
 
@@ -650,7 +661,7 @@ export default function PublicAIInterviewPage() {
       finishAssistantSpeechVisual();
       if (options.resumeAfter !== false) {
         voiceAssistantSpeakingRef.current = false;
-        resumeCandidateMic();
+        waitForCandidateMicPress();
       } else {
         setVoiceStatus("Preparing next interviewer message...");
       }
@@ -659,12 +670,12 @@ export default function PublicAIInterviewPage() {
       if (speechRequestIdRef.current === requestId) {
         finishAssistantSpeechVisual();
         voiceAssistantSpeakingRef.current = false;
-        resumeCandidateMic("Interviewer voice could not play. You can continue by text or try voice again.");
+        waitForCandidateMicPress("Interviewer voice could not play. Tap the mic or type to continue.");
         toast.error(error?.message || "Unable to play interviewer voice");
       }
       return false;
     }
-  }, [finishAssistantSpeechVisual, pauseCandidateMic, recordAssistantVoiceTranscript, resumeCandidateMic, startAssistantSpeechVisual, token]);
+  }, [finishAssistantSpeechVisual, pauseCandidateMic, recordAssistantVoiceTranscript, startAssistantSpeechVisual, token, waitForCandidateMicPress]);
 
   const speakPendingAiMessages = useCallback(async (data: PublicAIInterviewState | null) => {
     if (!data || data.session.status !== "in_progress") return false;
@@ -705,7 +716,7 @@ export default function PublicAIInterviewPage() {
 
       if (spokeAny) {
         voiceAssistantSpeakingRef.current = false;
-        resumeCandidateMic();
+        waitForCandidateMicPress();
       }
 
       if (!spokeAny) {
@@ -716,7 +727,7 @@ export default function PublicAIInterviewPage() {
     } finally {
       speechQueueRunningRef.current = false;
     }
-  }, [speakVoiceText]);
+  }, [speakVoiceText, waitForCandidateMicPress]);
 
   const toggleCandidateMic = useCallback(() => {
     if (voiceState !== "connected") return;
@@ -728,8 +739,9 @@ export default function PublicAIInterviewPage() {
       return;
     }
 
-    if (voiceAssistantSpeakingRef.current) {
-      pauseCandidateMic("paused", "Interviewer is speaking. Mic will reopen after the reply.");
+    if (voiceAssistantSpeakingRef.current || assistantSpeech.active) {
+      voiceMicWantedRef.current = false;
+      pauseCandidateMic("paused", "Interviewer is speaking. Mic is locked.");
       return;
     }
 
@@ -739,7 +751,7 @@ export default function PublicAIInterviewPage() {
     }
 
     resumeCandidateMic();
-  }, [pauseCandidateMic, resumeCandidateMic, voiceState]);
+  }, [assistantSpeech.active, pauseCandidateMic, resumeCandidateMic, voiceState]);
 
   const handleCandidateVoiceTranscript = useCallback(async (text: string) => {
     const cleaned = normalizeTranscriptText(text);
@@ -764,14 +776,14 @@ export default function PublicAIInterviewPage() {
 
       const spoke = await speakPendingAiMessages(data);
       if (!spoke) {
-        resumeCandidateMic();
+        waitForCandidateMicPress();
       }
     } catch (error: any) {
       recordedTranscriptKeysRef.current.delete(key);
       toast.error(error.message || "Failed to send voice response");
-      resumeCandidateMic("I could not process that. Please try speaking again.");
+      waitForCandidateMicPress("I could not process that. Tap the mic to try again.");
     }
-  }, [applyPublicState, isCandidateSpeechTurnActive, pauseCandidateMic, resumeCandidateMic, speakPendingAiMessages, token]);
+  }, [applyPublicState, isCandidateSpeechTurnActive, pauseCandidateMic, speakPendingAiMessages, token, waitForCandidateMicPress]);
 
   const handleVoiceEvent = useCallback((event: any) => {
     const type = event?.type;
@@ -832,7 +844,7 @@ export default function PublicAIInterviewPage() {
       voiceProcessingRef.current = false;
       candidateSpeechTurnEpochRef.current = 0;
       setVoiceStatus("Azure Speech could not transcribe that. Please try again.");
-      resumeCandidateMic("I did not catch that. Please try again.");
+      waitForCandidateMicPress("I did not catch that. Tap the mic to try again.");
       return;
     }
 
@@ -847,13 +859,13 @@ export default function PublicAIInterviewPage() {
       if (transcript) {
         void handleCandidateVoiceTranscript(transcript);
       } else {
-        resumeCandidateMic("I did not catch that. Please try again.");
+        waitForCandidateMicPress("I did not catch that. Tap the mic to try again.");
       }
       return;
     }
 
     if (type.startsWith("response.")) return;
-  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, isCandidateSpeechTurnActive, isCurrentCandidateSpeechEvent, pauseCandidateMic, resumeCandidateMic]);
+  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, isCandidateSpeechTurnActive, isCurrentCandidateSpeechEvent, pauseCandidateMic, waitForCandidateMicPress]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -927,7 +939,7 @@ export default function PublicAIInterviewPage() {
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       voiceStreamRef.current = stream;
-      voiceMicWantedRef.current = true;
+      voiceMicWantedRef.current = false;
       setVoiceInputEnabled(false);
       setVoiceMicState("paused");
       stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
@@ -942,7 +954,7 @@ export default function PublicAIInterviewPage() {
         const payload = parseVoiceMessage(event.data);
         if (payload) handleVoiceEvent(payload);
       };
-      dataChannel.onopen = () => setVoiceStatus("Connected. The interviewer will speak first, then your mic will open.");
+      dataChannel.onopen = () => setVoiceStatus("Connected. The interviewer will speak first. Tap the mic when you are ready to answer.");
 
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
@@ -973,12 +985,12 @@ export default function PublicAIInterviewPage() {
       await peerConnection.setRemoteDescription({ type: "answer", sdp: sdpAnswer });
       setVoiceState("connected");
       voiceAssistantSpeakingRef.current = true;
-      pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
+      pauseCandidateMic("paused", "Interviewer is getting ready. Mic is locked.");
 
       window.setTimeout(() => {
         const activeState = stateOverride || stateRef.current;
         void speakPendingAiMessages(activeState).then((spoke) => {
-          if (!spoke) resumeCandidateMic();
+          if (!spoke) waitForCandidateMicPress();
         });
       }, 500);
     } catch (error: any) {
@@ -986,7 +998,7 @@ export default function PublicAIInterviewPage() {
       setVoiceState("error");
       toast.error(error.message || "Unable to start voice mode");
     }
-  }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, resumeCandidateMic, session, setVoiceInputEnabled, speakPendingAiMessages, token, voiceEnabled]);
+  }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, session, setVoiceInputEnabled, speakPendingAiMessages, token, voiceEnabled, waitForCandidateMicPress]);
 
   const startBrowserSpeechRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1162,12 +1174,12 @@ export default function PublicAIInterviewPage() {
     window.setTimeout(() => {
       if (ws.readyState !== WebSocket.OPEN) return;
       voiceAssistantSpeakingRef.current = true;
-      pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
+      pauseCandidateMic("paused", "Interviewer is getting ready. Mic is locked.");
       void speakPendingAiMessages(stateRef.current).then((spoke) => {
-        if (!spoke) resumeCandidateMic();
+        if (!spoke) waitForCandidateMicPress();
       });
     }, 500);
-  }, [currentIndex, pauseCandidateMic, resumeCandidateMic, session?.status, speakPendingAiMessages, voiceState]);
+  }, [currentIndex, pauseCandidateMic, session?.status, speakPendingAiMessages, voiceState, waitForCandidateMicPress]);
 
   const answeredIndexes = useMemo(() => {
     return new Set((session?.answers || []).filter((answer) => answer.status !== "draft").map((answer) => answer.questionIndex));
@@ -1275,12 +1287,12 @@ export default function PublicAIInterviewPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70">
+    <main className="min-h-[100dvh] bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.10),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.10),transparent_30%),linear-gradient(135deg,#f8fafc_0%,#eef6ff_54%,#f6f7fb_100%)]">
       <audio ref={ttsAudioRef} preload="auto" className="hidden" />
       <div
         ref={layoutRef}
         style={layoutStyle}
-        className="mx-auto grid max-w-screen-2xl gap-4 p-3 sm:p-4 md:p-6 xl:grid-cols-[var(--interview-rail-width)_12px_minmax(0,1fr)]"
+        className="mx-auto grid max-w-[1800px] gap-3 p-2 sm:gap-4 sm:p-4 lg:p-6 xl:grid-cols-[var(--interview-rail-width)_12px_minmax(0,1fr)]"
       >
         <aside className={`space-y-4 xl:sticky xl:top-6 xl:max-h-[calc(100vh-48px)] xl:self-start xl:overflow-y-auto xl:pr-1 ${sidebarCollapsed ? "hidden xl:block" : ""}`}>
           {sidebarCollapsed ? (
@@ -1468,7 +1480,7 @@ export default function PublicAIInterviewPage() {
                   <Button
                     type="button"
                     variant={voiceMicState === "listening" ? "outline" : "default"}
-                    disabled={voiceMicState === "processing"}
+                    disabled={assistantSpeech.active || voiceMicState === "processing"}
                     onClick={toggleCandidateMic}
                   >
                     {voiceMicState === "listening" ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
@@ -1511,12 +1523,12 @@ export default function PublicAIInterviewPage() {
           <GripVertical className="h-4 w-4" />
         </button>
 
-        <section className="min-w-0 min-h-[calc(100vh-24px)] overflow-hidden rounded-2xl border bg-white/95 shadow-xl shadow-slate-200/70 md:min-h-[calc(100vh-48px)]">
+        <section className="min-h-[calc(100dvh-16px)] min-w-0 overflow-hidden rounded-[1.25rem] border bg-white/95 shadow-xl shadow-slate-200/70 sm:min-h-[calc(100dvh-32px)] md:rounded-[1.5rem] xl:min-h-[calc(100dvh-48px)]">
           {session.status !== "in_progress" ? (
-            <div className="min-h-[calc(100vh-80px)] p-4 sm:p-6 lg:p-8">
-              <div className="mx-auto grid max-w-6xl gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="min-h-[calc(100dvh-56px)] p-3 sm:p-5 lg:p-7">
+              <div className="mx-auto grid max-w-6xl gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
                 <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-                  <div className="border-b bg-slate-950 px-5 py-5 text-white sm:px-7">
+                  <div className="border-b bg-slate-950 px-4 py-5 text-white sm:px-7 sm:py-7">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -1527,14 +1539,14 @@ export default function PublicAIInterviewPage() {
                           <Badge className="border-white/15 bg-white/10 text-white">{statusLabel(session.status)}</Badge>
                         </div>
                         <p className="text-sm text-slate-300">Welcome, {candidateName}</p>
-                        <h2 className="mt-2 max-w-3xl text-3xl font-semibold tracking-normal sm:text-4xl">
+                        <h2 className="mt-2 max-w-3xl text-2xl font-semibold tracking-normal sm:text-4xl">
                           Get ready for your structured AI interview
                         </h2>
                         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                          You will answer one question at a time. You can ask for clarification, then confirm when you are ready to move forward.
+                          You will answer one question at a time. Ask for clarification when needed, then confirm when your answer is ready.
                         </p>
                       </div>
-                      <div className="grid min-w-[220px] grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
+                      <div className="grid w-full grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm sm:w-auto sm:min-w-[240px]">
                         <div>
                           <div className="text-slate-400">Questions</div>
                           <div className="text-2xl font-semibold">{questionCount}</div>
@@ -1547,7 +1559,7 @@ export default function PublicAIInterviewPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-5 p-5 sm:p-7">
+                  <div className="space-y-4 p-4 sm:space-y-5 sm:p-7">
                     <div className="grid gap-3 md:grid-cols-3">
                       {[
                         { label: "Question time", value: questionTimeLabel, icon: Clock, tone: "blue" },
@@ -1566,7 +1578,7 @@ export default function PublicAIInterviewPage() {
                       ))}
                     </div>
 
-                    <div className="rounded-2xl border bg-white p-5">
+                    <div className="rounded-2xl border bg-white p-4 sm:p-5">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div>
                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
@@ -1602,7 +1614,7 @@ export default function PublicAIInterviewPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-5">
                       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-950">
                         <ShieldCheck className="h-4 w-4" />
                         Guidelines from the recruiter
@@ -1653,7 +1665,7 @@ export default function PublicAIInterviewPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl bg-slate-950 p-5 text-white shadow-xl">
+                  <div className="rounded-3xl bg-slate-950 p-5 text-white shadow-xl xl:sticky xl:top-6">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-sm text-slate-300">Ready to begin</div>
@@ -1664,25 +1676,43 @@ export default function PublicAIInterviewPage() {
                       </span>
                     </div>
                     <Button className="mt-5 h-12 w-full bg-white text-slate-950 hover:bg-slate-100" onClick={start} disabled={starting}>
-                      {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : voiceEnabled ? <Mic className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                      {voiceEnabled ? "Start Interview & Turn Mic On" : "Start Interview"}
+                      {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                      Start Interview
                     </Button>
                     <p className="mt-3 text-xs leading-5 text-slate-400">
-                      Your answers are saved to the transcript as you go. You can still type if voice is unavailable.
+                      Voice stays off until you tap the mic in the workspace. You can type at any time.
                     </p>
                   </div>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="flex h-[calc(100vh-24px)] min-h-[620px] flex-col md:h-[calc(100vh-48px)]">
-              <div className="border-b bg-slate-950 p-4 text-white">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="text-sm text-slate-300">Question {currentIndex + 1} of {questionCount}</div>
-                    <h2 className="text-lg font-semibold">Interview Workspace</h2>
+            <div className="flex h-[calc(100dvh-16px)] min-h-[640px] flex-col sm:h-[calc(100dvh-32px)] xl:h-[calc(100dvh-48px)]">
+              <div className="border-b bg-slate-950 p-3 text-white sm:p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+                      <span>Question {currentIndex + 1} of {questionCount}</span>
+                      <span className="hidden h-1 w-1 rounded-full bg-slate-500 sm:inline-flex" />
+                      <span className="truncate">{state.job?.title || interview.title}</span>
+                    </div>
+                    <h2 className="mt-1 text-xl font-semibold tracking-normal">Interview Workspace</h2>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-slate-100">
+                        <Clock className="h-3.5 w-3.5" />
+                        Question {formatSeconds(questionSeconds)}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-slate-100">
+                        <TimerReset className="h-3.5 w-3.5" />
+                        Total {formatSeconds(totalSeconds)}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-1 text-emerald-100">
+                        <Workflow className="h-3.5 w-3.5" />
+                        {Math.min(activeStep, questionCount)} / {questionCount}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                     <Button
                       type="button"
                       size="icon"
@@ -1698,7 +1728,7 @@ export default function PublicAIInterviewPage() {
                       type="button"
                       size="sm"
                       variant="secondary"
-                      disabled={!voiceEnabled || voiceState === "connecting" || (voiceState === "connected" && voiceMicState === "processing")}
+                      disabled={!voiceEnabled || voiceState === "connecting" || (voiceState === "connected" && (assistantSpeech.active || voiceMicState === "processing"))}
                       onClick={voiceState === "connected" ? toggleCandidateMic : () => connectVoice()}
                       className="bg-white text-slate-950 hover:bg-slate-100"
                     >
@@ -1717,22 +1747,27 @@ export default function PublicAIInterviewPage() {
                     </Button>
                   </div>
                 </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, progress)}%` }} />
+                </div>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50 p-3 sm:p-4 md:p-5">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-3 sm:p-4 md:p-5">
+                <div className="mx-auto flex max-w-5xl flex-col gap-3">
                 {(session.messages || []).map((chat, index) => (
                   <div
                     key={chat._id || index}
                     className={`flex ${chat.role === "candidate" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[min(88%,780px)] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
+                      className={`max-w-[min(92%,820px)] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm sm:px-5 sm:py-4 ${
                         chat.role === "candidate"
-                          ? "bg-slate-950 text-white"
-                          : "border bg-white text-slate-900"
+                          ? "rounded-br-md bg-slate-950 text-white"
+                          : "rounded-bl-md border bg-white text-slate-900"
                       }`}
                     >
-                      <div className="mb-1 text-xs opacity-70">
+                      <div className="mb-1 flex items-center gap-2 text-xs opacity-70">
+                        <span className={`h-1.5 w-1.5 rounded-full ${chat.role === "candidate" ? "bg-white/70" : "bg-emerald-500"}`} />
                         {chat.role === "candidate" ? "You" : "Interviewer"}
                       </div>
                       <div className="whitespace-pre-wrap">
@@ -1744,9 +1779,11 @@ export default function PublicAIInterviewPage() {
                   </div>
                 ))}
                 <div ref={bottomRef} />
+                </div>
               </div>
 
-              <div className="border-t bg-white p-4">
+              <div className="border-t bg-white/95 p-3 backdrop-blur sm:p-4">
+                <div className="mx-auto max-w-5xl">
                 {voiceState !== "idle" && (
                   <div className={`mb-3 rounded-xl border px-3 py-3 text-xs ${
                     voiceState === "connected"
@@ -1784,7 +1821,7 @@ export default function PublicAIInterviewPage() {
                             type="button"
                             size="sm"
                             variant={voiceMicState === "listening" ? "outline" : "default"}
-                            disabled={voiceMicState === "processing"}
+                            disabled={assistantSpeech.active || voiceMicState === "processing"}
                             onClick={toggleCandidateMic}
                             className="h-8"
                           >
@@ -1807,13 +1844,13 @@ export default function PublicAIInterviewPage() {
                     )}
                   </div>
                 )}
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
+                <div className="rounded-2xl border bg-white p-2 shadow-sm">
                   <Textarea
                     value={message}
                     onChange={(event) => setMessage(event.target.value)}
                     placeholder="Type your answer or ask for clarification..."
                     rows={3}
-                    className="min-h-[92px] max-h-[240px] resize-y bg-slate-50"
+                    className="min-h-[82px] max-h-[220px] resize-y border-0 bg-slate-50 shadow-none focus-visible:ring-0"
                     onKeyDown={(event) => {
                       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                         event.preventDefault();
@@ -1821,18 +1858,25 @@ export default function PublicAIInterviewPage() {
                       }
                     }}
                   />
-                  <Button variant="outline" onClick={sendMessage} disabled={sending || !message.trim()} className="min-h-[44px]">
-                    {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                    Send
-                  </Button>
-                  <Button onClick={confirm} disabled={confirming || timeoutRunning} className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700">
-                    {confirming || timeoutRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                    Confirm & Move On
-                  </Button>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[auto_auto_1fr]">
+                    <Button variant="outline" onClick={() => setMessage("")} disabled={!message.trim()} className="min-h-[44px]">
+                      <X className="mr-2 h-4 w-4" />
+                      Clear
+                    </Button>
+                    <Button variant="outline" onClick={sendMessage} disabled={sending || !message.trim()} className="min-h-[44px]">
+                      {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                      Send
+                    </Button>
+                    <Button onClick={confirm} disabled={confirming || timeoutRunning} className="min-h-[44px] bg-emerald-600 hover:bg-emerald-700 sm:justify-self-end">
+                      {confirming || timeoutRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                      Confirm & Move On
+                    </Button>
+                  </div>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   The interview will auto-move when the question timer reaches zero. Voice answers are saved to the same transcript.
                 </p>
+                </div>
               </div>
             </div>
           )}
