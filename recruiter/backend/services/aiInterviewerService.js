@@ -115,7 +115,11 @@ End by telling the candidate they can ask for clarification or answer when ready
       'do not understand',
       'help me understand'
     ];
-    return text.endsWith('?') || clarificationTerms.some((term) => text.includes(term));
+    const hasClarificationTerm = clarificationTerms.some((term) => text.includes(term));
+    if (hasClarificationTerm) return true;
+
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    return text.endsWith('?') && wordCount <= 24;
   }
 
   async clarifyQuestion({ interview, session, question, questionNumber, candidateMessage }) {
@@ -128,6 +132,8 @@ End by telling the candidate they can ask for clarification or answer when ready
 Answer the candidate's exact clarification request.
 If they ask what a term means, define that term in the context of the current question.
 If they ask to rephrase the question, rephrase the current question without changing what is being assessed.
+Start with the specific term or phrase they asked about when one is present.
+Avoid generic restatements such as "this question is asking you to explain your experience" unless the candidate asked for a broad rephrase.
 Use only the current question and the candidate-facing guidelines.
 Do not answer the question for the candidate.
 Do not add a new assessment question.

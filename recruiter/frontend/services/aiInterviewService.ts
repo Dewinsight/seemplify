@@ -288,6 +288,15 @@ class AIInterviewService {
     return response.json();
   }
 
+  async synthesizePublicSpeech(token: string, text: string): Promise<Blob> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/speech`, {
+      method: 'POST',
+      body: JSON.stringify({ text })
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.blob();
+  }
+
   getVoiceWebSocketUrl(token: string): string {
     const base = getCurrentWsBaseUrl().replace(/\/$/, '');
     return `${base}/ws/ai-interview-voice?token=${encodeURIComponent(token)}`;

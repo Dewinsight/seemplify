@@ -16,10 +16,6 @@ function toWebSocketBase(endpoint) {
   return normalized.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
 }
 
-function isAzureVoice(voice) {
-  return String(voice || '').includes('-') || String(voice || '').includes(':');
-}
-
 function parseNumber(value, fallback, min, max) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -132,17 +128,15 @@ class AIInterviewVoiceLiveService {
     const total = interview.questionSnapshots?.length || 0;
 
     return [
-      'You are the voice layer for Seemplify AI Interviewer.',
+      'You are the speech-to-text layer for Seemplify AI Interviewer.',
       'The backend application controls the workflow, timers, active question, scoring, and when the interview moves forward.',
-      'You are not the interview orchestrator and must not independently answer candidate microphone input.',
-      'Candidate speech is transcribed and sent back to the application backend, which decides the next interviewer text.',
-      'Only speak interviewer text when the application explicitly sends a response.create request.',
-      'You must not move to another question, create new assessment questions, score the candidate, reveal rubrics, or reveal expected answers.',
+      'Your only job is to transcribe candidate microphone input.',
+      'Do not generate, answer, clarify, translate, summarize, or speak interviewer content.',
+      'Candidate speech is sent back to the application backend, which decides the next interviewer text.',
+      'You must not move to another question, create assessment questions, score the candidate, reveal rubrics, or reveal expected answers.',
       'Only discuss the current active question.',
-      'This interview is English-only. Speak English only.',
-      'Never translate, repeat, summarize, or continue in another language.',
-      'If candidate speech is received, do not answer it directly; wait for the backend application to send the next interviewer message.',
-      'Keep spoken replies concise and professional.',
+      'This interview is English-only. Transcribe English only.',
+      'If candidate speech is received, do not answer it directly.',
       `Interview title: ${interview.title}`,
       `Candidate: ${session.candidateSnapshot?.name || 'Candidate'}`,
       `Current stage: question ${session.currentQuestionIndex + 1} of ${total}`,
@@ -157,7 +151,7 @@ class AIInterviewVoiceLiveService {
     return {
       type: 'session.update',
       session: {
-        modalities: ['audio'],
+        modalities: ['text'],
         instructions: this.buildInstructions(session, interview),
         input_audio_transcription: {
           model: 'azure-speech',
@@ -180,51 +174,7 @@ class AIInterviewVoiceLiveService {
           interrupt_response: false
         },
         input_audio_noise_reduction: { type: 'azure_deep_noise_suppression' },
-        input_audio_echo_cancellation: { type: 'server_echo_cancellation' },
-        output_audio_timestamp_types: config.outputWordTimestamps ? ['word'] : undefined,
-        voice: isAzureVoice(config.voice)
-          ? {
-              type: 'azure-standard',
-              name: config.voice,
-              temperature: config.voiceTemperature,
-              locale: config.voiceLocale,
-              rate: config.voiceRate
-            }
-          : config.voice
-      }
-    };
-  }
-
-  buildSpeakCurrentQuestion(session) {
-    const prompt = getLatestInterviewerPrompt(session);
-    if (!prompt) return null;
-
-    return this.buildSpeakText(prompt, [
-      'Read the following interviewer message exactly as written with natural pacing.',
-      'Speak English only. Never translate or switch languages.',
-      'Do not add reminders, summaries, translations, new questions, or extra assessment content.'
-    ]);
-  }
-
-  buildSpeakText(text, instructionLines = []) {
-    const content = String(text || '').trim();
-    if (!content) return null;
-
-    return {
-      type: 'response.create',
-      response: {
-        modalities: ['audio'],
-        instructions: [
-          'Speak English only.',
-          'Never translate, repeat, summarize, or continue in another language.',
-          'Read only the provided interviewer message and stop when it is complete.',
-          ...(instructionLines.length ? instructionLines : [
-            'Speak the following interviewer message naturally.',
-            'Do not add new assessment content.'
-          ]),
-          '',
-          content
-        ].join('\n')
+        input_audio_echo_cancellation: { type: 'server_echo_cancellation' }
       }
     };
   }
@@ -343,31 +293,20 @@ class AIInterviewVoiceLiveService {
               return;
             }
 
-            if (message.type === 'voice.say_current_question') {
-              session = await findPublicSession(token);
-              const speakEvent = session ? this.buildSpeakCurrentQuestion(session) : null;
-              if (speakEvent && azureWs?.readyState === WebSocket.OPEN) {
-                this.sendJson(azureWs, speakEvent);
-              }
+            if (message.type === 'voice.say_current_question' || message.type === 'voice.speak_text' || message.type === 'response.create') {
+              this.sendJson(clientWs, {
+                type: 'voice.output.blocked',
+                message: 'Interview speech output is handled by deterministic Azure Speech TTS.'
+              });
               return;
             }
 
-            if (message.type === 'voice.speak_text') {
-              const speakEvent = this.buildSpeakText(message.text || message.content, [
-                'Read the following interviewer message exactly as written with natural pacing.',
-                'Speak English only. Never translate or switch languages.',
-                'Do not add a new question, score the candidate, reveal rubrics, or add extra content.'
-              ]);
-              if (speakEvent && azureWs?.readyState === WebSocket.OPEN) {
-                this.sendJson(azureWs, speakEvent);
-              }
-              return;
-            }
-
-            if (azureWs?.readyState === WebSocket.OPEN) {
+            if (message.type === 'rtc.call.sdp.create' && azureWs?.readyState === WebSocket.OPEN) {
               this.sendJson(azureWs, message);
-            } else {
+            } else if (message.type === 'rtc.call.sdp.create') {
               pendingMessages.push(message);
+            } else {
+              this.sendJson(clientWs, { type: 'voice.error', message: 'Unsupported voice command.' });
             }
           } catch (error) {
             console.error('AI interview voice client message error:', error.message);

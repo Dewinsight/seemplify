@@ -158,22 +158,6 @@ function isCandidateTranscriptFailedEvent(type?: string) {
   return Boolean(type && type.includes("input_audio_transcription") && type.endsWith(".failed"));
 }
 
-function isAssistantTranscriptDoneEvent(type?: string) {
-  return [
-    "response.audio_transcript.done",
-    "response.output_text.done",
-    "response.text.done"
-  ].includes(type || "");
-}
-
-function isAssistantTranscriptDeltaEvent(type?: string) {
-  return [
-    "response.audio_transcript.delta",
-    "response.output_text.delta",
-    "response.text.delta"
-  ].includes(type || "");
-}
-
 type VoiceMicState = "off" | "listening" | "paused" | "processing";
 type BrowserSpeechState = "checking" | "unavailable" | "off" | "listening";
 
@@ -192,12 +176,20 @@ declare global {
   }
 }
 
-function getLatestAiMessageContent(data: PublicAIInterviewState) {
+function getSpeakableAiMessages(data: PublicAIInterviewState) {
   const currentIndex = data.session.currentQuestionIndex;
-  return [...(data.session.messages || [])]
-    .reverse()
-    .find((chat) => chat.role === "ai" && chat.questionIndex === currentIndex)
-    ?.content?.trim() || "";
+  return (data.session.messages || []).filter((chat) => {
+    if (chat.role !== "ai") return false;
+    if (chat.questionIndex == null) {
+      return chat.messageType === "greeting" && data.session.status === "in_progress";
+    }
+    return chat.questionIndex === currentIndex && ["transition", "question", "clarification", "acknowledgement"].includes(chat.messageType);
+  });
+}
+
+function getAiMessageSpeakKey(message?: PublicAIInterviewState["session"]["messages"][number]) {
+  if (!message) return "";
+  return message._id || `${message.questionIndex ?? "none"}:${message.messageType}:${canonicalTranscriptText(message.content || "")}`;
 }
 
 function getHighlightedWordCount(text: string, progress: number) {
@@ -252,11 +244,15 @@ export default function PublicAIInterviewPage() {
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeTtsUrlRef = useRef("");
+  const speechRequestIdRef = useRef(0);
+  const spokenAiMessageKeysRef = useRef<Set<string>>(new Set());
+  const speechQueueRunningRef = useRef(false);
   const voiceWsRef = useRef<WebSocket | null>(null);
   const voicePeerRef = useRef<RTCPeerConnection | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceDataChannelRef = useRef<RTCDataChannel | null>(null);
-  const assistantTranscriptBufferRef = useRef<Record<string, string>>({});
   const assistantSpeechTimerRef = useRef<number | null>(null);
   const assistantSpeechTextRef = useRef("");
   const assistantSpeechStartedAtRef = useRef(0);
@@ -361,6 +357,17 @@ export default function PublicAIInterviewPage() {
       remoteAudioRef.current.srcObject = null;
     }
 
+    speechRequestIdRef.current += 1;
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.removeAttribute("src");
+      ttsAudioRef.current.load();
+    }
+    if (activeTtsUrlRef.current) {
+      URL.revokeObjectURL(activeTtsUrlRef.current);
+      activeTtsUrlRef.current = "";
+    }
+
     if (assistantSpeechTimerRef.current) {
       window.clearInterval(assistantSpeechTimerRef.current);
       assistantSpeechTimerRef.current = null;
@@ -368,10 +375,11 @@ export default function PublicAIInterviewPage() {
 
     stopBrowserSpeechRecognition(false);
 
-    assistantTranscriptBufferRef.current = {};
     assistantSpeechTextRef.current = "";
     assistantSpeechStartedAtRef.current = 0;
     assistantSpeechDurationRef.current = 0;
+    spokenAiMessageKeysRef.current.clear();
+    speechQueueRunningRef.current = false;
     voiceMicWantedRef.current = false;
     voiceAssistantSpeakingRef.current = false;
     voiceProcessingRef.current = false;
@@ -415,15 +423,6 @@ export default function PublicAIInterviewPage() {
     setVoiceStatus(status);
   }, [setVoiceInputEnabled, stopBrowserSpeechRecognition]);
 
-  const sendVoiceCommand = useCallback((payload: Record<string, unknown>) => {
-    const ws = voiceWsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(payload));
-      return true;
-    }
-    return false;
-  }, []);
-
   const recordAssistantVoiceTranscript = useCallback(async (
     text: string,
     messageType: "greeting" | "question" | "clarification" | "acknowledgement" | "transition" | "system" = "acknowledgement"
@@ -455,7 +454,7 @@ export default function PublicAIInterviewPage() {
     }
   }, [applyPublicState, token]);
 
-  const startAssistantSpeechVisual = useCallback((text: string) => {
+  const startAssistantSpeechVisual = useCallback((text: string, useEstimatedTimer = true) => {
     const cleaned = text.trim();
     if (!cleaned) return;
 
@@ -470,6 +469,8 @@ export default function PublicAIInterviewPage() {
     assistantSpeechStartedAtRef.current = Date.now();
     assistantSpeechDurationRef.current = estimatedDuration;
     setAssistantSpeech({ active: true, text: cleaned, progress: 2 });
+
+    if (!useEstimatedTimer) return;
 
     assistantSpeechTimerRef.current = window.setInterval(() => {
       const elapsed = Date.now() - assistantSpeechStartedAtRef.current;
@@ -513,9 +514,13 @@ export default function PublicAIInterviewPage() {
     }, 900);
   }, []);
 
-  const speakVoiceText = useCallback((
+  const speakVoiceText = useCallback(async (
     text: string,
-    options: { persist?: boolean; messageType?: "greeting" | "question" | "clarification" | "acknowledgement" | "transition" | "system" } = {}
+    options: {
+      persist?: boolean;
+      resumeAfter?: boolean;
+      messageType?: "greeting" | "question" | "clarification" | "acknowledgement" | "transition" | "system";
+    } = {}
   ) => {
     const cleaned = normalizeTranscriptText(text);
     if (!cleaned) return false;
@@ -526,14 +531,120 @@ export default function PublicAIInterviewPage() {
 
     voiceAssistantSpeakingRef.current = true;
     pauseCandidateMic("paused", "Interviewer is speaking. Mic is paused.");
-    const sent = sendVoiceCommand({ type: "voice.speak_text", text: cleaned });
-    if (sent) {
-      startAssistantSpeechVisual(cleaned);
-    } else {
-      finishAssistantSpeechVisual();
+    setVoiceStatus("Preparing interviewer voice...");
+
+    const requestId = speechRequestIdRef.current + 1;
+    speechRequestIdRef.current = requestId;
+
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.removeAttribute("src");
+      ttsAudioRef.current.load();
     }
-    return sent;
-  }, [finishAssistantSpeechVisual, pauseCandidateMic, recordAssistantVoiceTranscript, sendVoiceCommand, startAssistantSpeechVisual]);
+    if (activeTtsUrlRef.current) {
+      URL.revokeObjectURL(activeTtsUrlRef.current);
+      activeTtsUrlRef.current = "";
+    }
+
+    try {
+      const audioBlob = await aiInterviewService.synthesizePublicSpeech(token, cleaned);
+      if (speechRequestIdRef.current !== requestId) return false;
+
+      const audio = ttsAudioRef.current;
+      if (!audio) return false;
+
+      const objectUrl = URL.createObjectURL(audioBlob);
+      activeTtsUrlRef.current = objectUrl;
+      audio.src = objectUrl;
+      audio.currentTime = 0;
+
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          audio.removeEventListener("ended", onEnded);
+          audio.removeEventListener("error", onError);
+          audio.removeEventListener("timeupdate", onTimeUpdate);
+        };
+
+        const onEnded = () => {
+          cleanup();
+          resolve();
+        };
+
+        const onError = () => {
+          cleanup();
+          reject(new Error("Unable to play interviewer audio."));
+        };
+
+        const onTimeUpdate = () => {
+          if (speechRequestIdRef.current !== requestId || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+          const progress = Math.max(2, Math.min(99, Math.round((audio.currentTime / audio.duration) * 100)));
+          setAssistantSpeech((current) => (
+            current.text === cleaned ? { ...current, active: true, progress } : current
+          ));
+        };
+
+        audio.addEventListener("ended", onEnded);
+        audio.addEventListener("error", onError);
+        audio.addEventListener("timeupdate", onTimeUpdate);
+
+        startAssistantSpeechVisual(cleaned, false);
+        setVoiceStatus("Interviewer is speaking. Your mic is muted.");
+        audio.play().catch((error) => {
+          cleanup();
+          reject(error);
+        });
+      });
+
+      if (speechRequestIdRef.current !== requestId) return false;
+      finishAssistantSpeechVisual();
+      if (options.resumeAfter !== false) {
+        resumeCandidateMic();
+      } else {
+        setVoiceStatus("Preparing next interviewer message...");
+      }
+      return true;
+    } catch (error: any) {
+      if (speechRequestIdRef.current === requestId) {
+        finishAssistantSpeechVisual();
+        resumeCandidateMic("Interviewer voice could not play. You can continue by text or try voice again.");
+        toast.error(error?.message || "Unable to play interviewer voice");
+      }
+      return false;
+    }
+  }, [finishAssistantSpeechVisual, pauseCandidateMic, recordAssistantVoiceTranscript, resumeCandidateMic, startAssistantSpeechVisual, token]);
+
+  const speakPendingAiMessages = useCallback(async (data: PublicAIInterviewState | null) => {
+    if (!data || data.session.status !== "in_progress") return false;
+    if (speechQueueRunningRef.current) return true;
+
+    const pendingMessages = getSpeakableAiMessages(data)
+      .map((message) => ({ message, key: getAiMessageSpeakKey(message), content: message.content?.trim() || "" }))
+      .filter((item) => item.key && item.content && !spokenAiMessageKeysRef.current.has(item.key));
+
+    if (!pendingMessages.length) {
+      return voiceAssistantSpeakingRef.current || Boolean(assistantSpeechTextRef.current);
+    }
+
+    speechQueueRunningRef.current = true;
+    try {
+      let spokeAny = false;
+      for (const [index, item] of pendingMessages.entries()) {
+        spokenAiMessageKeysRef.current.add(item.key);
+        const spoke = await speakVoiceText(item.content, {
+          persist: false,
+          resumeAfter: index === pendingMessages.length - 1
+        });
+        if (!spoke) {
+          spokenAiMessageKeysRef.current.delete(item.key);
+          return spokeAny;
+        }
+        spokeAny = true;
+      }
+      return spokeAny;
+    } finally {
+      speechQueueRunningRef.current = false;
+    }
+  }, [speakVoiceText]);
 
   const toggleCandidateMic = useCallback(() => {
     if (voiceState !== "connected") return;
@@ -579,8 +690,8 @@ export default function PublicAIInterviewPage() {
       applyPublicState(data);
       setMessage("");
 
-      const reply = getLatestAiMessageContent(data);
-      if (!reply || !speakVoiceText(reply, { persist: false })) {
+      const spoke = await speakPendingAiMessages(data);
+      if (!spoke) {
         resumeCandidateMic();
       }
     } catch (error: any) {
@@ -588,7 +699,7 @@ export default function PublicAIInterviewPage() {
       toast.error(error.message || "Failed to send voice response");
       resumeCandidateMic("I could not process that. Please try speaking again.");
     }
-  }, [applyPublicState, pauseCandidateMic, resumeCandidateMic, speakVoiceText, token]);
+  }, [applyPublicState, pauseCandidateMic, resumeCandidateMic, speakPendingAiMessages, token]);
 
   const handleVoiceEvent = useCallback((event: any) => {
     const type = event?.type;
@@ -596,6 +707,10 @@ export default function PublicAIInterviewPage() {
 
     if (type === "voice.proxy.ready") {
       setVoiceStatus("Voice mode is ready");
+      return;
+    }
+
+    if (type === "voice.output.blocked") {
       return;
     }
 
@@ -607,9 +722,7 @@ export default function PublicAIInterviewPage() {
     }
 
     if (type === "session.updated") {
-      if (!voiceAssistantSpeakingRef.current && !voiceProcessingRef.current) {
-        resumeCandidateMic();
-      }
+      setVoiceStatus("Voice session ready");
       return;
     }
 
@@ -652,20 +765,8 @@ export default function PublicAIInterviewPage() {
       return;
     }
 
-    if (type === "response.created" || type === "response.audio.delta") {
-      voiceAssistantSpeakingRef.current = true;
-      pauseCandidateMic("paused", "Interviewer is speaking. Mic is paused.");
-      if (!assistantSpeechTextRef.current) {
-        startAssistantSpeechVisual("Interviewer is speaking...");
-      }
-      return;
-    }
-
-    if (type === "response.audio.done" || type === "response.done") {
-      finishAssistantSpeechVisual();
-      window.setTimeout(() => {
-        resumeCandidateMic();
-      }, 600);
+    if (type === "response.created" || type === "response.audio.delta" || type === "response.audio.done" || type === "response.done") {
+      setVoiceStatus("Ignoring unexpected Voice Live output. Interview speech is controlled by Azure Speech TTS.");
       return;
     }
 
@@ -679,30 +780,8 @@ export default function PublicAIInterviewPage() {
       return;
     }
 
-    if (isAssistantTranscriptDeltaEvent(type)) {
-      const id = event?.response_id || event?.item_id || "active";
-      const delta = getVoiceTranscriptText(event);
-      if (delta) {
-        assistantTranscriptBufferRef.current[id] = `${assistantTranscriptBufferRef.current[id] || ""}${delta}`;
-        const expectedText = assistantSpeechTextRef.current;
-        if (expectedText) {
-          const spokenLength = assistantTranscriptBufferRef.current[id].length;
-          const progress = Math.min(98, Math.round((spokenLength / Math.max(expectedText.length, 1)) * 100));
-          setAssistantSpeech((current) => (
-            current.active && current.text === expectedText
-              ? { ...current, progress: Math.max(current.progress, progress) }
-              : current
-          ));
-        }
-      }
-      return;
-    }
-
-    if (isAssistantTranscriptDoneEvent(type)) {
-      const id = event?.response_id || event?.item_id || "active";
-      delete assistantTranscriptBufferRef.current[id];
-    }
-  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic, startAssistantSpeechVisual]);
+    if (type.startsWith("response.")) return;
+  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, pauseCandidateMic, resumeCandidateMic]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -827,18 +906,17 @@ export default function PublicAIInterviewPage() {
       pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
 
       window.setTimeout(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const prompt = stateOverride ? getLatestAiMessageContent(stateOverride) : stateRef.current ? getLatestAiMessageContent(stateRef.current) : "";
-          if (prompt) startAssistantSpeechVisual(prompt);
-          ws.send(JSON.stringify({ type: "voice.say_current_question" }));
-        }
+        const activeState = stateOverride || stateRef.current;
+        void speakPendingAiMessages(activeState).then((spoke) => {
+          if (!spoke) resumeCandidateMic();
+        });
       }, 500);
     } catch (error: any) {
       cleanupVoice(error.message || "Voice mode failed");
       setVoiceState("error");
       toast.error(error.message || "Unable to start voice mode");
     }
-  }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, session, setVoiceInputEnabled, startAssistantSpeechVisual, token, voiceEnabled]);
+  }, [cleanupVoice, handleVoiceEvent, pauseCandidateMic, resumeCandidateMic, session, setVoiceInputEnabled, speakPendingAiMessages, token, voiceEnabled]);
 
   const startBrowserSpeechRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1021,15 +1099,14 @@ export default function PublicAIInterviewPage() {
 
     ws.send(JSON.stringify({ type: "voice.refresh_session" }));
     window.setTimeout(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        voiceAssistantSpeakingRef.current = true;
-        pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
-        const prompt = stateRef.current ? getLatestAiMessageContent(stateRef.current) : "";
-        if (prompt) startAssistantSpeechVisual(prompt);
-        ws.send(JSON.stringify({ type: "voice.say_current_question" }));
-      }
+      if (ws.readyState !== WebSocket.OPEN) return;
+      voiceAssistantSpeakingRef.current = true;
+      pauseCandidateMic("paused", "Interviewer is getting ready. Mic will open after the prompt.");
+      void speakPendingAiMessages(stateRef.current).then((spoke) => {
+        if (!spoke) resumeCandidateMic();
+      });
     }, 500);
-  }, [currentIndex, pauseCandidateMic, session?.status, startAssistantSpeechVisual, voiceState]);
+  }, [currentIndex, pauseCandidateMic, resumeCandidateMic, session?.status, speakPendingAiMessages, voiceState]);
 
   const answeredIndexes = useMemo(() => {
     return new Set((session?.answers || []).filter((answer) => answer.status !== "draft").map((answer) => answer.questionIndex));
@@ -1060,8 +1137,7 @@ export default function PublicAIInterviewPage() {
       const data = await aiInterviewService.sendPublicMessage(token, text);
       applyPublicState(data);
       if (voiceState === "connected") {
-        const reply = getLatestAiMessageContent(data);
-        if (reply) speakVoiceText(reply, { persist: false });
+        void speakPendingAiMessages(data);
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to send message");
@@ -1140,6 +1216,7 @@ export default function PublicAIInterviewPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70">
       <audio ref={remoteAudioRef} autoPlay className="hidden" />
+      <audio ref={ttsAudioRef} preload="auto" className="hidden" />
       <div
         ref={layoutRef}
         style={layoutStyle}

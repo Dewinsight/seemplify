@@ -10,6 +10,7 @@ const creditsService = require('../services/creditsService');
 const aiInterviewerService = require('../services/aiInterviewerService');
 const aiInterviewEmailService = require('../services/aiInterviewEmailService');
 const aiInterviewVoiceLiveService = require('../services/aiInterviewVoiceLiveService');
+const azureSpeechTtsService = require('../services/azureSpeechTtsService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
@@ -154,6 +155,21 @@ function hasEquivalentTranscriptMessage(session, { role, questionIndex, content 
     if (!existingContent) return false;
 
     return areEquivalentTranscriptTexts(existingContent, canonicalContent);
+  });
+}
+
+function isApprovedAssistantSpeech(session, content) {
+  const canonicalContent = canonicalTranscriptText(content);
+  if (!canonicalContent) return false;
+
+  return (session.messages || []).some((message) => {
+    if (message.role !== 'ai') return false;
+    if (!['greeting', 'question', 'clarification', 'acknowledgement', 'transition', 'system'].includes(message.messageType)) {
+      return false;
+    }
+
+    const existingContent = canonicalTranscriptText(message.content);
+    return existingContent && areEquivalentTranscriptTexts(existingContent, canonicalContent);
   });
 }
 
@@ -964,6 +980,46 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
   } catch (error) {
     console.error('Public AI interview voice transcript error:', error);
     res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.synthesizePublicSpeech = async (req, res) => {
+  try {
+    const content = normalizeTranscriptText(truncateText(req.body?.text || req.body?.message || '', 4000));
+    if (!content) {
+      return res.status(400).json({ error: 'EMPTY_SPEECH_TEXT', message: 'Speech text is required' });
+    }
+
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ error: 'NOT_IN_PROGRESS', message: 'Interview is not in progress' });
+    }
+
+    if (!isApprovedAssistantSpeech(session, content)) {
+      return res.status(403).json({
+        error: 'UNAPPROVED_SPEECH_TEXT',
+        message: 'Only approved interviewer messages can be synthesized.'
+      });
+    }
+
+    const speech = await azureSpeechTtsService.synthesize(content);
+    res.set({
+      'Content-Type': speech.contentType,
+      'Content-Length': speech.buffer.length,
+      'Cache-Control': 'no-store',
+      'X-Speech-Output-Format': speech.outputFormat
+    });
+    res.send(speech.buffer);
+  } catch (error) {
+    console.error('Public AI interview speech synthesis error:', error.message);
+    sendControllerError(res, error);
   }
 };
 
