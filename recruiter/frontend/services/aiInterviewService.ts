@@ -179,7 +179,10 @@ export interface PublicAIInterviewState {
   };
   voice?: {
     enabled: boolean;
+    provider?: string;
     model?: string;
+    language?: string;
+    sampleRate?: number;
     voice?: string;
   };
   job?: {

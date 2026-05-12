@@ -21,6 +21,7 @@ import {
   Play,
   RotateCcw,
   Send,
+  Settings,
   ShieldCheck,
   TimerReset,
   UserRound,
@@ -66,33 +67,36 @@ function statusLabel(status?: string) {
   }
 }
 
-function waitForIceGatheringComplete(peerConnection: RTCPeerConnection) {
-  if (peerConnection.iceGatheringState === "complete") return Promise.resolve();
-
-  return new Promise<void>((resolve) => {
-    const timeout = window.setTimeout(() => {
-      peerConnection.removeEventListener("icegatheringstatechange", onStateChange);
-      resolve();
-    }, 3000);
-
-    function onStateChange() {
-      if (peerConnection.iceGatheringState === "complete") {
-        window.clearTimeout(timeout);
-        peerConnection.removeEventListener("icegatheringstatechange", onStateChange);
-        resolve();
-      }
-    }
-
-    peerConnection.addEventListener("icegatheringstatechange", onStateChange);
-  });
-}
-
 function parseVoiceMessage(raw: MessageEvent["data"]) {
   try {
     return JSON.parse(typeof raw === "string" ? raw : raw.toString());
   } catch {
     return null;
   }
+}
+
+function downsampleToPcm16(input: Float32Array, inputSampleRate: number, outputSampleRate = 16000) {
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new ArrayBuffer(outputLength * 2);
+  const view = new DataView(output);
+
+  for (let index = 0; index < outputLength; index += 1) {
+    const start = Math.floor(index * ratio);
+    const end = Math.min(input.length, Math.floor((index + 1) * ratio));
+    let sum = 0;
+    let count = 0;
+
+    for (let sourceIndex = start; sourceIndex < end; sourceIndex += 1) {
+      sum += input[sourceIndex];
+      count += 1;
+    }
+
+    const sample = Math.max(-1, Math.min(1, count ? sum / count : input[start] || 0));
+    view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+
+  return output;
 }
 
 function getVoiceTranscriptText(event: any) {
@@ -149,15 +153,24 @@ function hasEquivalentTranscriptMessage(
 }
 
 function isCandidateTranscriptEvent(type?: string) {
-  return Boolean(type && type.includes("input_audio_transcription") && (type.endsWith(".completed") || type.endsWith(".done")));
+  return Boolean(
+    type === "voice.transcript.final" ||
+    (type && type.includes("input_audio_transcription") && (type.endsWith(".completed") || type.endsWith(".done")))
+  );
 }
 
 function isCandidateTranscriptDeltaEvent(type?: string) {
-  return Boolean(type && type.includes("input_audio_transcription") && type.endsWith(".delta"));
+  return Boolean(
+    type === "voice.transcript.delta" ||
+    (type && type.includes("input_audio_transcription") && type.endsWith(".delta"))
+  );
 }
 
 function isCandidateTranscriptFailedEvent(type?: string) {
-  return Boolean(type && type.includes("input_audio_transcription") && type.endsWith(".failed"));
+  return Boolean(
+    type === "voice.transcript.failed" ||
+    (type && type.includes("input_audio_transcription") && type.endsWith(".failed"))
+  );
 }
 
 // Single source of truth for the voice-mode lifecycle. Every UI element and
@@ -165,16 +178,22 @@ function isCandidateTranscriptFailedEvent(type?: string) {
 //   off        — voice mode is not running
 //   connecting — establishing WS/RTC connection
 //   speaking   — TTS is playing one or more AI messages back-to-back
+//   ready      — voice is connected, mic is off, candidate can tap mic
 //   listening  — mic is open and Azure STT is transcribing
 //   processing — user finished speaking (or hit "I'm done"); we're sending and
 //                waiting for the AI response
 //   error      — voice mode failed; user must restart
-type VoicePhase = "off" | "connecting" | "speaking" | "listening" | "processing" | "error";
+type VoicePhase = "off" | "connecting" | "speaking" | "ready" | "listening" | "processing" | "error";
 
 type AssistantSpeechState = {
   active: boolean;
   text: string;
   progress: number;
+};
+
+type AudioDeviceOption = {
+  deviceId: string;
+  label: string;
 };
 
 function getSpeakableAiMessages(data: PublicAIInterviewState) {
@@ -236,6 +255,11 @@ export default function PublicAIInterviewPage() {
   const [timeoutRunning, setTimeoutRunning] = useState(false);
   const [voicePhase, setVoicePhaseState] = useState<VoicePhase>("off");
   const [voiceStatus, setVoiceStatus] = useState("Voice mode is off");
+  const [audioInputs, setAudioInputs] = useState<AudioDeviceOption[]>([]);
+  const [audioOutputs, setAudioOutputs] = useState<AudioDeviceOption[]>([]);
+  const [selectedInputDeviceId, setSelectedInputDeviceId] = useState("");
+  const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState("");
+  const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
   const [assistantSpeech, setAssistantSpeech] = useState<AssistantSpeechState>({
     active: false,
     text: "",
@@ -252,10 +276,19 @@ export default function PublicAIInterviewPage() {
   const spokenAiMessageKeysRef = useRef<Set<string>>(new Set());
   const speechQueueRunningRef = useRef(false);
   const speechQueueDrainRequestedRef = useRef(false);
+  const messageRef = useRef("");
   const voiceWsRef = useRef<WebSocket | null>(null);
-  const voicePeerRef = useRef<RTCPeerConnection | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
-  const voiceDataChannelRef = useRef<RTCDataChannel | null>(null);
+  const voiceAudioContextRef = useRef<AudioContext | null>(null);
+  const voiceAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const voiceAudioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const voiceAudioSilenceGainRef = useRef<GainNode | null>(null);
+  const voiceAudioCaptureEnabledRef = useRef(false);
+  const voiceSampleRateRef = useRef(16000);
+  const voiceTurnCounterRef = useRef(0);
+  const voiceListenTurnIdRef = useRef<string | null>(null);
+  const voiceTranscriptBaseRef = useRef("");
+  const voiceFinalTranscriptRef = useRef("");
   const assistantSpeechTimerRef = useRef<number | null>(null);
   const assistantSpeechTextRef = useRef("");
   const assistantSpeechStartedAtRef = useRef(0);
@@ -306,6 +339,7 @@ export default function PublicAIInterviewPage() {
   const voiceActionLabel = (() => {
     switch (voicePhase) {
       case "speaking": return "AI is speaking";
+      case "ready": return "Speak now";
       case "listening": return "I'm done";
       case "processing": return "Thinking…";
       case "connecting": return "Connecting…";
@@ -316,6 +350,7 @@ export default function PublicAIInterviewPage() {
   const voiceActionDisabled = voicePhase === "speaking" || voicePhase === "processing" || voicePhase === "connecting";
   const voiceBannerTone: "speaking" | "listening" | "processing" | "error" | "neutral" = (() => {
     if (voicePhase === "speaking") return "speaking";
+    if (voicePhase === "ready") return "listening";
     if (voicePhase === "listening") return "listening";
     if (voicePhase === "processing") return "processing";
     if (voicePhase === "error") return "error";
@@ -337,6 +372,56 @@ export default function PublicAIInterviewPage() {
     }
   };
 
+  const loadAudioDevices = useCallback(async (requestPermission = false) => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+
+    let permissionStream: MediaStream | null = null;
+    try {
+      if (requestPermission) {
+        permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices
+        .filter((device) => device.kind === "audioinput")
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Microphone ${index + 1}`
+        }));
+      const outputs = devices
+        .filter((device) => device.kind === "audiooutput")
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Speaker ${index + 1}`
+        }));
+
+      setAudioInputs(inputs);
+      setAudioOutputs(outputs);
+      setSelectedInputDeviceId((current) => (
+        current && inputs.some((device) => device.deviceId === current) ? current : inputs[0]?.deviceId || ""
+      ));
+      setSelectedOutputDeviceId((current) => (
+        current && outputs.some((device) => device.deviceId === current) ? current : outputs[0]?.deviceId || ""
+      ));
+    } catch (error) {
+      if (requestPermission) {
+        toast.error("Unable to access microphone devices");
+      }
+    } finally {
+      permissionStream?.getTracks().forEach((track) => track.stop());
+    }
+  }, []);
+
+  const applyOutputDevice = useCallback(async (deviceId: string) => {
+    const audio = ttsAudioRef.current as (HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void> }) | null;
+    if (!audio?.setSinkId || !deviceId) return;
+    try {
+      await audio.setSinkId(deviceId);
+    } catch {
+      toast.error("Could not switch speaker output in this browser");
+    }
+  }, []);
+
   // Single setter that updates the phase ref AND state in one place. Every
   // transition flows through here so the ref and the React state can never
   // disagree (a class of bugs the previous implementation kept hitting).
@@ -347,37 +432,63 @@ export default function PublicAIInterviewPage() {
   }, []);
 
   const setMicTrackEnabled = useCallback((enabled: boolean) => {
+    voiceAudioCaptureEnabledRef.current = enabled;
     voiceStreamRef.current?.getAudioTracks().forEach((track) => {
       track.enabled = enabled;
     });
   }, []);
 
   const isVoiceTransportActive = useCallback(() => {
-    const peerConnection = voicePeerRef.current;
-    const dataChannel = voiceDataChannelRef.current;
-
-    const peerState = peerConnection?.connectionState;
-    const iceState = peerConnection?.iceConnectionState;
-    const peerUsable = Boolean(peerConnection)
-      && !["closed", "failed", "disconnected"].includes(peerState || "")
-      && !["closed", "failed", "disconnected"].includes(iceState || "");
-
-    return (
-      dataChannel?.readyState === "open" ||
-      peerUsable ||
-      voiceWsRef.current?.readyState === WebSocket.OPEN
-    );
+    return voiceWsRef.current?.readyState === WebSocket.OPEN;
   }, []);
 
+  const sendVoiceCommand = useCallback((payload: Record<string, unknown>) => {
+    const ws = voiceWsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+    }
+  }, []);
+
+  const openCandidateMic = useCallback(() => {
+    const turnId = `turn_${Date.now()}_${voiceTurnCounterRef.current += 1}`;
+    voiceListenTurnIdRef.current = turnId;
+    voiceTranscriptBaseRef.current = messageRef.current.trim();
+    voiceFinalTranscriptRef.current = "";
+    setMicTrackEnabled(true);
+    sendVoiceCommand({ type: "voice.audio.start", turnId });
+  }, [sendVoiceCommand, setMicTrackEnabled]);
+
+  const pauseCandidateMic = useCallback((options: { endTurn?: boolean } = {}) => {
+    const turnId = voiceListenTurnIdRef.current;
+    setMicTrackEnabled(false);
+    if (options.endTurn && turnId) {
+      sendVoiceCommand({ type: "voice.audio.end_turn", turnId });
+    }
+  }, [sendVoiceCommand, setMicTrackEnabled]);
+
+  const startListeningTurn = useCallback(() => {
+    if (!isVoiceTransportActive()) {
+      setVoicePhase("off", "Voice connection lost. Restart voice mode to continue.");
+      return;
+    }
+    openCandidateMic();
+    setVoicePhase("listening", "Listening. Speak naturally, then tap I'm done or Send.");
+  }, [isVoiceTransportActive, openCandidateMic, setVoicePhase]);
+
   const cleanupVoice = useCallback((status = "Voice mode is off", nextPhase: VoicePhase = "off") => {
-    voiceDataChannelRef.current?.close();
-    voiceDataChannelRef.current = null;
-
-    voicePeerRef.current?.close();
-    voicePeerRef.current = null;
-
     voiceWsRef.current?.close();
     voiceWsRef.current = null;
+
+    voiceAudioProcessorRef.current?.disconnect();
+    voiceAudioProcessorRef.current = null;
+    voiceAudioSourceRef.current?.disconnect();
+    voiceAudioSourceRef.current = null;
+    voiceAudioSilenceGainRef.current?.disconnect();
+    voiceAudioSilenceGainRef.current = null;
+    voiceAudioContextRef.current?.close().catch(() => {});
+    voiceAudioContextRef.current = null;
+    voiceAudioCaptureEnabledRef.current = false;
+    voiceListenTurnIdRef.current = null;
 
     voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
     voiceStreamRef.current = null;
@@ -491,6 +602,7 @@ export default function PublicAIInterviewPage() {
     const maybeAudio = ttsAudioRef.current;
     if (!maybeAudio) throw new Error("Audio element not ready.");
     const audio: HTMLAudioElement = maybeAudio;
+    await applyOutputDevice(selectedOutputDeviceId);
 
     // Stop any current playback before swapping the source. We DO NOT call
     // removeAttribute("src") + load() here — that un-primes the element on
@@ -584,7 +696,41 @@ export default function PublicAIInterviewPage() {
         try { URL.revokeObjectURL(previousUrl); } catch { /* ignore */ }
       }
     }
-  }, [token]);
+  }, [applyOutputDevice, selectedOutputDeviceId, token]);
+
+  const submitCandidateText = useCallback(async (text: string) => {
+    const cleaned = normalizeTranscriptText(text);
+    if (!cleaned) return false;
+
+    const activeSession = sessionRef.current;
+    if (!activeSession || activeSession.status !== "in_progress") return false;
+
+    const key = transcriptKey("candidate", activeSession.currentQuestionIndex, cleaned);
+    if (recordedTranscriptKeysRef.current.has(key) || hasEquivalentTranscriptMessage(stateRef.current, "candidate", activeSession.currentQuestionIndex, cleaned)) {
+      setMessage("");
+      messageRef.current = "";
+      return true;
+    }
+
+    recordedTranscriptKeysRef.current.add(key);
+    setSending(true);
+    setMessage("");
+    messageRef.current = "";
+
+    try {
+      const data = await aiInterviewService.sendPublicMessage(token, cleaned);
+      applyPublicState(data);
+      return true;
+    } catch (error: any) {
+      recordedTranscriptKeysRef.current.delete(key);
+      setMessage(cleaned);
+      messageRef.current = cleaned;
+      toast.error(error?.message || "Failed to send your answer");
+      return false;
+    } finally {
+      setSending(false);
+    }
+  }, [applyPublicState, token]);
 
   // The single voice-flow driver. Reads the current session state and:
   //   1. Speaks every queued AI message that hasn't been spoken yet.
@@ -620,7 +766,7 @@ export default function PublicAIInterviewPage() {
         spokenAiMessageKeysRef.current.add(item.key);
 
         setVoicePhase("speaking", "Interviewer is speaking…");
-        setMicTrackEnabled(false);
+        pauseCandidateMic();
 
         const requestId = ++speechRequestIdRef.current;
         const cleaned = normalizeTranscriptText(item.content);
@@ -646,7 +792,7 @@ export default function PublicAIInterviewPage() {
         if (phaseAfterClip === "off" || phaseAfterClip === "error") return;
       }
 
-      // Queue drained. If voice is still on and the session is live, auto-listen.
+      // Queue drained. Keep the mic closed until the candidate taps the mic.
       const phaseAfterDrain = voicePhaseRef.current as VoicePhase;
       if (
         phaseAfterDrain !== "off" &&
@@ -654,61 +800,83 @@ export default function PublicAIInterviewPage() {
         sessionRef.current?.status === "in_progress" &&
         isVoiceTransportActive()
       ) {
-        setMicTrackEnabled(true);
-        setVoicePhase("listening", "I'm listening — speak naturally. Tap \"I'm done\" when you finish.");
+        pauseCandidateMic();
+        setVoicePhase("ready", "Tap Speak now when you are ready to answer.");
       }
     } finally {
       speechQueueRunningRef.current = false;
     }
-  }, [isVoiceTransportActive, playSpeechClip, setMicTrackEnabled, setVoicePhase, startAssistantSpeechVisual, finishAssistantSpeechVisual]);
+  }, [isVoiceTransportActive, pauseCandidateMic, playSpeechClip, setVoicePhase, startAssistantSpeechVisual, finishAssistantSpeechVisual]);
 
   // User pressed "I'm done" while listening — close the mic and move into
   // processing so the upcoming Azure transcript is treated as the answer.
   const endListening = useCallback(() => {
     if (voicePhaseRef.current !== "listening") return;
-    setMicTrackEnabled(false);
-    setVoicePhase("processing", "Got it — let me think about that…");
-  }, [setMicTrackEnabled, setVoicePhase]);
+    pauseCandidateMic({ endTurn: true });
+    setVoicePhase("processing", "Finishing your transcript...");
 
-  const handleCandidateVoiceTranscript = useCallback(async (text: string) => {
+    window.setTimeout(async () => {
+      const transcript = messageRef.current.trim();
+      if (!transcript) {
+        if (isVoiceTransportActive()) {
+          pauseCandidateMic();
+          setVoicePhase("ready", "I didn't catch that. Tap Speak now to try again.");
+        } else {
+          setVoicePhase("off", "Voice connection lost. Restart voice mode to continue.");
+        }
+        return;
+      }
+
+      const sent = await submitCandidateText(transcript);
+      if (sent) {
+        void advanceVoiceFlow();
+      } else if (isVoiceTransportActive()) {
+        pauseCandidateMic();
+        setVoicePhase("ready", "Let's try that again. Tap Speak now when ready.");
+      }
+    }, 1400);
+  }, [advanceVoiceFlow, isVoiceTransportActive, pauseCandidateMic, setVoicePhase, submitCandidateText]);
+
+  const updateCandidateVoiceTranscript = useCallback((text: string, mode: "delta" | "final", turnId?: string | null) => {
     const cleaned = normalizeTranscriptText(text);
     const activeSession = sessionRef.current;
     if (!cleaned || !activeSession || activeSession.status !== "in_progress") return;
-    // Only accept transcripts when we're listening or already processing one.
     if (voicePhaseRef.current !== "listening" && voicePhaseRef.current !== "processing") return;
+    if (turnId && voiceListenTurnIdRef.current && turnId !== voiceListenTurnIdRef.current) return;
 
-    const key = transcriptKey("candidate", activeSession.currentQuestionIndex, cleaned);
-    if (recordedTranscriptKeysRef.current.has(key)) return;
-    recordedTranscriptKeysRef.current.add(key);
-
-    setMicTrackEnabled(false);
-    setVoicePhase("processing", "Got it — let me think about that…");
-
-    try {
-      const data = await aiInterviewService.sendPublicMessage(token, cleaned);
-      applyPublicState(data);
-      setMessage("");
-      // The state change will trigger the speakableAiMessageSignature effect
-      // which calls advanceVoiceFlow() — but we also invoke it here to keep
-      // the experience snappy and to avoid relying on render scheduling.
-      void advanceVoiceFlow();
-    } catch (error: any) {
-      recordedTranscriptKeysRef.current.delete(key);
-      toast.error(error?.message || "Failed to send your answer");
-      if (isVoiceTransportActive()) {
-        setMicTrackEnabled(true);
-        setVoicePhase("listening", "Let's try that again — I'm listening.");
-      } else {
-        setVoicePhase("off", "Voice connection lost. Restart voice mode to continue.");
+    if (mode === "final") {
+      const existingFinal = canonicalTranscriptText(voiceFinalTranscriptRef.current);
+      const nextFinal = canonicalTranscriptText(cleaned);
+      if (!existingFinal || !areEquivalentTranscriptTexts(existingFinal, nextFinal)) {
+        voiceFinalTranscriptRef.current = [voiceFinalTranscriptRef.current, cleaned].filter(Boolean).join(" ").trim();
       }
     }
-  }, [applyPublicState, advanceVoiceFlow, isVoiceTransportActive, setMicTrackEnabled, setVoicePhase, token]);
+
+    const combined = [
+      voiceTranscriptBaseRef.current,
+      voiceFinalTranscriptRef.current,
+      mode === "delta" ? cleaned : ""
+    ].filter(Boolean).join(" ").trim();
+
+    setMessage(combined);
+    messageRef.current = combined;
+  }, []);
 
   const handleVoiceEvent = useCallback((event: any) => {
     const type = event?.type;
     if (!type) return;
 
-    if (type === "voice.proxy.ready" || type === "session.updated" || type === "voice.output.blocked") {
+    if (
+      type === "voice.proxy.ready" ||
+      type === "voice.audio.ready" ||
+      type === "voice.session.refreshed" ||
+      type === "voice.stt.closed" ||
+      type === "session.updated" ||
+      type === "voice.output.blocked"
+    ) {
+      if (type === "voice.proxy.ready" && Number.isFinite(Number(event?.sampleRate))) {
+        voiceSampleRateRef.current = Number(event.sampleRate);
+      }
       return;
     }
 
@@ -743,15 +911,17 @@ export default function PublicAIInterviewPage() {
 
     if (isCandidateTranscriptDeltaEvent(type)) {
       if (!listeningOrProcessing) return;
-      // Could be used in future to show interim transcript text.
+      const transcript = getVoiceTranscriptText(event);
+      if (transcript) updateCandidateVoiceTranscript(transcript, "delta", event?.turnId);
       return;
     }
 
     if (isCandidateTranscriptFailedEvent(type)) {
       if (!listeningOrProcessing) return;
+      if (event?.turnId && voiceListenTurnIdRef.current && event.turnId !== voiceListenTurnIdRef.current) return;
       if (isVoiceTransportActive()) {
-        setMicTrackEnabled(true);
-        setVoicePhase("listening", "I didn't catch that — try again.");
+        pauseCandidateMic();
+        setVoicePhase("ready", "I didn't catch that. Tap Speak now to try again.");
       }
       return;
     }
@@ -760,18 +930,18 @@ export default function PublicAIInterviewPage() {
       if (!listeningOrProcessing) return;
       const transcript = getVoiceTranscriptText(event);
       if (transcript) {
-        void handleCandidateVoiceTranscript(transcript);
+        updateCandidateVoiceTranscript(transcript, "final", event?.turnId);
       } else if (isVoiceTransportActive()) {
-        setMicTrackEnabled(true);
-        setVoicePhase("listening", "I didn't catch that — try again.");
+        pauseCandidateMic();
+        setVoicePhase("ready", "I didn't catch that. Tap Speak now to try again.");
       }
       return;
     }
 
-    // Anything from Voice Live's own LLM (response.*) is ignored — we use
-    // Azure Speech TTS, not Voice Live's response audio.
+    // Any legacy response.* event is ignored. The backend interview harness
+    // creates text replies, and Azure Speech only handles TTS/STT.
     if (type.startsWith("response.")) return;
-  }, [finishAssistantSpeechVisual, handleCandidateVoiceTranscript, isVoiceTransportActive, setMicTrackEnabled, setVoicePhase]);
+  }, [finishAssistantSpeechVisual, isVoiceTransportActive, pauseCandidateMic, setVoicePhase, updateCandidateVoiceTranscript]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -782,7 +952,7 @@ export default function PublicAIInterviewPage() {
     const activeVoiceEnabled = Boolean(stateOverride?.voice?.enabled ?? voiceEnabled);
 
     if (!activeVoiceEnabled) {
-      toast.error("Voice Live is not configured for this interview yet");
+      toast.error("Azure Speech is not configured for this interview yet");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -827,8 +997,6 @@ export default function PublicAIInterviewPage() {
       ws.addEventListener("close", () => {
         if (voiceWsRef.current === ws) {
           voiceWsRef.current = null;
-          // If the RTC peer is still up, keep going — Azure tears the WS
-          // down once RTC is established. Otherwise the connection is gone.
           if (!isVoiceTransportActive()) {
             setMicTrackEnabled(false);
             setVoicePhase("off", "Voice connection closed. Restart voice mode to continue.");
@@ -842,84 +1010,49 @@ export default function PublicAIInterviewPage() {
       });
       await proxyReady;
 
-      const peerConnection = new RTCPeerConnection();
-      voicePeerRef.current = peerConnection;
+      const getMicStream = (deviceId?: string) => navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let stream: MediaStream;
+      try {
+        stream = await getMicStream(selectedInputDeviceId || undefined);
+      } catch (error) {
+        if (!selectedInputDeviceId) throw error;
+        setSelectedInputDeviceId("");
+        toast.error("Selected microphone was unavailable. Using the default microphone.");
+        stream = await getMicStream();
+      }
       voiceStreamRef.current = stream;
       // Mic stays muted until the queue has drained and we move to 'listening'.
       stream.getAudioTracks().forEach((track) => { track.enabled = false; });
-      stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
 
-      peerConnection.ontrack = (event) => {
-        // Voice Live audio output is intentionally ignored; we use Azure TTS.
-        // Some browsers will still pipe an unattached remote audio track to
-        // the speakers (Chrome's "implicit playback" for an autoplaying
-        // remote stream). Defensively stop incoming audio tracks so the
-        // candidate never hears a stray Voice Live stream.
-        event.streams?.forEach((stream) => {
-          stream.getAudioTracks().forEach((track) => {
-            try { track.stop(); } catch { /* ignore */ }
-          });
-        });
-        event.track?.stop?.();
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext: AudioContext = new AudioContextCtor();
+      voiceAudioContextRef.current = audioContext;
+
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const silenceGain = audioContext.createGain();
+      silenceGain.gain.value = 0;
+      processor.onaudioprocess = (event) => {
+        if (!voiceAudioCaptureEnabledRef.current || ws.readyState !== WebSocket.OPEN) return;
+        const pcm = downsampleToPcm16(event.inputBuffer.getChannelData(0), audioContext.sampleRate, voiceSampleRateRef.current);
+        ws.send(pcm);
       };
 
-      const dataChannel = peerConnection.createDataChannel("voice-live-events");
-      voiceDataChannelRef.current = dataChannel;
-      dataChannel.onmessage = (event) => {
-        const payload = parseVoiceMessage(event.data);
-        if (payload) handleVoiceEvent(payload);
-      };
-      dataChannel.onclose = () => {
-        if (voiceDataChannelRef.current === dataChannel) {
-          voiceDataChannelRef.current = null;
-          if (!isVoiceTransportActive()) {
-            setMicTrackEnabled(false);
-            setVoicePhase("off", "Voice connection closed. Restart voice mode to continue.");
-          }
-        }
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        if (voicePeerRef.current !== peerConnection) return;
-        if (peerConnection.connectionState === "disconnected") {
-          setVoiceStatus("Voice connection is reconnecting…");
-          return;
-        }
-        if (["failed", "closed"].includes(peerConnection.connectionState)) {
-          setMicTrackEnabled(false);
-          setVoicePhase("off", "Voice connection closed. Restart voice mode to continue.");
-        }
-      };
-
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      await waitForIceGatheringComplete(peerConnection);
-
-      const answerPromise = new Promise<string>((resolve, reject) => {
-        const timeout = window.setTimeout(() => reject(new Error("Voice Live did not return an SDP answer")), 15000);
-        ws.addEventListener("message", function onMessage(event) {
-          const payload = parseVoiceMessage(event.data);
-          if (payload?.type === "rtc.call.sdp.created" && payload.sdp_answer) {
-            window.clearTimeout(timeout);
-            ws.removeEventListener("message", onMessage);
-            resolve(payload.sdp_answer);
-          } else if (payload?.type === "voice.error" || payload?.type === "error") {
-            window.clearTimeout(timeout);
-            ws.removeEventListener("message", onMessage);
-            reject(new Error(payload.message || payload.error?.message || "Voice Live failed"));
-          }
-        });
-      });
-
-      ws.send(JSON.stringify({
-        type: "rtc.call.sdp.create",
-        sdp_offer: peerConnection.localDescription?.sdp
-      }));
-
-      const sdpAnswer = await answerPromise;
-      await peerConnection.setRemoteDescription({ type: "answer", sdp: sdpAnswer });
+      source.connect(processor);
+      processor.connect(silenceGain);
+      silenceGain.connect(audioContext.destination);
+      voiceAudioSourceRef.current = source;
+      voiceAudioProcessorRef.current = processor;
+      voiceAudioSilenceGainRef.current = silenceGain;
+      await audioContext.resume();
 
       // Voice is live. Transition to 'speaking' and let advanceVoiceFlow drain
       // the queue, after which it'll automatically move to 'listening'.
@@ -931,16 +1064,31 @@ export default function PublicAIInterviewPage() {
       cleanupVoice(error?.message || "Voice mode failed", "error");
       toast.error(error?.message || "Unable to start voice mode");
     }
-  }, [advanceVoiceFlow, cleanupVoice, handleVoiceEvent, isVoiceTransportActive, session, setMicTrackEnabled, setVoicePhase, token, voiceEnabled]);
+  }, [advanceVoiceFlow, cleanupVoice, handleVoiceEvent, isVoiceTransportActive, selectedInputDeviceId, session, setVoicePhase, token, voiceEnabled]);
 
   useEffect(() => {
     load();
   }, [token]);
 
   useEffect(() => {
+    void loadAudioDevices(false);
+    const handler = () => { void loadAudioDevices(false); };
+    navigator.mediaDevices?.addEventListener?.("devicechange", handler);
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", handler);
+  }, [loadAudioDevices]);
+
+  useEffect(() => {
+    void applyOutputDevice(selectedOutputDeviceId);
+  }, [applyOutputDevice, selectedOutputDeviceId]);
+
+  useEffect(() => {
     stateRef.current = state;
     sessionRef.current = session || null;
   }, [session, state]);
+
+  useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
 
   useEffect(() => {
     return () => cleanupVoice();
@@ -1047,6 +1195,7 @@ export default function PublicAIInterviewPage() {
       spokenAiMessageKeysRef.current.clear();
       recordedTranscriptKeysRef.current.clear();
       setMessage("");
+      messageRef.current = "";
       toast.success("Interview reset. Press Start to begin again.");
     } catch (error: any) {
       toast.error(error?.message || "Failed to reset interview");
@@ -1059,29 +1208,14 @@ export default function PublicAIInterviewPage() {
     const text = message.trim();
     if (!text) return;
 
-    setSending(true);
-    setMessage("");
-    // If we were listening, stop — typing implicitly ends the listening turn
-    // and the AI response will trigger another listen cycle when it arrives.
     if (voicePhaseRef.current === "listening") {
-      setMicTrackEnabled(false);
-      setVoicePhase("processing", "Got it — let me think about that…");
+      pauseCandidateMic({ endTurn: true });
+      setVoicePhase("processing", "Got it. Sending your response...");
     }
-    try {
-      const data = await aiInterviewService.sendPublicMessage(token, text);
-      applyPublicState(data);
-      // The speakableAiMessageSignature effect will pick up the new message
-      // and call advanceVoiceFlow if voice is on.
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to send message");
-      setMessage(text);
-      // Roll back to listening if we were there and the transport is still up.
-      if (voicePhaseRef.current === "processing" && isVoiceTransportActive()) {
-        setMicTrackEnabled(true);
-        setVoicePhase("listening", "Let's try that again — I'm listening.");
-      }
-    } finally {
-      setSending(false);
+
+    const sent = await submitCandidateText(text);
+    if (sent) {
+      void advanceVoiceFlow();
     }
   };
 
@@ -1098,6 +1232,72 @@ export default function PublicAIInterviewPage() {
       setConfirming(false);
     }
   };
+
+  const restartVoiceWithSelectedDevices = () => {
+    void loadAudioDevices(true);
+    if (session?.status === "in_progress" && !["off", "error", "connecting"].includes(voicePhase)) {
+      cleanupVoice("Switching voice devices...", "connecting");
+      window.setTimeout(() => { void connectVoice(); }, 200);
+    }
+  };
+
+  const renderAudioDeviceSettings = (compact = false) => (
+    <div className={`rounded-2xl border bg-white ${compact ? "p-3" : "p-4"} shadow-sm`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+          <Settings className="h-4 w-4 text-blue-600" />
+          Audio settings
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={() => void loadAudioDevices(true)}>
+          <RotateCcw className="mr-2 h-3.5 w-3.5" />
+          Detect
+        </Button>
+      </div>
+
+      <div className={`grid gap-3 ${compact ? "" : "sm:grid-cols-2"}`}>
+        <label className="space-y-1.5 text-xs font-medium text-slate-600">
+          Microphone
+          <select
+            value={selectedInputDeviceId}
+            onChange={(event) => setSelectedInputDeviceId(event.target.value)}
+            className="h-11 w-full rounded-xl border bg-white px-3 text-sm font-normal text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          >
+            {audioInputs.length ? audioInputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+            )) : (
+              <option value="">Default microphone</option>
+            )}
+          </select>
+        </label>
+
+        <label className="space-y-1.5 text-xs font-medium text-slate-600">
+          Speaker
+          <select
+            value={selectedOutputDeviceId}
+            onChange={(event) => setSelectedOutputDeviceId(event.target.value)}
+            className="h-11 w-full rounded-xl border bg-white px-3 text-sm font-normal text-slate-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          >
+            {audioOutputs.length ? audioOutputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+            )) : (
+              <option value="">Default speaker</option>
+            )}
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs leading-5 text-slate-500">
+          Speech-to-text fills the chat box first. Press Send or I'm done to submit it.
+        </p>
+        {session?.status === "in_progress" && voicePhase !== "off" && voicePhase !== "error" && (
+          <Button type="button" size="sm" onClick={restartVoiceWithSelectedDevices}>
+            Apply
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -1297,24 +1497,39 @@ export default function PublicAIInterviewPage() {
                   <Volume2 className="h-4 w-4 text-emerald-600" />
                   Voice mode
                 </div>
-                <Badge
-                  variant={voicePhase === "listening" || voicePhase === "speaking" || voicePhase === "processing" ? "default" : "secondary"}
-                  className={
-                    voicePhase === "listening" ? "bg-blue-600" :
-                    voicePhase === "speaking" ? "bg-emerald-600" :
-                    voicePhase === "processing" ? "bg-amber-500" :
-                    voicePhase === "error" ? "bg-red-600" : ""
-                  }
-                >
-                  {voicePhase === "speaking" ? "Speaking" :
-                    voicePhase === "listening" ? "Listening" :
-                    voicePhase === "processing" ? "Thinking" :
-                    voicePhase === "connecting" ? "Connecting" :
-                    voicePhase === "error" ? "Error" :
-                    voiceEnabled ? "Ready" : "Off"}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={voicePhase === "ready" || voicePhase === "listening" || voicePhase === "speaking" || voicePhase === "processing" ? "default" : "secondary"}
+                    className={
+                      voicePhase === "ready" ? "bg-slate-700" :
+                      voicePhase === "listening" ? "bg-blue-600" :
+                      voicePhase === "speaking" ? "bg-emerald-600" :
+                      voicePhase === "processing" ? "bg-amber-500" :
+                      voicePhase === "error" ? "bg-red-600" : ""
+                    }
+                  >
+                    {voicePhase === "speaking" ? "Speaking" :
+                      voicePhase === "ready" ? "Ready" :
+                      voicePhase === "listening" ? "Listening" :
+                      voicePhase === "processing" ? "Thinking" :
+                      voicePhase === "connecting" ? "Connecting" :
+                      voicePhase === "error" ? "Error" :
+                      voiceEnabled ? "Ready" : "Off"}
+                  </Badge>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setDeviceSettingsOpen((value) => !value)}
+                    aria-label="Voice settings"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <p className="text-xs leading-5 text-slate-600">{voiceStatus}</p>
+              {deviceSettingsOpen && <div className="mt-3">{renderAudioDeviceSettings(true)}</div>}
 
               {voicePhase === "speaking" && assistantSpeech.active && (
                 <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
@@ -1340,6 +1555,18 @@ export default function PublicAIInterviewPage() {
                   <div className="h-1.5 overflow-hidden rounded-full bg-emerald-100">
                     <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
                   </div>
+                </div>
+              )}
+
+              {voicePhase === "ready" && (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-900">
+                    <Mic className="h-3.5 w-3.5 text-blue-600" />
+                    Ready for your response
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-600">
+                    Your mic is muted. Tap <span className="font-semibold">Speak now</span> when you want Azure Speech to fill the answer box.
+                  </p>
                 </div>
               )}
 
@@ -1386,10 +1613,10 @@ export default function PublicAIInterviewPage() {
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   <Button
                     type="button"
-                    variant={voicePhase === "listening" ? "default" : "outline"}
-                    className={voicePhase === "listening" ? "bg-blue-600 hover:bg-blue-700" : ""}
+                    variant={voicePhase === "listening" || voicePhase === "ready" ? "default" : "outline"}
+                    className={voicePhase === "listening" || voicePhase === "ready" ? "bg-blue-600 hover:bg-blue-700" : ""}
                     disabled={voiceActionDisabled}
-                    onClick={endListening}
+                    onClick={voicePhase === "ready" ? startListeningTurn : endListening}
                   >
                     {voicePhase === "listening" ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
                     {voiceActionLabel}
@@ -1542,6 +1769,8 @@ export default function PublicAIInterviewPage() {
                     </div>
                   </div>
 
+                  {renderAudioDeviceSettings()}
+
                   <div className="rounded-3xl border bg-white p-5 shadow-sm">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
                       <CalendarClock className="h-4 w-4 text-emerald-600" />
@@ -1574,7 +1803,7 @@ export default function PublicAIInterviewPage() {
                       Start Interview
                     </Button>
                     <p className="mt-3 text-xs leading-5 text-slate-400">
-                      Voice stays off until you tap the mic in the workspace. You can type at any time.
+                      Voice reads interviewer messages first. Your mic stays muted until you tap Speak now.
                     </p>
                   </div>
                 </div>
@@ -1634,12 +1863,24 @@ export default function PublicAIInterviewPage() {
                     )}
                     <Button
                       type="button"
+                      size="icon"
+                      variant="secondary"
+                      className="h-11 min-w-11 rounded-xl bg-white px-3 text-slate-950 hover:bg-slate-100"
+                      onClick={() => setDeviceSettingsOpen((value) => !value)}
+                      aria-label="Audio settings"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
                       size="sm"
                       variant="secondary"
                       disabled={!voiceEnabled || voicePhase === "connecting" || voicePhase === "speaking" || voicePhase === "processing"}
                       onClick={
                         voicePhase === "listening"
                           ? endListening
+                          : voicePhase === "ready"
+                            ? startListeningTurn
                           : (voicePhase === "off" || voicePhase === "error")
                             ? () => connectVoice()
                             : undefined
@@ -1660,6 +1901,11 @@ export default function PublicAIInterviewPage() {
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, progress)}%` }} />
                 </div>
+                {deviceSettingsOpen && (
+                  <div className="mt-3 text-slate-950">
+                    {renderAudioDeviceSettings(true)}
+                  </div>
+                )}
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-2 sm:p-4 md:p-5">
@@ -1712,16 +1958,30 @@ export default function PublicAIInterviewPage() {
                           ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           : voicePhase === "listening"
                             ? <Mic className="h-3.5 w-3.5" />
+                            : voicePhase === "ready"
+                              ? <MicOff className="h-3.5 w-3.5" />
                             : <Volume2 className="h-3.5 w-3.5" />}
                         <span className="truncate">{voiceStatus}</span>
                       </div>
-                      {(voicePhase === "speaking" || voicePhase === "listening" || voicePhase === "processing") && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 bg-white"
+                        onClick={() => setDeviceSettingsOpen((value) => !value)}
+                      >
+                        <Settings className="mr-2 h-3.5 w-3.5" />
+                        Audio
+                      </Button>
+                      {(voicePhase === "speaking" || voicePhase === "ready" || voicePhase === "listening" || voicePhase === "processing") && (
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge
                             variant="outline"
                             className={
                               voicePhase === "listening"
                                 ? "border-blue-200 bg-white text-blue-700"
+                                : voicePhase === "ready"
+                                  ? "border-slate-200 bg-white text-slate-700"
                                 : voicePhase === "processing"
                                   ? "border-amber-200 bg-white text-amber-800"
                                   : "border-emerald-200 bg-white text-emerald-700"
@@ -1729,6 +1989,8 @@ export default function PublicAIInterviewPage() {
                           >
                             {voicePhase === "speaking"
                               ? "AI speaking"
+                              : voicePhase === "ready"
+                                ? "Mic muted"
                               : voicePhase === "listening"
                                 ? "Listening"
                                 : "Thinking"}
@@ -1736,10 +1998,10 @@ export default function PublicAIInterviewPage() {
                           <Button
                             type="button"
                             size="sm"
-                            variant={voicePhase === "listening" ? "default" : "outline"}
-                            className={voicePhase === "listening" ? "h-8 bg-blue-600 hover:bg-blue-700" : "h-8"}
+                            variant={voicePhase === "listening" || voicePhase === "ready" ? "default" : "outline"}
+                            className={voicePhase === "listening" || voicePhase === "ready" ? "h-8 bg-blue-600 hover:bg-blue-700" : "h-8"}
                             disabled={voiceActionDisabled}
-                            onClick={endListening}
+                            onClick={voicePhase === "ready" ? startListeningTurn : endListening}
                           >
                             {voicePhase === "listening"
                               ? <MicOff className="mr-2 h-3.5 w-3.5" />
@@ -1773,12 +2035,16 @@ export default function PublicAIInterviewPage() {
                         </div>
                       </div>
                     )}
+                    {deviceSettingsOpen && <div className="mt-3">{renderAudioDeviceSettings(true)}</div>}
                   </div>
                 )}
                 <div className="rounded-2xl border bg-white p-2 shadow-sm">
                   <Textarea
                     value={message}
-                    onChange={(event) => setMessage(event.target.value)}
+                    onChange={(event) => {
+                      setMessage(event.target.value);
+                      messageRef.current = event.target.value;
+                    }}
                     placeholder="Type your answer or ask for clarification..."
                     rows={2}
                     className="min-h-[56px] max-h-[160px] resize-none border-0 bg-slate-50 text-base shadow-none focus-visible:ring-0 sm:min-h-[82px] sm:max-h-[220px] sm:resize-y sm:text-sm"
@@ -1790,7 +2056,7 @@ export default function PublicAIInterviewPage() {
                     }}
                   />
                   <div className="mt-2 grid grid-cols-[44px_1fr] gap-2 sm:grid-cols-[auto_auto_1fr]">
-                    <Button variant="outline" onClick={() => setMessage("")} disabled={!message.trim()} className="min-h-[44px] px-0 sm:px-4">
+                    <Button variant="outline" onClick={() => { setMessage(""); messageRef.current = ""; }} disabled={!message.trim()} className="min-h-[44px] px-0 sm:px-4">
                       <X className="h-4 w-4 sm:mr-2" />
                       <span className="hidden sm:inline">Clear</span>
                     </Button>

@@ -1,25 +1,19 @@
 const crypto = require('crypto');
 const WebSocket = require('ws');
+const sdk = require('microsoft-cognitiveservices-speech-sdk');
 const AIInterviewSession = require('../models/AIInterviewSession');
 
 function hashPublicToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
-function normalizeEndpoint(endpoint) {
-  return String(endpoint || '').trim().replace(/\/+$/, '');
+function normalizeRegion(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
 }
 
-function toWebSocketBase(endpoint) {
-  const normalized = normalizeEndpoint(endpoint);
-  if (!normalized) return '';
-  return normalized.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
-}
-
-function parseNumber(value, fallback, min, max) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, parsed));
+function normalizeEnglishLanguage(value, fallback = 'en-US') {
+  const language = String(value || '').trim();
+  return /^en(?:-|$)/i.test(language) ? language : fallback;
 }
 
 function parseInteger(value, fallback, min, max) {
@@ -28,42 +22,10 @@ function parseInteger(value, fallback, min, max) {
   return Math.min(max, Math.max(min, parsed));
 }
 
-function parseBoolean(value, fallback) {
-  if (value == null || value === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
-}
-
-function parseLanguageList(value, fallback = ['en']) {
-  const languages = String(value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return languages.length ? languages : fallback;
-}
-
-function normalizeEnglishLanguage(value, fallback = 'en-US') {
-  const language = String(value || '').trim();
-  return /^en(?:-|$)/i.test(language) ? language : fallback;
-}
-
-function parseEnglishLanguageList(value, fallback = ['en-US']) {
-  const languages = parseLanguageList(value, fallback)
-    .filter((language) => /^en(?:-|$)/i.test(language));
-  return languages.length ? languages : fallback;
-}
-
-function getCurrentQuestion(interview, session) {
-  return interview.questionSnapshots?.[session.currentQuestionIndex] || null;
-}
-
-function getLatestInterviewerPrompt(session) {
-  const currentIndex = session.currentQuestionIndex;
-  const messages = [...(session.messages || [])].reverse();
-  return messages.find((message) => (
-    message.role === 'ai' &&
-    message.questionIndex === currentIndex &&
-    ['question', 'clarification', 'acknowledgement'].includes(message.messageType)
-  ))?.content || '';
+function writeSilence(pushStream, sampleRate, milliseconds) {
+  const sampleCount = Math.max(0, Math.round((sampleRate * milliseconds) / 1000));
+  if (!sampleCount) return;
+  pushStream.write(Buffer.alloc(sampleCount * 2));
 }
 
 async function findPublicSession(token) {
@@ -86,107 +48,44 @@ class AIInterviewVoiceLiveService {
   }
 
   getConfig() {
-    const endpoint = normalizeEndpoint(process.env.AZURE_VOICELIVE_ENDPOINT);
-    const apiKey = process.env.AZURE_VOICELIVE_API_KEY;
+    const region = normalizeRegion(
+      process.env.AZURE_SPEECH_REGION ||
+      process.env.AZURE_LOCATION ||
+      process.env.AZURE_VOICELIVE_REGION ||
+      'swedencentral'
+    );
+
     return {
-      endpoint,
-      apiKey,
-      apiVersion: process.env.AZURE_VOICELIVE_API_VERSION || '2025-10-01',
-      callsApiVersion: process.env.AZURE_VOICELIVE_WEBRTC_API_VERSION || '2026-01-01-preview',
-      model: process.env.AZURE_VOICELIVE_MODEL || 'gpt-realtime',
-      voice: process.env.AZURE_VOICELIVE_VOICE || 'en-US-Ava:DragonHDLatestNeural',
-      language: normalizeEnglishLanguage(process.env.AZURE_VOICELIVE_LANGUAGE || 'en-US'),
-      voiceLocale: process.env.AZURE_VOICELIVE_VOICE_LOCALE || 'en-US',
-      voiceRate: process.env.AZURE_VOICELIVE_VOICE_RATE || '1.0',
-      voiceTemperature: parseNumber(process.env.AZURE_VOICELIVE_VOICE_TEMPERATURE, 0.6, 0, 1),
-      vadThreshold: parseNumber(process.env.AZURE_VOICELIVE_VAD_THRESHOLD, 0.5, 0, 1),
-      vadPrefixPaddingMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_PREFIX_PADDING_MS, 300, 0, 2000),
-      vadSpeechDurationMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_SPEECH_DURATION_MS, 120, 40, 2000),
-      vadSilenceDurationMs: parseInteger(process.env.AZURE_VOICELIVE_VAD_SILENCE_DURATION_MS, 800, 200, 3000),
-      vadRemoveFillerWords: parseBoolean(process.env.AZURE_VOICELIVE_REMOVE_FILLER_WORDS, true),
-      vadLanguages: parseEnglishLanguageList(process.env.AZURE_VOICELIVE_VAD_LANGUAGES, ['en-US']),
-      eouTimeoutMs: parseInteger(process.env.AZURE_VOICELIVE_EOU_TIMEOUT_MS, 1200, 200, 5000),
-      outputWordTimestamps: parseBoolean(process.env.AZURE_VOICELIVE_OUTPUT_WORD_TIMESTAMPS, true)
+      apiKey: process.env.AZURE_SPEECH_KEY || process.env.AZURE_VOICELIVE_API_KEY,
+      region,
+      language: normalizeEnglishLanguage(
+        process.env.AZURE_AI_INTERVIEW_SPEECH_LANGUAGE ||
+        process.env.AZURE_SPEECH_LANGUAGE ||
+        process.env.AZURE_VOICELIVE_LANGUAGE ||
+        'en-US'
+      ),
+      sampleRate: parseInteger(process.env.AZURE_SPEECH_STT_SAMPLE_RATE, 16000, 8000, 48000),
+      initialSilenceTimeoutMs: parseInteger(process.env.AZURE_SPEECH_INITIAL_SILENCE_TIMEOUT_MS, 10000, 1000, 60000),
+      endSilenceTimeoutMs: parseInteger(process.env.AZURE_SPEECH_END_SILENCE_TIMEOUT_MS, 900, 200, 5000),
+      noSpeechTimeoutMs: parseInteger(process.env.AZURE_SPEECH_NO_SPEECH_TIMEOUT_MS, 4500, 1000, 12000),
+      voice: process.env.AZURE_SPEECH_VOICE || process.env.AZURE_VOICELIVE_VOICE || 'en-US-AvaNeural'
     };
   }
 
   isConfigured() {
     const config = this.getConfig();
-    return Boolean(config.endpoint && config.apiKey && config.model);
+    return Boolean(config.apiKey && config.region);
   }
 
   getPublicConfig() {
     const config = this.getConfig();
     return {
       enabled: this.isConfigured(),
-      model: config.model,
+      provider: 'azure-speech',
+      model: 'azure-speech',
+      language: config.language,
+      sampleRate: config.sampleRate,
       voice: config.voice
-    };
-  }
-
-  buildAzureUrl() {
-    const config = this.getConfig();
-    const wsBase = toWebSocketBase(config.endpoint);
-    const url = new URL(`${wsBase}/voice-live/realtime/calls`);
-    url.searchParams.set('api-version', config.callsApiVersion);
-    url.searchParams.set('model', config.model);
-    return url.toString();
-  }
-
-  buildInstructions(session, interview) {
-    const currentQuestion = getCurrentQuestion(interview, session);
-    const latestPrompt = getLatestInterviewerPrompt(session);
-    const total = interview.questionSnapshots?.length || 0;
-
-    return [
-      'You are the speech-to-text layer for Seemplify AI Interviewer.',
-      'The backend application controls the workflow, timers, active question, scoring, and when the interview moves forward.',
-      'Your only job is to transcribe candidate microphone input.',
-      'Do not generate, answer, clarify, translate, summarize, or speak interviewer content.',
-      'Candidate speech is sent back to the application backend, which decides the next interviewer text.',
-      'You must not move to another question, create assessment questions, score the candidate, reveal rubrics, or reveal expected answers.',
-      'Only discuss the current active question.',
-      'This interview is English-only. Transcribe English only.',
-      'If candidate speech is received, do not answer it directly.',
-      `Interview title: ${interview.title}`,
-      `Candidate: ${session.candidateSnapshot?.name || 'Candidate'}`,
-      `Current stage: question ${session.currentQuestionIndex + 1} of ${total}`,
-      `Current question: ${currentQuestion?.question || 'No active question'}`,
-      `Candidate-facing guidelines: ${interview.guidelines || 'No custom guidelines provided.'}`,
-      latestPrompt ? `Latest interviewer text already shown in the page: ${latestPrompt}` : ''
-    ].filter(Boolean).join('\n');
-  }
-
-  buildSessionUpdate(session, interview) {
-    const config = this.getConfig();
-    return {
-      type: 'session.update',
-      session: {
-        modalities: ['text'],
-        instructions: this.buildInstructions(session, interview),
-        input_audio_transcription: {
-          model: 'azure-speech',
-          language: config.language
-        },
-        turn_detection: {
-          type: 'azure_semantic_vad',
-          threshold: config.vadThreshold,
-          prefix_padding_ms: config.vadPrefixPaddingMs,
-          speech_duration_ms: config.vadSpeechDurationMs,
-          silence_duration_ms: config.vadSilenceDurationMs,
-          remove_filler_words: config.vadRemoveFillerWords,
-          languages: config.vadLanguages,
-          end_of_utterance_detection: {
-            model: 'semantic_detection_v1',
-            threshold_level: 'medium',
-            timeout_ms: config.eouTimeoutMs
-          },
-          create_response: false,
-          interrupt_response: false
-        },
-        input_audio_noise_reduction: { type: 'azure_deep_noise_suppression' },
-        input_audio_echo_cancellation: { type: 'server_echo_cancellation' }
-      }
     };
   }
 
@@ -194,6 +93,42 @@ class AIInterviewVoiceLiveService {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(payload));
     }
+  }
+
+  createRecognizer(clientWs, config) {
+    const speechConfig = sdk.SpeechConfig.fromSubscription(config.apiKey, config.region);
+    speechConfig.speechRecognitionLanguage = config.language;
+    speechConfig.setProperty(
+      sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs,
+      String(config.initialSilenceTimeoutMs)
+    );
+    speechConfig.setProperty(
+      sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
+      String(config.endSilenceTimeoutMs)
+    );
+    speechConfig.setProperty(
+      sdk.PropertyId.SpeechServiceResponse_RequestWordLevelTimestamps,
+      'true'
+    );
+
+    const audioFormat = sdk.AudioStreamFormat.getWaveFormatPCM(config.sampleRate, 16, 1);
+    const pushStream = sdk.AudioInputStream.createPushStream(audioFormat);
+    const audioConfig = sdk.AudioConfig.fromStreamInput(pushStream);
+    const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
+
+    return { recognizer, pushStream };
+  }
+
+  startRecognizer(recognizer) {
+    return new Promise((resolve, reject) => {
+      recognizer.startContinuousRecognitionAsync(resolve, reject);
+    });
+  }
+
+  stopRecognizer(recognizer) {
+    return new Promise((resolve) => {
+      recognizer.stopContinuousRecognitionAsync(resolve, resolve);
+    });
   }
 
   initialize(server) {
@@ -211,16 +146,38 @@ class AIInterviewVoiceLiveService {
     });
 
     this.wss.on('connection', async (clientWs, req) => {
-      let azureWs = null;
-      const pendingMessages = [];
+      let recognizer = null;
+      let pushStream = null;
+      let currentTurnId = null;
+      let finalTurnId = null;
+      let noSpeechTimer = null;
+      let closed = false;
+
+      const clearNoSpeechTimer = () => {
+        if (noSpeechTimer) {
+          clearTimeout(noSpeechTimer);
+          noSpeechTimer = null;
+        }
+      };
+
+      const cleanup = async () => {
+        if (closed) return;
+        closed = true;
+        clearNoSpeechTimer();
+        try { pushStream?.close(); } catch { /* ignore */ }
+        if (recognizer) {
+          await this.stopRecognizer(recognizer).catch(() => {});
+          recognizer.close();
+        }
+      };
 
       try {
         const requestUrl = new URL(req.url, 'http://localhost');
         const token = requestUrl.searchParams.get('token');
 
         if (!this.isConfigured()) {
-          this.sendJson(clientWs, { type: 'voice.error', message: 'Voice Live is not configured on the backend.' });
-          clientWs.close(1011, 'Voice Live not configured');
+          this.sendJson(clientWs, { type: 'voice.error', message: 'Azure Speech STT is not configured on the backend.' });
+          clientWs.close(1011, 'Azure Speech not configured');
           return;
         }
 
@@ -252,99 +209,125 @@ class AIInterviewVoiceLiveService {
         }
 
         const config = this.getConfig();
-        azureWs = new WebSocket(this.buildAzureUrl(), {
-          headers: {
-            'api-key': config.apiKey
-          }
-        });
+        const recognizerPair = this.createRecognizer(clientWs, config);
+        recognizer = recognizerPair.recognizer;
+        pushStream = recognizerPair.pushStream;
 
-        azureWs.on('open', () => {
-          this.sendJson(azureWs, this.buildSessionUpdate(session, interview));
+        recognizer.recognizing = (_sender, event) => {
+          const transcript = event?.result?.text;
+          if (!transcript) return;
           this.sendJson(clientWs, {
-            type: 'voice.proxy.ready',
-            model: config.model,
-            voice: config.voice
+            type: 'voice.transcript.delta',
+            transcript,
+            turnId: currentTurnId
           });
-          while (pendingMessages.length) {
-            this.sendJson(azureWs, pendingMessages.shift());
+        };
+
+        recognizer.recognized = (_sender, event) => {
+          const transcript = event?.result?.text;
+          if (event?.result?.reason === sdk.ResultReason.RecognizedSpeech && transcript) {
+            finalTurnId = currentTurnId;
+            clearNoSpeechTimer();
+            this.sendJson(clientWs, {
+              type: 'voice.transcript.final',
+              transcript,
+              turnId: currentTurnId
+            });
+            return;
           }
-        });
 
-        azureWs.on('message', (data) => {
-          if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.send(Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
+          if (event?.result?.reason === sdk.ResultReason.NoMatch && currentTurnId && finalTurnId !== currentTurnId) {
+            this.sendJson(clientWs, {
+              type: 'voice.transcript.failed',
+              message: 'No speech was recognized.',
+              turnId: currentTurnId
+            });
           }
+        };
+
+        recognizer.canceled = (_sender, event) => {
+          const details = event?.errorDetails || 'Azure Speech recognition was cancelled.';
+          console.error('AI interview Azure Speech STT cancelled:', details);
+          this.sendJson(clientWs, { type: 'voice.error', message: details });
+        };
+
+        recognizer.sessionStopped = () => {
+          this.sendJson(clientWs, { type: 'voice.stt.closed' });
+        };
+
+        await this.startRecognizer(recognizer);
+
+        this.sendJson(clientWs, {
+          type: 'voice.proxy.ready',
+          provider: 'azure-speech',
+          language: config.language,
+          sampleRate: config.sampleRate
         });
 
-        azureWs.on('close', (code, reason) => {
-          this.sendJson(clientWs, {
-            type: 'voice.proxy.closed',
-            code,
-            reason: reason?.toString()
-          });
-          if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.close(code || 1000, reason?.toString() || 'Azure Voice Live closed');
-          }
-        });
-
-        azureWs.on('error', (error) => {
-          console.error('AI interview Voice Live Azure WebSocket error:', error.message);
-          this.sendJson(clientWs, { type: 'voice.error', message: error.message });
-        });
-
-        clientWs.on('message', async (data) => {
+        clientWs.on('message', async (data, isBinary) => {
           try {
-            const message = JSON.parse(data.toString());
-
-            if (message.type === 'voice.refresh_session') {
-              session = await findPublicSession(token);
-              if (session?.aiInterview && azureWs?.readyState === WebSocket.OPEN) {
-                this.sendJson(azureWs, this.buildSessionUpdate(session, session.aiInterview));
+            if (isBinary) {
+              if (pushStream && currentTurnId) {
+                pushStream.write(Buffer.from(data));
               }
               return;
             }
 
-            if (message.type === 'voice.say_current_question' || message.type === 'voice.speak_text' || message.type === 'response.create') {
+            const message = JSON.parse(Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
+
+            if (message.type === 'voice.refresh_session') {
+              session = await findPublicSession(token);
+              this.sendJson(clientWs, { type: 'voice.session.refreshed' });
+              return;
+            }
+
+            if (message.type === 'voice.audio.start') {
+              currentTurnId = message.turnId || crypto.randomUUID();
+              finalTurnId = null;
+              clearNoSpeechTimer();
               this.sendJson(clientWs, {
-                type: 'voice.output.blocked',
-                message: 'Interview speech output is handled by deterministic Azure Speech TTS.'
+                type: 'voice.audio.ready',
+                turnId: currentTurnId
               });
               return;
             }
 
-            if (message.type === 'rtc.call.sdp.create' && azureWs?.readyState === WebSocket.OPEN) {
-              this.sendJson(azureWs, message);
-            } else if (message.type === 'rtc.call.sdp.create') {
-              pendingMessages.push(message);
-            } else {
-              this.sendJson(clientWs, { type: 'voice.error', message: 'Unsupported voice command.' });
+            if (message.type === 'voice.audio.end_turn') {
+              const turnId = message.turnId || currentTurnId;
+              writeSilence(pushStream, config.sampleRate, config.endSilenceTimeoutMs + 300);
+              clearNoSpeechTimer();
+              noSpeechTimer = setTimeout(() => {
+                if (turnId && finalTurnId !== turnId) {
+                  this.sendJson(clientWs, {
+                    type: 'voice.transcript.failed',
+                    message: 'No speech was recognized.',
+                    turnId
+                  });
+                }
+              }, config.noSpeechTimeoutMs);
+              return;
             }
+
+            this.sendJson(clientWs, { type: 'voice.error', message: 'Unsupported voice command.' });
           } catch (error) {
-            console.error('AI interview voice client message error:', error.message);
+            console.error('AI interview Azure Speech client message error:', error.message);
             this.sendJson(clientWs, { type: 'voice.error', message: 'Invalid voice message.' });
           }
         });
 
-        clientWs.on('close', () => {
-          if (azureWs && [WebSocket.OPEN, WebSocket.CONNECTING].includes(azureWs.readyState)) {
-            azureWs.close(1000, 'Client disconnected');
-          }
-        });
-
+        clientWs.on('close', cleanup);
         clientWs.on('error', (error) => {
-          console.error('AI interview voice client WebSocket error:', error.message);
+          console.error('AI interview Azure Speech client WebSocket error:', error.message);
         });
       } catch (error) {
-        console.error('AI interview voice connection error:', error.message);
+        console.error('AI interview Azure Speech connection error:', error.message);
         this.sendJson(clientWs, { type: 'voice.error', message: 'Unable to start voice mode.' });
-        if (azureWs && [WebSocket.OPEN, WebSocket.CONNECTING].includes(azureWs.readyState)) {
-          azureWs.close();
-        }
+        await cleanup();
         clientWs.close(1011, 'Voice setup failed');
       }
     });
 
-    console.log('AI Interview Voice Live proxy initialized on /ws/ai-interview-voice');
+    console.log('AI Interview Azure Speech STT bridge initialized on /ws/ai-interview-voice');
   }
 }
 
