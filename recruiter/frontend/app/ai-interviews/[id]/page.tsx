@@ -498,6 +498,11 @@ export default function AIInterviewDetailPage() {
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <div className="truncate font-semibold text-slate-950">{candidateDisplayName(session)}</div>
+                                  {session.recipientType === "guest" && (
+                                    <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                                      Guest
+                                    </Badge>
+                                  )}
                                 </div>
                                 <div className="truncate text-xs text-muted-foreground">{session.candidateSnapshot?.email}</div>
                               </div>
@@ -562,6 +567,11 @@ export default function AIInterviewDetailPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <h2 className="truncate text-xl font-semibold text-slate-950">{candidateDisplayName(selectedSession)}</h2>
                           <Badge className={statusColor(selectedSession.status)}>{selectedSession.status}</Badge>
+                          {selectedSession.recipientType === "guest" && (
+                            <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                              Guest
+                            </Badge>
+                          )}
                         </div>
                         <div className="mt-1 truncate text-sm text-muted-foreground">{selectedSession.candidateSnapshot?.email}</div>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">

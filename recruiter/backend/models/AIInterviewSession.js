@@ -83,6 +83,12 @@ const AIInterviewSessionSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  recipientType: {
+    type: String,
+    enum: ['candidate', 'guest'],
+    default: 'candidate',
+    index: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

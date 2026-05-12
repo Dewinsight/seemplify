@@ -22,7 +22,8 @@ import {
   TimerReset,
   Trophy,
   Users,
-  Workflow
+  Workflow,
+  XCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { InterviewQuestionSelector } from "@/components/ui/interview-question-selector";
-import { getAllJobs, getJobInterviewCandidates, type JobData } from "@/services/jobService";
+import { getAllJobs, type JobData } from "@/services/jobService";
+import { getAllCandidates } from "@/services/candidateService";
 import interviewService from "@/services/interviewService";
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService";
 
@@ -157,6 +159,12 @@ type JobRankingCandidate = {
   jobRank: number;
 };
 
+type GuestRecipient = {
+  id: string;
+  fullName: string;
+  email: string;
+};
+
 export default function AIInterviewsPage() {
   const searchParams = useSearchParams();
   const presetJobId = searchParams.get("jobId") || "";
@@ -169,6 +177,9 @@ export default function AIInterviewsPage() {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState("");
+  const [guestRecipients, setGuestRecipients] = useState<GuestRecipient[]>([]);
+  const [guestFullName, setGuestFullName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
   const [questionSelectorKey, setQuestionSelectorKey] = useState(0);
   const [activeTab, setActiveTab] = useState("create");
   const [selectedJobRankingId, setSelectedJobRankingId] = useState<string | null>(null);
@@ -212,6 +223,24 @@ export default function AIInterviewsPage() {
   const selectedCandidateRecords = useMemo(
     () => candidates.filter((candidate) => selectedCandidateIds.includes(candidate._id)),
     [candidates, selectedCandidateIds]
+  );
+  const guestEmailSet = useMemo(
+    () => new Set(guestRecipients.map((guest) => guest.email.toLowerCase())),
+    [guestRecipients]
+  );
+  const selectedRecipientCount = selectedCandidateIds.length + guestRecipients.length;
+  const selectedRecipientPills = useMemo(
+    () => [
+      ...selectedCandidateRecords.map((candidate) => ({
+        id: `candidate-${candidate._id}`,
+        label: candidateName(candidate)
+      })),
+      ...guestRecipients.map((guest) => ({
+        id: `guest-${guest.id}`,
+        label: `${guest.fullName} (guest)`
+      }))
+    ],
+    [guestRecipients, selectedCandidateRecords]
   );
   const totalCandidateSessions = useMemo(
     () => interviews.reduce((sum, interview) => sum + Number(interview.candidateCount || 0), 0),
@@ -338,27 +367,30 @@ export default function AIInterviewsPage() {
   const createProgress = useMemo(() => {
     const steps = [
       Boolean(form.jobId),
-      selectedCandidateIds.length > 0,
+      selectedRecipientCount > 0,
       selectedQuestionIds.length > 0,
       Boolean(form.sendAt && form.expiresAt)
     ];
     return Math.round((steps.filter(Boolean).length / steps.length) * 100);
-  }, [form.jobId, form.sendAt, form.expiresAt, selectedCandidateIds.length, selectedQuestionIds.length]);
+  }, [form.jobId, form.sendAt, form.expiresAt, selectedQuestionIds.length, selectedRecipientCount]);
 
   const loadData = async () => {
     setLoading(true);
+    setLoadingCandidates(true);
     try {
-      const [interviewList, jobList] = await Promise.all([
+      const [interviewList, jobList, candidateList] = await Promise.all([
         aiInterviewService.list(),
-        getAllJobs({ limit: 200 })
+        getAllJobs({ limit: 200 }),
+        getAllCandidates(1000)
       ]);
       setInterviews(interviewList);
       setJobs(jobList || []);
-      setCandidates([]);
+      setCandidates(candidateList || []);
     } catch (error: any) {
       toast.error(error.message || "Failed to load AI interviews");
     } finally {
       setLoading(false);
+      setLoadingCandidates(false);
     }
   };
 
@@ -368,32 +400,8 @@ export default function AIInterviewsPage() {
 
   useEffect(() => {
     setSelectedCandidateIds([]);
+    setGuestRecipients([]);
     setCandidateSearch("");
-
-    if (!form.jobId) {
-      setCandidates([]);
-      return;
-    }
-
-    let cancelled = false;
-    setLoadingCandidates(true);
-    getJobInterviewCandidates(form.jobId)
-      .then((candidateList) => {
-        if (!cancelled) setCandidates(candidateList || []);
-      })
-      .catch((error: any) => {
-        if (!cancelled) {
-          setCandidates([]);
-          toast.error(error.message || "Failed to load candidates for this job");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingCandidates(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
   }, [form.jobId]);
 
   useEffect(() => {
@@ -424,19 +432,66 @@ export default function AIInterviewsPage() {
   }, [jobRankingGroups, loading, selectedJobRankingId]);
 
   const toggleCandidate = (candidateId: string) => {
-    setSelectedCandidateIds((current) =>
-      current.includes(candidateId)
-        ? current.filter((id) => id !== candidateId)
-        : [...current, candidateId]
-    );
+    setSelectedCandidateIds((current) => {
+      if (current.includes(candidateId)) {
+        return current.filter((id) => id !== candidateId);
+      }
+
+      const candidate = candidates.find((item) => item._id === candidateId);
+      const email = String(candidate?.email || "").toLowerCase();
+      if (email && guestEmailSet.has(email)) {
+        toast.error("That email is already added as a guest recipient");
+        return current;
+      }
+
+      return [...current, candidateId];
+    });
   };
 
   const selectVisibleCandidates = () => {
-    setSelectedCandidateIds((current) => Array.from(new Set([...current, ...filteredCandidateIds])));
+    const selectableIds = filteredCandidates
+      .filter((candidate) => !guestEmailSet.has(String(candidate.email || "").toLowerCase()))
+      .map((candidate) => candidate._id);
+    setSelectedCandidateIds((current) => Array.from(new Set([...current, ...selectableIds])));
   };
 
   const clearVisibleCandidates = () => {
     setSelectedCandidateIds((current) => current.filter((id) => !filteredCandidateIds.includes(id)));
+  };
+
+  const addGuestRecipient = () => {
+    const fullName = guestFullName.trim();
+    const email = guestEmail.trim().toLowerCase();
+
+    if (!fullName || !email) {
+      toast.error("Enter the guest candidate's full name and email");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error("Enter a valid guest candidate email");
+      return;
+    }
+    const selectedSavedEmail = selectedCandidateRecords.some((candidate) => String(candidate.email || "").toLowerCase() === email);
+    const existingGuestEmail = guestRecipients.some((guest) => guest.email.toLowerCase() === email);
+    if (selectedSavedEmail || existingGuestEmail) {
+      toast.error("That email is already selected");
+      return;
+    }
+
+    setGuestRecipients((current) => [
+      ...current,
+      {
+        id: `${email}-${Date.now()}`,
+        fullName,
+        email
+      }
+    ]);
+    setGuestFullName("");
+    setGuestEmail("");
+  };
+
+  const removeGuestRecipient = (id: string) => {
+    setGuestRecipients((current) => current.filter((guest) => guest.id !== id));
   };
 
   const generateQuestions = async () => {
@@ -464,8 +519,8 @@ export default function AIInterviewsPage() {
   };
 
   const submit = async () => {
-    if (!form.jobId || selectedCandidateIds.length === 0 || selectedQuestionIds.length === 0) {
-      toast.error("Select a job, at least one candidate, and at least one question");
+    if (!form.jobId || selectedRecipientCount === 0 || selectedQuestionIds.length === 0) {
+      toast.error("Select a job, add at least one recipient, and select at least one question");
       return;
     }
 
@@ -475,6 +530,10 @@ export default function AIInterviewsPage() {
         title: form.title || `${selectedJob?.title || "Role"} AI Interview`,
         jobId: form.jobId,
         candidateIds: selectedCandidateIds,
+        guestCandidates: guestRecipients.map((guest) => ({
+          fullName: guest.fullName,
+          email: guest.email
+        })),
         questionIds: selectedQuestionIds,
         guidelines: form.guidelines,
         sendAt: new Date(form.sendAt).toISOString(),
@@ -489,7 +548,7 @@ export default function AIInterviewsPage() {
         jobId: form.jobId,
         jobTitle: selectedJob?.title || result.aiInterview.job?.title || "Job",
         title: result.aiInterview.title,
-        candidateCount: result.sessions?.length || selectedCandidateIds.length,
+        candidateCount: result.sessions?.length || selectedRecipientCount,
         sendAt: result.aiInterview.schedule?.sendAt || new Date(form.sendAt).toISOString(),
         expiresAt: result.aiInterview.schedule?.expiresAt || new Date(form.expiresAt).toISOString()
       });
@@ -497,6 +556,9 @@ export default function AIInterviewsPage() {
       setActiveTab("interviews");
       toast.success("AI interview scheduled");
       setSelectedCandidateIds([]);
+      setGuestRecipients([]);
+      setGuestFullName("");
+      setGuestEmail("");
       setSelectedQuestionIds([]);
       setForm((current) => ({
         ...current,
@@ -601,7 +663,7 @@ export default function AIInterviewsPage() {
                 <div>
                   <div className="font-semibold text-emerald-950 dark:text-emerald-100">AI interview scheduled</div>
                   <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200">
-                    {lastScheduledInterview.title} is queued for {lastScheduledInterview.candidateCount} candidate{lastScheduledInterview.candidateCount === 1 ? "" : "s"} under {lastScheduledInterview.jobTitle}.
+                    {lastScheduledInterview.title} is queued for {lastScheduledInterview.candidateCount} recipient{lastScheduledInterview.candidateCount === 1 ? "" : "s"} under {lastScheduledInterview.jobTitle}.
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-emerald-800 dark:text-emerald-200">
                     <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-1 dark:bg-white/10">
@@ -677,7 +739,7 @@ export default function AIInterviewsPage() {
                     <div className="grid gap-3 md:grid-cols-4">
                       {[
                         { label: "Job", done: Boolean(form.jobId), icon: Briefcase },
-                        { label: "Candidates", done: selectedCandidateIds.length > 0, icon: Users },
+                        { label: "Recipients", done: selectedRecipientCount > 0, icon: Users },
                         { label: "Questions", done: selectedQuestionIds.length > 0, icon: FileQuestion },
                         { label: "Schedule", done: Boolean(form.sendAt && form.expiresAt), icon: CalendarClock }
                       ].map((step, index) => {
@@ -847,16 +909,18 @@ export default function AIInterviewsPage() {
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
                           <Users className="h-4 w-4 text-blue-600" />
-                          Candidates
+                          Recipients
                         </CardTitle>
-                        <CardDescription>{selectedCandidateIds.length} selected from {candidates.length} candidates for this job</CardDescription>
+                        <CardDescription>
+                          {selectedRecipientCount} selected: {selectedCandidateIds.length} saved, {guestRecipients.length} guest
+                        </CardDescription>
                       </div>
                       <Badge variant="outline">{selectedVisibleCount}/{filteredCandidateIds.length} visible</Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3 p-5">
                     <Input
-                      placeholder="Search candidates"
+                      placeholder="Search all saved candidates"
                       value={candidateSearch}
                       onChange={(event) => setCandidateSearch(event.target.value)}
                       className="bg-white dark:bg-slate-950"
@@ -873,7 +937,7 @@ export default function AIInterviewsPage() {
                             }
                           }}
                         />
-                        <span className="font-medium text-slate-900 dark:text-white">Select all visible job candidates</span>
+                        <span className="font-medium text-slate-900 dark:text-white">Select all visible saved candidates</span>
                       </label>
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={selectVisibleCandidates} disabled={!filteredCandidateIds.length}>
@@ -887,18 +951,64 @@ export default function AIInterviewsPage() {
                         </Button>
                       </div>
                     </div>
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 dark:border-blue-900/50 dark:bg-blue-950/20">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-950 dark:text-white">Add guest candidate</div>
+                          <div className="text-xs text-muted-foreground">Invite someone who is not saved in the candidate database.</div>
+                        </div>
+                        <Badge variant="outline">{guestRecipients.length} guest</Badge>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                        <Input
+                          placeholder="Full name"
+                          value={guestFullName}
+                          onChange={(event) => setGuestFullName(event.target.value)}
+                          className="bg-white dark:bg-slate-950"
+                        />
+                        <Input
+                          type="email"
+                          placeholder="Email address"
+                          value={guestEmail}
+                          onChange={(event) => setGuestEmail(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              addGuestRecipient();
+                            }
+                          }}
+                          className="bg-white dark:bg-slate-950"
+                        />
+                        <Button type="button" variant="outline" onClick={addGuestRecipient} className="shrink-0 bg-white dark:bg-slate-950">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add
+                        </Button>
+                      </div>
+                      {guestRecipients.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {guestRecipients.map((guest) => (
+                            <span key={guest.id} className="inline-flex max-w-full items-center gap-2 rounded-full bg-white px-3 py-1 text-xs text-slate-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-slate-200 dark:ring-blue-900">
+                              <span className="truncate">{guest.fullName} - {guest.email}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeGuestRecipient(guest.id)}
+                                className="rounded-full text-slate-400 hover:text-red-600"
+                                aria-label={`Remove ${guest.fullName}`}
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
                       {loadingCandidates && (
                         <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-950/40">
-                          Loading candidates for this job...
+                          Loading saved candidates...
                         </div>
                       )}
-                      {!loadingCandidates && !form.jobId && (
-                        <Alert>
-                          <AlertDescription>Select a job to load eligible pipeline and shortlist candidates.</AlertDescription>
-                        </Alert>
-                      )}
-                      {!loadingCandidates && form.jobId && filteredCandidates.map((candidate) => {
+                      {!loadingCandidates && filteredCandidates.map((candidate) => {
                         const checked = selectedCandidateIds.includes(candidate._id);
                         const name = candidateName(candidate);
                         return (
@@ -918,9 +1028,9 @@ export default function AIInterviewsPage() {
                           </label>
                         );
                       })}
-                      {!loadingCandidates && form.jobId && !filteredCandidates.length && (
+                      {!loadingCandidates && !filteredCandidates.length && (
                         <Alert>
-                          <AlertDescription>No pipeline or shortlist candidates found for this job.</AlertDescription>
+                          <AlertDescription>No saved candidates found. Add a guest recipient above.</AlertDescription>
                         </Alert>
                       )}
                     </div>
@@ -938,8 +1048,8 @@ export default function AIInterviewsPage() {
                   <CardContent className="space-y-4 p-5 text-sm">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                        <div className="text-slate-400">Candidates</div>
-                        <div className="mt-1 text-xl font-bold">{selectedCandidateIds.length}</div>
+                        <div className="text-slate-400">Recipients</div>
+                        <div className="mt-1 text-xl font-bold">{selectedRecipientCount}</div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Questions</div>
@@ -951,7 +1061,7 @@ export default function AIInterviewsPage() {
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Credits</div>
-                        <div className="mt-1 text-xl font-bold">{selectedCandidateIds.length * 5}</div>
+                        <div className="mt-1 text-xl font-bold">{selectedRecipientCount * 5}</div>
                       </div>
                     </div>
 
@@ -979,18 +1089,18 @@ export default function AIInterviewsPage() {
                       </div>
                     </div>
 
-                    {selectedCandidateRecords.length > 0 && (
+                    {selectedRecipientPills.length > 0 && (
                       <div className="space-y-2">
-                        <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Selected candidates</div>
+                        <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Selected recipients</div>
                         <div className="flex flex-wrap gap-2">
-                          {selectedCandidateRecords.slice(0, 6).map((candidate) => (
-                            <span key={candidate._id} className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-100">
-                              {candidateName(candidate)}
+                          {selectedRecipientPills.slice(0, 6).map((recipient) => (
+                            <span key={recipient.id} className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-100">
+                              {recipient.label}
                             </span>
                           ))}
-                          {selectedCandidateRecords.length > 6 && (
+                          {selectedRecipientPills.length > 6 && (
                             <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-100">
-                              +{selectedCandidateRecords.length - 6} more
+                              +{selectedRecipientPills.length - 6} more
                             </span>
                           )}
                         </div>

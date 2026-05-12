@@ -35,30 +35,29 @@ function isValidObjectId(value) {
   return mongoose.Types.ObjectId.isValid(String(value));
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function splitFullName(value) {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: '', lastName: '' };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' ')
+  };
+}
+
 function hashPublicToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
 function createLegacyPublicLinkValue() {
   return `ai_${crypto.randomBytes(18).toString('base64url')}`;
-}
-
-function getCandidateIdFromJobEntry(entry) {
-  const candidate = entry?.candidate;
-  return String(candidate?._id || candidate || '');
-}
-
-function getJobInterviewCandidateIdSet(job) {
-  const ids = new Set();
-  (job.applicants || []).forEach((applicant) => {
-    const id = getCandidateIdFromJobEntry(applicant);
-    if (id) ids.add(id);
-  });
-  (job.shortlist || []).forEach((item) => {
-    const id = getCandidateIdFromJobEntry(item);
-    if (id) ids.add(id);
-  });
-  return ids;
 }
 
 function getSessionCandidateName(session) {
@@ -424,6 +423,7 @@ exports.createAIInterview = async (req, res) => {
       title,
       jobId,
       candidateIds,
+      guestCandidates,
       questionIds,
       guidelines,
       sendAt,
@@ -443,8 +443,41 @@ exports.createAIInterview = async (req, res) => {
 
     const uniqueCandidateIds = uniqueStrings(candidateIds);
     const uniqueQuestionIds = uniqueStrings(questionIds);
-    if (!uniqueCandidateIds.length || !uniqueQuestionIds.length) {
-      return res.status(400).json({ error: 'MISSING_SELECTIONS', message: 'Select at least one candidate and one question' });
+    const guestCandidateInputs = Array.isArray(guestCandidates) ? guestCandidates : [];
+    const normalizedGuests = [];
+    const seenGuestEmails = new Set();
+
+    for (const guest of guestCandidateInputs) {
+      const email = normalizeEmail(guest?.email);
+      const fullName = String(guest?.fullName || guest?.name || `${guest?.firstName || ''} ${guest?.lastName || ''}`).trim();
+
+      if (!email && !fullName) continue;
+      if (!isValidEmail(email)) {
+        return res.status(400).json({ error: 'INVALID_GUEST_CANDIDATE', message: 'Guest candidates need a valid email address' });
+      }
+      if (!fullName) {
+        return res.status(400).json({ error: 'INVALID_GUEST_CANDIDATE', message: 'Guest candidates need a full name' });
+      }
+      if (seenGuestEmails.has(email)) continue;
+
+      const splitName = splitFullName(fullName);
+      normalizedGuests.push({
+        firstName: String(guest?.firstName || splitName.firstName || '').trim(),
+        lastName: String(guest?.lastName || splitName.lastName || '').trim(),
+        name: fullName,
+        email
+      });
+      seenGuestEmails.add(email);
+    }
+
+    if ((!uniqueCandidateIds.length && !normalizedGuests.length) || !uniqueQuestionIds.length) {
+      return res.status(400).json({ error: 'MISSING_SELECTIONS', message: 'Select or add at least one candidate and one question' });
+    }
+    if (uniqueCandidateIds.some((id) => !isValidObjectId(id))) {
+      return res.status(400).json({ error: 'INVALID_CANDIDATES', message: 'One or more candidate ids are invalid' });
+    }
+    if (uniqueQuestionIds.some((id) => !isValidObjectId(id))) {
+      return res.status(400).json({ error: 'INVALID_QUESTIONS', message: 'One or more question ids are invalid' });
     }
 
     const scheduledSendAt = new Date(sendAt);
@@ -464,15 +497,6 @@ exports.createAIInterview = async (req, res) => {
       return res.status(404).json({ error: 'JOB_NOT_FOUND', message: 'Job not found for this organization' });
     }
 
-    const jobCandidateIds = getJobInterviewCandidateIdSet(job);
-    const candidatesOutsideJob = uniqueCandidateIds.filter((id) => !jobCandidateIds.has(String(id)));
-    if (candidatesOutsideJob.length) {
-      return res.status(400).json({
-        error: 'INVALID_CANDIDATES',
-        message: 'AI interviews can only be sent to candidates in the selected job pipeline or shortlist'
-      });
-    }
-
     const candidates = await Candidate.find({
       _id: { $in: uniqueCandidateIds },
       organization: organizationId
@@ -481,6 +505,38 @@ exports.createAIInterview = async (req, res) => {
     if (candidates.length !== uniqueCandidateIds.length) {
       return res.status(400).json({ error: 'INVALID_CANDIDATES', message: 'One or more candidates were not found in this organization' });
     }
+
+    const candidateMap = new Map(candidates.map((candidate) => [String(candidate._id), candidate]));
+    const savedRecipients = uniqueCandidateIds.map((id) => candidateMap.get(String(id))).filter(Boolean);
+    const savedEmails = new Set(savedRecipients.map((candidate) => normalizeEmail(candidate.email)).filter(Boolean));
+    const duplicateGuest = normalizedGuests.find((guest) => savedEmails.has(guest.email));
+    if (duplicateGuest) {
+      return res.status(400).json({
+        error: 'DUPLICATE_RECIPIENT',
+        message: `${duplicateGuest.email} is already selected as a saved candidate`
+      });
+    }
+
+    const recipients = [
+      ...savedRecipients.map((candidate) => {
+        const name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email;
+        return {
+          recipientType: 'candidate',
+          candidateId: candidate._id,
+          candidateSnapshot: {
+            firstName: candidate.firstName,
+            lastName: candidate.lastName,
+            name,
+            email: normalizeEmail(candidate.email)
+          }
+        };
+      }),
+      ...normalizedGuests.map((guest) => ({
+        recipientType: 'guest',
+        candidateId: new mongoose.Types.ObjectId(),
+        candidateSnapshot: guest
+      }))
+    ];
 
     const questions = await InterviewQuestion.find({
       _id: { $in: uniqueQuestionIds },
@@ -511,7 +567,7 @@ exports.createAIInterview = async (req, res) => {
 
     const creditCheck = await creditsService.checkSufficientCredits(organizationId, AI_INTERVIEW_ACTION);
     const perCandidateCost = Number(creditCheck.cost || 0);
-    const totalRequired = perCandidateCost * candidates.length;
+    const totalRequired = perCandidateCost * recipients.length;
     if (!creditCheck.allowed || (Number.isFinite(creditCheck.remaining) && creditCheck.remaining < totalRequired)) {
       return res.status(402).json({
         error: 'INSUFFICIENT_CREDITS',
@@ -521,7 +577,7 @@ exports.createAIInterview = async (req, res) => {
           required: totalRequired,
           available: creditCheck.remaining,
           perCandidateCost,
-          candidateCount: candidates.length
+          candidateCount: recipients.length
         }
       });
     }
@@ -543,24 +599,19 @@ exports.createAIInterview = async (req, res) => {
         expiresAt: scheduledExpiresAt,
         timezone: timezone || 'UTC'
       },
-      candidateCount: candidates.length,
+      candidateCount: recipients.length,
       creditCostPerCandidate: perCandidateCost
     });
 
-    const sessions = await AIInterviewSession.insertMany(candidates.map((candidate) => {
-      const name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email;
+    const sessions = await AIInterviewSession.insertMany(recipients.map((recipient) => {
       return {
         aiInterview: aiInterview._id,
         organization: organizationId,
         job: job._id,
-        candidate: candidate._id,
+        candidate: recipient.candidateId,
+        recipientType: recipient.recipientType,
         createdBy: userId,
-        candidateSnapshot: {
-          firstName: candidate.firstName,
-          lastName: candidate.lastName,
-          name,
-          email: candidate.email
-        },
+        candidateSnapshot: recipient.candidateSnapshot,
         credits: {
           cost: perCandidateCost
         }

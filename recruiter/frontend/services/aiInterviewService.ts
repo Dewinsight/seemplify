@@ -15,6 +15,7 @@ export interface AIInterviewSession {
   _id: string;
   aiInterview: string;
   candidate?: any;
+  recipientType?: 'candidate' | 'guest';
   candidateSnapshot: {
     firstName?: string;
     lastName?: string;
@@ -139,6 +140,12 @@ export interface CreateAIInterviewInput {
   title?: string;
   jobId: string;
   candidateIds: string[];
+  guestCandidates?: Array<{
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
+    email: string;
+  }>;
   questionIds: string[];
   guidelines: string;
   sendAt: string;
