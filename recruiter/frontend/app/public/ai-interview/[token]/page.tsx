@@ -106,7 +106,8 @@ function hasEquivalentTranscriptMessage(
 }
 
 // Single source of truth for the voice-mode lifecycle. Every UI element reads
-// this so TTS playback and candidate recording cannot fight each other.
+// this so TTS playback and candidate recording cannot fight each other. Keep
+// all voice hooks below ordered by dependency to avoid production TDZ crashes.
 //   off        - voice mode is not running
 //   connecting - preparing audio devices
 //   speaking   - TTS is playing one or more AI messages back-to-back
