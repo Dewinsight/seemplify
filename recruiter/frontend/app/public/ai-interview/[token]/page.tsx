@@ -111,7 +111,7 @@ function hasEquivalentTranscriptMessage(
 //   off        - voice mode is not running
 //   connecting - preparing audio devices
 //   speaking   - TTS is playing one or more AI messages back-to-back
-//   ready      - voice is available, mic is off, candidate can tap Speak now
+//   ready      - voice is available, mic is off, candidate can tap the mic
 //   listening  - mic is recording candidate audio
 //   processing - Azure STT is transcribing, then the answer is submitted
 //   error      - voice mode failed; user must restart
@@ -253,6 +253,34 @@ function renderHighlightedSpeech(text: string, highlightedWordCount: number) {
   });
 }
 
+function renderVoiceBars(level: number, tone: "blue" | "emerald" | "slate" | "white" = "blue", compact = false) {
+  const bars = Array.from({ length: compact ? 12 : 18 });
+  const normalized = Math.max(8, Math.min(100, level));
+  const toneClass = tone === "emerald" ? "bg-emerald-400" : tone === "blue" ? "bg-blue-500" : tone === "white" ? "bg-white" : "bg-slate-400";
+
+  return (
+    <div className={`flex ${compact ? "h-7 gap-0.5" : "h-9 gap-1"} items-center`}>
+      {bars.map((_, index) => {
+        const wave = Math.abs(Math.sin((index + 1) * 0.72));
+        const height = compact
+          ? 7 + wave * 14 + (normalized / 100) * 10
+          : 8 + wave * 18 + (normalized / 100) * 14;
+        return (
+          <span
+            key={index}
+            className={`w-1 rounded-full ${toneClass} transition-all duration-150 ${level > 12 ? "animate-pulse" : ""}`}
+            style={{
+              height: `${Math.round(height)}px`,
+              opacity: 0.42 + wave * 0.48,
+              animationDelay: `${index * 45}ms`
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export default function PublicAIInterviewPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -283,6 +311,7 @@ export default function PublicAIInterviewPage() {
     text: "",
     progress: 0
   });
+  const [micLevel, setMicLevel] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(340);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
@@ -301,6 +330,10 @@ export default function PublicAIInterviewPage() {
   const assistantSpeechTextRef = useRef("");
   const assistantSpeechStartedAtRef = useRef(0);
   const assistantSpeechDurationRef = useRef(0);
+  const liveTranscriptTimerRef = useRef<number | null>(null);
+  const liveTranscriptRequestIdRef = useRef(0);
+  const liveTranscriptInFlightRef = useRef(false);
+  const micLevelLastUpdateRef = useRef(0);
   const recordedTranscriptKeysRef = useRef<Set<string>>(new Set());
   // Phase mirror so async work (audio playback, fetches, WS events) can read
   // the current phase without waiting for a re-render.
@@ -347,7 +380,7 @@ export default function PublicAIInterviewPage() {
   const voiceActionLabel = (() => {
     switch (voicePhase) {
       case "speaking": return "AI is speaking";
-      case "ready": return "Speak now";
+      case "ready": return "Open mic";
       case "listening": return "I'm done";
       case "processing": return "Thinking…";
       case "connecting": return "Connecting…";
@@ -451,9 +484,56 @@ export default function PublicAIInterviewPage() {
     setMicTrackEnabled(true);
   }, [setMicTrackEnabled]);
 
+  const stopLiveTranscriptionPreview = useCallback(() => {
+    if (liveTranscriptTimerRef.current) {
+      window.clearInterval(liveTranscriptTimerRef.current);
+      liveTranscriptTimerRef.current = null;
+    }
+    liveTranscriptRequestIdRef.current += 1;
+    liveTranscriptInFlightRef.current = false;
+  }, []);
+
+  const updateLiveTranscriptionPreview = useCallback(async (force = false) => {
+    if (liveTranscriptInFlightRef.current && !force) return;
+    const recorder = candidateAudioRecorderRef.current;
+    if (!recorder || voicePhaseRef.current !== "listening") return;
+    if (!force && recorder.chunks.length < 12) return;
+
+    const requestId = ++liveTranscriptRequestIdRef.current;
+    const audioBlob = encodeWavBlob([...recorder.chunks], recorder.sampleRate);
+    if (audioBlob.size < 4000) return;
+
+    try {
+      liveTranscriptInFlightRef.current = true;
+      const result = await aiInterviewService.transcribePublicSpeech(token, audioBlob);
+      if (requestId !== liveTranscriptRequestIdRef.current || voicePhaseRef.current !== "listening") return;
+
+      const transcript = normalizeTranscriptText(result.transcript || "");
+      if (!transcript) return;
+
+      setMessage(transcript);
+      messageRef.current = transcript;
+      setVoiceStatus("Listening. Your answer is appearing in the chat.");
+    } catch {
+      // Live preview is best-effort. The final Azure transcription still runs
+      // when the candidate taps "I'm done".
+    } finally {
+      liveTranscriptInFlightRef.current = false;
+    }
+  }, [token]);
+
+  const startLiveTranscriptionPreview = useCallback(() => {
+    stopLiveTranscriptionPreview();
+    liveTranscriptTimerRef.current = window.setInterval(() => {
+      void updateLiveTranscriptionPreview(false);
+    }, 2600);
+  }, [stopLiveTranscriptionPreview, updateLiveTranscriptionPreview]);
+
   const stopCandidateRecording = useCallback(() => {
+    stopLiveTranscriptionPreview();
     setMicTrackEnabled(false);
     speechRecognitionActiveRef.current = false;
+    setMicLevel(0);
 
     const recorder = candidateAudioRecorderRef.current;
     candidateAudioRecorderRef.current = null;
@@ -466,7 +546,7 @@ export default function PublicAIInterviewPage() {
 
     if (!recorder.chunks.length) return null;
     return encodeWavBlob(recorder.chunks, recorder.sampleRate);
-  }, [setMicTrackEnabled]);
+  }, [setMicTrackEnabled, stopLiveTranscriptionPreview]);
 
   const startCandidateRecording = useCallback(async () => {
     stopCandidateRecording();
@@ -512,6 +592,16 @@ export default function PublicAIInterviewPage() {
       if (!voiceAudioCaptureEnabledRef.current || voicePhaseRef.current !== "listening") return;
       const input = event.inputBuffer.getChannelData(0);
       chunks.push(new Float32Array(input));
+      const now = Date.now();
+      if (now - micLevelLastUpdateRef.current > 90) {
+        let sum = 0;
+        for (let i = 0; i < input.length; i += 1) {
+          sum += input[i] * input[i];
+        }
+        const rms = Math.sqrt(sum / input.length);
+        setMicLevel(Math.max(4, Math.min(100, Math.round(rms * 650))));
+        micLevelLastUpdateRef.current = now;
+      }
       const output = event.outputBuffer.getChannelData(0);
       output.fill(0);
     };
@@ -528,7 +618,8 @@ export default function PublicAIInterviewPage() {
       sampleRate: audioContext.sampleRate
     };
     speechRecognitionActiveRef.current = true;
-  }, [selectedInputDeviceId, setSelectedInputDeviceId, stopCandidateRecording]);
+    startLiveTranscriptionPreview();
+  }, [selectedInputDeviceId, setSelectedInputDeviceId, startLiveTranscriptionPreview, stopCandidateRecording]);
 
   const pauseCandidateMic = useCallback((_options: { endTurn?: boolean } = {}) => {
     stopCandidateRecording();
@@ -544,7 +635,7 @@ export default function PublicAIInterviewPage() {
 
     try {
       await startCandidateRecording();
-      setVoicePhase("listening", "Listening. Speak naturally, then tap I'm done.");
+      setVoicePhase("listening", "Listening. Your answer is appearing in the chat. Tap I'm done to submit.");
     } catch (error: any) {
       setMicTrackEnabled(false);
       setVoicePhase("ready", "Speech recognition could not start. Check your microphone and try again.");
@@ -796,9 +887,9 @@ export default function PublicAIInterviewPage() {
     }
   }, [applyPublicState, token]);
 
-  // Speaks every queued AI message that has not been spoken yet, then leaves
-  // the mic muted until the candidate taps Speak now. Re-entry is safe;
-  // concurrent invocations no-op.
+  // Speaks every queued AI message that has not been spoken yet, then opens
+  // the candidate mic automatically. Re-entry is safe; concurrent invocations
+  // no-op.
   const advanceVoiceFlow = useCallback(async () => {
     if (speechQueueRunningRef.current) return;
     if (voicePhaseRef.current === "off" || voicePhaseRef.current === "error" || voicePhaseRef.current === "connecting") {
@@ -855,20 +946,20 @@ export default function PublicAIInterviewPage() {
         if (phaseAfterClip === "off" || phaseAfterClip === "error") return;
       }
 
-      // Queue drained. Keep the mic closed until the candidate taps the mic.
+      // Queue drained. Hand the turn to the candidate immediately.
       const phaseAfterDrain = voicePhaseRef.current as VoicePhase;
       if (
         phaseAfterDrain === "speaking" &&
         sessionRef.current?.status === "in_progress" &&
         isVoiceTransportActive()
       ) {
-        pauseCandidateMic();
-        setVoicePhase("ready", "Tap Speak now when you are ready to answer.");
+        setVoicePhase("ready", "Interviewer finished. Opening your mic...");
+        await startListeningTurn();
       }
     } finally {
       speechQueueRunningRef.current = false;
     }
-  }, [isVoiceTransportActive, pauseCandidateMic, playSpeechClip, setVoicePhase, startAssistantSpeechVisual, finishAssistantSpeechVisual]);
+  }, [isVoiceTransportActive, pauseCandidateMic, playSpeechClip, setVoicePhase, startAssistantSpeechVisual, finishAssistantSpeechVisual, startListeningTurn]);
 
   // User pressed "I'm done" while listening — close the mic and move into
   // processing so the upcoming Azure transcript is treated as the answer.
@@ -879,13 +970,13 @@ export default function PublicAIInterviewPage() {
 
     try {
       if (!audioBlob || audioBlob.size < 800) {
-        throw new Error("I didn't catch any audio. Tap Speak now and try again.");
+        throw new Error("I didn't catch any audio. Tap the mic and try again.");
       }
 
       const result = await aiInterviewService.transcribePublicSpeech(token, audioBlob);
       const transcript = normalizeTranscriptText(result.transcript || "");
       if (!transcript) {
-        throw new Error("I didn't catch that. Tap Speak now to try again.");
+        throw new Error("I didn't catch that. Tap the mic to try again.");
       }
 
       setMessage(transcript);
@@ -894,11 +985,11 @@ export default function PublicAIInterviewPage() {
       if (sent) {
         void advanceVoiceFlow();
       } else if (isVoiceTransportActive()) {
-        setVoicePhase("ready", "Let's try that again. Tap Speak now when ready.");
+        setVoicePhase("ready", "Let's try that again. Tap the mic when ready.");
       }
     } catch (error: any) {
       if (isVoiceTransportActive()) {
-        setVoicePhase("ready", error?.message || "I didn't catch that. Tap Speak now to try again.");
+        setVoicePhase("ready", error?.message || "I didn't catch that. Tap the mic to try again.");
       } else {
         setVoicePhase("off", "Voice connection lost. Restart voice mode to continue.");
       }
@@ -934,7 +1025,7 @@ export default function PublicAIInterviewPage() {
       await loadAudioDevices(true);
 
       // Voice is live. Transition to 'speaking' and let advanceVoiceFlow drain
-      // the queue, after which the mic stays muted until Speak now is tapped.
+      // the queue, after which the candidate mic opens automatically.
       setVoicePhase("speaking", "Voice ready. Interviewer is starting…");
       // A small delay lets the audio element finish settling after any prior
       // cleanup and gives React a paint before audio starts.
@@ -1003,6 +1094,11 @@ export default function PublicAIInterviewPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [state?.session?.messages?.length]);
+
+  useEffect(() => {
+    if (voicePhase !== "listening") return;
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [message, voicePhase]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1411,68 +1507,74 @@ export default function PublicAIInterviewPage() {
               {deviceSettingsOpen && <div className="mt-3">{renderAudioDeviceSettings(true)}</div>}
 
               {voicePhase === "speaking" && assistantSpeech.active && (
-                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-900">
-                      <span className="relative flex h-2.5 w-2.5">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-600" />
-                      </span>
-                      Interviewer is speaking
+                <div className="mt-3 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-3">
+                  <div className="flex items-center gap-3">
+                    <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-200">
+                      <span className="absolute h-full w-full animate-ping rounded-full bg-emerald-400/40" />
+                      <Volume2 className="relative h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold text-emerald-950">Interviewer speaking</span>
+                        <span className="text-[11px] font-medium text-emerald-700">Mic muted</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between gap-3">
+                        {renderVoiceBars(assistantSpeech.progress, "emerald", true)}
+                        <span className="text-[11px] tabular-nums text-emerald-700">{Math.round(assistantSpeech.progress)}%</span>
+                      </div>
+                      <div className="mt-2 h-1 overflow-hidden rounded-full bg-emerald-100">
+                        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
+                      </div>
                     </div>
-                    <Badge variant="outline" className="border-emerald-200 bg-white text-emerald-700">Mic muted</Badge>
-                  </div>
-                  <div className="mb-2 flex h-7 items-end gap-1">
-                    {[0, 1, 2, 3, 4].map((bar) => (
-                      <span
-                        key={bar}
-                        className="w-1.5 rounded-full bg-emerald-500/80"
-                        style={{ height: `${10 + ((bar * 7 + Math.round(assistantSpeech.progress)) % 18)}px` }}
-                      />
-                    ))}
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-emerald-100">
-                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
                   </div>
                 </div>
               )}
 
               {voicePhase === "ready" && (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-900">
-                    <Mic className="h-3.5 w-3.5 text-blue-600" />
-                    Ready for your response
+                <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-100">
+                      <Mic className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-blue-950">Ready for your response</div>
+                      <p className="mt-1 text-xs leading-5 text-blue-800">
+                        If your mic did not open automatically, tap the mic button.
+                      </p>
+                    </div>
                   </div>
-                  <p className="mt-2 text-xs leading-5 text-slate-600">
-                    Your mic is muted. Tap <span className="font-semibold">Speak now</span> when you want Azure Speech to fill the answer box.
-                  </p>
                 </div>
               )}
 
               {voicePhase === "listening" && (
-                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-blue-900">
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-60" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-600" />
+                <div className="mt-3 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-3">
+                  <div className="flex items-center gap-3">
+                    <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-100">
+                      <span className="absolute h-full w-full animate-ping rounded-full bg-blue-400/40" />
+                      <Mic className="relative h-4 w-4" />
                     </span>
-                    Listening… speak naturally
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold text-blue-950">Listening now</span>
+                        <span className="text-[11px] font-medium text-blue-700">Live draft</span>
+                      </div>
+                      <div className="mt-1.5">{renderVoiceBars(micLevel, "blue", true)}</div>
+                      <p className="mt-1 text-xs leading-5 text-blue-800">
+                        Your words appear in the chat draft. Tap <span className="font-semibold">I'm done</span> to send.
+                      </p>
+                    </div>
                   </div>
-                  <p className="mt-2 text-xs leading-5 text-blue-800">
-                    I'll wait for you to finish. Tap <span className="font-semibold">I'm done</span> below when you're ready to send.
-                  </p>
                 </div>
               )}
 
               {voicePhase === "processing" && (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-amber-900">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Thinking about your answer…
+                    Finalizing your answer...
                   </div>
                 </div>
               )}
-
               {voicePhase === "off" || voicePhase === "error" ? (
                 <Button
                   type="button"
@@ -1682,7 +1784,7 @@ export default function PublicAIInterviewPage() {
                       Start Interview
                     </Button>
                     <p className="mt-3 text-xs leading-5 text-slate-400">
-                      Voice reads interviewer messages first. Your mic stays muted until you tap Speak now.
+                      Voice reads interviewer messages first, then opens your mic automatically for your answer.
                     </p>
                   </div>
                 </div>
@@ -1765,6 +1867,8 @@ export default function PublicAIInterviewPage() {
                             : undefined
                       }
                       className="h-11 min-w-11 rounded-xl bg-white px-3 text-slate-950 hover:bg-slate-100 sm:px-4"
+                      aria-label={voiceActionLabel}
+                      title={voiceActionLabel}
                     >
                       {voicePhase === "connecting" ? (
                         <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
@@ -1773,7 +1877,9 @@ export default function PublicAIInterviewPage() {
                       ) : (
                         <Mic className="h-4 w-4 sm:mr-2" />
                       )}
-                      <span className="hidden sm:inline">{voiceActionLabel}</span>
+                      <span className={`${voicePhase === "off" || voicePhase === "error" || voicePhase === "listening" || voicePhase === "ready" ? "ml-2 inline text-sm" : "hidden sm:inline"}`}>
+                        {voicePhase === "off" ? "Voice" : voicePhase === "listening" ? "Done" : voiceActionLabel}
+                      </span>
                     </Button>
                   </div>
                 </div>
@@ -1787,18 +1893,23 @@ export default function PublicAIInterviewPage() {
                 )}
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-2 sm:p-3 md:p-4">
-                <div className="mx-auto flex max-w-7xl flex-col gap-2.5">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.08),transparent_34%),linear-gradient(180deg,#f8fbff_0%,#eef4fb_100%)] p-2 sm:p-3 md:p-4">
+                <div className="mx-auto flex max-w-7xl flex-col gap-3">
                 {(session.messages || []).map((chat, index) => (
                   <div
                     key={chat._id || index}
-                    className={`flex ${chat.role === "candidate" ? "justify-end" : "justify-start"}`}
+                    className={`flex items-end gap-2 ${chat.role === "candidate" ? "justify-end" : "justify-start"}`}
                   >
+                    {chat.role === "ai" && (
+                      <span className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm sm:flex">
+                        <Volume2 className="h-3.5 w-3.5" />
+                      </span>
+                    )}
                     <div
-                      className={`max-w-[min(92%,960px)] rounded-2xl px-3 py-2.5 text-[15px] leading-6 shadow-sm sm:max-w-[min(94%,960px)] sm:px-4 sm:py-3 sm:text-sm ${
+                      className={`max-w-[min(88%,960px)] rounded-[1.35rem] px-3.5 py-2.5 text-[15px] leading-6 shadow-sm sm:max-w-[min(90%,960px)] sm:px-4 sm:py-3 sm:text-sm ${
                         chat.role === "candidate"
-                          ? "rounded-br-md bg-slate-950 text-white"
-                          : "rounded-bl-md border bg-white text-slate-900"
+                          ? "rounded-br-md bg-slate-950 text-white shadow-slate-300/60"
+                          : "rounded-bl-md border border-white bg-white/95 text-slate-900 shadow-slate-200/80 ring-1 ring-slate-200/70"
                       }`}
                     >
                       <div className="mb-1 flex items-center gap-2 text-xs opacity-70">
@@ -1813,6 +1924,30 @@ export default function PublicAIInterviewPage() {
                     </div>
                   </div>
                 ))}
+                {voicePhase === "listening" && (
+                  <div className="flex items-end justify-end gap-2">
+                    <div className="max-w-[min(88%,900px)] rounded-[1.35rem] rounded-br-md bg-blue-600 px-3.5 py-2.5 text-[15px] leading-6 text-white shadow-sm shadow-blue-200/70 sm:max-w-[min(86%,900px)] sm:px-4 sm:py-3 sm:text-sm">
+                      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-blue-100">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
+                          You
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-[11px]">
+                          <Mic className="h-3 w-3" />
+                          Drafting
+                        </span>
+                      </div>
+                      {message.trim() ? (
+                        <div className="whitespace-pre-wrap">{message}</div>
+                      ) : (
+                        <div className="flex items-center gap-3 text-blue-50">
+                          {renderVoiceBars(micLevel, "white", true)}
+                          <span className="text-sm">Listening...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div ref={bottomRef} />
                 </div>
               </div>
@@ -1820,113 +1955,135 @@ export default function PublicAIInterviewPage() {
               <div className="border-t bg-white/95 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-3">
                 <div className="mx-auto max-w-7xl">
                 {voicePhase !== "off" && (
-                  <div className={`mb-2 rounded-2xl border px-3 py-2.5 text-xs sm:mb-3 sm:py-3 ${
+                  <div className={`mb-2 overflow-hidden rounded-2xl border bg-white/95 px-2 py-1.5 shadow-sm backdrop-blur sm:mb-3 sm:px-3 sm:py-2 ${
                     voiceBannerTone === "speaking"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                      ? "border-emerald-200"
                       : voiceBannerTone === "listening"
-                        ? "border-blue-200 bg-blue-50 text-blue-900"
+                        ? "border-blue-200"
                         : voiceBannerTone === "processing"
-                          ? "border-amber-200 bg-amber-50 text-amber-900"
+                          ? "border-amber-200"
                           : voiceBannerTone === "error"
-                            ? "border-red-200 bg-red-50 text-red-700"
-                            : "border-slate-200 bg-slate-50 text-slate-700"
+                            ? "border-red-200"
+                            : "border-slate-200"
                   }`}>
-                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                      <div className="flex min-w-0 items-center gap-2">
-                        {voicePhase === "connecting" || voicePhase === "processing"
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : voicePhase === "listening"
-                            ? <Mic className="h-3.5 w-3.5" />
-                            : voicePhase === "ready"
-                              ? <MicOff className="h-3.5 w-3.5" />
-                            : <Volume2 className="h-3.5 w-3.5" />}
-                        <span className="truncate">{voiceStatus}</span>
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <div className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-lg ${
+                        voicePhase === "listening"
+                          ? "bg-blue-600 shadow-blue-100"
+                          : voicePhase === "speaking"
+                            ? "bg-emerald-600 shadow-emerald-100"
+                            : voicePhase === "processing"
+                              ? "bg-amber-500 shadow-amber-100"
+                              : voicePhase === "error"
+                                ? "bg-red-600 shadow-red-100"
+                                : "bg-slate-900 shadow-slate-100"
+                      }`}>
+                        {(voicePhase === "listening" || voicePhase === "speaking") && <span className="absolute h-full w-full animate-ping rounded-full bg-current opacity-20" />}
+                        {voicePhase === "connecting" || voicePhase === "processing" ? (
+                          <Loader2 className="relative h-4 w-4 animate-spin" />
+                        ) : voicePhase === "listening" ? (
+                          <Mic className="relative h-4 w-4" />
+                        ) : voicePhase === "ready" ? (
+                          <Mic className="relative h-4 w-4" />
+                        ) : voicePhase === "error" ? (
+                          <AlertCircle className="relative h-4 w-4" />
+                        ) : (
+                          <Volume2 className="relative h-4 w-4" />
+                        )}
                       </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate text-[13px] font-semibold text-slate-950 sm:text-sm">
+                            {voicePhase === "speaking"
+                              ? "AI is speaking"
+                              : voicePhase === "listening"
+                                ? "Listening now"
+                                : voicePhase === "ready"
+                                  ? "Ready for you"
+                                  : voicePhase === "processing"
+                                    ? "Finalizing answer"
+                                    : voicePhase === "error"
+                                      ? "Voice needs restart"
+                                      : "Voice mode"}
+                          </div>
+                          <span className={`hidden rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline-flex ${
+                            voicePhase === "speaking"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : voicePhase === "listening"
+                                ? "bg-blue-50 text-blue-700"
+                                : voicePhase === "processing"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {voicePhase === "speaking" ? "Mic muted" : voicePhase === "listening" ? "Live draft" : voicePhase === "ready" ? "Mic ready" : voicePhase === "processing" ? "Azure STT" : "Status"}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2">
+                          {voicePhase === "speaking"
+                            ? renderVoiceBars(assistantSpeech.progress, "emerald", true)
+                            : voicePhase === "listening"
+                              ? renderVoiceBars(micLevel, "blue", true)
+                              : voicePhase === "processing"
+                                ? renderVoiceBars(45, "slate", true)
+                                : <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full w-1/3 rounded-full bg-slate-400" /></div>}
+                          <span className="hidden min-w-0 truncate text-[11px] text-slate-500 md:block">{voiceStatus}</span>
+                        </div>
+                      </div>
+
                       <Button
                         type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 bg-white"
+                        size="icon"
+                        variant="ghost"
+                        className="h-9 w-9 shrink-0 rounded-full"
                         onClick={() => setDeviceSettingsOpen((value) => !value)}
+                        aria-label="Audio settings"
                       >
-                        <Settings className="mr-2 h-3.5 w-3.5" />
-                        Audio
+                        <Settings className="h-4 w-4" />
                       </Button>
+
                       {(voicePhase === "speaking" || voicePhase === "ready" || voicePhase === "listening" || voicePhase === "processing") && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className={
-                              voicePhase === "listening"
-                                ? "border-blue-200 bg-white text-blue-700"
-                                : voicePhase === "ready"
-                                  ? "border-slate-200 bg-white text-slate-700"
-                                : voicePhase === "processing"
-                                  ? "border-amber-200 bg-white text-amber-800"
-                                  : "border-emerald-200 bg-white text-emerald-700"
-                            }
-                          >
-                            {voicePhase === "speaking"
-                              ? "AI speaking"
-                              : voicePhase === "ready"
-                                ? "Mic muted"
-                              : voicePhase === "listening"
-                                ? "Listening"
-                                : "Thinking"}
-                          </Badge>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={voicePhase === "listening" || voicePhase === "ready" ? "default" : "outline"}
-                            className={voicePhase === "listening" || voicePhase === "ready" ? "h-8 bg-blue-600 hover:bg-blue-700" : "h-8"}
-                            disabled={voiceActionDisabled}
-                            onClick={voicePhase === "ready" ? startListeningTurn : endListening}
-                          >
-                            {voicePhase === "listening"
-                              ? <MicOff className="mr-2 h-3.5 w-3.5" />
-                              : <Mic className="mr-2 h-3.5 w-3.5" />}
-                            {voiceActionLabel}
-                          </Button>
-                        </div>
-                      )}
-                      {voicePhase === "error" && (
                         <Button
                           type="button"
                           size="sm"
-                          variant="default"
-                          className="h-8"
-                          disabled={!voiceEnabled}
-                          onClick={() => connectVoice()}
+                          variant={voicePhase === "listening" || voicePhase === "ready" ? "default" : "outline"}
+                          className={voicePhase === "listening" || voicePhase === "ready" ? "h-9 shrink-0 rounded-full bg-blue-600 px-3 hover:bg-blue-700" : "h-9 w-9 shrink-0 rounded-full px-0 sm:w-auto sm:px-3"}
+                          disabled={voiceActionDisabled}
+                          onClick={voicePhase === "ready" ? startListeningTurn : endListening}
                         >
-                          <Mic className="mr-2 h-3.5 w-3.5" />
-                          Restart voice
+                          {voicePhase === "listening" || voicePhase === "speaking" ? (
+                            <MicOff className={`${voicePhase === "speaking" ? "sm:mr-1.5" : "mr-1.5"} h-3.5 w-3.5`} />
+                          ) : (
+                            <Mic className={`${voicePhase === "speaking" || voicePhase === "processing" ? "sm:mr-1.5" : "mr-1.5"} h-3.5 w-3.5`} />
+                          )}
+                          <span className={`${voicePhase === "speaking" || voicePhase === "processing" ? "hidden sm:inline" : "text-xs sm:text-sm"}`}>
+                            {voicePhase === "listening" ? "Done" : voiceActionLabel}
+                          </span>
+                        </Button>
+                      )}
+                      {voicePhase === "error" && (
+                        <Button type="button" size="sm" className="h-9 shrink-0 rounded-full" disabled={!voiceEnabled} onClick={() => connectVoice()}>
+                          Restart
                         </Button>
                       )}
                     </div>
-                    {voicePhase === "speaking" && assistantSpeech.active && (
-                      <div className="mt-3 rounded-lg bg-white/80 p-3 text-slate-700">
-                        <div className="mb-2 flex items-center justify-between gap-3">
-                          <span className="font-semibold text-emerald-900">Interviewer is speaking — mic is muted.</span>
-                          <span className="text-[11px] text-emerald-700">{Math.round(assistantSpeech.progress)}%</span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-emerald-100">
-                          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${assistantSpeech.progress}%` }} />
-                        </div>
-                      </div>
-                    )}
                     {deviceSettingsOpen && <div className="mt-3">{renderAudioDeviceSettings(true)}</div>}
                   </div>
                 )}
-                <div className="rounded-2xl border bg-white p-2 shadow-sm">
+                <div className={`rounded-[1.35rem] border bg-white p-2 shadow-sm transition-colors ${
+                  voicePhase === "listening" ? "border-blue-200 shadow-blue-100" : "border-slate-200"
+                }`}>
                   <Textarea
                     value={message}
                     onChange={(event) => {
                       setMessage(event.target.value);
                       messageRef.current = event.target.value;
                     }}
-                    placeholder="Type your answer or ask for clarification..."
-                    rows={2}
-                    className="min-h-[48px] max-h-[120px] resize-none border-0 bg-slate-50 text-base shadow-none focus-visible:ring-0 sm:min-h-[60px] sm:max-h-[160px] sm:resize-y sm:text-sm"
+                    placeholder={voicePhase === "listening" ? "Listening... your answer will appear here" : "Type your answer or ask for clarification..."}
+                    rows={voicePhase === "listening" ? 1 : 2}
+                    className={`min-h-[42px] max-h-[84px] resize-none border-0 text-base shadow-none transition-colors focus-visible:ring-0 sm:min-h-[60px] sm:max-h-[160px] sm:resize-y sm:text-sm ${
+                      voicePhase === "listening" ? "bg-blue-50/70" : "bg-slate-50"
+                    }`}
                     onKeyDown={(event) => {
                       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                         event.preventDefault();
@@ -1949,7 +2106,7 @@ export default function PublicAIInterviewPage() {
                     </Button>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">
+                <p className="mt-2 hidden text-xs text-muted-foreground sm:block">
                   The interview will auto-move when the question timer reaches zero. Voice answers are saved to the same transcript.
                 </p>
                 </div>
