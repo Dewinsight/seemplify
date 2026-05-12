@@ -9,11 +9,14 @@ import {
   Bot,
   CheckCircle2,
   Clock,
+  Copy,
+  FileText,
   Loader2,
   Mail,
   MessageSquareText,
   RefreshCw,
   RotateCcw,
+  Search,
   Star,
   Timer,
   UserRound,
@@ -29,6 +32,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import aiInterviewService, { type AIInterview, type AIInterviewSession } from "@/services/aiInterviewService";
 
 function formatDate(value?: string) {
@@ -154,6 +158,33 @@ function scoreBand(score: number | null) {
   };
 }
 
+type TranscriptMessage = AIInterviewSession["messages"][number];
+
+function transcriptRoleLabel(role: TranscriptMessage["role"]) {
+  if (role === "candidate") return "Candidate";
+  if (role === "system") return "System";
+  return "AI Interviewer";
+}
+
+function transcriptStageLabel(message: TranscriptMessage) {
+  if (typeof message.questionIndex === "number") {
+    return `Question ${message.questionIndex + 1}`;
+  }
+  if (message.messageType === "greeting") return "Opening";
+  if (message.messageType === "completion") return "Completion";
+  return "General";
+}
+
+function transcriptStageKey(message: TranscriptMessage) {
+  if (typeof message.questionIndex === "number") return `q-${message.questionIndex}`;
+  return message.messageType || "general";
+}
+
+function compactQuestionText(question?: string) {
+  if (!question) return "";
+  return question.length > 140 ? `${question.slice(0, 140).trim()}...` : question;
+}
+
 export default function AIInterviewDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -163,6 +194,7 @@ export default function AIInterviewDetailPage() {
   const [loading, setLoading] = useState(true);
   const [resending, setResending] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [transcriptSearch, setTranscriptSearch] = useState("");
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session._id === selectedSessionId) || sessions[0],
@@ -186,6 +218,76 @@ export default function AIInterviewDetailPage() {
   const selectedBand = scoreBand(selectedScore);
   const selectedAnsweredCount = selectedSession ? answeredCount(selectedSession) : 0;
   const selectedAnswerTime = selectedSession ? totalAnswerTime(selectedSession) : 0;
+  const transcriptMessages = selectedSession?.messages || [];
+  const transcriptStats = useMemo(() => {
+    const messages = selectedSession?.messages || [];
+    const aiCount = messages.filter((message) => message.role === "ai").length;
+    const candidateCount = messages.filter((message) => message.role === "candidate").length;
+    const questionCount = new Set(messages
+      .map((message) => message.questionIndex)
+      .filter((value): value is number => typeof value === "number")
+    ).size;
+    return {
+      total: messages.length,
+      aiCount,
+      candidateCount,
+      questionCount
+    };
+  }, [selectedSession]);
+  const transcriptGroups = useMemo(() => {
+    const query = transcriptSearch.trim().toLowerCase();
+    const groups: Array<{
+      key: string;
+      title: string;
+      question?: string;
+      messages: TranscriptMessage[];
+    }> = [];
+    const groupMap = new Map<string, (typeof groups)[number]>();
+
+    transcriptMessages.forEach((message) => {
+      const haystack = [
+        transcriptRoleLabel(message.role),
+        transcriptStageLabel(message),
+        message.messageType,
+        message.content
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (query && !haystack.includes(query)) return;
+
+      const key = transcriptStageKey(message);
+      let group = groupMap.get(key);
+      if (!group) {
+        const question = typeof message.questionIndex === "number"
+          ? compactQuestionText(aiInterview?.questionSnapshots?.[message.questionIndex]?.question)
+          : undefined;
+        group = {
+          key,
+          title: transcriptStageLabel(message),
+          question,
+          messages: []
+        };
+        groupMap.set(key, group);
+        groups.push(group);
+      }
+      group.messages.push(message);
+    });
+
+    return groups;
+  }, [aiInterview?.questionSnapshots, transcriptMessages, transcriptSearch]);
+  const transcriptText = useMemo(() => {
+    if (!selectedSession) return "";
+    const lines = [
+      `${aiInterview?.title || "AI Interview"} transcript`,
+      `Candidate: ${candidateDisplayName(selectedSession)}`,
+      selectedSession.candidateSnapshot?.email ? `Email: ${selectedSession.candidateSnapshot.email}` : "",
+      "",
+      ...transcriptMessages.map((message) => {
+        const stage = transcriptStageLabel(message);
+        const timestamp = message.createdAt ? ` ${formatDate(message.createdAt)}` : "";
+        return `[${stage}] ${transcriptRoleLabel(message.role)}${timestamp}\n${message.content}`;
+      })
+    ].filter((line) => line !== "");
+    return lines.join("\n\n");
+  }, [aiInterview?.title, selectedSession, transcriptMessages]);
 
   const load = async () => {
     setLoading(true);
@@ -232,6 +334,19 @@ export default function AIInterviewDetailPage() {
       toast.error(error.message || "Failed to cancel AI interview");
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const copyTranscript = async () => {
+    if (!transcriptText.trim()) {
+      toast.error("No transcript to copy yet");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(transcriptText);
+      toast.success("Transcript copied");
+    } catch {
+      toast.error("Unable to copy transcript");
     }
   };
 
@@ -505,29 +620,117 @@ export default function AIInterviewDetailPage() {
               </div>
 
               <TabsContent value="transcript">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <UserRound className="h-4 w-4" />
-                      {selectedSession.candidateSnapshot?.name}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {selectedSession.messages?.length ? (
-                      selectedSession.messages.map((message, index) => (
-                        <div
-                          key={message._id || index}
-                          className={`rounded-md p-3 text-sm ${
-                            message.role === "candidate" ? "ml-8 bg-slate-900 text-white" : "mr-8 bg-white border"
-                          }`}
-                        >
-                          <div className="mb-1 text-xs opacity-70">
-                            {message.role === "candidate" ? "Candidate" : "AI Interviewer"}
-                            {typeof message.questionIndex === "number" ? ` - Question ${message.questionIndex + 1}` : ""}
-                          </div>
-                          <div className="whitespace-pre-wrap">{message.content}</div>
+                <Card className="overflow-hidden border-0 bg-white shadow-sm">
+                  <CardHeader className="space-y-4 border-b bg-gradient-to-br from-slate-50 to-white">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <FileText className="h-4 w-4 text-blue-600" />
+                          Interview transcript
+                        </CardTitle>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Review the conversation by stage, search for evidence, and copy a clean transcript for notes.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={copyTranscript}
+                        disabled={!transcriptMessages.length}
+                        className="w-fit"
+                      >
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copy transcript
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-4">
+                      {[
+                        { label: "Messages", value: transcriptStats.total },
+                        { label: "Candidate", value: transcriptStats.candidateCount },
+                        { label: "Interviewer", value: transcriptStats.aiCount },
+                        { label: "Stages", value: transcriptStats.questionCount || (transcriptStats.total ? 1 : 0) }
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-xl border bg-white px-3 py-2">
+                          <div className="text-xs text-muted-foreground">{item.label}</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-950">{item.value}</div>
                         </div>
+                      ))}
+                    </div>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={transcriptSearch}
+                        onChange={(event) => setTranscriptSearch(event.target.value)}
+                        placeholder="Search transcript, roles, or question stage..."
+                        className="pl-9"
+                      />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 p-4 sm:p-5">
+                    {transcriptGroups.length ? (
+                      transcriptGroups.map((group) => (
+                        <section key={group.key} className="overflow-hidden rounded-2xl border bg-slate-50/70">
+                          <div className="border-b bg-white px-4 py-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="bg-slate-950 text-white">
+                                  {group.title}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {group.messages.length} message{group.messages.length === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                              {group.question && (
+                                <span className="max-w-full truncate text-xs text-muted-foreground md:max-w-xl">
+                                  {group.question}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-3 p-3 sm:p-4">
+                            {group.messages.map((message, index) => {
+                              const isCandidate = message.role === "candidate";
+                              const isSystem = message.role === "system";
+                              return (
+                                <div key={message._id || `${group.key}-${index}`} className={`flex gap-3 ${isCandidate ? "justify-end" : "justify-start"}`}>
+                                  {!isCandidate && (
+                                    <span className={`mt-1 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:flex ${
+                                      isSystem ? "bg-slate-200 text-slate-700" : "bg-blue-50 text-blue-700"
+                                    }`}>
+                                      {isSystem ? <FileText className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                                    </span>
+                                  )}
+                                  <div className={`max-w-[min(100%,820px)] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                                    isCandidate
+                                      ? "rounded-br-md bg-slate-950 text-white"
+                                      : isSystem
+                                        ? "border bg-white text-slate-700"
+                                        : "rounded-bl-md border bg-white text-slate-900"
+                                  }`}>
+                                    <div className={`mb-1 flex flex-wrap items-center gap-2 text-xs ${isCandidate ? "text-slate-300" : "text-muted-foreground"}`}>
+                                      <span className={`h-1.5 w-1.5 rounded-full ${isCandidate ? "bg-white/70" : isSystem ? "bg-slate-400" : "bg-blue-500"}`} />
+                                      <span className="font-medium">{transcriptRoleLabel(message.role)}</span>
+                                      {message.messageType && <span className="capitalize">{message.messageType.replace(/_/g, " ")}</span>}
+                                      {message.createdAt && <span>{formatDate(message.createdAt)}</span>}
+                                    </div>
+                                    <div className="whitespace-pre-wrap leading-6">{message.content}</div>
+                                  </div>
+                                  {isCandidate && (
+                                    <span className="mt-1 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white sm:flex">
+                                      <UserRound className="h-4 w-4" />
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </section>
                       ))
+                    ) : transcriptMessages.length ? (
+                      <Alert>
+                        <AlertDescription>No transcript messages match your search.</AlertDescription>
+                      </Alert>
                     ) : (
                       <Alert>
                         <AlertDescription>No chat messages captured yet.</AlertDescription>
