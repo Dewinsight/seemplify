@@ -68,9 +68,16 @@ function buildEmailHtml({ candidateName, organizationName, jobTitle, interviewTi
         <p style="margin: 6px 0 0;"><strong>Deadline:</strong> ${expiry}</p>
       </div>
       <p>Use the secure link below to review the guidelines and start when you are ready.</p>
-      <p style="text-align: center; margin: 28px 0;">
-        <a href="${interviewUrl}" style="background: #111827; color: #ffffff; padding: 12px 22px; border-radius: 6px; text-decoration: none; display: inline-block; font-weight: 600;">Start AI Interview</a>
-      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="border-collapse: separate; margin: 28px auto; width: auto;">
+        <tr>
+          <td align="center" bgcolor="#111827" style="border-radius: 6px; mso-padding-alt: 14px 28px;">
+            <a href="${interviewUrl}" target="_blank" style="background: #111827; border: 1px solid #111827; border-radius: 6px; color: #ffffff; display: inline-block; font-family: Arial, sans-serif; font-size: 15px; font-weight: 700; line-height: 20px; min-width: 190px; padding: 14px 28px; text-align: center; text-decoration: none; white-space: nowrap; -webkit-text-size-adjust: none;">
+              Start AI Interview
+            </a>
+          </td>
+        </tr>
+      </table>
+      <p style="font-size: 13px; color: #6b7280; word-break: break-word;">If the button does not open, copy and paste this link into your browser:<br><a href="${interviewUrl}" style="color: #2563eb; text-decoration: underline;">${interviewUrl}</a></p>
       <p style="font-size: 13px; color: #6b7280;">This link is unique to you. Please do not forward it.</p>
     </div>
   `;
