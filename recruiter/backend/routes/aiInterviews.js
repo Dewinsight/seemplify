@@ -6,6 +6,7 @@ const aiInterviewController = require('../controllers/aiInterviewController');
 
 router.get('/public/:token', aiInterviewController.bootstrapPublicInterview);
 router.get('/public/:token/voice', aiInterviewController.getPublicVoiceStatus);
+router.post('/public/:token/speech-token', aiInterviewController.getPublicSpeechToken);
 router.post('/public/:token/start', aiInterviewController.startPublicInterview);
 router.post('/public/:token/message', aiInterviewController.sendPublicMessage);
 router.post('/public/:token/voice-transcript', aiInterviewController.recordPublicVoiceTranscript);

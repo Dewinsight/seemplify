@@ -797,6 +797,28 @@ exports.getPublicVoiceStatus = async (req, res) => {
   }
 };
 
+exports.getPublicSpeechToken = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ error: 'NOT_IN_PROGRESS', message: 'Start the interview before enabling speech recognition' });
+    }
+
+    const speech = await aiInterviewVoiceLiveService.issueClientToken();
+    res.json({ success: true, speech });
+  } catch (error) {
+    console.error('Public AI interview speech token error:', error);
+    sendControllerError(res, error);
+  }
+};
+
 exports.startPublicInterview = async (req, res) => {
   try {
     const session = await findPublicSession(req.params.token);

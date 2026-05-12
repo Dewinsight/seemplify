@@ -260,6 +260,18 @@ class AIInterviewService {
     return response.json();
   }
 
+  async getPublicSpeechToken(token: string): Promise<{
+    token: string;
+    region: string;
+    language: string;
+    expiresInSeconds?: number;
+  }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/speech-token`, { method: 'POST' });
+    if (!response.ok) throw await parseError(response);
+    const data = await response.json();
+    return data.speech;
+  }
+
   async startPublic(token: string): Promise<PublicAIInterviewState> {
     const response = await apiRequest(`/api/ai-interviews/public/${token}/start`, { method: 'POST' });
     if (!response.ok) throw await parseError(response);

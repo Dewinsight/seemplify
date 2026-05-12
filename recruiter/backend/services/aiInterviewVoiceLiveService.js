@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const https = require('https');
 const WebSocket = require('ws');
 const sdk = require('microsoft-cognitiveservices-speech-sdk');
 const AIInterviewSession = require('../models/AIInterviewSession');
@@ -87,6 +88,56 @@ class AIInterviewVoiceLiveService {
       sampleRate: config.sampleRate,
       voice: config.voice
     };
+  }
+
+  issueClientToken() {
+    const config = this.getConfig();
+    if (!this.isConfigured()) {
+      const error = new Error('Azure Speech STT is not configured on the backend.');
+      error.statusCode = 503;
+      error.code = 'SPEECH_NOT_CONFIGURED';
+      throw error;
+    }
+
+    return new Promise((resolve, reject) => {
+      const req = https.request({
+        method: 'POST',
+        hostname: `${config.region}.api.cognitive.microsoft.com`,
+        path: '/sts/v1.0/issueToken',
+        headers: {
+          'Ocp-Apim-Subscription-Key': config.apiKey,
+          'Content-Length': 0
+        }
+      }, (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8').trim();
+          if (response.statusCode >= 200 && response.statusCode < 300 && body) {
+            resolve({
+              token: body,
+              region: config.region,
+              language: config.language,
+              expiresInSeconds: 540
+            });
+            return;
+          }
+
+          const error = new Error(body || `Azure Speech token request failed (${response.statusCode})`);
+          error.statusCode = 502;
+          error.code = 'SPEECH_TOKEN_FAILED';
+          reject(error);
+        });
+      });
+
+      req.on('error', (error) => {
+        error.statusCode = 502;
+        error.code = 'SPEECH_TOKEN_FAILED';
+        reject(error);
+      });
+
+      req.end();
+    });
   }
 
   sendJson(ws, payload) {
@@ -308,7 +359,11 @@ class AIInterviewVoiceLiveService {
               return;
             }
 
-            this.sendJson(clientWs, { type: 'voice.error', message: 'Unsupported voice command.' });
+            this.sendJson(clientWs, {
+              type: 'voice.command.ignored',
+              message: 'Unsupported voice command ignored.',
+              command: message.type || null
+            });
           } catch (error) {
             console.error('AI interview Azure Speech client message error:', error.message);
             this.sendJson(clientWs, { type: 'voice.error', message: 'Invalid voice message.' });

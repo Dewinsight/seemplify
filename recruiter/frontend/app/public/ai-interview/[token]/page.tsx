@@ -67,53 +67,6 @@ function statusLabel(status?: string) {
   }
 }
 
-function parseVoiceMessage(raw: MessageEvent["data"]) {
-  try {
-    return JSON.parse(typeof raw === "string" ? raw : raw.toString());
-  } catch {
-    return null;
-  }
-}
-
-function downsampleToPcm16(input: Float32Array, inputSampleRate: number, outputSampleRate = 16000) {
-  const ratio = inputSampleRate / outputSampleRate;
-  const outputLength = Math.max(1, Math.round(input.length / ratio));
-  const output = new ArrayBuffer(outputLength * 2);
-  const view = new DataView(output);
-
-  for (let index = 0; index < outputLength; index += 1) {
-    const start = Math.floor(index * ratio);
-    const end = Math.min(input.length, Math.floor((index + 1) * ratio));
-    let sum = 0;
-    let count = 0;
-
-    for (let sourceIndex = start; sourceIndex < end; sourceIndex += 1) {
-      sum += input[sourceIndex];
-      count += 1;
-    }
-
-    const sample = Math.max(-1, Math.min(1, count ? sum / count : input[start] || 0));
-    view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-  }
-
-  return output;
-}
-
-function getVoiceTranscriptText(event: any) {
-  const candidates = [
-    event?.transcript,
-    event?.text,
-    event?.delta,
-    event?.item?.transcript,
-    event?.item?.formatted?.transcript,
-    event?.item?.content?.[0]?.transcript,
-    event?.item?.content?.[0]?.text,
-    event?.response?.output_text
-  ];
-
-  return candidates.find((value) => typeof value === "string" && value.trim())?.trim() || "";
-}
-
 function normalizeTranscriptText(value: string) {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -135,21 +88,19 @@ function areEquivalentTranscriptTexts(left: string, right: string) {
   return shorter.length >= 30 && longer.includes(shorter);
 }
 
-function hasEquivalentTranscriptMessage(
-  data: PublicAIInterviewState | null,
-  role: "ai" | "candidate",
-  questionIndex: number,
-  text: string
-) {
-  const normalized = canonicalTranscriptText(text);
-  if (!normalized) return false;
+function getVoiceTranscriptText(event: any) {
+  const candidates = [
+    event?.transcript,
+    event?.text,
+    event?.delta,
+    event?.item?.transcript,
+    event?.item?.formatted?.transcript,
+    event?.item?.content?.[0]?.transcript,
+    event?.item?.content?.[0]?.text,
+    event?.response?.output_text
+  ];
 
-  return Boolean(data?.session.messages?.some((message) => {
-    if (message.role !== role || message.questionIndex !== questionIndex) return false;
-    const existing = canonicalTranscriptText(message.content || "");
-    if (!existing) return false;
-    return areEquivalentTranscriptTexts(existing, normalized);
-  }));
+  return candidates.find((value) => typeof value === "string" && value.trim())?.trim() || "";
 }
 
 function isCandidateTranscriptEvent(type?: string) {
@@ -171,6 +122,23 @@ function isCandidateTranscriptFailedEvent(type?: string) {
     type === "voice.transcript.failed" ||
     (type && type.includes("input_audio_transcription") && type.endsWith(".failed"))
   );
+}
+
+function hasEquivalentTranscriptMessage(
+  data: PublicAIInterviewState | null,
+  role: "ai" | "candidate",
+  questionIndex: number,
+  text: string
+) {
+  const normalized = canonicalTranscriptText(text);
+  if (!normalized) return false;
+
+  return Boolean(data?.session.messages?.some((message) => {
+    if (message.role !== role || message.questionIndex !== questionIndex) return false;
+    const existing = canonicalTranscriptText(message.content || "");
+    if (!existing) return false;
+    return areEquivalentTranscriptTexts(existing, normalized);
+  }));
 }
 
 // Single source of truth for the voice-mode lifecycle. Every UI element and
@@ -275,16 +243,14 @@ export default function PublicAIInterviewPage() {
   const speechRequestIdRef = useRef(0);
   const spokenAiMessageKeysRef = useRef<Set<string>>(new Set());
   const speechQueueRunningRef = useRef(false);
-  const speechQueueDrainRequestedRef = useRef(false);
   const messageRef = useRef("");
-  const voiceWsRef = useRef<WebSocket | null>(null);
-  const voiceStreamRef = useRef<MediaStream | null>(null);
-  const voiceAudioContextRef = useRef<AudioContext | null>(null);
-  const voiceAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const voiceAudioProcessorRef = useRef<ScriptProcessorNode | null>(null);
-  const voiceAudioSilenceGainRef = useRef<GainNode | null>(null);
+  const speechSdkRef = useRef<any>(null);
+  const speechRecognizerRef = useRef<any>(null);
+  const speechAudioConfigRef = useRef<any>(null);
+  const speechTokenExpiresAtRef = useRef(0);
+  const speechRecognitionActiveRef = useRef(false);
+  const speechRecognitionStartingRef = useRef(false);
   const voiceAudioCaptureEnabledRef = useRef(false);
-  const voiceSampleRateRef = useRef(16000);
   const voiceTurnCounterRef = useRef(0);
   const voiceListenTurnIdRef = useRef<string | null>(null);
   const voiceTranscriptBaseRef = useRef("");
@@ -433,20 +399,10 @@ export default function PublicAIInterviewPage() {
 
   const setMicTrackEnabled = useCallback((enabled: boolean) => {
     voiceAudioCaptureEnabledRef.current = enabled;
-    voiceStreamRef.current?.getAudioTracks().forEach((track) => {
-      track.enabled = enabled;
-    });
   }, []);
 
   const isVoiceTransportActive = useCallback(() => {
-    return voiceWsRef.current?.readyState === WebSocket.OPEN;
-  }, []);
-
-  const sendVoiceCommand = useCallback((payload: Record<string, unknown>) => {
-    const ws = voiceWsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(payload));
-    }
+    return Boolean(speechRecognizerRef.current);
   }, []);
 
   const openCandidateMic = useCallback(() => {
@@ -455,43 +411,92 @@ export default function PublicAIInterviewPage() {
     voiceTranscriptBaseRef.current = messageRef.current.trim();
     voiceFinalTranscriptRef.current = "";
     setMicTrackEnabled(true);
-    sendVoiceCommand({ type: "voice.audio.start", turnId });
-  }, [sendVoiceCommand, setMicTrackEnabled]);
+  }, [setMicTrackEnabled]);
 
-  const pauseCandidateMic = useCallback((options: { endTurn?: boolean } = {}) => {
-    const turnId = voiceListenTurnIdRef.current;
+  const stopSpeechRecognition = useCallback(() => {
     setMicTrackEnabled(false);
-    if (options.endTurn && turnId) {
-      sendVoiceCommand({ type: "voice.audio.end_turn", turnId });
-    }
-  }, [sendVoiceCommand, setMicTrackEnabled]);
+    const recognizer = speechRecognizerRef.current;
+    if (!recognizer || !speechRecognitionActiveRef.current) return Promise.resolve();
 
-  const startListeningTurn = useCallback(() => {
+    speechRecognitionActiveRef.current = false;
+    return new Promise<void>((resolve) => {
+      recognizer.stopContinuousRecognitionAsync(
+        () => resolve(),
+        () => resolve()
+      );
+    });
+  }, [setMicTrackEnabled]);
+
+  const refreshSpeechTokenIfNeeded = useCallback(async () => {
+    const recognizer = speechRecognizerRef.current;
+    if (!recognizer || Date.now() < speechTokenExpiresAtRef.current) return;
+
+    const speech = await aiInterviewService.getPublicSpeechToken(token);
+    recognizer.authorizationToken = speech.token;
+    speechTokenExpiresAtRef.current = Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000;
+  }, [token]);
+
+  const startSpeechRecognition = useCallback(async () => {
+    const recognizer = speechRecognizerRef.current;
+    if (!recognizer || speechRecognitionActiveRef.current || speechRecognitionStartingRef.current) return;
+
+    await refreshSpeechTokenIfNeeded();
+    speechRecognitionStartingRef.current = true;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        recognizer.startContinuousRecognitionAsync(
+          () => resolve(),
+          (error: string) => reject(new Error(error || "Speech recognition failed to start"))
+        );
+      });
+      speechRecognitionActiveRef.current = true;
+    } finally {
+      speechRecognitionStartingRef.current = false;
+    }
+  }, [refreshSpeechTokenIfNeeded]);
+
+  const pauseCandidateMic = useCallback((_options: { endTurn?: boolean } = {}) => {
+    void stopSpeechRecognition();
+  }, [stopSpeechRecognition]);
+
+  const startListeningTurn = useCallback(async () => {
     if (!isVoiceTransportActive()) {
       setVoicePhase("off", "Voice connection lost. Restart voice mode to continue.");
       return;
     }
     openCandidateMic();
-    setVoicePhase("listening", "Listening. Speak naturally, then tap I'm done or Send.");
-  }, [isVoiceTransportActive, openCandidateMic, setVoicePhase]);
+    setVoicePhase("listening", "Starting Azure Speech...");
+
+    try {
+      await startSpeechRecognition();
+      setVoicePhase("listening", "Listening. Speak naturally, then tap I'm done or Send.");
+    } catch (error: any) {
+      setMicTrackEnabled(false);
+      setVoicePhase("ready", "Speech recognition could not start. Check your microphone and try again.");
+      toast.error(error?.message || "Speech recognition failed to start");
+    }
+  }, [isVoiceTransportActive, openCandidateMic, setMicTrackEnabled, setVoicePhase, startSpeechRecognition]);
 
   const cleanupVoice = useCallback((status = "Voice mode is off", nextPhase: VoicePhase = "off") => {
-    voiceWsRef.current?.close();
-    voiceWsRef.current = null;
-
-    voiceAudioProcessorRef.current?.disconnect();
-    voiceAudioProcessorRef.current = null;
-    voiceAudioSourceRef.current?.disconnect();
-    voiceAudioSourceRef.current = null;
-    voiceAudioSilenceGainRef.current?.disconnect();
-    voiceAudioSilenceGainRef.current = null;
-    voiceAudioContextRef.current?.close().catch(() => {});
-    voiceAudioContextRef.current = null;
+    const recognizer = speechRecognizerRef.current;
+    if (recognizer) {
+      try {
+        if (speechRecognitionActiveRef.current) {
+          recognizer.stopContinuousRecognitionAsync(() => {}, () => {});
+        }
+      } catch {
+        // ignore
+      }
+      try { recognizer.close(); } catch { /* ignore */ }
+    }
+    try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
+    speechRecognizerRef.current = null;
+    speechAudioConfigRef.current = null;
+    speechRecognitionActiveRef.current = false;
+    speechRecognitionStartingRef.current = false;
+    speechTokenExpiresAtRef.current = 0;
     voiceAudioCaptureEnabledRef.current = false;
     voiceListenTurnIdRef.current = null;
-
-    voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
-    voiceStreamRef.current = null;
 
     // Bumping this aborts any in-flight TTS fetch/playback awaiting on the
     // current request id.
@@ -810,9 +815,9 @@ export default function PublicAIInterviewPage() {
 
   // User pressed "I'm done" while listening — close the mic and move into
   // processing so the upcoming Azure transcript is treated as the answer.
-  const endListening = useCallback(() => {
+  const endListening = useCallback(async () => {
     if (voicePhaseRef.current !== "listening") return;
-    pauseCandidateMic({ endTurn: true });
+    await stopSpeechRecognition();
     setVoicePhase("processing", "Finishing your transcript...");
 
     window.setTimeout(async () => {
@@ -835,7 +840,7 @@ export default function PublicAIInterviewPage() {
         setVoicePhase("ready", "Let's try that again. Tap Speak now when ready.");
       }
     }, 1400);
-  }, [advanceVoiceFlow, isVoiceTransportActive, pauseCandidateMic, setVoicePhase, submitCandidateText]);
+  }, [advanceVoiceFlow, isVoiceTransportActive, pauseCandidateMic, setVoicePhase, stopSpeechRecognition, submitCandidateText]);
 
   const updateCandidateVoiceTranscript = useCallback((text: string, mode: "delta" | "final", turnId?: string | null) => {
     const cleaned = normalizeTranscriptText(text);
@@ -874,9 +879,6 @@ export default function PublicAIInterviewPage() {
       type === "session.updated" ||
       type === "voice.output.blocked"
     ) {
-      if (type === "voice.proxy.ready" && Number.isFinite(Number(event?.sampleRate))) {
-        voiceSampleRateRef.current = Number(event.sampleRate);
-      }
       return;
     }
 
@@ -968,94 +970,53 @@ export default function PublicAIInterviewPage() {
     setVoicePhase("connecting", "Connecting voice mode…");
 
     try {
-      const ws = new WebSocket(aiInterviewService.getVoiceWebSocketUrl(token));
-      voiceWsRef.current = ws;
+      const [SpeechSDK, speech] = await Promise.all([
+        speechSdkRef.current || import("microsoft-cognitiveservices-speech-sdk"),
+        aiInterviewService.getPublicSpeechToken(token)
+      ]);
+      speechSdkRef.current = SpeechSDK;
 
-      const proxyReady = new Promise<void>((resolve, reject) => {
-        const timeout = window.setTimeout(() => reject(new Error("Voice proxy did not become ready")), 15000);
-        ws.addEventListener("message", function onMessage(event) {
-          const payload = parseVoiceMessage(event.data);
-          if (payload?.type === "voice.proxy.ready") {
-            window.clearTimeout(timeout);
-            ws.removeEventListener("message", onMessage);
-            handleVoiceEvent(payload);
-            resolve();
-          } else if (payload?.type === "voice.error" || payload?.type === "error") {
-            window.clearTimeout(timeout);
-            ws.removeEventListener("message", onMessage);
-            reject(new Error(payload.message || payload.error?.message || "Voice proxy failed"));
-          }
-        });
-        ws.addEventListener("error", () => reject(new Error("Voice WebSocket failed")), { once: true });
-      });
+      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(speech.token, speech.region);
+      speechConfig.speechRecognitionLanguage = speech.language || "en-US";
+      speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "10000");
+      speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "900");
 
-      ws.addEventListener("message", (event) => {
-        const payload = parseVoiceMessage(event.data);
-        if (payload) handleVoiceEvent(payload);
-      });
+      const audioConfig = selectedInputDeviceId
+        ? SpeechSDK.AudioConfig.fromMicrophoneInput(selectedInputDeviceId)
+        : SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+      const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
 
-      ws.addEventListener("close", () => {
-        if (voiceWsRef.current === ws) {
-          voiceWsRef.current = null;
-          if (!isVoiceTransportActive()) {
-            setMicTrackEnabled(false);
-            setVoicePhase("off", "Voice connection closed. Restart voice mode to continue.");
-          }
-        }
-      });
-
-      await new Promise<void>((resolve, reject) => {
-        ws.addEventListener("open", () => resolve(), { once: true });
-        ws.addEventListener("error", () => reject(new Error("Voice WebSocket failed")), { once: true });
-      });
-      await proxyReady;
-
-      const getMicStream = (deviceId?: string) => navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-
-      let stream: MediaStream;
-      try {
-        stream = await getMicStream(selectedInputDeviceId || undefined);
-      } catch (error) {
-        if (!selectedInputDeviceId) throw error;
-        setSelectedInputDeviceId("");
-        toast.error("Selected microphone was unavailable. Using the default microphone.");
-        stream = await getMicStream();
-      }
-      voiceStreamRef.current = stream;
-      // Mic stays muted until the queue has drained and we move to 'listening'.
-      stream.getAudioTracks().forEach((track) => { track.enabled = false; });
-
-      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
-      const audioContext: AudioContext = new AudioContextCtor();
-      voiceAudioContextRef.current = audioContext;
-
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      const silenceGain = audioContext.createGain();
-      silenceGain.gain.value = 0;
-      processor.onaudioprocess = (event) => {
-        if (!voiceAudioCaptureEnabledRef.current || ws.readyState !== WebSocket.OPEN) return;
-        const pcm = downsampleToPcm16(event.inputBuffer.getChannelData(0), audioContext.sampleRate, voiceSampleRateRef.current);
-        ws.send(pcm);
+      recognizer.recognizing = (_sender: any, event: any) => {
+        const text = event?.result?.text;
+        if (text) updateCandidateVoiceTranscript(text, "delta", voiceListenTurnIdRef.current);
       };
 
-      source.connect(processor);
-      processor.connect(silenceGain);
-      silenceGain.connect(audioContext.destination);
-      voiceAudioSourceRef.current = source;
-      voiceAudioProcessorRef.current = processor;
-      voiceAudioSilenceGainRef.current = silenceGain;
-      await audioContext.resume();
+      recognizer.recognized = (_sender: any, event: any) => {
+        const text = event?.result?.text;
+        if (event?.result?.reason === SpeechSDK.ResultReason.RecognizedSpeech && text) {
+          updateCandidateVoiceTranscript(text, "final", voiceListenTurnIdRef.current);
+        }
+      };
+
+      recognizer.canceled = (_sender: any, event: any) => {
+        speechRecognitionActiveRef.current = false;
+        if (voicePhaseRef.current !== "off" && voicePhaseRef.current !== "speaking") {
+          const details = event?.errorDetails || "Speech recognition was cancelled.";
+          setVoicePhase("ready", "Speech recognition stopped. Tap Speak now to try again.");
+          toast.error(details);
+        }
+      };
+
+      recognizer.sessionStopped = () => {
+        speechRecognitionActiveRef.current = false;
+      };
+
+      speechRecognizerRef.current = recognizer;
+      speechAudioConfigRef.current = audioConfig;
+      speechTokenExpiresAtRef.current = Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000;
 
       // Voice is live. Transition to 'speaking' and let advanceVoiceFlow drain
-      // the queue, after which it'll automatically move to 'listening'.
+      // the queue, after which the mic stays muted until Speak now is tapped.
       setVoicePhase("speaking", "Voice ready. Interviewer is starting…");
       // A small delay lets the audio element finish settling after any prior
       // cleanup and gives React a paint before audio starts.
@@ -1064,7 +1025,7 @@ export default function PublicAIInterviewPage() {
       cleanupVoice(error?.message || "Voice mode failed", "error");
       toast.error(error?.message || "Unable to start voice mode");
     }
-  }, [advanceVoiceFlow, cleanupVoice, handleVoiceEvent, isVoiceTransportActive, selectedInputDeviceId, session, setVoicePhase, token, voiceEnabled]);
+  }, [advanceVoiceFlow, cleanupVoice, selectedInputDeviceId, session, setVoicePhase, token, updateCandidateVoiceTranscript, voiceEnabled]);
 
   useEffect(() => {
     load();
@@ -1647,9 +1608,9 @@ export default function PublicAIInterviewPage() {
         <section className="min-h-[100dvh] min-w-0 overflow-hidden rounded-none border-0 bg-white/95 shadow-none sm:min-h-[calc(100dvh-32px)] sm:rounded-[1.5rem] sm:border sm:shadow-xl sm:shadow-slate-200/70 xl:min-h-[calc(100dvh-48px)]">
           {session.status !== "in_progress" ? (
             <div className="min-h-[100dvh] overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:min-h-[calc(100dvh-32px)] sm:p-5 lg:p-7">
-              <div className="mx-auto grid max-w-6xl gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="mx-auto grid max-w-7xl gap-3 lg:gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-                  <div className="border-b bg-slate-950 px-4 py-5 text-white sm:px-7 sm:py-7">
+                  <div className="border-b bg-slate-950 px-4 py-5 text-white sm:px-6 sm:py-6">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -1660,7 +1621,7 @@ export default function PublicAIInterviewPage() {
                           <Badge className="border-white/15 bg-white/10 text-white">{statusLabel(session.status)}</Badge>
                         </div>
                         <p className="text-sm text-slate-300">Welcome, {candidateName}</p>
-                        <h2 className="mt-2 max-w-3xl text-2xl font-semibold tracking-normal sm:text-4xl">
+                        <h2 className="mt-2 max-w-3xl text-2xl font-semibold tracking-normal sm:text-3xl">
                           Get ready for your structured AI interview
                         </h2>
                         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
@@ -1680,21 +1641,21 @@ export default function PublicAIInterviewPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-4 p-4 sm:space-y-5 sm:p-7">
+                  <div className="space-y-4 p-4 sm:p-5">
                     <div className="grid gap-3 md:grid-cols-3">
                       {[
                         { label: "Question time", value: questionTimeLabel, icon: Clock, tone: "blue" },
                         { label: "Total window", value: totalTimeLabel, icon: TimerReset, tone: "emerald" },
                         { label: "Progress", value: `${Math.min(activeStep, questionCount)} / ${questionCount}`, icon: Workflow, tone: "slate" }
                       ].map((item) => (
-                        <div key={item.label} className="rounded-2xl border bg-slate-50/80 p-4">
+                        <div key={item.label} className="rounded-2xl border bg-slate-50/80 p-3.5">
                           <div className="flex items-center justify-between gap-3">
                             <div className="text-sm text-slate-600">{item.label}</div>
                             <item.icon className={`h-4 w-4 ${
                               item.tone === "emerald" ? "text-emerald-600" : item.tone === "blue" ? "text-blue-600" : "text-slate-500"
                             }`} />
                           </div>
-                          <div className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">{item.value}</div>
+                          <div className="mt-2 text-2xl font-semibold tracking-normal text-slate-950">{item.value}</div>
                         </div>
                       ))}
                     </div>
@@ -1811,7 +1772,7 @@ export default function PublicAIInterviewPage() {
             </div>
           ) : (
             <div className="flex h-[100dvh] min-h-0 flex-col sm:h-[calc(100dvh-32px)] xl:h-[calc(100dvh-48px)]">
-              <div className="border-b bg-slate-950 p-3 pb-2 text-white sm:p-4">
+              <div className="border-b bg-slate-950 p-2.5 pb-2 text-white sm:p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-300 sm:gap-2 sm:text-sm">
@@ -1819,8 +1780,8 @@ export default function PublicAIInterviewPage() {
                       <span className="hidden h-1 w-1 rounded-full bg-slate-500 sm:inline-flex" />
                       <span className="truncate">{state.job?.title || interview.title}</span>
                     </div>
-                    <h2 className="mt-1 text-lg font-semibold tracking-normal sm:text-xl">Interview Workspace</h2>
-                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] sm:mt-3 sm:gap-2 sm:text-xs">
+                    <h2 className="mt-1 text-base font-semibold tracking-normal sm:text-lg">Interview Workspace</h2>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] sm:text-xs">
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-slate-100">
                         <Clock className="h-3.5 w-3.5" />
                         <span className="hidden sm:inline">Question </span>{formatSeconds(questionSeconds)}
@@ -1908,15 +1869,15 @@ export default function PublicAIInterviewPage() {
                 )}
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-2 sm:p-4 md:p-5">
-                <div className="mx-auto flex max-w-5xl flex-col gap-3">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-2 sm:p-3 md:p-4">
+                <div className="mx-auto flex max-w-7xl flex-col gap-2.5">
                 {(session.messages || []).map((chat, index) => (
                   <div
                     key={chat._id || index}
                     className={`flex ${chat.role === "candidate" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[min(88%,820px)] rounded-2xl px-3 py-2.5 text-[15px] leading-6 shadow-sm sm:max-w-[min(92%,820px)] sm:px-5 sm:py-4 sm:text-sm ${
+                      className={`max-w-[min(92%,960px)] rounded-2xl px-3 py-2.5 text-[15px] leading-6 shadow-sm sm:max-w-[min(94%,960px)] sm:px-4 sm:py-3 sm:text-sm ${
                         chat.role === "candidate"
                           ? "rounded-br-md bg-slate-950 text-white"
                           : "rounded-bl-md border bg-white text-slate-900"
@@ -1938,8 +1899,8 @@ export default function PublicAIInterviewPage() {
                 </div>
               </div>
 
-              <div className="border-t bg-white/95 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-4">
-                <div className="mx-auto max-w-5xl">
+              <div className="border-t bg-white/95 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-3">
+                <div className="mx-auto max-w-7xl">
                 {voicePhase !== "off" && (
                   <div className={`mb-2 rounded-2xl border px-3 py-2.5 text-xs sm:mb-3 sm:py-3 ${
                     voiceBannerTone === "speaking"
@@ -2047,7 +2008,7 @@ export default function PublicAIInterviewPage() {
                     }}
                     placeholder="Type your answer or ask for clarification..."
                     rows={2}
-                    className="min-h-[56px] max-h-[160px] resize-none border-0 bg-slate-50 text-base shadow-none focus-visible:ring-0 sm:min-h-[82px] sm:max-h-[220px] sm:resize-y sm:text-sm"
+                    className="min-h-[48px] max-h-[120px] resize-none border-0 bg-slate-50 text-base shadow-none focus-visible:ring-0 sm:min-h-[60px] sm:max-h-[160px] sm:resize-y sm:text-sm"
                     onKeyDown={(event) => {
                       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                         event.preventDefault();
