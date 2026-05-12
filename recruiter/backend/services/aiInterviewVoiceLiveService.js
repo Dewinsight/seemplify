@@ -182,6 +182,71 @@ class AIInterviewVoiceLiveService {
     });
   }
 
+  transcribeWav(audioBuffer) {
+    const config = this.getConfig();
+    if (!this.isConfigured()) {
+      const error = new Error('Azure Speech STT is not configured on the backend.');
+      error.statusCode = 503;
+      error.code = 'SPEECH_NOT_CONFIGURED';
+      throw error;
+    }
+
+    if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length < 44) {
+      const error = new Error('A valid WAV audio payload is required.');
+      error.statusCode = 400;
+      error.code = 'INVALID_AUDIO';
+      throw error;
+    }
+
+    const speechConfig = sdk.SpeechConfig.fromSubscription(config.apiKey, config.region);
+    speechConfig.speechRecognitionLanguage = config.language;
+    speechConfig.setProperty(
+      sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs,
+      String(config.initialSilenceTimeoutMs)
+    );
+    speechConfig.setProperty(
+      sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
+      String(config.endSilenceTimeoutMs)
+    );
+
+    const audioConfig = sdk.AudioConfig.fromWavFileInput(audioBuffer, 'candidate-response.wav');
+    const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
+
+    return new Promise((resolve, reject) => {
+      const close = () => {
+        try { recognizer.close(); } catch { /* ignore */ }
+        try { audioConfig.close?.(); } catch { /* ignore */ }
+      };
+
+      recognizer.recognizeOnceAsync(
+        (result) => {
+          close();
+          if (result.reason === sdk.ResultReason.RecognizedSpeech) {
+            resolve(String(result.text || '').trim());
+            return;
+          }
+
+          if (result.reason === sdk.ResultReason.NoMatch) {
+            resolve('');
+            return;
+          }
+
+          const error = new Error(result.errorDetails || 'Azure Speech could not transcribe the audio.');
+          error.statusCode = 502;
+          error.code = 'SPEECH_TRANSCRIPTION_FAILED';
+          reject(error);
+        },
+        (error) => {
+          close();
+          const wrapped = new Error(String(error || 'Azure Speech transcription failed.'));
+          wrapped.statusCode = 502;
+          wrapped.code = 'SPEECH_TRANSCRIPTION_FAILED';
+          reject(wrapped);
+        }
+      );
+    });
+  }
+
   initialize(server) {
     if (this.wss) return;
 

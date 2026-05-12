@@ -819,6 +819,37 @@ exports.getPublicSpeechToken = async (req, res) => {
   }
 };
 
+exports.transcribePublicSpeech = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ error: 'NOT_IN_PROGRESS', message: 'Interview is not in progress' });
+    }
+
+    const audioBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+    if (!audioBuffer.length) {
+      return res.status(400).json({ error: 'EMPTY_AUDIO', message: 'Audio payload is required' });
+    }
+
+    const transcript = await aiInterviewVoiceLiveService.transcribeWav(audioBuffer);
+    res.json({
+      success: true,
+      transcript,
+      language: aiInterviewVoiceLiveService.getConfig().language
+    });
+  } catch (error) {
+    console.error('Public AI interview speech transcription error:', error.message);
+    sendControllerError(res, error);
+  }
+};
+
 exports.startPublicInterview = async (req, res) => {
   try {
     const session = await findPublicSession(req.params.token);

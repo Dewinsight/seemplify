@@ -312,6 +312,19 @@ class AIInterviewService {
     return response.blob();
   }
 
+  async transcribePublicSpeech(token: string, audio: Blob): Promise<{ transcript: string; language?: string }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/speech-transcribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': audio.type || 'audio/wav',
+        'X-Skip-Body-Sanitization': 'true'
+      },
+      body: audio
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
   getVoiceWebSocketUrl(token: string): string {
     const base = getCurrentWsBaseUrl().replace(/\/$/, '');
     return `${base}/ws/ai-interview-voice?token=${encodeURIComponent(token)}`;

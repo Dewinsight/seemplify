@@ -88,42 +88,6 @@ function areEquivalentTranscriptTexts(left: string, right: string) {
   return shorter.length >= 30 && longer.includes(shorter);
 }
 
-function getVoiceTranscriptText(event: any) {
-  const candidates = [
-    event?.transcript,
-    event?.text,
-    event?.delta,
-    event?.item?.transcript,
-    event?.item?.formatted?.transcript,
-    event?.item?.content?.[0]?.transcript,
-    event?.item?.content?.[0]?.text,
-    event?.response?.output_text
-  ];
-
-  return candidates.find((value) => typeof value === "string" && value.trim())?.trim() || "";
-}
-
-function isCandidateTranscriptEvent(type?: string) {
-  return Boolean(
-    type === "voice.transcript.final" ||
-    (type && type.includes("input_audio_transcription") && (type.endsWith(".completed") || type.endsWith(".done")))
-  );
-}
-
-function isCandidateTranscriptDeltaEvent(type?: string) {
-  return Boolean(
-    type === "voice.transcript.delta" ||
-    (type && type.includes("input_audio_transcription") && type.endsWith(".delta"))
-  );
-}
-
-function isCandidateTranscriptFailedEvent(type?: string) {
-  return Boolean(
-    type === "voice.transcript.failed" ||
-    (type && type.includes("input_audio_transcription") && type.endsWith(".failed"))
-  );
-}
-
 function hasEquivalentTranscriptMessage(
   data: PublicAIInterviewState | null,
   role: "ai" | "candidate",
@@ -141,16 +105,15 @@ function hasEquivalentTranscriptMessage(
   }));
 }
 
-// Single source of truth for the voice-mode lifecycle. Every UI element and
-// every voice handler reads this — no more competing refs that get out of sync.
-//   off        — voice mode is not running
-//   connecting — establishing WS/RTC connection
-//   speaking   — TTS is playing one or more AI messages back-to-back
-//   ready      — voice is connected, mic is off, candidate can tap mic
-//   listening  — mic is open and Azure STT is transcribing
-//   processing — user finished speaking (or hit "I'm done"); we're sending and
-//                waiting for the AI response
-//   error      — voice mode failed; user must restart
+// Single source of truth for the voice-mode lifecycle. Every UI element reads
+// this so TTS playback and candidate recording cannot fight each other.
+//   off        - voice mode is not running
+//   connecting - preparing audio devices
+//   speaking   - TTS is playing one or more AI messages back-to-back
+//   ready      - voice is available, mic is off, candidate can tap Speak now
+//   listening  - mic is recording candidate audio
+//   processing - Azure STT is transcribing, then the answer is submitted
+//   error      - voice mode failed; user must restart
 type VoicePhase = "off" | "connecting" | "speaking" | "ready" | "listening" | "processing" | "error";
 
 type AssistantSpeechState = {
@@ -164,12 +127,91 @@ type AudioDeviceOption = {
   label: string;
 };
 
-type SpeechTokenState = {
-  token: string;
-  region: string;
-  language: string;
-  expiresAt: number;
+type CandidateAudioRecorder = {
+  stream: MediaStream;
+  audioContext: AudioContext;
+  source: MediaStreamAudioSourceNode;
+  processor: ScriptProcessorNode;
+  chunks: Float32Array[];
+  sampleRate: number;
 };
+
+function flattenAudioChunks(chunks: Float32Array[]) {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const output = new Float32Array(totalLength);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return output;
+}
+
+function downsampleAudioBuffer(buffer: Float32Array, inputSampleRate: number, outputSampleRate: number) {
+  if (outputSampleRate === inputSampleRate) return buffer;
+  if (outputSampleRate > inputSampleRate) return buffer;
+
+  const ratio = inputSampleRate / outputSampleRate;
+  const newLength = Math.round(buffer.length / ratio);
+  const result = new Float32Array(newLength);
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+    let accumulator = 0;
+    let count = 0;
+
+    for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i += 1) {
+      accumulator += buffer[i];
+      count += 1;
+    }
+
+    result[offsetResult] = count ? accumulator / count : 0;
+    offsetResult += 1;
+    offsetBuffer = nextOffsetBuffer;
+  }
+
+  return result;
+}
+
+function writeAsciiString(view: DataView, offset: number, value: string) {
+  for (let i = 0; i < value.length; i += 1) {
+    view.setUint8(offset + i, value.charCodeAt(i));
+  }
+}
+
+function encodeWavBlob(chunks: Float32Array[], sampleRate: number) {
+  const targetSampleRate = 16000;
+  const samples = downsampleAudioBuffer(flattenAudioChunks(chunks), sampleRate, targetSampleRate);
+  const bytesPerSample = 2;
+  const blockAlign = bytesPerSample;
+  const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+  const view = new DataView(buffer);
+
+  writeAsciiString(view, 0, "RIFF");
+  view.setUint32(4, 36 + samples.length * bytesPerSample, true);
+  writeAsciiString(view, 8, "WAVE");
+  writeAsciiString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, targetSampleRate, true);
+  view.setUint32(28, targetSampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeAsciiString(view, 36, "data");
+  view.setUint32(40, samples.length * bytesPerSample, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += bytesPerSample;
+  }
+
+  return new Blob([view], { type: "audio/wav" });
+}
 
 function getSpeakableAiMessages(data: PublicAIInterviewState) {
   const currentIndex = data.session.currentQuestionIndex;
@@ -251,17 +293,9 @@ export default function PublicAIInterviewPage() {
   const spokenAiMessageKeysRef = useRef<Set<string>>(new Set());
   const speechQueueRunningRef = useRef(false);
   const messageRef = useRef("");
-  const speechSdkRef = useRef<any>(null);
-  const speechRecognizerRef = useRef<any>(null);
-  const speechAudioConfigRef = useRef<any>(null);
-  const speechTokenRef = useRef<SpeechTokenState | null>(null);
   const speechRecognitionActiveRef = useRef(false);
-  const speechRecognitionStartingRef = useRef(false);
+  const candidateAudioRecorderRef = useRef<CandidateAudioRecorder | null>(null);
   const voiceAudioCaptureEnabledRef = useRef(false);
-  const voiceTurnCounterRef = useRef(0);
-  const voiceListenTurnIdRef = useRef<string | null>(null);
-  const voiceTranscriptBaseRef = useRef("");
-  const voiceFinalTranscriptRef = useRef("");
   const assistantSpeechTimerRef = useRef<number | null>(null);
   const assistantSpeechTextRef = useRef("");
   const assistantSpeechStartedAtRef = useRef(0);
@@ -409,151 +443,95 @@ export default function PublicAIInterviewPage() {
   }, []);
 
   const isVoiceTransportActive = useCallback(() => {
-    return Boolean(speechSdkRef.current && speechTokenRef.current);
-  }, []);
+    return Boolean(stateRef.current?.voice?.enabled ?? voiceEnabled);
+  }, [voiceEnabled]);
 
   const openCandidateMic = useCallback(() => {
-    const turnId = `turn_${Date.now()}_${voiceTurnCounterRef.current += 1}`;
-    voiceListenTurnIdRef.current = turnId;
-    voiceTranscriptBaseRef.current = messageRef.current.trim();
-    voiceFinalTranscriptRef.current = "";
     setMicTrackEnabled(true);
   }, [setMicTrackEnabled]);
 
-  const stopSpeechRecognition = useCallback(() => {
+  const stopCandidateRecording = useCallback(() => {
     setMicTrackEnabled(false);
-    const recognizer = speechRecognizerRef.current;
-    if (!recognizer) return Promise.resolve();
-
-    const wasActive = speechRecognitionActiveRef.current;
     speechRecognitionActiveRef.current = false;
-    return new Promise<void>((resolve) => {
-      const finish = () => {
-        try { recognizer.close(); } catch { /* ignore */ }
-        try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
-        if (speechRecognizerRef.current === recognizer) speechRecognizerRef.current = null;
-        speechAudioConfigRef.current = null;
-        resolve();
-      };
 
-      if (wasActive) {
-        recognizer.stopContinuousRecognitionAsync(finish, finish);
-      } else {
-        finish();
-      }
-    });
+    const recorder = candidateAudioRecorderRef.current;
+    candidateAudioRecorderRef.current = null;
+    if (!recorder) return null;
+
+    try { recorder.processor.disconnect(); } catch { /* ignore */ }
+    try { recorder.source.disconnect(); } catch { /* ignore */ }
+    recorder.stream.getTracks().forEach((track) => track.stop());
+    void recorder.audioContext.close().catch(() => {});
+
+    if (!recorder.chunks.length) return null;
+    return encodeWavBlob(recorder.chunks, recorder.sampleRate);
   }, [setMicTrackEnabled]);
 
-  const refreshSpeechTokenIfNeeded = useCallback(async () => {
-    if (speechTokenRef.current && Date.now() < speechTokenRef.current.expiresAt) return;
+  const startCandidateRecording = useCallback(async () => {
+    stopCandidateRecording();
+    setMicTrackEnabled(true);
 
-    const speech = await aiInterviewService.getPublicSpeechToken(token);
-    speechTokenRef.current = {
-      token: speech.token,
-      region: speech.region,
-      language: speech.language || "en-US",
-      expiresAt: Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000
-    };
-  }, [token]);
-
-  const createSpeechRecognizer = useCallback((forceDefaultMic = false) => {
-    const SpeechSDK = speechSdkRef.current;
-    const speech = speechTokenRef.current;
-    if (!SpeechSDK || !speech) {
-      throw new Error("Speech recognition is not ready yet.");
+    const AudioContextConstructor =
+      window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) {
+      throw new Error("This browser does not support microphone recording.");
     }
 
-    const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(speech.token, speech.region);
-    speechConfig.speechRecognitionLanguage = speech.language || "en-US";
-    speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "10000");
-    speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "900");
+    const selectedDevice = selectedInputDeviceId && selectedInputDeviceId !== "default" ? selectedInputDeviceId : "";
+    const buildConstraints = (deviceId?: string): MediaStreamConstraints => ({
+      audio: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
 
-    let audioConfig;
+    let stream: MediaStream;
     try {
-      audioConfig = selectedInputDeviceId && selectedInputDeviceId !== "default" && !forceDefaultMic
-        ? SpeechSDK.AudioConfig.fromMicrophoneInput(selectedInputDeviceId)
-        : SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
-    } catch {
-      audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+      stream = await navigator.mediaDevices.getUserMedia(buildConstraints(selectedDevice));
+    } catch (error) {
+      if (!selectedDevice) throw error;
+      setSelectedInputDeviceId("");
+      stream = await navigator.mediaDevices.getUserMedia(buildConstraints());
+      toast.info("Selected microphone was unavailable. Using the default microphone.");
     }
 
-    const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
-
-    recognizer.recognizing = (_sender: any, event: any) => {
-      const text = event?.result?.text;
-      if (text) {
-        setVoiceStatus("Listening. Azure Speech is transcribing...");
-        updateCandidateVoiceTranscript(text, "delta", voiceListenTurnIdRef.current);
-      }
-    };
-
-    recognizer.recognized = (_sender: any, event: any) => {
-      const text = event?.result?.text;
-      if (event?.result?.reason === SpeechSDK.ResultReason.RecognizedSpeech && text) {
-        updateCandidateVoiceTranscript(text, "final", voiceListenTurnIdRef.current);
-      }
-    };
-
-    recognizer.canceled = (_sender: any, event: any) => {
-      const wasListening = voicePhaseRef.current === "listening" || voicePhaseRef.current === "processing";
-      speechRecognitionActiveRef.current = false;
-      if (speechRecognizerRef.current === recognizer) speechRecognizerRef.current = null;
-      try { recognizer.close(); } catch { /* ignore */ }
-      try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
-      speechAudioConfigRef.current = null;
-
-      if (wasListening) {
-        const details = event?.errorDetails || "Speech recognition stopped before audio was received.";
-        console.warn("[ai-interview] Azure Speech recognition cancelled", event);
-        setVoicePhase("ready", "Speech recognition stopped. Tap Speak now to try again.");
-        toast.error(details);
-      }
-    };
-
-    recognizer.sessionStopped = () => {
-      speechRecognitionActiveRef.current = false;
-    };
-
-    speechRecognizerRef.current = recognizer;
-    speechAudioConfigRef.current = audioConfig;
-    return recognizer;
-  }, [selectedInputDeviceId, setVoicePhase, updateCandidateVoiceTranscript]);
-
-  const startSpeechRecognition = useCallback(async () => {
-    if (speechRecognitionActiveRef.current || speechRecognitionStartingRef.current) return;
-
-    await refreshSpeechTokenIfNeeded();
-    let recognizer = createSpeechRecognizer();
-    speechRecognitionStartingRef.current = true;
-    try {
-      const startRecognizer = (candidate: any) => new Promise<void>((resolve, reject) => {
-        candidate.startContinuousRecognitionAsync(
-          () => resolve(),
-          (error: string) => reject(new Error(error || "Speech recognition failed to start"))
-        );
-      });
-
-      try {
-        await startRecognizer(recognizer);
-      } catch (error) {
-        if (!selectedInputDeviceId || selectedInputDeviceId === "default") throw error;
-        try { recognizer.close(); } catch { /* ignore */ }
-        try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
-        setSelectedInputDeviceId("");
-        recognizer = createSpeechRecognizer(true);
-        await startRecognizer(recognizer);
-        toast.info("Selected microphone was unavailable. Using the default microphone.");
-      }
-
-      speechRecognitionActiveRef.current = true;
-    } finally {
-      speechRecognitionStartingRef.current = false;
+    const audioContext = new AudioContextConstructor();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume().catch(() => {});
     }
-  }, [createSpeechRecognizer, refreshSpeechTokenIfNeeded, selectedInputDeviceId]);
+
+    const source = audioContext.createMediaStreamSource(stream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+    const chunks: Float32Array[] = [];
+
+    processor.onaudioprocess = (event) => {
+      if (!voiceAudioCaptureEnabledRef.current || voicePhaseRef.current !== "listening") return;
+      const input = event.inputBuffer.getChannelData(0);
+      chunks.push(new Float32Array(input));
+      const output = event.outputBuffer.getChannelData(0);
+      output.fill(0);
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    candidateAudioRecorderRef.current = {
+      stream,
+      audioContext,
+      source,
+      processor,
+      chunks,
+      sampleRate: audioContext.sampleRate
+    };
+    speechRecognitionActiveRef.current = true;
+  }, [selectedInputDeviceId, setSelectedInputDeviceId, stopCandidateRecording]);
 
   const pauseCandidateMic = useCallback((_options: { endTurn?: boolean } = {}) => {
-    void stopSpeechRecognition();
-  }, [stopSpeechRecognition]);
+    stopCandidateRecording();
+  }, [stopCandidateRecording]);
 
   const startListeningTurn = useCallback(async () => {
     if (!isVoiceTransportActive()) {
@@ -561,38 +539,22 @@ export default function PublicAIInterviewPage() {
       return;
     }
     openCandidateMic();
-    setVoicePhase("listening", "Starting Azure Speech...");
+    setVoicePhase("listening", "Opening your microphone...");
 
     try {
-      await startSpeechRecognition();
-      setVoicePhase("listening", "Listening. Speak naturally, then tap I'm done or Send.");
+      await startCandidateRecording();
+      setVoicePhase("listening", "Listening. Speak naturally, then tap I'm done.");
     } catch (error: any) {
       setMicTrackEnabled(false);
       setVoicePhase("ready", "Speech recognition could not start. Check your microphone and try again.");
       toast.error(error?.message || "Speech recognition failed to start");
     }
-  }, [isVoiceTransportActive, openCandidateMic, setMicTrackEnabled, setVoicePhase, startSpeechRecognition]);
+  }, [isVoiceTransportActive, openCandidateMic, setMicTrackEnabled, setVoicePhase, startCandidateRecording]);
 
   const cleanupVoice = useCallback((status = "Voice mode is off", nextPhase: VoicePhase = "off") => {
-    const recognizer = speechRecognizerRef.current;
-    if (recognizer) {
-      try {
-        if (speechRecognitionActiveRef.current) {
-          recognizer.stopContinuousRecognitionAsync(() => {}, () => {});
-        }
-      } catch {
-        // ignore
-      }
-      try { recognizer.close(); } catch { /* ignore */ }
-    }
-    try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
-    speechRecognizerRef.current = null;
-    speechAudioConfigRef.current = null;
+    stopCandidateRecording();
     speechRecognitionActiveRef.current = false;
-    speechRecognitionStartingRef.current = false;
-    speechTokenRef.current = null;
     voiceAudioCaptureEnabledRef.current = false;
-    voiceListenTurnIdRef.current = null;
 
     // Bumping this aborts any in-flight TTS fetch/playback awaiting on the
     // current request id.
@@ -623,7 +585,7 @@ export default function PublicAIInterviewPage() {
     speechQueueRunningRef.current = false;
     setAssistantSpeech({ active: false, text: "", progress: 0 });
     setVoicePhase(nextPhase, status);
-  }, [setVoicePhase]);
+  }, [setVoicePhase, stopCandidateRecording]);
 
   // Reserved for future use — AI messages are already persisted by the
   // backend when they are created, so the frontend does not need to record
@@ -833,10 +795,9 @@ export default function PublicAIInterviewPage() {
     }
   }, [applyPublicState, token]);
 
-  // The single voice-flow driver. Reads the current session state and:
-  //   1. Speaks every queued AI message that hasn't been spoken yet.
-  //   2. After draining, automatically opens the mic and moves to 'listening'.
-  // Re-entry is safe; concurrent invocations no-op.
+  // Speaks every queued AI message that has not been spoken yet, then leaves
+  // the mic muted until the candidate taps Speak now. Re-entry is safe;
+  // concurrent invocations no-op.
   const advanceVoiceFlow = useCallback(async () => {
     if (speechQueueRunningRef.current) return;
     if (voicePhaseRef.current === "off" || voicePhaseRef.current === "error" || voicePhaseRef.current === "connecting") {
@@ -896,8 +857,7 @@ export default function PublicAIInterviewPage() {
       // Queue drained. Keep the mic closed until the candidate taps the mic.
       const phaseAfterDrain = voicePhaseRef.current as VoicePhase;
       if (
-        phaseAfterDrain !== "off" &&
-        phaseAfterDrain !== "error" &&
+        phaseAfterDrain === "speaking" &&
         sessionRef.current?.status === "in_progress" &&
         isVoiceTransportActive()
       ) {
@@ -913,133 +873,37 @@ export default function PublicAIInterviewPage() {
   // processing so the upcoming Azure transcript is treated as the answer.
   const endListening = useCallback(async () => {
     if (voicePhaseRef.current !== "listening") return;
-    await stopSpeechRecognition();
-    setVoicePhase("processing", "Finishing your transcript...");
+    const audioBlob = stopCandidateRecording();
+    setVoicePhase("processing", "Transcribing your response with Azure Speech...");
 
-    window.setTimeout(async () => {
-      const transcript = messageRef.current.trim();
-      if (!transcript) {
-        if (isVoiceTransportActive()) {
-          pauseCandidateMic();
-          setVoicePhase("ready", "I didn't catch that. Tap Speak now to try again.");
-        } else {
-          setVoicePhase("off", "Voice connection lost. Restart voice mode to continue.");
-        }
-        return;
+    try {
+      if (!audioBlob || audioBlob.size < 800) {
+        throw new Error("I didn't catch any audio. Tap Speak now and try again.");
       }
 
+      const result = await aiInterviewService.transcribePublicSpeech(token, audioBlob);
+      const transcript = normalizeTranscriptText(result.transcript || "");
+      if (!transcript) {
+        throw new Error("I didn't catch that. Tap Speak now to try again.");
+      }
+
+      setMessage(transcript);
+      messageRef.current = transcript;
       const sent = await submitCandidateText(transcript);
       if (sent) {
         void advanceVoiceFlow();
       } else if (isVoiceTransportActive()) {
-        pauseCandidateMic();
         setVoicePhase("ready", "Let's try that again. Tap Speak now when ready.");
       }
-    }, 1400);
-  }, [advanceVoiceFlow, isVoiceTransportActive, pauseCandidateMic, setVoicePhase, stopSpeechRecognition, submitCandidateText]);
-
-  const updateCandidateVoiceTranscript = useCallback((text: string, mode: "delta" | "final", turnId?: string | null) => {
-    const cleaned = normalizeTranscriptText(text);
-    const activeSession = sessionRef.current;
-    if (!cleaned || !activeSession || activeSession.status !== "in_progress") return;
-    if (voicePhaseRef.current !== "listening" && voicePhaseRef.current !== "processing") return;
-    if (turnId && voiceListenTurnIdRef.current && turnId !== voiceListenTurnIdRef.current) return;
-
-    if (mode === "final") {
-      const existingFinal = canonicalTranscriptText(voiceFinalTranscriptRef.current);
-      const nextFinal = canonicalTranscriptText(cleaned);
-      if (!existingFinal || !areEquivalentTranscriptTexts(existingFinal, nextFinal)) {
-        voiceFinalTranscriptRef.current = [voiceFinalTranscriptRef.current, cleaned].filter(Boolean).join(" ").trim();
-      }
-    }
-
-    const combined = [
-      voiceTranscriptBaseRef.current,
-      voiceFinalTranscriptRef.current,
-      mode === "delta" ? cleaned : ""
-    ].filter(Boolean).join(" ").trim();
-
-    setMessage(combined);
-    messageRef.current = combined;
-  }, []);
-
-  const handleVoiceEvent = useCallback((event: any) => {
-    const type = event?.type;
-    if (!type) return;
-
-    if (
-      type === "voice.proxy.ready" ||
-      type === "voice.audio.ready" ||
-      type === "voice.session.refreshed" ||
-      type === "voice.stt.closed" ||
-      type === "session.updated" ||
-      type === "voice.output.blocked"
-    ) {
-      return;
-    }
-
-    if (type === "voice.error" || type === "error") {
-      setVoicePhase("error", event?.message || event?.error?.message || "Voice mode failed");
-      finishAssistantSpeechVisual();
-      toast.error(event?.message || event?.error?.message || "Voice mode failed");
-      return;
-    }
-
-    // We only care about candidate transcript events while the user is in
-    // listening/processing — anything earlier is residual from the previous
-    // turn and should be ignored.
-    const listeningOrProcessing = voicePhaseRef.current === "listening" || voicePhaseRef.current === "processing";
-
-    if (type === "input_audio_buffer.speech_started") {
-      if (voicePhaseRef.current === "listening") {
-        setVoiceStatus("Listening… you can keep speaking.");
-      }
-      return;
-    }
-
-    if (type === "input_audio_buffer.speech_stopped") {
-      // Azure detected the user stopped talking. Switch to processing so the
-      // transcription event below routes correctly.
-      if (voicePhaseRef.current === "listening") {
-        setMicTrackEnabled(false);
-        setVoicePhase("processing", "Got it — let me think about that…");
-      }
-      return;
-    }
-
-    if (isCandidateTranscriptDeltaEvent(type)) {
-      if (!listeningOrProcessing) return;
-      const transcript = getVoiceTranscriptText(event);
-      if (transcript) updateCandidateVoiceTranscript(transcript, "delta", event?.turnId);
-      return;
-    }
-
-    if (isCandidateTranscriptFailedEvent(type)) {
-      if (!listeningOrProcessing) return;
-      if (event?.turnId && voiceListenTurnIdRef.current && event.turnId !== voiceListenTurnIdRef.current) return;
+    } catch (error: any) {
       if (isVoiceTransportActive()) {
-        pauseCandidateMic();
-        setVoicePhase("ready", "I didn't catch that. Tap Speak now to try again.");
+        setVoicePhase("ready", error?.message || "I didn't catch that. Tap Speak now to try again.");
+      } else {
+        setVoicePhase("off", "Voice connection lost. Restart voice mode to continue.");
       }
-      return;
+      toast.error(error?.message || "Speech transcription failed");
     }
-
-    if (isCandidateTranscriptEvent(type)) {
-      if (!listeningOrProcessing) return;
-      const transcript = getVoiceTranscriptText(event);
-      if (transcript) {
-        updateCandidateVoiceTranscript(transcript, "final", event?.turnId);
-      } else if (isVoiceTransportActive()) {
-        pauseCandidateMic();
-        setVoicePhase("ready", "I didn't catch that. Tap Speak now to try again.");
-      }
-      return;
-    }
-
-    // Any legacy response.* event is ignored. The backend interview harness
-    // creates text replies, and Azure Speech only handles TTS/STT.
-    if (type.startsWith("response.")) return;
-  }, [finishAssistantSpeechVisual, isVoiceTransportActive, pauseCandidateMic, setVoicePhase, updateCandidateVoiceTranscript]);
+  }, [advanceVoiceFlow, isVoiceTransportActive, setVoicePhase, stopCandidateRecording, submitCandidateText, token]);
 
   const disconnectVoice = useCallback(() => {
     cleanupVoice("Voice mode is off");
@@ -1066,17 +930,7 @@ export default function PublicAIInterviewPage() {
     setVoicePhase("connecting", "Connecting voice mode…");
 
     try {
-      const [SpeechSDK, speech] = await Promise.all([
-        speechSdkRef.current || import("microsoft-cognitiveservices-speech-sdk"),
-        aiInterviewService.getPublicSpeechToken(token)
-      ]);
-      speechSdkRef.current = SpeechSDK;
-      speechTokenRef.current = {
-        token: speech.token,
-        region: speech.region,
-        language: speech.language || "en-US",
-        expiresAt: Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000
-      };
+      await loadAudioDevices(true);
 
       // Voice is live. Transition to 'speaking' and let advanceVoiceFlow drain
       // the queue, after which the mic stays muted until Speak now is tapped.
@@ -1088,7 +942,7 @@ export default function PublicAIInterviewPage() {
       cleanupVoice(error?.message || "Voice mode failed", "error");
       toast.error(error?.message || "Unable to start voice mode");
     }
-  }, [advanceVoiceFlow, cleanupVoice, selectedInputDeviceId, session, setVoicePhase, token, updateCandidateVoiceTranscript, voiceEnabled]);
+  }, [advanceVoiceFlow, cleanupVoice, loadAudioDevices, session, setVoicePhase, voiceEnabled]);
 
   useEffect(() => {
     load();
@@ -1312,7 +1166,7 @@ export default function PublicAIInterviewPage() {
 
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs leading-5 text-slate-500">
-          Speech-to-text fills the chat box first. Press Send or I'm done to submit it.
+          Tap I'm done to transcribe and submit your spoken answer. Use Send for typed answers.
         </p>
         {session?.status === "in_progress" && voicePhase !== "off" && voicePhase !== "error" && (
           <Button type="button" size="sm" onClick={restartVoiceWithSelectedDevices}>
