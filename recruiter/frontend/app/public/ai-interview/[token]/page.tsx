@@ -164,6 +164,13 @@ type AudioDeviceOption = {
   label: string;
 };
 
+type SpeechTokenState = {
+  token: string;
+  region: string;
+  language: string;
+  expiresAt: number;
+};
+
 function getSpeakableAiMessages(data: PublicAIInterviewState) {
   const currentIndex = data.session.currentQuestionIndex;
   return (data.session.messages || []).filter((chat) => {
@@ -247,7 +254,7 @@ export default function PublicAIInterviewPage() {
   const speechSdkRef = useRef<any>(null);
   const speechRecognizerRef = useRef<any>(null);
   const speechAudioConfigRef = useRef<any>(null);
-  const speechTokenExpiresAtRef = useRef(0);
+  const speechTokenRef = useRef<SpeechTokenState | null>(null);
   const speechRecognitionActiveRef = useRef(false);
   const speechRecognitionStartingRef = useRef(false);
   const voiceAudioCaptureEnabledRef = useRef(false);
@@ -402,7 +409,7 @@ export default function PublicAIInterviewPage() {
   }, []);
 
   const isVoiceTransportActive = useCallback(() => {
-    return Boolean(speechRecognizerRef.current);
+    return Boolean(speechSdkRef.current && speechTokenRef.current);
   }, []);
 
   const openCandidateMic = useCallback(() => {
@@ -416,44 +423,133 @@ export default function PublicAIInterviewPage() {
   const stopSpeechRecognition = useCallback(() => {
     setMicTrackEnabled(false);
     const recognizer = speechRecognizerRef.current;
-    if (!recognizer || !speechRecognitionActiveRef.current) return Promise.resolve();
+    if (!recognizer) return Promise.resolve();
 
+    const wasActive = speechRecognitionActiveRef.current;
     speechRecognitionActiveRef.current = false;
     return new Promise<void>((resolve) => {
-      recognizer.stopContinuousRecognitionAsync(
-        () => resolve(),
-        () => resolve()
-      );
+      const finish = () => {
+        try { recognizer.close(); } catch { /* ignore */ }
+        try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
+        if (speechRecognizerRef.current === recognizer) speechRecognizerRef.current = null;
+        speechAudioConfigRef.current = null;
+        resolve();
+      };
+
+      if (wasActive) {
+        recognizer.stopContinuousRecognitionAsync(finish, finish);
+      } else {
+        finish();
+      }
     });
   }, [setMicTrackEnabled]);
 
   const refreshSpeechTokenIfNeeded = useCallback(async () => {
-    const recognizer = speechRecognizerRef.current;
-    if (!recognizer || Date.now() < speechTokenExpiresAtRef.current) return;
+    if (speechTokenRef.current && Date.now() < speechTokenRef.current.expiresAt) return;
 
     const speech = await aiInterviewService.getPublicSpeechToken(token);
-    recognizer.authorizationToken = speech.token;
-    speechTokenExpiresAtRef.current = Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000;
+    speechTokenRef.current = {
+      token: speech.token,
+      region: speech.region,
+      language: speech.language || "en-US",
+      expiresAt: Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000
+    };
   }, [token]);
 
+  const createSpeechRecognizer = useCallback((forceDefaultMic = false) => {
+    const SpeechSDK = speechSdkRef.current;
+    const speech = speechTokenRef.current;
+    if (!SpeechSDK || !speech) {
+      throw new Error("Speech recognition is not ready yet.");
+    }
+
+    const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(speech.token, speech.region);
+    speechConfig.speechRecognitionLanguage = speech.language || "en-US";
+    speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "10000");
+    speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "900");
+
+    let audioConfig;
+    try {
+      audioConfig = selectedInputDeviceId && selectedInputDeviceId !== "default" && !forceDefaultMic
+        ? SpeechSDK.AudioConfig.fromMicrophoneInput(selectedInputDeviceId)
+        : SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+    } catch {
+      audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+    }
+
+    const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+
+    recognizer.recognizing = (_sender: any, event: any) => {
+      const text = event?.result?.text;
+      if (text) {
+        setVoiceStatus("Listening. Azure Speech is transcribing...");
+        updateCandidateVoiceTranscript(text, "delta", voiceListenTurnIdRef.current);
+      }
+    };
+
+    recognizer.recognized = (_sender: any, event: any) => {
+      const text = event?.result?.text;
+      if (event?.result?.reason === SpeechSDK.ResultReason.RecognizedSpeech && text) {
+        updateCandidateVoiceTranscript(text, "final", voiceListenTurnIdRef.current);
+      }
+    };
+
+    recognizer.canceled = (_sender: any, event: any) => {
+      const wasListening = voicePhaseRef.current === "listening" || voicePhaseRef.current === "processing";
+      speechRecognitionActiveRef.current = false;
+      if (speechRecognizerRef.current === recognizer) speechRecognizerRef.current = null;
+      try { recognizer.close(); } catch { /* ignore */ }
+      try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
+      speechAudioConfigRef.current = null;
+
+      if (wasListening) {
+        const details = event?.errorDetails || "Speech recognition stopped before audio was received.";
+        console.warn("[ai-interview] Azure Speech recognition cancelled", event);
+        setVoicePhase("ready", "Speech recognition stopped. Tap Speak now to try again.");
+        toast.error(details);
+      }
+    };
+
+    recognizer.sessionStopped = () => {
+      speechRecognitionActiveRef.current = false;
+    };
+
+    speechRecognizerRef.current = recognizer;
+    speechAudioConfigRef.current = audioConfig;
+    return recognizer;
+  }, [selectedInputDeviceId, setVoicePhase, updateCandidateVoiceTranscript]);
+
   const startSpeechRecognition = useCallback(async () => {
-    const recognizer = speechRecognizerRef.current;
-    if (!recognizer || speechRecognitionActiveRef.current || speechRecognitionStartingRef.current) return;
+    if (speechRecognitionActiveRef.current || speechRecognitionStartingRef.current) return;
 
     await refreshSpeechTokenIfNeeded();
+    let recognizer = createSpeechRecognizer();
     speechRecognitionStartingRef.current = true;
     try {
-      await new Promise<void>((resolve, reject) => {
-        recognizer.startContinuousRecognitionAsync(
+      const startRecognizer = (candidate: any) => new Promise<void>((resolve, reject) => {
+        candidate.startContinuousRecognitionAsync(
           () => resolve(),
           (error: string) => reject(new Error(error || "Speech recognition failed to start"))
         );
       });
+
+      try {
+        await startRecognizer(recognizer);
+      } catch (error) {
+        if (!selectedInputDeviceId || selectedInputDeviceId === "default") throw error;
+        try { recognizer.close(); } catch { /* ignore */ }
+        try { speechAudioConfigRef.current?.close?.(); } catch { /* ignore */ }
+        setSelectedInputDeviceId("");
+        recognizer = createSpeechRecognizer(true);
+        await startRecognizer(recognizer);
+        toast.info("Selected microphone was unavailable. Using the default microphone.");
+      }
+
       speechRecognitionActiveRef.current = true;
     } finally {
       speechRecognitionStartingRef.current = false;
     }
-  }, [refreshSpeechTokenIfNeeded]);
+  }, [createSpeechRecognizer, refreshSpeechTokenIfNeeded, selectedInputDeviceId]);
 
   const pauseCandidateMic = useCallback((_options: { endTurn?: boolean } = {}) => {
     void stopSpeechRecognition();
@@ -494,7 +590,7 @@ export default function PublicAIInterviewPage() {
     speechAudioConfigRef.current = null;
     speechRecognitionActiveRef.current = false;
     speechRecognitionStartingRef.current = false;
-    speechTokenExpiresAtRef.current = 0;
+    speechTokenRef.current = null;
     voiceAudioCaptureEnabledRef.current = false;
     voiceListenTurnIdRef.current = null;
 
@@ -975,45 +1071,12 @@ export default function PublicAIInterviewPage() {
         aiInterviewService.getPublicSpeechToken(token)
       ]);
       speechSdkRef.current = SpeechSDK;
-
-      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(speech.token, speech.region);
-      speechConfig.speechRecognitionLanguage = speech.language || "en-US";
-      speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "10000");
-      speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "900");
-
-      const audioConfig = selectedInputDeviceId
-        ? SpeechSDK.AudioConfig.fromMicrophoneInput(selectedInputDeviceId)
-        : SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
-      const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
-
-      recognizer.recognizing = (_sender: any, event: any) => {
-        const text = event?.result?.text;
-        if (text) updateCandidateVoiceTranscript(text, "delta", voiceListenTurnIdRef.current);
+      speechTokenRef.current = {
+        token: speech.token,
+        region: speech.region,
+        language: speech.language || "en-US",
+        expiresAt: Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000
       };
-
-      recognizer.recognized = (_sender: any, event: any) => {
-        const text = event?.result?.text;
-        if (event?.result?.reason === SpeechSDK.ResultReason.RecognizedSpeech && text) {
-          updateCandidateVoiceTranscript(text, "final", voiceListenTurnIdRef.current);
-        }
-      };
-
-      recognizer.canceled = (_sender: any, event: any) => {
-        speechRecognitionActiveRef.current = false;
-        if (voicePhaseRef.current !== "off" && voicePhaseRef.current !== "speaking") {
-          const details = event?.errorDetails || "Speech recognition was cancelled.";
-          setVoicePhase("ready", "Speech recognition stopped. Tap Speak now to try again.");
-          toast.error(details);
-        }
-      };
-
-      recognizer.sessionStopped = () => {
-        speechRecognitionActiveRef.current = false;
-      };
-
-      speechRecognizerRef.current = recognizer;
-      speechAudioConfigRef.current = audioConfig;
-      speechTokenExpiresAtRef.current = Date.now() + Math.max(60, Number(speech.expiresInSeconds || 540) - 60) * 1000;
 
       // Voice is live. Transition to 'speaking' and let advanceVoiceFlow drain
       // the queue, after which the mic stays muted until Speak now is tapped.
