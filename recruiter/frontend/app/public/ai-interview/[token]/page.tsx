@@ -2091,18 +2091,34 @@ export default function PublicAIInterviewPage() {
                       }
                     }}
                   />
-                  <div className="mt-2 grid grid-cols-[44px_1fr] gap-2 sm:grid-cols-[auto_auto_1fr]">
-                    <Button variant="outline" onClick={() => { setMessage(""); messageRef.current = ""; }} disabled={!message.trim()} className="min-h-[44px] px-0 sm:px-4">
+                  <div className="mt-2 flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => { setMessage(""); messageRef.current = ""; }}
+                      disabled={!message.trim()}
+                      className="h-10 w-10 shrink-0 rounded-xl px-0 sm:w-auto sm:px-4"
+                      aria-label="Clear answer"
+                    >
                       <X className="h-4 w-4 sm:mr-2" />
                       <span className="hidden sm:inline">Clear</span>
                     </Button>
-                    <Button variant="outline" onClick={sendMessage} disabled={sending || !message.trim()} className="min-h-[44px]">
-                      {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                      Send
+                    <Button
+                      variant="outline"
+                      onClick={sendMessage}
+                      disabled={sending || !message.trim()}
+                      className="h-10 w-10 shrink-0 rounded-xl px-0 sm:w-auto sm:px-4"
+                      aria-label="Send answer"
+                    >
+                      {sending ? <Loader2 className="h-4 w-4 animate-spin sm:mr-2" /> : <Send className="h-4 w-4 sm:mr-2" />}
+                      <span className="hidden sm:inline">Send</span>
                     </Button>
-                    <Button onClick={confirm} disabled={confirming || timeoutRunning} className="col-span-2 min-h-[46px] bg-emerald-600 hover:bg-emerald-700 sm:col-span-1 sm:justify-self-end">
-                      {confirming || timeoutRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                      Confirm & Move On
+                    <Button
+                      onClick={confirm}
+                      disabled={confirming || timeoutRunning}
+                      className="ml-auto h-10 shrink-0 rounded-xl bg-emerald-600 px-3 text-sm hover:bg-emerald-700 sm:px-4"
+                    >
+                      {confirming || timeoutRunning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin sm:mr-2" /> : <CheckCircle2 className="mr-1.5 h-4 w-4 sm:mr-2" />}
+                      Confirm<span className="hidden sm:inline">&nbsp;& Move On</span>
                     </Button>
                   </div>
                 </div>
