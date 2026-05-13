@@ -15,6 +15,7 @@ import {
   FileQuestion,
   Loader2,
   Medal,
+  Play,
   Plus,
   RefreshCw,
   Send,
@@ -210,12 +211,15 @@ export default function AIInterviewsPage() {
   const searchParams = useSearchParams();
   const presetJobId = searchParams.get("jobId") || "";
   const presetAppliedRef = useRef(false);
+  const voicePreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voicePreviewUrlRef = useRef<string | null>(null);
   const [interviews, setInterviews] = useState<AIInterview[]>([]);
   const [jobs, setJobs] = useState<JobData[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [voiceOptions, setVoiceOptions] = useState<AIInterviewVoiceOption[]>([]);
   const [costEstimate, setCostEstimate] = useState<AIInterviewCostEstimate | null>(null);
   const [estimatingCost, setEstimatingCost] = useState(false);
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -280,6 +284,7 @@ export default function AIInterviewsPage() {
     [guestRecipients]
   );
   const selectedRecipientCount = selectedCandidateIds.length + guestRecipients.length;
+  const estimateRecipientCount = Math.max(1, selectedRecipientCount);
   const selectedRecipientPills = useMemo(
     () => [
       ...selectedCandidateRecords.map((candidate) => ({
@@ -459,6 +464,17 @@ export default function AIInterviewsPage() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      voicePreviewAudioRef.current?.pause();
+      voicePreviewAudioRef.current = null;
+      if (voicePreviewUrlRef.current) {
+        URL.revokeObjectURL(voicePreviewUrlRef.current);
+        voicePreviewUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     setSelectedCandidateIds([]);
     setGuestRecipients([]);
     setCandidateSearch("");
@@ -498,7 +514,7 @@ export default function AIInterviewsPage() {
       setEstimatingCost(true);
       try {
         const estimate = await aiInterviewService.estimateCost({
-          candidateCount: selectedRecipientCount,
+          candidateCount: estimateRecipientCount,
           questionCount: Math.max(1, selectedQuestionIds.length || 1),
           totalMinutes: Number(form.totalMinutes) || 45,
           voiceId: form.voiceId
@@ -512,7 +528,60 @@ export default function AIInterviewsPage() {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [form.totalMinutes, form.voiceId, selectedQuestionIds.length, selectedRecipientCount, voiceOptions.length]);
+  }, [estimateRecipientCount, form.totalMinutes, form.voiceId, selectedQuestionIds.length, voiceOptions.length]);
+
+  const previewVoice = async (voice: AIInterviewVoiceOption) => {
+    setForm((current) => ({ ...current, voiceId: voice.id }));
+    voicePreviewAudioRef.current?.pause();
+    voicePreviewAudioRef.current = null;
+    if (voicePreviewUrlRef.current) {
+      URL.revokeObjectURL(voicePreviewUrlRef.current);
+      voicePreviewUrlRef.current = null;
+    }
+    setPreviewingVoiceId(voice.id);
+
+    let audioUrl: string | null = null;
+    try {
+      const audioBlob = await aiInterviewService.previewVoice({
+        voiceId: voice.id,
+        text: voice.samplePhrase
+      });
+      audioUrl = URL.createObjectURL(audioBlob);
+      voicePreviewUrlRef.current = audioUrl;
+      const currentAudioUrl = audioUrl;
+      const audio = new Audio(audioUrl);
+      voicePreviewAudioRef.current = audio;
+      audio.onended = () => {
+        if (voicePreviewUrlRef.current === currentAudioUrl) {
+          URL.revokeObjectURL(currentAudioUrl);
+          voicePreviewUrlRef.current = null;
+        }
+        setPreviewingVoiceId((current) => (current === voice.id ? null : current));
+        if (voicePreviewAudioRef.current === audio) {
+          voicePreviewAudioRef.current = null;
+        }
+      };
+      audio.onerror = () => {
+        if (voicePreviewUrlRef.current === currentAudioUrl) {
+          URL.revokeObjectURL(currentAudioUrl);
+          voicePreviewUrlRef.current = null;
+        }
+        setPreviewingVoiceId((current) => (current === voice.id ? null : current));
+        if (voicePreviewAudioRef.current === audio) {
+          voicePreviewAudioRef.current = null;
+        }
+        toast.error("Could not play this voice preview");
+      };
+      await audio.play();
+    } catch (error: any) {
+      if (audioUrl && voicePreviewUrlRef.current === audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        voicePreviewUrlRef.current = null;
+      }
+      setPreviewingVoiceId((current) => (current === voice.id ? null : current));
+      toast.error(error.message || "Could not generate this voice preview");
+    }
+  };
 
   const toggleCandidate = (candidateId: string) => {
     setSelectedCandidateIds((current) => {
@@ -994,11 +1063,10 @@ export default function AIInterviewsPage() {
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                       {voiceOptions.map((voice) => {
                         const selected = form.voiceId === voice.id;
+                        const previewing = previewingVoiceId === voice.id;
                         return (
-                          <button
+                          <div
                             key={voice.id}
-                            type="button"
-                            onClick={() => setForm((current) => ({ ...current, voiceId: voice.id }))}
                             className={`group rounded-2xl border p-4 text-left transition-all ${
                               selected
                                 ? "border-slate-950 bg-slate-950 text-white shadow-lg dark:border-white dark:bg-white dark:text-slate-950"
@@ -1006,26 +1074,50 @@ export default function AIInterviewsPage() {
                             }`}
                           >
                             <div className="flex items-start gap-3">
-                              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold ${
-                                selected ? "bg-white text-slate-950 dark:bg-slate-950 dark:text-white" : "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
-                              }`}>
-                                {voiceInitials(voice)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <div className="font-semibold">{voice.displayName}</div>
-                                  {voice.isDefault && (
-                                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${selected ? "bg-emerald-400/20 text-emerald-100 dark:text-emerald-800" : "bg-emerald-50 text-emerald-700"}`}>
-                                      Default
-                                    </span>
-                                  )}
+                              <button
+                                type="button"
+                                onClick={() => setForm((current) => ({ ...current, voiceId: voice.id }))}
+                                className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                                aria-pressed={selected}
+                              >
+                                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold ${
+                                  selected ? "bg-white text-slate-950 dark:bg-slate-950 dark:text-white" : "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                                }`}>
+                                  {voiceInitials(voice)}
                                 </div>
-                                <div className={`mt-1 text-xs ${selected ? "text-slate-200 dark:text-slate-700" : "text-muted-foreground"}`}>
-                                  {voice.description}
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="font-semibold">{voice.displayName}</div>
+                                    {voice.isDefault && (
+                                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${selected ? "bg-emerald-400/20 text-emerald-100 dark:text-emerald-800" : "bg-emerald-50 text-emerald-700"}`}>
+                                        Default
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className={`mt-1 text-xs ${selected ? "text-slate-200 dark:text-slate-700" : "text-muted-foreground"}`}>
+                                    {voice.description}
+                                  </div>
                                 </div>
-                              </div>
+                              </button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={selected ? "secondary" : "outline"}
+                                className={`h-9 shrink-0 rounded-full px-3 ${selected ? "dark:bg-slate-950 dark:text-white" : ""}`}
+                                onClick={() => previewVoice(voice)}
+                                disabled={Boolean(previewingVoiceId && !previewing)}
+                                aria-label={`Play ${voice.displayName} voice sample`}
+                              >
+                                {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                                <span className="ml-1 hidden sm:inline">Play</span>
+                              </Button>
                             </div>
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setForm((current) => ({ ...current, voiceId: voice.id }))}
+                              className="mt-3 flex w-full flex-wrap items-center gap-2 text-left"
+                              aria-label={`Select ${voice.displayName} voice`}
+                            >
                               <Badge variant="outline" className={selected ? "border-white/20 bg-white/10 text-white dark:border-slate-200 dark:bg-slate-100 dark:text-slate-900" : voiceTierClass(voice.tier)}>
                                 {voice.tierLabel}
                               </Badge>
@@ -1035,15 +1127,18 @@ export default function AIInterviewsPage() {
                               <span className={`rounded-full px-2 py-1 text-xs ${selected ? "bg-white/10 text-slate-100 dark:bg-slate-100 dark:text-slate-800" : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
                                 ${voice.usdPerMillionCharacters}/1M chars
                               </span>
-                            </div>
+                            </button>
                             {voice.samplePhrase && (
-                              <div className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-5 ${
+                              <button
+                                type="button"
+                                onClick={() => setForm((current) => ({ ...current, voiceId: voice.id }))}
+                                className={`mt-3 w-full rounded-xl border px-3 py-2 text-left text-xs leading-5 ${
                                 selected ? "border-white/15 bg-white/10 text-slate-100 dark:border-slate-200 dark:bg-slate-100 dark:text-slate-700" : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                               }`}>
                                 "{voice.samplePhrase}"
-                              </div>
+                              </button>
                             )}
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1061,14 +1156,19 @@ export default function AIInterviewsPage() {
                         </div>
                         {estimatingCost && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
                       </div>
+                      {selectedRecipientCount === 0 && (
+                        <div className="mt-3 rounded-xl border border-blue-100 bg-white/70 px-3 py-2 text-xs text-blue-900 dark:border-blue-900/60 dark:bg-slate-950/50 dark:text-blue-100">
+                          Add candidates or guest recipients to calculate the real batch total. Showing a one-candidate preview for now.
+                        </div>
+                      )}
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
                           <div className="text-xs text-muted-foreground">Per candidate</div>
-                          <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 5} credits</div>
+                          <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 12} credits</div>
                         </div>
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
-                          <div className="text-xs text-muted-foreground">Total batch</div>
-                          <div className="mt-1 text-lg font-bold">{costEstimate?.totalCredits ?? selectedRecipientCount * 5} credits</div>
+                          <div className="text-xs text-muted-foreground">{selectedRecipientCount > 0 ? "Total batch" : "Preview total"}</div>
+                          <div className="mt-1 text-lg font-bold">{costEstimate?.totalCredits ?? estimateRecipientCount * 12} credits</div>
                         </div>
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
                           <div className="text-xs text-muted-foreground">Dollar equivalent</div>
@@ -1086,7 +1186,7 @@ export default function AIInterviewsPage() {
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
-                        <span>Base {costEstimate?.baseCreditsPerCandidate ?? 5}</span>
+                        <span>Base {costEstimate?.baseCreditsPerCandidate ?? 12}</span>
                         <span>Voice +{costEstimate?.voiceSurchargeCredits ?? selectedVoice?.surchargeCredits ?? 0}</span>
                         <span>Duration +{costEstimate?.durationSurchargeCredits ?? 0}</span>
                         <span>Estimated TTS {formatCompactNumber(costEstimate?.estimatedSpeechCharacters)} characters</span>

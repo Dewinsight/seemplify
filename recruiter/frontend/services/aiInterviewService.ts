@@ -360,6 +360,15 @@ class AIInterviewService {
     return data.estimate;
   }
 
+  async previewVoice(input: { voiceId: string; text?: string }): Promise<Blob> {
+    const response = await apiRequest('/api/ai-interviews/voice-preview', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.blob();
+  }
+
   async list(params?: { status?: string; jobId?: string }): Promise<AIInterview[]> {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);

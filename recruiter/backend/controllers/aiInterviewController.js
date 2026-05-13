@@ -533,6 +533,33 @@ exports.estimateAIInterviewCost = async (req, res) => {
   }
 };
 
+exports.previewAIInterviewVoice = async (req, res) => {
+  try {
+    const voice = aiInterviewCostService.snapshotVoice(req.body?.voiceId);
+    const text = String(req.body?.text || voice.samplePhrase || '').trim().slice(0, 300);
+
+    if (!text) {
+      return res.status(400).json({ error: 'EMPTY_PREVIEW_TEXT', message: 'A voice preview phrase is required.' });
+    }
+
+    const speech = await azureSpeechTtsService.synthesize(text, {
+      voice: voice.voiceId,
+      language: voice.language
+    });
+
+    res.set({
+      'Content-Type': speech.contentType || 'audio/mpeg',
+      'Content-Length': speech.buffer.length,
+      'Cache-Control': 'no-store',
+      'X-AI-Interview-Voice': voice.voiceId || ''
+    });
+    res.send(speech.buffer);
+  } catch (error) {
+    console.error('AI interview voice preview error:', error);
+    sendControllerError(res, error);
+  }
+};
+
 exports.createAIInterview = async (req, res) => {
   try {
     const organizationId = getOrganizationId(req);

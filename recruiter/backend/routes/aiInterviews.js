@@ -25,6 +25,7 @@ router.use(requireOrganization);
 
 router.get('/options', aiInterviewController.getAIInterviewOptions);
 router.post('/estimate', aiInterviewController.estimateAIInterviewCost);
+router.post('/voice-preview', aiInterviewController.previewAIInterviewVoice);
 router.get('/', aiInterviewController.listAIInterviews);
 router.post('/', aiInterviewController.createAIInterview);
 router.get('/:id', aiInterviewController.getAIInterview);
