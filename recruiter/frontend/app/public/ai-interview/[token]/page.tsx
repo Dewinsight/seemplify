@@ -88,6 +88,36 @@ function areEquivalentTranscriptTexts(left: string, right: string) {
   return shorter.length >= 30 && longer.includes(shorter);
 }
 
+function mergeTranscriptPreview(current: string, incoming: string) {
+  const existing = normalizeTranscriptText(current);
+  const next = normalizeTranscriptText(incoming);
+  if (!existing) return next;
+  if (!next) return existing;
+
+  const canonicalExisting = canonicalTranscriptText(existing);
+  const canonicalNext = canonicalTranscriptText(next);
+  if (!canonicalNext || canonicalExisting.includes(canonicalNext)) return existing;
+  if (canonicalNext.includes(canonicalExisting)) return next;
+
+  const existingWords = existing.split(/\s+/).filter(Boolean);
+  const nextWords = next.split(/\s+/).filter(Boolean);
+  const canonicalExistingWords = existingWords.map(canonicalTranscriptText);
+  const canonicalNextWords = nextWords.map(canonicalTranscriptText);
+  const maxOverlap = Math.min(12, canonicalExistingWords.length, canonicalNextWords.length);
+  let overlap = 0;
+
+  for (let count = maxOverlap; count > 0; count -= 1) {
+    const left = canonicalExistingWords.slice(-count).join(" ");
+    const right = canonicalNextWords.slice(0, count).join(" ");
+    if (left && left === right) {
+      overlap = count;
+      break;
+    }
+  }
+
+  return normalizeTranscriptText(`${existing} ${nextWords.slice(overlap).join(" ")}`);
+}
+
 function hasEquivalentTranscriptMessage(
   data: PublicAIInterviewState | null,
   role: "ai" | "candidate",
@@ -333,6 +363,8 @@ export default function PublicAIInterviewPage() {
   const liveTranscriptTimerRef = useRef<number | null>(null);
   const liveTranscriptRequestIdRef = useRef(0);
   const liveTranscriptInFlightRef = useRef(false);
+  const liveTranscriptChunkCursorRef = useRef(0);
+  const liveTranscriptPreviewTextRef = useRef("");
   const micLevelLastUpdateRef = useRef(0);
   const recordedTranscriptKeysRef = useRef<Set<string>>(new Set());
   // Phase mirror so async work (audio playback, fetches, WS events) can read
@@ -497,10 +529,16 @@ export default function PublicAIInterviewPage() {
     if (liveTranscriptInFlightRef.current && !force) return;
     const recorder = candidateAudioRecorderRef.current;
     if (!recorder || voicePhaseRef.current !== "listening") return;
-    if (!force && recorder.chunks.length < 12) return;
+
+    const endChunkIndex = recorder.chunks.length;
+    const startChunkIndex = liveTranscriptChunkCursorRef.current;
+    const newChunkCount = endChunkIndex - startChunkIndex;
+    if (!force && newChunkCount < 22) return;
+    if (newChunkCount <= 0) return;
 
     const requestId = ++liveTranscriptRequestIdRef.current;
-    const audioBlob = encodeWavBlob([...recorder.chunks], recorder.sampleRate);
+    const overlap = startChunkIndex > 0 ? Math.min(6, startChunkIndex) : 0;
+    const audioBlob = encodeWavBlob(recorder.chunks.slice(startChunkIndex - overlap, endChunkIndex), recorder.sampleRate);
     if (audioBlob.size < 4000) return;
 
     try {
@@ -509,10 +547,13 @@ export default function PublicAIInterviewPage() {
       if (requestId !== liveTranscriptRequestIdRef.current || voicePhaseRef.current !== "listening") return;
 
       const transcript = normalizeTranscriptText(result.transcript || "");
+      liveTranscriptChunkCursorRef.current = Math.max(liveTranscriptChunkCursorRef.current, endChunkIndex);
       if (!transcript) return;
 
-      setMessage(transcript);
-      messageRef.current = transcript;
+      const merged = mergeTranscriptPreview(messageRef.current || liveTranscriptPreviewTextRef.current, transcript);
+      setMessage(merged);
+      messageRef.current = merged;
+      liveTranscriptPreviewTextRef.current = merged;
       setVoiceStatus("Listening. Your answer is appearing in the chat.");
     } catch {
       // Live preview is best-effort. The final Azure transcription still runs
@@ -551,6 +592,8 @@ export default function PublicAIInterviewPage() {
   const startCandidateRecording = useCallback(async () => {
     stopCandidateRecording();
     setMicTrackEnabled(true);
+    liveTranscriptChunkCursorRef.current = 0;
+    liveTranscriptPreviewTextRef.current = messageRef.current;
 
     const AudioContextConstructor =
       window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
