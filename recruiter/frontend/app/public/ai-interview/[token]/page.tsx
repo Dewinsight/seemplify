@@ -35,6 +35,13 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import aiInterviewService, { type AIInterviewProctoringEventType, type PublicAIInterviewState } from "@/services/aiInterviewService";
 
 function formatSeconds(seconds: number) {
@@ -148,6 +155,19 @@ function hasEquivalentTranscriptMessage(
 //   processing - Azure STT is transcribing, then the answer is submitted
 //   error      - voice mode failed; user must restart
 type VoicePhase = "off" | "connecting" | "speaking" | "ready" | "listening" | "processing" | "error";
+
+type ProctoringModalState = {
+  open: boolean;
+  severity: "warning" | "final" | "blocked" | "input";
+  title: string;
+  message: string;
+  details?: string;
+  primaryAction?: string;
+  focusCount?: number;
+  maxFocusViolations?: number;
+  pasteCount?: number;
+  locked?: boolean;
+};
 
 type AssistantSpeechState = {
   active: boolean;
@@ -285,6 +305,68 @@ function renderHighlightedSpeech(text: string, highlightedWordCount: number) {
   });
 }
 
+function buildFocusProctoringModal(
+  action: "warned" | "final_warning" | "terminated",
+  warningMessage: string | undefined,
+  focusCount: number,
+  maxFocusViolations: number
+): ProctoringModalState {
+  const remaining = Math.max(0, maxFocusViolations - focusCount);
+
+  if (action === "terminated") {
+    return {
+      open: true,
+      severity: "blocked",
+      title: "Interview ended",
+      message: warningMessage || "You left the interview screen too many times, so this interview has been ended.",
+      details: "The recruiter will see the proctoring log for this session.",
+      primaryAction: "Review status",
+      focusCount,
+      maxFocusViolations,
+      locked: true
+    };
+  }
+
+  if (action === "final_warning") {
+    return {
+      open: true,
+      severity: "final",
+      title: "Final proctoring warning",
+      message: `You have moved away from the interview screen ${focusCount} times. If you leave again, this interview will automatically end.`,
+      details: warningMessage || "Keep this tab visible until the interview is complete.",
+      primaryAction: "I understand",
+      focusCount,
+      maxFocusViolations
+    };
+  }
+
+  return {
+    open: true,
+    severity: "warning",
+    title: "Proctoring warning",
+    message: `You moved away from the interview screen ${focusCount} time${focusCount === 1 ? "" : "s"}. You have ${remaining} more before the interview is blocked.`,
+    details: warningMessage || "Stay on this tab while the interview is in progress.",
+    primaryAction: "I understand",
+    focusCount,
+    maxFocusViolations
+  };
+}
+
+function buildInputProctoringModal(type: "paste_attempt" | "drop_attempt", pasteCount: number, warningMessage?: string): ProctoringModalState {
+  const isDrop = type === "drop_attempt";
+  return {
+    open: true,
+    severity: "input",
+    title: isDrop ? "Drop blocked" : "Paste blocked",
+    message: isDrop
+      ? "Dropping prepared text or files into the answer box is not allowed."
+      : "Pasting prepared answers into this interview is not allowed.",
+    details: warningMessage || "This attempt has been logged for the recruiter. Please type your answer in your own words.",
+    primaryAction: "I understand",
+    pasteCount
+  };
+}
+
 function renderVoiceBars(level: number, tone: "blue" | "emerald" | "slate" | "white" = "blue", compact = false) {
   const bars = Array.from({ length: compact ? 12 : 18 });
   const normalized = Math.max(8, Math.min(100, level));
@@ -338,6 +420,7 @@ export default function PublicAIInterviewPage() {
   const [selectedInputDeviceId, setSelectedInputDeviceId] = useState("");
   const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState("");
   const [deviceSettingsOpen, setDeviceSettingsOpen] = useState(false);
+  const [proctoringModal, setProctoringModal] = useState<ProctoringModalState | null>(null);
   const [assistantSpeech, setAssistantSpeech] = useState<AssistantSpeechState>({
     active: false,
     text: "",
@@ -480,6 +563,10 @@ export default function PublicAIInterviewPage() {
         }
       });
       applyPublicState(data);
+      const nextProctoring = data.session?.proctoring;
+      const nextFocusCount = Number(nextProctoring?.focusViolationCount || 0);
+      const nextMaxFocusViolations = Number(nextProctoring?.maxFocusViolations || 3);
+      const nextPasteCount = Number(nextProctoring?.pasteAttemptCount || 0);
 
       if (data.action === "terminated") {
         ttsAudioRef.current?.pause();
@@ -487,14 +574,22 @@ export default function PublicAIInterviewPage() {
         setVoicePhaseState("off");
         voicePhaseRef.current = "off";
         setVoiceStatus("Interview ended due to proctoring");
+        setProctoringModal(buildFocusProctoringModal("terminated", data.warningMessage, nextFocusCount, nextMaxFocusViolations));
         toast.error(data.warningMessage || "Interview ended due to proctoring violations.");
       } else if (data.action === "final_warning") {
+        setProctoringModal(buildFocusProctoringModal("final_warning", data.warningMessage, nextFocusCount, nextMaxFocusViolations));
         toast.warning(data.warningMessage || "Final warning: leaving again will end the interview.");
-      } else if (data.action === "warned" || category === "input") {
+      } else if (data.action === "warned") {
+        setProctoringModal(buildFocusProctoringModal("warned", data.warningMessage, nextFocusCount, nextMaxFocusViolations));
+        toast.warning(data.warningMessage || "Please keep this interview tab open.");
+      } else if (category === "input" && !data.deduped) {
+        setProctoringModal(buildInputProctoringModal(type as "paste_attempt" | "drop_attempt", nextPasteCount, data.warningMessage));
         toast.warning(data.warningMessage || (category === "input" ? "Pasting is disabled for this interview." : "Please keep this interview tab open."));
       }
     } catch (error: any) {
       if (category === "input") {
+        const currentPasteCount = Number(sessionRef.current?.proctoring?.pasteAttemptCount || 0);
+        setProctoringModal(buildInputProctoringModal(type as "paste_attempt" | "drop_attempt", currentPasteCount + 1));
         toast.warning(type === "drop_attempt" ? "Dropping content is disabled for this interview." : "Pasting is disabled for this interview.");
       } else {
         toast.error(error?.message || "Could not record proctoring event");
@@ -1355,6 +1450,8 @@ export default function PublicAIInterviewPage() {
   };
 
   const blockPasteOrDrop = (type: "paste_attempt" | "drop_attempt") => {
+    const currentPasteCount = Number(sessionRef.current?.proctoring?.pasteAttemptCount || 0);
+    setProctoringModal(buildInputProctoringModal(type, currentPasteCount + 1));
     void recordProctoringEvent(type, {
       reason: type === "drop_attempt" ? "candidate attempted to drop content" : "candidate attempted to paste content"
     });
@@ -1417,6 +1514,97 @@ export default function PublicAIInterviewPage() {
       </div>
     </div>
   );
+
+  const renderProctoringModal = () => {
+    if (!proctoringModal) return null;
+
+    const isSevere = proctoringModal.severity === "final" || proctoringModal.severity === "blocked";
+    const isInput = proctoringModal.severity === "input";
+    const tone = isInput
+      ? "border-red-200 bg-red-50 text-red-700"
+      : isSevere
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-blue-200 bg-blue-50 text-blue-700";
+    const buttonClass = isInput
+      ? "bg-red-600 hover:bg-red-700"
+      : isSevere
+        ? "bg-amber-600 hover:bg-amber-700"
+        : "bg-slate-950 hover:bg-slate-800";
+
+    return (
+      <Dialog
+        open={proctoringModal.open}
+        onOpenChange={(open) => {
+          if (!open && !proctoringModal.locked) setProctoringModal(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-0 bg-white p-0 shadow-2xl sm:max-w-xl">
+          <div className={`border-b px-5 py-5 sm:px-6 ${tone}`}>
+            <DialogHeader className="space-y-3 text-left">
+              <div className="flex items-center gap-3">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">
+                  {isInput ? <AlertCircle className="h-6 w-6" /> : <ShieldCheck className="h-6 w-6" />}
+                </span>
+                <div>
+                  <DialogTitle className="text-2xl font-semibold tracking-normal text-slate-950">
+                    {proctoringModal.title}
+                  </DialogTitle>
+                  <DialogDescription className="mt-1 text-sm font-medium text-slate-700">
+                    Proctoring event recorded
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+          </div>
+
+          <div className="space-y-4 px-5 py-5 sm:px-6">
+            <p className="text-lg font-semibold leading-7 text-slate-950">
+              {proctoringModal.message}
+            </p>
+            {proctoringModal.details && (
+              <p className="text-sm leading-6 text-slate-600">
+                {proctoringModal.details}
+              </p>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {typeof proctoringModal.focusCount === "number" && (
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Screen leave events</div>
+                  <div className="mt-2 text-3xl font-bold text-slate-950">
+                    {proctoringModal.focusCount}
+                    <span className="text-base font-semibold text-slate-500"> / {proctoringModal.maxFocusViolations || 3}</span>
+                  </div>
+                </div>
+              )}
+              {typeof proctoringModal.pasteCount === "number" && (
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Paste/drop attempts</div>
+                  <div className="mt-2 text-3xl font-bold text-slate-950">{proctoringModal.pasteCount}</div>
+                </div>
+              )}
+              <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white sm:col-span-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Required action</div>
+                <div className="mt-2 text-sm leading-6">
+                  Keep the interview tab open and type answers directly in your own words.
+                </div>
+              </div>
+            </div>
+
+            {!proctoringModal.locked && (
+              <Button
+                type="button"
+                className={`h-12 w-full rounded-2xl text-base font-semibold text-white ${buttonClass}`}
+                onClick={() => setProctoringModal(null)}
+              >
+                {proctoringModal.primaryAction || "I understand"}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  };
 
   if (loading) {
     return (
@@ -1504,6 +1692,7 @@ export default function PublicAIInterviewPage() {
   return (
     <main className="min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.10),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.10),transparent_30%),linear-gradient(135deg,#f8fafc_0%,#eef6ff_54%,#f6f7fb_100%)]">
       <audio ref={ttsAudioRef} preload="auto" className="hidden" />
+      {renderProctoringModal()}
       <div
         ref={layoutRef}
         style={layoutStyle}
@@ -1889,28 +2078,28 @@ export default function PublicAIInterviewPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 sm:p-5">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div>
-                          <div className="flex items-center gap-2 text-sm font-semibold text-blue-950">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-amber-950">
                             <ShieldCheck className="h-4 w-4" />
                             Proctoring rules
                           </div>
-                          <p className="mt-2 text-sm leading-6 text-blue-900">
-                            This interview uses lightweight browser checks to protect the integrity of the session.
+                          <p className="mt-2 text-sm leading-6 text-amber-950">
+                            These rules are enforced during the interview. Violations are logged and repeated screen switching can end the session.
                           </p>
                         </div>
-                        <Badge className="w-fit border-blue-200 bg-white text-blue-800">
+                        <Badge className="w-fit border-amber-200 bg-white text-amber-900">
                           {maxFocusViolations} tab warnings max
                         </Badge>
                       </div>
                       <div className="mt-4 grid gap-3 md:grid-cols-3">
                         {[
-                          "Do not paste or drop prepared text into the answer box.",
+                          "Do not paste or drop prepared text. Paste attempts are blocked and logged.",
                           "Keep this interview tab visible while the interview is in progress.",
-                          "Leaving the tab or browser is logged; repeated switching will end the interview."
+                          "Leaving the tab or browser triggers warnings; the third screen-leave ends the interview."
                         ].map((rule) => (
-                          <div key={rule} className="rounded-2xl border border-blue-100 bg-white/80 p-3 text-sm leading-6 text-slate-800">
+                          <div key={rule} className="rounded-2xl border border-amber-100 bg-white/85 p-3 text-sm font-medium leading-6 text-slate-900">
                             {rule}
                           </div>
                         ))}
@@ -2095,23 +2284,19 @@ export default function PublicAIInterviewPage() {
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, progress)}%` }} />
                 </div>
                 {(focusViolationCount > 0 || pasteAttemptCount > 0) && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-200">
-                    {focusViolationCount > 0 && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/25 bg-amber-400/10 px-2.5 py-1 text-amber-100">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        Screen checks {focusViolationCount}/{maxFocusViolations}
-                      </span>
-                    )}
-                    {pasteAttemptCount > 0 && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
-                        Paste blocked {pasteAttemptCount}
-                      </span>
-                    )}
-                    {focusViolationCount > 0 && focusAttemptsRemaining > 0 && (
-                      <span className="text-slate-300">
-                        {focusAttemptsRemaining} screen leave{focusAttemptsRemaining === 1 ? "" : "s"} before automatic end.
-                      </span>
-                    )}
+                  <div className="mt-3 rounded-2xl border border-amber-300/40 bg-amber-300/12 p-3 text-amber-50 shadow-inner">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold uppercase tracking-wide">Proctoring warning active</div>
+                        <div className="mt-1 text-sm leading-5 text-amber-50/95">
+                          {focusViolationCount > 0
+                            ? `Screen leave events: ${focusViolationCount}/${maxFocusViolations}. ${focusAttemptsRemaining > 0 ? `${focusAttemptsRemaining} more before automatic end.` : "No screen leaves remaining."}`
+                            : "Stay inside the interview tab until the session is complete."}
+                          {pasteAttemptCount > 0 ? ` Paste/drop attempts blocked: ${pasteAttemptCount}.` : ""}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
                 {deviceSettingsOpen && (

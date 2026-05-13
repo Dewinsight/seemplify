@@ -1348,7 +1348,7 @@ exports.recordPublicProctoringEvent = async (req, res) => {
 
       if (count >= maxFocusViolations) {
         action = 'terminated';
-        message = 'Interview ended because the interview screen was left multiple times.';
+        message = 'Interview ended because the interview screen was left too many times. The recruiter will see this proctoring log.';
         session.status = 'proctor_failed';
         session.completedAt = now;
         session.proctoring.terminatedAt = now;
@@ -1361,17 +1361,18 @@ exports.recordPublicProctoringEvent = async (req, res) => {
         });
       } else if (count === maxFocusViolations - 1) {
         action = 'final_warning';
-        message = 'Final warning: if you leave this interview screen again, the interview will automatically end.';
+        message = `Final warning: you have left the interview screen ${count} times. If you leave again, the interview will automatically end.`;
       } else {
         action = 'warned';
-        message = 'We noticed you left the interview screen. Please keep this tab open and visible during the interview.';
+        const remaining = Math.max(0, maxFocusViolations - count);
+        message = `You moved away from the interview screen ${count} time${count === 1 ? '' : 's'}. You have ${remaining} more before the interview is blocked.`;
       }
     } else {
       count = Number(session.proctoring.pasteAttemptCount || 0) + 1;
       session.proctoring.pasteAttemptCount = count;
       message = type === 'drop_attempt'
-        ? 'Dropping text or files into the answer box is disabled for this interview.'
-        : 'Pasting is disabled for this interview.';
+        ? 'Dropping prepared text or files into the answer box is disabled. This attempt has been logged for the recruiter.'
+        : 'Pasting prepared answers is disabled for this interview. This attempt has been logged for the recruiter.';
     }
 
     session.proctoring.violations.push({
