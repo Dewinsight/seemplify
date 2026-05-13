@@ -128,7 +128,8 @@ const AIInterviewSchema = new mongoose.Schema({
     inProgress: { type: Number, default: 0 },
     completed: { type: Number, default: 0 },
     blocked: { type: Number, default: 0 },
-    failed: { type: Number, default: 0 }
+    failed: { type: Number, default: 0 },
+    proctorFailed: { type: Number, default: 0 }
   },
   cancelledAt: Date,
   cancelledBy: {

@@ -14,6 +14,16 @@ const azureSpeechTtsService = require('../services/azureSpeechTtsService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
+const TERMINAL_SESSION_STATUSES = new Set(['completed', 'expired', 'cancelled', 'proctor_failed']);
+const PROCTORING_FOCUS_EVENT_TYPES = new Set(['visibility_hidden', 'window_blur', 'pagehide']);
+const PROCTORING_INPUT_EVENT_TYPES = new Set(['paste_attempt', 'drop_attempt']);
+const PROCTORING_EVENT_TYPES = new Set([
+  ...PROCTORING_FOCUS_EVENT_TYPES,
+  ...PROCTORING_INPUT_EVENT_TYPES
+]);
+const PROCTORING_FOCUS_DEDUP_WINDOW_MS = 3000;
+const PROCTORING_INPUT_DEDUP_WINDOW_MS = 1000;
+const PROCTORING_MAX_FOCUS_VIOLATIONS = 3;
 
 function sendControllerError(res, error) {
   const statusCode = Number(error.statusCode || error.status || 500);
@@ -118,6 +128,62 @@ function truncateText(value, max = 5000) {
   return text.length > max ? text.slice(0, max) : text;
 }
 
+function normalizeProctoringEventType(value) {
+  const type = String(value || '').trim();
+  return PROCTORING_EVENT_TYPES.has(type) ? type : null;
+}
+
+function getProctoringCategory(type) {
+  if (PROCTORING_FOCUS_EVENT_TYPES.has(type)) return 'focus';
+  if (PROCTORING_INPUT_EVENT_TYPES.has(type)) return 'input';
+  return null;
+}
+
+function safeProctoringMetadata(input, req) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    visibilityState: truncateText(source.visibilityState || '', 50),
+    reason: truncateText(source.reason || '', 120),
+    userAgent: truncateText(req.get('user-agent') || '', 300)
+  };
+}
+
+function getProctoringSummary(session) {
+  const proctoring = session.proctoring || {};
+  const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
+
+  return {
+    enabled: proctoring.enabled !== false,
+    maxFocusViolations: Number(proctoring.maxFocusViolations || PROCTORING_MAX_FOCUS_VIOLATIONS),
+    focusViolationCount: Number(proctoring.focusViolationCount || 0),
+    pasteAttemptCount: Number(proctoring.pasteAttemptCount || 0),
+    terminatedAt: proctoring.terminatedAt,
+    terminationReason: proctoring.terminationReason,
+    violations: violations.map((violation) => ({
+      _id: violation._id,
+      type: violation.type,
+      category: violation.category,
+      questionIndex: violation.questionIndex,
+      count: violation.count,
+      actionTaken: violation.actionTaken,
+      message: violation.message,
+      createdAt: violation.createdAt
+    }))
+  };
+}
+
+function findRecentProctoringViolation(session, category, now, windowMs) {
+  const violations = session.proctoring?.violations || [];
+  for (let index = violations.length - 1; index >= 0; index -= 1) {
+    const violation = violations[index];
+    if (violation.category !== category) continue;
+    const createdAt = violation.createdAt ? new Date(violation.createdAt).getTime() : 0;
+    if (createdAt && now.getTime() - createdAt <= windowMs) return violation;
+    return null;
+  }
+  return null;
+}
+
 function normalizeTranscriptText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
@@ -176,6 +242,7 @@ function buildPublicState(session, interview) {
   const currentQuestion = interview.questionSnapshots[session.currentQuestionIndex];
   return {
     session: {
+      _id: session._id,
       id: session._id,
       status: session.status,
       currentQuestionIndex: session.currentQuestionIndex,
@@ -190,7 +257,8 @@ function buildPublicState(session, interview) {
         submittedAt: answer.submittedAt,
         timeSpentSeconds: answer.timeSpentSeconds
       })),
-      scoring: session.status === 'completed' ? session.scoring : undefined
+      scoring: session.status === 'completed' ? session.scoring : undefined,
+      proctoring: getProctoringSummary(session)
     },
     interview: {
       id: interview._id,
@@ -233,7 +301,8 @@ async function syncInterviewStats(interviewId) {
       inProgress: counts.in_progress || 0,
       completed: counts.completed || 0,
       blocked: (counts.credit_blocked || 0) + (counts.credit_error || 0),
-      failed: counts.email_failed || 0
+      failed: (counts.email_failed || 0) + (counts.proctor_failed || 0),
+      proctorFailed: counts.proctor_failed || 0
     }
   });
 }
@@ -373,7 +442,7 @@ async function advanceQuestion(session, interview, mode = 'answered') {
 async function enforceDeadlines(session, interview) {
   const now = new Date();
 
-  if (['completed', 'expired', 'cancelled'].includes(session.status)) {
+  if (TERMINAL_SESSION_STATUSES.has(session.status)) {
     return session;
   }
 
@@ -655,7 +724,7 @@ exports.listAIInterviews = async (req, res) => {
       aiInterview: { $in: interviewIds },
       organization: organizationId
     })
-      .select('aiInterview candidateSnapshot status completedAt answers scoring')
+      .select('aiInterview candidateSnapshot status completedAt answers scoring proctoring')
       .lean();
     const sessionsByInterview = sessions.reduce((map, session) => {
       const key = String(session.aiInterview);
@@ -748,7 +817,7 @@ exports.cancelAIInterview = async (req, res) => {
     await AIInterviewSession.updateMany({
       aiInterview: id,
       organization: organizationId,
-      status: { $nin: ['completed', 'expired'] }
+      status: { $nin: Array.from(TERMINAL_SESSION_STATUSES) }
     }, {
       $set: { status: 'cancelled' }
     });
@@ -911,7 +980,7 @@ exports.startPublicInterview = async (req, res) => {
     const interview = session.aiInterview;
     await enforceDeadlines(session, interview);
 
-    if (['completed', 'expired', 'cancelled'].includes(session.status)) {
+    if (TERMINAL_SESSION_STATUSES.has(session.status)) {
       return res.json({ success: true, ...buildPublicState(session, interview) });
     }
 
@@ -1087,6 +1156,128 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
   }
 };
 
+exports.recordPublicProctoringEvent = async (req, res) => {
+  try {
+    const type = normalizeProctoringEventType(req.body?.type);
+    if (!type) {
+      return res.status(400).json({ error: 'INVALID_PROCTORING_EVENT', message: 'Unsupported proctoring event type' });
+    }
+
+    const session = await findPublicSession(req.params.token);
+    if (!session || !session.aiInterview) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    }
+
+    const interview = session.aiInterview;
+    await enforceDeadlines(session, interview);
+
+    if (TERMINAL_SESSION_STATUSES.has(session.status)) {
+      return res.json({
+        success: true,
+        action: 'ignored',
+        proctoring: getProctoringSummary(session),
+        ...buildPublicState(session, interview)
+      });
+    }
+
+    if (session.status !== 'in_progress') {
+      return res.json({
+        success: true,
+        action: 'ignored',
+        proctoring: getProctoringSummary(session),
+        ...buildPublicState(session, interview)
+      });
+    }
+
+    if (!session.proctoring) session.proctoring = {};
+    if (!Array.isArray(session.proctoring.violations)) session.proctoring.violations = [];
+    if (session.proctoring.enabled === false) {
+      return res.json({
+        success: true,
+        action: 'ignored',
+        proctoring: getProctoringSummary(session),
+        ...buildPublicState(session, interview)
+      });
+    }
+
+    const now = new Date();
+    const category = getProctoringCategory(type);
+    const windowMs = category === 'focus' ? PROCTORING_FOCUS_DEDUP_WINDOW_MS : PROCTORING_INPUT_DEDUP_WINDOW_MS;
+    const recent = findRecentProctoringViolation(session, category, now, windowMs);
+    if (recent) {
+      return res.json({
+        success: true,
+        deduped: true,
+        action: recent.actionTaken || 'logged',
+        warningMessage: recent.message,
+        proctoring: getProctoringSummary(session),
+        ...buildPublicState(session, interview)
+      });
+    }
+
+    const maxFocusViolations = Number(session.proctoring.maxFocusViolations || PROCTORING_MAX_FOCUS_VIOLATIONS);
+    let count = 1;
+    let action = 'logged';
+    let message = 'This event has been recorded.';
+
+    if (category === 'focus') {
+      count = Number(session.proctoring.focusViolationCount || 0) + 1;
+      session.proctoring.focusViolationCount = count;
+
+      if (count >= maxFocusViolations) {
+        action = 'terminated';
+        message = 'Interview ended because the interview screen was left multiple times.';
+        session.status = 'proctor_failed';
+        session.completedAt = now;
+        session.proctoring.terminatedAt = now;
+        session.proctoring.terminationReason = message;
+        session.messages.push({
+          role: 'system',
+          content: message,
+          questionIndex: session.currentQuestionIndex,
+          messageType: 'system'
+        });
+      } else if (count === maxFocusViolations - 1) {
+        action = 'final_warning';
+        message = 'Final warning: if you leave this interview screen again, the interview will automatically end.';
+      } else {
+        action = 'warned';
+        message = 'We noticed you left the interview screen. Please keep this tab open and visible during the interview.';
+      }
+    } else {
+      count = Number(session.proctoring.pasteAttemptCount || 0) + 1;
+      session.proctoring.pasteAttemptCount = count;
+      message = type === 'drop_attempt'
+        ? 'Dropping text or files into the answer box is disabled for this interview.'
+        : 'Pasting is disabled for this interview.';
+    }
+
+    session.proctoring.violations.push({
+      type,
+      category,
+      questionIndex: session.currentQuestionIndex,
+      count,
+      actionTaken: action,
+      message,
+      metadata: safeProctoringMetadata(req.body?.metadata, req)
+    });
+    session.lastActivityAt = now;
+    await session.save();
+    await syncInterviewStats(interview._id);
+
+    res.json({
+      success: true,
+      action,
+      warningMessage: message,
+      proctoring: getProctoringSummary(session),
+      ...buildPublicState(session, interview)
+    });
+  } catch (error) {
+    console.error('Public AI interview proctoring event error:', error);
+    sendControllerError(res, error);
+  }
+};
+
 exports.synthesizePublicSpeech = async (req, res) => {
   try {
     const session = await findPublicSession(req.params.token);
@@ -1230,6 +1421,15 @@ exports.resetPublicSession = async (req, res) => {
       raw: undefined,
       error: undefined,
       scoredAt: undefined
+    };
+    session.proctoring = {
+      enabled: true,
+      maxFocusViolations: PROCTORING_MAX_FOCUS_VIOLATIONS,
+      focusViolationCount: 0,
+      pasteAttemptCount: 0,
+      violations: [],
+      terminatedAt: undefined,
+      terminationReason: undefined
     };
 
     await session.save();

@@ -13,6 +13,7 @@ router.post('/public/:token/speech-transcribe', express.raw({
 }), aiInterviewController.transcribePublicSpeech);
 router.post('/public/:token/start', aiInterviewController.startPublicInterview);
 router.post('/public/:token/message', aiInterviewController.sendPublicMessage);
+router.post('/public/:token/proctoring-event', aiInterviewController.recordPublicProctoringEvent);
 router.post('/public/:token/voice-transcript', aiInterviewController.recordPublicVoiceTranscript);
 router.post('/public/:token/speech', aiInterviewController.synthesizePublicSpeech);
 router.post('/public/:token/confirm', aiInterviewController.confirmPublicQuestion);

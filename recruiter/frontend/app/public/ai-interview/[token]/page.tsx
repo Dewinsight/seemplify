@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
-import aiInterviewService, { type PublicAIInterviewState } from "@/services/aiInterviewService";
+import aiInterviewService, { type AIInterviewProctoringEventType, type PublicAIInterviewState } from "@/services/aiInterviewService";
 
 function formatSeconds(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds));
@@ -57,6 +57,8 @@ function statusLabel(status?: string) {
       return "Expired";
     case "cancelled":
       return "Cancelled";
+    case "proctor_failed":
+      return "Ended";
     case "in_progress":
       return "In progress";
     case "opened":
@@ -372,6 +374,8 @@ export default function PublicAIInterviewPage() {
   const voicePhaseRef = useRef<VoicePhase>("off");
   const stateRef = useRef<PublicAIInterviewState | null>(null);
   const sessionRef = useRef<PublicAIInterviewState["session"] | null>(null);
+  const proctoringEventInFlightRef = useRef(false);
+  const lastProctoringEventAtRef = useRef<Record<string, number>>({});
 
   const applyPublicState = useCallback((data: PublicAIInterviewState) => {
     stateRef.current = data;
@@ -390,6 +394,11 @@ export default function PublicAIInterviewPage() {
       ? currentIndex + 1
       : 0;
   const progress = questionCount > 0 ? (activeStep / questionCount) * 100 : 0;
+  const proctoring = session?.proctoring;
+  const focusViolationCount = Number(proctoring?.focusViolationCount || 0);
+  const maxFocusViolations = Number(proctoring?.maxFocusViolations || 3);
+  const pasteAttemptCount = Number(proctoring?.pasteAttemptCount || 0);
+  const focusAttemptsRemaining = Math.max(0, maxFocusViolations - focusViolationCount);
   const candidateName = state?.candidate?.name || [state?.candidate?.firstName, state?.candidate?.lastName].filter(Boolean).join(" ") || "Candidate";
   const questionTimeLabel = `${interview?.timers.perQuestionMinutes || 0}m`;
   const totalTimeLabel = `${interview?.timers.totalMinutes || 0}m`;
@@ -444,6 +453,56 @@ export default function PublicAIInterviewPage() {
       setLoading(false);
     }
   };
+
+  const recordProctoringEvent = useCallback(async (
+    type: AIInterviewProctoringEventType,
+    metadata?: { visibilityState?: string; reason?: string }
+  ) => {
+    const sessionStatus = sessionRef.current?.status;
+    if (sessionStatus !== "in_progress") return;
+
+    const category = type === "paste_attempt" || type === "drop_attempt" ? "input" : "focus";
+    const now = Date.now();
+    const lastAt = lastProctoringEventAtRef.current[category] || 0;
+    const cooldownMs = category === "focus" ? 3000 : 900;
+    if (now - lastAt < cooldownMs) return;
+    lastProctoringEventAtRef.current[category] = now;
+
+    if (category === "focus" && proctoringEventInFlightRef.current) return;
+    if (category === "focus") proctoringEventInFlightRef.current = true;
+
+    try {
+      const data = await aiInterviewService.recordPublicProctoringEvent(token, {
+        type,
+        metadata: {
+          visibilityState: typeof document !== "undefined" ? document.visibilityState : undefined,
+          ...metadata
+        }
+      });
+      applyPublicState(data);
+
+      if (data.action === "terminated") {
+        ttsAudioRef.current?.pause();
+        setAssistantSpeech({ active: false, text: "", progress: 0 });
+        setVoicePhaseState("off");
+        voicePhaseRef.current = "off";
+        setVoiceStatus("Interview ended due to proctoring");
+        toast.error(data.warningMessage || "Interview ended due to proctoring violations.");
+      } else if (data.action === "final_warning") {
+        toast.warning(data.warningMessage || "Final warning: leaving again will end the interview.");
+      } else if (data.action === "warned" || category === "input") {
+        toast.warning(data.warningMessage || (category === "input" ? "Pasting is disabled for this interview." : "Please keep this interview tab open."));
+      }
+    } catch (error: any) {
+      if (category === "input") {
+        toast.warning(type === "drop_attempt" ? "Dropping content is disabled for this interview." : "Pasting is disabled for this interview.");
+      } else {
+        toast.error(error?.message || "Could not record proctoring event");
+      }
+    } finally {
+      if (category === "focus") proctoringEventInFlightRef.current = false;
+    }
+  }, [applyPublicState, token]);
 
   const loadAudioDevices = useCallback(async (requestPermission = false) => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -1169,6 +1228,42 @@ export default function PublicAIInterviewPage() {
       .finally(() => setTimeoutRunning(false));
   }, [applyPublicState, questionSeconds, state, timeoutRunning, token]);
 
+  useEffect(() => {
+    if (session?.status !== "in_progress") return;
+
+    const reportFocusEvent = (type: AIInterviewProctoringEventType, reason: string) => {
+      void recordProctoringEvent(type, { reason });
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        reportFocusEvent("visibility_hidden", "document hidden");
+      }
+    };
+
+    const onWindowBlur = () => {
+      window.setTimeout(() => {
+        if (!document.hasFocus()) {
+          reportFocusEvent("window_blur", "window lost focus");
+        }
+      }, 250);
+    };
+
+    const onPageHide = () => {
+      reportFocusEvent("pagehide", "page hidden or unloading");
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("pagehide", onPageHide);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [recordProctoringEvent, session?.status]);
+
   // Whenever new speakable AI messages appear (after the candidate sends a
   // message, confirms a question, etc.), drive the voice flow forward. This
   // single effect replaces every ad-hoc `if (voiceState === "connected") speak()`
@@ -1257,6 +1352,12 @@ export default function PublicAIInterviewPage() {
       cleanupVoice("Switching voice devices...", "connecting");
       window.setTimeout(() => { void connectVoice(); }, 200);
     }
+  };
+
+  const blockPasteOrDrop = (type: "paste_attempt" | "drop_attempt") => {
+    void recordProctoringEvent(type, {
+      reason: type === "drop_attempt" ? "candidate attempted to drop content" : "candidate attempted to paste content"
+    });
   };
 
   const renderAudioDeviceSettings = (compact = false) => (
@@ -1352,6 +1453,35 @@ export default function PublicAIInterviewPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Thank you, {state.candidate?.firstName || state.candidate?.name}. Your responses have been submitted.
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (session.status === "proctor_failed") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-amber-50/60 to-rose-50/70 p-4 md:p-8">
+        <div className="w-full max-w-2xl rounded-2xl border border-amber-200 bg-white/95 p-8 text-center shadow-xl">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
+            <ShieldCheck className="h-9 w-9" />
+          </div>
+          <h1 className="mt-5 text-2xl font-semibold text-slate-950">Interview Ended</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            This interview ended because the interview screen was left multiple times. The recruiter can review the proctoring log.
+          </p>
+          <div className="mt-5 rounded-2xl border bg-slate-50 p-4 text-left text-sm">
+            <div className="font-medium text-slate-950">Proctoring summary</div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl bg-white px-3 py-2">
+                <div className="text-xs text-muted-foreground">Screen leave events</div>
+                <div className="text-lg font-semibold text-slate-950">{focusViolationCount}/{maxFocusViolations}</div>
+              </div>
+              <div className="rounded-xl bg-white px-3 py-2">
+                <div className="text-xs text-muted-foreground">Paste attempts</div>
+                <div className="text-lg font-semibold text-slate-950">{pasteAttemptCount}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
     );
@@ -1759,6 +1889,34 @@ export default function PublicAIInterviewPage() {
                       </div>
                     </div>
 
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 sm:p-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 text-sm font-semibold text-blue-950">
+                            <ShieldCheck className="h-4 w-4" />
+                            Proctoring rules
+                          </div>
+                          <p className="mt-2 text-sm leading-6 text-blue-900">
+                            This interview uses lightweight browser checks to protect the integrity of the session.
+                          </p>
+                        </div>
+                        <Badge className="w-fit border-blue-200 bg-white text-blue-800">
+                          {maxFocusViolations} tab warnings max
+                        </Badge>
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {[
+                          "Do not paste or drop prepared text into the answer box.",
+                          "Keep this interview tab visible while the interview is in progress.",
+                          "Leaving the tab or browser is logged; repeated switching will end the interview."
+                        ].map((rule) => (
+                          <div key={rule} className="rounded-2xl border border-blue-100 bg-white/80 p-3 text-sm leading-6 text-slate-800">
+                            {rule}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-5">
                       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-950">
                         <ShieldCheck className="h-4 w-4" />
@@ -1871,6 +2029,13 @@ export default function PublicAIInterviewPage() {
                       {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
                     </Button>
                     <Badge className="hidden w-fit border-white/20 bg-white/10 text-white sm:inline-flex">Confirm required to move on</Badge>
+                    <Badge className={`hidden w-fit sm:inline-flex ${
+                      focusViolationCount >= maxFocusViolations - 1
+                        ? "border-amber-300/30 bg-amber-400/15 text-amber-100"
+                        : "border-emerald-300/30 bg-emerald-400/10 text-emerald-100"
+                    }`}>
+                      Proctoring {focusViolationCount}/{maxFocusViolations}
+                    </Badge>
                     {demoMode && (
                       <Button
                         type="button"
@@ -1929,6 +2094,26 @@ export default function PublicAIInterviewPage() {
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, progress)}%` }} />
                 </div>
+                {(focusViolationCount > 0 || pasteAttemptCount > 0) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-200">
+                    {focusViolationCount > 0 && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/25 bg-amber-400/10 px-2.5 py-1 text-amber-100">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        Screen checks {focusViolationCount}/{maxFocusViolations}
+                      </span>
+                    )}
+                    {pasteAttemptCount > 0 && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                        Paste blocked {pasteAttemptCount}
+                      </span>
+                    )}
+                    {focusViolationCount > 0 && focusAttemptsRemaining > 0 && (
+                      <span className="text-slate-300">
+                        {focusAttemptsRemaining} screen leave{focusAttemptsRemaining === 1 ? "" : "s"} before automatic end.
+                      </span>
+                    )}
+                  </div>
+                )}
                 {deviceSettingsOpen && (
                   <div className="mt-3 text-slate-950">
                     {renderAudioDeviceSettings(true)}
@@ -2097,7 +2282,7 @@ export default function PublicAIInterviewPage() {
                           {voicePhase === "listening" || voicePhase === "speaking" ? (
                             <MicOff className={`${voicePhase === "speaking" ? "sm:mr-1.5" : "mr-1.5"} h-3.5 w-3.5`} />
                           ) : (
-                            <Mic className={`${voicePhase === "speaking" || voicePhase === "processing" ? "sm:mr-1.5" : "mr-1.5"} h-3.5 w-3.5`} />
+                            <Mic className={`${voicePhase === "processing" ? "sm:mr-1.5" : "mr-1.5"} h-3.5 w-3.5`} />
                           )}
                           <span className={`${voicePhase === "speaking" || voicePhase === "processing" ? "hidden sm:inline" : "text-xs sm:text-sm"}`}>
                             {voicePhase === "listening" ? "Done" : voiceActionLabel}
@@ -2121,6 +2306,25 @@ export default function PublicAIInterviewPage() {
                     onChange={(event) => {
                       setMessage(event.target.value);
                       messageRef.current = event.target.value;
+                    }}
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      blockPasteOrDrop("paste_attempt");
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      blockPasteOrDrop("drop_attempt");
+                    }}
+                    onBeforeInput={(event) => {
+                      const inputType = (event.nativeEvent as InputEvent).inputType || "";
+                      if (inputType === "insertFromPaste" || inputType === "insertFromPasteAsQuotation") {
+                        event.preventDefault();
+                        blockPasteOrDrop("paste_attempt");
+                      }
+                      if (inputType === "insertFromDrop") {
+                        event.preventDefault();
+                        blockPasteOrDrop("drop_attempt");
+                      }
                     }}
                     placeholder={voicePhase === "listening" ? "Listening... your answer will appear here" : "Type your answer or ask for clarification..."}
                     rows={voicePhase === "listening" ? 1 : 2}

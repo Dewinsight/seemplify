@@ -26,6 +26,43 @@ const MessageSchema = new mongoose.Schema({
   }
 }, { _id: true });
 
+const ProctoringViolationSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['paste_attempt', 'drop_attempt', 'visibility_hidden', 'window_blur', 'pagehide'],
+    required: true
+  },
+  category: {
+    type: String,
+    enum: ['input', 'focus'],
+    required: true
+  },
+  questionIndex: {
+    type: Number,
+    default: null
+  },
+  count: {
+    type: Number,
+    min: 1,
+    default: 1
+  },
+  actionTaken: {
+    type: String,
+    enum: ['logged', 'warned', 'final_warning', 'terminated'],
+    default: 'logged'
+  },
+  message: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  metadata: mongoose.Schema.Types.Mixed,
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { _id: true });
+
 const AnswerSchema = new mongoose.Schema({
   questionIndex: {
     type: Number,
@@ -122,6 +159,7 @@ const AIInterviewSessionSchema = new mongoose.Schema({
       'completed',
       'expired',
       'cancelled',
+      'proctor_failed',
       'credit_blocked',
       'credit_error',
       'email_failed'
@@ -196,6 +234,30 @@ const AIInterviewSessionSchema = new mongoose.Schema({
     },
     refundedAt: Date,
     error: String
+  },
+  proctoring: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    maxFocusViolations: {
+      type: Number,
+      min: 1,
+      default: 3
+    },
+    focusViolationCount: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    pasteAttemptCount: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    violations: [ProctoringViolationSchema],
+    terminatedAt: Date,
+    terminationReason: String
   }
 }, {
   timestamps: true

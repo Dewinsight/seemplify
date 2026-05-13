@@ -62,6 +62,8 @@ function statusColor(status: string) {
     case "cancelled":
     case "expired":
       return "bg-slate-100 text-slate-700 border-slate-200";
+    case "proctor_failed":
+      return "bg-red-100 text-red-800 border-red-200";
     default:
       return "bg-amber-100 text-amber-800 border-amber-200";
   }
@@ -271,6 +273,7 @@ export default function AIInterviewsPage() {
       completedCount: number;
       blockedCount: number;
       failedCount: number;
+      proctorFailedCount: number;
       activeCount: number;
       scheduledCount: number;
       rankings: JobRankingCandidate[];
@@ -291,6 +294,7 @@ export default function AIInterviewsPage() {
           completedCount: 0,
           blockedCount: 0,
           failedCount: 0,
+          proctorFailedCount: 0,
           activeCount: 0,
           scheduledCount: 0,
           rankings: []
@@ -303,6 +307,7 @@ export default function AIInterviewsPage() {
       group.completedCount += Number(interview.stats?.completed || 0);
       group.blockedCount += Number(interview.stats?.blocked || 0);
       group.failedCount += Number(interview.stats?.failed || 0);
+      group.proctorFailedCount += Number(interview.stats?.proctorFailed || 0);
       if (interview.status === "active") group.activeCount += 1;
       if (interview.status === "scheduled") group.scheduledCount += 1;
 
@@ -1265,6 +1270,11 @@ export default function AIInterviewsPage() {
                                 <div className="mt-3 flex flex-wrap items-center gap-2">
                                   <Badge className={statusColor(interview.status)}>{interview.status}</Badge>
                                   <Badge variant="outline">{completed}/{total} complete</Badge>
+                                  {Number(interview.stats?.proctorFailed || 0) > 0 && (
+                                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+                                      {interview.stats?.proctorFailed} proctor ended
+                                    </Badge>
+                                  )}
                                   {hasScores ? (
                                     <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
                                       Avg {scoringSummary?.averageScore ?? "-"}
@@ -1348,6 +1358,10 @@ export default function AIInterviewsPage() {
                               <div className="text-xs text-muted-foreground">Needs review</div>
                               <div className="text-lg font-semibold">{selectedJobRanking.blockedCount + selectedJobRanking.failedCount}</div>
                             </div>
+                            <div className="rounded-xl bg-amber-50 p-3 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                              <div className="text-xs opacity-75">Proctor ended</div>
+                              <div className="text-lg font-semibold">{selectedJobRanking.proctorFailedCount}</div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1386,6 +1400,11 @@ export default function AIInterviewsPage() {
                                     Job ranking
                                   </div>
                                   <h3 className="mt-2 truncate text-lg font-semibold text-slate-950 dark:text-white">{group.jobTitle}</h3>
+                                  {group.proctorFailedCount > 0 && (
+                                    <Badge variant="outline" className="mt-2 border-amber-200 bg-amber-50 text-amber-800">
+                                      {group.proctorFailedCount} proctor ended
+                                    </Badge>
+                                  )}
                                 </div>
                                 <ArrowUpRight className="h-5 w-5 text-slate-400" />
                               </div>

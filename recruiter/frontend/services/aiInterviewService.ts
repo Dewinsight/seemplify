@@ -70,9 +70,34 @@ export interface AIInterviewSession {
     chargedAt?: string;
     error?: string;
   };
+  proctoring?: {
+    enabled?: boolean;
+    maxFocusViolations?: number;
+    focusViolationCount?: number;
+    pasteAttemptCount?: number;
+    terminatedAt?: string;
+    terminationReason?: string;
+    violations?: Array<{
+      _id?: string;
+      type: 'paste_attempt' | 'drop_attempt' | 'visibility_hidden' | 'window_blur' | 'pagehide';
+      category: 'input' | 'focus';
+      questionIndex?: number | null;
+      count?: number;
+      actionTaken?: 'logged' | 'warned' | 'final_warning' | 'terminated';
+      message?: string;
+      createdAt?: string;
+    }>;
+  };
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type AIInterviewProctoringEventType =
+  | 'paste_attempt'
+  | 'drop_attempt'
+  | 'visibility_hidden'
+  | 'window_blur'
+  | 'pagehide';
 
 export interface AIInterviewScoringSummary {
   scoredCount: number;
@@ -130,6 +155,7 @@ export interface AIInterview {
     completed: number;
     blocked: number;
     failed: number;
+    proctorFailed?: number;
   };
   scoringSummary?: AIInterviewScoringSummary;
   createdAt: string;
@@ -289,6 +315,28 @@ class AIInterviewService {
     const response = await apiRequest(`/api/ai-interviews/public/${token}/message`, {
       method: 'POST',
       body: JSON.stringify({ message })
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async recordPublicProctoringEvent(
+    token: string,
+    input: {
+      type: AIInterviewProctoringEventType;
+      metadata?: {
+        visibilityState?: string;
+        reason?: string;
+      };
+    }
+  ): Promise<PublicAIInterviewState & {
+    action?: 'ignored' | 'logged' | 'warned' | 'final_warning' | 'terminated';
+    warningMessage?: string;
+    deduped?: boolean;
+  }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/proctoring-event`, {
+      method: 'POST',
+      body: JSON.stringify(input)
     });
     if (!response.ok) throw await parseError(response);
     return response.json();

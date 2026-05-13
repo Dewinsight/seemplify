@@ -17,6 +17,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  ShieldCheck,
   Star,
   Timer,
   UserRound,
@@ -51,6 +52,7 @@ function statusColor(status: string) {
     case "credit_blocked":
     case "credit_error":
     case "email_failed":
+    case "proctor_failed":
       return "bg-red-100 text-red-800";
     case "cancelled":
     case "expired":
@@ -68,6 +70,14 @@ function getSessionScore(session?: AIInterviewSession) {
 
 function formatRecommendation(value?: string) {
   if (!value) return "Review";
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatProctoringEventType(value?: string) {
+  if (!value) return "Proctoring event";
   return value
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -218,6 +228,8 @@ export default function AIInterviewDetailPage() {
   const selectedBand = scoreBand(selectedScore);
   const selectedAnsweredCount = selectedSession ? answeredCount(selectedSession) : 0;
   const selectedAnswerTime = selectedSession ? totalAnswerTime(selectedSession) : 0;
+  const selectedProctoring = selectedSession?.proctoring;
+  const selectedProctoringViolations = selectedProctoring?.violations || [];
   const transcriptMessages = selectedSession?.messages || [];
   const transcriptStats = useMemo(() => {
     const messages = selectedSession?.messages || [];
@@ -279,6 +291,9 @@ export default function AIInterviewDetailPage() {
       `${aiInterview?.title || "AI Interview"} transcript`,
       `Candidate: ${candidateDisplayName(selectedSession)}`,
       selectedSession.candidateSnapshot?.email ? `Email: ${selectedSession.candidateSnapshot.email}` : "",
+      selectedProctoringViolations.length
+        ? `Proctoring: ${selectedProctoring?.focusViolationCount || 0} screen leave event(s), ${selectedProctoring?.pasteAttemptCount || 0} paste/drop attempt(s)`
+        : "",
       "",
       ...transcriptMessages.map((message) => {
         const stage = transcriptStageLabel(message);
@@ -287,7 +302,7 @@ export default function AIInterviewDetailPage() {
       })
     ].filter((line) => line !== "");
     return lines.join("\n\n");
-  }, [aiInterview?.title, selectedSession, transcriptMessages]);
+  }, [aiInterview?.title, selectedProctoring?.focusViolationCount, selectedProctoring?.pasteAttemptCount, selectedProctoringViolations.length, selectedSession, transcriptMessages]);
 
   const load = async () => {
     setLoading(true);
@@ -523,6 +538,12 @@ export default function AIInterviewDetailPage() {
                                   {score}/100
                                 </span>
                               )}
+                              {Number(session.proctoring?.violations?.length || 0) > 0 && (
+                                <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-800">
+                                  <ShieldCheck className="h-3 w-3" />
+                                  {session.proctoring?.violations?.length} proctor
+                                </span>
+                              )}
                             </div>
                             {score !== null && (
                               <div className="mt-3">
@@ -589,6 +610,12 @@ export default function AIInterviewDetailPage() {
                               Completed {formatDate(selectedSession.completedAt)}
                             </span>
                           )}
+                          {selectedProctoringViolations.length > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-amber-800">
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              {selectedProctoringViolations.length} proctoring event{selectedProctoringViolations.length === 1 ? "" : "s"}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -620,6 +647,7 @@ export default function AIInterviewDetailPage() {
                   <TabsTrigger value="transcript">Transcript</TabsTrigger>
                   <TabsTrigger value="score">Score</TabsTrigger>
                   <TabsTrigger value="answers">Answers</TabsTrigger>
+                  <TabsTrigger value="proctoring">Proctoring</TabsTrigger>
                 </TabsList>
                 {["sent", "opened", "email_failed", "credit_blocked", "credit_error"].includes(selectedSession.status) && (
                   <Button size="sm" variant="outline" onClick={() => resend(selectedSession._id)} disabled={resending === selectedSession._id}>
@@ -841,6 +869,73 @@ export default function AIInterviewDetailPage() {
                     )) : (
                       <Alert>
                         <AlertDescription>No answers captured yet.</AlertDescription>
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="proctoring">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ShieldCheck className="h-4 w-4 text-amber-600" />
+                      Proctoring Audit
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-xl border bg-slate-50 p-4">
+                        <div className="text-xs text-muted-foreground">Screen leave events</div>
+                        <div className="mt-1 text-2xl font-semibold text-slate-950">
+                          {selectedProctoring?.focusViolationCount || 0}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border bg-slate-50 p-4">
+                        <div className="text-xs text-muted-foreground">Paste/drop attempts</div>
+                        <div className="mt-1 text-2xl font-semibold text-slate-950">
+                          {selectedProctoring?.pasteAttemptCount || 0}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border bg-slate-50 p-4">
+                        <div className="text-xs text-muted-foreground">Rule status</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-950">
+                          {selectedSession.status === "proctor_failed" ? "Interview ended" : "No automatic end"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedProctoring?.terminationReason && (
+                      <Alert>
+                        <ShieldCheck className="h-4 w-4" />
+                        <AlertDescription>{selectedProctoring.terminationReason}</AlertDescription>
+                      </Alert>
+                    )}
+
+                    {selectedProctoringViolations.length ? (
+                      <div className="space-y-2">
+                        {selectedProctoringViolations.map((violation, index) => (
+                          <div key={violation._id || `${violation.type}-${index}`} className="rounded-xl border bg-white p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <div className="font-medium text-slate-950">{formatProctoringEventType(violation.type)}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {typeof violation.questionIndex === "number" ? `Question ${violation.questionIndex + 1}` : "General"} · {violation.createdAt ? formatDate(violation.createdAt) : "No timestamp"}
+                                </div>
+                              </div>
+                              <Badge className={violation.actionTaken === "terminated" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}>
+                                {formatProctoringEventType(violation.actionTaken)}
+                              </Badge>
+                            </div>
+                            {violation.message && (
+                              <p className="mt-2 text-sm leading-6 text-slate-700">{violation.message}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Alert>
+                        <AlertDescription>No proctoring violations were recorded for this candidate.</AlertDescription>
                       </Alert>
                     )}
                   </CardContent>

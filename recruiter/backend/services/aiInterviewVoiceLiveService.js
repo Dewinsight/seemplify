@@ -371,7 +371,7 @@ class AIInterviewVoiceLiveService {
 
         const interview = session.aiInterview;
         const now = new Date();
-        if (new Date(interview.schedule.expiresAt) <= now || ['completed', 'expired', 'cancelled'].includes(session.status)) {
+        if (new Date(interview.schedule.expiresAt) <= now || ['completed', 'expired', 'cancelled', 'proctor_failed'].includes(session.status)) {
           this.sendJson(clientWs, { type: 'voice.error', message: 'This interview is no longer accepting voice responses.' });
           clientWs.close(1008, 'Interview closed');
           return;
