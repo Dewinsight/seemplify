@@ -3,8 +3,15 @@ const Plan = require('../models/Plan');
 const mongoose = require('mongoose');
 
 const DEFAULT_ACTION_CREDIT_COSTS = {
-  aiInterviewCandidate: 5
+  aiInterviewCandidate: 12
 };
+
+function normalizeCreditCostOverride(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.ceil(parsed);
+}
 
 class CreditsService {
   /**
@@ -98,7 +105,7 @@ class CreditsService {
    * @param {String} action - Action name (e.g., 'createJob')
    * @returns {Object} { allowed: Boolean, cost: Number, remaining: Number, message: String }
    */
-  async checkSufficientCredits(organizationId, action) {
+  async checkSufficientCredits(organizationId, action, options = {}) {
     const timestamp = new Date().toISOString();
     console.log(`🔍 [${timestamp}] Checking credits for action: ${action}, Org: ${organizationId}`);
     
@@ -130,7 +137,8 @@ class CreditsService {
       }
       
       const creditCosts = plan.credits?.creditCosts || {};
-      const cost = creditCosts[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
+      const configuredCost = creditCosts[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
+      const cost = normalizeCreditCostOverride(options.creditCostOverride ?? options.costOverride ?? options.cost) ?? configuredCost;
 
       // If cost is 0 or plan has unlimited credits, allow action
       if (cost === 0 || plan?.credits?.totalCredits === 'unlimited') {
@@ -262,7 +270,10 @@ class CreditsService {
         console.warn(`⚠️ [${timestamp}] Unknown action '${action}'. Valid actions: ${validActions.join(', ')}`);
       }
       
-      const cost = plan?.credits?.creditCosts?.[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
+      const configuredCost = plan?.credits?.creditCosts?.[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
+      const cost = normalizeCreditCostOverride(
+        metadata.creditCostOverride ?? metadata.costOverride ?? metadata.overrideCost
+      ) ?? configuredCost;
 
       // Skip if no cost
       if (cost === 0) {

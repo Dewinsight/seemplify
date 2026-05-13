@@ -23,6 +23,8 @@ router.post('/public/:token/reset', aiInterviewController.resetPublicSession);
 router.use(authMiddleware);
 router.use(requireOrganization);
 
+router.get('/options', aiInterviewController.getAIInterviewOptions);
+router.post('/estimate', aiInterviewController.estimateAIInterviewCost);
 router.get('/', aiInterviewController.listAIInterviews);
 router.post('/', aiInterviewController.createAIInterview);
 router.get('/:id', aiInterviewController.getAIInterview);

@@ -5,6 +5,10 @@
  * - **Llama 3.3 70B Instruct**: use **$0.50 / 1M input** and **$0.50 / 1M output** tokens
  *   (your cited rate; regional/commitment pricing may differ).
  * - **text-embedding-3-large** (Azure OpenAI): **~$0.13 / 1M input** tokens (unchanged).
+ * - **AI interview voice**: product-priced from the 30-minute voice interview benchmark
+ *   rather than derived from LLM tokens only. The baseline covers Azure Speech STT,
+ *   Azure Speech TTS, question generation allocation, interview harness calls, scoring,
+ *   and a small infrastructure buffer.
  *
  * Vector DB hosting is excluded from per-credit COGS.
  *
@@ -17,7 +21,7 @@
  *
  * **aiMatching** = one enrichment batch (10 candidates) = one batched LLM call in `gptAnalysisService`.
  *
- * ## Subscription ladder ($100 → $5,000 / month)
+ * ## Subscription ladder ($99 → $4,999 / month)
  * Monthly included credits scale super-linearly with list price (higher tiers = better $/credit).
  * Tune `RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE` against your target margin after measuring real usage.
  */
@@ -58,7 +62,7 @@ function creditsFromModeledCogs(cogsUsd) {
 
 /**
  * Token assumptions (rough, documented). Tune from production `usage` logs when available.
- * @type {Record<string, { llmIn: number; llmOut: number; embedIn: number; note?: string }>}
+ * @type {Record<string, { llmIn: number; llmOut: number; embedIn: number; fixedCredits?: number; note?: string }>}
  */
 const OPERATION_TOKEN_ASSUMPTIONS = {
   createJob: {
@@ -103,7 +107,8 @@ const OPERATION_TOKEN_ASSUMPTIONS = {
     llmIn: 5000,
     llmOut: 3000,
     embedIn: 0,
-    note: 'per candidate async AI interview conversation + scoring allowance',
+    fixedCredits: 12,
+    note: 'per candidate 30-minute async voice AI interview: STT + TTS + LLM question generation allocation + interview harness + scoring',
   },
   bulkUpload: {
     llmIn: 4000,
@@ -122,6 +127,10 @@ const OPERATION_TOKEN_ASSUMPTIONS = {
 function deriveCreditCostsFromModel() {
   const out = {};
   for (const [action, est] of Object.entries(OPERATION_TOKEN_ASSUMPTIONS)) {
+    if (Number.isFinite(est.fixedCredits)) {
+      out[action] = est.fixedCredits;
+      continue;
+    }
     const cogs = llamaCostUsd(est.llmIn, est.llmOut) + embedCostUsd(est.embedIn);
     out[action] = creditsFromModeledCogs(cogs);
   }
@@ -136,7 +145,7 @@ const RECOMMENDED_CREDIT_COSTS = {
   aiMatching: 11,
   generateQuestions: 6,
   aiAnalysis: 12,
-  aiInterviewCandidate: 5,
+  aiInterviewCandidate: 12,
   bulkUpload: 5,
   reEmbed: 3,
 };
@@ -155,24 +164,24 @@ const RECOMMENDED_CREDIT_COSTS = {
 
 /**
  * Monthly credits included per plan code.
- * Ladder: Free → $100 → $500 → $1k → $2.5k → $5k / month (USD list).
+ * Ladder: Free → $99 → $499 → $999 → $2,499 → $4,999 / month (USD list).
  */
 const RECOMMENDED_MONTHLY_CREDITS_BY_PLAN_CODE = {
-  free: 70,
+  free: 60,
   basic: 360,
   pro: 2000,
   business: 4400,
   premium: 11500,
-  enterprise: 28000,
+  enterprise: 24000,
 };
 
 const RECOMMENDED_PLAN_LIST_PRICES_USD = {
   free: 0,
-  basic: 100,
-  pro: 500,
-  business: 1000,
-  premium: 2500,
-  enterprise: 5000,
+  basic: 99,
+  pro: 499,
+  business: 999,
+  premium: 2499,
+  enterprise: 4999,
 };
 
 /**

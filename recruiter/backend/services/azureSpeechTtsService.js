@@ -19,15 +19,19 @@ function normalizeEndpoint(value) {
 
 function isEnglishAzureVoice(value) {
   const voice = String(value || '').trim();
-  return /^en-[A-Z]{2}-/i.test(voice) && !voice.includes(':');
+  return /^en-[A-Z]{2}[-:]/i.test(voice);
 }
 
-function pickSpeechLanguage() {
-  const configured = process.env.AZURE_AI_INTERVIEW_SPEECH_LANGUAGE || process.env.AZURE_SPEECH_LANGUAGE || 'en-US';
+function pickSpeechLanguage(preferredLanguage) {
+  const configured = preferredLanguage || process.env.AZURE_AI_INTERVIEW_SPEECH_LANGUAGE || process.env.AZURE_SPEECH_LANGUAGE || 'en-US';
   return /^en(?:-|$)/i.test(String(configured).trim()) ? String(configured).trim() : 'en-US';
 }
 
-function pickSpeechVoice() {
+function pickSpeechVoice(preferredVoice) {
+  if (isEnglishAzureVoice(preferredVoice)) {
+    return preferredVoice.trim();
+  }
+
   if (isEnglishAzureVoice(process.env.AZURE_AI_INTERVIEW_SPEECH_VOICE)) {
     return process.env.AZURE_AI_INTERVIEW_SPEECH_VOICE.trim();
   }
@@ -41,11 +45,11 @@ function pickSpeechVoice() {
     return voiceLiveVoice.trim();
   }
 
-  return 'en-US-AvaNeural';
+  return 'en-US-JennyMultilingualNeural';
 }
 
 class AzureSpeechTtsService {
-  getConfig() {
+  getConfig(overrides = {}) {
     const region = normalizeRegion(
       process.env.AZURE_SPEECH_REGION ||
       process.env.AZURE_LOCATION ||
@@ -54,13 +58,13 @@ class AzureSpeechTtsService {
     );
     const endpoint = normalizeEndpoint(process.env.AZURE_SPEECH_TTS_ENDPOINT);
     const apiKey = process.env.AZURE_SPEECH_KEY || process.env.AZURE_VOICELIVE_API_KEY;
-    const language = pickSpeechLanguage();
+    const language = pickSpeechLanguage(overrides.language);
 
     return {
       apiKey,
       region,
       endpoint: endpoint || (region ? `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1` : ''),
-      voice: pickSpeechVoice(),
+      voice: pickSpeechVoice(overrides.voice || overrides.voiceId),
       language,
       outputFormat: process.env.AZURE_SPEECH_OUTPUT_FORMAT || 'audio-24khz-48kbitrate-mono-mp3',
       rate: process.env.AZURE_SPEECH_RATE || 'default',
@@ -73,15 +77,15 @@ class AzureSpeechTtsService {
     return Boolean(config.apiKey && config.endpoint && config.voice && config.language);
   }
 
-  buildSsml(text) {
-    const config = this.getConfig();
+  buildSsml(text, overrides = {}) {
+    const config = this.getConfig(overrides);
     const safeText = escapeXml(text);
     const safeVoice = escapeXml(config.voice);
     const safeLanguage = escapeXml(config.language);
     const safeRate = escapeXml(config.rate);
 
     return [
-      `<speak version='1.0' xml:lang='${safeLanguage}'>`,
+      `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${safeLanguage}'>`,
       `<voice xml:lang='${safeLanguage}' name='${safeVoice}'>`,
       `<prosody rate='${safeRate}'>${safeText}</prosody>`,
       '</voice>',
@@ -89,8 +93,8 @@ class AzureSpeechTtsService {
     ].join('');
   }
 
-  synthesize(text) {
-    const config = this.getConfig();
+  synthesize(text, overrides = {}) {
+    const config = this.getConfig(overrides);
     const content = String(text || '').trim();
 
     if (!this.isConfigured()) {
@@ -107,7 +111,7 @@ class AzureSpeechTtsService {
       throw error;
     }
 
-    const ssml = this.buildSsml(content);
+    const ssml = this.buildSsml(content, overrides);
     const url = new URL(config.endpoint);
 
     return new Promise((resolve, reject) => {

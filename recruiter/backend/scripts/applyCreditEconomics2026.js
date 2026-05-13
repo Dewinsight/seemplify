@@ -60,7 +60,7 @@ async function syncPlanByCode(code, label = code) {
   }
   const nextCredits = buildCreditsPayload(plan, monthly);
   console.log(
-    `[plan] ${label}: price $${plan.price} -> $${listPrice}, monthlyCredits ${plan.credits?.totalCredits} -> ${monthly}, aiMatching ${plan.credits?.creditCosts?.aiMatching} -> ${RECOMMENDED_CREDIT_COSTS.aiMatching}`
+    `[plan] ${label}: price $${plan.price} -> $${listPrice}, monthlyCredits ${plan.credits?.totalCredits} -> ${monthly}, aiMatching ${plan.credits?.creditCosts?.aiMatching} -> ${RECOMMENDED_CREDIT_COSTS.aiMatching}, aiInterviewCandidate ${plan.credits?.creditCosts?.aiInterviewCandidate} -> ${RECOMMENDED_CREDIT_COSTS.aiInterviewCandidate}`
   );
   if (!dryRun) {
     plan.price = listPrice;
@@ -87,7 +87,7 @@ async function syncLegacyAliasPlans() {
 
     const nextCredits = buildCreditsPayload(plan, monthly);
     console.log(
-      `[plan] LEGACY ${legacyCode} -> economics of "${canonical}": price $${plan.price} -> $${listPrice}, monthlyCredits ${plan.credits?.totalCredits} -> ${monthly}`
+      `[plan] LEGACY ${legacyCode} -> economics of "${canonical}": price $${plan.price} -> $${listPrice}, monthlyCredits ${plan.credits?.totalCredits} -> ${monthly}, aiInterviewCandidate ${plan.credits?.creditCosts?.aiInterviewCandidate} -> ${RECOMMENDED_CREDIT_COSTS.aiInterviewCandidate}`
     );
     if (!dryRun) {
       plan.price = listPrice;

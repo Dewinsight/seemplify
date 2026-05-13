@@ -11,6 +11,7 @@ const aiInterviewerService = require('../services/aiInterviewerService');
 const aiInterviewEmailService = require('../services/aiInterviewEmailService');
 const aiInterviewVoiceLiveService = require('../services/aiInterviewVoiceLiveService');
 const azureSpeechTtsService = require('../services/azureSpeechTtsService');
+const aiInterviewCostService = require('../services/aiInterviewCostService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
@@ -275,7 +276,11 @@ function buildPublicState(session, interview) {
       } : null
     },
     candidate: session.candidateSnapshot,
-    voice: aiInterviewVoiceLiveService.getPublicConfig(),
+    voice: {
+      ...aiInterviewVoiceLiveService.getPublicConfig(),
+      voice: interview.voice?.voiceId || aiInterviewVoiceLiveService.getPublicConfig().voice,
+      selectedVoice: interview.voice || null
+    },
     job: session.job ? {
       id: session.job._id,
       title: session.job.title
@@ -484,6 +489,50 @@ async function findPublicSession(token) {
     .populate('candidate', 'firstName lastName email');
 }
 
+exports.getAIInterviewOptions = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const estimate = await aiInterviewCostService.buildAIInterviewEstimate({
+      organizationId,
+      candidateCount: 1,
+      questionCount: 3,
+      totalMinutes: 45
+    });
+
+    res.json({
+      success: true,
+      ...aiInterviewCostService.getOptionsPayload(),
+      currency: {
+        displayCurrency: estimate.displayValue?.currency || 'USD',
+        supportedCurrencies: estimate.supportedCurrencies,
+        rateSource: estimate.displayValue?.source,
+        rateAsOf: estimate.displayValue?.asOf
+      },
+      creditRate: estimate.creditRate
+    });
+  } catch (error) {
+    console.error('AI interview options error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+exports.estimateAIInterviewCost = async (req, res) => {
+  try {
+    const organizationId = getOrganizationId(req);
+    const estimate = await aiInterviewCostService.buildAIInterviewEstimate({
+      organizationId,
+      candidateCount: req.body?.candidateCount,
+      questionCount: req.body?.questionCount,
+      totalMinutes: req.body?.totalMinutes,
+      voiceId: req.body?.voiceId
+    });
+    res.json({ success: true, estimate });
+  } catch (error) {
+    console.error('AI interview cost estimate error:', error);
+    res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
 exports.createAIInterview = async (req, res) => {
   try {
     const organizationId = getOrganizationId(req);
@@ -499,6 +548,7 @@ exports.createAIInterview = async (req, res) => {
       expiresAt,
       perQuestionMinutes,
       totalMinutes,
+      voiceId,
       timezone
     } = req.body;
 
@@ -634,9 +684,22 @@ exports.createAIInterview = async (req, res) => {
       };
     });
 
-    const creditCheck = await creditsService.checkSufficientCredits(organizationId, AI_INTERVIEW_ACTION);
-    const perCandidateCost = Number(creditCheck.cost || 0);
-    const totalRequired = perCandidateCost * recipients.length;
+    const normalizedTimers = {
+      perQuestionMinutes: Math.max(1, Math.min(120, Number(perQuestionMinutes) || 10)),
+      totalMinutes: Math.max(1, Math.min(480, Number(totalMinutes) || Math.max(30, questionSnapshots.length * 10)))
+    };
+    const costEstimate = await aiInterviewCostService.buildAIInterviewEstimate({
+      organizationId,
+      candidateCount: recipients.length,
+      questionCount: questionSnapshots.length,
+      totalMinutes: normalizedTimers.totalMinutes,
+      voiceId
+    });
+    const perCandidateCost = Number(costEstimate.creditCostPerCandidate || 0);
+    const totalRequired = Number(costEstimate.totalCredits || 0);
+    const creditCheck = await creditsService.checkSufficientCredits(organizationId, AI_INTERVIEW_ACTION, {
+      creditCostOverride: totalRequired
+    });
     if (!creditCheck.allowed || (Number.isFinite(creditCheck.remaining) && creditCheck.remaining < totalRequired)) {
       return res.status(402).json({
         error: 'INSUFFICIENT_CREDITS',
@@ -659,17 +722,33 @@ exports.createAIInterview = async (req, res) => {
       publicLink: createLegacyPublicLinkValue(),
       guidelines: guidelines?.trim() || '',
       questionSnapshots,
-      timers: {
-        perQuestionMinutes: Math.max(1, Math.min(120, Number(perQuestionMinutes) || 10)),
-        totalMinutes: Math.max(1, Math.min(480, Number(totalMinutes) || Math.max(30, questionSnapshots.length * 10)))
-      },
+      timers: normalizedTimers,
       schedule: {
         sendAt: scheduledSendAt,
         expiresAt: scheduledExpiresAt,
         timezone: timezone || 'UTC'
       },
       candidateCount: recipients.length,
-      creditCostPerCandidate: perCandidateCost
+      voice: aiInterviewCostService.snapshotVoice(costEstimate.voice?.id || voiceId),
+      creditCostPerCandidate: perCandidateCost,
+      costEstimate: {
+        baseCreditsPerCandidate: costEstimate.baseCreditsPerCandidate,
+        voiceSurchargeCredits: costEstimate.voiceSurchargeCredits,
+        durationSurchargeCredits: costEstimate.durationSurchargeCredits,
+        creditCostPerCandidate: perCandidateCost,
+        candidateCount: recipients.length,
+        totalCredits: totalRequired,
+        estimatedSpeechCharacters: costEstimate.estimatedSpeechCharacters,
+        estimatedSpeechUsd: costEstimate.estimatedSpeechUsd,
+        estimatedUsdValue: costEstimate.estimatedUsdValue,
+        creditUsdRate: costEstimate.creditRate?.usdPerCredit,
+        creditRateSource: costEstimate.creditRate?.source,
+        displayCurrency: costEstimate.displayValue?.currency,
+        displayCurrencyRate: costEstimate.displayValue?.rate,
+        estimatedDisplayValue: costEstimate.displayValue?.amount,
+        rateSource: costEstimate.displayValue?.source,
+        calculatedAt: new Date()
+      }
     });
 
     const sessions = await AIInterviewSession.insertMany(recipients.map((recipient) => {
@@ -696,7 +775,8 @@ exports.createAIInterview = async (req, res) => {
       sessions,
       creditPreview: {
         perCandidateCost,
-        totalRequired
+        totalRequired,
+        estimate: costEstimate
       }
     });
   } catch (error) {
@@ -908,7 +988,11 @@ exports.getPublicVoiceStatus = async (req, res) => {
 
     res.json({
       success: true,
-      voice: aiInterviewVoiceLiveService.getPublicConfig(),
+      voice: {
+        ...aiInterviewVoiceLiveService.getPublicConfig(),
+        voice: interview.voice?.voiceId || aiInterviewVoiceLiveService.getPublicConfig().voice,
+        selectedVoice: interview.voice || null
+      },
       canStart: session.status === 'in_progress'
     });
   } catch (error) {
@@ -1328,7 +1412,10 @@ exports.synthesizePublicSpeech = async (req, res) => {
       preview: content.slice(0, 80)
     });
 
-    const speech = await azureSpeechTtsService.synthesize(content);
+    const speech = await azureSpeechTtsService.synthesize(content, {
+      voice: interview.voice?.voiceId,
+      language: interview.voice?.language
+    });
     console.log('[ai-interview/speech] synthesized', {
       contentType: speech.contentType,
       bytes: speech.buffer.length,

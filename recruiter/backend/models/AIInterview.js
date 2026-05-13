@@ -117,10 +117,56 @@ const AIInterviewSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  voice: {
+    voiceId: String,
+    name: String,
+    displayName: String,
+    tier: String,
+    tierLabel: String,
+    provider: {
+      type: String,
+      default: 'azure-speech'
+    },
+    language: {
+      type: String,
+      default: 'en-US'
+    },
+    gender: String,
+    avatarTone: String,
+    samplePhrase: String,
+    description: String,
+    traits: [String],
+    surchargeCredits: {
+      type: Number,
+      default: 0
+    },
+    usdPerMillionCharacters: {
+      type: Number,
+      default: 15
+    }
+  },
   creditCostPerCandidate: {
     type: Number,
     min: 0,
-    default: 5
+    default: 12
+  },
+  costEstimate: {
+    baseCreditsPerCandidate: Number,
+    voiceSurchargeCredits: Number,
+    durationSurchargeCredits: Number,
+    creditCostPerCandidate: Number,
+    candidateCount: Number,
+    totalCredits: Number,
+    estimatedSpeechCharacters: Number,
+    estimatedSpeechUsd: Number,
+    estimatedUsdValue: Number,
+    creditUsdRate: Number,
+    creditRateSource: String,
+    displayCurrency: String,
+    displayCurrencyRate: Number,
+    estimatedDisplayValue: Number,
+    rateSource: String,
+    calculatedAt: Date
   },
   stats: {
     sent: { type: Number, default: 0 },

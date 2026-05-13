@@ -34,7 +34,7 @@ mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI)
     process.exit(1);
   });
 
-// Default plans — list prices $100 → $5,000 / mo (see creditEconomics.js)
+// Default plans — list prices $99 → $4,999 / mo (see creditEconomics.js)
 const defaultPlans = [
   {
     name: 'Free',
@@ -228,4 +228,3 @@ async function seedDefaultPlans() {
 
 // Run the seed function
 seedDefaultPlans();
-

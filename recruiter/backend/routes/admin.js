@@ -8,6 +8,7 @@ const Organization = require('../models/Organization');
 const { adminAuth, requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
+const currencyConversionService = require('../services/currencyConversionService');
 const {
   consumeIdpAdminSsoToken,
   upsertAdminFromIdpIdentity,
@@ -507,6 +508,7 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
       memberLimit,
       licenseType,
       licenseEndDate,
+      defaultCurrency,
       generateNewKey
     } = req.body;
 
@@ -532,6 +534,13 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
     if (memberLimit) organization.subscription.memberLimit = memberLimit;
     if (licenseType) organization.subscription.licenseType = licenseType;
     if (licenseEndDate) organization.subscription.licenseEndDate = new Date(licenseEndDate);
+    if (defaultCurrency) {
+      if (!currencyConversionService.ALLOWED_CURRENCIES[String(defaultCurrency).trim().toUpperCase()]) {
+        return res.status(400).json({ msg: 'Unsupported default currency' });
+      }
+      if (!organization.settings) organization.settings = {};
+      organization.settings.defaultCurrency = String(defaultCurrency).trim().toUpperCase();
+    }
 
     // Generate new license key if requested
     if (generateNewKey) {
@@ -544,7 +553,7 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
 
     // Add admin note
     organization.subscription.adminNotes.push({
-      note: `License updated: Plan ${plan}, Limits: ${memberLimit} members`,
+      note: `License updated: Plan ${plan}, Limits: ${memberLimit} members${defaultCurrency ? `, Currency: ${String(defaultCurrency).trim().toUpperCase()}` : ''}`,
       addedBy: req.admin.id
     });
 

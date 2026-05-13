@@ -130,6 +130,76 @@ export interface AIInterviewScoringSummary {
   }>;
 }
 
+export interface AIInterviewVoiceOption {
+  id: string;
+  name: string;
+  displayName: string;
+  tier: 'standard' | 'multilingual' | 'hd' | 'mai_premium';
+  tierLabel: string;
+  tierDescription?: string;
+  provider: string;
+  language: string;
+  gender?: string;
+  avatarTone?: string;
+  description?: string;
+  samplePhrase?: string;
+  traits?: string[];
+  isDefault?: boolean;
+  surchargeCredits: number;
+  usdPerMillionCharacters: number;
+}
+
+export interface AIInterviewCostEstimate {
+  baseCreditsPerCandidate: number;
+  voiceSurchargeCredits: number;
+  durationSurchargeCredits: number;
+  creditCostPerCandidate: number;
+  candidateCount: number;
+  totalCredits: number;
+  estimatedSpeechCharacters: number;
+  estimatedSpeechUsd: number;
+  estimatedUsdValue: number;
+  remainingCredits?: number | null;
+  enoughCredits?: boolean;
+  voice: AIInterviewVoiceOption;
+  creditRate?: {
+    usdPerCredit: number;
+    source: string;
+    referencePack?: {
+      name: string;
+      price: number;
+      totalCredits: number;
+      usdPerCredit: number;
+    } | null;
+    bestPack?: {
+      name: string;
+      price: number;
+      totalCredits: number;
+      usdPerCredit: number;
+    } | null;
+  };
+  displayValue?: {
+    amount: number;
+    currency: string;
+    rate: number;
+    source: string;
+    asOf?: string;
+    metadata?: {
+      code: string;
+      name: string;
+      symbol: string;
+      locale: string;
+    };
+  };
+  supportedCurrencies?: Array<{
+    code: string;
+    name: string;
+    symbol: string;
+    locale: string;
+  }>;
+  calculatedAt?: string;
+}
+
 export interface AIInterview {
   _id: string;
   title: string;
@@ -148,6 +218,27 @@ export interface AIInterview {
   };
   candidateCount: number;
   creditCostPerCandidate: number;
+  voice?: AIInterviewVoiceOption & {
+    voiceId?: string;
+  };
+  costEstimate?: {
+    baseCreditsPerCandidate?: number;
+    voiceSurchargeCredits?: number;
+    durationSurchargeCredits?: number;
+    creditCostPerCandidate?: number;
+    candidateCount?: number;
+    totalCredits?: number;
+    estimatedSpeechCharacters?: number;
+    estimatedSpeechUsd?: number;
+    estimatedUsdValue?: number;
+    creditUsdRate?: number;
+    creditRateSource?: string;
+    displayCurrency?: string;
+    displayCurrencyRate?: number;
+    estimatedDisplayValue?: number;
+    rateSource?: string;
+    calculatedAt?: string;
+  };
   stats?: {
     sent: number;
     opened: number;
@@ -178,6 +269,7 @@ export interface CreateAIInterviewInput {
   expiresAt: string;
   perQuestionMinutes: number;
   totalMinutes: number;
+  voiceId?: string;
   timezone?: string;
 }
 
@@ -217,6 +309,7 @@ export interface PublicAIInterviewState {
     language?: string;
     sampleRate?: number;
     voice?: string;
+    selectedVoice?: AIInterview['voice'] | null;
   };
   job?: {
     id: string;
@@ -233,6 +326,40 @@ async function parseError(response: Response): Promise<Error> {
 }
 
 class AIInterviewService {
+  async getOptions(): Promise<{
+    voices: AIInterviewVoiceOption[];
+    tiers: Array<{
+      id: string;
+      label: string;
+      description: string;
+      surchargeCredits: number;
+      usdPerMillionCharacters: number;
+      voices: AIInterviewVoiceOption[];
+    }>;
+    defaultVoiceId: string;
+    currency?: any;
+    creditRate?: AIInterviewCostEstimate['creditRate'];
+  }> {
+    const response = await apiRequest('/api/ai-interviews/options');
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async estimateCost(input: {
+    candidateCount: number;
+    questionCount: number;
+    totalMinutes: number;
+    voiceId?: string;
+  }): Promise<AIInterviewCostEstimate> {
+    const response = await apiRequest('/api/ai-interviews/estimate', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw await parseError(response);
+    const data = await response.json();
+    return data.estimate;
+  }
+
   async list(params?: { status?: string; jobId?: string }): Promise<AIInterview[]> {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);

@@ -70,19 +70,28 @@ interface Organization {
     currentMembers?: number;
     currentJobs?: number;
     currentCandidates?: number;
-    creditUsage?: {
-      totalCredits?: number;
-      usedCredits?: number;
-      remainingCredits?: number;
-      transactions?: any[];
-    };
+    creditUsage?: any;
   };
   memberCount: number;
   usagePercentage: {
     members: number;
   };
+  settings?: {
+    defaultCurrency?: string;
+  };
   createdAt: string;
 }
+
+const SUPPORTED_DISPLAY_CURRENCIES = [
+  { code: 'USD', label: 'USD - US Dollar' },
+  { code: 'NGN', label: 'NGN - Nigerian Naira' },
+  { code: 'GBP', label: 'GBP - British Pound' },
+  { code: 'EUR', label: 'EUR - Euro' },
+  { code: 'CAD', label: 'CAD - Canadian Dollar' },
+  { code: 'GHS', label: 'GHS - Ghanaian Cedi' },
+  { code: 'KES', label: 'KES - Kenyan Shilling' },
+  { code: 'ZAR', label: 'ZAR - South African Rand' }
+];
 
 export default function AdminOrganizationsPage() {
   const { checkPermission } = useAdmin();
@@ -104,6 +113,7 @@ export default function AdminOrganizationsPage() {
     memberLimit: '',
     licenseType: 'monthly',
     licenseEndDate: '',
+    defaultCurrency: 'USD',
     generateNewKey: false
   });
 
@@ -186,6 +196,7 @@ export default function AdminOrganizationsPage() {
       licenseType: org.subscription.licenseType || 'monthly',
       licenseEndDate: org.subscription.licenseEndDate ? 
         new Date(org.subscription.licenseEndDate).toISOString().split('T')[0] : '',
+      defaultCurrency: org.settings?.defaultCurrency || 'USD',
       generateNewKey: false
     });
     
@@ -430,7 +441,7 @@ export default function AdminOrganizationsPage() {
                                 <div className="text-sm text-gray-400">{org.description}</div>
                               )}
                               <div className="text-xs text-gray-500 mt-1">
-                                Members: {org.memberCount} | Created: {format(new Date(org.createdAt), 'MMM yyyy')}
+                                Members: {org.memberCount} | Currency: {org.settings?.defaultCurrency || 'USD'} | Created: {format(new Date(org.createdAt), 'MMM yyyy')}
                               </div>
                             </div>
                           </TableCell>
@@ -606,6 +617,22 @@ export default function AdminOrganizationsPage() {
                   className="bg-gray-700 border-gray-600"
                 />
                 <p className="text-xs text-gray-400 mt-1">Jobs and candidates are managed by credits</p>
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="defaultCurrency" className="text-gray-300">Default Display Currency</Label>
+                <Select value={licenseForm.defaultCurrency} onValueChange={(v) => setLicenseForm({...licenseForm, defaultCurrency: v})}>
+                  <SelectTrigger className="bg-gray-700 border-gray-600">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_DISPLAY_CURRENCIES.map((currency) => (
+                      <SelectItem key={currency.code} value={currency.code}>
+                        {currency.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-400 mt-1">Used for estimates shown to this organization. Billing remains credit-based.</p>
               </div>
             </div>
             

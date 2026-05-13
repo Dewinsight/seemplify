@@ -158,8 +158,10 @@ class AIInterviewEmailService {
 
     let cost = Number(session.credits?.cost || interview.creditCostPerCandidate || 0);
     if (!session.credits?.charged) {
-      const creditCheck = await creditsService.checkSufficientCredits(organizationId, AI_INTERVIEW_ACTION);
-      cost = Number(creditCheck.cost || interview.creditCostPerCandidate || 0);
+      const creditCheck = await creditsService.checkSufficientCredits(organizationId, AI_INTERVIEW_ACTION, {
+        creditCostOverride: cost
+      });
+      cost = Number(creditCheck.cost || cost || interview.creditCostPerCandidate || 0);
       if (!creditCheck.allowed || (Number.isFinite(creditCheck.remaining) && creditCheck.remaining < cost)) {
         await AIInterviewSession.findOneAndUpdate(
           { _id: session._id, status: 'pending_send' },
@@ -234,9 +236,12 @@ class AIInterviewEmailService {
           'aiInterview',
           session.createdBy,
           {
+            creditCostOverride: cost,
             aiInterviewId: interview._id,
             candidateId: session.candidate,
-            candidateEmail
+            candidateEmail,
+            voice: interview.voice,
+            costEstimate: interview.costEstimate
           }
         );
 

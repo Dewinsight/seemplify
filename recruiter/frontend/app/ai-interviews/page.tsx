@@ -11,6 +11,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  DollarSign,
   FileQuestion,
   Loader2,
   Medal,
@@ -18,10 +19,12 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  Sparkles,
   Star,
   TimerReset,
   Trophy,
   Users,
+  Volume2,
   Workflow,
   XCircle
 } from "lucide-react";
@@ -41,7 +44,7 @@ import { InterviewQuestionSelector } from "@/components/ui/interview-question-se
 import { getAllJobs, type JobData } from "@/services/jobService";
 import { getAllCandidates } from "@/services/candidateService";
 import interviewService from "@/services/interviewService";
-import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService";
+import aiInterviewService, { type AIInterview, type AIInterviewCostEstimate, type AIInterviewVoiceOption } from "@/services/aiInterviewService";
 
 function toLocalInputValue(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -51,6 +54,42 @@ function toLocalInputValue(date: Date) {
 function formatDate(value?: string) {
   if (!value) return "Not set";
   return new Date(value).toLocaleString();
+}
+
+function formatCurrencyValue(amount?: number | null, currency = "USD", locale?: string) {
+  if (typeof amount !== "number" || Number.isNaN(amount)) return "-";
+  try {
+    return new Intl.NumberFormat(locale || undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: amount >= 100 ? 0 : 2
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+}
+
+function formatCompactNumber(value?: number | null) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "-";
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function voiceTierClass(tier?: string) {
+  switch (tier) {
+    case "hd":
+      return "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200";
+    case "mai_premium":
+      return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200";
+    case "multilingual":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200";
+    default:
+      return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200";
+  }
+}
+
+function voiceInitials(voice?: AIInterviewVoiceOption | null) {
+  const name = voice?.name || voice?.displayName || "AI";
+  return name.slice(0, 2).toUpperCase();
 }
 
 function statusColor(status: string) {
@@ -174,6 +213,9 @@ export default function AIInterviewsPage() {
   const [interviews, setInterviews] = useState<AIInterview[]>([]);
   const [jobs, setJobs] = useState<JobData[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
+  const [voiceOptions, setVoiceOptions] = useState<AIInterviewVoiceOption[]>([]);
+  const [costEstimate, setCostEstimate] = useState<AIInterviewCostEstimate | null>(null);
+  const [estimatingCost, setEstimatingCost] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -193,6 +235,8 @@ export default function AIInterviewsPage() {
     candidateCount: number;
     sendAt: string;
     expiresAt: string;
+    totalCredits?: number;
+    voiceName?: string;
   } | null>(null);
 
   const [form, setForm] = useState({
@@ -202,12 +246,17 @@ export default function AIInterviewsPage() {
     sendAt: toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000)),
     expiresAt: toLocalInputValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
     perQuestionMinutes: 10,
-    totalMinutes: 45
+    totalMinutes: 45,
+    voiceId: ""
   });
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
 
   const selectedJob = jobs.find((job) => job._id === form.jobId);
+  const selectedVoice = useMemo(
+    () => voiceOptions.find((voice) => voice.id === form.voiceId) || voiceOptions.find((voice) => voice.isDefault) || voiceOptions[0] || null,
+    [form.voiceId, voiceOptions]
+  );
   const filteredCandidates = useMemo(() => {
     const term = candidateSearch.toLowerCase().trim();
     if (!term) return candidates;
@@ -388,9 +437,15 @@ export default function AIInterviewsPage() {
         getAllJobs({ limit: 200 }),
         getAllCandidates(1000)
       ]);
+      const options = await aiInterviewService.getOptions();
       setInterviews(interviewList);
       setJobs(jobList || []);
       setCandidates(candidateList || []);
+      setVoiceOptions(options.voices || []);
+      setForm((current) => ({
+        ...current,
+        voiceId: current.voiceId || options.defaultVoiceId || options.voices?.find((voice) => voice.isDefault)?.id || ""
+      }));
     } catch (error: any) {
       toast.error(error.message || "Failed to load AI interviews");
     } finally {
@@ -435,6 +490,29 @@ export default function AIInterviewsPage() {
       setSelectedJobRankingId(null);
     }
   }, [jobRankingGroups, loading, selectedJobRankingId]);
+
+  useEffect(() => {
+    if (!form.voiceId || !voiceOptions.length) return;
+
+    const timer = window.setTimeout(async () => {
+      setEstimatingCost(true);
+      try {
+        const estimate = await aiInterviewService.estimateCost({
+          candidateCount: selectedRecipientCount,
+          questionCount: Math.max(1, selectedQuestionIds.length || 1),
+          totalMinutes: Number(form.totalMinutes) || 45,
+          voiceId: form.voiceId
+        });
+        setCostEstimate(estimate);
+      } catch (error) {
+        console.error("Failed to estimate AI interview cost:", error);
+      } finally {
+        setEstimatingCost(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [form.totalMinutes, form.voiceId, selectedQuestionIds.length, selectedRecipientCount, voiceOptions.length]);
 
   const toggleCandidate = (candidateId: string) => {
     setSelectedCandidateIds((current) => {
@@ -545,6 +623,7 @@ export default function AIInterviewsPage() {
         expiresAt: new Date(form.expiresAt).toISOString(),
         perQuestionMinutes: Number(form.perQuestionMinutes),
         totalMinutes: Number(form.totalMinutes),
+        voiceId: form.voiceId,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       });
 
@@ -555,7 +634,9 @@ export default function AIInterviewsPage() {
         title: result.aiInterview.title,
         candidateCount: result.sessions?.length || selectedRecipientCount,
         sendAt: result.aiInterview.schedule?.sendAt || new Date(form.sendAt).toISOString(),
-        expiresAt: result.aiInterview.schedule?.expiresAt || new Date(form.expiresAt).toISOString()
+        expiresAt: result.aiInterview.schedule?.expiresAt || new Date(form.expiresAt).toISOString(),
+        totalCredits: result.creditPreview?.estimate?.totalCredits || result.aiInterview.costEstimate?.totalCredits,
+        voiceName: result.aiInterview.voice?.displayName || selectedVoice?.displayName
       });
       setSelectedJobRankingId(form.jobId);
       setActiveTab("interviews");
@@ -679,6 +760,18 @@ export default function AIInterviewsPage() {
                       <TimerReset className="h-3.5 w-3.5" />
                       Deadline {formatDate(lastScheduledInterview.expiresAt)}
                     </span>
+                    {lastScheduledInterview.voiceName && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-1 dark:bg-white/10">
+                        <Volume2 className="h-3.5 w-3.5" />
+                        {lastScheduledInterview.voiceName}
+                      </span>
+                    )}
+                    {typeof lastScheduledInterview.totalCredits === "number" && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-1 dark:bg-white/10">
+                        <DollarSign className="h-3.5 w-3.5" />
+                        {lastScheduledInterview.totalCredits} credits reserved
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -885,6 +978,128 @@ export default function AIInterviewsPage() {
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
+                          <Volume2 className="h-4 w-4 text-emerald-600" />
+                          Interview Voice
+                        </CardTitle>
+                        <CardDescription>Select the interviewer voice and quality tier. Azure Speech remains the TTS provider.</CardDescription>
+                      </div>
+                      {selectedVoice && (
+                        <Badge variant="outline" className={voiceTierClass(selectedVoice.tier)}>
+                          {selectedVoice.tierLabel}
+                        </Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 p-5">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {voiceOptions.map((voice) => {
+                        const selected = form.voiceId === voice.id;
+                        return (
+                          <button
+                            key={voice.id}
+                            type="button"
+                            onClick={() => setForm((current) => ({ ...current, voiceId: voice.id }))}
+                            className={`group rounded-2xl border p-4 text-left transition-all ${
+                              selected
+                                ? "border-slate-950 bg-slate-950 text-white shadow-lg dark:border-white dark:bg-white dark:text-slate-950"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold ${
+                                selected ? "bg-white text-slate-950 dark:bg-slate-950 dark:text-white" : "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                              }`}>
+                                {voiceInitials(voice)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="font-semibold">{voice.displayName}</div>
+                                  {voice.isDefault && (
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${selected ? "bg-emerald-400/20 text-emerald-100 dark:text-emerald-800" : "bg-emerald-50 text-emerald-700"}`}>
+                                      Default
+                                    </span>
+                                  )}
+                                </div>
+                                <div className={`mt-1 text-xs ${selected ? "text-slate-200 dark:text-slate-700" : "text-muted-foreground"}`}>
+                                  {voice.description}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className={selected ? "border-white/20 bg-white/10 text-white dark:border-slate-200 dark:bg-slate-100 dark:text-slate-900" : voiceTierClass(voice.tier)}>
+                                {voice.tierLabel}
+                              </Badge>
+                              <span className={`rounded-full px-2 py-1 text-xs ${selected ? "bg-white/10 text-slate-100 dark:bg-slate-100 dark:text-slate-800" : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
+                                +{voice.surchargeCredits} credit
+                              </span>
+                              <span className={`rounded-full px-2 py-1 text-xs ${selected ? "bg-white/10 text-slate-100 dark:bg-slate-100 dark:text-slate-800" : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
+                                ${voice.usdPerMillionCharacters}/1M chars
+                              </span>
+                            </div>
+                            {voice.samplePhrase && (
+                              <div className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-5 ${
+                                selected ? "border-white/15 bg-white/10 text-slate-100 dark:border-slate-200 dark:bg-slate-100 dark:text-slate-700" : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                              }`}>
+                                "{voice.samplePhrase}"
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-sm dark:border-blue-900/60 dark:bg-blue-950/25">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 font-semibold text-slate-950 dark:text-white">
+                            <Sparkles className="h-4 w-4 text-blue-600" />
+                            Voice cost estimate
+                          </div>
+                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                            Based on selected recipients, total time, question count, and the active credit pack rate.
+                          </p>
+                        </div>
+                        {estimatingCost && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
+                          <div className="text-xs text-muted-foreground">Per candidate</div>
+                          <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 5} credits</div>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
+                          <div className="text-xs text-muted-foreground">Total batch</div>
+                          <div className="mt-1 text-lg font-bold">{costEstimate?.totalCredits ?? selectedRecipientCount * 5} credits</div>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
+                          <div className="text-xs text-muted-foreground">Dollar equivalent</div>
+                          <div className="mt-1 text-lg font-bold">{formatCurrencyValue(costEstimate?.estimatedUsdValue, "USD")}</div>
+                        </div>
+                        <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
+                          <div className="text-xs text-muted-foreground">{costEstimate?.displayValue?.currency || "Org currency"}</div>
+                          <div className="mt-1 text-lg font-bold">
+                            {formatCurrencyValue(
+                              costEstimate?.displayValue?.amount,
+                              costEstimate?.displayValue?.currency || "USD",
+                              costEstimate?.displayValue?.metadata?.locale
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
+                        <span>Base {costEstimate?.baseCreditsPerCandidate ?? 5}</span>
+                        <span>Voice +{costEstimate?.voiceSurchargeCredits ?? selectedVoice?.surchargeCredits ?? 0}</span>
+                        <span>Duration +{costEstimate?.durationSurchargeCredits ?? 0}</span>
+                        <span>Estimated TTS {formatCompactNumber(costEstimate?.estimatedSpeechCharacters)} characters</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+                  <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
                           <FileQuestion className="h-4 w-4 text-purple-600" />
                           Question Set
                         </CardTitle>
@@ -1066,11 +1281,20 @@ export default function AIInterviewsPage() {
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Credits</div>
-                        <div className="mt-1 text-xl font-bold">{selectedRecipientCount * 5}</div>
+                        <div className="mt-1 text-xl font-bold">{costEstimate?.totalCredits ?? selectedRecipientCount * 5}</div>
                       </div>
                     </div>
 
                     <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-start gap-3">
+                        <Volume2 className="mt-0.5 h-4 w-4 text-emerald-300" />
+                        <div className="min-w-0">
+                          <div className="text-xs text-slate-400">Voice</div>
+                          <div className="truncate font-medium">
+                            {selectedVoice ? `${selectedVoice.displayName} (${selectedVoice.tierLabel})` : "Default voice"}
+                          </div>
+                        </div>
+                      </div>
                       <div className="flex items-start gap-3">
                         <Briefcase className="mt-0.5 h-4 w-4 text-blue-300" />
                         <div className="min-w-0">
@@ -1094,6 +1318,46 @@ export default function AIInterviewsPage() {
                       </div>
                     </div>
 
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Estimated charge</div>
+                        {estimatingCost && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-300" />}
+                      </div>
+                      <div className="grid gap-3 text-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-400">Per recipient</span>
+                          <span className="font-semibold">{costEstimate?.creditCostPerCandidate ?? 5} credits</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-400">Batch total</span>
+                          <span className="font-semibold">{costEstimate?.totalCredits ?? selectedRecipientCount * 5} credits</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-400">USD equivalent</span>
+                          <span className="font-semibold">{formatCurrencyValue(costEstimate?.estimatedUsdValue, "USD")}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-400">{costEstimate?.displayValue?.currency || "Org currency"}</span>
+                          <span className="font-semibold">
+                            {formatCurrencyValue(
+                              costEstimate?.displayValue?.amount,
+                              costEstimate?.displayValue?.currency || "USD",
+                              costEstimate?.displayValue?.metadata?.locale
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                      {costEstimate?.remainingCredits !== null && typeof costEstimate?.remainingCredits === "number" && (
+                        <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+                          costEstimate.enoughCredits ? "bg-emerald-400/10 text-emerald-100" : "bg-red-400/10 text-red-100"
+                        }`}>
+                          {costEstimate.enoughCredits
+                            ? `${costEstimate.remainingCredits} credits available`
+                            : `Only ${costEstimate.remainingCredits} credits available`}
+                        </div>
+                      )}
+                    </div>
+
                     {selectedRecipientPills.length > 0 && (
                       <div className="space-y-2">
                         <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Selected recipients</div>
@@ -1112,7 +1376,7 @@ export default function AIInterviewsPage() {
                       </div>
                     )}
 
-                    <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600" onClick={submit} disabled={saving}>
+                    <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600" onClick={submit} disabled={saving || costEstimate?.enoughCredits === false}>
                       {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                       Schedule AI Interview
                     </Button>

@@ -22,6 +22,7 @@ import {
   Timer,
   UserRound,
   Users,
+  Volume2,
   XCircle
 } from "lucide-react";
 import { toast } from "sonner";
@@ -39,6 +40,19 @@ import aiInterviewService, { type AIInterview, type AIInterviewSession } from "@
 function formatDate(value?: string) {
   if (!value) return "Not set";
   return new Date(value).toLocaleString();
+}
+
+function formatCurrencyValue(amount?: number | null, currency = "USD") {
+  if (typeof amount !== "number" || Number.isNaN(amount)) return "-";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: amount >= 100 ? 0 : 2
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
 }
 
 function statusColor(status: string) {
@@ -456,7 +470,7 @@ export default function AIInterviewDetailPage() {
         </div>
 
         <Card>
-          <CardContent className="grid gap-3 p-5 text-sm md:grid-cols-3">
+          <CardContent className="grid gap-3 p-5 text-sm md:grid-cols-5">
             <div>
               <div className="text-muted-foreground">Send time</div>
               <div className="font-medium">{formatDate(aiInterview.schedule.sendAt)}</div>
@@ -468,6 +482,24 @@ export default function AIInterviewDetailPage() {
             <div>
               <div className="text-muted-foreground">Timers</div>
               <div className="font-medium">{aiInterview.timers.perQuestionMinutes} min/question, {aiInterview.timers.totalMinutes} min total</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Voice</div>
+              <div className="flex items-center gap-2 font-medium">
+                <Volume2 className="h-4 w-4 text-emerald-600" />
+                {aiInterview.voice?.displayName || aiInterview.voice?.name || "Default"}
+              </div>
+              <div className="text-xs text-muted-foreground">{aiInterview.voice?.tierLabel || "Azure Speech"}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Estimated cost</div>
+              <div className="font-medium">{aiInterview.costEstimate?.totalCredits ?? aiInterview.creditCostPerCandidate * aiInterview.candidateCount} credits</div>
+              <div className="text-xs text-muted-foreground">
+                {formatCurrencyValue(aiInterview.costEstimate?.estimatedUsdValue, "USD")}
+                {aiInterview.costEstimate?.displayCurrency && aiInterview.costEstimate.displayCurrency !== "USD"
+                  ? ` / ${formatCurrencyValue(aiInterview.costEstimate.estimatedDisplayValue, aiInterview.costEstimate.displayCurrency)}`
+                  : ""}
+              </div>
             </div>
           </CardContent>
         </Card>
