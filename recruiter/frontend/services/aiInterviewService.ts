@@ -162,9 +162,11 @@ export interface AIInterviewCostEstimate {
   estimatedLlmAndPlatformUsd?: number;
   estimatedBackendCostUsdPerCandidate?: number;
   targetProfitUsdPerCandidate?: number;
+  voiceSurchargeUsdPerCandidate?: number;
   billableUsdPerCandidate?: number;
   estimatedBackendCostUsd?: number;
   targetProfitUsd?: number;
+  voiceSurchargeUsd?: number;
   billableUsdBeforeRounding?: number;
   roundedBillableUsd?: number;
   platformUsdPerCredit?: number;
@@ -244,9 +246,11 @@ export interface AIInterview {
     estimatedLlmAndPlatformUsd?: number;
     estimatedBackendCostUsdPerCandidate?: number;
     targetProfitUsdPerCandidate?: number;
+    voiceSurchargeUsdPerCandidate?: number;
     billableUsdPerCandidate?: number;
     estimatedBackendCostUsd?: number;
     targetProfitUsd?: number;
+    voiceSurchargeUsd?: number;
     billableUsdBeforeRounding?: number;
     roundedBillableUsd?: number;
     estimatedUsdValue?: number;

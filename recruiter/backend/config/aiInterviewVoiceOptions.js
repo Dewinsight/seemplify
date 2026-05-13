@@ -26,7 +26,7 @@ const VOICE_TIERS = {
     label: 'HD',
     description: 'Azure Neural HD voices with stronger expressiveness and pacing.',
     usdPerMillionCharacters: 22,
-    surchargeCredits: 0,
+    surchargeCredits: 1,
     sortOrder: 30
   },
   mai_premium: {
@@ -34,7 +34,7 @@ const VOICE_TIERS = {
     label: 'MAI Premium',
     description: 'Microsoft MAI-Voice-1 preview voices for premium conversation quality.',
     usdPerMillionCharacters: 22,
-    surchargeCredits: 0,
+    surchargeCredits: 2,
     sortOrder: 40
   }
 };
@@ -274,13 +274,16 @@ function estimateAIInterviewCredits({
   const estimatedLlmAndPlatformUsd = AI_INTERVIEW_LLM_AND_PLATFORM_USD_PER_CANDIDATE;
   const estimatedBackendCostUsdPerCandidate = estimatedSttUsd + estimatedSpeechUsd + estimatedLlmAndPlatformUsd;
   const targetProfitUsdPerCandidate = AI_INTERVIEW_TARGET_PROFIT_USD_PER_CANDIDATE;
-  const billableUsdPerCandidate = estimatedBackendCostUsdPerCandidate + targetProfitUsdPerCandidate;
-  const creditCostPerCandidate = Math.max(1, Math.ceil(billableUsdPerCandidate / AI_INTERVIEW_USD_PER_CREDIT));
-  const baseCreditsPerCandidate = creditCostPerCandidate;
-  const voiceSurchargeCredits = 0;
+  const billableUsdPerCandidateBeforePremium = estimatedBackendCostUsdPerCandidate + targetProfitUsdPerCandidate;
+  const baseCreditsPerCandidate = Math.max(1, Math.ceil(billableUsdPerCandidateBeforePremium / AI_INTERVIEW_USD_PER_CREDIT));
+  const voiceSurchargeCredits = Math.max(0, Math.ceil(Number(voice.surchargeCredits) || 0));
   const durationSurchargeCredits = 0;
+  const creditCostPerCandidate = baseCreditsPerCandidate + voiceSurchargeCredits;
+  const voiceSurchargeUsdPerCandidate = voiceSurchargeCredits * AI_INTERVIEW_USD_PER_CREDIT;
+  const billableUsdPerCandidate = billableUsdPerCandidateBeforePremium + voiceSurchargeUsdPerCandidate;
   const estimatedBackendCostUsd = estimatedBackendCostUsdPerCandidate * candidates;
   const targetProfitUsd = targetProfitUsdPerCandidate * candidates;
+  const voiceSurchargeUsd = voiceSurchargeUsdPerCandidate * candidates;
   const billableUsdBeforeRounding = billableUsdPerCandidate * candidates;
   const roundedBillableUsd = creditCostPerCandidate * candidates * AI_INTERVIEW_USD_PER_CREDIT;
 
@@ -297,9 +300,11 @@ function estimateAIInterviewCredits({
     estimatedLlmAndPlatformUsd,
     estimatedBackendCostUsdPerCandidate,
     targetProfitUsdPerCandidate,
+    voiceSurchargeUsdPerCandidate,
     billableUsdPerCandidate,
     estimatedBackendCostUsd,
     targetProfitUsd,
+    voiceSurchargeUsd,
     billableUsdBeforeRounding,
     roundedBillableUsd,
     platformUsdPerCredit: AI_INTERVIEW_USD_PER_CREDIT,

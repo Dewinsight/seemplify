@@ -1188,6 +1188,11 @@ export default function AIInterviewsPage() {
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
                         <span>Target profit {formatCurrencyValue(costEstimate?.targetProfitUsd, "USD")}</span>
+                        {Number(costEstimate?.voiceSurchargeCredits || 0) > 0 && (
+                          <span>
+                            Premium voice +{costEstimate?.voiceSurchargeCredits} credits ({formatCurrencyValue(costEstimate?.voiceSurchargeUsd, "USD")})
+                          </span>
+                        )}
                         <span>Credit rate {formatCurrencyValue(costEstimate?.creditRate?.usdPerCredit ?? 0.25, "USD")}/credit</span>
                         {costEstimate?.displayValue?.currency && costEstimate.displayValue.currency !== "USD" && (
                           <span>
