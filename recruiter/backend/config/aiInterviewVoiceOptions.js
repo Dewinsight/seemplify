@@ -1,4 +1,8 @@
 const DEFAULT_LANGUAGE = 'en-US';
+const AI_INTERVIEW_USD_PER_CREDIT = 0.25;
+const AI_INTERVIEW_TARGET_PROFIT_USD_PER_CANDIDATE = 1;
+const AZURE_SPEECH_STT_USD_PER_HOUR = 1;
+const AI_INTERVIEW_LLM_AND_PLATFORM_USD_PER_CANDIDATE = 0.35;
 
 const VOICE_TIERS = {
   standard: {
@@ -22,7 +26,7 @@ const VOICE_TIERS = {
     label: 'HD',
     description: 'Azure Neural HD voices with stronger expressiveness and pacing.',
     usdPerMillionCharacters: 22,
-    surchargeCredits: 3,
+    surchargeCredits: 0,
     sortOrder: 30
   },
   mai_premium: {
@@ -30,12 +34,10 @@ const VOICE_TIERS = {
     label: 'MAI Premium',
     description: 'Microsoft MAI-Voice-1 preview voices for premium conversation quality.',
     usdPerMillionCharacters: 22,
-    surchargeCredits: 3,
+    surchargeCredits: 0,
     sortOrder: 40
   }
 };
-
-const DURATION_SURCHARGE_CREDITS_PER_15_MINUTES = 4;
 
 const AI_INTERVIEW_VOICE_OPTIONS = [
   {
@@ -258,25 +260,32 @@ function estimateSpokenCharacters(questionCount, totalMinutes) {
 }
 
 function estimateAIInterviewCredits({
-  basePerCandidateCost = 12,
   candidateCount = 0,
   questionCount = 1,
   totalMinutes = 30,
   voiceId
 } = {}) {
   const voice = findAIInterviewVoiceOption(voiceId);
-  const base = Math.max(0, Math.ceil(Number(basePerCandidateCost) || 0));
   const candidates = Math.max(0, Math.ceil(Number(candidateCount) || 0));
   const minutes = Math.max(1, Math.ceil(Number(totalMinutes) || 30));
-  const extraFifteenMinuteBlocks = Math.max(0, Math.ceil((minutes - 30) / 15));
-  const durationSurchargeCredits = extraFifteenMinuteBlocks * DURATION_SURCHARGE_CREDITS_PER_15_MINUTES;
-  const voiceSurchargeCredits = Math.max(0, Math.ceil(Number(voice.surchargeCredits) || 0));
-  const creditCostPerCandidate = Math.max(0, base + voiceSurchargeCredits + durationSurchargeCredits);
   const estimatedSpeechCharacters = estimateSpokenCharacters(questionCount, minutes);
   const estimatedSpeechUsd = (estimatedSpeechCharacters / 1000000) * Number(voice.usdPerMillionCharacters || 0);
+  const estimatedSttUsd = (minutes / 60) * AZURE_SPEECH_STT_USD_PER_HOUR;
+  const estimatedLlmAndPlatformUsd = AI_INTERVIEW_LLM_AND_PLATFORM_USD_PER_CANDIDATE;
+  const estimatedBackendCostUsdPerCandidate = estimatedSttUsd + estimatedSpeechUsd + estimatedLlmAndPlatformUsd;
+  const targetProfitUsdPerCandidate = AI_INTERVIEW_TARGET_PROFIT_USD_PER_CANDIDATE;
+  const billableUsdPerCandidate = estimatedBackendCostUsdPerCandidate + targetProfitUsdPerCandidate;
+  const creditCostPerCandidate = Math.max(1, Math.ceil(billableUsdPerCandidate / AI_INTERVIEW_USD_PER_CREDIT));
+  const baseCreditsPerCandidate = creditCostPerCandidate;
+  const voiceSurchargeCredits = 0;
+  const durationSurchargeCredits = 0;
+  const estimatedBackendCostUsd = estimatedBackendCostUsdPerCandidate * candidates;
+  const targetProfitUsd = targetProfitUsdPerCandidate * candidates;
+  const billableUsdBeforeRounding = billableUsdPerCandidate * candidates;
+  const roundedBillableUsd = creditCostPerCandidate * candidates * AI_INTERVIEW_USD_PER_CREDIT;
 
   return {
-    baseCreditsPerCandidate: base,
+    baseCreditsPerCandidate,
     voiceSurchargeCredits,
     durationSurchargeCredits,
     creditCostPerCandidate,
@@ -284,6 +293,16 @@ function estimateAIInterviewCredits({
     totalCredits: creditCostPerCandidate * candidates,
     estimatedSpeechCharacters,
     estimatedSpeechUsd,
+    estimatedSttUsd,
+    estimatedLlmAndPlatformUsd,
+    estimatedBackendCostUsdPerCandidate,
+    targetProfitUsdPerCandidate,
+    billableUsdPerCandidate,
+    estimatedBackendCostUsd,
+    targetProfitUsd,
+    billableUsdBeforeRounding,
+    roundedBillableUsd,
+    platformUsdPerCredit: AI_INTERVIEW_USD_PER_CREDIT,
     voice
   };
 }
@@ -291,7 +310,10 @@ function estimateAIInterviewCredits({
 module.exports = {
   VOICE_TIERS,
   AI_INTERVIEW_VOICE_OPTIONS,
-  DURATION_SURCHARGE_CREDITS_PER_15_MINUTES,
+  AI_INTERVIEW_USD_PER_CREDIT,
+  AI_INTERVIEW_TARGET_PROFIT_USD_PER_CANDIDATE,
+  AZURE_SPEECH_STT_USD_PER_HOUR,
+  AI_INTERVIEW_LLM_AND_PLATFORM_USD_PER_CANDIDATE,
   getAIInterviewVoiceOptions,
   findAIInterviewVoiceOption,
   getDefaultAIInterviewVoiceOption,

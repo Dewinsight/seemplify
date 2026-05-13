@@ -107,8 +107,8 @@ const OPERATION_TOKEN_ASSUMPTIONS = {
     llmIn: 5000,
     llmOut: 3000,
     embedIn: 0,
-    fixedCredits: 12,
-    note: 'per candidate 30-minute async voice AI interview: STT + TTS + LLM question generation allocation + interview harness + scoring',
+    fixedCredits: 8,
+    note: 'per candidate 30-minute async voice AI interview priced from estimated STT + TTS + LLM/platform COGS plus about $1 target profit',
   },
   bulkUpload: {
     llmIn: 4000,
@@ -145,7 +145,7 @@ const RECOMMENDED_CREDIT_COSTS = {
   aiMatching: 11,
   generateQuestions: 6,
   aiAnalysis: 12,
-  aiInterviewCandidate: 12,
+  aiInterviewCandidate: 8,
   bulkUpload: 5,
   reEmbed: 3,
 };

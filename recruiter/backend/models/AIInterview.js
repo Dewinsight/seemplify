@@ -148,7 +148,7 @@ const AIInterviewSchema = new mongoose.Schema({
   creditCostPerCandidate: {
     type: Number,
     min: 0,
-    default: 12
+    default: 8
   },
   costEstimate: {
     baseCreditsPerCandidate: Number,
@@ -159,6 +159,15 @@ const AIInterviewSchema = new mongoose.Schema({
     totalCredits: Number,
     estimatedSpeechCharacters: Number,
     estimatedSpeechUsd: Number,
+    estimatedSttUsd: Number,
+    estimatedLlmAndPlatformUsd: Number,
+    estimatedBackendCostUsdPerCandidate: Number,
+    targetProfitUsdPerCandidate: Number,
+    billableUsdPerCandidate: Number,
+    estimatedBackendCostUsd: Number,
+    targetProfitUsd: Number,
+    billableUsdBeforeRounding: Number,
+    roundedBillableUsd: Number,
     estimatedUsdValue: Number,
     creditUsdRate: Number,
     creditRateSource: String,

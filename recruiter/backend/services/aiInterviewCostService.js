@@ -1,45 +1,21 @@
 const Organization = require('../models/Organization');
-const CreditPack = require('../models/CreditPack');
 const creditsService = require('./creditsService');
 const currencyConversionService = require('./currencyConversionService');
 const {
+  AI_INTERVIEW_USD_PER_CREDIT,
   estimateAIInterviewCredits,
   findAIInterviewVoiceOption,
   getAIInterviewVoiceOptions
 } = require('../config/aiInterviewVoiceOptions');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
-const FALLBACK_USD_PER_CREDIT = 0.30;
 
 async function getReferenceCreditRate() {
-  const packs = await CreditPack.find({ isActive: true, currency: 'USD' })
-    .sort({ isPopular: -1, displayOrder: 1, price: 1 })
-    .lean();
-
-  const normalized = packs
-    .map((pack) => {
-      const totalCredits = Number(pack.totalCredits || pack.credits || 0);
-      const price = Number(pack.price || 0);
-      const usdPerCredit = totalCredits > 0 ? price / totalCredits : 0;
-      return {
-        code: pack.code,
-        name: pack.name,
-        price,
-        totalCredits,
-        usdPerCredit,
-        isPopular: Boolean(pack.isPopular)
-      };
-    })
-    .filter((pack) => pack.totalCredits > 0 && pack.usdPerCredit > 0);
-
-  const referencePack = normalized.find((pack) => pack.isPopular) || normalized[0];
-  const bestPack = [...normalized].sort((a, b) => a.usdPerCredit - b.usdPerCredit)[0];
-
   return {
-    usdPerCredit: referencePack?.usdPerCredit || FALLBACK_USD_PER_CREDIT,
-    source: referencePack ? 'credit_pack' : 'fallback',
-    referencePack: referencePack || null,
-    bestPack: bestPack || null
+    usdPerCredit: AI_INTERVIEW_USD_PER_CREDIT,
+    source: 'ai_interview_pricing_model',
+    referencePack: null,
+    bestPack: null
   };
 }
 
@@ -61,9 +37,7 @@ async function buildAIInterviewEstimate({
     organizationId ? getOrganizationCurrency(organizationId) : Promise.resolve('USD')
   ]);
 
-  const basePerCandidateCost = Number(creditStatus?.creditCosts?.[AI_INTERVIEW_ACTION] ?? 12);
   const creditEstimate = estimateAIInterviewCredits({
-    basePerCandidateCost,
     candidateCount,
     questionCount,
     totalMinutes,
@@ -133,6 +107,7 @@ function getOptionsPayload() {
 module.exports = {
   buildAIInterviewEstimate,
   getReferenceCreditRate,
+  AI_INTERVIEW_USD_PER_CREDIT,
   snapshotVoice,
   getOptionsPayload
 };

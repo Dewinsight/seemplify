@@ -8,7 +8,7 @@ const DEFAULT_CREDIT_COSTS = {
   aiMatching: 0,
   generateQuestions: 0,
   aiAnalysis: 0,
-  aiInterviewCandidate: 12,
+  aiInterviewCandidate: 8,
   bulkUpload: 0,
   reEmbed: 0
 };

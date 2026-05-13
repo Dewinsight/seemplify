@@ -3,7 +3,7 @@ const Plan = require('../models/Plan');
 const mongoose = require('mongoose');
 
 const DEFAULT_ACTION_CREDIT_COSTS = {
-  aiInterviewCandidate: 12
+  aiInterviewCandidate: 8
 };
 
 function normalizeCreditCostOverride(value) {

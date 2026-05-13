@@ -1121,9 +1121,11 @@ export default function AIInterviewsPage() {
                               <Badge variant="outline" className={selected ? "border-white/20 bg-white/10 text-white dark:border-slate-200 dark:bg-slate-100 dark:text-slate-900" : voiceTierClass(voice.tier)}>
                                 {voice.tierLabel}
                               </Badge>
-                              <span className={`rounded-full px-2 py-1 text-xs ${selected ? "bg-white/10 text-slate-100 dark:bg-slate-100 dark:text-slate-800" : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
-                                +{voice.surchargeCredits} credit
-                              </span>
+                              {Number(voice.surchargeCredits || 0) > 0 && (
+                                <span className={`rounded-full px-2 py-1 text-xs ${selected ? "bg-white/10 text-slate-100 dark:bg-slate-100 dark:text-slate-800" : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
+                                  +{voice.surchargeCredits} credit
+                                </span>
+                              )}
                               <span className={`rounded-full px-2 py-1 text-xs ${selected ? "bg-white/10 text-slate-100 dark:bg-slate-100 dark:text-slate-800" : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>
                                 ${voice.usdPerMillionCharacters}/1M chars
                               </span>
@@ -1151,7 +1153,7 @@ export default function AIInterviewsPage() {
                             Voice cost estimate
                           </div>
                           <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                            Based on selected recipients, total time, question count, and the active credit pack rate.
+                            Based on estimated Azure + LLM cost, a $1 target profit per candidate, then rounded to credits.
                           </p>
                         </div>
                         {estimatingCost && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
@@ -1164,31 +1166,38 @@ export default function AIInterviewsPage() {
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
                           <div className="text-xs text-muted-foreground">Per candidate</div>
-                          <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 12} credits</div>
+                          <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 8} credits</div>
                         </div>
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
                           <div className="text-xs text-muted-foreground">{selectedRecipientCount > 0 ? "Total batch" : "Preview total"}</div>
-                          <div className="mt-1 text-lg font-bold">{costEstimate?.totalCredits ?? estimateRecipientCount * 12} credits</div>
+                          <div className="mt-1 text-lg font-bold">{costEstimate?.totalCredits ?? estimateRecipientCount * 8} credits</div>
                         </div>
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
-                          <div className="text-xs text-muted-foreground">Dollar equivalent</div>
-                          <div className="mt-1 text-lg font-bold">{formatCurrencyValue(costEstimate?.estimatedUsdValue, "USD")}</div>
+                          <div className="text-xs text-muted-foreground">Estimated backend cost</div>
+                          <div className="mt-1 text-lg font-bold">{formatCurrencyValue(costEstimate?.estimatedBackendCostUsd, "USD")}</div>
                         </div>
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
-                          <div className="text-xs text-muted-foreground">{costEstimate?.displayValue?.currency || "Org currency"}</div>
+                          <div className="text-xs text-muted-foreground">Customer charge</div>
                           <div className="mt-1 text-lg font-bold">
                             {formatCurrencyValue(
-                              costEstimate?.displayValue?.amount,
-                              costEstimate?.displayValue?.currency || "USD",
-                              costEstimate?.displayValue?.metadata?.locale
+                              costEstimate?.estimatedUsdValue,
+                              "USD"
                             )}
                           </div>
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
-                        <span>Base {costEstimate?.baseCreditsPerCandidate ?? 12}</span>
-                        <span>Voice +{costEstimate?.voiceSurchargeCredits ?? selectedVoice?.surchargeCredits ?? 0}</span>
-                        <span>Duration +{costEstimate?.durationSurchargeCredits ?? 0}</span>
+                        <span>Target profit {formatCurrencyValue(costEstimate?.targetProfitUsd, "USD")}</span>
+                        <span>Credit rate {formatCurrencyValue(costEstimate?.creditRate?.usdPerCredit ?? 0.25, "USD")}/credit</span>
+                        {costEstimate?.displayValue?.currency && costEstimate.displayValue.currency !== "USD" && (
+                          <span>
+                            {costEstimate.displayValue.currency} {formatCurrencyValue(
+                              costEstimate.displayValue.amount,
+                              costEstimate.displayValue.currency,
+                              costEstimate.displayValue.metadata?.locale
+                            )}
+                          </span>
+                        )}
                         <span>Estimated TTS {formatCompactNumber(costEstimate?.estimatedSpeechCharacters)} characters</span>
                       </div>
                     </div>
@@ -1381,7 +1390,7 @@ export default function AIInterviewsPage() {
                       </div>
                       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                         <div className="text-slate-400">Credits</div>
-                        <div className="mt-1 text-xl font-bold">{costEstimate?.totalCredits ?? selectedRecipientCount * 5}</div>
+                        <div className="mt-1 text-xl font-bold">{costEstimate?.totalCredits ?? estimateRecipientCount * 8}</div>
                       </div>
                     </div>
 
@@ -1426,14 +1435,22 @@ export default function AIInterviewsPage() {
                       <div className="grid gap-3 text-xs">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-slate-400">Per recipient</span>
-                          <span className="font-semibold">{costEstimate?.creditCostPerCandidate ?? 5} credits</span>
+                          <span className="font-semibold">{costEstimate?.creditCostPerCandidate ?? 8} credits</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-slate-400">Batch total</span>
-                          <span className="font-semibold">{costEstimate?.totalCredits ?? selectedRecipientCount * 5} credits</span>
+                          <span className="font-semibold">{costEstimate?.totalCredits ?? estimateRecipientCount * 8} credits</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-400">USD equivalent</span>
+                          <span className="text-slate-400">Backend cost</span>
+                          <span className="font-semibold">{formatCurrencyValue(costEstimate?.estimatedBackendCostUsd, "USD")}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-400">Target profit</span>
+                          <span className="font-semibold">{formatCurrencyValue(costEstimate?.targetProfitUsd, "USD")}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-400">Customer charge</span>
                           <span className="font-semibold">{formatCurrencyValue(costEstimate?.estimatedUsdValue, "USD")}</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
