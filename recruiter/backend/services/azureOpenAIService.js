@@ -116,23 +116,202 @@ class AzureOpenAIService {
       throw new Error('Empty model response.');
     }
 
-    try {
-      return JSON.parse(content);
-    } catch (_error) {
-      // Handle fenced JSON blocks or stray text around JSON
-      const fencedMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-      if (fencedMatch?.[1]) {
-        return JSON.parse(fencedMatch[1]);
+    const parseCandidates = [];
+    const addCandidate = (candidate) => {
+      if (candidate && typeof candidate === 'string') {
+        const cleaned = this.cleanJsonCandidate(candidate);
+        if (cleaned && !parseCandidates.includes(cleaned)) {
+          parseCandidates.push(cleaned);
+        }
       }
+    };
 
-      const firstBrace = content.indexOf('{');
-      const lastBrace = content.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace > firstBrace) {
-        return JSON.parse(content.slice(firstBrace, lastBrace + 1));
-      }
+    addCandidate(content);
 
-      throw new Error('Could not parse JSON object from model response.');
+    const fencedMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fencedMatch?.[1]) {
+      addCandidate(fencedMatch[1]);
     }
+
+    const balancedCandidate = this.extractBalancedJsonObject(content);
+    if (balancedCandidate) {
+      addCandidate(balancedCandidate);
+    }
+
+    let lastError = null;
+    for (const candidate of parseCandidates) {
+      try {
+        return JSON.parse(candidate);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw new Error(`Could not parse JSON object from model response.${lastError ? ` ${lastError.message}` : ''}`);
+  }
+
+  cleanJsonCandidate(candidate) {
+    return candidate
+      .trim()
+      .replace(/^\uFEFF/, '')
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/,\s*([}\]])/g, '$1')
+      .trim();
+  }
+
+  extractBalancedJsonObject(content) {
+    const start = content.indexOf('{');
+    if (start === -1) {
+      return null;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < content.length; i += 1) {
+      const char = content[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = inString;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) {
+        continue;
+      }
+
+      if (char === '{') {
+        depth += 1;
+      } else if (char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return content.slice(start, i + 1);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  getResponsePreview(content, maxLength = 600) {
+    const text = this.extractTextContent(content).replace(/\s+/g, ' ').trim();
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+  }
+
+  async generateJsonObject(messages, options = {}, contextLabel = 'AI JSON generation') {
+    const baseRequest = {
+      messages,
+      max_completion_tokens: options.max_completion_tokens ?? 1500,
+      temperature: options.temperature ?? 0.4,
+      top_p: options.top_p ?? 1,
+      frequency_penalty: options.frequency_penalty ?? 0,
+      presence_penalty: options.presence_penalty ?? 0,
+      model: this.modelName,
+      response_format: { type: "json_object" }
+    };
+
+    const schemaHint = options.schemaHint || 'Use the exact JSON schema requested by the user.';
+    const originalTask = messages
+      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .join('\n\n');
+
+    const attempts = [
+      baseRequest,
+      {
+        ...baseRequest,
+        messages: [
+          {
+            role: "system",
+            content: `${messages[0]?.content || ''}\n\nSTRICT OUTPUT RULES: Return exactly one compact, valid JSON object. Do not include markdown, prose, comments, examples, or text outside the JSON object. Close every string, array, and object.`
+          },
+          ...messages.slice(1),
+          {
+            role: "user",
+            content: "Generate the response again as valid JSON only. No markdown. No explanation."
+          }
+        ],
+        temperature: 0.1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        max_completion_tokens: Math.max(baseRequest.max_completion_tokens, options.retry_max_completion_tokens ?? 2500)
+      },
+      {
+        ...baseRequest,
+        messages: [
+          {
+            role: "system",
+            content: `You create compact, valid JSON for an API parser. Return exactly one JSON object and nothing else. ${schemaHint} Keep the entire JSON under ${options.compact_max_chars ?? 4500} characters. Keep every array item concise.`
+          },
+          {
+            role: "user",
+            content: `${originalTask}\n\nReturn the final answer now as compact valid JSON only.`
+          }
+        ],
+        temperature: 0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        max_completion_tokens: options.compact_max_completion_tokens ?? 1400
+      }
+    ];
+
+    let lastContent = '';
+    let lastError = null;
+
+    for (let index = 0; index < attempts.length; index += 1) {
+      const response = await this.client.chat.completions.create(attempts[index]);
+
+      if (response?.error !== undefined && response.status !== "200") {
+        throw response.error;
+      }
+
+      lastContent = this.extractTextContent(response.choices?.[0]?.message?.content);
+
+      try {
+        return {
+          parsed: this.extractJsonObject(lastContent),
+          rawContent: lastContent,
+          usage: response?.usage,
+          attempt: index + 1
+        };
+      } catch (error) {
+        lastError = error;
+        console.warn(`${contextLabel} returned malformed JSON on attempt ${index + 1}:`, {
+          responseLength: lastContent.length,
+          preview: this.getResponsePreview(lastContent)
+        });
+      }
+    }
+
+    throw new Error(`Failed to parse AI response after retry. ${lastError?.message || ''}`);
+  }
+
+  coerceStringArray(value) {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (item === null || item === undefined ? '' : String(item).trim()))
+        .filter(Boolean);
+    }
+
+    if (typeof value === 'string') {
+      return value
+        .split(/\n|(?:^|\s)[\-*\u2022]\s+/)
+        .map((item) => item.replace(/^\d+[.)]\s*/, '').trim())
+        .filter(Boolean);
+    }
+
+    return [];
   }
 
   async chatCompletion(messages, options = {}) {
@@ -493,14 +672,14 @@ ${cvText}`
           - Professional yet engaging tone
           - Include growth opportunities and company culture elements
           
-          Format the response as a JSON object with these fields:
-          - description: A comprehensive job description (3-4 paragraphs) in plain text
-          - responsibilities: Array of 6-8 key responsibilities as plain text strings
-          - requirements: Array of 6-8 requirements (mix of must-have and nice-to-have) as plain text strings
-          - skills: Array of 8-12 relevant skills as plain text strings
-          - benefits: Array of 5-7 compelling benefits and perks as plain text strings
+          Return ONLY a compact JSON object with these fields:
+          - description: A concise job description, 2 short paragraphs, maximum 900 characters total
+          - responsibilities: Array of exactly 6 key responsibilities, each maximum 140 characters
+          - requirements: Array of exactly 6 requirements, each maximum 140 characters
+          - skills: Array of exactly 8 relevant skills, each maximum 60 characters
+          - benefits: Array of exactly 5 benefits and perks, each maximum 100 characters
           
-          Remember: Each string should be clean, plain text with NO formatting symbols.`
+          Remember: Each string should be clean, plain text with NO formatting symbols. Return no text before or after the JSON.`
         },
         { 
           role: "user", 
@@ -518,42 +697,61 @@ ${cvText}`
         }
       ];
 
-      const response = await this.client.chat.completions.create({
-        messages: messages,
-        max_completion_tokens: 1500,
-        temperature: 0.8,
-        top_p: 1,
-        frequency_penalty: 0.1,
-        presence_penalty: 0.1,
-        model: this.modelName,
-        response_format: { type: "json_object" }
+      const { parsed: parsedJson, rawContent, attempt } = await this.generateJsonObject(
+        messages,
+        {
+          max_completion_tokens: 2200,
+          retry_max_completion_tokens: 3200,
+          compact_max_completion_tokens: 1200,
+          compact_max_chars: 4200,
+          temperature: 0.4,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          schemaHint: `Use this schema exactly:
+          {
+            "description": "Two concise paragraphs under 900 characters total.",
+            "responsibilities": ["Six concise responsibility strings."],
+            "requirements": ["Six concise requirement strings."],
+            "skills": ["Eight short skill strings."],
+            "benefits": ["Five concise benefit strings."]
+          }`
+        },
+        "Job description generation"
+      );
+
+      console.log("Azure OpenAI Job Description parsed:", {
+        attempt,
+        responseLength: rawContent.length
       });
 
-      if (response?.error !== undefined && response.status !== "200") {
-        throw response.error;
-      }
+      const nestedJobDescription =
+        parsedJson.jobDescription && typeof parsedJson.jobDescription === 'object'
+          ? parsedJson.jobDescription
+          : null;
+      const source = parsedJson.job && typeof parsedJson.job === 'object' ? parsedJson.job : parsedJson;
+      const description =
+        source.description ||
+        (typeof source.jobDescription === 'string' ? source.jobDescription : '') ||
+        nestedJobDescription?.description ||
+        source.summary ||
+        '';
 
-      const generatedContent = this.extractTextContent(response.choices?.[0]?.message?.content);
-      console.log("Azure OpenAI Job Description Response:", generatedContent);
-      
-      try {
-        const parsedJson = this.extractJsonObject(generatedContent);
-        return {
-          success: true,
-          description: this.sanitizeAIContent(parsedJson.description || ""),
-          responsibilities: this.sanitizeArrayContent(parsedJson.responsibilities || []),
-          requirements: this.sanitizeArrayContent(parsedJson.requirements || []),
-          skills: this.sanitizeArrayContent(parsedJson.skills || []),
-          benefits: this.sanitizeArrayContent(parsedJson.benefits || [])
-        };
-      } catch (jsonError) {
-        console.error("Error parsing JSON from Azure OpenAI:", jsonError);
-        return {
-          success: false,
-          error: "Failed to parse AI response",
-          rawResponse: generatedContent
-        };
-      }
+      return {
+        success: true,
+        description: this.sanitizeAIContent(description),
+        responsibilities: this.sanitizeArrayContent(
+          this.coerceStringArray(source.responsibilities || source.keyResponsibilities || source.duties)
+        ),
+        requirements: this.sanitizeArrayContent(
+          this.coerceStringArray(source.requirements || source.qualifications || source.requiredQualifications)
+        ),
+        skills: this.sanitizeArrayContent(
+          this.coerceStringArray(source.skills || source.keySkills || source.competencies)
+        ),
+        benefits: this.sanitizeArrayContent(
+          this.coerceStringArray(source.benefits || source.perks || source.compensationBenefits)
+        )
+      };
 
     } catch (error) {
       console.error("Error calling Azure OpenAI for job description:", error.message);
@@ -638,51 +836,74 @@ ${cvText}`
         }
       ];
 
-      const response = await this.client.chat.completions.create({
-        messages: messages,
-        max_completion_tokens: 1000,
-        temperature: 0.7,
-        top_p: 1,
-        frequency_penalty: 0.1,
-        presence_penalty: 0.1,
-        model: this.modelName,
-        response_format: { type: "json_object" }
+      const { parsed: generatedRequirementsJson, rawContent: generatedContent, attempt } = await this.generateJsonObject(
+        messages,
+        {
+          max_completion_tokens: 1800,
+          retry_max_completion_tokens: 2600,
+          compact_max_completion_tokens: 900,
+          compact_max_chars: 3200,
+          temperature: 0.3,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          schemaHint: `Use this schema exactly:
+          {
+            "requiredQualifications": ["Six to eight concise qualification strings."],
+            "preferredQualifications": ["Four to six concise qualification strings."]
+          }`
+        },
+        "Job requirements generation"
+      );
+
+      console.log("Azure OpenAI Requirements parsed:", {
+        attempt,
+        responseLength: generatedContent.length
       });
 
-      if (response?.error !== undefined && response.status !== "200") {
-        throw response.error;
-      }
-
-      const generatedContent = this.extractTextContent(response.choices?.[0]?.message?.content);
-      console.log("Azure OpenAI Requirements Response:", generatedContent);
-
       try {
-        const parsedJson = this.extractJsonObject(generatedContent);
+        const parsedJson = generatedRequirementsJson;
         
-        // Validate structure
-        if (!parsedJson.requiredQualifications || !Array.isArray(parsedJson.requiredQualifications)) {
-          throw new Error("Missing or invalid requiredQualifications array");
-        }
-        if (!parsedJson.preferredQualifications || !Array.isArray(parsedJson.preferredQualifications)) {
-          throw new Error("Missing or invalid preferredQualifications array");
+        const source =
+          parsedJson.requirements && typeof parsedJson.requirements === 'object' && !Array.isArray(parsedJson.requirements)
+            ? parsedJson.requirements
+            : parsedJson;
+
+        const requiredQualifications = this.coerceStringArray(
+          source.requiredQualifications ||
+            source.required ||
+            source.mustHave ||
+            source.mustHaveQualifications ||
+            (Array.isArray(source.requirements) ? source.requirements : null)
+        );
+
+        const preferredQualifications = this.coerceStringArray(
+          source.preferredQualifications ||
+            source.preferred ||
+            source.niceToHave ||
+            source.niceToHaveQualifications
+        );
+
+        if (!requiredQualifications.length) {
+          throw new Error("AI response did not include required qualifications");
         }
 
-        // Sanitize each qualification string
         const sanitized = {
-          requiredQualifications: this.sanitizeArrayContent(parsedJson.requiredQualifications),
-          preferredQualifications: this.sanitizeArrayContent(parsedJson.preferredQualifications)
+          requiredQualifications: this.sanitizeArrayContent(requiredQualifications),
+          preferredQualifications: this.sanitizeArrayContent(preferredQualifications)
         };
 
         // Format as readable text for backward compatibility and better display
         let formattedText = "Required Qualifications:\n\n";
         sanitized.requiredQualifications.forEach((qual) => {
-          formattedText += `• ${qual}\n`;
+          formattedText += `- ${qual}\n`;
         });
-        
-        formattedText += "\n\nPreferred Qualifications:\n\n";
-        sanitized.preferredQualifications.forEach((qual) => {
-          formattedText += `• ${qual}\n`;
-        });
+
+        if (sanitized.preferredQualifications.length) {
+          formattedText += "\n\nPreferred Qualifications:\n\n";
+          sanitized.preferredQualifications.forEach((qual) => {
+            formattedText += `- ${qual}\n`;
+          });
+        }
 
         return {
           success: true,
