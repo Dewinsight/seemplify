@@ -728,7 +728,10 @@ ${cvText}`
         parsedJson.jobDescription && typeof parsedJson.jobDescription === 'object'
           ? parsedJson.jobDescription
           : null;
-      const source = parsedJson.job && typeof parsedJson.job === 'object' ? parsedJson.job : parsedJson;
+      const source =
+        parsedJson.job && typeof parsedJson.job === 'object'
+          ? parsedJson.job
+          : nestedJobDescription || parsedJson;
       const description =
         source.description ||
         (typeof source.jobDescription === 'string' ? source.jobDescription : '') ||
