@@ -377,7 +377,8 @@ exports.updateWorkflowPolicy = async (req, res) => {
             : existing.description;
         existing.aiGate = {
             rejectBelow: Number(req.body?.aiGate?.rejectBelow ?? existing.aiGate?.rejectBelow ?? 1.5),
-            enhancedOversightMax: Number(req.body?.aiGate?.enhancedOversightMax ?? existing.aiGate?.enhancedOversightMax ?? 2.0)
+            enhancedOversightMax: Number(req.body?.aiGate?.enhancedOversightMax ?? existing.aiGate?.enhancedOversightMax ?? 2.0),
+            boundaryManualReviewDelta: Number(req.body?.aiGate?.boundaryManualReviewDelta ?? existing.aiGate?.boundaryManualReviewDelta ?? 0.3)
         };
         existing.escalation = {
             forcedTierOnEscalation: [1, 2, 3].includes(Number(req.body?.escalation?.forcedTierOnEscalation))

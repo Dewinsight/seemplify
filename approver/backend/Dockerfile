@@ -1,6 +1,6 @@
 # Dockerfile for Approver Backend (API Only)
 # No frontend serving - frontend is deployed separately
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -19,6 +19,7 @@ COPY models ./models
 COPY routes ./routes
 COPY services ./services
 COPY utils ./utils
+COPY data ./data
 COPY scripts ./scripts
 
 EXPOSE 80

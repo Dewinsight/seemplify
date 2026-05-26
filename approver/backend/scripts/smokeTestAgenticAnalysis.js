@@ -12,6 +12,7 @@
  *
  * Usage:
  *   node scripts/smokeTestAgenticAnalysis.js
+ *   node scripts/smokeTestAgenticAnalysis.js --apply
  */
 
 const path = require('path');
@@ -29,6 +30,10 @@ const Role = require('../models/Role');
 const WorkflowPolicy = require('../models/WorkflowPolicy');
 const UserOrganization = require('../models/UserOrganization');
 const Audit = require('../models/Audit');
+
+const allowDbMutation =
+    process.argv.includes('--apply') ||
+    process.env.SMOKE_ALLOW_DB_MUTATION === 'true';
 
 function createMockResponse() {
     let statusCode = 200;
@@ -433,6 +438,15 @@ async function cleanup(ids) {
 }
 
 async function main() {
+    if (!allowDbMutation) {
+        console.log(JSON.stringify({
+            mode: 'dry-run',
+            message: 'Agentic smoke test mutates the configured database. Re-run with --apply or SMOKE_ALLOW_DB_MUTATION=true to create and clean up sandbox records.'
+        }, null, 2));
+        process.exit(0);
+        return;
+    }
+
     const stamp = Date.now();
     const tempOrgName = `Agentic Smoke Org ${stamp}`;
     let tempOrg = null;

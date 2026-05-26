@@ -7,6 +7,18 @@ const { randomUUID } = require('crypto');
 const openAIService = require('../services/OpenAIService');
 const weaviateVectorService = require('../services/WeaviateVectorService');
 const {
+    getPolicyVersion
+} = require('../services/mosaicPolicyService');
+const {
+    calculateWeightedPriorityScore,
+    applyPriorityEffects,
+    determineTierFromScore: determineTierFromScoreWithPolicy,
+    getManualReviewReasons,
+    resolveInitialStage
+} = require('../services/approvalEngine');
+const { seedSystemRulesForOrganization } = require('../services/systemRuleSeedService');
+const {
+    DEFAULT_SCORING_WEIGHTS,
     getWorkflowPolicyForOrganization,
     ensureGovernanceConfigForOrganization
 } = require('../services/governanceConfigService');
@@ -78,6 +90,10 @@ const buildProjectVisibilityQuery = (user, organizationId) => {
         };
     }
 
+    if (reviewerDepartmentIds.includes('*')) {
+        return { organization: organizationId };
+    }
+
     return {
         organization: organizationId,
         $or: [
@@ -118,15 +134,6 @@ const getTierRouteLabel = (tierWorkflow) => {
     return stages.length > 0 ? stages.join(' -> ') : 'manual workflow';
 };
 
-const DEFAULT_SCORING_WEIGHTS = {
-    strategicAlignment: 25,
-    regulatoryRisk: 25,
-    businessImpact: 20,
-    implementationComplexity: 15,
-    timeToValue: 10,
-    resourceRequirements: 5
-};
-
 const SCORING_WEIGHT_KEYS = Object.keys(DEFAULT_SCORING_WEIGHTS);
 const TRIGGER_RULE_CATEGORIES = new Set(['ESCALATION', 'CAP', 'PENALTY', 'BOOST']);
 
@@ -154,26 +161,6 @@ const resolveScoringWeightsForDepartment = (workflowPolicy, departmentId) => {
     return normalizeScoringWeights(match.weights, globalWeights);
 };
 
-const determineTierFromScore = (priorityScore, workflowPolicy) => {
-    const tiers = Array.isArray(workflowPolicy?.tiers) ? [...workflowPolicy.tiers] : [];
-    if (tiers.length > 0) {
-        const sorted = tiers.sort((a, b) => Number(a.tier) - Number(b.tier));
-        const match = sorted.find((tierDef) => {
-            const min = Number(tierDef.minPriorityScore);
-            const max = Number(tierDef.maxPriorityScore);
-            if (Number.isNaN(min) || Number.isNaN(max)) return false;
-            return priorityScore >= min && priorityScore <= max;
-        });
-        if (match && [1, 2, 3].includes(Number(match.tier))) {
-            return Number(match.tier);
-        }
-    }
-
-    if (priorityScore >= 3.6) return 3;
-    if (priorityScore >= 2.6) return 2;
-    return 1;
-};
-
 const applyTriggeredRuleEffects = (effectSourceAnalyses, sourceRuleById) => {
     const appliedEffects = [];
     let forcedTier = null;
@@ -195,6 +182,8 @@ const applyTriggeredRuleEffects = (effectSourceAnalyses, sourceRuleById) => {
             } else if (type === 'SET_FLAG') {
                 const key = typeof params.key === 'string' ? params.key.trim() : '';
                 if (key) effectFlags[key] = params.value;
+            } else if (['ADJUST_PRIORITY_SCORE', 'CAP_PRIORITY_SCORE', 'CAP_DIMENSION_SCORE'].includes(type)) {
+                // Applied after base priority scoring.
             }
 
             appliedEffects.push({
@@ -234,6 +223,31 @@ const normalizeRuleEffects = (effects) => {
                 type: 'SET_FLAG',
                 params: { key, value: params.value }
             });
+            return;
+        }
+
+        if (type === 'ADJUST_PRIORITY_SCORE') {
+            const delta = Number(params.delta);
+            if (Number.isFinite(delta) && delta !== 0) {
+                normalized.push({ type: 'ADJUST_PRIORITY_SCORE', params: { delta } });
+            }
+            return;
+        }
+
+        if (type === 'CAP_PRIORITY_SCORE') {
+            const maxScore = Number(params.maxScore);
+            if (Number.isFinite(maxScore)) {
+                normalized.push({ type: 'CAP_PRIORITY_SCORE', params: { maxScore } });
+            }
+            return;
+        }
+
+        if (type === 'CAP_DIMENSION_SCORE') {
+            const dimension = typeof params.dimension === 'string' ? params.dimension.trim() : '';
+            const maxScore = Number(params.maxScore);
+            if (dimension && Number.isFinite(maxScore)) {
+                normalized.push({ type: 'CAP_DIMENSION_SCORE', params: { dimension, maxScore } });
+            }
         }
     });
 
@@ -708,6 +722,15 @@ const analyzeProjectPipeline = async ({
         throw error;
     }
 
+    const evaluationRules = rules.filter((rule) => inferRuleCategory(rule) !== 'SCORING');
+    const scoringReferenceRules = rules.filter((rule) => inferRuleCategory(rule) === 'SCORING');
+
+    if (evaluationRules.length === 0) {
+        const error = new Error('No active non-scoring approval rules defined for approval.');
+        error.status = 400;
+        throw error;
+    }
+
     const initiativeContext = buildInitiativeAnalysisContext({
         name,
         description,
@@ -780,21 +803,21 @@ const analyzeProjectPipeline = async ({
 
     onProgress?.({
         phase: 'rule_checks',
-        message: `Checking rules (0/${rules.length})...`,
+        message: `Checking rules (0/${evaluationRules.length})...`,
         completedRules: 0,
-        totalRules: rules.length
+        totalRules: evaluationRules.length
     });
 
     const { evaluations, coverage } = await evaluateRulesWithAgents({
         initiativeContext,
-        rules,
+        rules: evaluationRules,
         organizationId: organization,
         analysisRunId,
         onProgress,
         ruleVectorsById
     });
 
-    const sourceRules = rules.map((r) => ({
+    const sourceRules = evaluationRules.map((r) => ({
         id: (r._id || '').toString(),
         name: r.name || '',
         mandatory: r.isMandatory === true,
@@ -842,6 +865,12 @@ const analyzeProjectPipeline = async ({
 
     const analysisResult = {
         rulesAnalysis: ruleAnalyses,
+        scoringReferenceRules: scoringReferenceRules.map((rule) => ({
+            ruleId: String(rule._id || ''),
+            systemRuleId: rule.systemRuleId || null,
+            ruleName: rule.name,
+            criteria: rule.criteria || rule.description || ''
+        })),
         scoringBreakdown,
         ruleEvaluationCoverage: coverage,
         vectorGrounding,
@@ -859,31 +888,32 @@ const analyzeProjectPipeline = async ({
     const workflowPolicy = await getWorkflowPolicyForOrganization(organization);
     const scoringWeights = resolveScoringWeightsForDepartment(workflowPolicy, department);
 
-    let priorityScore;
+    let basePriorityScore;
     if (scoringBreakdown) {
-        const s = Number(scoringBreakdown.strategicAlignment?.score ?? 0);
-        const r = Number(scoringBreakdown.regulatoryRisk?.score ?? 0);
-        const b = Number(scoringBreakdown.businessImpact?.score ?? 0);
-        const c = Number(scoringBreakdown.implementationComplexity?.score ?? 0);
-        const t = Number(scoringBreakdown.timeToValue?.score ?? 0);
-        const resources = Number(scoringBreakdown.resourceRequirements?.score ?? 0);
-
-        priorityScore = Math.round((
-            (s * (Number(scoringWeights.strategicAlignment || 0) / 100)) +
-            (r * (Number(scoringWeights.regulatoryRisk || 0) / 100)) +
-            (b * (Number(scoringWeights.businessImpact || 0) / 100)) +
-            (c * (Number(scoringWeights.implementationComplexity || 0) / 100)) +
-            (t * (Number(scoringWeights.timeToValue || 0) / 100)) +
-            (resources * (Number(scoringWeights.resourceRequirements || 0) / 100))
-        ) * 100) / 100;
+        basePriorityScore = calculateWeightedPriorityScore(scoringBreakdown, scoringWeights);
     } else {
         const modelPriority = Number(priorityResult?.priorityScore);
-        priorityScore = Number.isFinite(modelPriority) ? modelPriority : (score / 20);
+        basePriorityScore = Number.isFinite(modelPriority) ? modelPriority : (score / 20);
     }
 
-    analysisResult.scoringWeightsUsed = scoringWeights;
+    const priorityEffects = applyPriorityEffects({
+        basePriorityScore,
+        scoringBreakdown,
+        scoringWeights,
+        appliedEffects
+    });
+    const priorityScore = priorityEffects.priorityScore;
+    const adjustedScoringBreakdown = priorityEffects.adjustedScoringBreakdown;
 
-    let tier = determineTierFromScore(priorityScore, workflowPolicy);
+    analysisResult.scoringWeightsUsed = scoringWeights;
+    analysisResult.baseScoringBreakdown = scoringBreakdown;
+    analysisResult.scoringBreakdown = adjustedScoringBreakdown;
+    analysisResult.basePriorityScore = basePriorityScore;
+    analysisResult.adjustedScoringBreakdown = adjustedScoringBreakdown;
+    analysisResult.scoreAdjustments = priorityEffects.scoreAdjustments;
+    analysisResult.scoreCapsApplied = priorityEffects.scoreCapsApplied;
+
+    let tier = determineTierFromScoreWithPolicy(priorityScore, workflowPolicy);
     const policyForcedTier = Number(workflowPolicy?.escalation?.forcedTierOnEscalation || 3);
 
     if (escalationTriggers.length > 0 && [1, 2, 3].includes(policyForcedTier)) {
@@ -898,6 +928,7 @@ const analyzeProjectPipeline = async ({
     const rejectBelow = Number(workflowPolicy?.aiGate?.rejectBelow ?? process.env.PRIORITY_SCORE_REJECT_BELOW ?? 1.5);
     const enhancedOversightMax = Number(workflowPolicy?.aiGate?.enhancedOversightMax ?? process.env.PRIORITY_SCORE_ENHANCED_OVERSIGHT_MAX ?? 2.0);
     const needEnhancedOversight = priorityScore >= rejectBelow && priorityScore < enhancedOversightMax;
+    const manualReviewReasons = getManualReviewReasons(priorityScore, workflowPolicy);
 
     const aiApproved = !mandatoryFailed && (priorityScore >= rejectBelow || escalationTriggers.length > 0);
 
@@ -914,6 +945,9 @@ const analyzeProjectPipeline = async ({
         totalRules,
         mandatoryFailedRules: failedMandatoryGateRules.map(rule => rule.ruleName),
         escalationTriggers,
+        scoreAdjustments: priorityEffects.scoreAdjustments,
+        scoreCapsApplied: priorityEffects.scoreCapsApplied,
+        manualReviewReasons,
         triggeredRuleActions: triggeredActionRules.map(rule => ({
             ruleName: rule.ruleName,
             category: rule.category
@@ -935,11 +969,14 @@ const analyzeProjectPipeline = async ({
     analysisResult.summary = isSummaryScaleInvalid(candidateSummary) ? fallback : candidateSummary;
     analysisResult.priorityScore = priorityScore;
     analysisResult.calculatedTier = tier;
+    analysisResult.manualReviewReasons = manualReviewReasons;
+    analysisResult.mosaicPolicyVersion = getPolicyVersion();
 
     let approvalStatus;
     let workflowStage;
     let simpleStatus;
     let aiDecisionReason;
+    let workflowRouteReason = '';
     let currentStageKey = null;
     const workflowPlanSnapshot = tierWorkflow ? JSON.parse(JSON.stringify(tierWorkflow)) : null;
 
@@ -958,8 +995,12 @@ const analyzeProjectPipeline = async ({
         aiDecisionReason = `AI rejected - ${rejectReasons.join('. ')}. Score: ${score}/100, Tier ${tier}`;
     } else {
         simpleStatus = 'Under Review';
-        const workflowStages = Array.isArray(tierWorkflow?.stages) ? tierWorkflow.stages : [];
-        const initialStage = workflowStages[0] || null;
+        const initialStageResult = resolveInitialStage({
+            tierWorkflow,
+            escalationTriggered: escalationTriggers.length > 0 || effectFlags.mandatoryEscalation === true
+        });
+        const initialStage = initialStageResult.stage;
+        workflowRouteReason = initialStageResult.reason;
 
         if (initialStage) {
             approvalStatus = getPendingStatusLabel(initialStage);
@@ -973,13 +1014,15 @@ const analyzeProjectPipeline = async ({
         const tierRoute = getTierRouteLabel(tierWorkflow);
 
         if (escalationTriggers.length > 0) {
-            aiDecisionReason = `AI approved with escalation triggers: ${escalationTriggers.join(', ')}. Routed to ${tierRoute} review path. Score: ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier})`;
+            aiDecisionReason = `AI approved with escalation triggers: ${escalationTriggers.join(', ')}. ${workflowRouteReason} Score: ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier})`;
         } else if (needEnhancedOversight) {
             aiDecisionReason = `AI approved with enhanced oversight - Priority Score ${priorityScore.toFixed(2)} (${rejectBelow}-${enhancedOversightMax} range). Routed to ${tierRoute} review path. Score: ${score}/100, Tier ${tier}`;
         } else {
             aiDecisionReason = `AI approved with score ${score}/100 (Priority: ${priorityScore.toFixed(2)}, Tier ${tier}). Routed to ${tierRoute} review path.`;
         }
     }
+
+    analysisResult.workflowRouteReason = workflowRouteReason;
 
     const aiAction = aiApproved
         ? (needEnhancedOversight || escalationTriggers.length > 0 ? 'Escalated' : 'Approved')
@@ -1008,7 +1051,7 @@ const analyzeProjectPipeline = async ({
     project.submittedAt = new Date();
     project.tier = tier;
     project.priorityScore = priorityScore;
-    project.scoringBreakdown = scoringBreakdown;
+    project.scoringBreakdown = adjustedScoringBreakdown || scoringBreakdown;
     project.escalationTriggers = escalationTriggers;
     project.needEnhancedOversight = needEnhancedOversight || false;
     project.workflowStage = workflowStage;
@@ -1786,9 +1829,9 @@ const getLegacyTierWorkflow = (tier) => {
             stages: [
                 {
                     stageKey: 'CenterOfExcellence',
-                    label: 'Center of Excellence Review',
+                    label: 'AI CoE Senior Review',
                     requiredRoleKeys: ['CenterOfExcellence', 'GovernanceApprover', 'ExecutiveApprover'],
-                    minApprovals: 1,
+                    minApprovals: 2,
                     onReject: 'REJECT',
                     pendingStatusLabel: 'Pending Center of Excellence',
                     approvedStatusLabel: 'Center of Excellence Approved',
@@ -1811,7 +1854,7 @@ const getLegacyTierWorkflow = (tier) => {
             stages: [
                 {
                     stageKey: 'CenterOfExcellence',
-                    label: 'Center of Excellence Review',
+                    label: 'AI CoE Full Scoring Review',
                     requiredRoleKeys: ['CenterOfExcellence', 'GovernanceApprover', 'ExecutiveApprover'],
                     minApprovals: 1,
                     onReject: 'REJECT',
@@ -2028,12 +2071,15 @@ exports.getPendingReviews = async (req, res) => {
                     [stageCapabilityByKey[requestedStageKey]],
                     req.user.roleCatalog || {}
                 )
-                : (req.user.permissions || [])
-                    .filter(permission => Array.isArray(permission.roles) && permission.roles.length > 0)
-                    .map(permission => (permission.department?._id || permission.department)?.toString())
-                    .filter(Boolean);
+                : getDepartmentsForCapabilities(
+                    req.user,
+                    PROJECT_REVIEW_VISIBILITY_CAPABILITIES,
+                    req.user.roleCatalog || {}
+                );
             if (userDepts?.length > 0) {
-                query.department = { $in: userDepts };
+                if (!userDepts.includes('*')) {
+                    query.department = { $in: userDepts };
+                }
             } else {
                 return res.json([]); // No reviewer permissions
             }
@@ -2083,7 +2129,7 @@ exports.createOrganization = async (req, res) => {
             createdBy: req.user.id
         });
         await org.save();
-        await ensureGovernanceConfigForOrganization(org._id);
+        await seedSystemRulesForOrganization(org._id);
         res.status(201).json(org);
     } catch (error) {
         // Duplicate key (e.g. unique org name/slug)
@@ -2127,7 +2173,7 @@ exports.createAndJoin = async (req, res) => {
             createdBy: req.user.id
         });
         await org.save();
-        await ensureGovernanceConfigForOrganization(org._id);
+        await seedSystemRulesForOrganization(org._id);
 
         // Create General department
         const generalDept = await new Department({
@@ -2183,7 +2229,7 @@ exports.createAndJoin = async (req, res) => {
                 // Orphan recovery: org exists but has no members — createdBy matches current user (partial create failed)
                 const isOrphan = existingOrg.createdBy && existingOrg.createdBy.toString() === req.user.id.toString();
                 if (isOrphan) {
-                    await ensureGovernanceConfigForOrganization(existingOrg._id);
+                    await seedSystemRulesForOrganization(existingOrg._id);
                     let generalDept = await Department.findOne({ name: 'General', organization: existingOrg._id });
                     if (!generalDept) {
                         generalDept = await new Department({

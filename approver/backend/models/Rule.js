@@ -15,7 +15,7 @@ const RuleSchema = new mongoose.Schema({
     effects: [{
         type: {
             type: String,
-            enum: ['SET_TIER', 'ROUTE_TO_STAGE', 'SET_FLAG']
+            enum: ['SET_TIER', 'ROUTE_TO_STAGE', 'SET_FLAG', 'ADJUST_PRIORITY_SCORE', 'CAP_PRIORITY_SCORE', 'CAP_DIMENSION_SCORE']
         },
         params: { type: mongoose.Schema.Types.Mixed, default: {} }
     }],

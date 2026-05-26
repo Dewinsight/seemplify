@@ -1,8 +1,6 @@
 const OpenAI = require('openai');
-const path = require('path');
-const fs = require('fs');
-
-const RULES_JSON_PATH = path.join(__dirname, '..', '..', 'mosaic_approver_rules_v2.json');
+const axios = require('axios');
+const { buildScoringRubricText } = require('./mosaicPolicyService');
 
 function readEnvAny(keys, fallback = '') {
     for (const key of keys) {
@@ -38,6 +36,9 @@ function resolveOpenAIConfig() {
     const targetUriKeys = preferKimi
         ? ['Azure_openai_kimi2.5_target_uri', 'AZURE_OPENAI_TARGET_URI']
         : ['AZURE_OPENAI_TARGET_URI', 'Azure_openai_kimi2.5_target_uri'];
+    const responsesUrl = readEnvAny(['AZURE_OPENAI_RESPONSES_URL', 'AZURE_OPENAI_PROJECT_RESPONSES_URL']);
+    const responsesApiKey = readEnvAny(['AZURE_OPENAI_RESPONSES_API_KEY', 'AZURE_OPENAI_API_KEY']);
+    const responsesModel = readEnvAny(['AZURE_OPENAI_RESPONSES_MODEL', 'AZURE_OPENAI_MODEL', 'AZURE_OPENAI_DEPLOYMENT_NAME']);
 
     const apiKey = readEnvAny(apiKeyKeys);
     let endpoint = readEnvAny(endpointKeys);
@@ -78,60 +79,19 @@ function resolveOpenAIConfig() {
         deployment,
         apiVersion,
         baseURL,
+        responsesUrl,
+        responsesApiKey,
+        responsesModel,
+        provider: responsesUrl ? 'responses' : 'chat_completions',
         temperatures
     };
 }
 
 function loadScoringRubric() {
     try {
-        if (!fs.existsSync(RULES_JSON_PATH)) return null;
-
-        const data = JSON.parse(fs.readFileSync(RULES_JSON_PATH, 'utf8'));
-        const model = data.priority_score_model;
-        const rubrics = data.parameter_rubrics;
-        if (!model || !rubrics) return null;
-
-        const weights = model.formula?.weights || {};
-        const lines = [];
-
-        const paramOrder = [
-            { key: 'strategic_alignment', name: 'Strategic Alignment' },
-            { key: 'regulatory_risk', name: 'Regulatory Risk' },
-            { key: 'business_impact', name: 'Business Impact' },
-            { key: 'implementation_complexity', name: 'Implementation Complexity' },
-            { key: 'time_to_value', name: 'Time-to-Value' },
-            { key: 'resource_requirements', name: 'Resource Requirements' }
-        ];
-
-        paramOrder.forEach(({ key, name }) => {
-            const rubric = rubrics[key];
-            const weightPct = (weights[key] || 0) * 100;
-
-            if (rubric?.top_level_rubric?.scale) {
-                const defs = rubric.top_level_rubric.scale
-                    .map(s => `Score ${s.score}: ${s.label} - ${s.definition}`)
-                    .join('\n               ');
-                lines.push(`${name} (${weightPct}% weight)\n               ${defs}`);
-            } else if (rubric?.scale && Array.isArray(rubric.scale)) {
-                const defs = rubric.scale
-                    .map(s => `Score ${s.score}: ${s.definition || s.profile || s.label || ''}`)
-                    .filter(Boolean)
-                    .join('\n               ');
-                if (defs) lines.push(`${name} (${weightPct}% weight)\n               ${defs}`);
-                else if (rubric.description) lines.push(`${name} (${weightPct}% weight): ${rubric.description}`);
-            } else if (rubric?.description) {
-                lines.push(`${name} (${weightPct}% weight): ${rubric.description}`);
-            }
-        });
-
-        const formula = model.formula?.expression || '(Strategic*0.25)+(Regulatory*0.25)+(Business*0.20)+(Complexity*0.15)+(TimeToValue*0.10)+(Resources*0.05)';
-        const tiers = model.tier_classification?.tiers
-            ?.map(t => `- ${t.tier}: ${t.score_range?.min}-${t.score_range?.max}`)
-            .join('\n            ') || '';
-
-        return { lines: lines.join('\n\n            '), formula, tiers };
+        return buildScoringRubricText();
     } catch (error) {
-        console.warn('Could not load scoring rubric from rules JSON:', error.message);
+        console.warn('Could not load scoring rubric from Mosaic policy:', error.message);
         return null;
     }
 }
@@ -195,6 +155,14 @@ function buildRulePrompts(rules) {
 class OpenAIService {
     constructor() {
         this.config = resolveOpenAIConfig();
+        if (this.config.provider === 'responses') {
+            if (!this.config.responsesUrl || !this.config.responsesApiKey || !this.config.responsesModel) {
+                throw new Error('Azure OpenAI Responses config missing. Set AZURE_OPENAI_RESPONSES_URL, AZURE_OPENAI_RESPONSES_MODEL, and an API key.');
+            }
+            this.client = null;
+            return;
+        }
+
         if (!this.config.apiKey || !this.config.baseURL || !this.config.apiVersion || !this.config.deployment) {
             throw new Error(
                 'Azure OpenAI config missing. Set AZURE_OPENAI_* vars or Azure_openai_kimi2.5_* vars.'
@@ -209,6 +177,13 @@ class OpenAIService {
     }
 
     async createCompletion(messages, options = {}) {
+        if (this.config.provider === 'responses') {
+            return this.createResponsesCompletion(messages, options);
+        }
+        return this.createChatCompletion(messages, options);
+    }
+
+    async createChatCompletion(messages, options = {}) {
         const {
             temperature = 0,
             parseJson = true
@@ -246,6 +221,78 @@ class OpenAIService {
         }
 
         const content = completion?.choices?.[0]?.message?.content || '';
+        return parseJson ? parseJsonPayload(content) : content;
+    }
+
+    extractResponsesText(responseData) {
+        if (typeof responseData?.output_text === 'string') return responseData.output_text;
+        const output = Array.isArray(responseData?.output) ? responseData.output : [];
+        const chunks = [];
+
+        output.forEach((item) => {
+            if (typeof item?.content === 'string') {
+                chunks.push(item.content);
+                return;
+            }
+            if (Array.isArray(item?.content)) {
+                item.content.forEach((contentPart) => {
+                    if (typeof contentPart?.text === 'string') chunks.push(contentPart.text);
+                    else if (typeof contentPart?.text?.value === 'string') chunks.push(contentPart.text.value);
+                    else if (typeof contentPart?.value === 'string') chunks.push(contentPart.value);
+                });
+            }
+        });
+
+        return chunks.join('\n').trim();
+    }
+
+    async createResponsesCompletion(messages, options = {}) {
+        const {
+            temperature = 0,
+            parseJson = true
+        } = options;
+        const payload = {
+            model: this.config.responsesModel,
+            input: messages,
+            temperature
+        };
+
+        if (parseJson) {
+            payload.text = { format: { type: 'json_object' } };
+        }
+
+        let response = await axios.post(this.config.responsesUrl, payload, {
+            timeout: 120000,
+            headers: {
+                'Content-Type': 'application/json',
+                'api-key': this.config.responsesApiKey,
+                Authorization: `Bearer ${this.config.responsesApiKey}`
+            },
+            validateStatus: () => true
+        });
+
+        if ((response.status < 200 || response.status >= 300) && parseJson) {
+            const retryPayload = { ...payload };
+            delete retryPayload.text;
+            response = await axios.post(this.config.responsesUrl, retryPayload, {
+                timeout: 120000,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': this.config.responsesApiKey,
+                    Authorization: `Bearer ${this.config.responsesApiKey}`
+                },
+                validateStatus: () => true
+            });
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+            const message = typeof response.data === 'string'
+                ? response.data
+                : JSON.stringify(response.data || {});
+            throw new Error(`Responses API request failed ${response.status}: ${message}`);
+        }
+
+        const content = this.extractResponsesText(response.data);
         return parseJson ? parseJsonPayload(content) : content;
     }
 

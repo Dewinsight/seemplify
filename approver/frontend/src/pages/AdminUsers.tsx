@@ -35,6 +35,7 @@ interface WorkflowPolicyPayload {
     aiGate: {
         rejectBelow: number;
         enhancedOversightMax: number;
+        boundaryManualReviewDelta?: number;
     };
     escalation: {
         forcedTierOnEscalation: number;
@@ -118,7 +119,12 @@ const buildDefaultStage = (tier: number, stageKey: WorkflowStageKey, roleList: R
 
     const defaultOnReject = stageKey === 'Governance' && tier === 3 ? 'ESCALATE_TO_NEXT' : 'REJECT';
 
-    const label = STAGE_CONFIG[stageKey].title;
+    const label = stageKey === 'CenterOfExcellence' && tier === 2
+        ? 'AI CoE Senior Review'
+        : stageKey === 'CenterOfExcellence' && tier === 3
+            ? 'AI CoE Full Scoring Review'
+            : STAGE_CONFIG[stageKey].title;
+    const minApprovals = stageKey === 'CenterOfExcellence' && tier === 2 ? 2 : 1;
     const pendingStageLabel = stageKey === 'CenterOfExcellence'
         ? 'Pending Center of Excellence'
         : stageKey === 'Governance'
@@ -129,7 +135,7 @@ const buildDefaultStage = (tier: number, stageKey: WorkflowStageKey, roleList: R
         stageKey,
         label,
         requiredRoleKeys: [defaultRoleKey],
-        minApprovals: 1,
+        minApprovals,
         onReject: defaultOnReject as 'REJECT' | 'ESCALATE_TO_NEXT',
         pendingStatusLabel: pendingStageLabel,
         approvedStatusLabel: `${label} Approved`,
@@ -142,7 +148,8 @@ const buildDefaultWorkflowPolicy = (roleList: RoleDefinition[]): WorkflowPolicyP
     description: 'Default tier routing and reviewer requirements for initiative approvals.',
     aiGate: {
         rejectBelow: 1.5,
-        enhancedOversightMax: 2.0
+        enhancedOversightMax: 2.0,
+        boundaryManualReviewDelta: 0.3
     },
     escalation: {
         forcedTierOnEscalation: 3
@@ -243,7 +250,8 @@ const normalizeWorkflowPolicy = (rawPolicy: any, roleList: RoleDefinition[]): Wo
         description: String(rawPolicy.description || base.description || ''),
         aiGate: {
             rejectBelow: Number(rawPolicy?.aiGate?.rejectBelow ?? base.aiGate.rejectBelow),
-            enhancedOversightMax: Number(rawPolicy?.aiGate?.enhancedOversightMax ?? base.aiGate.enhancedOversightMax)
+            enhancedOversightMax: Number(rawPolicy?.aiGate?.enhancedOversightMax ?? base.aiGate.enhancedOversightMax),
+            boundaryManualReviewDelta: Number(rawPolicy?.aiGate?.boundaryManualReviewDelta ?? base.aiGate.boundaryManualReviewDelta ?? 0.3)
         },
         escalation: {
             forcedTierOnEscalation: [1, 2, 3].includes(Number(rawPolicy?.escalation?.forcedTierOnEscalation))
@@ -1190,6 +1198,16 @@ const AdminUsers: React.FC = () => {
                                             step="0.1"
                                             value={workflowPolicy?.aiGate?.enhancedOversightMax ?? 2.0}
                                             onChange={(e) => updateWorkflowPolicyDraft((draft) => { draft.aiGate.enhancedOversightMax = Number(e.target.value || 0); })}
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
+                                        />
+                                    </label>
+                                    <label style={{ display: 'grid', gap: '0.25rem' }}>
+                                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Boundary Manual Review</span>
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            value={workflowPolicy?.aiGate?.boundaryManualReviewDelta ?? 0.3}
+                                            onChange={(e) => updateWorkflowPolicyDraft((draft) => { draft.aiGate.boundaryManualReviewDelta = Number(e.target.value || 0); })}
                                             style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'var(--glass-bg)', color: 'var(--text-primary)' }}
                                         />
                                     </label>

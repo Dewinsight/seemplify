@@ -1,5 +1,11 @@
 const Role = require('../models/Role');
 const WorkflowPolicy = require('../models/WorkflowPolicy');
+const {
+    getDefaultScoringWeights,
+    getTierDefinitions,
+    getAiGate,
+    buildEffectsForAtomicRule
+} = require('./mosaicPolicyService');
 
 const DEFAULT_ROLE_DEFINITIONS = [
     {
@@ -42,21 +48,18 @@ const DEFAULT_ROLE_DEFINITIONS = [
     }
 ];
 
-const DEFAULT_SCORING_WEIGHTS = {
-    strategicAlignment: 25,
-    regulatoryRisk: 25,
-    businessImpact: 20,
-    implementationComplexity: 15,
-    timeToValue: 10,
-    resourceRequirements: 5
-};
+const DEFAULT_SCORING_WEIGHTS = getDefaultScoringWeights();
+
+const tierRanges = getTierDefinitions();
+const tierRangeByNumber = new Map(tierRanges.map((tier) => [Number(tier.tier), tier]));
+const aiGate = getAiGate();
 
 const DEFAULT_WORKFLOW_TIERS = [
     {
         tier: 1,
         label: 'Tier 1',
-        minPriorityScore: 1.0,
-        maxPriorityScore: 2.5,
+        minPriorityScore: tierRangeByNumber.get(1)?.minPriorityScore ?? 1.0,
+        maxPriorityScore: tierRangeByNumber.get(1)?.maxPriorityScore ?? 2.5,
         stages: [
             {
                 stageKey: 'CenterOfExcellence',
@@ -73,14 +76,14 @@ const DEFAULT_WORKFLOW_TIERS = [
     {
         tier: 2,
         label: 'Tier 2',
-        minPriorityScore: 2.6,
-        maxPriorityScore: 3.5,
+        minPriorityScore: tierRangeByNumber.get(2)?.minPriorityScore ?? 2.6,
+        maxPriorityScore: tierRangeByNumber.get(2)?.maxPriorityScore ?? 3.5,
         stages: [
             {
                 stageKey: 'CenterOfExcellence',
-                label: 'Center of Excellence Review',
+                label: 'AI CoE Senior Review',
                 requiredRoleKeys: ['CenterOfExcellence'],
-                minApprovals: 1,
+                minApprovals: 2,
                 onReject: 'REJECT',
                 pendingStatusLabel: 'Pending Center of Excellence',
                 approvedStatusLabel: 'Center of Excellence Approved',
@@ -101,12 +104,12 @@ const DEFAULT_WORKFLOW_TIERS = [
     {
         tier: 3,
         label: 'Tier 3',
-        minPriorityScore: 3.6,
-        maxPriorityScore: 5.0,
+        minPriorityScore: tierRangeByNumber.get(3)?.minPriorityScore ?? 3.6,
+        maxPriorityScore: tierRangeByNumber.get(3)?.maxPriorityScore ?? 5.0,
         stages: [
             {
                 stageKey: 'CenterOfExcellence',
-                label: 'Center of Excellence Review',
+                label: 'AI CoE Full Scoring Review',
                 requiredRoleKeys: ['CenterOfExcellence'],
                 minApprovals: 1,
                 onReject: 'REJECT',
@@ -142,8 +145,9 @@ const DEFAULT_WORKFLOW_POLICY = {
     name: 'System Default Workflow Policy',
     description: 'Default tier routing and reviewer requirements for initiative approvals.',
     aiGate: {
-        rejectBelow: 1.5,
-        enhancedOversightMax: 2.0
+        rejectBelow: aiGate.rejectBelow,
+        enhancedOversightMax: aiGate.enhancedOversightMax,
+        boundaryManualReviewDelta: aiGate.boundaryManualReviewDelta
     },
     escalation: {
         forcedTierOnEscalation: 3
@@ -249,7 +253,9 @@ async function getWorkflowPolicyForOrganization(organizationId) {
     return workflowPolicy;
 }
 
-const buildRuleEffectsFromCategory = (category) => {
+const buildRuleEffectsFromCategory = (category, atomicRule = null) => {
+    if (atomicRule) return buildEffectsForAtomicRule(atomicRule);
+
     const normalized = String(category || '').trim().toUpperCase();
     if (normalized === 'ESCALATION') {
         return [{ type: 'SET_TIER', params: { tier: 3, source: 'ESCALATION_RULE' } }];

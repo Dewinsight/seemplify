@@ -41,7 +41,8 @@ const WorkflowPolicySchema = new mongoose.Schema({
     isActive: { type: Boolean, default: true },
     aiGate: {
         rejectBelow: { type: Number, default: 1.5 },
-        enhancedOversightMax: { type: Number, default: 2.0 }
+        enhancedOversightMax: { type: Number, default: 2.0 },
+        boundaryManualReviewDelta: { type: Number, default: 0.3 }
     },
     escalation: {
         forcedTierOnEscalation: { type: Number, enum: [1, 2, 3], default: 3 }

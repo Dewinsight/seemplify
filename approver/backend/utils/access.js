@@ -78,7 +78,7 @@ const roleMatches = (user, requiredRoleKeys = [], departmentId = null) => {
 
     return (user?.permissions || []).some((permission) => {
         const permissionDeptId = getDepartmentId(permission);
-        const deptMatches = !departmentId || permissionDeptId === String(departmentId);
+        const deptMatches = !departmentId || !permissionDeptId || permissionDeptId === String(departmentId);
         if (!deptMatches) return false;
         return toRoleArray(permission).some(roleKey => requiredRoleKeys.includes(roleKey));
     });
@@ -101,7 +101,7 @@ const hasAnyCapability = (user, requiredCapabilities = [], departmentId = null, 
 
     return (user?.permissions || []).some((permission) => {
         const permissionDeptId = getDepartmentId(permission);
-        const deptMatches = !departmentId || permissionDeptId === String(departmentId);
+        const deptMatches = !departmentId || !permissionDeptId || permissionDeptId === String(departmentId);
         if (!deptMatches) return false;
 
         const permissionCapabilities = toRoleArray(permission)
@@ -119,7 +119,6 @@ const getDepartmentsForCapabilities = (user, requiredCapabilities = [], roleCata
 
     (user?.permissions || []).forEach((permission) => {
         const deptId = getDepartmentId(permission);
-        if (!deptId) return;
 
         const permissionCapabilities = toRoleArray(permission)
             .flatMap(roleKey => getRoleCapabilities(roleKey, catalog));
@@ -128,7 +127,7 @@ const getDepartmentsForCapabilities = (user, requiredCapabilities = [], roleCata
             requiredCapabilities.some(required => capabilityTokenMatches(capability, required))
         );
 
-        if (matches) departments.add(deptId);
+        if (matches) departments.add(deptId || '*');
     });
 
     return Array.from(departments);

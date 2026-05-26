@@ -108,7 +108,7 @@ export const hasAnyCapability = (
 
     return permissions.some((permission) => {
         const permissionDepartmentId = getDepartmentId(permission);
-        const deptMatches = !departmentId || permissionDepartmentId === departmentId;
+        const deptMatches = !departmentId || !permissionDepartmentId || permissionDepartmentId === departmentId;
         if (!deptMatches) return false;
 
         const permissionCapabilities = toRoleArray(permission)
