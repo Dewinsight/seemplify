@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import { getCandidateById, getCandidatesPaginated, type CandidateData } from "@/services/candidateService";
@@ -16,6 +17,10 @@ import { toast } from "sonner";
 
 function candidateName(candidate: CandidateData) {
   return `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim() || candidate.email || "Candidate";
+}
+
+function candidateStatus(candidate: CandidateData) {
+  return (candidate.status || "Candidate").replace(/_/g, " ");
 }
 
 export default function NewOnboardingPage() {
@@ -144,22 +149,70 @@ export default function NewOnboardingPage() {
                 <Input value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} placeholder="Search candidates" className="pl-9" />
               </div>
             </div>
-            <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-              {candidates.map((candidate) => {
-                const selected = selectedCandidate?._id === candidate._id;
-                return (
-                  <button key={candidate._id} type="button" onClick={() => setSelectedCandidate(candidate)} className={`rounded-md border p-4 text-left transition ${selected ? "border-blue-500 bg-blue-50" : "bg-white hover:bg-slate-50"}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-semibold text-slate-950">{candidateName(candidate)}</div>
-                        <div className="text-sm text-slate-500">{candidate.email}</div>
-                        <div className="mt-2 text-xs text-slate-500">{candidate.position}</div>
-                      </div>
-                      {selected && <Check className="h-5 w-5 text-blue-600" />}
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="p-4">
+              <div className="h-[440px] overflow-auto rounded-md border">
+                <table className="w-full min-w-[760px] caption-bottom text-sm">
+                  <TableHeader className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgba(226,232,240,1)]">
+                    <TableRow className="hover:bg-white">
+                      <TableHead className="w-14">Select</TableHead>
+                      <TableHead>Candidate</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Position</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-28 text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {candidates.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-40 text-center text-sm text-slate-500">
+                          No candidates found.
+                        </TableCell>
+                      </TableRow>
+                    ) : candidates.map((candidate) => {
+                      const selected = selectedCandidate?._id === candidate._id;
+                      return (
+                        <TableRow
+                          key={candidate._id}
+                          aria-selected={selected}
+                          data-state={selected ? "selected" : undefined}
+                          onClick={() => setSelectedCandidate(candidate)}
+                          className={`cursor-pointer ${selected ? "bg-blue-50 hover:bg-blue-50" : "hover:bg-slate-50"}`}
+                        >
+                          <TableCell>
+                            <span className={`flex h-7 w-7 items-center justify-center rounded-full border ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>
+                              <Check className="h-4 w-4" />
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium text-slate-950">{candidateName(candidate)}</div>
+                          </TableCell>
+                          <TableCell className="text-slate-600">{candidate.email || "-"}</TableCell>
+                          <TableCell className="text-slate-600">{candidate.position || "-"}</TableCell>
+                          <TableCell>
+                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium capitalize text-slate-600">
+                              {candidateStatus(candidate)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={selected ? "default" : "outline"}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedCandidate(candidate);
+                              }}
+                            >
+                              {selected ? "Selected" : "Select"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </table>
+              </div>
             </div>
             <div className="flex justify-end border-t p-4">
               <Button disabled={!selectedCandidate} onClick={() => setStep("documents")}>Continue</Button>
