@@ -14,6 +14,10 @@ import {
   Briefcase,
   Clock,
   FileText,
+  GraduationCap,
+  Bot,
+  ArrowRight,
+  Send,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
@@ -28,13 +32,70 @@ import { MetroQuickActions } from "@/components/ui/metro-quick-actions"
 import { DashboardProfileCard } from "@/components/ui/dashboard-profile-card"
 import { ProgressiveDisclosure } from "@/components/ui/progressive-disclosure"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getIdpBaseUrl } from "@/utils/env"
+import { getOnboardingRecords, type CandidateOnboarding } from "@/services/onboardingService"
+import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
+
+type WorkQueueSummary = {
+  onboarding: {
+    total: number;
+    active: number;
+    sentPackets: number;
+    completed: number;
+  };
+  aiInterviews: {
+    total: number;
+    open: number;
+    candidates: number;
+    completedSessions: number;
+  };
+};
+
+const emptyWorkQueueSummary: WorkQueueSummary = {
+  onboarding: {
+    total: 0,
+    active: 0,
+    sentPackets: 0,
+    completed: 0,
+  },
+  aiInterviews: {
+    total: 0,
+    open: 0,
+    candidates: 0,
+    completedSessions: 0,
+  },
+};
+
+function summarizeOnboarding(records: CandidateOnboarding[]) {
+  return {
+    total: records.length,
+    active: records.filter((record) => ["pending", "in_progress"].includes(record.status)).length,
+    sentPackets: records.reduce(
+      (count, record) =>
+        count + (record.envelopes || []).filter((envelope) => ["sent", "viewed", "partially_signed"].includes(envelope.status)).length,
+      0
+    ),
+    completed: records.filter((record) => record.status === "completed").length,
+  };
+}
+
+function summarizeAIInterviews(interviews: AIInterview[]) {
+  return {
+    total: interviews.length,
+    open: interviews.filter((interview) => !["completed", "cancelled", "expired"].includes(interview.status)).length,
+    candidates: interviews.reduce((count, interview) => count + (interview.candidateCount || 0), 0),
+    completedSessions: interviews.reduce((count, interview) => count + (interview.stats?.completed || 0), 0),
+  };
+}
 
 export default function Dashboard() {
   const { state, loadAnalytics, getUserDisplayName, isProfileComplete } = useUser()
   const { user, analytics, suggestions, isLoading } = state
   const { viewMode, setViewMode, sections } = useDashboardState()
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [workQueues, setWorkQueues] = useState<WorkQueueSummary>(emptyWorkQueueSummary)
+  const [workQueuesLoading, setWorkQueuesLoading] = useState(false)
   
   // State for metric detail modal
   const [selectedMetric, setSelectedMetric] = useState<{
@@ -57,6 +118,39 @@ export default function Dashboard() {
         setTimeout(() => setShowProfileModal(true), 2000)
       }
     }
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return;
+
+    let mounted = true;
+
+    async function loadWorkQueues() {
+      try {
+        setWorkQueuesLoading(true);
+        const [onboardingResult, aiInterviews] = await Promise.all([
+          getOnboardingRecords(),
+          aiInterviewService.list(),
+        ]);
+
+        if (!mounted) return;
+
+        setWorkQueues({
+          onboarding: summarizeOnboarding(onboardingResult.data || []),
+          aiInterviews: summarizeAIInterviews(aiInterviews || []),
+        });
+      } catch (error) {
+        console.error("Failed to load dashboard work queues:", error);
+      } finally {
+        if (mounted) setWorkQueuesLoading(false);
+      }
+    }
+
+    loadWorkQueues();
+
+    return () => {
+      mounted = false;
+    };
   }, [user])
 
   const handleProfileModalClose = (open: boolean) => {
@@ -370,6 +464,103 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Work queues</h2>
+            {workQueuesLoading && <Badge variant="secondary">Loading</Badge>}
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="rounded-md">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-base">Onboarding</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Document packets and candidate signing progress</p>
+                </div>
+                <GraduationCap className="h-5 w-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.total}</div>
+                    <div className="text-xs text-muted-foreground">Total</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.active}</div>
+                    <div className="text-xs text-muted-foreground">Active</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.sentPackets}</div>
+                    <div className="text-xs text-muted-foreground">Sent</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.completed}</div>
+                    <div className="text-xs text-muted-foreground">Complete</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/onboarding">
+                      Open onboarding
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/onboarding/new">
+                      <Send className="mr-2 h-4 w-4" />
+                      Begin onboarding
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-md">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-base">AI interviews</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Automated interview packets and completed sessions</p>
+                </div>
+                <Bot className="h-5 w-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.total}</div>
+                    <div className="text-xs text-muted-foreground">Total</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.open}</div>
+                    <div className="text-xs text-muted-foreground">Open</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.candidates}</div>
+                    <div className="text-xs text-muted-foreground">Candidates</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.completedSessions}</div>
+                    <div className="text-xs text-muted-foreground">Complete</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/ai-interviews">
+                      Open AI interviews
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/ai-interviews">
+                      <Send className="mr-2 h-4 w-4" />
+                      Create interview
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
 
         {/* Analytics Section with Tabs */}
         {sections.analytics?.visible && (
