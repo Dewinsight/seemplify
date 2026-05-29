@@ -131,43 +131,51 @@ function PreviewBlock({ block }: { block: BuilderBlock }) {
 
 function InsertBlockControl({
   index,
-  open,
+  active,
   isDropTarget,
-  onToggle,
-  onInsert,
+  selectedType,
+  onClick,
   onDragOver,
   onDrop,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   index: number;
-  open: boolean;
+  active: boolean;
   isDropTarget: boolean;
-  onToggle: (index: number) => void;
-  onInsert: (type: BlockType, index: number) => void;
+  selectedType: BlockType | null;
+  onClick: (index: number) => void;
   onDragOver: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDrop: (event: DragEvent<HTMLDivElement>, index: number) => void;
+  onMouseEnter: (index: number) => void;
+  onMouseLeave: () => void;
 }) {
+  const selectedOption = selectedType ? blockOptions.find((option) => option.type === selectedType) : null;
+  const SelectedIcon = selectedOption?.icon || Plus;
+
   return (
     <div
       onDragOver={(event) => onDragOver(event, index)}
       onDrop={(event) => onDrop(event, index)}
-      className={`flex justify-center rounded-md border border-dashed px-2 py-2 transition ${
-        isDropTarget ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50/60"
+      onMouseEnter={() => onMouseEnter(index)}
+      onMouseLeave={onMouseLeave}
+      className={`flex justify-center rounded-md transition ${
+        active
+          ? `border border-dashed px-2 py-2 ${isDropTarget ? "border-blue-500 bg-blue-50 shadow-sm" : "border-slate-200 bg-slate-50/70"}`
+          : "h-3 border border-transparent"
       }`}
     >
-      {open ? (
-        <div className="flex flex-wrap justify-center gap-2">
-          {blockOptions.map((item) => (
-            <Button key={item.type} type="button" size="sm" variant="outline" className="h-8 bg-white text-xs" onClick={() => onInsert(item.type, index)}>
-              <item.icon className="h-3.5 w-3.5" />
-              {item.label}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <Button type="button" size="sm" variant="ghost" className="h-8 text-xs text-slate-600" onClick={() => onToggle(index)}>
-          <Plus className="h-3.5 w-3.5" />
-          Add block
-        </Button>
+      {active && (
+        <button
+          type="button"
+          onClick={() => onClick(index)}
+          className={`flex h-9 w-full items-center justify-center gap-2 rounded-md border text-xs font-medium transition ${
+            isDropTarget ? "border-blue-500 bg-white text-blue-700" : "border-transparent bg-white/80 text-slate-500 hover:border-blue-300 hover:text-blue-700"
+          }`}
+        >
+          <SelectedIcon className="h-3.5 w-3.5" />
+          Drop here
+        </button>
       )}
     </div>
   );
@@ -182,10 +190,13 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
   const [activeBlockId, setActiveBlockId] = useState(blocks[0]?.id || "");
   const [draggedBlockId, setDraggedBlockId] = useState<string | null>(null);
   const [isPaletteDragging, setIsPaletteDragging] = useState(false);
+  const [selectedPaletteType, setSelectedPaletteType] = useState<BlockType | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
-  const [insertMenuIndex, setInsertMenuIndex] = useState<number | null>(null);
+  const [hoverDropIndex, setHoverDropIndex] = useState<number | null>(null);
 
   const activeBlock = useMemo(() => blocks.find((block) => block.id === activeBlockId) || blocks[0], [activeBlockId, blocks]);
+  const activePlacementType = isPaletteDragging ? null : selectedPaletteType;
+  const isPlacementActive = Boolean(draggedBlockId || isPaletteDragging || selectedPaletteType);
 
   const updateBlock = (blockId: string, updater: (block: BuilderBlock) => BuilderBlock) => {
     setBlocks((current) => current.map((block) => (block.id === blockId ? updater(block) : block)));
@@ -212,11 +223,9 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
       return next;
     });
     setActiveBlockId(block.id);
-    setInsertMenuIndex(null);
-  };
-
-  const addBlock = (type: BlockType) => {
-    insertBlock(type, blocks.length);
+    setSelectedPaletteType(null);
+    setDropIndex(null);
+    setHoverDropIndex(null);
   };
 
   const removeBlock = (blockId: string) => {
@@ -232,6 +241,7 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     setDraggedBlockId(null);
     setIsPaletteDragging(false);
     setDropIndex(null);
+    setHoverDropIndex(null);
   };
 
   const moveBlockToIndex = (blockId: string, index: number) => {
@@ -253,17 +263,30 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
   const handlePaletteDragStart = (event: DragEvent<HTMLButtonElement>, type: BlockType) => {
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData(BLOCK_TYPE_MIME, type);
+    setSelectedPaletteType(null);
     setIsPaletteDragging(true);
   };
 
   const handleBlockDragStart = (event: DragEvent<HTMLButtonElement>, blockId: string) => {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData(BLOCK_ID_MIME, blockId);
+    setSelectedPaletteType(null);
     setDraggedBlockId(blockId);
     setActiveBlockId(blockId);
   };
 
   const canHandleDrag = () => draggedBlockId || isPaletteDragging;
+
+  const selectPaletteBlock = (type: BlockType) => {
+    setSelectedPaletteType((current) => (current === type ? null : type));
+    setDropIndex(null);
+    setHoverDropIndex(null);
+  };
+
+  const handleDropZoneClick = (index: number) => {
+    if (!selectedPaletteType) return;
+    insertBlock(selectedPaletteType, index);
+  };
 
   const handleGapDragOver = (event: DragEvent<HTMLDivElement>, index: number) => {
     if (!canHandleDrag()) return;
@@ -271,6 +294,7 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     event.stopPropagation();
     event.dataTransfer.dropEffect = isPaletteDragging ? "copy" : "move";
     setDropIndex(index);
+    setHoverDropIndex(index);
   };
 
   const getBlockDropIndex = (event: DragEvent<HTMLDivElement>, blockId: string) => {
@@ -286,7 +310,9 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = isPaletteDragging ? "copy" : "move";
-    setDropIndex(getBlockDropIndex(event, blockId));
+    const nextDropIndex = getBlockDropIndex(event, blockId);
+    setDropIndex(nextDropIndex);
+    setHoverDropIndex(nextDropIndex);
   };
 
   const handleDropAtIndex = (event: DragEvent<HTMLDivElement>, index: number) => {
@@ -304,6 +330,20 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     }
 
     clearDragState();
+  };
+
+  const handleDropZoneMouseEnter = (index: number) => {
+    if (selectedPaletteType) {
+      setHoverDropIndex(index);
+      setDropIndex(index);
+    }
+  };
+
+  const handleDropZoneMouseLeave = () => {
+    if (selectedPaletteType) {
+      setHoverDropIndex(null);
+      setDropIndex(null);
+    }
   };
 
   const save = async () => {
@@ -341,10 +381,11 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
                 <Button
                   key={item.type}
                   type="button"
-                  variant="outline"
+                  variant={selectedPaletteType === item.type ? "default" : "outline"}
                   draggable
                   className="justify-start"
-                  onClick={() => addBlock(item.type)}
+                  aria-pressed={selectedPaletteType === item.type}
+                  onClick={() => selectPaletteBlock(item.type)}
                   onDragStart={(event) => handlePaletteDragStart(event, item.type)}
                   onDragEnd={clearDragState}
                 >
@@ -367,12 +408,14 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
             <div className="mx-auto min-h-[680px] max-w-[780px] space-y-6 border border-slate-200 bg-white px-10 py-12 shadow-sm">
               <InsertBlockControl
                 index={0}
-                open={insertMenuIndex === 0}
-                isDropTarget={dropIndex === 0}
-                onToggle={(index) => setInsertMenuIndex((current) => (current === index ? null : index))}
-                onInsert={insertBlock}
+                active={isPlacementActive}
+                isDropTarget={dropIndex === 0 || hoverDropIndex === 0}
+                selectedType={activePlacementType}
+                onClick={handleDropZoneClick}
                 onDragOver={handleGapDragOver}
                 onDrop={handleDropAtIndex}
+                onMouseEnter={handleDropZoneMouseEnter}
+                onMouseLeave={handleDropZoneMouseLeave}
               />
 
               {blocks.map((block, index) => (
@@ -404,12 +447,14 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
 
                   <InsertBlockControl
                     index={index + 1}
-                    open={insertMenuIndex === index + 1}
-                    isDropTarget={dropIndex === index + 1}
-                    onToggle={(targetIndex) => setInsertMenuIndex((current) => (current === targetIndex ? null : targetIndex))}
-                    onInsert={insertBlock}
+                    active={isPlacementActive}
+                    isDropTarget={dropIndex === index + 1 || hoverDropIndex === index + 1}
+                    selectedType={activePlacementType}
+                    onClick={handleDropZoneClick}
                     onDragOver={handleGapDragOver}
                     onDrop={handleDropAtIndex}
+                    onMouseEnter={handleDropZoneMouseEnter}
+                    onMouseLeave={handleDropZoneMouseLeave}
                   />
                 </div>
               ))}
