@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies without peer-resolution drift from upstream packages
-RUN npm install --omit=dev --legacy-peer-deps && npm install graphql --no-save
+RUN npm install --omit=dev --legacy-peer-deps && npm install graphql --no-save --legacy-peer-deps
 
 # Copy source code
 COPY . .
