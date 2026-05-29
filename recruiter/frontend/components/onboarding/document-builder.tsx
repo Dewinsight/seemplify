@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState, type DragEvent } from "react";
+import { useMemo, useState, type CSSProperties, type DragEvent } from "react";
 import {
   AlignLeft,
+  Check,
+  Copy,
   FileText,
   GripVertical,
   Heading2,
@@ -19,10 +21,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import type { BuilderBlock, OnboardingDocument } from "@/services/onboardingService";
 
 type BlockType = BuilderBlock["type"];
+type SettingsMode = "block" | "document";
+
+interface DocumentSettings {
+  pageSize: "letter" | "a4" | "legal";
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  textColor: string;
+  backgroundColor: string;
+  accentColor: string;
+  marginX: number;
+  marginY: number;
+}
 
 interface DocumentBuilderProps {
   initialDocument?: Partial<OnboardingDocument>;
@@ -52,6 +66,39 @@ const variables = [
   "{{organization.name}}",
   "{{recruiter.name}}",
   "{{today}}",
+];
+
+const documentDefaults: DocumentSettings = {
+  pageSize: "letter",
+  fontFamily: "Inter, Arial, sans-serif",
+  fontSize: 14,
+  lineHeight: 1.6,
+  textColor: "#1f2937",
+  backgroundColor: "#ffffff",
+  accentColor: "#2563eb",
+  marginX: 40,
+  marginY: 48,
+};
+
+const pageSizes: Record<DocumentSettings["pageSize"], { label: string; width: number; height: number }> = {
+  letter: { label: "Letter", width: 780, height: 1009 },
+  a4: { label: "A4", width: 760, height: 1075 },
+  legal: { label: "Legal", width: 780, height: 1285 },
+};
+
+const fontOptions = [
+  { label: "Inter", value: "Inter, Arial, sans-serif" },
+  { label: "Arial", value: "Arial, sans-serif" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Times", value: "'Times New Roman', Times, serif" },
+];
+
+const alignOptions = ["left", "center", "right"] as const;
+const weightOptions = [
+  { label: "Normal", value: "normal" },
+  { label: "Medium", value: "500" },
+  { label: "Semibold", value: "600" },
+  { label: "Bold", value: "bold" },
 ];
 
 const BLOCK_ID_MIME = "application/x-seemplify-builder-block-id";
@@ -84,30 +131,64 @@ function defaultBlocks(title: string): BuilderBlock[] {
   ];
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
+}
+
+function getInitialDocumentSettings(initialDocument?: Partial<OnboardingDocument>): DocumentSettings {
+  const saved = (initialDocument?.variables as any)?.documentStyle || {};
+  return {
+    ...documentDefaults,
+    ...saved,
+    pageSize: pageSizes[saved.pageSize as DocumentSettings["pageSize"]] ? saved.pageSize : documentDefaults.pageSize,
+    fontSize: clampNumber(Number(saved.fontSize ?? documentDefaults.fontSize), 9, 28),
+    lineHeight: clampNumber(Number(saved.lineHeight ?? documentDefaults.lineHeight), 1, 2.4),
+    marginX: clampNumber(Number(saved.marginX ?? documentDefaults.marginX), 16, 96),
+    marginY: clampNumber(Number(saved.marginY ?? documentDefaults.marginY), 16, 120),
+  };
+}
+
+function getBlockStyle(block: BuilderBlock, fallback: CSSProperties = {}): CSSProperties {
+  const style = block.style || {};
+  const borderWidth = clampNumber(Number(style.borderWidth || 0), 0, 8);
+  return {
+    ...fallback,
+    color: style.color || fallback.color,
+    backgroundColor: style.backgroundColor || fallback.backgroundColor,
+    fontSize: style.fontSize ? `${clampNumber(Number(style.fontSize), 8, 48)}px` : fallback.fontSize,
+    fontWeight: style.fontWeight || fallback.fontWeight,
+    lineHeight: style.lineHeight ? clampNumber(Number(style.lineHeight), 1, 2.4) : fallback.lineHeight,
+    textAlign: style.align || fallback.textAlign,
+    padding: style.padding !== undefined ? `${clampNumber(Number(style.padding), 0, 48)}px` : fallback.padding,
+    border: borderWidth ? `${borderWidth}px solid ${style.borderColor || "#e2e8f0"}` : fallback.border,
+    borderRadius: style.borderRadius !== undefined ? `${clampNumber(Number(style.borderRadius), 0, 32)}px` : fallback.borderRadius,
+  } as CSSProperties;
+}
+
 function PreviewBlock({ block }: { block: BuilderBlock }) {
   if (block.type === "pageBreak") {
-    return <div className="my-5 border-t border-dashed border-slate-300 pt-3 text-xs uppercase tracking-wide text-slate-400">Page break</div>;
+    return <div className="my-5 border-t border-dashed pt-3 text-xs uppercase tracking-wide" style={getBlockStyle(block, { borderColor: "#cbd5e1", color: "#94a3b8" })}>Page break</div>;
   }
   if (block.type === "heading") {
-    return <h2 className="text-2xl font-semibold text-slate-950">{block.content?.text || "Heading"}</h2>;
+    return <h2 className="text-2xl font-semibold" style={getBlockStyle(block, { color: "#020617", fontWeight: 600 })}>{block.content?.text || "Heading"}</h2>;
   }
   if (block.type === "section") {
     return (
-      <section className="space-y-2 border-l-2 border-slate-200 pl-4">
-        <h3 className="text-base font-semibold text-slate-900">{block.content?.title || "Section"}</h3>
-        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{block.content?.text || ""}</p>
+      <section className="space-y-2 border-l-2 pl-4" style={getBlockStyle(block, { borderColor: "#e2e8f0" })}>
+        <h3 className="text-base font-semibold">{block.content?.title || "Section"}</h3>
+        <p className="whitespace-pre-wrap text-sm leading-6">{block.content?.text || ""}</p>
       </section>
     );
   }
   if (block.type === "table") {
     const rows = Array.isArray(block.content?.rows) ? block.content.rows : [];
     return (
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse text-sm" style={getBlockStyle(block)}>
         <tbody>
           {rows.map((row: string[], index: number) => (
             <tr key={index}>
               {row.map((cell, cellIndex) => (
-                <td key={cellIndex} className="border border-slate-200 px-3 py-2 text-slate-700">{cell}</td>
+                <td key={cellIndex} className="border border-slate-200 px-3 py-2">{cell}</td>
               ))}
             </tr>
           ))}
@@ -117,16 +198,16 @@ function PreviewBlock({ block }: { block: BuilderBlock }) {
   }
   if (block.type === "signature") {
     return (
-      <div className="space-y-2 pt-4">
+      <div className="space-y-2 pt-4" style={getBlockStyle(block)}>
         <div className="h-12 w-72 border-b border-slate-500" />
-        <p className="text-xs text-slate-500">{block.content?.label || "Signature"}</p>
+        <p className="text-xs">{block.content?.label || "Signature"}</p>
       </div>
     );
   }
   if (block.type === "logo") {
-    return <div className="inline-flex h-12 items-center border border-slate-200 px-4 text-sm font-semibold text-slate-700">{block.content?.text || "Logo"}</div>;
+    return <div className="inline-flex h-12 items-center border border-slate-200 px-4 text-sm font-semibold" style={getBlockStyle(block, { color: "#334155" })}>{block.content?.text || "Logo"}</div>;
   }
-  return <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{block.content?.text || ""}</p>;
+  return <p className="whitespace-pre-wrap text-sm leading-6" style={getBlockStyle(block, { color: "#334155" })}>{block.content?.text || ""}</p>;
 }
 
 function InsertBlockControl({
@@ -188,11 +269,14 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     initialDocument?.builderBlocks?.length ? initialDocument.builderBlocks : defaultBlocks(initialDocument?.title || "New onboarding document")
   );
   const [activeBlockId, setActiveBlockId] = useState(blocks[0]?.id || "");
+  const [settingsMode, setSettingsMode] = useState<SettingsMode>("block");
+  const [documentSettings, setDocumentSettings] = useState<DocumentSettings>(() => getInitialDocumentSettings(initialDocument));
   const [draggedBlockId, setDraggedBlockId] = useState<string | null>(null);
   const [isPaletteDragging, setIsPaletteDragging] = useState(false);
   const [selectedPaletteType, setSelectedPaletteType] = useState<BlockType | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [hoverDropIndex, setHoverDropIndex] = useState<number | null>(null);
+  const [copiedVariable, setCopiedVariable] = useState<string | null>(null);
 
   const activeBlock = useMemo(() => blocks.find((block) => block.id === activeBlockId) || blocks[0], [activeBlockId, blocks]);
   const activePlacementType = isPaletteDragging ? null : selectedPaletteType;
@@ -200,6 +284,31 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
 
   const updateBlock = (blockId: string, updater: (block: BuilderBlock) => BuilderBlock) => {
     setBlocks((current) => current.map((block) => (block.id === blockId ? updater(block) : block)));
+  };
+
+  const updateBlockStyle = (blockId: string, patch: Record<string, any>) => {
+    updateBlock(blockId, (block) => ({
+      ...block,
+      style: Object.entries(patch).reduce(
+        (nextStyle, [key, value]) => {
+          if (value === undefined || value === null || value === "") {
+            delete nextStyle[key];
+          } else {
+            nextStyle[key] = value;
+          }
+          return nextStyle;
+        },
+        { ...(block.style || {}) } as Record<string, any>
+      ),
+    }));
+  };
+
+  const resetBlockStyle = (blockId: string) => {
+    updateBlock(blockId, (block) => ({ ...block, style: {} }));
+  };
+
+  const updateDocumentSettings = (patch: Partial<DocumentSettings>) => {
+    setDocumentSettings((current) => ({ ...current, ...patch }));
   };
 
   const moveBlock = (blockId: string, direction: -1 | 1) => {
@@ -346,12 +455,52 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     }
   };
 
+  const copyVariable = async (variable: string) => {
+    const copyWithTextarea = () => {
+      const textarea = window.document.createElement("textarea");
+      textarea.value = variable;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      window.document.body.appendChild(textarea);
+      textarea.select();
+      const copied = window.document.execCommand("copy");
+      window.document.body.removeChild(textarea);
+      return copied;
+    };
+
+    let copied = false;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(variable);
+        copied = true;
+      } else {
+        copied = copyWithTextarea();
+      }
+    } catch {
+      copied = copyWithTextarea();
+    }
+
+    if (copied) {
+      setCopiedVariable(variable);
+      window.setTimeout(() => {
+        setCopiedVariable((current) => (current === variable ? null : current));
+      }, 1400);
+    } else {
+      setCopiedVariable(null);
+    }
+  };
+
   const save = async () => {
     await onSave({
       title,
       description,
       builderBlocks: blocks,
-      variables: {},
+      variables: {
+        ...((initialDocument?.variables as Record<string, any>) || {}),
+        documentStyle: documentSettings,
+      },
     });
   };
 
@@ -398,14 +547,42 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
               <div className="text-xs font-semibold uppercase text-slate-500">Variables</div>
               <div className="flex flex-wrap gap-2">
                 {variables.map((variable) => (
-                  <Badge key={variable} variant="secondary" className="font-mono text-[11px]">{variable}</Badge>
+                  <button
+                    key={variable}
+                    type="button"
+                    onClick={() => copyVariable(variable)}
+                    className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 font-mono text-[11px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      copiedVariable === variable
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-transparent bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                    }`}
+                    aria-label={`Copy ${variable}`}
+                    title={`Copy ${variable}`}
+                  >
+                    {copiedVariable === variable ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    {variable}
+                    {copiedVariable === variable && <span className="font-sans text-[10px] font-semibold">Copied</span>}
+                  </button>
                 ))}
               </div>
             </div>
           </aside>
 
           <main className="min-h-[720px] rounded-md border bg-white p-4 shadow-sm">
-            <div className="mx-auto min-h-[680px] max-w-[780px] space-y-6 border border-slate-200 bg-white px-10 py-12 shadow-sm">
+            <div
+              className="mx-auto space-y-6 border shadow-sm transition"
+              style={{
+                maxWidth: pageSizes[documentSettings.pageSize].width,
+                minHeight: pageSizes[documentSettings.pageSize].height,
+                padding: `${documentSettings.marginY}px ${documentSettings.marginX}px`,
+                backgroundColor: documentSettings.backgroundColor,
+                borderColor: documentSettings.accentColor,
+                color: documentSettings.textColor,
+                fontFamily: documentSettings.fontFamily,
+                fontSize: `${documentSettings.fontSize}px`,
+                lineHeight: documentSettings.lineHeight,
+              }}
+            >
               <InsertBlockControl
                 index={0}
                 active={isPlacementActive}
@@ -462,16 +639,102 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
           </main>
 
           <aside className="rounded-md border bg-white p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-950">Block settings</p>
-                <p className="text-xs text-slate-500">{activeBlock?.type || "No block selected"}</p>
-              </div>
-              {activeBlock && <GripVertical className="h-4 w-4 text-slate-400" />}
+            <div className="mb-4 grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setSettingsMode("block")}
+                className={`rounded px-3 py-2 text-sm font-medium transition ${settingsMode === "block" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+              >
+                Block
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsMode("document")}
+                className={`rounded px-3 py-2 text-sm font-medium transition ${settingsMode === "document" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+              >
+                Document
+              </button>
             </div>
 
-            {activeBlock ? (
+            {settingsMode === "document" ? (
               <div className="space-y-4">
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">Document properties</p>
+                      <p className="text-xs text-slate-500">{pageSizes[documentSettings.pageSize].label} page</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setDocumentSettings(documentDefaults)}>Reset</Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Page size</Label>
+                  <Select value={documentSettings.pageSize} onValueChange={(value: DocumentSettings["pageSize"]) => updateDocumentSettings({ pageSize: value })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(pageSizes).map(([value, option]) => <SelectItem key={value} value={value}>{option.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Font family</Label>
+                  <Select value={documentSettings.fontFamily} onValueChange={(value) => updateDocumentSettings({ fontFamily: value })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {fontOptions.map((font) => <SelectItem key={font.value} value={font.value}>{font.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Font size</Label>
+                    <Input type="number" min="9" max="28" value={documentSettings.fontSize} onChange={(event) => updateDocumentSettings({ fontSize: clampNumber(Number(event.target.value), 9, 28) })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Line height</Label>
+                    <Input type="number" min="1" max="2.4" step="0.1" value={documentSettings.lineHeight} onChange={(event) => updateDocumentSettings({ lineHeight: clampNumber(Number(event.target.value), 1, 2.4) })} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Side margin</Label>
+                    <Input type="number" min="16" max="96" value={documentSettings.marginX} onChange={(event) => updateDocumentSettings({ marginX: clampNumber(Number(event.target.value), 16, 96) })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Top margin</Label>
+                    <Input type="number" min="16" max="120" value={documentSettings.marginY} onChange={(event) => updateDocumentSettings({ marginY: clampNumber(Number(event.target.value), 16, 120) })} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label>Text</Label>
+                    <Input type="color" value={documentSettings.textColor} onChange={(event) => updateDocumentSettings({ textColor: event.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Paper</Label>
+                    <Input type="color" value={documentSettings.backgroundColor} onChange={(event) => updateDocumentSettings({ backgroundColor: event.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Accent</Label>
+                    <Input type="color" value={documentSettings.accentColor} onChange={(event) => updateDocumentSettings({ accentColor: event.target.value })} />
+                  </div>
+                </div>
+              </div>
+            ) : activeBlock ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">Block properties</p>
+                    <p className="text-xs text-slate-500">{activeBlock.type}</p>
+                  </div>
+                  <GripVertical className="h-4 w-4 text-slate-400" />
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => moveBlock(activeBlock.id, -1)}>Move up</Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => moveBlock(activeBlock.id, 1)}>Move down</Button>
@@ -505,7 +768,7 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
                   <div className="space-y-2">
                     <Label>{activeBlock.type === "signature" ? "Label" : "Content"}</Label>
                     <Textarea
-                      className="min-h-40"
+                      className="min-h-32"
                       value={activeBlock.type === "section" ? activeBlock.content?.text || "" : activeBlock.content?.text || activeBlock.content?.label || ""}
                       onChange={(event) => updateBlock(activeBlock.id, (block) => ({
                         ...block,
@@ -521,7 +784,7 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
                   <div className="space-y-2">
                     <Label>Rows JSON</Label>
                     <Textarea
-                      className="min-h-44 font-mono text-xs"
+                      className="min-h-36 font-mono text-xs"
                       value={JSON.stringify(activeBlock.content?.rows || [], null, 2)}
                       onChange={(event) => {
                         try {
@@ -532,6 +795,79 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
                     />
                   </div>
                 )}
+
+                <div className="border-t pt-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-950">Appearance</p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => resetBlockStyle(activeBlock.id)}>Reset</Button>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Align</Label>
+                        <Select value={(activeBlock.style?.align as string) || "left"} onValueChange={(value) => updateBlockStyle(activeBlock.id, { align: value })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {alignOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Weight</Label>
+                        <Select value={(activeBlock.style?.fontWeight as string) || "normal"} onValueChange={(value) => updateBlockStyle(activeBlock.id, { fontWeight: value })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {weightOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Font size</Label>
+                        <Input type="number" min="8" max="48" value={activeBlock.style?.fontSize ?? ""} placeholder="Auto" onChange={(event) => updateBlockStyle(activeBlock.id, { fontSize: event.target.value ? clampNumber(Number(event.target.value), 8, 48) : undefined })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Line height</Label>
+                        <Input type="number" min="1" max="2.4" step="0.1" value={activeBlock.style?.lineHeight ?? ""} placeholder="Auto" onChange={(event) => updateBlockStyle(activeBlock.id, { lineHeight: event.target.value ? clampNumber(Number(event.target.value), 1, 2.4) : undefined })} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Padding</Label>
+                        <Input type="number" min="0" max="48" value={activeBlock.style?.padding ?? 0} onChange={(event) => updateBlockStyle(activeBlock.id, { padding: clampNumber(Number(event.target.value), 0, 48) })} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-2">
+                        <Label>Text</Label>
+                        <Input type="color" value={activeBlock.style?.color || documentSettings.textColor} onChange={(event) => updateBlockStyle(activeBlock.id, { color: event.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Fill</Label>
+                        <Input type="color" value={activeBlock.style?.backgroundColor || "#ffffff"} onChange={(event) => updateBlockStyle(activeBlock.id, { backgroundColor: event.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Border</Label>
+                        <Input type="color" value={activeBlock.style?.borderColor || "#e2e8f0"} onChange={(event) => updateBlockStyle(activeBlock.id, { borderColor: event.target.value })} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Border width</Label>
+                        <Input type="number" min="0" max="8" value={activeBlock.style?.borderWidth ?? 0} onChange={(event) => updateBlockStyle(activeBlock.id, { borderWidth: clampNumber(Number(event.target.value), 0, 8) })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Radius</Label>
+                        <Input type="number" min="0" max="32" value={activeBlock.style?.borderRadius ?? 0} onChange={(event) => updateBlockStyle(activeBlock.id, { borderRadius: clampNumber(Number(event.target.value), 0, 32) })} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 <Button type="button" variant="destructive" className="w-full" onClick={() => removeBlock(activeBlock.id)}>
                   <Trash2 className="h-4 w-4" />

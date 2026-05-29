@@ -2,9 +2,22 @@ const PDFDocument = require('pdfkit');
 const { PDFDocument: PdfLibDocument, rgb, StandardFonts } = require('pdf-lib');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
-const PAGE_WIDTH = 612;
-const PAGE_HEIGHT = 792;
-const PAGE_MARGIN = 54;
+const PAGE_SIZES = {
+  letter: [612, 792],
+  a4: [595.28, 841.89],
+  legal: [612, 1008]
+};
+
+const DEFAULT_DOCUMENT_STYLE = {
+  pageSize: 'letter',
+  fontSize: 10,
+  lineHeight: 1.45,
+  textColor: '#1f2937',
+  backgroundColor: '#ffffff',
+  accentColor: '#2563eb',
+  marginX: 54,
+  marginY: 54
+};
 
 function normalizeText(value = '') {
   return decodeHtmlEntities(String(value ?? ''))
@@ -40,24 +53,225 @@ function createDefaultBlocks(title) {
   ];
 }
 
-function drawTable(doc, rows = []) {
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
+function normalizeHexColor(value, fallback) {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed) ? trimmed : fallback;
+}
+
+function getDocumentStyle(variables = {}) {
+  const saved = variables && typeof variables.documentStyle === 'object' && variables.documentStyle
+    ? variables.documentStyle
+    : {};
+
+  const pageSize = PAGE_SIZES[saved.pageSize] ? saved.pageSize : DEFAULT_DOCUMENT_STYLE.pageSize;
+
+  return {
+    pageSize,
+    fontSize: clampNumber(saved.fontSize, 9, 28, DEFAULT_DOCUMENT_STYLE.fontSize),
+    lineHeight: clampNumber(saved.lineHeight, 1, 2.4, DEFAULT_DOCUMENT_STYLE.lineHeight),
+    textColor: normalizeHexColor(saved.textColor, DEFAULT_DOCUMENT_STYLE.textColor),
+    backgroundColor: normalizeHexColor(saved.backgroundColor, DEFAULT_DOCUMENT_STYLE.backgroundColor),
+    accentColor: normalizeHexColor(saved.accentColor, DEFAULT_DOCUMENT_STYLE.accentColor),
+    marginX: clampNumber(saved.marginX, 16, 96, DEFAULT_DOCUMENT_STYLE.marginX),
+    marginY: clampNumber(saved.marginY, 16, 120, DEFAULT_DOCUMENT_STYLE.marginY)
+  };
+}
+
+function getBlockStyle(block = {}) {
+  const style = block && typeof block.style === 'object' && block.style ? block.style : {};
+  const align = ['left', 'center', 'right', 'justify'].includes(style.align) ? style.align : undefined;
+
+  return {
+    align,
+    color: normalizeHexColor(style.color, undefined),
+    backgroundColor: normalizeHexColor(style.backgroundColor, undefined),
+    borderColor: normalizeHexColor(style.borderColor, undefined),
+    borderWidth: clampNumber(style.borderWidth, 0, 8, 0),
+    borderRadius: clampNumber(style.borderRadius, 0, 32, 0),
+    fontSize: style.fontSize === undefined ? undefined : clampNumber(style.fontSize, 8, 48, undefined),
+    lineHeight: style.lineHeight === undefined ? undefined : clampNumber(style.lineHeight, 1, 2.4, undefined),
+    fontWeight: style.fontWeight,
+    padding: clampNumber(style.padding, 0, 48, 0)
+  };
+}
+
+function isBoldWeight(weight) {
+  return ['bold', '600', '700', '800', '900'].includes(String(weight || '').toLowerCase());
+}
+
+function fontNameForStyle(style, boldFallback = false) {
+  return isBoldWeight(style.fontWeight) || boldFallback ? 'Helvetica-Bold' : 'Helvetica';
+}
+
+function lineGapFor(fontSize, lineHeight) {
+  return Math.max(0, fontSize * lineHeight - fontSize);
+}
+
+function contentWidth(doc) {
+  return doc.page.width - doc.page.margins.left - doc.page.margins.right;
+}
+
+function ensureSpace(doc, requiredHeight) {
+  if (doc.y + requiredHeight > doc.page.height - doc.page.margins.bottom) {
+    doc.addPage();
+  }
+}
+
+function drawPageBackground(doc, documentStyle) {
+  if (documentStyle.backgroundColor === '#ffffff') return;
+  doc.save()
+    .rect(0, 0, doc.page.width, doc.page.height)
+    .fill(documentStyle.backgroundColor)
+    .restore();
+}
+
+function drawBox(doc, x, y, width, height, style) {
+  const hasBackground = style.backgroundColor && style.backgroundColor !== '#ffffff';
+  const hasBorder = style.borderWidth > 0;
+  if (!hasBackground && !hasBorder) return;
+
+  doc.save();
+
+  if (hasBackground) {
+    const fillPath = style.borderRadius > 0
+      ? doc.roundedRect(x, y, width, height, style.borderRadius)
+      : doc.rect(x, y, width, height);
+    fillPath.fill(style.backgroundColor);
+  }
+
+  if (hasBorder) {
+    const strokePath = style.borderRadius > 0
+      ? doc.roundedRect(x, y, width, height, style.borderRadius)
+      : doc.rect(x, y, width, height);
+    strokePath
+      .lineWidth(style.borderWidth)
+      .stroke(style.borderColor || '#d1d5db');
+  }
+
+  doc.restore();
+}
+
+function drawStyledText(doc, text, style, documentStyle, options = {}) {
+  const fontSize = style.fontSize || options.fontSize || documentStyle.fontSize;
+  const font = fontNameForStyle(style, Boolean(options.bold));
+  const lineGap = lineGapFor(fontSize, style.lineHeight || documentStyle.lineHeight);
+  const x = doc.page.margins.left;
+  const width = contentWidth(doc);
+  const padding = style.padding || 0;
+  const textOptions = {
+    width: Math.max(40, width - padding * 2),
+    lineGap,
+    align: style.align || options.align || 'left'
+  };
+
+  doc.font(font).fontSize(fontSize);
+  const height = doc.heightOfString(text || ' ', textOptions) + padding * 2;
+  ensureSpace(doc, height);
+
+  const y = doc.y;
+  drawBox(doc, x, y, width, height, style);
+  doc.font(font).fontSize(fontSize).fillColor(style.color || options.color || documentStyle.textColor)
+    .text(text || ' ', x + padding, y + padding, textOptions);
+  doc.y = y + height;
+  doc.moveDown(options.moveDown ?? 0.7);
+}
+
+function drawSection(doc, titleText, bodyText, style, documentStyle) {
+  const fontSize = style.fontSize || documentStyle.fontSize;
+  const titleFontSize = Math.max(fontSize + 1, 12);
+  const lineGap = lineGapFor(fontSize, style.lineHeight || documentStyle.lineHeight);
+  const x = doc.page.margins.left;
+  const width = contentWidth(doc);
+  const padding = style.padding || 0;
+  const align = style.align || 'left';
+  const textWidth = Math.max(40, width - padding * 2);
+
+  doc.font('Helvetica-Bold').fontSize(titleFontSize);
+  const titleHeight = doc.heightOfString(titleText || 'Section', { width: textWidth, lineGap: 2, align });
+  doc.font(fontNameForStyle(style)).fontSize(fontSize);
+  const bodyHeight = bodyText ? doc.heightOfString(bodyText, { width: textWidth, lineGap, align }) : 0;
+  const gap = bodyText ? 6 : 0;
+  const height = titleHeight + gap + bodyHeight + padding * 2;
+
+  ensureSpace(doc, height);
+  const y = doc.y;
+  drawBox(doc, x, y, width, height, style);
+  doc.font('Helvetica-Bold').fontSize(titleFontSize).fillColor(style.color || documentStyle.textColor)
+    .text(titleText || 'Section', x + padding, y + padding, { width: textWidth, lineGap: 2, align });
+
+  if (bodyText) {
+    doc.font(fontNameForStyle(style)).fontSize(fontSize).fillColor(style.color || documentStyle.textColor)
+      .text(bodyText, x + padding, y + padding + titleHeight + gap, { width: textWidth, lineGap, align });
+  }
+
+  doc.y = y + height;
+  doc.moveDown(0.8);
+}
+
+function drawSignatureBlock(doc, label, style, documentStyle) {
+  const fontSize = style.fontSize || documentStyle.fontSize;
+  const x = doc.page.margins.left;
+  const width = contentWidth(doc);
+  const padding = style.padding || 0;
+  const lineWidth = Math.min(220, Math.max(80, width - padding * 2));
+  const align = style.align || 'left';
+  const lineX = align === 'center'
+    ? x + (width - lineWidth) / 2
+    : align === 'right'
+      ? x + width - padding - lineWidth
+      : x + padding;
+  const height = padding * 2 + fontSize + 34;
+
+  ensureSpace(doc, height);
+  const y = doc.y;
+  drawBox(doc, x, y, width, height, style);
+  doc.font(fontNameForStyle(style)).fontSize(fontSize).fillColor(style.color || documentStyle.textColor)
+    .text(label || 'Signature', x + padding, y + padding, {
+      width: Math.max(40, width - padding * 2),
+      align
+    });
+
+  const lineY = y + padding + fontSize + 18;
+  doc.moveTo(lineX, lineY)
+    .lineTo(lineX + lineWidth, lineY)
+    .stroke(style.borderColor || '#6b7280');
+  doc.y = y + height;
+  doc.moveDown(0.5);
+}
+
+function drawTable(doc, rows = [], style = {}, documentStyle = DEFAULT_DOCUMENT_STYLE) {
   const safeRows = Array.isArray(rows) && rows.length ? rows : [
     ['Field', 'Value'],
     ['Candidate', '{{candidate.name}}']
   ];
-  const startX = PAGE_MARGIN;
-  const columnWidth = (PAGE_WIDTH - PAGE_MARGIN * 2) / Math.max(safeRows[0]?.length || 2, 1);
-  const rowHeight = 28;
+  const startX = doc.page.margins.left;
+  const width = contentWidth(doc);
+  const fontSize = style.fontSize || Math.max(9, documentStyle.fontSize - 1);
+  const padding = style.padding || 8;
+  const columnWidth = width / Math.max(safeRows[0]?.length || 2, 1);
+  const rowHeight = Math.max(28, fontSize + padding * 2);
 
   safeRows.forEach((row) => {
     const y = doc.y;
-    if (y + rowHeight > PAGE_HEIGHT - PAGE_MARGIN) {
+    if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
       doc.addPage();
     }
     row.forEach((cell, cellIndex) => {
-      doc.rect(startX + cellIndex * columnWidth, doc.y, columnWidth, rowHeight).stroke('#d1d5db');
-      doc.fontSize(9).fillColor('#111827').text(String(cell || ''), startX + cellIndex * columnWidth + 8, doc.y + 8, {
-        width: columnWidth - 16,
+      const cellX = startX + cellIndex * columnWidth;
+      if (style.backgroundColor && style.backgroundColor !== '#ffffff') {
+        doc.rect(cellX, doc.y, columnWidth, rowHeight).fill(style.backgroundColor);
+      }
+      doc.rect(cellX, doc.y, columnWidth, rowHeight).lineWidth(style.borderWidth || 1).stroke(style.borderColor || '#d1d5db');
+      doc.font(fontNameForStyle(style)).fontSize(fontSize).fillColor(style.color || documentStyle.textColor).text(String(cell || ''), cellX + padding, doc.y + padding, {
+        width: Math.max(24, columnWidth - padding * 2),
+        align: style.align || 'left',
         lineBreak: false
       });
     });
@@ -68,12 +282,18 @@ function drawTable(doc, rows = []) {
 
 async function renderBuilderDocumentToBuffer({ title, builderBlocks = [], variables = {} }) {
   const blocks = builderBlocks.length ? builderBlocks : createDefaultBlocks(title);
+  const documentStyle = getDocumentStyle(variables);
 
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
-        size: 'LETTER',
-        margin: PAGE_MARGIN,
+        size: PAGE_SIZES[documentStyle.pageSize] || PAGE_SIZES.letter,
+        margins: {
+          top: documentStyle.marginY,
+          bottom: documentStyle.marginY,
+          left: documentStyle.marginX,
+          right: documentStyle.marginX
+        },
         info: {
           Title: normalizeText(title || 'Onboarding document'),
           Author: 'Seemplify Recruiter'
@@ -84,8 +304,13 @@ async function renderBuilderDocumentToBuffer({ title, builderBlocks = [], variab
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
+      doc.on('pageAdded', () => drawPageBackground(doc, documentStyle));
+
+      drawPageBackground(doc, documentStyle);
 
       blocks.forEach((block) => {
+        const style = getBlockStyle(block);
+
         if (block.type === 'pageBreak') {
           doc.addPage();
           return;
@@ -94,22 +319,19 @@ async function renderBuilderDocumentToBuffer({ title, builderBlocks = [], variab
         if (block.type === 'heading') {
           const text = normalizeText(replaceVariables(block.content?.text || block.content?.title || title, variables));
           doc.moveDown(0.2);
-          doc.font('Helvetica-Bold').fontSize(18).fillColor('#111827').text(text || 'Untitled document', {
-            lineGap: 4
+          drawStyledText(doc, text || 'Untitled document', style, documentStyle, {
+            bold: true,
+            fontSize: 18,
+            color: '#111827',
+            moveDown: 0.8
           });
-          doc.moveDown(0.8);
           return;
         }
 
         if (block.type === 'section') {
           const titleText = normalizeText(replaceVariables(block.content?.title || 'Section', variables));
           const bodyText = normalizeText(replaceVariables(block.content?.text || block.content?.body || '', variables));
-          doc.font('Helvetica-Bold').fontSize(12).fillColor('#111827').text(titleText);
-          doc.moveDown(0.25);
-          if (bodyText) {
-            doc.font('Helvetica').fontSize(10).fillColor('#374151').text(bodyText, { lineGap: 3 });
-          }
-          doc.moveDown(0.8);
+          drawSection(doc, titleText, bodyText, style, documentStyle);
           return;
         }
 
@@ -117,33 +339,34 @@ async function renderBuilderDocumentToBuffer({ title, builderBlocks = [], variab
           const rows = (block.content?.rows || []).map((row) =>
             row.map((cell) => normalizeText(replaceVariables(cell, variables)))
           );
-          drawTable(doc, rows);
+          drawTable(doc, rows, style, documentStyle);
           return;
         }
 
         if (block.type === 'signature') {
           const label = normalizeText(replaceVariables(block.content?.label || 'Signature', variables));
           doc.moveDown(0.8);
-          doc.font('Helvetica').fontSize(10).fillColor('#374151').text(label);
-          const y = doc.y + 10;
-          doc.moveTo(PAGE_MARGIN, y).lineTo(PAGE_MARGIN + 220, y).stroke('#6b7280');
-          doc.y = y + 18;
+          drawSignatureBlock(doc, label, style, documentStyle);
           return;
         }
 
         if (block.type === 'logo') {
           const text = normalizeText(replaceVariables(block.content?.alt || block.content?.text || 'Company logo', variables));
-          doc.font('Helvetica-Bold').fontSize(11).fillColor('#111827').text(text);
-          doc.moveDown(0.6);
+          drawStyledText(doc, text, style, documentStyle, {
+            bold: true,
+            fontSize: 11,
+            color: '#111827',
+            moveDown: 0.6
+          });
           return;
         }
 
         const text = normalizeText(replaceVariables(block.content?.text || block.content?.body || '', variables));
         if (text) {
-          doc.font('Helvetica').fontSize(10).fillColor('#1f2937').text(text, {
-            lineGap: 4
+          drawStyledText(doc, text, style, documentStyle, {
+            color: documentStyle.textColor,
+            moveDown: 0.7
           });
-          doc.moveDown(0.7);
         }
       });
 
