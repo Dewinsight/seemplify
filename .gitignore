@@ -19,10 +19,14 @@ secrets/
 *token*
 !recruiter/frontend/app/public/ai-interview/\[token\]/
 !recruiter/frontend/app/public/ai-interview/\[token\]/page.tsx
+!ai-interview/frontend/app/public/ai-interview/\[token\]/
+!ai-interview/frontend/app/public/ai-interview/\[token\]/page.tsx
 
 # Logs
 *.log
 logs/
+.playwright-cli/
+output/playwright/
 
 # OS files
 .DS_Store
@@ -39,6 +43,7 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+ai-interview/backend/src/data/store.json
 
 # Build outputs
 dist/

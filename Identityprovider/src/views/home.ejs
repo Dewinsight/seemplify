@@ -70,16 +70,21 @@
     .app-card--primary { border-color: rgba(99,102,241,0.65); box-shadow: 0 18px 42px rgba(99,102,241,0.22); }
     .app-card--primary:hover { border-color: rgba(99,102,241,0.8); box-shadow: 0 22px 46px rgba(99,102,241,0.32); }
     .app-card__icon {
-      width: 46px;
-      height: 46px;
+      width: 44px;
+      height: 44px;
       border-radius: 12px;
-      background: linear-gradient(135deg, var(--app-color, var(--brand, #6366f1)), #ffffff);
+      background: color-mix(in srgb, var(--app-color, var(--brand, #6366f1)) 18%, transparent);
       display: grid;
       place-items: center;
-      color: var(--text, #ffffff);
-      border: 1px solid rgba(255,255,255,0.18);
+      color: var(--app-color, var(--brand, #6366f1));
+      border: 1px solid color-mix(in srgb, var(--app-color, var(--brand, #6366f1)) 32%, transparent);
+      transition: transform 0.25s ease, background-color 0.25s ease;
     }
-    .app-card__icon svg { width: 24px; height: 24px; }
+    .app-card:hover .app-card__icon {
+      transform: scale(1.06);
+      background: color-mix(in srgb, var(--app-color, var(--brand, #6366f1)) 26%, transparent);
+    }
+    .app-card__icon svg { width: 22px; height: 22px; }
     .app-card__body { display: grid; gap: 6px; }
     .app-card__title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; color: var(--text); display: flex; align-items: center; gap: 8px; }
     .app-card__badge {
@@ -111,11 +116,200 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
-    .app-card__desc { color: var(--muted); font-size: 13px; }
+    .app-card__desc { color: var(--muted); font-size: 13px; line-height: 1.55; }
     .app-card__meta { display: flex; gap: 6px; flex-wrap: wrap; }
     .pill { background: var(--panel-strong); border: 1px solid var(--border); color: var(--text-secondary); }
     .pill--soft { background: var(--hover-bg); color: var(--muted); border-color: var(--border); }
-    .app-card__arrow { color: var(--muted); }
+    .app-card__arrow {
+      color: var(--muted);
+      opacity: 0.6;
+      transition: transform 0.2s ease, opacity 0.2s ease, color 0.2s ease;
+    }
+    .app-card:hover .app-card__arrow {
+      transform: translateX(4px);
+      opacity: 1;
+      color: var(--text);
+    }
+
+    /* === Unified Org Hero Card === */
+    .org-hero {
+      padding: 24px 26px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .org-hero__main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .org-hero__identity {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+    .org-hero__icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      box-shadow: 0 10px 24px -10px rgba(139, 92, 246, 0.5);
+    }
+    .org-hero__identity-text { min-width: 0; }
+    .org-hero__eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .org-hero__name {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      line-height: 1.2;
+    }
+    .org-hero__role {
+      text-transform: capitalize;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 9px;
+      letter-spacing: 0.01em;
+    }
+    .org-hero__switch {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .org-hero__count {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--panel-strong);
+      border: 1px solid var(--border);
+    }
+    .org-hero__switch-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel-strong);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .org-hero__switch-btn:hover {
+      background: var(--hover-bg);
+      border-color: rgba(99, 102, 241, 0.32);
+      transform: translateY(-1px);
+    }
+    .org-hero__actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .org-hero__chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 13px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel-strong);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 12.5px;
+      letter-spacing: -0.005em;
+      transition: all 0.18s ease;
+    }
+    .org-hero__chip:hover {
+      background: var(--hover-bg);
+      border-color: rgba(99, 102, 241, 0.32);
+      color: var(--text);
+      transform: translateY(-1px);
+    }
+    .org-hero__chip svg { color: var(--muted); flex-shrink: 0; transition: color 0.18s ease; }
+    .org-hero__chip:hover svg { color: var(--brand); }
+    .org-hero__chip--ghost {
+      background: transparent;
+      border-color: transparent;
+      color: var(--muted);
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+    .org-hero__chip--ghost:hover {
+      background: var(--hover-bg);
+      color: var(--text);
+    }
+    .org-hero__sep {
+      width: 1px;
+      height: 18px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+    @media (max-width: 720px) {
+      .org-hero { padding: 18px; }
+      .org-hero__main { gap: 12px; }
+      .org-hero__icon { width: 40px; height: 40px; border-radius: 10px; }
+      .org-hero__name { font-size: 17px; }
+      .org-hero__switch { width: 100%; justify-content: flex-end; }
+      .org-hero__actions { padding-top: 14px; }
+      .org-hero__sep { display: none; }
+    }
+
+    /* === Action Banner (replaces inline notification cards) === */
+    .action-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      padding: 18px 22px 18px 26px;
+      position: relative;
+    }
+    .action-banner::before {
+      content: '';
+      position: absolute;
+      left: 12px;
+      top: 18px;
+      bottom: 18px;
+      width: 3px;
+      border-radius: 999px;
+      background: var(--brand);
+    }
+    .action-banner--warn::before { background: #f59e0b; }
+    .action-banner--review::before { background: #7c3aed; }
+    .action-banner--lock::before { background: #ef4444; }
+    .action-banner__title { font-weight: 700; font-size: 15.5px; color: var(--text); letter-spacing: -0.01em; }
+    .action-banner__desc { font-size: 13.5px; color: var(--muted); margin-top: 4px; line-height: 1.55; }
+    .action-banner__meta { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .action-banner__meta-row { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 12px; row-gap: 4px; margin-top: 8px; }
+    .action-banner__cta { display: flex; gap: 10px; flex-wrap: wrap; }
 
     .empty {
       margin-top: 12px;
@@ -955,16 +1149,16 @@
     <% } %>
 
     <% if (currentSubscriptionAccess && currentSubscriptionAccess.showExpiryReminder) { %>
-      <div class="card subscription-reminder-card">
+      <div class="card action-banner action-banner--warn subscription-reminder-card">
         <div>
-          <div style="font-weight: 700; font-size: 16px;">Plan expiry reminder</div>
-          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+          <div class="action-banner__title">Plan expiry reminder</div>
+          <div class="action-banner__desc">
             <%= currentSubscriptionAccess.planName || 'Your current plan' %> for <%= currentSubscriptionAccess.organizationName %> expires
             <strong style="color: var(--text);"><%= currentSubscriptionAccess.daysUntilExpiry === 0 ? 'today' : `in ${currentSubscriptionAccess.daysUntilExpiry} day${currentSubscriptionAccess.daysUntilExpiry === 1 ? '' : 's'}` %></strong>.
             Request another plan now to avoid access being locked.
           </div>
         </div>
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <div class="action-banner__cta">
           <a href="/plans" class="btn btn-primary">Request a Plan</a>
           <a href="/subscription" class="ghost-btn">Open Subscription</a>
         </div>
@@ -1032,32 +1226,34 @@
 
     <% if (hasOrganizations && !(currentSubscriptionAccess && currentSubscriptionAccess.isLocked)) { %>
     <% if (notificationSummary && notificationSummary.totalUnread > 0) { %>
-      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.35);">
+      <div class="card action-banner">
         <div>
-          <div style="font-weight: 700; font-size: 16px;">You have pending notifications</div>
-          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+          <div class="action-banner__title">You have pending notifications</div>
+          <div class="action-banner__desc">
             <%= notificationSummary.totalUnread %> task<%= notificationSummary.totalUnread === 1 ? '' : 's' %> need your attention.
           </div>
-          <div style="margin-top: 8px; display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
+          <div class="action-banner__meta">
             <span class="pill pill--soft">Documents: <%= notificationSummary.counts?.documents || 0 %></span>
             <span class="pill pill--soft">Simple Evaluation: <%= notificationSummary.counts?.simplePerformance || 0 %></span>
           </div>
         </div>
-        <a href="/notifications" class="btn btn-primary">Open Notifications</a>
+        <div class="action-banner__cta">
+          <a href="/notifications" class="btn btn-primary">Open Notifications</a>
+        </div>
       </div>
     <% } %>
 
     <% if (pendingSignatureCount > 0) { %>
-      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
+      <div class="card action-banner action-banner--warn">
         <div>
-          <div style="font-weight: 700; font-size: 16px;">Documents waiting for your signature</div>
-          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+          <div class="action-banner__title">Documents waiting for your signature</div>
+          <div class="action-banner__desc">
             You have <%= pendingSignatureCount %> pending document<%= pendingSignatureCount === 1 ? '' : 's' %> to sign.
           </div>
           <% if (pendingSignatureDocuments.length > 0) { %>
-            <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
+            <div class="action-banner__meta-row">
               <% pendingSignatureDocuments.slice(0, 3).forEach(doc => { %>
-                <span style="display:inline-flex; align-items:center; gap:6px; margin-right: 12px;">
+                <span style="display:inline-flex; align-items:center; gap:6px;">
                   <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#f59e0b;"></span>
                   <%= doc.title %> • <%= doc.organizationName || 'Organization' %>
                 </span>
@@ -1065,19 +1261,21 @@
             </div>
           <% } %>
         </div>
-        <a href="<%= firstDocumentNotificationActionUrl %>" class="btn btn-primary">Review &amp; Sign</a>
+        <div class="action-banner__cta">
+          <a href="<%= firstDocumentNotificationActionUrl %>" class="btn btn-primary">Review &amp; Sign</a>
+        </div>
       </div>
     <% } else if (pendingOnboardingCount && pendingOnboardingCount > 0) { %>
-      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
+      <div class="card action-banner action-banner--warn">
         <div>
-          <div style="font-weight: 700; font-size: 16px;">Documents need your attention</div>
-          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+          <div class="action-banner__title">Documents need your attention</div>
+          <div class="action-banner__desc">
             You have <%= pendingOnboardingCount %> pending document step<%= pendingOnboardingCount === 1 ? '' : 's' %> waiting.
           </div>
           <% if (pendingOnboardingAssignments && pendingOnboardingAssignments.length > 0) { %>
-            <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
+            <div class="action-banner__meta-row">
               <% pendingOnboardingAssignments.slice(0, 3).forEach(assignment => { %>
-                <span style="display:inline-flex; align-items:center; gap:6px; margin-right: 12px;">
+                <span style="display:inline-flex; align-items:center; gap:6px;">
                   <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#f59e0b;"></span>
                   <%= assignment.organization?.name || 'Organization' %>
                 </span>
@@ -1085,21 +1283,23 @@
             </div>
           <% } %>
         </div>
-        <a href="/documents" class="btn btn-primary">Open Documents Workspace</a>
+        <div class="action-banner__cta">
+          <a href="/documents" class="btn btn-primary">Open Documents Workspace</a>
+        </div>
       </div>
     <% } %>
 
     <% if (receivedEvaluationCount && receivedEvaluationCount > 0) { %>
-      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 24px;">
+      <div class="card action-banner action-banner--review">
         <div>
-          <div style="font-weight: 700; font-size: 16px;">New performance feedback available</div>
-          <div style="color: var(--muted); font-size: 14px; margin-top: 4px;">
+          <div class="action-banner__title">New performance feedback available</div>
+          <div class="action-banner__desc">
             You have <%= receivedEvaluationCount %> performance evaluation<%= receivedEvaluationCount === 1 ? '' : 's' %> available for review.
           </div>
           <% if (latestReceivedEvaluations && latestReceivedEvaluations.length > 0) { %>
-            <div style="margin-top: 8px; font-size: 13px; color: var(--muted);">
+            <div class="action-banner__meta-row">
               <% latestReceivedEvaluations.forEach(entry => { %>
-                <span style="display:inline-flex; align-items:center; gap:6px; margin-right: 12px; margin-bottom: 6px;">
+                <span style="display:inline-flex; align-items:center; gap:6px;">
                   <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#7c3aed;"></span>
                   <strong style="color: var(--text);"><%= entry.evaluatorName || entry.evaluatorEmail || 'Manager' %></strong>
                   <span><%= new Date(entry.evaluationDate || entry.createdAt).toLocaleDateString() %></span>
@@ -1109,82 +1309,67 @@
             </div>
           <% } %>
         </div>
-        <a href="/performance-evaluations?view=overview&reviewed=me" class="btn btn-primary">View My Evaluations</a>
+        <div class="action-banner__cta">
+          <a href="/performance-evaluations?view=overview&reviewed=me" class="btn btn-primary">View My Evaluations</a>
+        </div>
       </div>
     <% } %>
 
     <section class="apps">
-      <div class="section-title">Manage identity & access</div>
+      <div class="section-title">Identity & access</div>
 
       <% if (organizations && organizations.length > 0) { %>
       <% const currentOrg = organizations.find(o => o.isCurrent) %>
-      <div class="card hub-card" style="padding: 0; margin-bottom: 24px; overflow: hidden; display: flex; flex-direction: column; gap: 0;">
-        <!-- Top Strip: Current Org & Switcher -->
-        <div class="org-top-strip" style="padding: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--border); background: var(--hover-bg);">
-          <div style="display: flex; align-items: center; gap: 16px;">
-            <div class="org-icon" style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95); display: grid; place-items: center;">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+      <div class="card org-hero">
+        <div class="org-hero__main">
+          <div class="org-hero__identity">
+            <div class="org-hero__icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                 <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
               </svg>
             </div>
-            <div>
-              <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px;">Current Organization</div>
-              <div class="org-name" style="font-size: 18px; font-weight: 700; color: var(--text);"><%= currentOrg ? currentOrg.name : 'Select Organization' %></div>
+            <div class="org-hero__identity-text">
+              <div class="org-hero__eyebrow">Current organization</div>
+              <div class="org-hero__name">
+                <%= currentOrg ? currentOrg.name : 'Select organization' %>
+                <% if (currentOrg && currentOrg.role) { %>
+                  <span class="org-hero__role role-badge role-<%= currentOrg.role %>"><%= currentOrg.role %></span>
+                <% } %>
+              </div>
             </div>
           </div>
-
-          <div class="org-actions-row" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-            <% if (currentOrg) { %>
-              <a href="/organizations/<%= currentOrg.id %>/members" class="ghost-btn">Members</a>
-              <a href="/organizations/<%= currentOrg.id %>/teams" class="ghost-btn">Teams</a>
-              <% if (['owner', 'admin'].includes(currentOrg.role)) { %>
-                <a href="/organizations/<%= currentOrg.id %>/invitations" class="ghost-btn">Invites</a>
-              <% } %>
-              <div class="org-divider" style="width: 1px; height: 24px; background: var(--border); margin: 0 4px;"></div>
+          <div class="org-hero__switch">
+            <% if (organizations.length > 1) { %>
+              <span class="org-hero__count"><%= organizations.length %> orgs</span>
             <% } %>
-            <button onclick="openOrgModal()" style="
-              display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-              background: var(--panel-strong); border: 1px solid var(--border);
-              border-radius: 8px; color: var(--text); font-weight: 500; font-size: 14px; cursor: pointer;
-              transition: all 0.2s;
-            " class="org-switch-btn">
-              <span>Switch...</span>
-              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            <button type="button" onclick="openOrgModal()" class="org-hero__switch-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              Switch
             </button>
-            <div class="org-count-badge" style="padding: 10px 14px; background: var(--panel-strong); border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; gap: 8px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-              </svg>
-              <span style="font-size: 13px; font-weight: 600; color: var(--text);"><%= organizations.length %> Org<%= organizations.length === 1 ? '' : 's' %></span>
-            </div>
           </div>
         </div>
 
-        <!-- Bottom Strip: Settings & Actions -->
-        <div class="org-bottom-strip" style="padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; background: var(--panel);">
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <div class="settings-icon" style="width: 40px; height: 40px; border-radius: 10px; background: rgba(99, 102, 241, 0.1); display: grid; place-items: center;">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2.5">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-              </svg>
-            </div>
-            <div>
-              <div class="settings-title" style="font-weight: 600; color: var(--text); font-size: 15px;">Organization Settings</div>
-              <div class="settings-desc" style="font-size: 13px; color: var(--muted);">Manage your organization structure and team access</div>
-            </div>
-          </div>
-
-          <div class="org-bottom-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <a href="/profile" class="ghost-btn">Profile</a>
-            <a href="/organizations" class="ghost-btn">Orgs</a>
-            <a href="/invitations/pending" class="ghost-btn">Invites</a>
-          </div>
+        <div class="org-hero__actions">
+          <% if (currentOrg) { %>
+            <a href="/organizations/<%= currentOrg.id %>/members" class="org-hero__chip">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Members
+            </a>
+            <a href="/organizations/<%= currentOrg.id %>/teams" class="org-hero__chip">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Teams
+            </a>
+            <% if (['owner', 'admin'].includes(currentOrg.role)) { %>
+              <a href="/organizations/<%= currentOrg.id %>/invitations" class="org-hero__chip">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                Invites
+              </a>
+            <% } %>
+          <% } %>
+          <span class="org-hero__sep"></span>
+          <a href="/profile" class="org-hero__chip org-hero__chip--ghost">Profile</a>
+          <a href="/organizations" class="org-hero__chip org-hero__chip--ghost">All orgs</a>
+          <a href="/invitations/pending" class="org-hero__chip org-hero__chip--ghost">My invites</a>
         </div>
       </div>
       <% } %>

@@ -43,6 +43,7 @@ The ACCESS-GUIDE.md includes URLs, CLI commands, credential locations, and troub
 || **ZULIP-CREDENTIALS.md** | Zulip environment variables |
 || **BREVO-CONFIGURATION.md** | Brevo API and SMTP settings |
 || **GITHUB-SECRETS-SETUP-GUIDE.md** | GitHub Actions secrets configuration |
+|| **CANDIDATE-PORTAL-DOKPLOY-DEPLOYMENT.md** | Candidate portal Dokploy apps, domains, DNS, and GitHub workflow setup |
 || **CREDENTIALS-UPDATE-SUMMARY.md** | Credentials update history |
 || **CLOUDFLARE-API-ISSUE.md** | Cloudflare API troubleshooting |
 || **azure-budget-vm/** | Budget Azure Linux VM: SSH keys + [AZURE-BUDGET-VM-ACCESS.md](./azure-budget-vm/AZURE-BUDGET-VM-ACCESS.md) |

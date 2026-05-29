@@ -6,15 +6,6 @@
 // Determine environment from NODE_ENV
 const isProduction = process.env.NODE_ENV === 'production'
 
-function buildLmsLaunchUrl(baseUrl) {
-  const normalized = (baseUrl || '').replace(/\/+$/, '')
-  if (!normalized) return baseUrl
-  if (normalized.endsWith('/lms')) {
-    return `${normalized}/`
-  }
-  return `${normalized}/lms/`
-}
-
 // Development apps configuration
 const developmentApps = [
   {
@@ -122,11 +113,11 @@ const developmentApps = [
   },
   {
     appId: 'lms',
-    name: 'Seemplify LMS',
-    description: 'Online courses, training, and certifications',
+    name: 'Simple LMS',
+    description: 'Online courses, training, and certifications (Identity Provider)',
     icon: 'academic-cap',
     color: '#06b6d4',
-    url: buildLmsLaunchUrl(process.env.LMS_URL || 'http://localhost:8000'),
+    url: process.env.SIMPLE_LMS_URL || 'http://localhost:4000/simple-lms',
     authType: 'direct',
     isActive: true,
     isPublic: true,
@@ -256,11 +247,11 @@ const productionApps = [
   },
   {
     appId: 'lms',
-    name: 'Seemplify LMS',
-    description: 'Online courses, training, and certifications',
+    name: 'Simple LMS',
+    description: 'Online courses, training, and certifications (Identity Provider)',
     icon: 'academic-cap',
     color: '#06b6d4',
-    url: buildLmsLaunchUrl(process.env.LMS_URL || 'https://lms.seemplifyai.com'),
+    url: process.env.SIMPLE_LMS_URL || 'https://auth.seemplifyai.com/simple-lms',
     authType: 'direct',
     isActive: true,
     isPublic: true,

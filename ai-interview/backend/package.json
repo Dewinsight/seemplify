@@ -1,0 +1,22 @@
+{
+  "name": "seemplify-ai-interview-backend",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/store.js && node --check src/interviewEngine.js && node --check src/auth.js && node --check src/brevoEmailService.js && node --check src/llmRuntimeConfig.js && node --check src/llmClient.js && node --check src/aiInterviewerService.js && node --check src/azureSpeechSttService.js && node --check src/questionGeneratorService.js && node --check src/cvParsingService.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "mammoth": "^1.9.1",
+    "microsoft-cognitiveservices-speech-sdk": "^1.49.0",
+    "mongoose": "^8.15.1",
+    "multer": "^2.0.1",
+    "pdfjs-dist": "^5.4.394",
+    "xlsx": "^0.18.5"
+  }
+}

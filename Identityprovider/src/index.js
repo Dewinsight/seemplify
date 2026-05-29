@@ -1256,8 +1256,8 @@ app.get('/interaction/:uid', async (req, res) => {
       <head>
         <title>${brand.name} - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="/css/idp-theme.css?v=5">
-        <link rel="stylesheet" href="/css/login.css?v=5">
+        <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+        <link rel="stylesheet" href="/css/login.css?v=6">
         <script src="/js/theme.js?v=5"></script>
         <style>
           body { visibility: hidden; }
@@ -1559,7 +1559,7 @@ app.get('/interaction/:uid', async (req, res) => {
         <head>
           <title>Session Expired - Seemplify Identity</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <link rel="stylesheet" href="/css/idp-theme.css?v=5">
+          <link rel="stylesheet" href="/css/idp-theme.css?v=6">
           <script src="/js/theme.js?v=5"></script>
           <style>
             body { 
@@ -1636,8 +1636,8 @@ app.get('/signup/:uid', async (req, res) => {
     <head>
       <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css?v=5">
-      <link rel="stylesheet" href="/css/login.css?v=5">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=6">
       <script src="/js/theme.js?v=5"></script>
       <style>
         body { visibility: hidden; }
@@ -2066,7 +2066,7 @@ app.get('/verify-email/:accountId', async (req, res) => {
     <head>
       <title>Verify Email - Seemplify Identity</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css?v=5">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
       <script src="/js/theme.js?v=5"></script>
       <style>
         body {
@@ -2430,7 +2430,7 @@ app.get('/forgot-password', async (req, res) => {
     <head>
       <title>Forgot Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css?v=5">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
       <script src="/js/theme.js?v=5"></script>
       <style>
         body { 
@@ -9041,8 +9041,8 @@ function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = nu
       <meta charset="UTF-8">
       <title>${brand.name} - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css?v=5">
-      <link rel="stylesheet" href="/css/login.css?v=5">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=6">
       <script src="/js/theme.js?v=5"></script>
       <style>
         ${brand.cssVars}
@@ -9277,127 +9277,158 @@ function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = nu
 function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
   const brand = getIdpBrand(req)
   const hiddenAttributionInputs = buildHiddenAttributionInputs(attributionValues)
+  const marketingFeatures = brand.marketing ? brand.marketing.features : [
+    { title: 'Single Sign-On', desc: `One identity for ${brand.name}, SmartHR, LMS, AI Assistant, and all connected apps.`, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+    { title: 'Adaptive Security', desc: 'MFA, session continuity, and SOC 2-ready controls baked in from day one.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'purple' },
+    { title: 'Instant Setup', desc: 'Free trial, no credit card required. Invite your team and start in minutes.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'accent' }
+  ]
+  const marketingPill = brand.marketing ? brand.marketing.pill : 'Start free &bull; No credit card required'
+  const marketingHeading = brand.marketing ? brand.marketing.heading : 'Join the workspace,<br/><span class="highlight">unified.</span>'
+  const marketingDesc = brand.marketing ? brand.marketing.desc : `Create your ${brand.name} identity to connect HR, learning, and collaboration tools through one secure account.`
+
   return `
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="UTF-8">
       <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="/css/idp-theme.css?v=5">
-      <link rel="stylesheet" href="/css/login.css?v=5">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
-        body {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 32px 18px;
-          position: relative;
-        }
-        .shell {
-          position: relative;
-          z-index: 1;
-          width: min(1080px, 100%);
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
-          align-items: stretch;
-        }
-        .card { padding: 28px; }
-        .btn { width: 100%; margin-top: 6px; }
-        @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
-        @media (max-width: 640px) { .card { padding: 22px; } }
         ${brand.cssVars}
       </style>
-      <script src="/js/theme.js?v=3"></script>
     </head>
     <body class="${brand.themeClass}">
-      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
-        <div class="theme-dropdown">
-          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          </button>
-          <div class="theme-menu" id="theme-menu">
-            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-              Light
-            </button>
-            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              Dark
-            </button>
-            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              System
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="halo one"></div>
-      <div class="halo two"></div>
-      <div class="halo three"></div>
+      <div class="grid-overlay"></div>
 
-      <div class="shell">
-        <div class="card intro">
-          <span class="pill">AIIN Identity / New account</span>
-          <h1>Create your AIIN identity</h1>
-          <p>Aligned with the ${brand.name} dashboard aesthetic for a seamless move between login, hub, and apps.</p>
-          <div class="list">
-            <div class="list-item"><span class="dot"></span>SSO-ready hub credentials</div>
-            <div class="list-item"><span class="dot"></span>Adaptive MFA and session continuity</div>
-            <div class="list-item"><span class="dot"></span>Instant access to ${brand.name} and connected tools</div>
-          </div>
-        </div>
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
 
-        <div class="card form-card">
-          <div class="form-header">
-            <div>
-              <span class="eyebrow">Identity</span>
-              <h2 class="form-title">Create account</h2>
-              <p class="hint">One account for the hub and all connected apps.</p>
-            </div>
-            <div class="brand-mark">
-              ${brand.logoHtml}
-            </div>
-          </div>
+      <div class="login-split">
+        <!-- LEFT: Form Panel -->
+        <div class="login-form-panel">
+          <a href="/" class="login-back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Back to home
+          </a>
 
-          ${errorMsg ? `<div class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
-
-          <form id="signupForm" action="/signup" method="POST">
-            ${hiddenAttributionInputs}
-            <div class="form-group">
-              <label for="name">Full name (optional)</label>
-              <input type="text" id="name" name="name" placeholder="Jordan Harper" />
+          <div class="login-form-inner">
+            <div class="login-brand">
+              <div class="brand-mark">${brand.logoHtml}</div>
+              <span class="login-brand-name">${brand.name}</span>
             </div>
 
-            <div class="form-group">
-              <label for="email">Work email</label>
-              <input type="email" id="email" name="email" placeholder="you@company.com" required autofocus />
-            </div>
+            <h1 class="login-heading">Create your account</h1>
+            <p class="login-subheading">One identity for ${brand.name} and every connected app. Free trial included.</p>
 
-            <div class="form-group">
-              <label for="password">Password</label>
-              <input type="password" id="password" name="password" placeholder="Create a strong password" required minlength="8" />
-              <div class="password-strength">
-                <div class="password-strength-bar" id="strengthBar"></div>
+            ${errorMsg ? `<div id="signupError" class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
+
+            <form id="signupForm" action="/signup" method="POST">
+              ${hiddenAttributionInputs}
+
+              <div class="form-group">
+                <label for="name">Full name <span class="label-hint">(optional)</span></label>
+                <input type="text" id="name" name="name" placeholder="Jordan Harper" autocomplete="name" />
               </div>
-              <div class="password-hint" id="strengthText">Use 8+ characters with letters, numbers, and symbols.</div>
+
+              <div class="form-group">
+                <label for="email">Work email</label>
+                <input type="email" id="email" name="email" placeholder="you@company.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required autofocus />
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <div class="password-field">
+                  <input type="password" id="password" name="password" placeholder="Create a strong password" autocomplete="new-password" required minlength="8" />
+                  <button type="button" id="passwordToggle" class="password-toggle" aria-label="Show password" aria-controls="password" aria-pressed="false">
+                    <svg class="password-toggle-icon password-toggle-icon--show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg class="password-toggle-icon password-toggle-icon--hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.7 21.7 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.72 21.72 0 0 1-3.1 4.44M1 1l22 22"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="password-strength">
+                  <div class="password-strength-bar" id="strengthBar"></div>
+                </div>
+                <div class="password-hint" id="strengthText">Use 8+ characters with letters, numbers, and symbols.</div>
+              </div>
+
+              <div class="form-group">
+                <label for="confirmPassword">Confirm password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" autocomplete="new-password" required />
+              </div>
+
+              <button type="submit" id="submitBtn">
+                <span id="btnText">Create account</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </form>
+
+            <p class="terms-line">By creating an account, you agree to our terms of service and privacy policy.</p>
+
+            <div class="divider"><span>or</span></div>
+
+            <div class="signup-link">
+              Already have an account? <a class="link" href="/login">Sign in</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Marketing Panel -->
+        <div class="login-marketing-panel">
+          <div class="marketing-inner">
+            <div class="marketing-pill">
+              <span class="status-dot"></span>
+              ${marketingPill}
             </div>
 
-            <div class="form-group">
-              <label for="confirmPassword">Confirm password</label>
-              <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" required />
+            <h2 class="marketing-heading">
+              ${marketingHeading}
+            </h2>
+
+            <p class="marketing-desc">
+              ${marketingDesc}
+            </p>
+
+            <div class="feature-cards">
+              ${marketingFeatures.map(f => `
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--${f.color}">
+                  ${f.icon}
+                </div>
+                <div>
+                  <div class="feature-title">${f.title}</div>
+                  <div class="feature-desc">${f.desc}</div>
+                </div>
+              </div>
+              `).join('')}
             </div>
-
-            <button type="submit" id="submitBtn" class="btn">
-              <span id="btnText">Create account</span>
-            </button>
-          </form>
-
-          <hr class="divider" />
-
-          <div class="login-link">
-            Already a member? <a href="/login">Sign in</a>
           </div>
         </div>
       </div>
@@ -9410,12 +9441,20 @@ function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
         const confirmPasswordInput = document.getElementById('confirmPassword');
         const strengthBar = document.getElementById('strengthBar');
         const strengthText = document.getElementById('strengthText');
+        const passwordToggle = document.getElementById('passwordToggle');
         const hasError = ${JSON.stringify(Boolean(errorMsg))};
 
         if (hasError) {
           const cleanUrl = new URL(window.location.href);
           cleanUrl.searchParams.delete('error');
           window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        }
+
+        function setSubmittingState(isSubmitting) {
+          if (!submitBtn || !btnText) return;
+          submitBtn.disabled = isSubmitting;
+          submitBtn.classList.toggle('is-loading', isSubmitting);
+          btnText.innerHTML = isSubmitting ? '<span class="spinner"></span>Creating account...' : 'Create account';
         }
 
         passwordInput.addEventListener('input', () => {
@@ -9429,7 +9468,10 @@ function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
           if (/[^a-zA-Z0-9]/.test(password)) strength++;
 
           strengthBar.className = 'password-strength-bar';
-          if (strength <= 2) {
+          if (!password) {
+            strengthText.textContent = 'Use 8+ characters with letters, numbers, and symbols.';
+            strengthText.style.color = '';
+          } else if (strength <= 2) {
             strengthBar.classList.add('strength-weak');
             strengthText.textContent = 'Weak password';
             strengthText.style.color = '#fca5a5';
@@ -9444,14 +9486,53 @@ function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
           }
         });
 
+        if (passwordToggle && passwordInput) {
+          passwordToggle.addEventListener('click', () => {
+            const shouldShowPassword = passwordInput.type === 'password';
+            passwordInput.type = shouldShowPassword ? 'text' : 'password';
+            passwordToggle.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
+            passwordToggle.setAttribute('aria-label', shouldShowPassword ? 'Hide password' : 'Show password');
+            passwordToggle.classList.toggle('is-visible', shouldShowPassword);
+            passwordInput.focus();
+          });
+        }
+
         form.addEventListener('submit', (e) => {
           if (passwordInput.value !== confirmPasswordInput.value) {
             e.preventDefault();
             alert('Passwords do not match');
             return;
           }
-          submitBtn.disabled = true;
-          btnText.innerHTML = '<span class=\"spinner\"></span>Creating account...';
+          setSubmittingState(true);
+        });
+
+        window.addEventListener('pageshow', () => {
+          setSubmittingState(false);
+        });
+
+        function toggleTheme() {
+          const current = window.ThemeManager?.getTheme() || 'dark';
+          const next = current === 'dark' ? 'light' : 'dark';
+          window.ThemeManager?.setTheme(next);
+          updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+          const sunIcon = document.querySelector('.theme-icon-sun');
+          const moonIcon = document.querySelector('.theme-icon-moon');
+          if (!sunIcon || !moonIcon) return;
+          if (theme === 'light') {
+            sunIcon.style.display = 'none';
+            moonIcon.style.display = 'block';
+          } else {
+            sunIcon.style.display = 'block';
+            moonIcon.style.display = 'none';
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+          const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+          updateThemeIcon(currentTheme);
         });
       </script>
     </body>
