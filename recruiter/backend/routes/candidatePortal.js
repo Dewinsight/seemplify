@@ -471,6 +471,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
         email: req.candidateAccount.email
       },
       signerRole: 'candidate',
+      signerKey: signer.key,
       signatureDataUrl: req.body.signatureDataUrl,
       signedAt,
       auditText: `Signed by ${req.candidateAccount.email} via Seemplify Candidate Portal`
@@ -499,7 +500,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
       actorCandidateAccount: req.candidateAccount._id,
       actorEmail: req.candidateAccount.email,
       action: 'candidate_signed',
-      metadata: { completed }
+      metadata: { signerKey: signer.key, completed }
     });
 
     if (completed) {
@@ -510,6 +511,18 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
           organization: envelope.organization,
           envelope
         }).catch((error) => console.error('Failed to send completion email:', error))
+      ));
+    } else {
+      const readySigners = envelope.signers.filter((item) =>
+        ['pending', 'viewed'].includes(item.status) &&
+        canSignerAct(envelope, item)
+      );
+      await Promise.all(readySigners.map((item) =>
+        onboardingEmailService.sendEnvelopeSignerNotification({
+          signer: item,
+          organization: envelope.organization,
+          envelope
+        }).catch((error) => console.error('Failed to send signer notification:', error))
       ));
     }
 

@@ -423,6 +423,7 @@ async function stampSignedPdf({
   signatureFields = [],
   signer,
   signerRole = 'candidate',
+  signerKey,
   signatureDataUrl,
   signedAt = new Date(),
   auditText
@@ -450,7 +451,10 @@ async function stampSignedPdf({
   });
 
   signatureFields
-    .filter((field) => (field.role || 'candidate') === signerRole)
+    .filter((field) => {
+      if (signerKey && field.signerKey) return field.signerKey === signerKey;
+      return (field.role || 'candidate') === signerRole;
+    })
     .forEach((field) => {
       const page = pages[Math.max(0, Number(field.page || 1) - 1)];
       if (!page) return;

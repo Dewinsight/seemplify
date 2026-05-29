@@ -13,6 +13,7 @@ const SignatureFieldSchema = new mongoose.Schema({
     default: 'signature'
   },
   label: String,
+  signerKey: { type: String, trim: true },
   page: { type: Number, default: 1 },
   x: { type: Number, default: 0.1 },
   y: { type: Number, default: 0.1 },
@@ -58,6 +59,10 @@ const EnvelopeDocumentSchema = new mongoose.Schema({
 }, { _id: true });
 
 const SignerSchema = new mongoose.Schema({
+  key: {
+    type: String,
+    trim: true
+  },
   role: {
     type: String,
     enum: ['candidate', 'internal'],

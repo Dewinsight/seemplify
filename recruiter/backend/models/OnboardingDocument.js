@@ -24,6 +24,7 @@ const SignatureFieldSchema = new mongoose.Schema({
     default: 'signature'
   },
   label: { type: String, trim: true },
+  signerKey: { type: String, trim: true },
   page: { type: Number, default: 1, min: 1 },
   x: { type: Number, default: 0.1, min: 0, max: 1 },
   y: { type: Number, default: 0.1, min: 0, max: 1 },

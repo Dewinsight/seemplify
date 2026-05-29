@@ -152,6 +152,31 @@ async function sendEnvelopeReminder({ signer, organization, envelope, request, r
   });
 }
 
+async function sendEnvelopeSignerNotification({ signer, organization, envelope, request, req }) {
+  const portalUrl = signer.role === 'candidate'
+    ? candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req })
+    : `${recruiterFrontendBaseUrl()}/onboarding/envelopes/${envelope._id}`;
+  const organizationName = organization?.name || 'Seemplify';
+  const name = signer.name || signer.email || 'Signer';
+
+  return emailService.sendEmail({
+    to: signer.email,
+    subject: `Documents ready for signature: ${envelope.title}`,
+    organizationName,
+    text: `Hello ${name}, ${envelope.title} is ready for your signature. Open ${portalUrl}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
+        <h2 style="margin: 0 0 12px 0;">Documents ready for signature</h2>
+        <p>Hello ${name},</p>
+        <p>${organizationName} sent you <strong>${envelope.title}</strong> for review and signature.</p>
+        <p style="margin: 24px 0;">
+          <a href="${portalUrl}" style="background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Review and sign</a>
+        </p>
+      </div>
+    `
+  });
+}
+
 async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, request, req }) {
   const portalUrl = candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req });
   const organizationName = organization?.name || 'Seemplify';
@@ -180,6 +205,7 @@ module.exports = {
   isAkwaIbomContext,
   sendCandidateInvite,
   sendEnvelopeNotification,
+  sendEnvelopeSignerNotification,
   sendEnvelopeReminder,
   sendEnvelopeCompleted
 };

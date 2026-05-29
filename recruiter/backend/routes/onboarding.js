@@ -136,6 +136,141 @@ function defaultSignatureFields(role = 'candidate') {
   ];
 }
 
+function safeSignerKey(value, fallback) {
+  return String(value || fallback || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || fallback;
+}
+
+function normalizeFieldNumber(value, fallback, min = 0, max = 1) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
+function normalizeSignatureFields(fields, signers = []) {
+  const signerByKey = new Map(signers.filter((signer) => signer.key).map((signer) => [signer.key, signer]));
+
+  return (Array.isArray(fields) ? fields : [])
+    .filter((field) => field && field.id)
+    .map((field) => {
+      const signer = field.signerKey ? signerByKey.get(field.signerKey) : null;
+      const role = signer?.role || (field.role === 'internal' ? 'internal' : 'candidate');
+      const roleSigners = signers.filter((item) => item.role === role);
+      const resolvedSigner = signer || (roleSigners.length === 1 ? roleSigners[0] : null);
+      return {
+        id: String(field.id),
+        role,
+        signerKey: resolvedSigner?.key || undefined,
+        type: ['signature', 'date', 'name', 'email', 'text'].includes(field.type) ? field.type : 'signature',
+        label: field.label || '',
+        page: Math.max(1, Number(field.page || 1)),
+        x: normalizeFieldNumber(field.x, 0.1),
+        y: normalizeFieldNumber(field.y, 0.1),
+        width: normalizeFieldNumber(field.width, 0.25, 0.01, 1),
+        height: normalizeFieldNumber(field.height, 0.08, 0.01, 1),
+        required: field.required !== false
+      };
+    });
+}
+
+function buildEnvelopeSigners(req, onboarding) {
+  const requestedSigners = Array.isArray(req.body.signers) ? req.body.signers : [];
+  const requestedCandidate = requestedSigners.find((signer) => signer?.role === 'candidate');
+  const candidateSigner = {
+    key: safeSignerKey(requestedCandidate?.key, 'candidate-primary'),
+    role: 'candidate',
+    name: requestedCandidate?.name || candidateDisplayName(onboarding.candidate),
+    email: requestedCandidate?.email || onboarding.candidate.email,
+    order: Number(requestedCandidate?.order || 1),
+    candidateAccount: onboarding.candidateAccount,
+    status: 'pending'
+  };
+
+  const internalSigners = requestedSigners
+    .filter((signer) => signer?.role === 'internal' && signer.email)
+    .map((signer, index) => ({
+      key: safeSignerKey(signer.key, `internal-${index + 1}`),
+      role: 'internal',
+      name: signer.name || signer.email,
+      email: signer.email,
+      order: Number(signer.order || index + 2),
+      user: req.user.id,
+      status: 'pending'
+    }));
+
+  if (!internalSigners.length && req.body.internalSigner?.email) {
+    internalSigners.push({
+      key: 'internal-1',
+      role: 'internal',
+      name: req.body.internalSigner.name || req.body.internalSigner.email,
+      email: req.body.internalSigner.email,
+      order: 2,
+      user: req.user.id,
+      status: 'pending'
+    });
+  }
+
+  const seen = new Set();
+  return [candidateSigner, ...internalSigners]
+    .map((signer, index) => ({
+      ...signer,
+      key: safeSignerKey(signer.key, `${signer.role}-${index + 1}`),
+      order: Math.max(1, Number(signer.order || index + 1))
+    }))
+    .filter((signer) => {
+      if (seen.has(signer.key)) return false;
+      seen.add(signer.key);
+      return Boolean(signer.email);
+    })
+    .sort((a, b) => a.order - b.order);
+}
+
+async function completeEnvelopeIfReady(envelope) {
+  const allDocumentsComplete = envelope.documents.every((doc) => ['signed', 'completed'].includes(doc.status));
+  const allSignersSigned = envelope.signers.every((signer) => signer.status === 'signed');
+
+  if (allDocumentsComplete && allSignersSigned) {
+    envelope.status = 'completed';
+    envelope.completedAt = new Date();
+    envelope.documents.forEach((doc) => {
+      if (doc.status === 'signed') doc.status = 'completed';
+    });
+    await CandidateOnboarding.findByIdAndUpdate(envelope.onboarding, {
+      status: 'completed',
+      completedAt: new Date()
+    });
+    return true;
+  }
+
+  if (envelope.signers.some((signer) => signer.status === 'signed')) {
+    envelope.status = 'partially_signed';
+  }
+  return false;
+}
+
+function canSignerAct(envelope, signer) {
+  return !envelope.signers.some((item) => item.order < signer.order && item.status !== 'signed');
+}
+
+async function notifyReadySigners({ envelope, organization, req, excludeKeys = [] }) {
+  const excluded = new Set(excludeKeys.filter(Boolean));
+  const readySigners = envelope.signers.filter((signer) =>
+    ['pending', 'viewed'].includes(signer.status) &&
+    !excluded.has(signer.key) &&
+    canSignerAct(envelope, signer)
+  );
+
+  await Promise.all(readySigners.map((signer) =>
+    onboardingEmailService.sendEnvelopeSignerNotification({ signer, organization, envelope, request: req })
+      .catch((error) => console.error('Failed to send signer notification:', error))
+  ));
+  return readySigners;
+}
+
 function defaultBuilderBlocks(title = 'Onboarding document') {
   return [
     {
@@ -697,6 +832,11 @@ router.post('/envelopes', async (req, res) => {
       return res.status(400).json({ msg: 'One or more documents could not be found' });
     }
 
+    const signers = buildEnvelopeSigners(req, onboarding);
+    const documentFields = req.body.documentFields && typeof req.body.documentFields === 'object'
+      ? req.body.documentFields
+      : {};
+
     const envelopeDocuments = [];
     for (const document of documents) {
       const snapshot = await renderDocumentSnapshot(document, {
@@ -705,33 +845,21 @@ router.post('/envelopes', async (req, res) => {
         user,
         folder: 'onboarding/envelopes'
       });
+      const fieldOverride = documentFields[document._id.toString()];
+      const signatureFields = normalizeSignatureFields(
+        Array.isArray(fieldOverride) && fieldOverride.length
+          ? fieldOverride
+          : document.signatureFields?.length
+            ? document.signatureFields
+            : defaultSignatureFields('candidate'),
+        signers
+      );
       envelopeDocuments.push({
         document: document._id,
         title: document.title,
         status: 'pending',
         pdfSnapshot: snapshot,
-        signatureFields: document.signatureFields?.length ? document.signatureFields : defaultSignatureFields('candidate')
-      });
-    }
-
-    const candidateSigner = {
-      role: 'candidate',
-      name: candidateDisplayName(onboarding.candidate),
-      email: onboarding.candidate.email,
-      order: 1,
-      candidateAccount: onboarding.candidateAccount,
-      status: 'pending'
-    };
-    const signers = [candidateSigner];
-
-    if (req.body.internalSigner?.email) {
-      signers.push({
-        role: 'internal',
-        name: req.body.internalSigner.name || req.body.internalSigner.email,
-        email: req.body.internalSigner.email,
-        order: 2,
-        user: req.user.id,
-        status: 'pending'
+        signatureFields
       });
     }
 
@@ -798,6 +926,12 @@ router.post('/envelopes/:id/send', async (req, res) => {
       envelope,
       request: req
     }).catch((error) => console.error('Failed to send envelope email:', error));
+    const readySigners = await notifyReadySigners({
+      envelope,
+      organization,
+      req,
+      excludeKeys: envelope.signers.filter((signer) => signer.role === 'candidate').map((signer) => signer.key)
+    });
 
     await logOnboardingEvent({
       req,
@@ -807,7 +941,8 @@ router.post('/envelopes/:id/send', async (req, res) => {
       candidate: envelope.candidate._id,
       actorType: 'user',
       actorUser: req.user.id,
-      action: 'envelope_sent'
+      action: 'envelope_sent',
+      metadata: { readySigners: readySigners.map((signer) => signer.email) }
     });
 
     res.json({ data: envelope });
@@ -892,8 +1027,7 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
     const signer = envelope.signers.find((item) => item.role === 'internal' && ['pending', 'viewed'].includes(item.status));
     if (!signer) return res.status(400).json({ msg: 'No internal signer is pending' });
 
-    const lowerOrderPending = envelope.signers.some((item) => item.order < signer.order && item.status !== 'signed');
-    if (lowerOrderPending) {
+    if (!canSignerAct(envelope, signer)) {
       return res.status(400).json({ msg: 'Earlier signers must complete first' });
     }
 
@@ -913,6 +1047,7 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
         signatureFields: envelopeDocument.signatureFields,
         signer: signerInfo,
         signerRole: 'internal',
+        signerKey: signer.key,
         signatureDataUrl: req.body.signatureDataUrl,
         signedAt: new Date(),
         auditText: `Countersigned by ${signerInfo.email} via Seemplify Recruiter`
@@ -921,19 +1056,36 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
         folder: 'onboarding/signed',
         fileName: `${envelopeDocument.title}-countersigned-${Date.now()}.pdf`
       });
-      envelopeDocument.status = 'completed';
+      envelopeDocument.status = envelope.signers.every((item) => String(item._id) === String(signer._id) || item.status === 'signed')
+        ? 'completed'
+        : 'signed';
       envelopeDocument.signedAt = new Date();
     }
 
     signer.status = 'signed';
     signer.signedAt = new Date();
-    envelope.status = 'completed';
-    envelope.completedAt = new Date();
+    const completed = await completeEnvelopeIfReady(envelope);
     await envelope.save();
-    await CandidateOnboarding.findByIdAndUpdate(envelope.onboarding, {
-      status: 'completed',
-      completedAt: new Date()
-    });
+    const organization = await getOrganization(req);
+    let notifiedSigners = [];
+    if (completed) {
+      const recipients = Array.from(new Set(envelope.signers.map((item) => item.email).filter(Boolean)));
+      await Promise.all(recipients.map((recipientEmail) =>
+        onboardingEmailService.sendEnvelopeCompleted({
+          recipientEmail,
+          organization,
+          envelope,
+          request: req
+        }).catch((error) => console.error('Failed to send completion email:', error))
+      ));
+    } else {
+      notifiedSigners = await notifyReadySigners({
+        envelope,
+        organization,
+        req,
+        excludeKeys: [signer.key]
+      });
+    }
 
     await logOnboardingEvent({
       req,
@@ -943,7 +1095,8 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
       actorType: 'user',
       actorUser: req.user.id,
       actorEmail: signerInfo.email,
-      action: 'internal_signed'
+      action: 'internal_signed',
+      metadata: { signerKey: signer.key, completed, readySigners: notifiedSigners.map((item) => item.email) }
     });
 
     res.json({ data: envelope });

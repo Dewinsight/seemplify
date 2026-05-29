@@ -16,6 +16,7 @@ export interface SignatureField {
   role: "candidate" | "internal";
   type: "signature" | "date" | "name" | "email" | "text";
   label?: string;
+  signerKey?: string;
   page: number;
   x: number;
   y: number;
@@ -79,6 +80,7 @@ export interface OnboardingEnvelopeDocument {
 
 export interface OnboardingSigner {
   _id: string;
+  key?: string;
   role: "candidate" | "internal";
   name?: string;
   email: string;
@@ -261,6 +263,8 @@ export async function createEnvelope(data: {
   documentIds: string[];
   title?: string;
   message?: string;
+  signers?: Array<{ key?: string; role: "candidate" | "internal"; name?: string; email: string; order?: number }>;
+  documentFields?: Record<string, SignatureField[]>;
   internalSigner?: { name?: string; email?: string };
 }) {
   const response = await apiRequest("/api/onboarding/envelopes", {
@@ -317,6 +321,7 @@ export function newSignatureField(role: "candidate" | "internal" = "candidate"):
   return {
     id: `${role}-signature-${timestamp}`,
     role,
+    signerKey: role === "candidate" ? "candidate-primary" : undefined,
     type: "signature",
     label: role === "candidate" ? "Candidate signature" : "Internal signature",
     page: 1,
