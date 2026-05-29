@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import {
+  getDocumentPreviewBlob,
   getDocument,
   newSignatureField,
   renderDocument,
@@ -34,6 +35,10 @@ export default function PrepareOnboardingDocumentPage() {
   const [fields, setFields] = useState<SignatureField[]>([]);
   const [activeFieldId, setActiveFieldId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const [dragging, setDragging] = useState<{ id: string; dx: number; dy: number } | null>(null);
 
   useEffect(() => {
@@ -49,6 +54,43 @@ export default function PrepareOnboardingDocumentPage() {
     }
     load();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!document?._id) return;
+
+    let cancelled = false;
+    let objectUrl = "";
+
+    async function loadPreview() {
+      try {
+        setPreviewLoading(true);
+        setPreviewError("");
+        const blob = await getDocumentPreviewBlob(document!._id);
+        objectUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setPreviewUrl(objectUrl);
+      } catch (error: any) {
+        if (!cancelled) {
+          setPreviewUrl("");
+          setPreviewError(error.message || "Failed to load document preview");
+        }
+      } finally {
+        if (!cancelled) {
+          setPreviewLoading(false);
+        }
+      }
+    }
+
+    loadPreview();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [document?._id, document?.pdfSnapshot?.renderedAt, document?.updatedAt, previewReloadKey]);
 
   const activeField = fields.find((field) => field.id === activeFieldId);
 
@@ -126,9 +168,9 @@ export default function PrepareOnboardingDocumentPage() {
             <p className="mt-2 text-sm text-slate-600">Place signature fields using normalized coordinates. Drag a field on the page or edit exact values.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            {document.pdfSnapshot?.url && (
+            {previewUrl && (
               <Button asChild variant="outline">
-                <a href={document.pdfSnapshot.downloadUrl || document.pdfSnapshot.url} target="_blank" rel="noreferrer">
+                <a href={previewUrl} target="_blank" rel="noreferrer">
                   <Download className="h-4 w-4" />
                   Preview PDF
                 </a>
@@ -149,8 +191,18 @@ export default function PrepareOnboardingDocumentPage() {
               onPointerUp={() => setDragging(null)}
               className="relative mx-auto aspect-[8.5/11] max-h-[calc(100vh-180px)] w-full max-w-[720px] overflow-hidden border bg-white shadow-sm"
             >
-              {document.pdfSnapshot?.url ? (
-                <iframe title="Document preview" src={document.pdfSnapshot.url} className="h-full w-full" />
+              {previewLoading ? (
+                <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading document preview...</div>
+              ) : previewUrl ? (
+                <iframe title="Document preview" src={previewUrl} className="h-full w-full" />
+              ) : previewError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+                  <p className="text-sm font-medium text-slate-700">Document preview could not be loaded.</p>
+                  <p className="max-w-md text-xs leading-5 text-slate-500">{previewError}</p>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPreviewReloadKey((key) => key + 1)}>
+                    Retry preview
+                  </Button>
+                </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-slate-500">Render the document to preview the PDF.</div>
               )}

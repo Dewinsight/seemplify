@@ -619,6 +619,53 @@ router.post('/documents/:id/render', async (req, res) => {
   }
 });
 
+router.get('/documents/:id/preview', async (req, res) => {
+  try {
+    const document = await findDocumentForOrg(req, req.params.id);
+    if (!document) return res.status(404).json({ msg: 'Document not found' });
+
+    if (!document.pdfSnapshot?.url && !document.pdfSnapshot?.downloadUrl) {
+      if (document.lockedAt || document.status === 'sent') {
+        return res.status(404).json({ msg: 'No PDF snapshot is available for this document' });
+      }
+
+      const snapshot = await renderDocumentSnapshot(document, {
+        organization: await getOrganization(req),
+        user: await getCurrentUser(req),
+        folder: 'onboarding/documents'
+      });
+
+      document.pdfSnapshot = snapshot;
+      document.status = 'ready';
+      document.updatedBy = req.user.id;
+      await document.save();
+    }
+
+    const sourceUrls = [document.pdfSnapshot.url, document.pdfSnapshot.downloadUrl].filter(Boolean);
+    let buffer = null;
+    let lastDownloadError = null;
+    for (const sourceUrl of sourceUrls) {
+      try {
+        buffer = await onboardingPdfService.downloadPdfBuffer(sourceUrl);
+        break;
+      } catch (error) {
+        lastDownloadError = error;
+      }
+    }
+    if (!buffer) throw lastDownloadError || new Error('PDF snapshot URL is missing');
+    const filename = `${document.title || 'onboarding-document'}`.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 120) || 'onboarding-document';
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Content-Disposition', `inline; filename="${filename}.pdf"`);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.send(buffer);
+  } catch (error) {
+    console.error('Preview document failed:', error);
+    res.status(500).json({ msg: 'Failed to preview document', error: error.message });
+  }
+});
+
 router.post('/envelopes', async (req, res) => {
   try {
     const onboarding = await CandidateOnboarding.findOne({

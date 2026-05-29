@@ -233,6 +233,20 @@ export async function renderDocument(id: string) {
   return result.data;
 }
 
+export async function getDocumentPreviewBlob(id: string) {
+  const response = await apiRequest(`/api/onboarding/documents/${id}/preview`, {
+    headers: { Accept: "application/pdf" },
+  });
+
+  if (!response.ok) {
+    const result = await response.clone().json().catch(() => ({}));
+    throw new Error(result.msg || result.error || "Failed to load document preview");
+  }
+
+  const blob = await response.blob();
+  return new Blob([blob], { type: "application/pdf" });
+}
+
 export async function uploadDocument(formData: FormData) {
   const response = await apiRequest("/api/onboarding/documents/upload", {
     method: "POST",
