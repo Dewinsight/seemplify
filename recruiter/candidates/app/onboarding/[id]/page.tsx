@@ -7,6 +7,7 @@ import { ArrowLeft, Check, Download, FileSignature, PenLine } from "lucide-react
 import { toast } from "sonner"
 import { getAccessToken, getOnboarding } from "@/lib/api"
 import type { CandidateOnboarding, EnvelopeDocument } from "@/lib/types"
+import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 function documentAction(document: EnvelopeDocument) {
   if (document.status === "completed" || document.status === "signed") {
@@ -26,6 +27,7 @@ function documentAction(document: EnvelopeDocument) {
 export default function CandidateOnboardingDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
+  const brand = useCandidateBrand()
   const [record, setRecord] = useState<CandidateOnboarding | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -56,11 +58,11 @@ export default function CandidateOnboardingDetailPage() {
             <div className="mt-6 rounded-md border border-slate-200 bg-white p-6 shadow-soft">
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <div className="text-sm font-semibold uppercase tracking-wide text-blue-700">{record.organization?.name || "Onboarding"}</div>
+                  <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>{record.organization?.name || brand.organizationName}</div>
                   <h1 className="mt-2 text-3xl font-semibold text-slate-950">{record.title}</h1>
                   <p className="mt-2 text-sm text-slate-600">Review each document and complete required signatures digitally.</p>
                 </div>
-                <span className="w-fit rounded-md border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium capitalize text-blue-700">
+                <span className={`w-fit rounded-md border px-3 py-1 text-sm font-medium capitalize ${brand.accentBorderClass} ${brand.accentBgClass} ${brand.accentTextClass}`}>
                   {record.status.replace("_", " ")}
                 </span>
               </div>
@@ -89,14 +91,14 @@ export default function CandidateOnboardingDetailPage() {
                         <Link key={document._id} href={action.href} className="flex flex-col gap-3 p-5 transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex items-start gap-3">
                             <div className="rounded-md bg-slate-100 p-2">
-                              {document.status === "completed" ? <Check className="h-5 w-5 text-emerald-700" /> : <FileSignature className="h-5 w-5 text-blue-700" />}
+                              {document.status === "completed" ? <Check className="h-5 w-5 text-emerald-700" /> : <FileSignature className={`h-5 w-5 ${brand.accentTextClass}`} />}
                             </div>
                             <div>
                               <h3 className="font-medium text-slate-950">{document.title}</h3>
                               <p className="mt-1 text-sm text-slate-600 capitalize">{document.status}</p>
                             </div>
                           </div>
-                          <span className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
+                          <span className={`inline-flex items-center gap-2 text-sm font-semibold ${brand.accentTextClass}`}>
                             <Icon className="h-4 w-4" />
                             {action.label}
                           </span>

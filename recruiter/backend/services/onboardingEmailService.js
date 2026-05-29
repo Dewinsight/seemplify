@@ -1,11 +1,70 @@
 const emailService = require('./emailService');
 
-function candidatePortalBaseUrl() {
-  return (
+const DEFAULT_CANDIDATE_PORTAL_URL = 'https://candidate.seemplifyai.com';
+const DEFAULT_AKWA_IBOM_CANDIDATE_PORTAL_URL = 'https://candidate-ibom.aiinnigeria.com';
+
+function normalizeBaseUrl(value) {
+  return String(value || '').trim().replace(/\/$/, '');
+}
+
+function defaultCandidatePortalBaseUrl() {
+  return normalizeBaseUrl(
     process.env.CANDIDATE_PORTAL_URL ||
     process.env.NEXT_PUBLIC_CANDIDATE_PORTAL_URL ||
-    'https://candidate.seemplifyai.com'
-  ).replace(/\/$/, '');
+    DEFAULT_CANDIDATE_PORTAL_URL
+  );
+}
+
+function akwaIbomCandidatePortalBaseUrl() {
+  return normalizeBaseUrl(
+    process.env.AKWA_IBOM_CANDIDATE_PORTAL_URL ||
+    process.env.CANDIDATE_PORTAL_AKWA_IBOM_URL ||
+    DEFAULT_AKWA_IBOM_CANDIDATE_PORTAL_URL
+  );
+}
+
+function requestValue(req, headerName) {
+  if (!req || typeof req.get !== 'function') return '';
+  return req.get(headerName) || '';
+}
+
+function organizationSignals(organization = {}) {
+  return [
+    organization.name,
+    organization.website,
+    organization.logo,
+    organization.idpOrganizationId
+  ];
+}
+
+function isAkwaIbomContext(context = {}) {
+  const request = context.request || context.req;
+  const signal = [
+    context.origin,
+    context.referer,
+    context.referrer,
+    context.host,
+    context.url,
+    requestValue(request, 'origin'),
+    requestValue(request, 'referer'),
+    requestValue(request, 'host'),
+    ...organizationSignals(context.organization)
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return signal.includes('akwa') || signal.includes('ibom') || signal.includes('jetstone');
+}
+
+function candidatePortalBaseUrl(context = {}) {
+  return isAkwaIbomContext(context)
+    ? akwaIbomCandidatePortalBaseUrl()
+    : defaultCandidatePortalBaseUrl();
+}
+
+function candidatePortalUrl(path, context = {}) {
+  return `${candidatePortalBaseUrl(context)}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function recruiterFrontendBaseUrl() {
@@ -20,8 +79,9 @@ function candidateName(candidate = {}) {
   return `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email || 'Candidate';
 }
 
-async function sendCandidateInvite({ candidate, organization, inviteToken, onboarding }) {
-  const portalUrl = `${candidatePortalBaseUrl()}/signup?token=${encodeURIComponent(inviteToken)}`;
+async function sendCandidateInvite({ candidate, organization, inviteToken, onboarding, request, req }) {
+  const portalContext = { organization, request: request || req };
+  const portalUrl = candidatePortalUrl(`/signup?token=${encodeURIComponent(inviteToken)}`, portalContext);
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
 
@@ -46,8 +106,8 @@ async function sendCandidateInvite({ candidate, organization, inviteToken, onboa
   return portalUrl;
 }
 
-async function sendEnvelopeNotification({ candidate, organization, envelope }) {
-  const portalUrl = `${candidatePortalBaseUrl()}/onboarding/${envelope.onboarding}`;
+async function sendEnvelopeNotification({ candidate, organization, envelope, request, req }) {
+  const portalUrl = candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req });
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
 
@@ -69,9 +129,9 @@ async function sendEnvelopeNotification({ candidate, organization, envelope }) {
   });
 }
 
-async function sendEnvelopeReminder({ signer, organization, envelope }) {
+async function sendEnvelopeReminder({ signer, organization, envelope, request, req }) {
   const portalUrl = signer.role === 'candidate'
-    ? `${candidatePortalBaseUrl()}/onboarding/${envelope.onboarding}`
+    ? candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req })
     : `${recruiterFrontendBaseUrl()}/onboarding/envelopes/${envelope._id}`;
   const organizationName = organization?.name || 'Seemplify';
 
@@ -92,8 +152,8 @@ async function sendEnvelopeReminder({ signer, organization, envelope }) {
   });
 }
 
-async function sendEnvelopeCompleted({ recipientEmail, organization, envelope }) {
-  const portalUrl = `${candidatePortalBaseUrl()}/onboarding/${envelope.onboarding}`;
+async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, request, req }) {
+  const portalUrl = candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req });
   const organizationName = organization?.name || 'Seemplify';
 
   return emailService.sendEmail({
@@ -114,7 +174,10 @@ async function sendEnvelopeCompleted({ recipientEmail, organization, envelope })
 }
 
 module.exports = {
+  DEFAULT_AKWA_IBOM_CANDIDATE_PORTAL_URL,
   candidatePortalBaseUrl,
+  candidatePortalUrl,
+  isAkwaIbomContext,
   sendCandidateInvite,
   sendEnvelopeNotification,
   sendEnvelopeReminder,

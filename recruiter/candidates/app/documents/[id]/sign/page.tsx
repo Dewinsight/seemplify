@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { PdfCanvasPreview } from "@/components/pdf-canvas-preview"
 import { downloadDocumentBlob, getAccessToken, getDocument, getDocumentPreviewBlob, signDocument } from "@/lib/api"
 import type { CandidateDocumentPayload } from "@/lib/types"
+import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 function saveBlob(blob: Blob, fileName: string) {
   const objectUrl = URL.createObjectURL(blob)
@@ -23,6 +24,7 @@ function saveBlob(blob: Blob, fileName: string) {
 export default function CandidateSignDocumentPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
+  const brand = useCandidateBrand()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [payload, setPayload] = useState<CandidateDocumentPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -217,7 +219,7 @@ export default function CandidateSignDocumentPage() {
               <div className="h-[720px] bg-slate-100">
                 {previewLoading ? (
                   <div className="flex h-full items-center justify-center gap-3 p-6 text-sm text-slate-600">
-                    <Loader2 className="h-5 w-5 animate-spin text-blue-700" />
+                    <Loader2 className={`h-5 w-5 animate-spin ${brand.accentTextClass}`} />
                     Preparing PDF preview...
                   </div>
                 ) : previewBlob ? (
@@ -250,7 +252,7 @@ export default function CandidateSignDocumentPage() {
 
             <aside className="rounded-md border border-slate-200 bg-white p-5 shadow-soft">
               <div className="mb-5">
-                <div className="text-sm font-semibold uppercase tracking-wide text-blue-700">Signature</div>
+                <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>Signature</div>
                 <h2 className="mt-2 text-2xl font-semibold text-slate-950">Complete your signature</h2>
                 <p className="mt-2 text-sm text-slate-600">
                   Your signature will be stamped into the recruiter-provided PDF with date and audit metadata.
@@ -291,7 +293,7 @@ export default function CandidateSignDocumentPage() {
                   <button
                     onClick={submitSignature}
                     disabled={!payload.canSign || !hasSignature || submitting}
-                    className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${brand.primaryButtonClass}`}
                   >
                     <PenLine className="h-4 w-4" />
                     {submitting ? "Signing..." : "Sign document"}

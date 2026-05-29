@@ -5,8 +5,10 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowRight, CheckCircle2, FileSignature, Files, LogOut, UserRound } from "lucide-react"
 import { toast } from "sonner"
+import { CandidateBrandMark } from "@/components/candidate-brand-mark"
 import { fullName, getAccessToken, getOnboardingList, getStoredAccount, logout } from "@/lib/api"
 import type { CandidateAccount, CandidateOnboarding } from "@/lib/types"
+import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 function statusClass(status: string) {
   if (status === "completed") return "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -16,6 +18,7 @@ function statusClass(status: string) {
 
 export default function CandidateDashboardPage() {
   const router = useRouter()
+  const brand = useCandidateBrand()
   const [account, setAccount] = useState<CandidateAccount | null>(null)
   const [records, setRecords] = useState<CandidateOnboarding[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,9 +55,12 @@ export default function CandidateDashboardPage() {
     <main className="min-h-screen">
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div>
-            <div className="text-sm font-semibold uppercase tracking-wide text-blue-700">Seemplify</div>
-            <h1 className="text-xl font-semibold text-slate-950">Candidate portal</h1>
+          <div className="flex items-center gap-3">
+            <CandidateBrandMark brand={brand} compact />
+            <div>
+              <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>{brand.dashboardEyebrow}</div>
+              <h1 className="text-xl font-semibold text-slate-950">Candidate portal</h1>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden text-right text-sm sm:block">
@@ -72,7 +78,7 @@ export default function CandidateDashboardPage() {
       <section className="mx-auto max-w-6xl px-4 py-8">
         <div className="grid gap-4 md:grid-cols-3">
           <div className="rounded-md border border-slate-200 bg-white p-5 shadow-soft">
-            <UserRound className="h-5 w-5 text-blue-700" />
+            <UserRound className={`h-5 w-5 ${brand.accentTextClass}`} />
             <div className="mt-3 text-3xl font-semibold text-slate-950">{stats.active}</div>
             <div className="text-sm text-slate-600">Active onboarding</div>
           </div>
@@ -116,7 +122,7 @@ export default function CandidateDashboardPage() {
                     {record.envelopes?.length || 0} packet(s) from {record.organization?.name || "your recruiter"}
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
+                <span className={`inline-flex items-center gap-2 text-sm font-semibold ${brand.accentTextClass}`}>
                   Open <ArrowRight className="h-4 w-4" />
                 </span>
               </Link>

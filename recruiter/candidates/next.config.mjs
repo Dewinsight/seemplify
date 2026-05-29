@@ -25,7 +25,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; connect-src 'self' https://api.seemplifyai.com https://api-dev.seemplifyai.com https://*.seemplifyai.com http://localhost:*; frame-src 'self' https: blob:; object-src 'none'; form-action 'self'; base-uri 'self'"
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; connect-src 'self' https://api.seemplifyai.com https://api-dev.seemplifyai.com https://*.seemplifyai.com https://*.aiinnigeria.com http://localhost:*; frame-src 'self' https: blob:; object-src 'none'; form-action 'self'; base-uri 'self'"
           },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },

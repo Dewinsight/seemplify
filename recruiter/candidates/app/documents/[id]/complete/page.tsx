@@ -5,12 +5,15 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, CheckCircle2, Download, FileSignature } from "lucide-react"
 import { toast } from "sonner"
+import { CandidateBrandMark } from "@/components/candidate-brand-mark"
 import { getAccessToken, getDocument } from "@/lib/api"
 import type { CandidateDocumentPayload } from "@/lib/types"
+import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 export default function CandidateDocumentCompletePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
+  const brand = useCandidateBrand()
   const [payload, setPayload] = useState<CandidateDocumentPayload | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -32,6 +35,9 @@ export default function CandidateDocumentCompletePage() {
         {loading && <p className="text-sm text-slate-600">Checking document status...</p>}
         {!loading && payload && (
           <>
+            <div className="mb-5 flex justify-center">
+              <CandidateBrandMark brand={brand} compact />
+            </div>
             <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-700" />
             <h1 className="mt-4 text-3xl font-semibold text-slate-950">Signature submitted</h1>
             <p className="mt-3 text-sm leading-6 text-slate-600">
@@ -42,7 +48,7 @@ export default function CandidateDocumentCompletePage() {
 
             <div className="mt-6 rounded-md border border-slate-200 bg-slate-50 p-4 text-left">
               <div className="flex items-center gap-3">
-                <FileSignature className="h-5 w-5 text-blue-700" />
+                <FileSignature className={`h-5 w-5 ${brand.accentTextClass}`} />
                 <div>
                   <div className="font-medium text-slate-950">{payload.document.title}</div>
                   <div className="text-sm capitalize text-slate-600">{payload.document.status}</div>
@@ -55,7 +61,7 @@ export default function CandidateDocumentCompletePage() {
                 <ArrowLeft className="h-4 w-4" />
                 Dashboard
               </Link>
-              <Link href={`/documents/${params.id}/download`} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+              <Link href={`/documents/${params.id}/download`} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white ${brand.primaryButtonClass}`}>
                 <Download className="h-4 w-4" />
                 Download copy
               </Link>

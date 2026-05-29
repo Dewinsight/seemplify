@@ -312,10 +312,14 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       candidate,
       organization,
       inviteToken: invite.token,
-      onboarding
+      onboarding,
+      request: req
     }).catch((error) => {
       console.error('Failed to send onboarding invite email:', error);
-      return `${onboardingEmailService.candidatePortalBaseUrl()}/signup?token=${encodeURIComponent(invite.token)}`;
+      return onboardingEmailService.candidatePortalUrl(
+        `/signup?token=${encodeURIComponent(invite.token)}`,
+        { organization, request: req }
+      );
     });
 
     onboarding.portalInviteUrl = portalInviteUrl;
@@ -791,7 +795,8 @@ router.post('/envelopes/:id/send', async (req, res) => {
     await onboardingEmailService.sendEnvelopeNotification({
       candidate: envelope.candidate,
       organization,
-      envelope
+      envelope,
+      request: req
     }).catch((error) => console.error('Failed to send envelope email:', error));
 
     await logOnboardingEvent({
@@ -823,7 +828,7 @@ router.post('/envelopes/:id/remind', async (req, res) => {
     const pendingSigners = envelope.signers.filter((signer) => ['pending', 'viewed'].includes(signer.status));
     await Promise.all(pendingSigners.map(async (signer) => {
       signer.lastReminderAt = new Date();
-      await onboardingEmailService.sendEnvelopeReminder({ signer, organization, envelope })
+      await onboardingEmailService.sendEnvelopeReminder({ signer, organization, envelope, request: req })
         .catch((error) => console.error('Failed to send reminder:', error));
     }));
     await envelope.save();
