@@ -5,15 +5,16 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, CheckCircle2, Download, FileSignature } from "lucide-react"
 import { toast } from "sonner"
-import { CandidateBrandMark } from "@/components/candidate-brand-mark"
-import { getAccessToken, getDocument } from "@/lib/api"
-import type { CandidateDocumentPayload } from "@/lib/types"
+import { CandidateShell, StatusPill } from "@/components/candidate-ui"
+import { getAccessToken, getDocument, getStoredAccount, logout } from "@/lib/api"
+import type { CandidateAccount, CandidateDocumentPayload } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 export default function CandidateDocumentCompletePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const brand = useCandidateBrand()
+  const [account, setAccount] = useState<CandidateAccount | null>(null)
   const [payload, setPayload] = useState<CandidateDocumentPayload | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -23,22 +24,33 @@ export default function CandidateDocumentCompletePage() {
       return
     }
 
+    setAccount(getStoredAccount())
     getDocument(params.id)
       .then((result) => setPayload(result.data))
       .catch((error) => toast.error(error.message || "Failed to load document"))
       .finally(() => setLoading(false))
   }, [params.id, router])
 
+  async function signOut() {
+    await logout()
+    router.push("/login")
+  }
+
   return (
-    <main className="min-h-screen px-4 py-8">
-      <section className="mx-auto max-w-2xl rounded-md border border-slate-200 bg-white p-6 text-center shadow-soft sm:p-8">
+    <CandidateShell
+      brand={brand}
+      account={account}
+      title="Signature submitted"
+      subtitle="Your candidate portal keeps the signing status and downloads together."
+      onSignOut={signOut}
+    >
+      <section className="mx-auto max-w-3xl rounded-md border border-slate-200 bg-white p-6 text-center shadow-soft sm:p-8">
         {loading && <p className="text-sm text-slate-600">Checking document status...</p>}
         {!loading && payload && (
           <>
-            <div className="mb-5 flex justify-center">
-              <CandidateBrandMark brand={brand} compact />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50">
+              <CheckCircle2 className="h-8 w-8 text-emerald-700" />
             </div>
-            <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-700" />
             <h1 className="mt-4 text-3xl font-semibold text-slate-950">Signature submitted</h1>
             <p className="mt-3 text-sm leading-6 text-slate-600">
               {payload.document.status === "completed"
@@ -47,12 +59,15 @@ export default function CandidateDocumentCompletePage() {
             </p>
 
             <div className="mt-6 rounded-md border border-slate-200 bg-slate-50 p-4 text-left">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
                 <FileSignature className={`h-5 w-5 ${brand.accentTextClass}`} />
                 <div>
                   <div className="font-medium text-slate-950">{payload.document.title}</div>
                   <div className="text-sm capitalize text-slate-600">{payload.document.status}</div>
                 </div>
+                </div>
+                <StatusPill status={payload.document.status} />
               </div>
             </div>
 
@@ -69,6 +84,6 @@ export default function CandidateDocumentCompletePage() {
           </>
         )}
       </section>
-    </main>
+    </CandidateShell>
   )
 }

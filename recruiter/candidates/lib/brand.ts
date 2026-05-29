@@ -18,6 +18,10 @@ export interface CandidateBrand {
   accentBorderClass: string
   focusRingClass: string
   primaryButtonClass: string
+  softGradientClass: string
+  sidebarClass: string
+  navActiveClass: string
+  progressClass: string
 }
 
 export const CANDIDATE_BRANDS: Record<CandidateBrandId, CandidateBrand> = {
@@ -39,6 +43,10 @@ export const CANDIDATE_BRANDS: Record<CandidateBrandId, CandidateBrand> = {
     accentBorderClass: "border-blue-200",
     focusRingClass: "ring-blue-500",
     primaryButtonClass: "bg-slate-950 hover:bg-slate-800",
+    softGradientClass: "from-blue-50 via-white to-emerald-50",
+    sidebarClass: "border-slate-200 bg-white/92",
+    navActiveClass: "bg-slate-950 text-white",
+    progressClass: "bg-blue-600",
   },
   "akwa-ibom": {
     id: "akwa-ibom",
@@ -59,6 +67,10 @@ export const CANDIDATE_BRANDS: Record<CandidateBrandId, CandidateBrand> = {
     accentBorderClass: "border-emerald-200",
     focusRingClass: "ring-emerald-600",
     primaryButtonClass: "bg-emerald-900 hover:bg-emerald-800",
+    softGradientClass: "from-emerald-50 via-white to-amber-50",
+    sidebarClass: "border-emerald-900/10 bg-white/94",
+    navActiveClass: "bg-emerald-900 text-white",
+    progressClass: "bg-emerald-700",
   },
 }
 

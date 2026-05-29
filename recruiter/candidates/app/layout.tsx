@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import { headers } from "next/headers"
 import { Toaster } from "sonner"
 import { CandidateBrandProvider } from "@/components/candidate-brand-provider"
@@ -21,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
   const headersList = await headers()
   const brand = detectCandidateBrandFromHostname(headersList.get("host"))
 

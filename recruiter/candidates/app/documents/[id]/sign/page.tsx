@@ -5,9 +5,10 @@ import { MouseEvent, TouchEvent, useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, CheckCircle2, Download, Eraser, ExternalLink, FileWarning, Loader2, PenLine, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
+import { CandidateShell, StatusPill } from "@/components/candidate-ui"
 import { PdfCanvasPreview } from "@/components/pdf-canvas-preview"
-import { downloadDocumentBlob, getAccessToken, getDocument, getDocumentPreviewBlob, signDocument } from "@/lib/api"
-import type { CandidateDocumentPayload } from "@/lib/types"
+import { downloadDocumentBlob, getAccessToken, getDocument, getDocumentPreviewBlob, getStoredAccount, logout, signDocument } from "@/lib/api"
+import type { CandidateAccount, CandidateDocumentPayload } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 function saveBlob(blob: Blob, fileName: string) {
@@ -26,6 +27,7 @@ export default function CandidateSignDocumentPage() {
   const router = useRouter()
   const brand = useCandidateBrand()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [account, setAccount] = useState<CandidateAccount | null>(null)
   const [payload, setPayload] = useState<CandidateDocumentPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [drawing, setDrawing] = useState(false)
@@ -44,6 +46,7 @@ export default function CandidateSignDocumentPage() {
       return
     }
 
+    setAccount(getStoredAccount())
     getDocument(params.id)
       .then((result) => setPayload(result.data))
       .catch((error) => toast.error(error.message || "Failed to load document"))
@@ -177,23 +180,37 @@ export default function CandidateSignDocumentPage() {
     }
   }
 
+  async function signOut() {
+    await logout()
+    router.push("/login")
+  }
+
   return (
-    <main className="min-h-screen">
-      <section className="mx-auto max-w-7xl px-4 py-6">
+    <CandidateShell
+      brand={brand}
+      account={account}
+      title={payload?.document.title || "Document signing"}
+      subtitle={payload?.envelope.title || "Review the prepared PDF and complete your signature."}
+      onSignOut={signOut}
+    >
+      <section className="mx-auto max-w-7xl">
         <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950">
           <ArrowLeft className="h-4 w-4" />
           Dashboard
         </Link>
 
-        {loading && <div className="mt-6 rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-600">Loading document...</div>}
+        {loading && <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-soft">Loading document...</div>}
 
         {!loading && payload && (
-          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-            <section className="min-h-[720px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
+          <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <section className="min-h-[760px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
               <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h1 className="text-xl font-semibold text-slate-950">{payload.document.title}</h1>
-                  <p className="mt-1 text-sm text-slate-600">{payload.envelope.title}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <p className="text-sm text-slate-600">{payload.envelope.title}</p>
+                    <StatusPill status={payload.document.status} />
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -216,7 +233,7 @@ export default function CandidateSignDocumentPage() {
                   </button>
                 </div>
               </div>
-              <div className="h-[720px] bg-slate-100">
+              <div className="h-[760px] bg-slate-100">
                 {previewLoading ? (
                   <div className="flex h-full items-center justify-center gap-3 p-6 text-sm text-slate-600">
                     <Loader2 className={`h-5 w-5 animate-spin ${brand.accentTextClass}`} />
@@ -250,7 +267,7 @@ export default function CandidateSignDocumentPage() {
               </div>
             </section>
 
-            <aside className="rounded-md border border-slate-200 bg-white p-5 shadow-soft">
+            <aside className="h-fit rounded-md border border-slate-200 bg-white p-5 shadow-soft lg:sticky lg:top-24">
               <div className="mb-5">
                 <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>Signature</div>
                 <h2 className="mt-2 text-2xl font-semibold text-slate-950">Complete your signature</h2>
@@ -322,6 +339,6 @@ export default function CandidateSignDocumentPage() {
           </div>
         )}
       </section>
-    </main>
+    </CandidateShell>
   )
 }
