@@ -65,7 +65,7 @@ const nextConfig = {
   
   // Turbopack configuration (Next.js 16+)
   turbopack: {
-    // Empty config to silence Turbopack warnings
+    root: process.cwd(),
   },
   
   // Disable webpack dev middleware

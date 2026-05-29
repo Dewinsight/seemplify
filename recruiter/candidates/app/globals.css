@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.98)),
+    linear-gradient(120deg, rgba(37, 99, 235, 0.08), rgba(16, 185, 129, 0.06) 48%, rgba(245, 158, 11, 0.08));
+  color: #111827;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.signature-canvas {
+  touch-action: none;
+}

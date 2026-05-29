@@ -51,6 +51,7 @@ import NotificationDropdown from "@/components/NotificationDropdown";
 const navigationItems = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
   { title: "Candidates", href: "/candidates", icon: Users },
+  { title: "Onboarding", href: "/onboarding", icon: GraduationCap },
   { title: "Jobs", href: "/jobs", icon: Briefcase },
   { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
   { title: "Calendar", href: "/calendar", icon: Calendar },

@@ -39,6 +39,7 @@
     "nylas": "^7.11.0",
     "openai": "^5.1.1",
     "openid-client": "^5.6.4",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.4.394",
     "pdfkit": "^0.15.0",
@@ -74,7 +75,9 @@
     "audit:credits": "node scripts/auditCreditEconomics.js",
     "apply:credits": "node scripts/applyCreditEconomics2026.js --dry-run",
     "apply:credits:force": "node scripts/applyCreditEconomics2026.js --apply",
-    "apply:credits:force:full": "node scripts/applyCreditEconomics2026.js --apply --replace-packs"
+    "apply:credits:force:full": "node scripts/applyCreditEconomics2026.js --apply --replace-packs",
+    "seed:onboarding-templates": "node scripts/seedOnboardingTemplates.js",
+    "seed:onboarding-templates:dry-run": "node scripts/seedOnboardingTemplates.js --dry-run"
   },
   "keywords": [],
   "author": "",
