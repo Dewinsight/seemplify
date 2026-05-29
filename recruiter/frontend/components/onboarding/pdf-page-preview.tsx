@@ -16,9 +16,10 @@ interface PdfPagePreviewProps {
   pageNumber: number;
   title: string;
   onPageCount?: (count: number) => void;
+  onPageRendered?: (page: Pick<RenderedPage, "pageNumber" | "totalPages" | "width" | "height">) => void;
 }
 
-export function PdfPagePreview({ blob, pageNumber, title, onPageCount }: PdfPagePreviewProps) {
+export function PdfPagePreview({ blob, pageNumber, title, onPageCount, onPageRendered }: PdfPagePreviewProps) {
   const [renderedPage, setRenderedPage] = useState<RenderedPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -60,13 +61,17 @@ export function PdfPagePreview({ blob, pageNumber, title, onPageCount }: PdfPage
       await pdf.destroy();
 
       if (!cancelled) {
-        onPageCount?.(totalPages);
-        setRenderedPage({
-          dataUrl: canvas.toDataURL("image/png"),
+        const pageInfo = {
           pageNumber: safePageNumber,
           totalPages,
           width: canvas.width,
           height: canvas.height,
+        };
+        onPageCount?.(totalPages);
+        onPageRendered?.(pageInfo);
+        setRenderedPage({
+          dataUrl: canvas.toDataURL("image/png"),
+          ...pageInfo,
         });
       }
     }
@@ -86,7 +91,7 @@ export function PdfPagePreview({ blob, pageNumber, title, onPageCount }: PdfPage
     return () => {
       cancelled = true;
     };
-  }, [blob, onPageCount, pageNumber]);
+  }, [blob, onPageCount, onPageRendered, pageNumber]);
 
   if (loading) {
     return (
@@ -119,7 +124,7 @@ export function PdfPagePreview({ blob, pageNumber, title, onPageCount }: PdfPage
       alt={`${title} page ${renderedPage.pageNumber}`}
       width={renderedPage.width}
       height={renderedPage.height}
-      className="h-full w-full object-fill"
+      className="block h-full w-full object-contain"
       draggable={false}
     />
   );

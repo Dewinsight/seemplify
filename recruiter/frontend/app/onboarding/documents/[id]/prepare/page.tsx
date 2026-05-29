@@ -29,6 +29,46 @@ const fieldIcons = {
   text: Type,
 };
 
+type FieldResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+type FieldInteraction =
+  | { mode: "move"; id: string; dx: number; dy: number }
+  | { mode: "resize"; id: string; handle: FieldResizeHandle; startX: number; startY: number; startField: SignatureField };
+
+const resizeHandles: FieldResizeHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+const resizeHandleClassNames: Record<FieldResizeHandle, string> = {
+  n: "left-1/2 top-[-6px] -translate-x-1/2 cursor-ns-resize",
+  s: "bottom-[-6px] left-1/2 -translate-x-1/2 cursor-ns-resize",
+  e: "right-[-6px] top-1/2 -translate-y-1/2 cursor-ew-resize",
+  w: "left-[-6px] top-1/2 -translate-y-1/2 cursor-ew-resize",
+  nw: "left-[-6px] top-[-6px] cursor-nwse-resize",
+  ne: "right-[-6px] top-[-6px] cursor-nesw-resize",
+  sw: "bottom-[-6px] left-[-6px] cursor-nesw-resize",
+  se: "bottom-[-6px] right-[-6px] cursor-nwse-resize",
+};
+
+const MIN_FIELD_WIDTH = 0.06;
+const MIN_FIELD_HEIGHT = 0.035;
+
+function roundUnit(value: number) {
+  return Number(value.toFixed(4));
+}
+
+function clampUnit(value: number, min = 0, max = 1) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampFieldRect(rect: Pick<SignatureField, "x" | "y" | "width" | "height">) {
+  const width = clampUnit(rect.width, MIN_FIELD_WIDTH, 1);
+  const height = clampUnit(rect.height, MIN_FIELD_HEIGHT, 1);
+  return {
+    width: roundUnit(width),
+    height: roundUnit(height),
+    x: roundUnit(clampUnit(rect.x, 0, 1 - width)),
+    y: roundUnit(clampUnit(rect.y, 0, 1 - height)),
+  };
+}
+
 export default function PrepareOnboardingDocumentPage() {
   const params = useParams<{ id: string }>();
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -43,7 +83,8 @@ export default function PrepareOnboardingDocumentPage() {
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageCount, setPreviewPageCount] = useState(1);
-  const [dragging, setDragging] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  const [previewPageSize, setPreviewPageSize] = useState<{ width: number; height: number } | null>(null);
+  const [interaction, setInteraction] = useState<FieldInteraction | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -105,6 +146,9 @@ export default function PrepareOnboardingDocumentPage() {
     setPreviewPageCount(count);
     setPreviewPage((page) => Math.max(1, Math.min(page, count)));
   }, []);
+  const handlePreviewPageRendered = useCallback((page: { width: number; height: number }) => {
+    setPreviewPageSize({ width: page.width, height: page.height });
+  }, []);
 
   function addField(role: "candidate" | "internal" = "candidate") {
     const field = { ...newSignatureField(role), page: previewPage };
@@ -114,6 +158,21 @@ export default function PrepareOnboardingDocumentPage() {
 
   function updateField(id: string, patch: Partial<SignatureField>) {
     setFields((current) => current.map((field) => (field.id === id ? { ...field, ...patch } : field)));
+  }
+
+  function updateFieldRect(id: string, patch: Partial<Pick<SignatureField, "x" | "y" | "width" | "height">>) {
+    setFields((current) => current.map((field) => {
+      if (field.id !== id) return field;
+      return {
+        ...field,
+        ...clampFieldRect({
+          x: patch.x ?? field.x,
+          y: patch.y ?? field.y,
+          width: patch.width ?? field.width,
+          height: patch.height ?? field.height,
+        }),
+      };
+    }));
   }
 
   function removeField(id: string) {
@@ -133,12 +192,14 @@ export default function PrepareOnboardingDocumentPage() {
     setPreviewPage(field.page);
   }
 
-  function onPointerDown(event: PointerEvent<HTMLButtonElement>, field: SignatureField) {
+  function onMovePointerDown(event: PointerEvent<HTMLDivElement>, field: SignatureField) {
     const page = pageRef.current?.getBoundingClientRect();
     if (!page) return;
+    event.preventDefault();
     const fieldLeft = field.x * page.width;
     const fieldTop = field.y * page.height;
-    setDragging({
+    setInteraction({
+      mode: "move",
       id: field.id,
       dx: event.clientX - page.left - fieldLeft,
       dy: event.clientY - page.top - fieldTop,
@@ -147,17 +208,74 @@ export default function PrepareOnboardingDocumentPage() {
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   }
 
+  function onResizePointerDown(event: PointerEvent<HTMLSpanElement>, field: SignatureField, handle: FieldResizeHandle) {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveFieldId(field.id);
+    setInteraction({
+      mode: "resize",
+      id: field.id,
+      handle,
+      startX: event.clientX,
+      startY: event.clientY,
+      startField: field,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (!dragging) return;
+    if (!interaction) return;
     const page = pageRef.current?.getBoundingClientRect();
     if (!page) return;
-    const field = fields.find((item) => item.id === dragging.id);
-    if (!field) return;
-    const width = field.width;
-    const height = field.height;
-    const x = Math.max(0, Math.min(1 - width, (event.clientX - page.left - dragging.dx) / page.width));
-    const y = Math.max(0, Math.min(1 - height, (event.clientY - page.top - dragging.dy) / page.height));
-    updateField(dragging.id, { x, y });
+
+    if (interaction.mode === "move") {
+      const field = fields.find((item) => item.id === interaction.id);
+      if (!field) return;
+      const x = (event.clientX - page.left - interaction.dx) / page.width;
+      const y = (event.clientY - page.top - interaction.dy) / page.height;
+      updateFieldRect(interaction.id, { x, y });
+      return;
+    }
+
+    const dx = (event.clientX - interaction.startX) / page.width;
+    const dy = (event.clientY - interaction.startY) / page.height;
+    const start = interaction.startField;
+    let x = start.x;
+    let y = start.y;
+    let width = start.width;
+    let height = start.height;
+
+    if (interaction.handle.includes("e")) width = start.width + dx;
+    if (interaction.handle.includes("s")) height = start.height + dy;
+    if (interaction.handle.includes("w")) {
+      x = start.x + dx;
+      width = start.width - dx;
+      if (width < MIN_FIELD_WIDTH) {
+        width = MIN_FIELD_WIDTH;
+        x = start.x + start.width - MIN_FIELD_WIDTH;
+      }
+    }
+    if (interaction.handle.includes("n")) {
+      y = start.y + dy;
+      height = start.height - dy;
+      if (height < MIN_FIELD_HEIGHT) {
+        height = MIN_FIELD_HEIGHT;
+        y = start.y + start.height - MIN_FIELD_HEIGHT;
+      }
+    }
+
+    if (x < 0) {
+      width += x;
+      x = 0;
+    }
+    if (y < 0) {
+      height += y;
+      y = 0;
+    }
+    if (x + width > 1) width = 1 - x;
+    if (y + height > 1) height = 1 - y;
+
+    updateFieldRect(interaction.id, { x, y, width, height });
   }
 
   async function saveFields() {
@@ -237,8 +355,13 @@ export default function PrepareOnboardingDocumentPage() {
             <div
               ref={pageRef}
               onPointerMove={onPointerMove}
-              onPointerUp={() => setDragging(null)}
-              className="relative mx-auto aspect-[8.5/11] max-h-[calc(100vh-180px)] w-full max-w-[720px] overflow-hidden border bg-white shadow-sm"
+              onPointerUp={() => setInteraction(null)}
+              onPointerCancel={() => setInteraction(null)}
+              className="relative mx-auto w-full max-w-[760px] select-none overflow-hidden border bg-white shadow-sm"
+              style={{
+                aspectRatio: previewPageSize ? `${previewPageSize.width} / ${previewPageSize.height}` : "8.5 / 11",
+                touchAction: "none",
+              }}
             >
               {previewLoading ? (
                 <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading document preview...</div>
@@ -248,6 +371,7 @@ export default function PrepareOnboardingDocumentPage() {
                   title={document.title}
                   pageNumber={previewPage}
                   onPageCount={handlePreviewPageCount}
+                  onPageRendered={handlePreviewPageRendered}
                 />
               ) : previewError ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
@@ -265,11 +389,12 @@ export default function PrepareOnboardingDocumentPage() {
                 {visibleFields.map((field) => {
                   const Icon = fieldIcons[field.type] || Signature;
                   return (
-                    <button
+                    <div
                       key={field.id}
-                      type="button"
-                      onPointerDown={(event) => onPointerDown(event, field)}
-                      className={`pointer-events-auto absolute flex items-center gap-1 rounded border px-2 text-left text-[11px] font-medium shadow-sm ${activeFieldId === field.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-emerald-500 bg-emerald-50 text-emerald-700"}`}
+                      role="button"
+                      tabIndex={0}
+                      onPointerDown={(event) => onMovePointerDown(event, field)}
+                      className={`pointer-events-auto absolute flex cursor-move items-center gap-1 rounded border px-2 text-left text-[11px] font-medium shadow-sm ${activeFieldId === field.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-emerald-500 bg-emerald-50 text-emerald-700"}`}
                       style={{
                         left: `${field.x * 100}%`,
                         top: `${field.y * 100}%`,
@@ -279,7 +404,16 @@ export default function PrepareOnboardingDocumentPage() {
                     >
                       <Icon className="h-3 w-3" />
                       <span className="truncate">{field.label || field.type}</span>
-                    </button>
+                      {activeFieldId === field.id && resizeHandles.map((handle) => (
+                        <span
+                          key={handle}
+                          aria-label={`Resize ${handle}`}
+                          data-resize-handle={handle}
+                          onPointerDown={(event) => onResizePointerDown(event, field, handle)}
+                          className={`absolute h-3 w-3 rounded-sm border border-blue-600 bg-white shadow-sm ${resizeHandleClassNames[handle]}`}
+                        />
+                      ))}
+                    </div>
                   );
                 })}
               </div>
@@ -344,7 +478,7 @@ export default function PrepareOnboardingDocumentPage() {
                   {(["x", "y", "width", "height"] as const).map((key) => (
                     <div key={key} className="space-y-2">
                       <Label>{key}</Label>
-                      <Input type="number" step="0.01" min="0" max="1" value={activeField[key]} onChange={(event) => updateField(activeField.id, { [key]: Number(event.target.value) })} />
+                      <Input type="number" step="0.01" min="0" max="1" value={activeField[key]} onChange={(event) => updateFieldRect(activeField.id, { [key]: Number(event.target.value) })} />
                     </div>
                   ))}
                 </div>
