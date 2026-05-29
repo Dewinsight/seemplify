@@ -227,23 +227,93 @@ function drawSignatureBlock(doc, label, style, documentStyle) {
     : align === 'right'
       ? x + width - padding - lineWidth
       : x + padding;
-  const height = padding * 2 + fontSize + 34;
+  const height = padding * 2 + fontSize + 38;
 
   ensureSpace(doc, height);
   const y = doc.y;
   drawBox(doc, x, y, width, height, style);
-  doc.font(fontNameForStyle(style)).fontSize(fontSize).fillColor(style.color || documentStyle.textColor)
-    .text(label || 'Signature', x + padding, y + padding, {
-      width: Math.max(40, width - padding * 2),
-      align
-    });
 
-  const lineY = y + padding + fontSize + 18;
+  const lineY = y + padding + 18;
   doc.moveTo(lineX, lineY)
     .lineTo(lineX + lineWidth, lineY)
     .stroke(style.borderColor || '#6b7280');
+  doc.font(fontNameForStyle(style)).fontSize(fontSize).fillColor(style.color || documentStyle.textColor)
+    .text(label || 'Signature', x + padding, lineY + 8, {
+      width: Math.max(40, width - padding * 2),
+      align
+    });
   doc.y = y + height;
   doc.moveDown(0.5);
+}
+
+function drawSpacer(doc, requestedHeight) {
+  let remaining = clampNumber(requestedHeight, 8, 600, 48);
+
+  while (remaining > 0) {
+    const available = doc.page.height - doc.page.margins.bottom - doc.y;
+    if (available <= 0) {
+      doc.addPage();
+      continue;
+    }
+
+    const step = Math.min(remaining, available);
+    doc.y += step;
+    remaining -= step;
+    if (remaining > 0) doc.addPage();
+  }
+}
+
+function parseImageDataUrl(value) {
+  if (!value || typeof value !== 'string') return null;
+
+  const match = value.match(/^data:(image\/png|image\/jpeg|image\/jpg);base64,([\s\S]+)$/);
+  if (!match) return null;
+
+  try {
+    const buffer = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
+    return buffer.length ? buffer : null;
+  } catch {
+    return null;
+  }
+}
+
+function drawLogoBlock(doc, block, style, documentStyle, variables) {
+  const imageBuffer = parseImageDataUrl(block.content?.src || block.content?.url);
+
+  if (!imageBuffer) {
+    const text = normalizeText(replaceVariables(block.content?.alt || block.content?.text || 'Company logo', variables));
+    drawStyledText(doc, text, style, documentStyle, {
+      bold: true,
+      fontSize: 11,
+      color: '#111827',
+      moveDown: 0.6
+    });
+    return;
+  }
+
+  const x = doc.page.margins.left;
+  const width = contentWidth(doc);
+  const padding = style.padding || 0;
+  const maxImageWidth = Math.max(24, width - padding * 2);
+  const imageWidth = Math.min(clampNumber(block.content?.width, 32, 420, 160), maxImageWidth);
+  const imageHeight = clampNumber(block.content?.height, 24, 240, 64);
+  const align = style.align || 'left';
+  const imageX = align === 'center'
+    ? x + (width - imageWidth) / 2
+    : align === 'right'
+      ? x + width - padding - imageWidth
+      : x + padding;
+  const blockHeight = imageHeight + padding * 2;
+
+  ensureSpace(doc, blockHeight);
+  const y = doc.y;
+  drawBox(doc, x, y, width, blockHeight, style);
+  doc.image(imageBuffer, imageX, y + padding, {
+    fit: [imageWidth, imageHeight],
+    align
+  });
+  doc.y = y + blockHeight;
+  doc.moveDown(0.6);
 }
 
 function drawTable(doc, rows = [], style = {}, documentStyle = DEFAULT_DOCUMENT_STYLE) {
@@ -316,6 +386,11 @@ async function renderBuilderDocumentToBuffer({ title, builderBlocks = [], variab
           return;
         }
 
+        if (block.type === 'spacer') {
+          drawSpacer(doc, block.content?.height);
+          return;
+        }
+
         if (block.type === 'heading') {
           const text = normalizeText(replaceVariables(block.content?.text || block.content?.title || title, variables));
           doc.moveDown(0.2);
@@ -351,13 +426,7 @@ async function renderBuilderDocumentToBuffer({ title, builderBlocks = [], variab
         }
 
         if (block.type === 'logo') {
-          const text = normalizeText(replaceVariables(block.content?.alt || block.content?.text || 'Company logo', variables));
-          drawStyledText(doc, text, style, documentStyle, {
-            bold: true,
-            fontSize: 11,
-            color: '#111827',
-            moveDown: 0.6
-          });
+          drawLogoBlock(doc, block, style, documentStyle, variables);
           return;
         }
 

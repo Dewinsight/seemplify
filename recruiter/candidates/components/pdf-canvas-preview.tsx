@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { FileWarning, Loader2 } from "lucide-react"
+import type { SignatureField } from "@/lib/types"
 
 interface RenderedPage {
   pageNumber: number
@@ -13,9 +14,19 @@ interface RenderedPage {
 interface PdfCanvasPreviewProps {
   blob: Blob | null
   title: string
+  signatureFields?: SignatureField[]
+  signaturePreviewUrl?: string
 }
 
-export function PdfCanvasPreview({ blob, title }: PdfCanvasPreviewProps) {
+function fieldLabel(field: SignatureField) {
+  if (field.type === "date") return "Date signed"
+  if (field.type === "name") return "Name"
+  if (field.type === "email") return "Email"
+  if (field.type === "text") return field.label || "Text"
+  return field.label || "Signature"
+}
+
+export function PdfCanvasPreview({ blob, title, signatureFields = [], signaturePreviewUrl = "" }: PdfCanvasPreviewProps) {
   const [pages, setPages] = useState<RenderedPage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -111,17 +122,54 @@ export function PdfCanvasPreview({ blob, title }: PdfCanvasPreviewProps) {
   return (
     <div className="h-full overflow-auto bg-slate-100 px-4 py-6">
       <div className="mx-auto flex max-w-[920px] flex-col gap-5">
-        {pages.map((page) => (
-          <figure key={page.pageNumber} className="rounded-sm bg-white shadow-lg ring-1 ring-slate-200">
-            <img
-              src={page.dataUrl}
-              alt={`${title} page ${page.pageNumber}`}
-              width={page.width}
-              height={page.height}
-              className="h-auto w-full"
-            />
-          </figure>
-        ))}
+        {pages.map((page) => {
+          const pageFields = signatureFields.filter((field) => field.page === page.pageNumber)
+
+          return (
+            <figure key={page.pageNumber} className="relative rounded-sm bg-white shadow-lg ring-1 ring-slate-200">
+              <img
+                src={page.dataUrl}
+                alt={`${title} page ${page.pageNumber}`}
+                width={page.width}
+                height={page.height}
+                className="h-auto w-full"
+              />
+              <div className="pointer-events-none absolute inset-0">
+                {pageFields.map((field) => {
+                  const showSignature = field.type === "signature" && Boolean(signaturePreviewUrl)
+                  return (
+                    <div
+                      key={field.id}
+                      className={`absolute overflow-hidden border ${
+                        showSignature
+                          ? "border-slate-300 bg-white"
+                          : "border-blue-500/70 bg-blue-50/70"
+                      }`}
+                      style={{
+                        left: `${field.x * 100}%`,
+                        top: `${field.y * 100}%`,
+                        width: `${field.width * 100}%`,
+                        height: `${field.height * 100}%`,
+                      }}
+                    >
+                      {showSignature ? (
+                        <img
+                          src={signaturePreviewUrl}
+                          alt="Signature preview"
+                          className="h-full w-full object-contain p-1"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center px-2 text-[11px] font-medium text-blue-800">
+                          {fieldLabel(field)}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </figure>
+          )
+        })}
       </div>
     </div>
   )

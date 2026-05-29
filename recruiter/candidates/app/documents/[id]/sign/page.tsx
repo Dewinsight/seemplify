@@ -32,6 +32,7 @@ export default function CandidateSignDocumentPage() {
   const [loading, setLoading] = useState(true)
   const [drawing, setDrawing] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null)
   const [previewUrl, setPreviewUrl] = useState("")
@@ -96,6 +97,12 @@ export default function CandidateSignDocumentPage() {
     context.strokeStyle = "#111827"
   }, [])
 
+  function updateSignaturePreview() {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    setSignaturePreviewUrl(canvas.toDataURL("image/png"))
+  }
+
   function pointFromMouse(event: MouseEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current
     if (!canvas) return null
@@ -133,9 +140,11 @@ export default function CandidateSignDocumentPage() {
     context.lineTo(point.x, point.y)
     context.stroke()
     setHasSignature(true)
+    updateSignaturePreview()
   }
 
   function stop() {
+    if (drawing && hasSignature) updateSignaturePreview()
     setDrawing(false)
   }
 
@@ -147,6 +156,7 @@ export default function CandidateSignDocumentPage() {
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.strokeStyle = "#111827"
     setHasSignature(false)
+    setSignaturePreviewUrl("")
   }
 
   async function submitSignature() {
@@ -240,7 +250,12 @@ export default function CandidateSignDocumentPage() {
                     Preparing PDF preview...
                   </div>
                 ) : previewBlob ? (
-                  <PdfCanvasPreview blob={previewBlob} title={payload.document.title} />
+                  <PdfCanvasPreview
+                    blob={previewBlob}
+                    title={payload.document.title}
+                    signatureFields={payload.document.signatureFields?.filter((field) => field.role === "candidate") || []}
+                    signaturePreviewUrl={signaturePreviewUrl}
+                  />
                 ) : previewError ? (
                   <div className="flex h-full items-center justify-center p-6">
                     <div className="max-w-md rounded-md border border-amber-200 bg-amber-50 p-5 text-center text-sm text-amber-900">

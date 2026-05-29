@@ -4,7 +4,7 @@ const BuilderBlockSchema = new mongoose.Schema({
   id: { type: String, required: true },
   type: {
     type: String,
-    enum: ['logo', 'heading', 'text', 'section', 'table', 'signature', 'pageBreak'],
+    enum: ['logo', 'heading', 'text', 'section', 'table', 'signature', 'spacer', 'pageBreak'],
     required: true
   },
   content: mongoose.Schema.Types.Mixed,

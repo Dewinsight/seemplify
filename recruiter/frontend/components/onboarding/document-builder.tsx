@@ -56,6 +56,7 @@ const blockOptions: Array<{ type: BlockType; label: string; icon: any }> = [
   { type: "section", label: "Section", icon: FileText },
   { type: "table", label: "Table", icon: Table2 },
   { type: "signature", label: "Signature", icon: Signature },
+  { type: "spacer", label: "Spacer", icon: ListPlus },
   { type: "pageBreak", label: "Page break", icon: ListPlus },
 ];
 
@@ -113,8 +114,9 @@ function makeBlock(type: BlockType): BuilderBlock {
   if (type === "heading") return { id, type, content: { text: "Document heading" } };
   if (type === "section") return { id, type, content: { title: "Section title", text: "Section content" } };
   if (type === "table") return { id, type, content: { rows: [["Label", "Value"], ["Candidate", "{{candidate.name}}"]] } };
-  if (type === "signature") return { id, type, content: { label: "Candidate signature" } };
-  if (type === "logo") return { id, type, content: { text: "{{organization.name}}", alt: "Company logo" } };
+  if (type === "signature") return { id, type, content: { label: "Signature" } };
+  if (type === "logo") return { id, type, content: { text: "{{organization.name}}", alt: "Company logo", width: 160, height: 64 } };
+  if (type === "spacer") return { id, type, content: { height: 48 } };
   if (type === "pageBreak") return { id, type, content: {} };
   return { id, type, content: { text: "Write your document text here." } };
 }
@@ -127,7 +129,7 @@ function defaultBlocks(title: string): BuilderBlock[] {
       type: "text",
       content: { text: "Hello {{candidate.firstName}},\n\nPlease review this onboarding document from {{organization.name}}." },
     },
-    { id: "signature-default", type: "signature", content: { label: "Candidate signature" } },
+    { id: "signature-default", type: "signature", content: { label: "Signature" } },
   ];
 }
 
@@ -165,9 +167,28 @@ function getBlockStyle(block: BuilderBlock, fallback: CSSProperties = {}): CSSPr
   } as CSSProperties;
 }
 
+function blockDimension(block: BuilderBlock, key: "width" | "height", fallback: number, min: number, max: number) {
+  return clampNumber(Number(block.content?.[key] ?? fallback), min, max);
+}
+
+function hasEditableTextContent(block: BuilderBlock) {
+  return !["logo", "signature", "spacer", "table", "pageBreak"].includes(block.type);
+}
+
 function PreviewBlock({ block }: { block: BuilderBlock }) {
   if (block.type === "pageBreak") {
     return <div className="my-5 border-t border-dashed pt-3 text-xs uppercase tracking-wide" style={getBlockStyle(block, { borderColor: "#cbd5e1", color: "#94a3b8" })}>Page break</div>;
+  }
+  if (block.type === "spacer") {
+    const height = blockDimension(block, "height", 48, 8, 600);
+    return (
+      <div
+        className="relative border border-dashed border-slate-200 bg-slate-50/70"
+        style={{ ...getBlockStyle(block), height }}
+      >
+        <span className="absolute left-2 top-1 text-[10px] font-medium text-slate-400">{height}px spacer</span>
+      </div>
+    );
   }
   if (block.type === "heading") {
     return <h2 className="text-2xl font-semibold" style={getBlockStyle(block, { color: "#020617", fontWeight: 600 })}>{block.content?.text || "Heading"}</h2>;
@@ -205,7 +226,27 @@ function PreviewBlock({ block }: { block: BuilderBlock }) {
     );
   }
   if (block.type === "logo") {
-    return <div className="inline-flex h-12 items-center border border-slate-200 px-4 text-sm font-semibold" style={getBlockStyle(block, { color: "#334155" })}>{block.content?.text || "Logo"}</div>;
+    const logoSrc = block.content?.src || block.content?.url;
+    const width = blockDimension(block, "width", 160, 32, 420);
+    const height = blockDimension(block, "height", 64, 24, 240);
+    if (logoSrc) {
+      return (
+        <img
+          src={logoSrc}
+          alt={block.content?.alt || "Company logo"}
+          className="block max-w-full object-contain"
+          style={{ ...getBlockStyle(block), width, height }}
+        />
+      );
+    }
+    return (
+      <div
+        className="inline-flex items-center border border-slate-200 px-4 text-sm font-semibold"
+        style={{ ...getBlockStyle(block, { color: "#334155" }), width, height }}
+      >
+        {block.content?.text || "Logo"}
+      </div>
+    );
   }
   return <p className="whitespace-pre-wrap text-sm leading-6" style={getBlockStyle(block, { color: "#334155" })}>{block.content?.text || ""}</p>;
 }
@@ -492,6 +533,27 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     }
   };
 
+  const uploadLogo = (blockId: string, file?: File | null) => {
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : "";
+      if (!src) return;
+      updateBlock(blockId, (block) => ({
+        ...block,
+        content: {
+          ...block.content,
+          src,
+          alt: block.content?.alt || file.name.replace(/\.[^.]+$/, "") || "Company logo",
+          width: block.content?.width || 160,
+          height: block.content?.height || 64,
+        },
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const save = async () => {
     await onSave({
       title,
@@ -764,17 +826,63 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
                   </div>
                 )}
 
-                {activeBlock.type !== "pageBreak" && activeBlock.type !== "table" && (
+                {activeBlock.type === "logo" && (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Logo image</Label>
+                      <Input
+                        type="file"
+                        accept="image/png,image/jpeg"
+                        onChange={(event) => {
+                          uploadLogo(activeBlock.id, event.currentTarget.files?.[0]);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Alt text</Label>
+                      <Input value={activeBlock.content?.alt || ""} onChange={(event) => updateBlock(activeBlock.id, (block) => ({ ...block, content: { ...block.content, alt: event.target.value } }))} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Width</Label>
+                        <Input type="number" min="32" max="420" value={blockDimension(activeBlock, "width", 160, 32, 420)} onChange={(event) => updateBlock(activeBlock.id, (block) => ({ ...block, content: { ...block.content, width: clampNumber(Number(event.target.value), 32, 420) } }))} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Height</Label>
+                        <Input type="number" min="24" max="240" value={blockDimension(activeBlock, "height", 64, 24, 240)} onChange={(event) => updateBlock(activeBlock.id, (block) => ({ ...block, content: { ...block.content, height: clampNumber(Number(event.target.value), 24, 240) } }))} />
+                      </div>
+                    </div>
+                    {activeBlock.content?.src && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => updateBlock(activeBlock.id, (block) => ({ ...block, content: { ...block.content, src: "" } }))}>
+                        Remove uploaded logo
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {activeBlock.type === "spacer" && (
                   <div className="space-y-2">
-                    <Label>{activeBlock.type === "signature" ? "Label" : "Content"}</Label>
+                    <Label>Height</Label>
+                    <Input
+                      type="number"
+                      min="8"
+                      max="600"
+                      value={blockDimension(activeBlock, "height", 48, 8, 600)}
+                      onChange={(event) => updateBlock(activeBlock.id, (block) => ({ ...block, content: { ...block.content, height: clampNumber(Number(event.target.value), 8, 600) } }))}
+                    />
+                  </div>
+                )}
+
+                {hasEditableTextContent(activeBlock) && (
+                  <div className="space-y-2">
+                    <Label>Content</Label>
                     <Textarea
                       className="min-h-32"
-                      value={activeBlock.type === "section" ? activeBlock.content?.text || "" : activeBlock.content?.text || activeBlock.content?.label || ""}
+                      value={activeBlock.type === "section" ? activeBlock.content?.text || "" : activeBlock.content?.text || ""}
                       onChange={(event) => updateBlock(activeBlock.id, (block) => ({
                         ...block,
-                        content: activeBlock.type === "signature"
-                          ? { ...block.content, label: event.target.value }
-                          : { ...block.content, text: event.target.value },
+                        content: { ...block.content, text: event.target.value },
                       }))}
                     />
                   </div>

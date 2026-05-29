@@ -6,7 +6,7 @@ export type DocumentSourceType = "builder" | "uploaded_pdf" | "uploaded_docx";
 
 export interface BuilderBlock {
   id: string;
-  type: "logo" | "heading" | "text" | "section" | "table" | "signature" | "pageBreak";
+  type: "logo" | "heading" | "text" | "section" | "table" | "signature" | "spacer" | "pageBreak";
   content?: Record<string, any>;
   style?: Record<string, any>;
 }

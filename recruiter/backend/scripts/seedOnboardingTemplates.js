@@ -76,7 +76,7 @@ function builderBlocks(template) {
   return [
     { id: `${template.category}-heading`, type: 'heading', content: { text: template.name } },
     { id: `${template.category}-body`, type: 'text', content: { text: template.text } },
-    { id: `${template.category}-signature`, type: 'signature', content: { label: 'Candidate signature' } }
+    { id: `${template.category}-signature`, type: 'signature', content: { label: 'Signature' } }
   ];
 }
 

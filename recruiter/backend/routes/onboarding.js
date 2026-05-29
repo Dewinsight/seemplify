@@ -334,7 +334,7 @@ function defaultBuilderBlocks(title = 'Onboarding document') {
     {
       id: 'signature-1',
       type: 'signature',
-      content: { label: 'Candidate signature' }
+      content: { label: 'Signature' }
     }
   ];
 }
@@ -686,7 +686,7 @@ router.post('/documents/upload', upload.single('document'), async (req, res) => 
       builderBlocks = [
         { id: 'heading-upload', type: 'heading', content: { text: title } },
         { id: 'text-upload', type: 'text', content: { text: extracted.value || '' } },
-        { id: 'signature-upload', type: 'signature', content: { label: 'Candidate signature' } }
+        { id: 'signature-upload', type: 'signature', content: { label: 'Signature' } }
       ];
       const buffer = await onboardingPdfService.renderBuilderDocumentToBuffer({
         title,
