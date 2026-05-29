@@ -1,14 +1,15 @@
 "use client";
 
-import { PointerEvent, useEffect, useRef, useState } from "react";
+import { PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, Download, Mail, Plus, Save, Signature, Type, UserRound } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Mail, Plus, Save, Signature, Type, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
+import { PdfPagePreview } from "@/components/onboarding/pdf-page-preview";
 import {
   getDocumentPreviewBlob,
   getDocument,
@@ -35,10 +36,13 @@ export default function PrepareOnboardingDocumentPage() {
   const [fields, setFields] = useState<SignatureField[]>([]);
   const [activeFieldId, setActiveFieldId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageCount, setPreviewPageCount] = useState(1);
   const [dragging, setDragging] = useState<{ id: string; dx: number; dy: number } | null>(null);
 
   useEffect(() => {
@@ -48,6 +52,7 @@ export default function PrepareOnboardingDocumentPage() {
         setDocument(data);
         setFields(data.signatureFields || []);
         setActiveFieldId(data.signatureFields?.[0]?.id || "");
+        setPreviewPage(data.signatureFields?.[0]?.page || 1);
       } catch (error: any) {
         toast.error(error.message || "Failed to load document");
       }
@@ -71,9 +76,11 @@ export default function PrepareOnboardingDocumentPage() {
           URL.revokeObjectURL(objectUrl);
           return;
         }
+        setPreviewBlob(blob);
         setPreviewUrl(objectUrl);
       } catch (error: any) {
         if (!cancelled) {
+          setPreviewBlob(null);
           setPreviewUrl("");
           setPreviewError(error.message || "Failed to load document preview");
         }
@@ -93,9 +100,14 @@ export default function PrepareOnboardingDocumentPage() {
   }, [document?._id, document?.pdfSnapshot?.renderedAt, document?.updatedAt, previewReloadKey]);
 
   const activeField = fields.find((field) => field.id === activeFieldId);
+  const visibleFields = fields.filter((field) => field.page === previewPage);
+  const handlePreviewPageCount = useCallback((count: number) => {
+    setPreviewPageCount(count);
+    setPreviewPage((page) => Math.max(1, Math.min(page, count)));
+  }, []);
 
   function addField(role: "candidate" | "internal" = "candidate") {
-    const field = newSignatureField(role);
+    const field = { ...newSignatureField(role), page: previewPage };
     setFields((current) => [...current, field]);
     setActiveFieldId(field.id);
   }
@@ -105,8 +117,20 @@ export default function PrepareOnboardingDocumentPage() {
   }
 
   function removeField(id: string) {
-    setFields((current) => current.filter((field) => field.id !== id));
-    if (activeFieldId === id) setActiveFieldId(fields[0]?.id || "");
+    setFields((current) => {
+      const remaining = current.filter((field) => field.id !== id);
+      if (activeFieldId === id) {
+        const nextField = remaining[0];
+        setActiveFieldId(nextField?.id || "");
+        setPreviewPage(nextField?.page || 1);
+      }
+      return remaining;
+    });
+  }
+
+  function selectField(field: SignatureField) {
+    setActiveFieldId(field.id);
+    setPreviewPage(field.page);
   }
 
   function onPointerDown(event: PointerEvent<HTMLButtonElement>, field: SignatureField) {
@@ -185,6 +209,31 @@ export default function PrepareOnboardingDocumentPage() {
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="rounded-md border bg-white p-4">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm font-medium text-slate-700">Page {previewPage} of {previewPageCount}</div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={previewPage <= 1}
+                  onClick={() => setPreviewPage((page) => Math.max(1, page - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={previewPage >= previewPageCount}
+                  onClick={() => setPreviewPage((page) => Math.min(previewPageCount, page + 1))}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
             <div
               ref={pageRef}
               onPointerMove={onPointerMove}
@@ -193,8 +242,13 @@ export default function PrepareOnboardingDocumentPage() {
             >
               {previewLoading ? (
                 <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading document preview...</div>
-              ) : previewUrl ? (
-                <iframe title="Document preview" src={previewUrl} className="h-full w-full" />
+              ) : previewBlob ? (
+                <PdfPagePreview
+                  blob={previewBlob}
+                  title={document.title}
+                  pageNumber={previewPage}
+                  onPageCount={handlePreviewPageCount}
+                />
               ) : previewError ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
                   <p className="text-sm font-medium text-slate-700">Document preview could not be loaded.</p>
@@ -208,7 +262,7 @@ export default function PrepareOnboardingDocumentPage() {
               )}
 
               <div className="pointer-events-none absolute inset-0">
-                {fields.map((field) => {
+                {visibleFields.map((field) => {
                   const Icon = fieldIcons[field.type] || Signature;
                   return (
                     <button
@@ -246,7 +300,7 @@ export default function PrepareOnboardingDocumentPage() {
 
             <div className="mb-5 grid gap-2">
               {fields.map((field) => (
-                <button key={field.id} type="button" onClick={() => setActiveFieldId(field.id)} className={`rounded-md border p-3 text-left text-sm ${activeFieldId === field.id ? "border-blue-300 bg-blue-50" : "hover:bg-slate-50"}`}>
+                <button key={field.id} type="button" onClick={() => selectField(field)} className={`rounded-md border p-3 text-left text-sm ${activeFieldId === field.id ? "border-blue-300 bg-blue-50" : "hover:bg-slate-50"}`}>
                   <div className="font-medium text-slate-950">{field.label || field.type}</div>
                   <div className="text-xs text-slate-500">{field.role} · page {field.page}</div>
                 </button>
@@ -297,7 +351,17 @@ export default function PrepareOnboardingDocumentPage() {
 
                 <div className="space-y-2">
                   <Label>Page</Label>
-                  <Input type="number" min="1" value={activeField.page} onChange={(event) => updateField(activeField.id, { page: Number(event.target.value) || 1 })} />
+                  <Input
+                    type="number"
+                    min="1"
+                    max={previewPageCount}
+                    value={activeField.page}
+                    onChange={(event) => {
+                      const nextPage = Math.max(1, Math.min(Number(event.target.value) || 1, previewPageCount));
+                      updateField(activeField.id, { page: nextPage });
+                      setPreviewPage(nextPage);
+                    }}
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
