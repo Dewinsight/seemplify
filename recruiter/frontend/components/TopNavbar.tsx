@@ -17,6 +17,7 @@ import {
   Moon,
   Shield,
   GraduationCap,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -48,25 +49,53 @@ import OrganizationSwitcher from "@/components/OrganizationSwitcher";
 import { Logo } from "@/components/ui/Logo";
 import NotificationDropdown from "@/components/NotificationDropdown";
 
-const navigationItems = [
+type NavigationLink = {
+  title: string;
+  href: string;
+  icon: React.ElementType;
+};
+
+type NavigationGroup = {
+  title: string;
+  icon: React.ElementType;
+  children: NavigationLink[];
+};
+
+type NavigationItem = NavigationLink | NavigationGroup;
+
+const navigationItems: NavigationItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
-  { title: "Candidates", href: "/candidates", icon: Users },
+  {
+    title: "Recruitment",
+    icon: Users,
+    children: [
+      { title: "Candidates", href: "/candidates", icon: Users },
+      { title: "Jobs", href: "/jobs", icon: Briefcase },
+    ],
+  },
   { title: "Onboarding", href: "/onboarding", icon: GraduationCap },
-  { title: "Jobs", href: "/jobs", icon: Briefcase },
   { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
   { title: "Calendar", href: "/calendar", icon: Calendar },
 ];
 
 // Directly use the Settings component for the icon
-const settingsNavigation = { title: "Settings", href: "/settings", icon: Settings };
+const settingsNavigation: NavigationLink = { title: "Settings", href: "/settings", icon: Settings };
+
+function isNavigationGroup(item: NavigationItem): item is NavigationGroup {
+  return "children" in item;
+}
+
+function isLinkActive(pathname: string | null, href: string) {
+  return Boolean(pathname?.startsWith(href));
+}
+
+function isGroupActive(pathname: string | null, item: NavigationGroup) {
+  return item.children.some((child) => isLinkActive(pathname, child.href));
+}
 
 interface NavLinkProps {
-  item: {
-    title: string;
-    href: string;
-    icon: React.ElementType;
-  };
-  pathname: string;
+  item: NavigationLink;
+  pathname: string | null;
   isMobile?: boolean;
   onClick?: () => void;
 }
@@ -80,7 +109,7 @@ const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) =>
       isMobile
         ? "text-lg font-medium p-3 rounded-lg"
         : "text-sm font-medium px-3 py-2 rounded-md",
-      pathname?.startsWith(item.href)
+      isLinkActive(pathname, item.href)
         ? "bg-primary/10 text-primary"
         : "text-foreground/70 hover:text-foreground hover:bg-accent"
     )}
@@ -89,6 +118,49 @@ const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) =>
     <span>{item.title}</span>
   </Link>
 );
+
+interface NavDropdownProps {
+  item: NavigationGroup;
+  pathname: string | null;
+  isMobile?: boolean;
+  onItemClick?: () => void;
+}
+
+const NavDropdown = ({ item, pathname, isMobile = false, onItemClick }: NavDropdownProps) => {
+  const active = isGroupActive(pathname, item);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          className={cn(
+            "flex items-center justify-start gap-2 rounded-md transition-colors duration-200 ease-in-out",
+            isMobile ? "h-auto p-3 text-lg font-medium" : "h-auto px-3 py-2 text-sm font-medium",
+            active
+              ? "bg-primary/10 text-primary"
+              : "text-foreground/70 hover:bg-accent hover:text-foreground"
+          )}
+        >
+          <item.icon className="h-5 w-5" />
+          <span>{item.title}</span>
+          <ChevronDown className="ml-auto h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={isMobile ? "start" : "center"} className="w-52">
+        {item.children.map((child) => (
+          <DropdownMenuItem key={child.href} asChild>
+            <Link href={child.href} onClick={onItemClick} className="flex items-center gap-2">
+              <child.icon className="h-4 w-4" />
+              <span>{child.title}</span>
+            </Link>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
 
 const TopNavbar = () => {
   const pathname = usePathname();
@@ -123,13 +195,23 @@ const TopNavbar = () => {
                 </SheetHeader>
                 <nav className="flex flex-col gap-4">
                   {[...navigationItems, settingsNavigation].map((item) => (
-                    <NavLink
-                      key={item.title}
-                      item={item}
-                      isMobile={true}
-                      onClick={() => setIsSheetOpen(false)}
-                      pathname={pathname}
-                    />
+                    isNavigationGroup(item) ? (
+                      <NavDropdown
+                        key={item.title}
+                        item={item}
+                        isMobile={true}
+                        onItemClick={() => setIsSheetOpen(false)}
+                        pathname={pathname}
+                      />
+                    ) : (
+                      <NavLink
+                        key={item.title}
+                        item={item}
+                        isMobile={true}
+                        onClick={() => setIsSheetOpen(false)}
+                        pathname={pathname}
+                      />
+                    )
                   ))}
                 </nav>
               </SheetContent>
@@ -143,7 +225,11 @@ const TopNavbar = () => {
         {/* Center Section - Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-2">
           {navigationItems.map((item) => (
-            <NavLink key={item.title} item={item} pathname={pathname} />
+            isNavigationGroup(item) ? (
+              <NavDropdown key={item.title} item={item} pathname={pathname} />
+            ) : (
+              <NavLink key={item.title} item={item} pathname={pathname} />
+            )
           ))}
         </nav>
 
