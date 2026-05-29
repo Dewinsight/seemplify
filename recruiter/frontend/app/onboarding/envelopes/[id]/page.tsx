@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Download, Eraser, FileText, Mail, PenLine, Send } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Eraser, FileText, Mail, PenLine, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
+import { PdfPagePreview } from "@/components/onboarding/pdf-page-preview";
 import {
   countersignEnvelope,
   getEnvelope,
   getEnvelopeAudit,
+  getEnvelopeDocumentPreviewBlob,
   remindEnvelope,
   sendEnvelope,
   voidEnvelope,
@@ -79,12 +82,24 @@ function SignaturePad({ onChange }: { onChange: (value: string) => void }) {
   );
 }
 
+function signerSelectValue(signer: { _id: string; key?: string }) {
+  return signer.key || signer._id;
+}
+
 export default function OnboardingEnvelopePage() {
   const params = useParams<{ id: string }>();
   const [envelope, setEnvelope] = useState<OnboardingEnvelope | null>(null);
   const [audit, setAudit] = useState<OnboardingAuditEvent[]>([]);
   const [signature, setSignature] = useState("");
   const [voidReason, setVoidReason] = useState("");
+  const [selectedSignerKey, setSelectedSignerKey] = useState("");
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageCount, setPreviewPageCount] = useState(1);
+  const [previewPageSize, setPreviewPageSize] = useState<{ width: number; height: number } | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -104,6 +119,58 @@ export default function OnboardingEnvelopePage() {
     load();
   }, [params.id]);
 
+  useEffect(() => {
+    if (!envelope) return;
+    const pendingSigner = envelope.signers.find((signer) => signer.role === "internal" && ["pending", "viewed"].includes(signer.status));
+    const firstDocument = envelope.documents[0];
+
+    if (pendingSigner && !envelope.signers.some((signer) => signerSelectValue(signer) === selectedSignerKey)) {
+      setSelectedSignerKey(signerSelectValue(pendingSigner));
+    }
+    if (firstDocument && !envelope.documents.some((document) => document._id === selectedDocumentId)) {
+      setSelectedDocumentId(firstDocument._id);
+      setPreviewPage(1);
+    }
+  }, [envelope, selectedDocumentId, selectedSignerKey]);
+
+  useEffect(() => {
+    if (!envelope?._id || !selectedDocumentId) {
+      setPreviewBlob(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadPreview() {
+      try {
+        setPreviewLoading(true);
+        setPreviewError("");
+        const blob = await getEnvelopeDocumentPreviewBlob(envelope!._id, selectedDocumentId);
+        if (!cancelled) setPreviewBlob(blob);
+      } catch (error: any) {
+        if (!cancelled) {
+          setPreviewBlob(null);
+          setPreviewError(error.message || "Failed to load document preview");
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    }
+
+    loadPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [envelope?._id, selectedDocumentId, envelope?.updatedAt]);
+
+  const handlePreviewPageCount = useCallback((count: number) => {
+    setPreviewPageCount(count);
+    setPreviewPage((page) => Math.max(1, Math.min(page, count)));
+  }, []);
+
+  const handlePreviewPageRendered = useCallback((page: { width: number; height: number }) => {
+    setPreviewPageSize({ width: page.width, height: page.height });
+  }, []);
+
   async function action(label: string, run: () => Promise<any>) {
     try {
       setBusy(true);
@@ -121,7 +188,17 @@ export default function OnboardingEnvelopePage() {
     return <div className="p-8 text-sm text-slate-500">Loading envelope...</div>;
   }
 
-  const internalPending = envelope.signers?.some((signer) => signer.role === "internal" && ["pending", "viewed"].includes(signer.status));
+  const pendingInternalSigners = envelope.signers?.filter((signer) => signer.role === "internal" && ["pending", "viewed"].includes(signer.status)) || [];
+  const internalPending = pendingInternalSigners.length > 0;
+  const selectedSigner = pendingInternalSigners.find((signer) => signerSelectValue(signer) === selectedSignerKey) || pendingInternalSigners[0];
+  const selectedDocument = envelope.documents.find((document) => document._id === selectedDocumentId) || envelope.documents[0];
+  const selectedSignerFields = selectedDocument?.signatureFields?.filter((field) =>
+    field.page === previewPage &&
+    (
+      field.signerKey === selectedSigner?.key ||
+      (!field.signerKey && field.role === "internal")
+    )
+  ) || [];
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -218,12 +295,112 @@ export default function OnboardingEnvelopePage() {
           <aside className="space-y-5">
             {internalPending && (
               <section className="rounded-md border bg-white p-4">
-                <h2 className="mb-3 text-lg font-semibold text-slate-950">Internal countersign</h2>
-                <SignaturePad onChange={setSignature} />
-                <Button className="mt-3 w-full" disabled={busy || !signature} onClick={() => action("Envelope countersigned", () => countersignEnvelope(envelope._id, signature))}>
-                  <PenLine className="h-4 w-4" />
-                  Countersign
-                </Button>
+                <h2 className="text-lg font-semibold text-slate-950">Internal signing</h2>
+                <div className="mt-4 space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">Signer</label>
+                    <Select value={selectedSigner ? signerSelectValue(selectedSigner) : ""} onValueChange={setSelectedSignerKey}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select signer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pendingInternalSigners.map((signer) => (
+                          <SelectItem key={signerSelectValue(signer)} value={signerSelectValue(signer)}>
+                            {signer.name || signer.email} - order {signer.order}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">Document preview</label>
+                    <Select
+                      value={selectedDocument?._id || ""}
+                      onValueChange={(value) => {
+                        setSelectedDocumentId(value);
+                        setPreviewPage(1);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select document" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {envelope.documents.map((document) => (
+                          <SelectItem key={document._id} value={document._id}>
+                            {document.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div
+                    className="relative overflow-hidden rounded-md border bg-white"
+                    style={{
+                      aspectRatio: previewPageSize ? `${previewPageSize.width} / ${previewPageSize.height}` : "8.5 / 11",
+                    }}
+                  >
+                    {previewLoading ? (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading document preview...</div>
+                    ) : previewBlob && selectedDocument ? (
+                      <>
+                        <PdfPagePreview
+                          blob={previewBlob}
+                          title={selectedDocument.title}
+                          pageNumber={previewPage}
+                          onPageCount={handlePreviewPageCount}
+                          onPageRendered={handlePreviewPageRendered}
+                        />
+                        <div className="pointer-events-none absolute inset-0">
+                          {selectedSignerFields.map((field) => (
+                            <div
+                              key={field.id}
+                              className="absolute rounded border border-slate-900/50 bg-slate-900/5 px-1 text-[10px] font-medium text-slate-900"
+                              style={{
+                                left: `${field.x * 100}%`,
+                                top: `${field.y * 100}%`,
+                                width: `${field.width * 100}%`,
+                                height: `${field.height * 100}%`,
+                              }}
+                            >
+                              <span className="truncate">{field.label || field.type}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-500">
+                        {previewError || "No document preview is available."}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <Button type="button" variant="outline" size="sm" disabled={previewPage <= 1} onClick={() => setPreviewPage((page) => Math.max(1, page - 1))}>
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <span className="text-xs text-slate-500">Page {previewPage} of {previewPageCount}</span>
+                    <Button type="button" variant="outline" size="sm" disabled={previewPage >= previewPageCount} onClick={() => setPreviewPage((page) => Math.min(previewPageCount, page + 1))}>
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  <SignaturePad onChange={setSignature} />
+                  <Button
+                    className="w-full"
+                    disabled={busy || !signature || !selectedSigner}
+                    onClick={() => action("Envelope countersigned", async () => {
+                      await countersignEnvelope(envelope._id, signature, selectedSigner?.key);
+                      setSignature("");
+                    })}
+                  >
+                    <PenLine className="h-4 w-4" />
+                    Sign as {selectedSigner?.name || selectedSigner?.email || "internal signer"}
+                  </Button>
+                </div>
               </section>
             )}
 

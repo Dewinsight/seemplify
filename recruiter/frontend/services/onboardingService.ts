@@ -301,10 +301,24 @@ export async function voidEnvelope(id: string, reason?: string) {
   return result.data;
 }
 
-export async function countersignEnvelope(id: string, signatureDataUrl: string) {
+export async function getEnvelopeDocumentPreviewBlob(envelopeId: string, documentId: string) {
+  const response = await apiRequest(`/api/onboarding/envelopes/${envelopeId}/documents/${documentId}/preview`, {
+    headers: { Accept: "application/pdf" },
+  });
+
+  if (!response.ok) {
+    const result = await response.clone().json().catch(() => ({}));
+    throw new Error(result.msg || result.error || "Failed to load envelope document preview");
+  }
+
+  const blob = await response.blob();
+  return new Blob([blob], { type: "application/pdf" });
+}
+
+export async function countersignEnvelope(id: string, signatureDataUrl: string, signerKey?: string) {
   const response = await apiRequest(`/api/onboarding/envelopes/${id}/countersign`, {
     method: "POST",
-    body: JSON.stringify({ signatureDataUrl }),
+    body: JSON.stringify({ signatureDataUrl, signerKey }),
   });
   const result = await parseResponse<{ data: OnboardingEnvelope }>(response, "Failed to countersign envelope");
   return result.data;

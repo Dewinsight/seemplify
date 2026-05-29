@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import { PdfPagePreview } from "@/components/onboarding/pdf-page-preview";
 import { getCandidateById, getCandidatesPaginated, type CandidateData } from "@/services/candidateService";
+import organizationService from "@/services/organizationService";
 import {
   createEnvelope,
   getDocumentPreviewBlob,
@@ -50,6 +51,23 @@ type WizardSigner = {
   email: string;
   order: number;
   locked?: boolean;
+  source?: "candidate" | "member" | "manual";
+  memberId?: string;
+  roleLabel?: string;
+};
+type OrganizationMember = {
+  _id: string;
+  role?: string;
+  status?: string;
+  user?: {
+    _id?: string;
+    email?: string;
+    profile?: {
+      firstName?: string;
+      lastName?: string;
+      displayName?: string;
+    };
+  };
 };
 type FieldResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 type FieldInteraction =
@@ -97,6 +115,22 @@ function candidateStatus(candidate: CandidateData) {
 
 function signerKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function memberName(member: OrganizationMember) {
+  const profile = member.user?.profile || {};
+  return profile.displayName ||
+    `${profile.firstName || ""} ${profile.lastName || ""}`.trim() ||
+    member.user?.email ||
+    "Team member";
+}
+
+function memberEmail(member: OrganizationMember) {
+  return member.user?.email || "";
+}
+
+function memberRoleLabel(role?: string) {
+  return (role || "member").replace(/_/g, " ");
 }
 
 function roundUnit(value: number) {
@@ -153,10 +187,12 @@ export default function NewOnboardingPage() {
   const [step, setStep] = useState<WizardStep>("candidate");
   const [candidates, setCandidates] = useState<CandidateData[]>([]);
   const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
+  const [organizationMembers, setOrganizationMembers] = useState<OrganizationMember[]>([]);
   const [candidateSearch, setCandidateSearch] = useState("");
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateData | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [manualSigners, setManualSigners] = useState<WizardSigner[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
   const [documentFieldsById, setDocumentFieldsById] = useState<Record<string, SignatureField[]>>({});
   const [activeDocumentId, setActiveDocumentId] = useState("");
   const [activeFieldId, setActiveFieldId] = useState("");
@@ -193,6 +229,27 @@ export default function NewOnboardingPage() {
   }, [candidateSearch]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadMembers() {
+      try {
+        const result = await organizationService.getOrganizationMembers();
+        if (!cancelled) setOrganizationMembers(result.members || []);
+      } catch (error: any) {
+        if (!cancelled) {
+          setOrganizationMembers([]);
+          toast.error(error.message || "Failed to load recruiter list");
+        }
+      }
+    }
+
+    loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!initialCandidateId) return;
     async function loadCandidate() {
       try {
@@ -216,6 +273,7 @@ export default function NewOnboardingPage() {
       email: selectedCandidate.email || "",
       order: 1,
       locked: true,
+      source: "candidate",
     };
   }, [selectedCandidate]);
 
@@ -230,6 +288,14 @@ export default function NewOnboardingPage() {
     () => documents.filter((document) => selectedDocumentIds.includes(document._id)),
     [documents, selectedDocumentIds]
   );
+  const recruiterMembers = useMemo(() => {
+    const allowedRoles = new Set(["owner", "admin", "hr_manager", "recruiter", "hiring_manager", "interviewer"]);
+    return organizationMembers
+      .filter((member) => member.status !== "inactive")
+      .filter((member) => memberEmail(member))
+      .filter((member) => !member.role || allowedRoles.has(member.role))
+      .sort((a, b) => memberName(a).localeCompare(memberName(b)));
+  }, [organizationMembers]);
 
   const activeDocument = selectedDocuments.find((document) => document._id === activeDocumentId) || selectedDocuments[0];
   const activeDocumentFields = activeDocument ? documentFieldsById[activeDocument._id] || [] : [];
@@ -323,7 +389,7 @@ export default function NewOnboardingPage() {
     setSelectedDocumentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
 
-  function addInternalSigner() {
+  function addManualSigner() {
     setManualSigners((current) => [
       ...current,
       {
@@ -332,8 +398,38 @@ export default function NewOnboardingPage() {
         name: "",
         email: "",
         order: current.length + 2,
+        source: "manual",
       },
     ]);
+  }
+
+  function addRecruiterSigner(memberId = selectedMemberId) {
+    const member = recruiterMembers.find((item) => item._id === memberId);
+    if (!member) {
+      toast.error("Select a recruiter first");
+      return;
+    }
+
+    const email = memberEmail(member).trim().toLowerCase();
+    if (signers.some((signer) => signer.email.trim().toLowerCase() === email)) {
+      toast.error("That signer is already added");
+      return;
+    }
+
+    setManualSigners((current) => [
+      ...current,
+      {
+        key: signerKey("internal-member"),
+        role: "internal",
+        name: memberName(member),
+        email,
+        order: current.length + 2,
+        source: "member",
+        memberId: member._id,
+        roleLabel: memberRoleLabel(member.role),
+      },
+    ]);
+    setSelectedMemberId("");
   }
 
   function updateManualSigner(key: string, patch: Partial<WizardSigner>) {
@@ -719,12 +815,30 @@ export default function NewOnboardingPage() {
             <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">Signers</h2>
-                <p className="text-sm text-slate-500">Add the people who need signing fields on the selected documents.</p>
+                <p className="text-sm text-slate-500">Select an internal recruiter or add a manual signer before placing fields.</p>
               </div>
-              <Button type="button" onClick={addInternalSigner}>
-                <Plus className="h-4 w-4" />
-                Add signer
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select value={selectedMemberId || undefined} onValueChange={setSelectedMemberId}>
+                  <SelectTrigger className="w-full sm:w-72">
+                    <SelectValue placeholder={recruiterMembers.length ? "Select recruiter" : "No recruiters found"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {recruiterMembers.map((member) => (
+                      <SelectItem key={member._id} value={member._id}>
+                        {memberName(member)} - {memberRoleLabel(member.role)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="outline" onClick={() => addRecruiterSigner()} disabled={!selectedMemberId}>
+                  <UserPlus className="h-4 w-4" />
+                  Add recruiter
+                </Button>
+                <Button type="button" onClick={addManualSigner}>
+                  <Plus className="h-4 w-4" />
+                  Add manual
+                </Button>
+              </div>
             </div>
             <div className="p-4">
               <div className="overflow-hidden rounded-md border">
@@ -739,48 +853,51 @@ export default function NewOnboardingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {signers.map((signer) => (
-                      <TableRow key={signer.key}>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="1"
-                            value={signer.order}
-                            disabled={signer.locked}
-                            onChange={(event) => updateManualSigner(signer.key, { order: Number(event.target.value) || signer.order })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={signer.name}
-                            disabled={signer.locked}
-                            placeholder="Signer name"
-                            onChange={(event) => updateManualSigner(signer.key, { name: event.target.value })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="email"
-                            value={signer.email}
-                            disabled={signer.locked}
-                            placeholder="name@example.com"
-                            onChange={(event) => updateManualSigner(signer.key, { email: event.target.value })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium capitalize text-slate-600">
-                            {signer.role === "candidate" ? "Candidate" : "Internal / other"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {!signer.locked && (
-                            <Button type="button" variant="ghost" size="icon" onClick={() => removeManualSigner(signer.key)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {signers.map((signer) => {
+                      const detailsLocked = signer.locked || signer.source === "member";
+                      return (
+                        <TableRow key={signer.key}>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={signer.order}
+                              disabled={signer.locked}
+                              onChange={(event) => updateManualSigner(signer.key, { order: Number(event.target.value) || signer.order })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={signer.name}
+                              disabled={detailsLocked}
+                              placeholder="Signer name"
+                              onChange={(event) => updateManualSigner(signer.key, { name: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="email"
+                              value={signer.email}
+                              disabled={detailsLocked}
+                              placeholder="name@example.com"
+                              onChange={(event) => updateManualSigner(signer.key, { email: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium capitalize text-slate-600">
+                              {signer.role === "candidate" ? "Candidate" : signer.source === "member" ? signer.roleLabel || "Recruiter" : "Manual"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {!signer.locked && (
+                              <Button type="button" variant="ghost" size="icon" onClick={() => removeManualSigner(signer.key)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </table>
               </div>

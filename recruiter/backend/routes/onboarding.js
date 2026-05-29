@@ -256,6 +256,44 @@ function canSignerAct(envelope, signer) {
   return !envelope.signers.some((item) => item.order < signer.order && item.status !== 'signed');
 }
 
+function safePdfFileName(title = 'onboarding-document') {
+  return `${title || 'onboarding-document'}`
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'onboarding-document';
+}
+
+function documentPdfUrls(envelopeDocument) {
+  return [
+    envelopeDocument?.signedPdf?.url,
+    envelopeDocument?.signedPdf?.downloadUrl,
+    envelopeDocument?.pdfSnapshot?.url,
+    envelopeDocument?.pdfSnapshot?.downloadUrl
+  ].filter(Boolean);
+}
+
+async function loadEnvelopeDocumentPdfBuffer(envelopeDocument) {
+  let lastDownloadError = null;
+  for (const sourceUrl of documentPdfUrls(envelopeDocument)) {
+    try {
+      return await onboardingPdfService.downloadPdfBuffer(sourceUrl);
+    } catch (error) {
+      lastDownloadError = error;
+    }
+  }
+
+  throw lastDownloadError || new Error('No PDF snapshot is available for this document');
+}
+
+function sendPdf(res, buffer, { title, disposition = 'inline' } = {}) {
+  const filename = safePdfFileName(title);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Content-Disposition', `${disposition}; filename="${filename}.pdf"`);
+  res.setHeader('Cache-Control', 'private, max-age=60');
+  res.send(buffer);
+}
+
 async function notifyReadySigners({ envelope, organization, req, excludeKeys = [] }) {
   const excluded = new Set(excludeKeys.filter(Boolean));
   const readySigners = envelope.signers.filter((signer) =>
@@ -1016,6 +1054,39 @@ router.post('/envelopes/:id/void', async (req, res) => {
   }
 });
 
+router.get('/envelopes/:id/documents/:documentId/preview', async (req, res) => {
+  try {
+    const envelope = await OnboardingEnvelope.findOne({
+      _id: req.params.id,
+      organization: organizationId(req)
+    });
+    if (!envelope) return res.status(404).json({ msg: 'Envelope not found' });
+
+    const envelopeDocument = envelope.documents.id(req.params.documentId) ||
+      envelope.documents.find((doc) => doc.document.toString() === req.params.documentId);
+    if (!envelopeDocument) return res.status(404).json({ msg: 'Envelope document not found' });
+
+    const buffer = await loadEnvelopeDocumentPdfBuffer(envelopeDocument);
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: envelope.onboarding,
+      envelope: envelope._id,
+      document: envelopeDocument.document,
+      candidate: envelope.candidate,
+      actorType: 'user',
+      actorUser: req.user.id,
+      action: 'internal_document_previewed'
+    });
+
+    sendPdf(res, buffer, { title: envelopeDocument.title, disposition: 'inline' });
+  } catch (error) {
+    console.error('Envelope document preview failed:', error);
+    res.status(500).json({ msg: 'Failed to preview envelope document', error: error.message });
+  }
+});
+
 router.post('/envelopes/:id/countersign', async (req, res) => {
   try {
     const envelope = await OnboardingEnvelope.findOne({
@@ -1024,7 +1095,12 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
     });
     if (!envelope) return res.status(404).json({ msg: 'Envelope not found' });
 
-    const signer = envelope.signers.find((item) => item.role === 'internal' && ['pending', 'viewed'].includes(item.status));
+    const requestedSignerKey = req.body.signerKey ? String(req.body.signerKey) : '';
+    const signer = envelope.signers.find((item) =>
+      item.role === 'internal' &&
+      ['pending', 'viewed'].includes(item.status) &&
+      (!requestedSignerKey || item.key === requestedSignerKey)
+    );
     if (!signer) return res.status(400).json({ msg: 'No internal signer is pending' });
 
     if (!canSignerAct(envelope, signer)) {
