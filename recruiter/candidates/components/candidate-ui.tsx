@@ -45,8 +45,8 @@ export function CandidateShell({
   const pathname = usePathname()
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, active: pathname === "/dashboard" },
-    { href: "/dashboard#documents", label: "Documents", icon: Files, active: pathname.includes("/documents") },
-    { href: "/dashboard#profile", label: "Profile", icon: UserRound, active: false },
+    { href: "/documents", label: "Documents", icon: Files, active: pathname === "/documents" || pathname.startsWith("/documents/") },
+    { href: "/profile", label: "Profile", icon: UserRound, active: pathname === "/profile" },
   ]
 
   return (
@@ -116,6 +116,24 @@ export function CandidateShell({
                 )}
               </div>
             </div>
+            <nav className="flex gap-1 overflow-x-auto border-t border-slate-200 px-4 py-2 sm:px-6 lg:hidden">
+              {navItems.map((item) => {
+                const Icon = item.icon
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={cn(
+                      "inline-flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-semibold transition",
+                      item.active ? brand.navActiveClass : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </nav>
           </header>
 
           <div className="px-4 py-6 sm:px-6 lg:px-8">{children}</div>
