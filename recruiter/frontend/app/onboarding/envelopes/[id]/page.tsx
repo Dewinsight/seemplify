@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Download, Eraser, FileText, Mail, PenLine, Send } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Eraser, FileText, Mail, PenLine, RefreshCw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
+import { PdfDocumentPreview } from "@/components/onboarding/pdf-document-preview";
 import { PdfPagePreview } from "@/components/onboarding/pdf-page-preview";
 import {
   countersignEnvelope,
@@ -97,6 +98,7 @@ export default function OnboardingEnvelopePage() {
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageCount, setPreviewPageCount] = useState(1);
   const [previewPageSize, setPreviewPageSize] = useState<{ width: number; height: number } | null>(null);
@@ -160,7 +162,7 @@ export default function OnboardingEnvelopePage() {
     return () => {
       cancelled = true;
     };
-  }, [envelope?._id, selectedDocumentId, envelope?.updatedAt]);
+  }, [envelope?._id, selectedDocumentId, envelope?.updatedAt, previewReloadKey]);
 
   const handlePreviewPageCount = useCallback((count: number) => {
     setPreviewPageCount(count);
@@ -192,6 +194,7 @@ export default function OnboardingEnvelopePage() {
   const internalPending = pendingInternalSigners.length > 0;
   const selectedSigner = pendingInternalSigners.find((signer) => signerSelectValue(signer) === selectedSignerKey) || pendingInternalSigners[0];
   const selectedDocument = envelope.documents.find((document) => document._id === selectedDocumentId) || envelope.documents[0];
+  const selectedDocumentIsSigned = Boolean(selectedDocument?.signedPdf?.url || selectedDocument?.signedPdf?.downloadUrl);
   const selectedSignerFields = selectedDocument?.signatureFields?.filter((field) =>
     field.page === previewPage &&
     (
@@ -232,6 +235,56 @@ export default function OnboardingEnvelopePage() {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <main className="space-y-5">
             <section className="rounded-md border bg-white">
+              <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Document review</h2>
+                  <p className="text-sm text-slate-500">
+                    {selectedDocumentIsSigned ? "Viewing the latest signed PDF stored for this candidate." : "Viewing the current immutable PDF snapshot."}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Select
+                    value={selectedDocument?._id || ""}
+                    onValueChange={(value) => {
+                      setSelectedDocumentId(value);
+                      setPreviewPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-full sm:w-72">
+                      <SelectValue placeholder="Select document" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {envelope.documents.map((document) => (
+                        <SelectItem key={document._id} value={document._id}>
+                          {document.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" onClick={() => setPreviewReloadKey((key) => key + 1)} disabled={previewLoading}>
+                    <RefreshCw className={`h-4 w-4 ${previewLoading ? "animate-spin" : ""}`} />
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+              <div className="h-[760px]">
+                {previewLoading ? (
+                  <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading document preview...</div>
+                ) : previewBlob && selectedDocument ? (
+                  <PdfDocumentPreview
+                    blob={previewBlob}
+                    title={selectedDocument.title}
+                    emptyMessage="No signed PDF preview is available yet."
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
+                    {previewError || "No document is available to review yet."}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-md border bg-white">
               <div className="border-b p-4">
                 <h2 className="text-lg font-semibold text-slate-950">Documents</h2>
               </div>
@@ -248,8 +301,16 @@ export default function OnboardingEnvelopePage() {
                     <div className="flex items-center gap-2">
                       <OnboardingStatusBadge status={document.status} />
                       {(document.signedPdf?.url || document.pdfSnapshot?.url) && (
-                        <Button asChild size="sm" variant="outline">
-                          <a href={document.signedPdf?.downloadUrl || document.signedPdf?.url || document.pdfSnapshot?.downloadUrl || document.pdfSnapshot?.url} target="_blank" rel="noreferrer">Open</a>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={selectedDocument?._id === document._id ? "default" : "outline"}
+                          onClick={() => {
+                            setSelectedDocumentId(document._id);
+                            setPreviewPage(1);
+                          }}
+                        >
+                          {document.signedPdf?.url || document.signedPdf?.downloadUrl ? "View signed" : "Review"}
                         </Button>
                       )}
                     </div>
