@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import {
   AlignLeft,
   FileText,
@@ -53,6 +53,13 @@ const variables = [
   "{{recruiter.name}}",
   "{{today}}",
 ];
+
+const BLOCK_ID_MIME = "application/x-seemplify-builder-block-id";
+const BLOCK_TYPE_MIME = "application/x-seemplify-builder-block-type";
+
+function isBlockType(value: string): value is BlockType {
+  return blockOptions.some((option) => option.type === value);
+}
 
 function makeBlock(type: BlockType): BuilderBlock {
   const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -122,6 +129,50 @@ function PreviewBlock({ block }: { block: BuilderBlock }) {
   return <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{block.content?.text || ""}</p>;
 }
 
+function InsertBlockControl({
+  index,
+  open,
+  isDropTarget,
+  onToggle,
+  onInsert,
+  onDragOver,
+  onDrop,
+}: {
+  index: number;
+  open: boolean;
+  isDropTarget: boolean;
+  onToggle: (index: number) => void;
+  onInsert: (type: BlockType, index: number) => void;
+  onDragOver: (event: DragEvent<HTMLDivElement>, index: number) => void;
+  onDrop: (event: DragEvent<HTMLDivElement>, index: number) => void;
+}) {
+  return (
+    <div
+      onDragOver={(event) => onDragOver(event, index)}
+      onDrop={(event) => onDrop(event, index)}
+      className={`flex justify-center rounded-md border border-dashed px-2 py-2 transition ${
+        isDropTarget ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50/60"
+      }`}
+    >
+      {open ? (
+        <div className="flex flex-wrap justify-center gap-2">
+          {blockOptions.map((item) => (
+            <Button key={item.type} type="button" size="sm" variant="outline" className="h-8 bg-white text-xs" onClick={() => onInsert(item.type, index)}>
+              <item.icon className="h-3.5 w-3.5" />
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <Button type="button" size="sm" variant="ghost" className="h-8 text-xs text-slate-600" onClick={() => onToggle(index)}>
+          <Plus className="h-3.5 w-3.5" />
+          Add block
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function DocumentBuilder({ initialDocument, saving = false, onSave }: DocumentBuilderProps) {
   const [title, setTitle] = useState(initialDocument?.title || "New onboarding document");
   const [description, setDescription] = useState(initialDocument?.description || "");
@@ -129,6 +180,10 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     initialDocument?.builderBlocks?.length ? initialDocument.builderBlocks : defaultBlocks(initialDocument?.title || "New onboarding document")
   );
   const [activeBlockId, setActiveBlockId] = useState(blocks[0]?.id || "");
+  const [draggedBlockId, setDraggedBlockId] = useState<string | null>(null);
+  const [isPaletteDragging, setIsPaletteDragging] = useState(false);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [insertMenuIndex, setInsertMenuIndex] = useState<number | null>(null);
 
   const activeBlock = useMemo(() => blocks.find((block) => block.id === activeBlockId) || blocks[0], [activeBlockId, blocks]);
 
@@ -148,15 +203,107 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
     });
   };
 
-  const addBlock = (type: BlockType) => {
+  const insertBlock = (type: BlockType, index = blocks.length) => {
     const block = makeBlock(type);
-    setBlocks((current) => [...current, block]);
+    setBlocks((current) => {
+      const safeIndex = Math.max(0, Math.min(index, current.length));
+      const next = [...current];
+      next.splice(safeIndex, 0, block);
+      return next;
+    });
     setActiveBlockId(block.id);
+    setInsertMenuIndex(null);
+  };
+
+  const addBlock = (type: BlockType) => {
+    insertBlock(type, blocks.length);
   };
 
   const removeBlock = (blockId: string) => {
-    setBlocks((current) => current.filter((block) => block.id !== blockId));
-    if (activeBlockId === blockId) setActiveBlockId(blocks[0]?.id || "");
+    const index = blocks.findIndex((block) => block.id === blockId);
+    const nextBlocks = blocks.filter((block) => block.id !== blockId);
+    setBlocks(nextBlocks);
+    if (activeBlockId === blockId) {
+      setActiveBlockId(nextBlocks[Math.max(0, index - 1)]?.id || nextBlocks[0]?.id || "");
+    }
+  };
+
+  const clearDragState = () => {
+    setDraggedBlockId(null);
+    setIsPaletteDragging(false);
+    setDropIndex(null);
+  };
+
+  const moveBlockToIndex = (blockId: string, index: number) => {
+    setBlocks((current) => {
+      const fromIndex = current.findIndex((block) => block.id === blockId);
+      if (fromIndex < 0) return current;
+
+      let safeIndex = Math.max(0, Math.min(index, current.length));
+      const next = [...current];
+      const [item] = next.splice(fromIndex, 1);
+
+      if (fromIndex < safeIndex) safeIndex -= 1;
+      next.splice(Math.max(0, Math.min(safeIndex, next.length)), 0, item);
+      return next;
+    });
+    setActiveBlockId(blockId);
+  };
+
+  const handlePaletteDragStart = (event: DragEvent<HTMLButtonElement>, type: BlockType) => {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(BLOCK_TYPE_MIME, type);
+    setIsPaletteDragging(true);
+  };
+
+  const handleBlockDragStart = (event: DragEvent<HTMLButtonElement>, blockId: string) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(BLOCK_ID_MIME, blockId);
+    setDraggedBlockId(blockId);
+    setActiveBlockId(blockId);
+  };
+
+  const canHandleDrag = () => draggedBlockId || isPaletteDragging;
+
+  const handleGapDragOver = (event: DragEvent<HTMLDivElement>, index: number) => {
+    if (!canHandleDrag()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = isPaletteDragging ? "copy" : "move";
+    setDropIndex(index);
+  };
+
+  const getBlockDropIndex = (event: DragEvent<HTMLDivElement>, blockId: string) => {
+    const blockIndex = blocks.findIndex((block) => block.id === blockId);
+    if (blockIndex < 0) return blocks.length;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const shouldDropAfter = event.clientY > rect.top + rect.height / 2;
+    return blockIndex + (shouldDropAfter ? 1 : 0);
+  };
+
+  const handleBlockDragOver = (event: DragEvent<HTMLDivElement>, blockId: string) => {
+    if (!canHandleDrag()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = isPaletteDragging ? "copy" : "move";
+    setDropIndex(getBlockDropIndex(event, blockId));
+  };
+
+  const handleDropAtIndex = (event: DragEvent<HTMLDivElement>, index: number) => {
+    if (!canHandleDrag()) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const droppedType = event.dataTransfer.getData(BLOCK_TYPE_MIME);
+    const droppedBlockId = event.dataTransfer.getData(BLOCK_ID_MIME) || draggedBlockId;
+
+    if (isBlockType(droppedType)) {
+      insertBlock(droppedType, index);
+    } else if (droppedBlockId) {
+      moveBlockToIndex(droppedBlockId, index);
+    }
+
+    clearDragState();
   };
 
   const save = async () => {
@@ -191,7 +338,16 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
             </div>
             <div className="grid gap-2">
               {blockOptions.map((item) => (
-                <Button key={item.type} type="button" variant="outline" className="justify-start" onClick={() => addBlock(item.type)}>
+                <Button
+                  key={item.type}
+                  type="button"
+                  variant="outline"
+                  draggable
+                  className="justify-start"
+                  onClick={() => addBlock(item.type)}
+                  onDragStart={(event) => handlePaletteDragStart(event, item.type)}
+                  onDragEnd={clearDragState}
+                >
                   <item.icon className="h-4 w-4" />
                   {item.label}
                 </Button>
@@ -209,15 +365,53 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
 
           <main className="min-h-[720px] rounded-md border bg-white p-4 shadow-sm">
             <div className="mx-auto min-h-[680px] max-w-[780px] space-y-6 border border-slate-200 bg-white px-10 py-12 shadow-sm">
-              {blocks.map((block) => (
-                <button
-                  key={block.id}
-                  type="button"
-                  onClick={() => setActiveBlockId(block.id)}
-                  className={`block w-full rounded-md border p-3 text-left transition ${activeBlockId === block.id ? "border-blue-400 bg-blue-50/50" : "border-transparent hover:border-slate-200"}`}
-                >
-                  <PreviewBlock block={block} />
-                </button>
+              <InsertBlockControl
+                index={0}
+                open={insertMenuIndex === 0}
+                isDropTarget={dropIndex === 0}
+                onToggle={(index) => setInsertMenuIndex((current) => (current === index ? null : index))}
+                onInsert={insertBlock}
+                onDragOver={handleGapDragOver}
+                onDrop={handleDropAtIndex}
+              />
+
+              {blocks.map((block, index) => (
+                <div key={block.id} className="space-y-6">
+                  <div
+                    onDragOver={(event) => handleBlockDragOver(event, block.id)}
+                    onDrop={(event) => handleDropAtIndex(event, getBlockDropIndex(event, block.id))}
+                    className={`rounded-md border p-2 transition ${
+                      activeBlockId === block.id ? "border-blue-400 bg-blue-50/50" : "border-transparent hover:border-slate-200"
+                    } ${draggedBlockId === block.id ? "opacity-50" : ""}`}
+                  >
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        draggable
+                        onDragStart={(event) => handleBlockDragStart(event, block.id)}
+                        onDragEnd={clearDragState}
+                        onClick={() => setActiveBlockId(block.id)}
+                        className="mt-1 flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:text-slate-700 active:cursor-grabbing"
+                        aria-label="Drag block"
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={() => setActiveBlockId(block.id)} className="block min-w-0 flex-1 rounded-md p-2 text-left">
+                        <PreviewBlock block={block} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <InsertBlockControl
+                    index={index + 1}
+                    open={insertMenuIndex === index + 1}
+                    isDropTarget={dropIndex === index + 1}
+                    onToggle={(targetIndex) => setInsertMenuIndex((current) => (current === targetIndex ? null : targetIndex))}
+                    onInsert={insertBlock}
+                    onDragOver={handleGapDragOver}
+                    onDrop={handleDropAtIndex}
+                  />
+                </div>
               ))}
             </div>
           </main>
@@ -240,7 +434,14 @@ export function DocumentBuilder({ initialDocument, saving = false, onSave }: Doc
 
                 <div className="space-y-2">
                   <Label>Block type</Label>
-                  <Select value={activeBlock.type} onValueChange={(value: BlockType) => updateBlock(activeBlock.id, (block) => ({ ...block, type: value }))}>
+                  <Select
+                    value={activeBlock.type}
+                    onValueChange={(value: BlockType) => updateBlock(activeBlock.id, (block) => ({
+                      ...block,
+                      type: value,
+                      content: makeBlock(value).content,
+                    }))}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {blockOptions.map((item) => <SelectItem key={item.type} value={item.type}>{item.label}</SelectItem>)}
