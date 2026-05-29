@@ -282,6 +282,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/user')); // User profile routes
 // REMOVED global multer middleware - handled at route level for better control
 app.use('/api/candidates', require('./routes/candidate')); // File upload handled in route
+app.use('/api/candidate-lists', require('./routes/candidateLists')); // Saved candidate list routes
 app.use('/api/bulk-upload', require('./routes/bulkUpload')); // Bulk CV upload with BullMQ
 app.use('/api/jobs', require('./routes/job')); // Job routes
 app.use('/api/feedback-forms', require('./routes/feedbackForm')); // Feedback form templates and custom fields

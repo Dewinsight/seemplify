@@ -360,10 +360,14 @@ class AssistantService {
    * Get matching candidates report for a specific job
    * @param jobId - Job ID to get matching report for
    * @param forceRefresh - If true, bypasses cache and generates fresh insights (will deduct credits)
+   * @param topK - Number of ranked candidates to return
    */
-  async getMatchingReport(jobId: string, forceRefresh: boolean = false): Promise<any> {
+  async getMatchingReport(jobId: string, forceRefresh: boolean = false, topK: number = 10): Promise<any> {
     try {
-      const url = `/api/ai/matching-report/${jobId}${forceRefresh ? '?forceRefresh=true' : ''}`;
+      const query = new URLSearchParams();
+      if (forceRefresh) query.set('forceRefresh', 'true');
+      if (topK) query.set('topK', String(topK));
+      const url = `/api/ai/matching-report/${jobId}${query.toString() ? `?${query.toString()}` : ''}`;
       const response = await apiRequest(url, {
         method: 'GET',
         headers: getAuthHeaders(),

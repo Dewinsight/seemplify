@@ -14,6 +14,7 @@ import {
   DollarSign,
   FileQuestion,
   Loader2,
+  ListPlus,
   Medal,
   Play,
   Plus,
@@ -46,6 +47,7 @@ import { getAllJobs, type JobData } from "@/services/jobService";
 import { getAllCandidates } from "@/services/candidateService";
 import interviewService from "@/services/interviewService";
 import aiInterviewService, { type AIInterview, type AIInterviewCostEstimate, type AIInterviewVoiceOption } from "@/services/aiInterviewService";
+import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog";
 
 function toLocalInputValue(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -185,6 +187,7 @@ function buildRankingBands(rankings: Array<{ score: number }>) {
 
 type JobRankingCandidate = {
   sessionId: string;
+  candidateId?: string;
   candidateName: string;
   candidateEmail?: string;
   score: number;
@@ -231,6 +234,9 @@ export default function AIInterviewsPage() {
   const [questionSelectorKey, setQuestionSelectorKey] = useState(0);
   const [activeTab, setActiveTab] = useState("create");
   const [selectedJobRankingId, setSelectedJobRankingId] = useState<string | null>(null);
+  const [rankingListTopN, setRankingListTopN] = useState(10);
+  const [rankingListEntries, setRankingListEntries] = useState<any[]>([]);
+  const [showRankingListDialog, setShowRankingListDialog] = useState(false);
   const [lastScheduledInterview, setLastScheduledInterview] = useState<{
     id: string;
     jobId: string;
@@ -411,6 +417,46 @@ export default function AIInterviewsPage() {
     () => jobRankingGroups.find((group) => group.jobId === selectedJobRankingId) || null,
     [jobRankingGroups, selectedJobRankingId]
   );
+
+  const resolveRankingCandidateId = (ranking: JobRankingCandidate) => {
+    if (ranking.candidateId) return ranking.candidateId;
+    const email = String(ranking.candidateEmail || "").toLowerCase();
+    if (email) {
+      const byEmail = candidates.find((candidate) => String(candidate.email || "").toLowerCase() === email);
+      if (byEmail?._id) return byEmail._id;
+    }
+
+    const name = ranking.candidateName.toLowerCase();
+    const byName = candidates.find((candidate) => candidateName(candidate).toLowerCase() === name);
+    return byName?._id || null;
+  };
+
+  const openRankingList = () => {
+    if (!selectedJobRanking?.rankings.length) {
+      toast.error("No ranked candidates available");
+      return;
+    }
+
+    const entries = selectedJobRanking.rankings
+      .slice(0, Math.max(1, rankingListTopN))
+      .map((candidate) => ({
+        candidateId: resolveRankingCandidateId(candidate),
+        rank: candidate.jobRank,
+        score: candidate.score,
+        source: "ai_interview",
+        notes: `${candidate.score} interview score for ${selectedJobRanking.jobTitle}`,
+      }))
+      .filter((entry) => entry.candidateId);
+
+    if (!entries.length) {
+      toast.error("No saved candidate records matched this ranking");
+      return;
+    }
+
+    setRankingListEntries(entries);
+    setShowRankingListDialog(true);
+  };
+
   const topRankedJob = useMemo(
     () => jobRankingGroups.find((group) => group.scoredCount > 0) || null,
     [jobRankingGroups]
@@ -1572,9 +1618,24 @@ export default function AIInterviewsPage() {
                             All scored candidates for this job, highest Llama score first. Interview batches are grouped beside this ranking.
                           </p>
                         </div>
-                        <Badge variant="outline" className="w-fit">
-                          {selectedJobRanking.priorityCount} priority
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={selectedJobRanking.rankings.length || 1}
+                            value={rankingListTopN}
+                            onChange={(event) => setRankingListTopN(Math.min(Math.max(Number(event.target.value) || 1, 1), selectedJobRanking.rankings.length || 1))}
+                            className="h-9 w-24"
+                            aria-label="Top ranked candidates to save"
+                          />
+                          <Button type="button" variant="outline" size="sm" onClick={openRankingList}>
+                            <ListPlus className="mr-2 h-4 w-4" />
+                            List top
+                          </Button>
+                          <Badge variant="outline" className="w-fit">
+                            {selectedJobRanking.priorityCount} priority
+                          </Badge>
+                        </div>
                       </div>
                       <div className="p-5">
                         {selectedJobRanking.rankings.length ? (
@@ -1876,6 +1937,18 @@ export default function AIInterviewsPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <AddToCandidateListDialog
+        open={showRankingListDialog}
+        onOpenChange={setShowRankingListDialog}
+        entries={rankingListEntries}
+        source="ai_interview"
+        sourceRef={{ jobId: selectedJobRanking?.jobId, jobTitle: selectedJobRanking?.jobTitle }}
+        defaultName={`${selectedJobRanking?.jobTitle || "AI interview"} - top ${rankingListEntries.length || rankingListTopN}`}
+        defaultDescription={selectedJobRanking?.jobTitle ? `AI interview ranking for ${selectedJobRanking.jobTitle}` : "AI interview ranking"}
+        countLabel={`${rankingListEntries.length} ranked candidate${rankingListEntries.length === 1 ? "" : "s"} will be saved.`}
+        onCompleted={() => setRankingListEntries([])}
+      />
     </div>
   );
 }

@@ -105,6 +105,7 @@ export interface AIInterviewScoringSummary {
   topScore?: number | null;
   topCandidate?: {
     sessionId: string;
+    candidateId?: string;
     candidateName: string;
     candidateEmail?: string;
     score: number;
@@ -118,6 +119,7 @@ export interface AIInterviewScoringSummary {
   recommendationCounts?: Record<string, number>;
   rankings?: Array<{
     sessionId: string;
+    candidateId?: string;
     candidateName: string;
     candidateEmail?: string;
     score: number;

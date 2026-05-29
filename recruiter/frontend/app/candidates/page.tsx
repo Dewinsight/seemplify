@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Upload,
   Loader2,
+  ListPlus,
 } from "lucide-react"
 import useMobile from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
@@ -49,6 +50,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { getAllCandidates, getCandidatesPaginated, deleteCandidate, bulkDeleteCandidates, type CandidateData } from "@/services/candidateService"
 import { getAllJobs, addCandidateToShortlist, bulkAddToShortlist, type JobData } from "@/services/jobService"
 import candidateShortlistService, { type CandidateShortlistInfo } from "@/services/candidateShortlistService"
+import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog"
 import { toast } from "sonner"
 import { TourProvider, useTour, type StepType } from "@reactour/tour"
 
@@ -261,6 +263,9 @@ export default function CandidatesPage() {
     const [addingToShortlist, setAddingToShortlist] = useState(false)
     const [jobSearchTerm, setJobSearchTerm] = useState('')
     const [candidateShortlists, setCandidateShortlists] = useState<Record<string, CandidateShortlistInfo[]>>({})
+    const [showAddToListDialog, setShowAddToListDialog] = useState(false)
+    const [listDialogCandidateIds, setListDialogCandidateIds] = useState<string[]>([])
+    const [showAllMatchingListDialog, setShowAllMatchingListDialog] = useState(false)
 
     // Debounced search - update searchTerm 500ms after user stops typing
     useEffect(() => {
@@ -442,6 +447,18 @@ export default function CandidatesPage() {
       loadAllJobs()
     }
 
+    const openAddSelectedToList = () => {
+      if (selectedCandidates.length === 0) return
+      setListDialogCandidateIds(selectedCandidates)
+      setShowAddToListDialog(true)
+    }
+
+    const openAddCandidateToList = (candidateId: string, event: React.MouseEvent) => {
+      event.stopPropagation()
+      setListDialogCandidateIds([candidateId])
+      setShowAddToListDialog(true)
+    }
+
     // Load all jobs for shortlist selection
     const loadAllJobs = async () => {
       try {
@@ -550,6 +567,12 @@ export default function CandidatesPage() {
             </div>
             <div className="flex items-center gap-3">
               <StartTourButton />
+              <Button asChild variant="outline" className="border-gray-200 dark:border-gray-700">
+                <Link href="/candidates/lists">
+                  <ListPlus className="h-4 w-4 mr-2" />
+                  Candidate Lists
+                </Link>
+              </Button>
               <Button asChild variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50" data-tutorial="add-candidate-btn">
                 <Link href="/bulk-upload">
                   <Upload className="h-4 w-4 mr-2" />
@@ -634,6 +657,10 @@ export default function CandidatesPage() {
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 disabled:opacity-50" onClick={openBulkShortlist}>
                         Move to Shortlist
                       </Button>
+                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openAddSelectedToList}>
+                        <ListPlus className="h-4 w-4 mr-2" />
+                        Save to List
+                      </Button>
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-800/50 disabled:opacity-50" onClick={handleBulkDelete}>
                         Delete Selected
                       </Button>
@@ -660,6 +687,15 @@ export default function CandidatesPage() {
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllMatchingListDialog(true)}
+                    disabled={totalCandidates === 0}
+                    className="border-gray-200 dark:border-gray-700"
+                  >
+                    <ListPlus className="h-4 w-4 mr-2" />
+                    List all {searchTerm ? "matching" : "candidates"}
+                  </Button>
                   <Select
                     value={itemsPerPage.toString()}
                     onValueChange={(value) => setItemsPerPage(Number(value))}
@@ -714,6 +750,7 @@ export default function CandidatesPage() {
                                     <DropdownMenuItem onClick={() => router.push(`/candidates/${candidate._id}`)}>View Profile</DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => router.push(`/candidates/${candidate._id}/edit`)}>Edit</DropdownMenuItem>
                                     <DropdownMenuItem onClick={(e) => handleOpenAddToShortlist(candidate, e)}>Add to Shortlist</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={(e) => openAddCandidateToList(candidate._id, e)}>Add to List</DropdownMenuItem>
                                     <DropdownMenuItem onClick={(e) => handleDeleteCandidate(candidate._id, e)}>Delete</DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -901,6 +938,12 @@ export default function CandidatesPage() {
                                 >
                                   Add to Shortlist
                                 </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => openAddCandidateToList(candidate._id, e)}
+                                  className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 cursor-pointer"
+                                >
+                                  Add to List
+                                </DropdownMenuItem>
                                 <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
                                 <DropdownMenuItem
                                   onClick={(e) => handleDeleteCandidate(candidate._id, e)}
@@ -969,6 +1012,30 @@ export default function CandidatesPage() {
             </CardContent>
           </Card>
         </div>
+
+        <AddToCandidateListDialog
+          open={showAddToListDialog}
+          onOpenChange={setShowAddToListDialog}
+          candidateIds={listDialogCandidateIds}
+          source="candidates"
+          defaultName={`Selected candidates - ${new Date().toLocaleDateString()}`}
+          countLabel={`${listDialogCandidateIds.length} selected candidate${listDialogCandidateIds.length === 1 ? "" : "s"} will be saved.`}
+          onCompleted={() => {
+            setListDialogCandidateIds([])
+            setSelectedCandidates([])
+          }}
+        />
+
+        <AddToCandidateListDialog
+          open={showAllMatchingListDialog}
+          onOpenChange={setShowAllMatchingListDialog}
+          query={{ search: searchTerm || undefined, limit: 5000 }}
+          source="candidates"
+          defaultName={`${searchTerm ? "Matching candidates" : "All candidates"} - ${new Date().toLocaleDateString()}`}
+          defaultDescription={searchTerm ? `Search: ${searchTerm}` : "Created from the full candidate table."}
+          countLabel={`${Math.min(totalCandidates, 5000).toLocaleString()} candidate${Math.min(totalCandidates, 5000) === 1 ? "" : "s"} will be saved${totalCandidates > 5000 ? " (limited to 5,000)" : ""}.`}
+          onCompleted={() => setShowAllMatchingListDialog(false)}
+        />
 
         {/* Add to Shortlist Modal */}
         <Dialog open={showAddToShortlistModal} onOpenChange={handleCloseModal}>

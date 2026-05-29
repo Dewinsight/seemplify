@@ -6,10 +6,10 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   CalendarDays,
-  Check,
   ChevronLeft,
   ChevronRight,
   FileText,
+  ListChecks,
   Mail,
   Plus,
   Search,
@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import { PdfPagePreview } from "@/components/onboarding/pdf-page-preview";
 import { getCandidateById, getCandidatesPaginated, type CandidateData } from "@/services/candidateService";
+import { getCandidateList, getCandidateLists, type CandidateListSummary } from "@/services/candidateListService";
 import organizationService from "@/services/organizationService";
 import {
   createEnvelope,
@@ -187,9 +188,13 @@ export default function NewOnboardingPage() {
   const [step, setStep] = useState<WizardStep>("candidate");
   const [candidates, setCandidates] = useState<CandidateData[]>([]);
   const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
+  const [candidateLists, setCandidateLists] = useState<CandidateListSummary[]>([]);
   const [organizationMembers, setOrganizationMembers] = useState<OrganizationMember[]>([]);
   const [candidateSearch, setCandidateSearch] = useState("");
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateData | null>(null);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [selectedCandidateListId, setSelectedCandidateListId] = useState("all");
+  const [candidateListLoading, setCandidateListLoading] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [manualSigners, setManualSigners] = useState<WizardSigner[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -214,19 +219,38 @@ export default function NewOnboardingPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [candidateResult, documentResult] = await Promise.all([
-          getCandidatesPaginated({ page: 1, limit: 100, search: candidateSearch }),
-          getDocuments(),
-        ]);
-        setCandidates(candidateResult.candidates || []);
+        const documentResult = await getDocuments();
         setDocuments(documentResult.filter((document) => document.status !== "archived"));
+
+        if (selectedCandidateListId !== "all") return;
+
+        const candidateResult = await getCandidatesPaginated({ page: 1, limit: 100, search: candidateSearch });
+        setCandidates(candidateResult.candidates || []);
       } catch (error: any) {
         toast.error(error.message || "Failed to load onboarding data");
       }
     }
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [candidateSearch]);
+  }, [candidateSearch, selectedCandidateListId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLists() {
+      try {
+        const lists = await getCandidateLists();
+        if (!cancelled) setCandidateLists(lists);
+      } catch (error: any) {
+        if (!cancelled) toast.error(error.message || "Failed to load candidate lists");
+      }
+    }
+
+    loadLists();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,6 +279,7 @@ export default function NewOnboardingPage() {
       try {
         const candidate = await getCandidateById(initialCandidateId);
         setSelectedCandidate(candidate);
+        setSelectedCandidateIds([candidate._id]);
         setCandidateSearch(candidateName(candidate));
         setStep("documents");
       } catch (error: any) {
@@ -264,7 +289,31 @@ export default function NewOnboardingPage() {
     loadCandidate();
   }, [initialCandidateId]);
 
+  const selectedCandidates = useMemo(() => {
+    const byId = new Map(candidates.map((candidate) => [candidate._id, candidate]));
+    if (selectedCandidate && !byId.has(selectedCandidate._id)) {
+      byId.set(selectedCandidate._id, selectedCandidate);
+    }
+    return selectedCandidateIds
+      .map((id) => byId.get(id))
+      .filter(Boolean) as CandidateData[];
+  }, [candidates, selectedCandidate, selectedCandidateIds]);
+
+  const selectedCandidateCount = selectedCandidateIds.length;
+
   const candidateSigner = useMemo<WizardSigner | null>(() => {
+    if (!selectedCandidateCount) return null;
+    if (selectedCandidateCount > 1) {
+      return {
+        key: "candidate-primary",
+        role: "candidate",
+        name: `${selectedCandidateCount} selected candidates`,
+        email: "Set per candidate",
+        order: 1,
+        locked: true,
+        source: "candidate",
+      };
+    }
     if (!selectedCandidate) return null;
     return {
       key: "candidate-primary",
@@ -275,7 +324,7 @@ export default function NewOnboardingPage() {
       locked: true,
       source: "candidate",
     };
-  }, [selectedCandidate]);
+  }, [selectedCandidate, selectedCandidateCount]);
 
   const signers = useMemo(() => {
     const roster = candidateSigner ? [candidateSigner, ...manualSigners] : manualSigners;
@@ -384,6 +433,75 @@ export default function NewOnboardingPage() {
   const handlePreviewPageRendered = useCallback((page: { width: number; height: number }) => {
     setFieldPreviewPageSize({ width: page.width, height: page.height });
   }, []);
+
+  function setCandidateSelection(nextIds: string[], candidatePool = candidates) {
+    const uniqueIds = [...new Set(nextIds)];
+    setSelectedCandidateIds(uniqueIds);
+    const firstCandidate = candidatePool.find((candidate) => candidate._id === uniqueIds[0]) || null;
+    setSelectedCandidate(firstCandidate);
+  }
+
+  function toggleCandidate(candidate: CandidateData) {
+    setSelectedCandidateIds((current) => {
+      const next = current.includes(candidate._id)
+        ? current.filter((id) => id !== candidate._id)
+        : [...current, candidate._id];
+      const firstCandidate = candidates.find((item) => item._id === next[0]) || null;
+      setSelectedCandidate(firstCandidate);
+      return next;
+    });
+  }
+
+  async function handleCandidateListChange(listId: string) {
+    setSelectedCandidateListId(listId);
+    setCandidateSearch("");
+
+    if (listId === "all") {
+      setCandidateSelection([]);
+      return;
+    }
+
+    try {
+      setCandidateListLoading(true);
+      const list = await getCandidateList(listId);
+      const listCandidates = list.entries
+        .map((entry) => typeof entry.candidate === "object" ? entry.candidate : null)
+        .filter(Boolean) as CandidateData[];
+      setCandidates(listCandidates);
+      setCandidateSelection(listCandidates.map((candidate) => candidate._id), listCandidates);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load candidate list");
+    } finally {
+      setCandidateListLoading(false);
+    }
+  }
+
+  function toggleVisibleCandidates() {
+    const visibleIds = candidates.map((candidate) => candidate._id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedCandidateIds.includes(id));
+    const nextIds = allSelected
+      ? selectedCandidateIds.filter((id) => !visibleIds.includes(id))
+      : [...selectedCandidateIds, ...visibleIds];
+    setCandidateSelection(nextIds);
+  }
+
+  async function selectAllMatchingCandidates() {
+    try {
+      setCandidateListLoading(true);
+      const result = await getCandidatesPaginated({ page: 1, limit: 5000, search: candidateSearch || undefined });
+      const nextCandidates = result.candidates || [];
+      setSelectedCandidateListId("all");
+      setCandidates(nextCandidates);
+      setCandidateSelection(nextCandidates.map((candidate) => candidate._id), nextCandidates);
+      if (result.total > nextCandidates.length) {
+        toast.info(`Selected ${nextCandidates.length.toLocaleString()} candidates. Narrow the search to select beyond the 5,000 limit.`);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to select matching candidates");
+    } finally {
+      setCandidateListLoading(false);
+    }
+  }
 
   function toggleDocument(id: string) {
     setSelectedDocumentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -588,7 +706,7 @@ export default function NewOnboardingPage() {
 
   function canOpenStep(target: WizardStep) {
     if (target === "candidate") return true;
-    if (!selectedCandidate) return false;
+    if (!selectedCandidateCount) return false;
     if (target === "documents") return true;
     if (!selectedDocumentIds.length) return false;
     if (target === "signers" || target === "fields" || target === "send") return true;
@@ -604,7 +722,7 @@ export default function NewOnboardingPage() {
   }
 
   function continueFromSigners() {
-    const missingEmail = signers.some((signer) => !signer.email.trim());
+    const missingEmail = signers.some((signer) => !(signer.locked && signer.role === "candidate") && !signer.email.trim());
     if (missingEmail) {
       toast.error("Every signer needs an email address");
       return;
@@ -613,39 +731,83 @@ export default function NewOnboardingPage() {
   }
 
   async function submit() {
-    if (!selectedCandidate) return toast.error("Select a candidate");
+    if (!selectedCandidateCount) return toast.error("Select at least one candidate");
+    if (!selectedCandidates.length) return toast.error("Selected candidate records are not loaded");
+
     try {
       setSubmitting(true);
-      const onboardingResult = await startOnboarding(selectedCandidate._id, {
-        title: title.trim() || `${candidateName(selectedCandidate)} onboarding`,
-        notes,
-      });
+      const createdEnvelopeIds: string[] = [];
 
-      if (selectedDocumentIds.length > 0) {
+      for (const candidate of selectedCandidates) {
+        const candidateDisplayName = candidateName(candidate);
+        const onboardingResult = await startOnboarding(candidate._id, {
+          title: title.trim() || `${candidateDisplayName} onboarding`,
+          notes,
+        });
+
+        if (!selectedDocumentIds.length) continue;
+
+        const actualCandidateSigner: WizardSigner = {
+          key: "candidate-primary",
+          role: "candidate",
+          name: candidateDisplayName,
+          email: candidate.email || "",
+          order: 1,
+          locked: true,
+          source: "candidate",
+        };
+
+        const signersForCandidate = signers.map((signer) => (
+          signer.locked && signer.role === "candidate"
+            ? actualCandidateSigner
+            : {
+                key: signer.key,
+                role: signer.role,
+                name: signer.name,
+                email: signer.email,
+                order: signer.order,
+              }
+        ));
+
+        const documentFieldsForCandidate = Object.fromEntries(selectedDocumentIds.map((id) => [
+          id,
+          (documentFieldsById[id] || []).map((field) => (
+            field.signerKey === "candidate-primary"
+              ? { ...field, role: "candidate" as const, label: fieldLabel(actualCandidateSigner, field.type) }
+              : field
+          )),
+        ]));
+
         const envelope = await createEnvelope({
           onboardingId: onboardingResult.data._id,
           documentIds: selectedDocumentIds,
-          title: title.trim() || `${candidateName(selectedCandidate)} onboarding packet`,
+          title: title.trim() || `${candidateDisplayName} onboarding packet`,
           message,
-          signers: signers.map((signer) => ({
-            key: signer.key,
-            role: signer.role,
-            name: signer.name,
-            email: signer.email,
-            order: signer.order,
-          })),
-          documentFields: Object.fromEntries(selectedDocumentIds.map((id) => [id, documentFieldsById[id] || []])),
+          signers: signersForCandidate,
+          documentFields: documentFieldsForCandidate,
         });
         if (sendingNow) {
           await sendEnvelope(envelope._id);
         }
-        toast.success(sendingNow ? "Onboarding started and sent" : "Onboarding draft created");
-        window.location.href = `/onboarding/envelopes/${envelope._id}`;
+        createdEnvelopeIds.push(envelope._id);
+      }
+
+      if (selectedDocumentIds.length > 0) {
+        toast.success(
+          selectedCandidateCount > 1
+            ? `${selectedCandidateCount} onboarding packets ${sendingNow ? "created and sent" : "created as drafts"}`
+            : sendingNow ? "Onboarding started and sent" : "Onboarding draft created"
+        );
+        if (createdEnvelopeIds.length === 1) {
+          window.location.href = `/onboarding/envelopes/${createdEnvelopeIds[0]}`;
+          return;
+        }
+        window.location.href = "/onboarding";
         return;
       }
 
-      toast.success("Onboarding started");
-      window.location.href = `/onboarding/${onboardingResult.data._id}`;
+      toast.success(selectedCandidateCount > 1 ? `${selectedCandidateCount} onboarding records started` : "Onboarding started");
+      window.location.href = "/onboarding";
     } catch (error: any) {
       toast.error(error.message || "Failed to start onboarding");
     } finally {
@@ -684,19 +846,67 @@ export default function NewOnboardingPage() {
             <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">Candidate</h2>
-                <p className="text-sm text-slate-500">The selected candidate becomes the primary candidate portal signer.</p>
+                <p className="text-sm text-slate-500">
+                  {selectedCandidateCount ? `${selectedCandidateCount} selected` : "Choose candidates directly, from a saved list, or from the current search."}
+                </p>
               </div>
-              <div className="relative md:w-96">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <Input value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} placeholder="Search candidates" className="pl-9" />
+              <div className="grid gap-2 md:w-[620px] md:grid-cols-[240px_minmax(0,1fr)]">
+                <Select value={selectedCandidateListId} onValueChange={handleCandidateListChange} disabled={candidateListLoading}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Candidate list" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All candidates</SelectItem>
+                    {candidateLists.map((list) => (
+                      <SelectItem key={list._id} value={list._id}>
+                        {list.name} ({list.candidateCount})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    value={candidateSearch}
+                    onChange={(event) => {
+                      setSelectedCandidateListId("all");
+                      setCandidateSearch(event.target.value);
+                    }}
+                    placeholder="Search candidates"
+                    className="pl-9"
+                  />
+                </div>
               </div>
             </div>
             <div className="p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm text-slate-600">
+                  {selectedCandidateCount ? `${selectedCandidateCount} selected for onboarding` : `${candidates.length} visible candidates`}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={toggleVisibleCandidates} disabled={!candidates.length || candidateListLoading}>
+                    <ListChecks className="h-4 w-4" />
+                    {candidates.length && candidates.every((candidate) => selectedCandidateIds.includes(candidate._id)) ? "Clear visible" : "Select visible"}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={selectAllMatchingCandidates} disabled={candidateListLoading}>
+                    Select all matching
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setCandidateSelection([])} disabled={!selectedCandidateCount}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
               <div className="h-[440px] overflow-auto rounded-md border">
                 <table className="w-full min-w-[760px] caption-bottom text-sm">
                   <TableHeader className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgba(226,232,240,1)]">
                     <TableRow className="hover:bg-white">
-                      <TableHead className="w-14">Select</TableHead>
+                      <TableHead className="w-14">
+                        <Checkbox
+                          checked={candidates.length > 0 && candidates.every((candidate) => selectedCandidateIds.includes(candidate._id))}
+                          onCheckedChange={toggleVisibleCandidates}
+                          aria-label="Select visible candidates"
+                        />
+                      </TableHead>
                       <TableHead>Candidate</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Position</TableHead>
@@ -712,19 +922,22 @@ export default function NewOnboardingPage() {
                         </TableCell>
                       </TableRow>
                     ) : candidates.map((candidate) => {
-                      const selected = selectedCandidate?._id === candidate._id;
+                      const selected = selectedCandidateIds.includes(candidate._id);
                       return (
                         <TableRow
                           key={candidate._id}
                           aria-selected={selected}
                           data-state={selected ? "selected" : undefined}
-                          onClick={() => setSelectedCandidate(candidate)}
+                          onClick={() => toggleCandidate(candidate)}
                           className={`cursor-pointer ${selected ? "bg-blue-50 hover:bg-blue-50" : "hover:bg-slate-50"}`}
                         >
                           <TableCell>
-                            <span className={`flex h-7 w-7 items-center justify-center rounded-full border ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>
-                              <Check className="h-4 w-4" />
-                            </span>
+                            <Checkbox
+                              checked={selected}
+                              onCheckedChange={() => toggleCandidate(candidate)}
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label={`Select ${candidateName(candidate)}`}
+                            />
                           </TableCell>
                           <TableCell>
                             <div className="font-medium text-slate-950">{candidateName(candidate)}</div>
@@ -743,10 +956,10 @@ export default function NewOnboardingPage() {
                               variant={selected ? "default" : "outline"}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                setSelectedCandidate(candidate);
+                                toggleCandidate(candidate);
                               }}
                             >
-                              {selected ? "Selected" : "Select"}
+                              {selected ? "Remove" : "Select"}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -757,7 +970,7 @@ export default function NewOnboardingPage() {
               </div>
             </div>
             <div className="flex justify-end border-t p-4">
-              <Button disabled={!selectedCandidate} onClick={() => setStep("documents")}>Continue</Button>
+              <Button disabled={!selectedCandidateCount} onClick={() => setStep("documents")}>Continue</Button>
             </div>
           </section>
         )}
@@ -1102,7 +1315,7 @@ export default function NewOnboardingPage() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Packet title</Label>
-                  <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={selectedCandidate ? `${candidateName(selectedCandidate)} onboarding packet` : "Onboarding packet"} />
+                  <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={selectedCandidateCount === 1 && selectedCandidate ? `${candidateName(selectedCandidate)} onboarding packet` : "Onboarding packet"} />
                 </div>
                 <div className="space-y-2">
                   <Label>Internal notes</Label>
@@ -1122,9 +1335,13 @@ export default function NewOnboardingPage() {
                 <h2 className="font-semibold text-slate-950">Summary</h2>
                 <div className="mt-4 space-y-4 text-sm">
                   <div>
-                    <div className="text-xs uppercase text-slate-500">Candidate</div>
-                    <div className="font-medium text-slate-950">{selectedCandidate ? candidateName(selectedCandidate) : "Not selected"}</div>
-                    <div className="text-slate-500">{selectedCandidate?.email}</div>
+                    <div className="text-xs uppercase text-slate-500">Candidates</div>
+                    <div className="font-medium text-slate-950">{selectedCandidateCount ? `${selectedCandidateCount} selected` : "Not selected"}</div>
+                    {selectedCandidateCount === 1 && selectedCandidate ? (
+                      <div className="text-slate-500">{selectedCandidate.email}</div>
+                    ) : (
+                      <div className="text-slate-500">One packet is created per candidate.</div>
+                    )}
                   </div>
                   <div>
                     <div className="text-xs uppercase text-slate-500">Signers</div>
@@ -1148,7 +1365,7 @@ export default function NewOnboardingPage() {
                       ))}
                     </div>
                   </div>
-                  <Button className="w-full" onClick={submit} disabled={submitting || !selectedCandidate || !selectedDocumentIds.length}>
+                  <Button className="w-full" onClick={submit} disabled={submitting || !selectedCandidateCount || !selectedDocumentIds.length}>
                     {sendingNow ? <Send className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                     {submitting ? "Creating..." : sendingNow ? "Create and send" : "Create draft"}
                   </Button>

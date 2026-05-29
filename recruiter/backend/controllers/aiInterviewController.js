@@ -81,6 +81,7 @@ function buildScoringSummary(sessions = []) {
     .filter((session) => session.scoring?.status === 'completed' && Number.isFinite(Number(session.scoring.overallScore)))
     .map((session) => ({
       sessionId: session._id,
+      candidateId: session.candidate,
       candidateName: getSessionCandidateName(session),
       candidateEmail: session.candidateSnapshot?.email,
       score: Math.round(Number(session.scoring.overallScore)),

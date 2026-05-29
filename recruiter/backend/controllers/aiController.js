@@ -1233,6 +1233,7 @@ exports.getMatchingReport = async (req, res) => {
   try {
     const { jobId } = req.params;
     const { topK = 10, forceRefresh = 'false' } = req.query;
+    const requestedTopK = Math.min(Math.max(parseInt(topK, 10) || 10, 1), 5000);
     const shouldForceRefresh = forceRefresh === 'true' || forceRefresh === true;
     
     const job = await Job.findById(jobId);
@@ -1247,8 +1248,9 @@ exports.getMatchingReport = async (req, res) => {
     if (!shouldForceRefresh) {
       const aiMatchCacheService = require('../services/aiMatchCacheService');
       const cachedReport = await aiMatchCacheService.getCachedReport(jobId);
+      const cachedCandidateCount = cachedReport?.data?.topCandidates?.length || 0;
       
-      if (cachedReport && cachedReport.data) {
+      if (cachedReport && cachedReport.data && cachedCandidateCount >= requestedTopK) {
         console.log(`⚡ Returning cached report for job ${jobId} (${cachedReport.cacheAgeMinutes} minutes old)`);
         // Explicitly set fromCache to true and ensure it's the first property to avoid any override issues
         const cachedResponse = {
@@ -1261,6 +1263,8 @@ exports.getMatchingReport = async (req, res) => {
         cachedResponse.fromCache = true;
         console.log(`💾 Cached response fromCache flag: ${cachedResponse.fromCache}`);
         return res.json(cachedResponse);
+      } else if (cachedReport && cachedReport.data) {
+        console.log(`Cached AI matching report has ${cachedCandidateCount} candidates, requested ${requestedTopK}; regenerating`);
       }
     } else {
       console.log(`🔄 Force refresh requested for job ${jobId} - bypassing cache`);
@@ -1279,7 +1283,7 @@ exports.getMatchingReport = async (req, res) => {
 
     // Use the existing job matching endpoint with embeddings
     const embeddingService = require('../services/embeddingService');
-    const matchResult = await embeddingService.findMatchingCandidatesWithExplanation(job, parseInt(topK));
+    const matchResult = await embeddingService.findMatchingCandidatesWithExplanation(job, requestedTopK);
     // Extract matches array from result object
     const matches = matchResult.matches || (Array.isArray(matchResult) ? matchResult : []);
 
