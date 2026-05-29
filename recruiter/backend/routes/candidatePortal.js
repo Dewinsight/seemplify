@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const candidateAuthMiddleware = require('../middleware/candidateAuthMiddleware');
 const CandidateAccount = require('../models/CandidateAccount');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
+const OnboardingDocument = require('../models/OnboardingDocument');
 const OnboardingEnvelope = require('../models/OnboardingEnvelope');
 const OnboardingAuditEvent = require('../models/OnboardingAuditEvent');
 const onboardingPdfService = require('../services/onboardingPdfService');
@@ -56,6 +57,99 @@ async function findOnboardingsForAccount(account) {
 
 function canSignerAct(envelope, signer) {
   return !envelope.signers.some((item) => item.order < signer.order && item.status !== 'signed');
+}
+
+function safePdfFileName(title = 'onboarding-document') {
+  return `${title || 'onboarding-document'}`
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'onboarding-document';
+}
+
+function documentPdfUrls(envelopeDocument) {
+  return [
+    envelopeDocument?.signedPdf?.url,
+    envelopeDocument?.signedPdf?.downloadUrl,
+    envelopeDocument?.pdfSnapshot?.url,
+    envelopeDocument?.pdfSnapshot?.downloadUrl
+  ].filter(Boolean);
+}
+
+async function ensureEnvelopeDocumentSnapshot(envelope, envelopeDocument) {
+  if (documentPdfUrls(envelopeDocument).length > 0) {
+    return;
+  }
+
+  const sourceDocument = await OnboardingDocument.findById(envelopeDocument.document);
+  if (!sourceDocument) {
+    throw new Error('Source onboarding document could not be found');
+  }
+
+  if (sourceDocument.pdfSnapshot?.url || sourceDocument.pdfSnapshot?.downloadUrl) {
+    envelopeDocument.pdfSnapshot = sourceDocument.pdfSnapshot;
+    await envelope.save();
+    return;
+  }
+
+  if (sourceDocument.sourceType === 'uploaded_pdf' && (sourceDocument.originalFile?.url || sourceDocument.originalFile?.downloadUrl)) {
+    envelopeDocument.pdfSnapshot = sourceDocument.originalFile;
+    await envelope.save();
+    return;
+  }
+
+  const buffer = await onboardingPdfService.renderBuilderDocumentToBuffer({
+    title: sourceDocument.title || envelopeDocument.title,
+    builderBlocks: sourceDocument.builderBlocks,
+    variables: sourceDocument.variables || {}
+  });
+  envelopeDocument.pdfSnapshot = await onboardingStorageService.uploadBuffer(buffer, {
+    folder: 'onboarding/envelopes',
+    fileName: `${sourceDocument.title || envelopeDocument.title || 'onboarding-document'}-${Date.now()}.pdf`,
+    mimeType: 'application/pdf',
+    resourceType: 'raw'
+  });
+  await envelope.save();
+}
+
+async function loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument) {
+  await ensureEnvelopeDocumentSnapshot(envelope, envelopeDocument);
+
+  let lastDownloadError = null;
+  for (const sourceUrl of documentPdfUrls(envelopeDocument)) {
+    try {
+      return await onboardingPdfService.downloadPdfBuffer(sourceUrl);
+    } catch (error) {
+      lastDownloadError = error;
+    }
+  }
+
+  throw lastDownloadError || new Error('No PDF snapshot is available for this document');
+}
+
+async function findCandidateEnvelopeDocument(req, documentId) {
+  const envelope = await OnboardingEnvelope.findOne({
+    'documents.document': documentId,
+    'signers.candidateAccount': req.candidateAccount._id
+  })
+    .populate('candidate', 'firstName lastName email phone position status')
+    .populate('organization', 'name logo')
+    .populate('onboarding', 'title status');
+
+  if (!envelope) {
+    return { envelope: null, envelopeDocument: null };
+  }
+
+  const envelopeDocument = envelope.documents.find((doc) => doc.document.toString() === documentId);
+  return { envelope, envelopeDocument };
+}
+
+function sendPdf(res, buffer, { title, disposition = 'inline' } = {}) {
+  const filename = safePdfFileName(title);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Content-Disposition', `${disposition}; filename="${filename}.pdf"`);
+  res.setHeader('Cache-Control', 'private, max-age=60');
+  res.send(buffer);
 }
 
 async function completeEnvelopeIfReady(envelope) {
@@ -260,17 +354,9 @@ router.get('/onboarding/:id', candidateAuthMiddleware, async (req, res) => {
 
 router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
   try {
-    const envelope = await OnboardingEnvelope.findOne({
-      'documents.document': req.params.id,
-      'signers.candidateAccount': req.candidateAccount._id
-    })
-      .populate('candidate', 'firstName lastName email phone position status')
-      .populate('organization', 'name logo')
-      .populate('onboarding', 'title status');
-
+    const { envelope, envelopeDocument } = await findCandidateEnvelopeDocument(req, req.params.id);
     if (!envelope) return res.status(404).json({ msg: 'Document not found' });
 
-    const envelopeDocument = envelope.documents.find((doc) => doc.document.toString() === req.params.id);
     const signer = envelope.signers.find((item) =>
       item.role === 'candidate' &&
       item.candidateAccount?.toString() === req.candidateAccount._id.toString()
@@ -321,6 +407,33 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
   }
 });
 
+router.get('/documents/:id/preview', candidateAuthMiddleware, async (req, res) => {
+  try {
+    const { envelope, envelopeDocument } = await findCandidateEnvelopeDocument(req, req.params.id);
+    if (!envelope || !envelopeDocument) return res.status(404).json({ msg: 'Document not found' });
+
+    const buffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
+
+    await logOnboardingEvent({
+      req,
+      organization: envelope.organization._id || envelope.organization,
+      onboarding: envelope.onboarding._id || envelope.onboarding,
+      envelope: envelope._id,
+      document: envelopeDocument.document,
+      candidate: envelope.candidate._id || envelope.candidate,
+      actorType: 'candidate',
+      actorCandidateAccount: req.candidateAccount._id,
+      actorEmail: req.candidateAccount.email,
+      action: 'document_previewed'
+    });
+
+    sendPdf(res, buffer, { title: envelopeDocument.title, disposition: 'inline' });
+  } catch (error) {
+    console.error('Candidate document preview failed:', error);
+    res.status(500).json({ msg: 'Failed to preview document', error: error.message });
+  }
+});
+
 router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => {
   try {
     if (!req.body.signatureDataUrl) {
@@ -348,10 +461,10 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
     const envelopeDocument = envelope.documents.find((doc) => doc.document.toString() === req.params.id);
     if (!envelopeDocument) return res.status(404).json({ msg: 'Document not found' });
 
-    const sourceUrl = envelopeDocument.signedPdf?.url || envelopeDocument.pdfSnapshot?.url;
+    const sourceBuffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
     const signedAt = new Date();
     const stamped = await onboardingPdfService.stampSignedPdf({
-      pdfUrl: sourceUrl,
+      pdfBuffer: sourceBuffer,
       signatureFields: envelopeDocument.signatureFields,
       signer: {
         name: candidateName(envelope.candidate),
@@ -409,34 +522,27 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
 
 router.get('/documents/:id/download', candidateAuthMiddleware, async (req, res) => {
   try {
-    const envelope = await OnboardingEnvelope.findOne({
-      'documents.document': req.params.id,
-      'signers.candidateAccount': req.candidateAccount._id
-    });
-    if (!envelope) return res.status(404).json({ msg: 'Document not found' });
+    const { envelope, envelopeDocument } = await findCandidateEnvelopeDocument(req, req.params.id);
+    if (!envelope || !envelopeDocument) return res.status(404).json({ msg: 'Document not found' });
 
-    const envelopeDocument = envelope.documents.find((doc) => doc.document.toString() === req.params.id);
-    const url = envelopeDocument?.signedPdf?.downloadUrl ||
-      envelopeDocument?.signedPdf?.url ||
-      envelopeDocument?.pdfSnapshot?.downloadUrl ||
-      envelopeDocument?.pdfSnapshot?.url;
-    if (!url) return res.status(404).json({ msg: 'No downloadable file found' });
+    const buffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
 
     await logOnboardingEvent({
       req,
-      organization: envelope.organization,
-      onboarding: envelope.onboarding,
+      organization: envelope.organization._id || envelope.organization,
+      onboarding: envelope.onboarding._id || envelope.onboarding,
       envelope: envelope._id,
       document: envelopeDocument.document,
-      candidate: envelope.candidate,
+      candidate: envelope.candidate._id || envelope.candidate,
       actorType: 'candidate',
       actorCandidateAccount: req.candidateAccount._id,
       actorEmail: req.candidateAccount.email,
       action: 'document_downloaded'
     });
 
-    res.redirect(url);
+    sendPdf(res, buffer, { title: envelopeDocument.title, disposition: 'attachment' });
   } catch (error) {
+    console.error('Candidate document download failed:', error);
     res.status(500).json({ msg: 'Failed to download document', error: error.message });
   }
 });

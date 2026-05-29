@@ -58,6 +58,17 @@ async function parseResponse<T>(response: Response, fallback: string): Promise<T
   return payload as T
 }
 
+async function parseFileError(response: Response, fallback: string) {
+  const contentType = response.headers.get("content-type") || ""
+  if (contentType.includes("application/json")) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.msg || payload.error || fallback)
+  }
+
+  const text = await response.text().catch(() => "")
+  throw new Error(text || fallback)
+}
+
 async function refreshAccessToken() {
   if (!hasWindow()) return null
   const refreshToken = window.localStorage.getItem(REFRESH_TOKEN_KEY)
@@ -108,6 +119,49 @@ export async function candidateRequest<T>(
   return parseResponse<T>(response, "Request failed")
 }
 
+async function candidateFileRequest(
+  path: string,
+  options: RequestInit = {},
+  retryAfterRefresh = true,
+): Promise<Response> {
+  const token = getAccessToken()
+  const headers = {
+    Accept: "application/pdf",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  }
+
+  const response = await fetch(buildUrl(path), {
+    ...options,
+    headers,
+  })
+
+  if (response.status === 401 && retryAfterRefresh) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      return candidateFileRequest(path, options, false)
+    }
+  }
+
+  if (!response.ok) {
+    await parseFileError(response, "File request failed")
+  }
+
+  return response
+}
+
+function filenameFromDisposition(disposition: string | null, fallback: string) {
+  if (!disposition) return fallback
+
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1].replace(/"/g, ""))
+  }
+
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1] || fallback
+}
+
 export async function acceptInvite(token: string, password: string) {
   const result = await candidateRequest<AuthResponse>("/api/candidate-portal/auth/accept-invite", {
     method: "POST",
@@ -150,11 +204,25 @@ export async function getDocument(id: string) {
   return candidateRequest<{ data: CandidateDocumentPayload }>(`/api/candidate-portal/documents/${id}`)
 }
 
+export async function getDocumentPreviewBlob(id: string) {
+  const response = await candidateFileRequest(`/api/candidate-portal/documents/${id}/preview`)
+  return response.blob()
+}
+
 export async function signDocument(id: string, signatureDataUrl: string) {
   return candidateRequest<{ data: unknown }>(`/api/candidate-portal/documents/${id}/sign`, {
     method: "POST",
     body: JSON.stringify({ signatureDataUrl }),
   })
+}
+
+export async function downloadDocumentBlob(id: string) {
+  const response = await candidateFileRequest(`/api/candidate-portal/documents/${id}/download`)
+  const fallbackName = `onboarding-document-${id}.pdf`
+  return {
+    blob: await response.blob(),
+    fileName: filenameFromDisposition(response.headers.get("content-disposition"), fallbackName),
+  }
 }
 
 export function candidateDocumentDownloadPath(id: string) {

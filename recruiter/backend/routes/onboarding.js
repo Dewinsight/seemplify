@@ -179,8 +179,13 @@ async function findDocumentForOrg(req, id) {
 }
 
 async function renderDocumentSnapshot(document, { candidate, organization, user, folder = 'onboarding/documents' } = {}) {
-  if (document.sourceType === 'uploaded_pdf' && document.pdfSnapshot?.url) {
-    return document.pdfSnapshot;
+  if (document.sourceType === 'uploaded_pdf') {
+    if (document.pdfSnapshot?.url || document.pdfSnapshot?.downloadUrl) {
+      return document.pdfSnapshot;
+    }
+    if (document.originalFile?.url || document.originalFile?.downloadUrl) {
+      return document.originalFile;
+    }
   }
 
   const variables = {
@@ -894,7 +899,10 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
     };
 
     for (const envelopeDocument of envelope.documents) {
-      const sourceUrl = envelopeDocument.signedPdf?.url || envelopeDocument.pdfSnapshot?.url;
+      const sourceUrl = envelopeDocument.signedPdf?.url ||
+        envelopeDocument.signedPdf?.downloadUrl ||
+        envelopeDocument.pdfSnapshot?.url ||
+        envelopeDocument.pdfSnapshot?.downloadUrl;
       const stamped = await onboardingPdfService.stampSignedPdf({
         pdfUrl: sourceUrl,
         signatureFields: envelopeDocument.signatureFields,

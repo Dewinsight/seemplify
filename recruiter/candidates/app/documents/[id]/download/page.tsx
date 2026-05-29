@@ -3,16 +3,28 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Download, FileText } from "lucide-react"
+import { ArrowLeft, Download, FileText, Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import { getAccessToken, getDocument } from "@/lib/api"
+import { downloadDocumentBlob, getAccessToken, getDocument } from "@/lib/api"
 import type { CandidateDocumentPayload } from "@/lib/types"
+
+function saveBlob(blob: Blob, fileName: string) {
+  const objectUrl = URL.createObjectURL(blob)
+  const link = window.document.createElement("a")
+  link.href = objectUrl
+  link.download = fileName
+  window.document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
 
 export default function CandidateDocumentDownloadPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const [payload, setPayload] = useState<CandidateDocumentPayload | null>(null)
   const [loading, setLoading] = useState(true)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -26,7 +38,17 @@ export default function CandidateDocumentDownloadPage() {
       .finally(() => setLoading(false))
   }, [params.id, router])
 
-  const downloadUrl = payload?.downloadUrl
+  async function downloadCopy() {
+    try {
+      setDownloading(true)
+      const { blob, fileName } = await downloadDocumentBlob(params.id)
+      saveBlob(blob, fileName)
+    } catch (error: any) {
+      toast.error(error.message || "Could not download document")
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <main className="min-h-screen px-4 py-8">
@@ -45,21 +67,15 @@ export default function CandidateDocumentDownloadPage() {
               Download the latest available PDF for this onboarding document.
             </p>
 
-            {downloadUrl ? (
-              <a
-                href={downloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                <Download className="h-4 w-4" />
-                Open PDF
-              </a>
-            ) : (
-              <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                No downloadable PDF is available yet. If the document needs countersigning, check back after it is complete.
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={downloadCopy}
+              disabled={downloading}
+              className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {downloading ? "Preparing PDF..." : "Download PDF"}
+            </button>
           </div>
         )}
       </section>
