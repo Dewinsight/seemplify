@@ -6,7 +6,6 @@ import Image from 'next/image'
 import { motion } from 'framer-motion'
 import HeroBackground from '@/components/HeroBackground'
 import SeemplifyLogo from '@/components/SeemplifyLogo'
-import ThemeToggle from '@/components/ThemeToggle'
 import BookDemoModal from '@/components/BookDemoModal'
 import JsonLd from '@/components/JsonLd'
 
@@ -701,7 +700,6 @@ export default function HomePage() {
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
-            <ThemeToggle />
             <Link href={IDP_LOGIN_URL} className="text-sm text-zinc-700 transition hover:text-zinc-900 dark:text-white/80 dark:hover:text-white">
               Sign In
             </Link>

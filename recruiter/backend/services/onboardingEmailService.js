@@ -198,6 +198,30 @@ async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, r
   });
 }
 
+async function sendWorkflowReminder({ candidate, organization, onboarding, item, request, req }) {
+  const portalUrl = candidatePortalUrl(`/onboarding/${onboarding._id || onboarding}`, { organization, request: request || req });
+  const name = candidateName(candidate);
+  const organizationName = organization?.name || 'Seemplify';
+  const title = item?.title || onboarding?.title || 'Your onboarding';
+
+  return emailService.sendEmail({
+    to: candidate.email,
+    subject: `Reminder: ${title}`,
+    organizationName,
+    text: `Hello ${name}, ${title} is still waiting in your onboarding portal. Open ${portalUrl}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
+        <h2 style="margin: 0 0 12px 0;">Onboarding reminder</h2>
+        <p>Hello ${name},</p>
+        <p><strong>${title}</strong> is still waiting in your onboarding portal.</p>
+        <p style="margin: 24px 0;">
+          <a href="${portalUrl}" style="background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Open onboarding</a>
+        </p>
+      </div>
+    `
+  });
+}
+
 module.exports = {
   DEFAULT_AKWA_IBOM_CANDIDATE_PORTAL_URL,
   candidatePortalBaseUrl,
@@ -207,5 +231,6 @@ module.exports = {
   sendEnvelopeNotification,
   sendEnvelopeSignerNotification,
   sendEnvelopeReminder,
-  sendEnvelopeCompleted
+  sendEnvelopeCompleted,
+  sendWorkflowReminder
 };

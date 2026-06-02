@@ -36,10 +36,12 @@ import {
   createEnvelope,
   getDocumentPreviewBlob,
   getDocuments,
+  getPacketTemplates,
   newSignatureField,
   sendEnvelope,
   startOnboarding,
   type OnboardingDocument,
+  type OnboardingPacketTemplate,
   type SignatureField,
 } from "@/services/onboardingService";
 import { toast } from "sonner";
@@ -184,10 +186,21 @@ function normalizeDocumentFields(document: OnboardingDocument, signers: WizardSi
 export default function NewOnboardingPage() {
   const searchParams = useSearchParams();
   const initialCandidateId = searchParams.get("candidateId") || "";
+  const initialCandidateIdsParam = searchParams.get("candidateIds") || "";
+  const initialCandidateIds = useMemo(() => {
+    const candidateIds = initialCandidateIdsParam
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (initialCandidateId) candidateIds.unshift(initialCandidateId);
+    return Array.from(new Set(candidateIds));
+  }, [initialCandidateId, initialCandidateIdsParam]);
+  const initialCandidateKey = initialCandidateIds.join(",");
   const pageRef = useRef<HTMLDivElement | null>(null);
   const [step, setStep] = useState<WizardStep>("candidate");
   const [candidates, setCandidates] = useState<CandidateData[]>([]);
   const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
+  const [packetTemplates, setPacketTemplates] = useState<OnboardingPacketTemplate[]>([]);
   const [candidateLists, setCandidateLists] = useState<CandidateListSummary[]>([]);
   const [organizationMembers, setOrganizationMembers] = useState<OrganizationMember[]>([]);
   const [candidateSearch, setCandidateSearch] = useState("");
@@ -196,6 +209,7 @@ export default function NewOnboardingPage() {
   const [selectedCandidateListId, setSelectedCandidateListId] = useState("all");
   const [candidateListLoading, setCandidateListLoading] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [selectedPacketTemplateId, setSelectedPacketTemplateId] = useState("none");
   const [manualSigners, setManualSigners] = useState<WizardSigner[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [documentFieldsById, setDocumentFieldsById] = useState<Record<string, SignatureField[]>>({});
@@ -219,8 +233,12 @@ export default function NewOnboardingPage() {
   useEffect(() => {
     async function load() {
       try {
-        const documentResult = await getDocuments();
+        const [documentResult, packetTemplateResult] = await Promise.all([
+          getDocuments(),
+          getPacketTemplates(),
+        ]);
         setDocuments(documentResult.filter((document) => document.status !== "archived"));
+        setPacketTemplates(packetTemplateResult);
 
         if (selectedCandidateListId !== "all") return;
 
@@ -274,20 +292,38 @@ export default function NewOnboardingPage() {
   }, []);
 
   useEffect(() => {
-    if (!initialCandidateId) return;
-    async function loadCandidate() {
+    const candidateIds = initialCandidateKey.split(",").filter(Boolean);
+    if (!candidateIds.length) return;
+
+    let cancelled = false;
+
+    async function loadInitialCandidates() {
       try {
-        const candidate = await getCandidateById(initialCandidateId);
-        setSelectedCandidate(candidate);
-        setSelectedCandidateIds([candidate._id]);
-        setCandidateSearch(candidateName(candidate));
+        setCandidateListLoading(true);
+        const loadedCandidates = await Promise.all(candidateIds.map((id) => getCandidateById(id)));
+        if (cancelled) return;
+
+        setSelectedCandidateListId("all");
+        setCandidates((current) => {
+          const byId = new Map(current.map((candidate) => [candidate._id, candidate]));
+          loadedCandidates.forEach((candidate) => byId.set(candidate._id, candidate));
+          return Array.from(byId.values());
+        });
+        setCandidateSelection(loadedCandidates.map((candidate) => candidate._id), loadedCandidates);
+        setCandidateSearch(loadedCandidates.length === 1 ? candidateName(loadedCandidates[0]) : "");
         setStep("documents");
       } catch (error: any) {
-        toast.error(error.message || "Failed to preselect candidate");
+        if (!cancelled) toast.error(error.message || "Failed to preselect candidates");
+      } finally {
+        if (!cancelled) setCandidateListLoading(false);
       }
     }
-    loadCandidate();
-  }, [initialCandidateId]);
+
+    loadInitialCandidates();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCandidateKey]);
 
   const selectedCandidates = useMemo(() => {
     const byId = new Map(candidates.map((candidate) => [candidate._id, candidate]));
@@ -505,6 +541,19 @@ export default function NewOnboardingPage() {
 
   function toggleDocument(id: string) {
     setSelectedDocumentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function applyPacketTemplate(templateId: string) {
+    setSelectedPacketTemplateId(templateId);
+    const template = packetTemplates.find((item) => item._id === templateId);
+    if (!template) return;
+    const nextDocumentIds = (template.documents || [])
+      .map((document) => typeof document === "string" ? document : document._id)
+      .filter(Boolean);
+    if (nextDocumentIds.length) {
+      setSelectedDocumentIds(nextDocumentIds);
+      toast.info(`${nextDocumentIds.length} document(s) selected from packet template`);
+    }
   }
 
   function addManualSigner() {
@@ -733,6 +782,9 @@ export default function NewOnboardingPage() {
   async function submit() {
     if (!selectedCandidateCount) return toast.error("Select at least one candidate");
     if (!selectedCandidates.length) return toast.error("Selected candidate records are not loaded");
+    if (selectedCandidates.length !== selectedCandidateCount) {
+      return toast.error("Some selected candidate records are still loading. Try again in a moment.");
+    }
 
     try {
       setSubmitting(true);
@@ -740,9 +792,19 @@ export default function NewOnboardingPage() {
 
       for (const candidate of selectedCandidates) {
         const candidateDisplayName = candidateName(candidate);
+        const customTitle = title.trim();
+        const onboardingTitle = selectedCandidateCount === 1
+          ? customTitle || `${candidateDisplayName} onboarding`
+          : `${candidateDisplayName} onboarding`;
+        const envelopeTitle = selectedCandidateCount === 1
+          ? customTitle || `${candidateDisplayName} onboarding packet`
+          : customTitle
+            ? `${candidateDisplayName} - ${customTitle}`
+            : `${candidateDisplayName} onboarding packet`;
         const onboardingResult = await startOnboarding(candidate._id, {
-          title: title.trim() || `${candidateDisplayName} onboarding`,
+          title: onboardingTitle,
           notes,
+          templateId: selectedPacketTemplateId === "none" ? undefined : selectedPacketTemplateId,
         });
 
         if (!selectedDocumentIds.length) continue;
@@ -781,7 +843,7 @@ export default function NewOnboardingPage() {
         const envelope = await createEnvelope({
           onboardingId: onboardingResult.data._id,
           documentIds: selectedDocumentIds,
-          title: title.trim() || `${candidateDisplayName} onboarding packet`,
+          title: envelopeTitle,
           message,
           signers: signersForCandidate,
           documentFields: documentFieldsForCandidate,
@@ -798,7 +860,7 @@ export default function NewOnboardingPage() {
             ? `${selectedCandidateCount} onboarding packets ${sendingNow ? "created and sent" : "created as drafts"}`
             : sendingNow ? "Onboarding started and sent" : "Onboarding draft created"
         );
-        if (createdEnvelopeIds.length === 1) {
+        if (selectedCandidateCount === 1 && createdEnvelopeIds.length === 1) {
           window.location.href = `/onboarding/envelopes/${createdEnvelopeIds[0]}`;
           return;
         }
@@ -982,9 +1044,24 @@ export default function NewOnboardingPage() {
                 <h2 className="text-lg font-semibold text-slate-950">Documents</h2>
                 <p className="text-sm text-slate-500">Choose the documents that will receive signer fields.</p>
               </div>
-              <Button asChild variant="outline">
-                <Link href="/onboarding/documents/new"><FileText className="h-4 w-4" /> Build document</Link>
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select value={selectedPacketTemplateId} onValueChange={applyPacketTemplate}>
+                  <SelectTrigger className="w-full sm:w-72">
+                    <SelectValue placeholder="Packet template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No packet template</SelectItem>
+                    {packetTemplates.map((template) => (
+                      <SelectItem key={template._id} value={template._id}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button asChild variant="outline">
+                  <Link href="/onboarding/documents/new"><FileText className="h-4 w-4" /> Build document</Link>
+                </Button>
+              </div>
             </div>
             <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
               {documents.map((document) => {

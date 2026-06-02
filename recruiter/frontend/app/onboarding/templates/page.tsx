@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Copy, FileText, Plus, Trash2 } from "lucide-react";
+import { ClipboardList, Copy, FileText, PackageCheck, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,30 +12,132 @@ import { Badge } from "@/components/ui/badge";
 import {
   createDocument,
   createDocumentTemplate,
+  createOnboardingFormTemplate,
+  createPacketTemplate,
   deleteDocumentTemplate,
+  getDocuments,
   getDocumentTemplates,
+  getOnboardingFormTemplates,
+  getPacketTemplates,
   type OnboardingDocumentTemplate,
+  type OnboardingDocument,
+  type OnboardingFormTemplate,
+  type OnboardingPacketTemplate,
 } from "@/services/onboardingService";
 import { toast } from "sonner";
 
 export default function OnboardingTemplatesPage() {
   const [templates, setTemplates] = useState<OnboardingDocumentTemplate[]>([]);
+  const [packetTemplates, setPacketTemplates] = useState<OnboardingPacketTemplate[]>([]);
+  const [formTemplates, setFormTemplates] = useState<OnboardingFormTemplate[]>([]);
+  const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [packetSaving, setPacketSaving] = useState(false);
+  const [formSaving, setFormSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
     category: "custom",
+    description: "",
+  });
+  const [packetForm, setPacketForm] = useState({
+    name: "",
+    description: "",
+    documentIds: [] as string[],
+    formTemplateIds: [] as string[],
+  });
+  const [customForm, setCustomForm] = useState({
+    name: "",
     description: "",
   });
 
   async function load() {
     try {
       setLoading(true);
-      setTemplates(await getDocumentTemplates());
+      const [documentTemplatesResult, packetTemplatesResult, formTemplatesResult, documentsResult] = await Promise.all([
+        getDocumentTemplates(),
+        getPacketTemplates(),
+        getOnboardingFormTemplates(),
+        getDocuments(),
+      ]);
+      setTemplates(documentTemplatesResult);
+      setPacketTemplates(packetTemplatesResult);
+      setFormTemplates(formTemplatesResult);
+      setDocuments(documentsResult.filter((document) => document.status !== "archived"));
     } catch (error: any) {
       toast.error(error.message || "Failed to load templates");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function togglePacketDocument(id: string) {
+    setPacketForm((current) => ({
+      ...current,
+      documentIds: current.documentIds.includes(id)
+        ? current.documentIds.filter((item) => item !== id)
+        : [...current.documentIds, id],
+    }));
+  }
+
+  function togglePacketFormTemplate(id: string) {
+    setPacketForm((current) => ({
+      ...current,
+      formTemplateIds: current.formTemplateIds.includes(id)
+        ? current.formTemplateIds.filter((item) => item !== id)
+        : [...current.formTemplateIds, id],
+    }));
+  }
+
+  async function createPacket() {
+    if (!packetForm.name.trim()) return toast.error("Packet template name is required");
+    try {
+      setPacketSaving(true);
+      await createPacketTemplate({
+        name: packetForm.name,
+        description: packetForm.description,
+        documents: packetForm.documentIds,
+        formTemplates: packetForm.formTemplateIds,
+        workflowItems: [
+          { id: "forms", type: "form", title: "Complete onboarding details", ownerType: "candidate", order: 10 },
+          { id: "documents", type: "document", title: "Review and sign onboarding documents", ownerType: "candidate", order: 20 },
+          { id: "review", type: "approval", title: "HR review sensitive information", ownerType: "user", order: 30 },
+          { id: "handoff", type: "handoff", title: "Create employee handoff", ownerType: "system", order: 40 },
+        ],
+        reminderRules: [{ name: "Candidate reminder", targetType: "candidate", delayHours: 24, repeatEveryHours: 48 }],
+        completionActions: [{ target: "internal_employee_profile" }],
+      });
+      setPacketForm({ name: "", description: "", documentIds: [], formTemplateIds: [] });
+      toast.success("Packet template created");
+      await load();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create packet template");
+    } finally {
+      setPacketSaving(false);
+    }
+  }
+
+  async function createFormTemplate() {
+    if (!customForm.name.trim()) return toast.error("Form template name is required");
+    try {
+      setFormSaving(true);
+      await createOnboardingFormTemplate({
+        name: customForm.name,
+        description: customForm.description,
+        category: "custom",
+        fields: [
+          { id: "legal-name", key: "legalName", label: "Legal name", type: "text", required: true, order: 10 },
+          { id: "address", key: "address", label: "Address", type: "address", required: true, order: 20 },
+          { id: "custom-field", key: "customField", label: "Custom field", type: "text", order: 30 },
+        ],
+      });
+      setCustomForm({ name: "", description: "" });
+      toast.success("Form template created");
+      await load();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create form template");
+    } finally {
+      setFormSaving(false);
     }
   }
 
@@ -128,6 +230,109 @@ export default function OnboardingTemplatesPage() {
               <Plus className="h-4 w-4" />
               {saving ? "Creating..." : "Create"}
             </Button>
+          </div>
+        </section>
+
+        <section className="mb-6 rounded-md border bg-white p-4">
+          <div className="mb-4 flex items-center gap-2">
+            <PackageCheck className="h-5 w-5 text-slate-600" />
+            <h2 className="text-lg font-semibold text-slate-950">Packet templates</h2>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Name</Label>
+                  <Input value={packetForm.name} onChange={(event) => setPacketForm((current) => ({ ...current, name: event.target.value }))} placeholder="New hire packet" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Input value={packetForm.description} onChange={(event) => setPacketForm((current) => ({ ...current, description: event.target.value }))} placeholder="Reusable packet details" />
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-md border p-3">
+                  <div className="mb-2 text-sm font-semibold text-slate-950">Documents</div>
+                  <div className="max-h-44 space-y-2 overflow-auto text-sm">
+                    {documents.map((document) => (
+                      <label key={document._id} className="flex items-center gap-2">
+                        <input type="checkbox" checked={packetForm.documentIds.includes(document._id)} onChange={() => togglePacketDocument(document._id)} />
+                        <span>{document.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="mb-2 text-sm font-semibold text-slate-950">Forms</div>
+                  <div className="max-h-44 space-y-2 overflow-auto text-sm">
+                    {formTemplates.map((template) => (
+                      <label key={template._id} className="flex items-center gap-2">
+                        <input type="checkbox" checked={packetForm.formTemplateIds.includes(template._id)} onChange={() => togglePacketFormTemplate(template._id)} />
+                        <span>{template.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <Button onClick={createPacket} disabled={packetSaving}>
+                <Plus className="h-4 w-4" />
+                {packetSaving ? "Creating..." : "Create packet"}
+              </Button>
+            </div>
+            <div className="overflow-hidden rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">Template</th>
+                    <th className="px-3 py-2">Documents</th>
+                    <th className="px-3 py-2">Forms</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {packetTemplates.length === 0 ? (
+                    <tr><td colSpan={3} className="px-3 py-5 text-center text-slate-500">No packet templates yet.</td></tr>
+                  ) : packetTemplates.map((template) => (
+                    <tr key={template._id}>
+                      <td className="px-3 py-2 font-medium text-slate-950">{template.name}</td>
+                      <td className="px-3 py-2 text-slate-600">{template.documents?.length || 0}</td>
+                      <td className="px-3 py-2 text-slate-600">{template.formTemplates?.length || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-6 rounded-md border bg-white p-4">
+          <div className="mb-4 flex items-center gap-2">
+            <ClipboardList className="h-5 w-5 text-slate-600" />
+            <h2 className="text-lg font-semibold text-slate-950">Form templates</h2>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input value={customForm.name} onChange={(event) => setCustomForm((current) => ({ ...current, name: event.target.value }))} placeholder="Custom onboarding form" />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input value={customForm.description} onChange={(event) => setCustomForm((current) => ({ ...current, description: event.target.value }))} />
+              </div>
+              <Button onClick={createFormTemplate} disabled={formSaving}>
+                <Plus className="h-4 w-4" />
+                {formSaving ? "Creating..." : "Create form"}
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {formTemplates.map((template) => (
+                <article key={template._id} className="rounded-md border p-3">
+                  <div className="font-semibold text-slate-950">{template.name}</div>
+                  <div className="mt-1 text-sm text-slate-500">{template.fields?.length || 0} fields · v{template.version}</div>
+                  {template.isSystem && <Badge variant="outline" className="mt-2">System</Badge>}
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 

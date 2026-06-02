@@ -494,6 +494,7 @@ async function stampSignedPdf({
   signerRole = 'candidate',
   signerKey,
   signatureDataUrl,
+  fieldValues = {},
   signedAt = new Date(),
   auditText
 }) {
@@ -529,16 +530,20 @@ async function stampSignedPdf({
       if (!page) return;
 
       const rect = fieldRect(field, page);
-      page.drawRectangle({
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        borderColor: rgb(0.15, 0.2, 0.32),
-        borderWidth: 0.4,
-        color: rgb(1, 1, 1),
-        opacity: 0.02
-      });
+      const shouldDrawFieldBox = field.type !== 'signature' || !embeddedSignature;
+
+      if (shouldDrawFieldBox) {
+        page.drawRectangle({
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          borderColor: rgb(0.15, 0.2, 0.32),
+          borderWidth: 0.4,
+          color: rgb(1, 1, 1),
+          opacity: 0.02
+        });
+      }
 
       if (field.type === 'signature' && embeddedSignature) {
         page.drawImage(embeddedSignature, {
@@ -550,7 +555,12 @@ async function stampSignedPdf({
         return;
       }
 
-      const value = field.type === 'date'
+      const customValue = fieldValues[field.id] ??
+        fieldValues[field.key] ??
+        (field.label ? fieldValues[field.label] : undefined);
+      const value = customValue !== undefined && customValue !== null && customValue !== ''
+        ? customValue
+        : field.type === 'date'
         ? dateText
         : field.type === 'email'
           ? signerEmail

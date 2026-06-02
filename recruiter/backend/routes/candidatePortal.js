@@ -3,17 +3,32 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
+const multer = require('multer');
 
 const candidateAuthMiddleware = require('../middleware/candidateAuthMiddleware');
 const CandidateAccount = require('../models/CandidateAccount');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
 const OnboardingDocument = require('../models/OnboardingDocument');
 const OnboardingEnvelope = require('../models/OnboardingEnvelope');
+const OnboardingFormSubmission = require('../models/OnboardingFormSubmission');
 const OnboardingAuditEvent = require('../models/OnboardingAuditEvent');
 const onboardingPdfService = require('../services/onboardingPdfService');
 const onboardingStorageService = require('../services/onboardingStorageService');
 const onboardingEmailService = require('../services/onboardingEmailService');
 const { logOnboardingEvent } = require('../services/onboardingAuditService');
+const {
+  markDocumentWorkflowComplete,
+  saveCandidateFormSubmission,
+  serializeOnboardingPlatform,
+  tryCompleteOnboarding
+} = require('../services/onboardingWorkflowService');
+const { serializeSubmission } = require('../services/onboardingSecurityService');
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 }
+});
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -51,6 +66,7 @@ async function findOnboardingsForAccount(account) {
     status: { $ne: 'cancelled' }
   })
     .populate('candidate', 'firstName lastName email phone position status')
+    .populate('organization', 'name logo')
     .populate('envelopes')
     .sort({ createdAt: -1 });
 }
@@ -73,6 +89,36 @@ function documentPdfUrls(envelopeDocument) {
     envelopeDocument?.pdfSnapshot?.url,
     envelopeDocument?.pdfSnapshot?.downloadUrl
   ].filter(Boolean);
+}
+
+function findEnvelopeDocumentByRouteId(envelope, routeId) {
+  const normalizedRouteId = String(routeId);
+  return envelope.documents.find((doc) => String(doc._id) === normalizedRouteId) ||
+    envelope.documents.find((doc) => String(doc.document) === normalizedRouteId);
+}
+
+function candidateSignerForEnvelope(envelope, accountId) {
+  return envelope.signers.find((item) =>
+    item.role === 'candidate' &&
+    item.candidateAccount?.toString() === accountId.toString()
+  );
+}
+
+const ACTIVE_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
+
+function candidateDocumentPriority(envelope, signer) {
+  const active = ACTIVE_ENVELOPE_STATUSES.includes(envelope.status);
+  const canSign = Boolean(
+    signer &&
+    signer.status !== 'signed' &&
+    active &&
+    canSignerAct(envelope, signer)
+  );
+
+  if (canSign) return 3;
+  if (active && signer && signer.status !== 'signed') return 2;
+  if (active) return 1;
+  return 0;
 }
 
 async function ensureEnvelopeDocumentSnapshot(envelope, envelopeDocument) {
@@ -126,20 +172,48 @@ async function loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument) {
   throw lastDownloadError || new Error('No PDF snapshot is available for this document');
 }
 
-async function findCandidateEnvelopeDocument(req, documentId) {
-  const envelope = await OnboardingEnvelope.findOne({
-    'documents.document': documentId,
-    'signers.candidateAccount': req.candidateAccount._id
-  })
-    .populate('candidate', 'firstName lastName email phone position status')
-    .populate('organization', 'name logo')
-    .populate('onboarding', 'title status');
-
-  if (!envelope) {
+async function findCandidateEnvelopeDocument(req, routeId) {
+  if (!mongoose.Types.ObjectId.isValid(routeId)) {
     return { envelope: null, envelopeDocument: null };
   }
 
-  const envelopeDocument = envelope.documents.find((doc) => doc.document.toString() === documentId);
+  const documentMatch = {
+    $or: [
+      { 'documents._id': routeId },
+      { 'documents.document': routeId }
+    ]
+  };
+
+  const envelopes = await OnboardingEnvelope.find({
+    ...documentMatch,
+    'signers.candidateAccount': req.candidateAccount._id
+  })
+    .populate('candidate', 'firstName lastName email phone position status')
+    .populate('organization', 'name logo website idpOrganizationId')
+    .sort({ createdAt: -1 });
+
+  if (!envelopes.length) {
+    return { envelope: null, envelopeDocument: null };
+  }
+
+  const ranked = envelopes
+    .map((envelope) => ({
+      envelope,
+      envelopeDocument: findEnvelopeDocumentByRouteId(envelope, routeId),
+      signer: candidateSignerForEnvelope(envelope, req.candidateAccount._id)
+    }))
+    .filter((item) => item.envelopeDocument)
+    .sort((a, b) => {
+      const priorityDelta = candidateDocumentPriority(b.envelope, b.signer) - candidateDocumentPriority(a.envelope, a.signer);
+      if (priorityDelta !== 0) return priorityDelta;
+      return new Date(b.envelope.createdAt || 0).getTime() - new Date(a.envelope.createdAt || 0).getTime();
+    });
+
+  if (!ranked.length) {
+    return { envelope: null, envelopeDocument: null };
+  }
+
+  const { envelope, envelopeDocument } = ranked[0];
   return { envelope, envelopeDocument };
 }
 
@@ -152,7 +226,7 @@ function sendPdf(res, buffer, { title, disposition = 'inline' } = {}) {
   res.send(buffer);
 }
 
-async function completeEnvelopeIfReady(envelope) {
+async function completeEnvelopeIfReady(envelope, req) {
   const allDocumentsComplete = envelope.documents.every((doc) => ['signed', 'completed'].includes(doc.status));
   const allSignersSigned = envelope.signers.every((signer) => signer.status === 'signed');
 
@@ -162,10 +236,8 @@ async function completeEnvelopeIfReady(envelope) {
     envelope.documents.forEach((doc) => {
       if (doc.status === 'signed') doc.status = 'completed';
     });
-    await CandidateOnboarding.findByIdAndUpdate(envelope.onboarding, {
-      status: 'completed',
-      completedAt: new Date()
-    });
+    await markDocumentWorkflowComplete(envelope.onboarding, envelope._id);
+    await tryCompleteOnboarding(envelope.onboarding, { req });
     return true;
   }
 
@@ -295,7 +367,8 @@ router.get('/me', candidateAuthMiddleware, async (req, res) => {
 router.get('/onboarding', candidateAuthMiddleware, async (req, res) => {
   try {
     const onboardings = await findOnboardingsForAccount(req.candidateAccount);
-    res.json({ data: onboardings });
+    const data = await Promise.all(onboardings.map((onboarding) => serializeOnboardingPlatform(onboarding)));
+    res.json({ data });
   } catch (error) {
     res.status(500).json({ msg: 'Failed to load onboarding records', error: error.message });
   }
@@ -346,9 +419,115 @@ router.get('/onboarding/:id', candidateAuthMiddleware, async (req, res) => {
       .populate('candidate', 'firstName lastName email phone position status')
       .populate('organization', 'name logo')
       .populate('envelopes');
-    res.json({ data: refreshed });
+    res.json({ data: await serializeOnboardingPlatform(refreshed) });
   } catch (error) {
     res.status(500).json({ msg: 'Failed to load onboarding', error: error.message });
+  }
+});
+
+async function findCandidateFormSubmission(req, id) {
+  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+  return OnboardingFormSubmission.findOne({
+    _id: id,
+    candidateAccount: req.candidateAccount._id
+  });
+}
+
+router.get('/forms/:id', candidateAuthMiddleware, async (req, res) => {
+  try {
+    const submission = await findCandidateFormSubmission(req, req.params.id);
+    if (!submission) return res.status(404).json({ msg: 'Onboarding form not found' });
+    res.json({ data: serializeSubmission(submission) });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to load onboarding form', error: error.message });
+  }
+});
+
+router.post('/forms/:id/save', candidateAuthMiddleware, async (req, res) => {
+  try {
+    const submission = await findCandidateFormSubmission(req, req.params.id);
+    if (!submission) return res.status(404).json({ msg: 'Onboarding form not found' });
+    if (['approved', 'under_review'].includes(submission.status)) {
+      return res.status(400).json({ msg: 'This onboarding form is already submitted for review' });
+    }
+    const saved = await saveCandidateFormSubmission({
+      submission,
+      values: req.body.values || {},
+      submit: false,
+      req
+    });
+    res.json({ data: serializeSubmission(saved) });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ msg: error.message || 'Failed to save onboarding form' });
+  }
+});
+
+router.post('/forms/:id/submit', candidateAuthMiddleware, async (req, res) => {
+  try {
+    const submission = await findCandidateFormSubmission(req, req.params.id);
+    if (!submission) return res.status(404).json({ msg: 'Onboarding form not found' });
+    if (['approved', 'under_review'].includes(submission.status)) {
+      return res.status(400).json({ msg: 'This onboarding form is already submitted for review' });
+    }
+    const saved = await saveCandidateFormSubmission({
+      submission,
+      values: req.body.values || {},
+      submit: true,
+      req
+    });
+    res.json({ data: serializeSubmission(saved) });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ msg: error.message || 'Failed to submit onboarding form' });
+  }
+});
+
+router.post('/forms/:id/files', candidateAuthMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    const submission = await findCandidateFormSubmission(req, req.params.id);
+    if (!submission) return res.status(404).json({ msg: 'Onboarding form not found' });
+    if (!req.file) return res.status(400).json({ msg: 'A file is required' });
+
+    const fieldKey = req.body.fieldKey || req.body.key;
+    const field = (submission.templateSnapshot?.fields || []).find((item) => item.key === fieldKey || item.id === fieldKey);
+    if (!field) return res.status(400).json({ msg: 'A valid form field key is required' });
+    if (field.sensitive) {
+      return res.status(400).json({ msg: 'Sensitive file uploads require private storage before they can be accepted' });
+    }
+
+    const file = await onboardingStorageService.uploadBuffer(req.file.buffer, {
+      folder: 'onboarding/forms',
+      fileName: `${field.key}-${Date.now()}-${req.file.originalname}`,
+      mimeType: req.file.mimetype,
+      resourceType: 'raw'
+    });
+
+    const existing = submission.values.find((value) => value.key === field.key);
+    if (existing) {
+      existing.files = [...(existing.files || []), file];
+      existing.valuePreview = `${existing.files.length} file(s)`;
+      existing.updatedAt = new Date();
+    }
+    await submission.save();
+
+    await logOnboardingEvent({
+      req,
+      organization: submission.organization,
+      onboarding: submission.onboarding,
+      candidate: submission.candidate,
+      actorType: 'candidate',
+      actorCandidateAccount: req.candidateAccount._id,
+      actorEmail: req.candidateAccount.email,
+      action: 'form_file_uploaded',
+      metadata: {
+        formSubmission: submission._id,
+        fieldKey: field.key,
+        fileName: req.file.originalname
+      }
+    });
+
+    res.status(201).json({ data: file, form: serializeSubmission(submission) });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to upload onboarding form file', error: error.message });
   }
 });
 
@@ -357,15 +536,11 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
     const { envelope, envelopeDocument } = await findCandidateEnvelopeDocument(req, req.params.id);
     if (!envelope) return res.status(404).json({ msg: 'Document not found' });
 
-    const signer = envelope.signers.find((item) =>
-      item.role === 'candidate' &&
-      item.candidateAccount?.toString() === req.candidateAccount._id.toString()
-    );
-    const activeStatuses = ['sent', 'viewed', 'partially_signed'];
+    const signer = candidateSignerForEnvelope(envelope, req.candidateAccount._id);
     const canSign = Boolean(
       signer &&
       signer.status !== 'signed' &&
-      activeStatuses.includes(envelope.status) &&
+      ACTIVE_ENVELOPE_STATUSES.includes(envelope.status) &&
       canSignerAct(envelope, signer)
     );
     const downloadUrl = envelopeDocument?.signedPdf?.downloadUrl ||
@@ -373,7 +548,7 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
       envelopeDocument?.pdfSnapshot?.downloadUrl ||
       envelopeDocument?.pdfSnapshot?.url;
 
-    if (signer && signer.status === 'pending' && activeStatuses.includes(envelope.status)) {
+    if (signer && signer.status === 'pending' && ACTIVE_ENVELOPE_STATUSES.includes(envelope.status)) {
       signer.status = 'viewed';
       signer.viewedAt = new Date();
       if (envelope.status === 'sent') envelope.status = 'viewed';
@@ -440,26 +615,18 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
       return res.status(400).json({ msg: 'Signature image is required' });
     }
 
-    const envelope = await OnboardingEnvelope.findOne({
-      'documents.document': req.params.id,
-      'signers.candidateAccount': req.candidateAccount._id,
-      status: { $in: ['sent', 'viewed', 'partially_signed'] }
-    }).populate('candidate').populate('organization');
+    const { envelope, envelopeDocument } = await findCandidateEnvelopeDocument(req, req.params.id);
 
-    if (!envelope) return res.status(404).json({ msg: 'Document not found or not available for signing' });
+    if (!envelope || !envelopeDocument || !ACTIVE_ENVELOPE_STATUSES.includes(envelope.status)) {
+      return res.status(404).json({ msg: 'Document not found or not available for signing' });
+    }
 
-    const signer = envelope.signers.find((item) =>
-      item.role === 'candidate' &&
-      item.candidateAccount?.toString() === req.candidateAccount._id.toString()
-    );
+    const signer = candidateSignerForEnvelope(envelope, req.candidateAccount._id);
     if (!signer) return res.status(403).json({ msg: 'You are not a signer on this document' });
     if (signer.status === 'signed') return res.status(400).json({ msg: 'You have already signed this envelope' });
     if (!canSignerAct(envelope, signer)) {
       return res.status(400).json({ msg: 'Earlier signers must complete first' });
     }
-
-    const envelopeDocument = envelope.documents.find((doc) => doc.document.toString() === req.params.id);
-    if (!envelopeDocument) return res.status(404).json({ msg: 'Document not found' });
 
     const sourceBuffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
     const signedAt = new Date();
@@ -473,6 +640,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
       signerRole: 'candidate',
       signerKey: signer.key,
       signatureDataUrl: req.body.signatureDataUrl,
+      fieldValues: req.body.fieldValues || {},
       signedAt,
       auditText: `Signed by ${req.candidateAccount.email} via Seemplify Candidate Portal`
     });
@@ -486,7 +654,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
     signer.status = 'signed';
     signer.signedAt = signedAt;
 
-    const completed = await completeEnvelopeIfReady(envelope);
+    const completed = await completeEnvelopeIfReady(envelope, req);
     await envelope.save();
 
     await logOnboardingEvent({

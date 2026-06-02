@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, FileSignature, FileText, Plus, Search, Send, Users } from "lucide-react";
+import { ArrowRight, Clock, FileSignature, FileText, Plus, Search, Send, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
-import { getOnboardingRecords, type CandidateOnboarding, type OnboardingAuditEvent } from "@/services/onboardingService";
+import { getOnboardingDashboard, getOnboardingRecords, runOnboardingReminders, type CandidateOnboarding, type OnboardingAuditEvent } from "@/services/onboardingService";
 import { toast } from "sonner";
 
 function candidateName(onboarding: CandidateOnboarding) {
@@ -19,7 +19,9 @@ function candidateName(onboarding: CandidateOnboarding) {
 export default function OnboardingDashboardPage() {
   const [records, setRecords] = useState<CandidateOnboarding[]>([]);
   const [events, setEvents] = useState<OnboardingAuditEvent[]>([]);
+  const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getOnboardingDashboard>> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reminding, setReminding] = useState(false);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -28,9 +30,11 @@ export default function OnboardingDashboardPage() {
       try {
         setLoading(true);
         const result = await getOnboardingRecords({ search });
+        const dashboardResult = await getOnboardingDashboard();
         if (!mounted) return;
         setRecords(result.data || []);
         setEvents(result.recentEvents || []);
+        setDashboard(dashboardResult);
       } catch (error: any) {
         toast.error(error.message || "Failed to load onboarding");
       } finally {
@@ -52,6 +56,18 @@ export default function OnboardingDashboardPage() {
     return { total, inProgress, completed, sent };
   }, [records]);
 
+  async function runReminders() {
+    try {
+      setReminding(true);
+      const result = await runOnboardingReminders();
+      toast.success(`${result.sent} onboarding reminder(s) sent`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to run reminders");
+    } finally {
+      setReminding(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-screen-2xl px-4 py-6 lg:px-8">
@@ -64,6 +80,10 @@ export default function OnboardingDashboardPage() {
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={runReminders} disabled={reminding}>
+              <Clock className="h-4 w-4" />
+              {reminding ? "Running..." : "Run reminders"}
+            </Button>
             <Button asChild variant="outline">
               <Link href="/onboarding/documents">
                 <FileText className="h-4 w-4" />
@@ -95,6 +115,25 @@ export default function OnboardingDashboardPage() {
           <Card className="rounded-md">
             <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Completed</CardTitle></CardHeader>
             <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{stats.completed}</div><FileSignature className="h-5 w-5 text-emerald-500" /></CardContent>
+          </Card>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-4">
+          <Card className="rounded-md">
+            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Pending HR review</CardTitle></CardHeader>
+            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.pendingApprovals || 0}</div><ShieldCheck className="h-5 w-5 text-amber-600" /></CardContent>
+          </Card>
+          <Card className="rounded-md">
+            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Form reviews</CardTitle></CardHeader>
+            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.formReviews || 0}</div><FileText className="h-5 w-5 text-slate-400" /></CardContent>
+          </Card>
+          <Card className="rounded-md">
+            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Overdue items</CardTitle></CardHeader>
+            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.overdueItems || 0}</div><Clock className="h-5 w-5 text-rose-600" /></CardContent>
+          </Card>
+          <Card className="rounded-md">
+            <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-500">Handoff failures</CardTitle></CardHeader>
+            <CardContent className="flex items-end justify-between"><div className="text-3xl font-semibold">{dashboard?.handoffFailures || 0}</div><ArrowRight className="h-5 w-5 text-slate-400" /></CardContent>
           </Card>
         </div>
 

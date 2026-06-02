@@ -1,5 +1,6 @@
 export type OnboardingStatus = "draft" | "pending" | "in_progress" | "completed" | "cancelled"
 export type EnvelopeStatus = "draft" | "sent" | "viewed" | "partially_signed" | "completed" | "voided" | "expired"
+export type WorkflowItemStatus = "not_started" | "pending" | "in_progress" | "completed" | "blocked" | "skipped" | "failed"
 
 export interface CandidateAccount {
   _id: string
@@ -41,6 +42,7 @@ export interface SignatureField {
   role: "candidate" | "internal"
   type: "signature" | "date" | "name" | "email" | "text"
   label?: string
+  key?: string
   page: number
   x: number
   y: number
@@ -85,6 +87,80 @@ export interface OnboardingEnvelope {
   updatedAt: string
 }
 
+export interface OnboardingWorkflowItem {
+  _id: string
+  type: "document" | "form" | "task" | "approval" | "handoff"
+  title: string
+  description?: string
+  status: WorkflowItemStatus
+  ownerType: "candidate" | "user" | "system"
+  order: number
+  dueAt?: string
+  sourceType?: string
+  sourceId?: string
+  lastReminderAt?: string
+  completedAt?: string
+}
+
+export interface OnboardingFormField {
+  id: string
+  key: string
+  label: string
+  type: "text" | "textarea" | "email" | "phone" | "date" | "number" | "select" | "checkbox" | "bank_account" | "routing_number" | "tax_id" | "address" | "file"
+  required?: boolean
+  sensitive?: boolean
+  options?: string[]
+  placeholder?: string
+  helpText?: string
+  order?: number
+}
+
+export interface OnboardingFormValue {
+  fieldId: string
+  key: string
+  label: string
+  type: string
+  sensitive: boolean
+  value?: string | number | boolean | string[]
+  revealedValue?: string | number | boolean | string[]
+  valuePreview?: string
+  files?: FileSnapshot[]
+  updatedAt?: string
+}
+
+export interface OnboardingFormSubmission {
+  _id: string
+  title: string
+  status: "draft" | "submitted" | "under_review" | "approved" | "rejected"
+  templateSnapshot?: {
+    fields?: OnboardingFormField[]
+  }
+  values: OnboardingFormValue[]
+  hasSensitiveValues: boolean
+  submittedAt?: string
+  reviewedAt?: string
+  reviewerNotes?: string
+  rejectionReason?: string
+}
+
+export interface OnboardingApproval {
+  _id: string
+  type: "sensitive_data" | "exception" | "completion"
+  status: "pending" | "approved" | "rejected" | "cancelled"
+  formSubmission?: string
+  notes?: string
+  reviewedAt?: string
+}
+
+export interface OnboardingHandoff {
+  _id: string
+  target: "internal_employee_profile" | "payroll" | "identity_provider" | "custom"
+  status: "pending" | "running" | "completed" | "failed"
+  attempts: number
+  lastError?: string
+  completedAt?: string
+}
+
 export interface CandidateOnboarding {
   _id: string
   title: string
@@ -93,6 +169,15 @@ export interface CandidateOnboarding {
   candidate: CandidateProfile
   organization?: OrganizationSummary
   envelopes?: OnboardingEnvelope[]
+  workflowItems?: OnboardingWorkflowItem[]
+  forms?: OnboardingFormSubmission[]
+  approvals?: OnboardingApproval[]
+  handoffs?: OnboardingHandoff[]
+  progress?: {
+    totalItems: number
+    completedItems: number
+    percent: number
+  }
   startedAt?: string
   completedAt?: string
   createdAt: string

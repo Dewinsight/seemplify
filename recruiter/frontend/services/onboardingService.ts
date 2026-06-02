@@ -3,6 +3,7 @@ import { apiRequest } from "./apiConfig";
 export type OnboardingStatus = "draft" | "pending" | "in_progress" | "completed" | "cancelled";
 export type EnvelopeStatus = "draft" | "sent" | "viewed" | "partially_signed" | "completed" | "voided" | "expired";
 export type DocumentSourceType = "builder" | "uploaded_pdf" | "uploaded_docx";
+export type WorkflowItemStatus = "not_started" | "pending" | "in_progress" | "completed" | "blocked" | "skipped" | "failed";
 
 export interface BuilderBlock {
   id: string;
@@ -16,6 +17,7 @@ export interface SignatureField {
   role: "candidate" | "internal";
   type: "signature" | "date" | "name" | "email" | "text";
   label?: string;
+  key?: string;
   signerKey?: string;
   page: number;
   x: number;
@@ -105,6 +107,110 @@ export interface OnboardingEnvelope {
   updatedAt: string;
 }
 
+export interface OnboardingWorkflowItem {
+  _id: string;
+  type: "document" | "form" | "task" | "approval" | "handoff";
+  title: string;
+  description?: string;
+  status: WorkflowItemStatus;
+  ownerType: "candidate" | "user" | "system";
+  order: number;
+  dueAt?: string;
+  sourceType?: string;
+  sourceId?: string;
+  lastReminderAt?: string;
+  completedAt?: string;
+}
+
+export interface OnboardingFormField {
+  id: string;
+  key: string;
+  label: string;
+  type: "text" | "textarea" | "email" | "phone" | "date" | "number" | "select" | "checkbox" | "bank_account" | "routing_number" | "tax_id" | "address" | "file";
+  required?: boolean;
+  sensitive?: boolean;
+  options?: string[];
+  placeholder?: string;
+  helpText?: string;
+  order?: number;
+}
+
+export interface OnboardingFormTemplate {
+  _id: string;
+  name: string;
+  description?: string;
+  category: string;
+  status: "active" | "archived";
+  version: number;
+  isSystem: boolean;
+  fields: OnboardingFormField[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OnboardingPacketTemplate {
+  _id: string;
+  name: string;
+  description?: string;
+  category: string;
+  status: "active" | "archived";
+  version: number;
+  documents?: Array<OnboardingDocument | string>;
+  formTemplates?: Array<OnboardingFormTemplate | string>;
+  workflowItems?: Array<Record<string, any>>;
+  reminderRules?: Array<Record<string, any>>;
+  completionActions?: Array<Record<string, any>>;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OnboardingFormValue {
+  fieldId: string;
+  key: string;
+  label: string;
+  type: string;
+  sensitive: boolean;
+  value?: string | number | boolean | string[];
+  revealedValue?: string | number | boolean | string[];
+  valuePreview?: string;
+  files?: FileSnapshot[];
+  updatedAt?: string;
+}
+
+export interface OnboardingFormSubmission {
+  _id: string;
+  title: string;
+  status: "draft" | "submitted" | "under_review" | "approved" | "rejected";
+  templateSnapshot?: {
+    fields?: OnboardingFormField[];
+  };
+  values: OnboardingFormValue[];
+  hasSensitiveValues: boolean;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewerNotes?: string;
+  rejectionReason?: string;
+}
+
+export interface OnboardingApproval {
+  _id: string;
+  type: "sensitive_data" | "exception" | "completion";
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  formSubmission?: string;
+  notes?: string;
+  reviewedAt?: string;
+}
+
+export interface OnboardingHandoff {
+  _id: string;
+  target: "internal_employee_profile" | "payroll" | "identity_provider" | "custom";
+  status: "pending" | "running" | "completed" | "failed";
+  attempts: number;
+  lastError?: string;
+  completedAt?: string;
+}
+
 export interface CandidateOnboarding {
   _id: string;
   title: string;
@@ -114,6 +220,15 @@ export interface CandidateOnboarding {
   candidateAccount?: any;
   documents?: OnboardingDocument[];
   envelopes?: OnboardingEnvelope[];
+  workflowItems?: OnboardingWorkflowItem[];
+  forms?: OnboardingFormSubmission[];
+  approvals?: OnboardingApproval[];
+  handoffs?: OnboardingHandoff[];
+  progress?: {
+    totalItems: number;
+    completedItems: number;
+    percent: number;
+  };
   portalInviteUrl?: string;
   startedAt?: string;
   completedAt?: string;
@@ -147,17 +262,97 @@ export async function getOnboardingRecords(params: { status?: string; search?: s
   return parseResponse<{ data: CandidateOnboarding[]; recentEvents: OnboardingAuditEvent[] }>(response, "Failed to load onboarding");
 }
 
+export async function getOnboardingDashboard() {
+  const response = await apiRequest("/api/onboarding/dashboard");
+  const result = await parseResponse<{
+    data: {
+      statusCounts: Record<string, number>;
+      overdueItems: number;
+      pendingApprovals: number;
+      handoffFailures: number;
+      formReviews: number;
+    };
+  }>(response, "Failed to load onboarding dashboard");
+  return result.data;
+}
+
 export async function getOnboarding(id: string) {
   const response = await apiRequest(`/api/onboarding/${id}`);
   return parseResponse<{ data: CandidateOnboarding; events: OnboardingAuditEvent[] }>(response, "Failed to load onboarding");
 }
 
-export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string } = {}) {
+export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string } = {}) {
   const response = await apiRequest(`/api/onboarding/candidates/${candidateId}/start`, {
     method: "POST",
     body: JSON.stringify(data),
   });
   return parseResponse<{ data: CandidateOnboarding; inviteUrl: string }>(response, "Failed to start onboarding");
+}
+
+export async function getPacketTemplates() {
+  const response = await apiRequest("/api/onboarding/templates");
+  const result = await parseResponse<{ data: OnboardingPacketTemplate[] }>(response, "Failed to load packet templates");
+  return result.data;
+}
+
+export async function createPacketTemplate(data: Partial<OnboardingPacketTemplate>) {
+  const response = await apiRequest("/api/onboarding/templates", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const result = await parseResponse<{ data: OnboardingPacketTemplate }>(response, "Failed to create packet template");
+  return result.data;
+}
+
+export async function updatePacketTemplate(id: string, data: Partial<OnboardingPacketTemplate>) {
+  const response = await apiRequest(`/api/onboarding/templates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  const result = await parseResponse<{ data: OnboardingPacketTemplate }>(response, "Failed to update packet template");
+  return result.data;
+}
+
+export async function getOnboardingFormTemplates() {
+  const response = await apiRequest("/api/onboarding/form-templates");
+  const result = await parseResponse<{ data: OnboardingFormTemplate[] }>(response, "Failed to load form templates");
+  return result.data;
+}
+
+export async function createOnboardingFormTemplate(data: Partial<OnboardingFormTemplate>) {
+  const response = await apiRequest("/api/onboarding/form-templates", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const result = await parseResponse<{ data: OnboardingFormTemplate }>(response, "Failed to create form template");
+  return result.data;
+}
+
+export async function revealFormSubmission(id: string) {
+  const response = await apiRequest(`/api/onboarding/form-submissions/${id}/reveal`, { method: "POST" });
+  const result = await parseResponse<{ data: OnboardingFormSubmission }>(response, "Failed to reveal form values");
+  return result.data;
+}
+
+export async function reviewFormSubmission(id: string, decision: "approved" | "rejected", notes?: string) {
+  const response = await apiRequest(`/api/onboarding/form-submissions/${id}/review`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision, notes }),
+  });
+  const result = await parseResponse<{ data: OnboardingFormSubmission }>(response, "Failed to review form submission");
+  return result.data;
+}
+
+export async function runOnboardingReminders() {
+  const response = await apiRequest("/api/onboarding/reminders/run", { method: "POST" });
+  const result = await parseResponse<{ data: { scanned: number; sent: number } }>(response, "Failed to run onboarding reminders");
+  return result.data;
+}
+
+export async function retryOnboardingHandoff(onboardingId: string) {
+  const response = await apiRequest(`/api/onboarding/${onboardingId}/handoff/retry`, { method: "POST" });
+  const result = await parseResponse<{ data: OnboardingHandoff | null }>(response, "Failed to retry onboarding handoff");
+  return result.data;
 }
 
 export async function getDocumentTemplates() {
@@ -226,6 +421,12 @@ export async function updateDocument(id: string, data: Partial<OnboardingDocumen
     body: JSON.stringify(data),
   });
   const result = await parseResponse<{ data: OnboardingDocument }>(response, "Failed to update document");
+  return result.data;
+}
+
+export async function deleteDocument(id: string) {
+  const response = await apiRequest(`/api/onboarding/documents/${id}`, { method: "DELETE" });
+  const result = await parseResponse<{ data: OnboardingDocument }>(response, "Failed to remove document");
   return result.data;
 }
 

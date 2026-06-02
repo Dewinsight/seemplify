@@ -16,6 +16,7 @@ interface PdfCanvasPreviewProps {
   title: string
   signatureFields?: SignatureField[]
   signaturePreviewUrl?: string
+  fieldValues?: Record<string, string>
 }
 
 function fieldLabel(field: SignatureField) {
@@ -26,7 +27,7 @@ function fieldLabel(field: SignatureField) {
   return field.label || "Signature"
 }
 
-export function PdfCanvasPreview({ blob, title, signatureFields = [], signaturePreviewUrl = "" }: PdfCanvasPreviewProps) {
+export function PdfCanvasPreview({ blob, title, signatureFields = [], signaturePreviewUrl = "", fieldValues = {} }: PdfCanvasPreviewProps) {
   const [pages, setPages] = useState<RenderedPage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -137,13 +138,14 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
               <div className="pointer-events-none absolute inset-0">
                 {pageFields.map((field) => {
                   const showSignature = field.type === "signature" && Boolean(signaturePreviewUrl)
+                  const typedValue = fieldValues[field.id] || (field.label ? fieldValues[field.label] : "") || ""
                   return (
                     <div
                       key={field.id}
-                      className={`absolute overflow-hidden border ${
+                      className={`absolute overflow-hidden ${
                         showSignature
-                          ? "border-slate-300 bg-white"
-                          : "border-blue-500/70 bg-blue-50/70"
+                          ? "bg-transparent"
+                          : "border border-blue-500/70 bg-blue-50/70"
                       }`}
                       style={{
                         left: `${field.x * 100}%`,
@@ -160,7 +162,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
                         />
                       ) : (
                         <div className="flex h-full items-center px-2 text-[11px] font-medium text-blue-800">
-                          {fieldLabel(field)}
+                          {field.type === "text" && typedValue ? typedValue : fieldLabel(field)}
                         </div>
                       )}
                     </div>

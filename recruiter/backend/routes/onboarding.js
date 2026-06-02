@@ -13,15 +13,33 @@ const Organization = require('../models/Organization');
 const User = require('../models/User');
 const CandidateAccount = require('../models/CandidateAccount');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
+const OnboardingApproval = require('../models/OnboardingApproval');
 const OnboardingDocumentTemplate = require('../models/OnboardingDocumentTemplate');
 const OnboardingDocument = require('../models/OnboardingDocument');
 const OnboardingEnvelope = require('../models/OnboardingEnvelope');
+const OnboardingFormSubmission = require('../models/OnboardingFormSubmission');
+const OnboardingFormTemplate = require('../models/OnboardingFormTemplate');
+const OnboardingHandoff = require('../models/OnboardingHandoff');
+const OnboardingTemplate = require('../models/OnboardingTemplate');
 const OnboardingAuditEvent = require('../models/OnboardingAuditEvent');
+const OnboardingWorkflowItem = require('../models/OnboardingWorkflowItem');
 const CloudinaryUploadService = require('../services/cloudinaryUploadService');
 const onboardingStorageService = require('../services/onboardingStorageService');
 const onboardingPdfService = require('../services/onboardingPdfService');
 const onboardingEmailService = require('../services/onboardingEmailService');
 const { logOnboardingEvent } = require('../services/onboardingAuditService');
+const {
+  attachEnvelopeToWorkflow,
+  ensureDefaultFormTemplate,
+  initializeDefaultWorkflow,
+  markDocumentWorkflowComplete,
+  markDocumentWorkflowInProgress,
+  reviewFormSubmission,
+  serializeOnboardingPlatform,
+  tryCompleteOnboarding,
+  updateProgress
+} = require('../services/onboardingWorkflowService');
+const { serializeSubmission } = require('../services/onboardingSecurityService');
 
 const cloudinaryUploadService = new CloudinaryUploadService();
 
@@ -229,7 +247,7 @@ function buildEnvelopeSigners(req, onboarding) {
     .sort((a, b) => a.order - b.order);
 }
 
-async function completeEnvelopeIfReady(envelope) {
+async function completeEnvelopeIfReady(envelope, req) {
   const allDocumentsComplete = envelope.documents.every((doc) => ['signed', 'completed'].includes(doc.status));
   const allSignersSigned = envelope.signers.every((signer) => signer.status === 'signed');
 
@@ -239,10 +257,8 @@ async function completeEnvelopeIfReady(envelope) {
     envelope.documents.forEach((doc) => {
       if (doc.status === 'signed') doc.status = 'completed';
     });
-    await CandidateOnboarding.findByIdAndUpdate(envelope.onboarding, {
-      status: 'completed',
-      completedAt: new Date()
-    });
+    await markDocumentWorkflowComplete(envelope.onboarding, envelope._id);
+    await tryCompleteOnboarding(envelope.onboarding, { req });
     return true;
   }
 
@@ -347,8 +363,10 @@ async function getCurrentUser(req) {
   return User.findById(req.user.id);
 }
 
-async function findDocumentForOrg(req, id) {
-  return OnboardingDocument.findOne({ _id: id, organization: organizationId(req) });
+async function findDocumentForOrg(req, id, { includeArchived = false } = {}) {
+  const query = { _id: id, organization: organizationId(req) };
+  if (!includeArchived) query.status = { $ne: 'archived' };
+  return OnboardingDocument.findOne(query);
 }
 
 async function renderDocumentSnapshot(document, { candidate, organization, user, folder = 'onboarding/documents' } = {}) {
@@ -400,13 +418,53 @@ async function ensureCandidateAccount(candidate, organization) {
 }
 
 async function serializeOnboarding(onboarding) {
-  return onboarding.populate([
+  const populated = await onboarding.populate([
     { path: 'candidate', select: 'firstName lastName email phone position status resumeUrl' },
     { path: 'candidateAccount', select: 'email profile status lastLoginAt' },
     { path: 'documents' },
     { path: 'envelopes' }
   ]);
+  return serializeOnboardingPlatform(populated);
 }
+
+router.get('/dashboard', async (req, res) => {
+  try {
+    const organization = organizationId(req);
+    const now = new Date();
+    const [
+      statusCounts,
+      overdueItems,
+      pendingApprovals,
+      handoffFailures,
+      formReviews
+    ] = await Promise.all([
+      CandidateOnboarding.aggregate([
+        { $match: { organization } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
+      OnboardingWorkflowItem.countDocuments({
+        organization,
+        status: { $in: ['pending', 'in_progress', 'blocked', 'failed'] },
+        dueAt: { $lt: now }
+      }),
+      OnboardingApproval.countDocuments({ organization, status: 'pending' }),
+      OnboardingHandoff.countDocuments({ organization, status: 'failed' }),
+      OnboardingFormSubmission.countDocuments({ organization, status: 'under_review' })
+    ]);
+
+    res.json({
+      data: {
+        statusCounts: statusCounts.reduce((acc, item) => ({ ...acc, [item._id]: item.count }), {}),
+        overdueItems,
+        pendingApprovals,
+        handoffFailures,
+        formReviews
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to load onboarding dashboard', error: error.message });
+  }
+});
 
 router.get('/', async (req, res) => {
   try {
@@ -465,12 +523,31 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
     const account = await ensureCandidateAccount(candidate, organization);
     const invite = createInviteToken();
     const title = req.body.title || `${candidateDisplayName(candidate)} onboarding`;
+    const packetTemplate = req.body.templateId
+      ? await OnboardingTemplate.findOne({
+          _id: req.body.templateId,
+          organization: organizationId(req),
+          status: 'active'
+        })
+      : null;
 
     const onboarding = await CandidateOnboarding.create({
       organization: organizationId(req),
       candidate: candidate._id,
       candidateAccount: account._id,
       job: candidate.jobAppliedFor,
+      template: packetTemplate?._id,
+      templateSnapshot: packetTemplate ? {
+        _id: packetTemplate._id,
+        name: packetTemplate.name,
+        version: packetTemplate.version,
+        documents: packetTemplate.documents,
+        formTemplates: packetTemplate.formTemplates,
+        workflowItems: packetTemplate.workflowItems,
+        reminderRules: packetTemplate.reminderRules,
+        completionActions: packetTemplate.completionActions,
+        capturedAt: new Date()
+      } : undefined,
       title,
       notes: req.body.notes || '',
       startedBy: req.user.id,
@@ -498,6 +575,13 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
     onboarding.portalInviteUrl = portalInviteUrl;
     await onboarding.save();
 
+    await initializeDefaultWorkflow({
+      onboarding,
+      candidate,
+      userId: req.user.id,
+      req
+    });
+
     await logOnboardingEvent({
       req,
       organization: organizationId(req),
@@ -514,6 +598,277 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
   } catch (error) {
     console.error('Start onboarding failed:', error);
     res.status(500).json({ msg: 'Failed to start onboarding', error: error.message });
+  }
+});
+
+router.get('/templates', async (req, res) => {
+  try {
+    const templates = await OnboardingTemplate.find({
+      organization: organizationId(req),
+      status: { $ne: 'archived' }
+    })
+      .populate('documents', 'title status sourceType')
+      .populate('formTemplates', 'name category fields')
+      .sort({ isSystem: -1, name: 1 });
+    res.json({ data: templates });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to load onboarding packet templates', error: error.message });
+  }
+});
+
+router.post('/templates', async (req, res) => {
+  try {
+    const template = await OnboardingTemplate.create({
+      organization: organizationId(req),
+      name: req.body.name,
+      description: req.body.description || '',
+      category: req.body.category || 'default',
+      documents: Array.isArray(req.body.documents) ? req.body.documents : [],
+      formTemplates: Array.isArray(req.body.formTemplates) ? req.body.formTemplates : [],
+      workflowItems: Array.isArray(req.body.workflowItems) ? req.body.workflowItems : [],
+      reminderRules: Array.isArray(req.body.reminderRules) ? req.body.reminderRules : [],
+      completionActions: Array.isArray(req.body.completionActions) ? req.body.completionActions : [],
+      createdBy: req.user.id
+    });
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: req.user.email,
+      action: 'packet_template_created',
+      metadata: { templateId: template._id, name: template.name }
+    });
+
+    res.status(201).json({ data: template });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to create onboarding packet template', error: error.message });
+  }
+});
+
+router.patch('/templates/:id', async (req, res) => {
+  try {
+    const template = await OnboardingTemplate.findOneAndUpdate(
+      { _id: req.params.id, organization: organizationId(req), isSystem: { $ne: true } },
+      {
+        $set: {
+          name: req.body.name,
+          description: req.body.description || '',
+          category: req.body.category || 'default',
+          status: req.body.status || 'active',
+          documents: Array.isArray(req.body.documents) ? req.body.documents : [],
+          formTemplates: Array.isArray(req.body.formTemplates) ? req.body.formTemplates : [],
+          workflowItems: Array.isArray(req.body.workflowItems) ? req.body.workflowItems : [],
+          reminderRules: Array.isArray(req.body.reminderRules) ? req.body.reminderRules : [],
+          completionActions: Array.isArray(req.body.completionActions) ? req.body.completionActions : [],
+          updatedBy: req.user.id
+        },
+        $inc: { version: 1 }
+      },
+      { new: true }
+    );
+    if (!template) return res.status(404).json({ msg: 'Onboarding packet template not found' });
+    res.json({ data: template });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to update onboarding packet template', error: error.message });
+  }
+});
+
+router.delete('/templates/:id', async (req, res) => {
+  try {
+    const template = await OnboardingTemplate.findOneAndUpdate(
+      { _id: req.params.id, organization: organizationId(req), isSystem: { $ne: true } },
+      { $set: { status: 'archived', updatedBy: req.user.id } },
+      { new: true }
+    );
+    if (!template) return res.status(404).json({ msg: 'Onboarding packet template not found' });
+    res.json({ data: template });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to archive onboarding packet template', error: error.message });
+  }
+});
+
+router.get('/form-templates', async (req, res) => {
+  try {
+    await ensureDefaultFormTemplate({ organization: organizationId(req), userId: req.user.id });
+    const templates = await OnboardingFormTemplate.find({
+      organization: organizationId(req),
+      status: { $ne: 'archived' }
+    }).sort({ isSystem: -1, name: 1 });
+    res.json({ data: templates });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to load onboarding form templates', error: error.message });
+  }
+});
+
+router.post('/form-templates', async (req, res) => {
+  try {
+    const template = await OnboardingFormTemplate.create({
+      organization: organizationId(req),
+      name: req.body.name,
+      description: req.body.description || '',
+      category: req.body.category || 'custom',
+      fields: Array.isArray(req.body.fields) ? req.body.fields : [],
+      createdBy: req.user.id
+    });
+    res.status(201).json({ data: template });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to create onboarding form template', error: error.message });
+  }
+});
+
+router.patch('/form-templates/:id', async (req, res) => {
+  try {
+    const template = await OnboardingFormTemplate.findOneAndUpdate(
+      { _id: req.params.id, organization: organizationId(req), isSystem: { $ne: true } },
+      {
+        $set: {
+          name: req.body.name,
+          description: req.body.description || '',
+          category: req.body.category || 'custom',
+          status: req.body.status || 'active',
+          fields: Array.isArray(req.body.fields) ? req.body.fields : [],
+          updatedBy: req.user.id
+        },
+        $inc: { version: 1 }
+      },
+      { new: true }
+    );
+    if (!template) return res.status(404).json({ msg: 'Onboarding form template not found' });
+    res.json({ data: template });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to update onboarding form template', error: error.message });
+  }
+});
+
+router.delete('/form-templates/:id', async (req, res) => {
+  try {
+    const template = await OnboardingFormTemplate.findOneAndUpdate(
+      { _id: req.params.id, organization: organizationId(req), isSystem: { $ne: true } },
+      { $set: { status: 'archived', updatedBy: req.user.id } },
+      { new: true }
+    );
+    if (!template) return res.status(404).json({ msg: 'Onboarding form template not found' });
+    res.json({ data: template });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to archive onboarding form template', error: error.message });
+  }
+});
+
+router.post('/form-submissions/:id/reveal', async (req, res) => {
+  try {
+    const submission = await OnboardingFormSubmission.findOne({
+      _id: req.params.id,
+      organization: organizationId(req)
+    });
+    if (!submission) return res.status(404).json({ msg: 'Onboarding form submission not found' });
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: submission.onboarding,
+      candidate: submission.candidate,
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: req.user.email,
+      action: 'sensitive_form_values_revealed',
+      metadata: {
+        formSubmission: submission._id,
+        fields: submission.values.filter((value) => value.sensitive).map((value) => value.key)
+      }
+    });
+
+    res.json({ data: serializeSubmission(submission, { reveal: true }) });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to reveal form submission', error: error.message });
+  }
+});
+
+router.patch('/form-submissions/:id/review', async (req, res) => {
+  try {
+    const decision = req.body.decision === 'rejected' ? 'rejected' : 'approved';
+    const submission = await OnboardingFormSubmission.findOne({
+      _id: req.params.id,
+      organization: organizationId(req)
+    });
+    if (!submission) return res.status(404).json({ msg: 'Onboarding form submission not found' });
+
+    const reviewed = await reviewFormSubmission({
+      submission,
+      decision,
+      reviewerId: req.user.id,
+      reviewerEmail: req.user.email,
+      notes: req.body.notes || '',
+      req
+    });
+
+    res.json({ data: serializeSubmission(reviewed) });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to review form submission', error: error.message });
+  }
+});
+
+router.post('/reminders/run', async (req, res) => {
+  try {
+    const organization = organizationId(req);
+    const now = new Date();
+    const reminderWindow = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const items = await OnboardingWorkflowItem.find({
+      organization,
+      status: { $in: ['pending', 'in_progress', 'blocked', 'failed'] },
+      dueAt: { $lte: now },
+      $or: [
+        { lastReminderAt: { $exists: false } },
+        { lastReminderAt: { $lte: reminderWindow } }
+      ]
+    })
+      .sort({ dueAt: 1 })
+      .limit(100);
+
+    const organizationDoc = await getOrganization(req);
+    let sent = 0;
+    for (const item of items) {
+      const onboarding = await CandidateOnboarding.findById(item.onboarding).populate('candidate');
+      if (!onboarding?.candidate) continue;
+      item.lastReminderAt = now;
+      await item.save();
+      sent += 1;
+      await onboardingEmailService.sendWorkflowReminder({
+        candidate: onboarding.candidate,
+        organization: organizationDoc,
+        onboarding,
+        item,
+        request: req
+      }).catch((error) => console.error('Failed to send onboarding workflow reminder:', error));
+      await logOnboardingEvent({
+        req,
+        organization,
+        onboarding: onboarding._id,
+        candidate: onboarding.candidate._id,
+        actorType: 'system',
+        action: 'workflow_reminder_sent',
+        metadata: { workflowItem: item._id, itemType: item.type }
+      });
+    }
+
+    res.json({ data: { scanned: items.length, sent } });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to run onboarding reminders', error: error.message });
+  }
+});
+
+router.post('/:onboardingId/handoff/retry', async (req, res) => {
+  try {
+    const onboarding = await CandidateOnboarding.findOne({
+      _id: req.params.onboardingId,
+      organization: organizationId(req)
+    });
+    if (!onboarding) return res.status(404).json({ msg: 'Onboarding not found' });
+    const handoff = await tryCompleteOnboarding(onboarding._id, { req });
+    res.json({ data: handoff });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to retry onboarding handoff', error: error.message });
   }
 });
 
@@ -601,7 +956,10 @@ router.delete('/document-templates/:id', async (req, res) => {
 
 router.get('/documents', async (req, res) => {
   try {
-    const documents = await OnboardingDocument.find({ organization: organizationId(req) })
+    const query = { organization: organizationId(req) };
+    if (req.query.includeArchived !== 'true') query.status = { $ne: 'archived' };
+
+    const documents = await OnboardingDocument.find(query)
       .sort({ updatedAt: -1 })
       .limit(200);
     res.json({ data: documents });
@@ -766,6 +1124,38 @@ router.patch('/documents/:id', async (req, res) => {
   }
 });
 
+router.delete('/documents/:id', async (req, res) => {
+  try {
+    const document = await findDocumentForOrg(req, req.params.id, { includeArchived: true });
+    if (!document) return res.status(404).json({ msg: 'Document not found' });
+
+    const previousStatus = document.status;
+    if (document.status !== 'archived') {
+      document.status = 'archived';
+      document.updatedBy = req.user.id;
+      await document.save();
+
+      await logOnboardingEvent({
+        req,
+        organization: organizationId(req),
+        document: document._id,
+        actorType: 'user',
+        actorUser: req.user.id,
+        action: 'document_archived',
+        metadata: {
+          title: document.title,
+          previousStatus,
+          preservesCandidateInstances: true
+        }
+      });
+    }
+
+    res.json({ data: document, msg: 'Document removed from library' });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to remove document', error: error.message });
+  }
+});
+
 router.post('/documents/:id/render', async (req, res) => {
   try {
     const document = await findDocumentForOrg(req, req.params.id);
@@ -864,10 +1254,11 @@ router.post('/envelopes', async (req, res) => {
     const [organization, user] = await Promise.all([getOrganization(req), getCurrentUser(req)]);
     const documents = await OnboardingDocument.find({
       _id: { $in: documentIds },
-      organization: organizationId(req)
+      organization: organizationId(req),
+      status: { $ne: 'archived' }
     });
     if (documents.length !== documentIds.length) {
-      return res.status(400).json({ msg: 'One or more documents could not be found' });
+      return res.status(400).json({ msg: 'One or more documents could not be found or has been removed from the library' });
     }
 
     const signers = buildEnvelopeSigners(req, onboarding);
@@ -915,6 +1306,7 @@ router.post('/envelopes', async (req, res) => {
     onboarding.documents = Array.from(new Set([...(onboarding.documents || []), ...documents.map((doc) => doc._id)]));
     onboarding.envelopes = Array.from(new Set([...(onboarding.envelopes || []), envelope._id]));
     await onboarding.save();
+    await attachEnvelopeToWorkflow({ onboardingId: onboarding._id, envelopeId: envelope._id });
 
     await logOnboardingEvent({
       req,
@@ -950,12 +1342,8 @@ router.post('/envelopes/:id/send', async (req, res) => {
     envelope.sentAt = new Date();
     await envelope.save();
 
-    const documentIds = envelope.documents.map((doc) => doc.document);
-    await OnboardingDocument.updateMany(
-      { _id: { $in: documentIds }, organization: organizationId(req) },
-      { $set: { status: 'sent', lockedAt: new Date() } }
-    );
     await CandidateOnboarding.findByIdAndUpdate(envelope.onboarding, { status: 'in_progress' });
+    await markDocumentWorkflowInProgress(envelope.onboarding, envelope._id);
 
     const organization = await getOrganization(req);
     await onboardingEmailService.sendEnvelopeNotification({
@@ -1125,6 +1513,7 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
         signerRole: 'internal',
         signerKey: signer.key,
         signatureDataUrl: req.body.signatureDataUrl,
+        fieldValues: req.body.fieldValues || {},
         signedAt: new Date(),
         auditText: `Countersigned by ${signerInfo.email} via Seemplify Recruiter`
       });
@@ -1140,7 +1529,7 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
 
     signer.status = 'signed';
     signer.signedAt = new Date();
-    const completed = await completeEnvelopeIfReady(envelope);
+    const completed = await completeEnvelopeIfReady(envelope, req);
     await envelope.save();
     const organization = await getOrganization(req);
     let notifiedSigners = [];

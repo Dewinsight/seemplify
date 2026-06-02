@@ -40,6 +40,7 @@ export default function CandidateSignDocumentPage() {
   const [previewError, setPreviewError] = useState("")
   const [previewReloadKey, setPreviewReloadKey] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -49,7 +50,17 @@ export default function CandidateSignDocumentPage() {
 
     setAccount(getStoredAccount())
     getDocument(params.id)
-      .then((result) => setPayload(result.data))
+      .then((result) => {
+        setPayload(result.data)
+        const nextValues: Record<string, string> = {}
+        ;(result.data.document.signatureFields || [])
+          .filter((field) => field.role === "candidate" && field.type === "text")
+          .forEach((field) => {
+            nextValues[field.id] = ""
+            if (field.label) nextValues[field.label] = ""
+          })
+        setFieldValues(nextValues)
+      })
       .catch((error) => toast.error(error.message || "Failed to load document"))
       .finally(() => setLoading(false))
   }, [params.id, router])
@@ -90,8 +101,7 @@ export default function CandidateSignDocumentPage() {
     if (!canvas) return
     const context = canvas.getContext("2d")
     if (!context) return
-    context.fillStyle = "#ffffff"
-    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.clearRect(0, 0, canvas.width, canvas.height)
     context.lineWidth = 3
     context.lineCap = "round"
     context.strokeStyle = "#111827"
@@ -152,8 +162,7 @@ export default function CandidateSignDocumentPage() {
     const canvas = canvasRef.current
     const context = canvas?.getContext("2d")
     if (!canvas || !context) return
-    context.fillStyle = "#ffffff"
-    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.clearRect(0, 0, canvas.width, canvas.height)
     context.strokeStyle = "#111827"
     setHasSignature(false)
     setSignaturePreviewUrl("")
@@ -165,10 +174,17 @@ export default function CandidateSignDocumentPage() {
       toast.error("Draw your signature first")
       return
     }
+    const missingField = (payload?.document.signatureFields || [])
+      .filter((field) => field.role === "candidate" && field.type === "text" && field.required !== false)
+      .find((field) => !String(fieldValues[field.id] || "").trim())
+    if (missingField) {
+      toast.error(`${missingField.label || "Text field"} is required`)
+      return
+    }
 
     try {
       setSubmitting(true)
-      await signDocument(params.id, canvas.toDataURL("image/png"))
+      await signDocument(params.id, canvas.toDataURL("image/png"), fieldValues)
       toast.success("Document signed")
       router.push(`/documents/${params.id}/complete`)
     } catch (error: any) {
@@ -255,6 +271,7 @@ export default function CandidateSignDocumentPage() {
                     title={payload.document.title}
                     signatureFields={payload.document.signatureFields?.filter((field) => field.role === "candidate") || []}
                     signaturePreviewUrl={signaturePreviewUrl}
+                    fieldValues={fieldValues}
                   />
                 ) : previewError ? (
                   <div className="flex h-full items-center justify-center p-6">
@@ -294,6 +311,34 @@ export default function CandidateSignDocumentPage() {
               {!payload.canSign && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                   This document is not currently waiting for your signature. It may already be signed or waiting for another signer.
+                </div>
+              )}
+
+              {(payload.document.signatureFields || []).some((field) => field.role === "candidate" && field.type === "text") && (
+                <div className="mt-5 space-y-4 border-t border-slate-200 pt-5">
+                  {(payload.document.signatureFields || [])
+                    .filter((field) => field.role === "candidate" && field.type === "text")
+                    .map((field) => (
+                      <label key={field.id} className="block">
+                        <span className="text-sm font-semibold text-slate-950">
+                          {field.label || "Text field"}
+                          {field.required !== false && <span className="text-rose-600"> *</span>}
+                        </span>
+                        <input
+                          value={fieldValues[field.id] || ""}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            setFieldValues((current) => ({
+                              ...current,
+                              [field.id]: value,
+                              ...(field.label ? { [field.label]: value } : {}),
+                            }))
+                          }}
+                          disabled={!payload.canSign}
+                          className="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                      </label>
+                    ))}
                 </div>
               )}
 

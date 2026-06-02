@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Plus, RefreshCw } from "lucide-react";
+import { ArrowRight, CheckCircle2, Eye, Plus, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdfDocumentPreview } from "@/components/onboarding/pdf-document-preview";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import {
   getEnvelopeDocumentPreviewBlob,
   getOnboarding,
+  revealFormSubmission,
+  retryOnboardingHandoff,
+  reviewFormSubmission,
   type CandidateOnboarding,
   type OnboardingAuditEvent,
   type OnboardingEnvelopeDocument,
+  type OnboardingFormSubmission,
 } from "@/services/onboardingService";
 import { toast } from "sonner";
 
@@ -34,6 +38,9 @@ export default function OnboardingWorkspacePage() {
   const [events, setEvents] = useState<OnboardingAuditEvent[]>([]);
   const [selectedReviewKey, setSelectedReviewKey] = useState("");
   const [reviewBlob, setReviewBlob] = useState<Blob | null>(null);
+  const [revealedForms, setRevealedForms] = useState<Record<string, OnboardingFormSubmission>>({});
+  const [reviewingFormId, setReviewingFormId] = useState("");
+  const [retryingHandoff, setRetryingHandoff] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState("");
   const [reviewReloadKey, setReviewReloadKey] = useState(0);
@@ -45,6 +52,47 @@ export default function OnboardingWorkspacePage() {
       setEvents(onboardingResult.events || []);
     } catch (error: any) {
       toast.error(error.message || "Failed to load onboarding");
+    }
+  }
+
+  async function revealSubmission(formId: string) {
+    try {
+      const revealed = await revealFormSubmission(formId);
+      setRevealedForms((current) => ({ ...current, [formId]: revealed }));
+      toast.success("Sensitive values revealed for this session");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to reveal form values");
+    }
+  }
+
+  async function reviewSubmission(formId: string, decision: "approved" | "rejected") {
+    try {
+      setReviewingFormId(formId);
+      await reviewFormSubmission(formId, decision);
+      toast.success(decision === "approved" ? "Form approved" : "Form sent back to candidate");
+      setRevealedForms((current) => {
+        const next = { ...current };
+        delete next[formId];
+        return next;
+      });
+      await load();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to review form");
+    } finally {
+      setReviewingFormId("");
+    }
+  }
+
+  async function retryHandoff() {
+    try {
+      setRetryingHandoff(true);
+      await retryOnboardingHandoff(params.id);
+      toast.success("Handoff retry completed");
+      await load();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to retry handoff");
+    } finally {
+      setRetryingHandoff(false);
     }
   }
 
@@ -134,6 +182,109 @@ export default function OnboardingWorkspacePage() {
         </div>
 
         <main className="space-y-5">
+            <section className="rounded-md border bg-white">
+              <div className="border-b p-4">
+                <h2 className="text-lg font-semibold text-slate-950">Timeline</h2>
+                <p className="text-sm text-slate-500">Workflow items for forms, signatures, HR review, and completion handoff.</p>
+              </div>
+              <div className="divide-y">
+                {(onboarding.workflowItems || []).length === 0 ? (
+                  <div className="p-6 text-sm text-slate-500">No workflow items have been created.</div>
+                ) : (onboarding.workflowItems || []).map((item) => (
+                  <div key={item._id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-medium text-slate-950">{item.title}</div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {item.type} item owned by {item.ownerType}
+                        {item.dueAt ? ` · due ${new Date(item.dueAt).toLocaleDateString()}` : ""}
+                      </div>
+                    </div>
+                    <OnboardingStatusBadge status={item.status} />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-md border bg-white">
+              <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Candidate forms</h2>
+                  <p className="text-sm text-slate-500">Masked by default. Revealing sensitive values is audited.</p>
+                </div>
+                {(onboarding.handoffs || []).some((handoff) => handoff.status === "failed") && (
+                  <Button type="button" variant="outline" onClick={retryHandoff} disabled={retryingHandoff}>
+                    <ArrowRight className="h-4 w-4" />
+                    {retryingHandoff ? "Retrying..." : "Retry handoff"}
+                  </Button>
+                )}
+              </div>
+              <div className="divide-y">
+                {(onboarding.forms || []).length === 0 ? (
+                  <div className="p-6 text-sm text-slate-500">No candidate forms have been assigned.</div>
+                ) : (onboarding.forms || []).map((form) => {
+                  const visibleForm = revealedForms[form._id] || form;
+                  return (
+                    <div key={form._id} className="p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                            <h3 className="font-semibold text-slate-950">{form.title}</h3>
+                          </div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {form.hasSensitiveValues ? "Contains encrypted fields" : "No sensitive fields"} · {form.values?.length || 0} fields
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <OnboardingStatusBadge status={form.status} />
+                          {form.hasSensitiveValues && (
+                            <Button type="button" size="sm" variant="outline" onClick={() => revealSubmission(form._id)}>
+                              <Eye className="h-4 w-4" />
+                              Reveal
+                            </Button>
+                          )}
+                          {form.status === "under_review" && (
+                            <>
+                              <Button type="button" size="sm" onClick={() => reviewSubmission(form._id, "approved")} disabled={reviewingFormId === form._id}>
+                                <CheckCircle2 className="h-4 w-4" />
+                                Approve
+                              </Button>
+                              <Button type="button" size="sm" variant="outline" onClick={() => reviewSubmission(form._id, "rejected")} disabled={reviewingFormId === form._id}>
+                                <XCircle className="h-4 w-4" />
+                                Reject
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-4 overflow-hidden rounded-md border">
+                        <table className="w-full min-w-[720px] text-sm">
+                          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2 font-semibold">Field</th>
+                              <th className="px-3 py-2 font-semibold">Value</th>
+                              <th className="px-3 py-2 font-semibold">Security</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {(visibleForm.values || []).map((value) => (
+                              <tr key={value.key}>
+                                <td className="px-3 py-2 font-medium text-slate-900">{value.label}</td>
+                                <td className="px-3 py-2 text-slate-600">
+                                  {value.revealedValue !== undefined ? String(value.revealedValue) : value.valuePreview || String(value.value || "") || "Not provided"}
+                                </td>
+                                <td className="px-3 py-2 text-slate-500">{value.sensitive ? "Encrypted" : "Standard"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
             <section className="rounded-md border bg-white">
               <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>

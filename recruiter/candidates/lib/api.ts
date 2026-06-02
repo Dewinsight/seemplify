@@ -4,6 +4,7 @@ import type {
   AuthResponse,
   CandidateAccount,
   CandidateDocumentPayload,
+  OnboardingFormSubmission,
   CandidateOnboarding,
 } from "./types"
 
@@ -209,10 +210,38 @@ export async function getDocumentPreviewBlob(id: string) {
   return response.blob()
 }
 
-export async function signDocument(id: string, signatureDataUrl: string) {
+export async function signDocument(id: string, signatureDataUrl: string, fieldValues: Record<string, string> = {}) {
   return candidateRequest<{ data: unknown }>(`/api/candidate-portal/documents/${id}/sign`, {
     method: "POST",
-    body: JSON.stringify({ signatureDataUrl }),
+    body: JSON.stringify({ signatureDataUrl, fieldValues }),
+  })
+}
+
+export async function getOnboardingForm(id: string) {
+  return candidateRequest<{ data: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}`)
+}
+
+export async function saveOnboardingForm(id: string, values: Record<string, unknown>) {
+  return candidateRequest<{ data: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}/save`, {
+    method: "POST",
+    body: JSON.stringify({ values }),
+  })
+}
+
+export async function submitOnboardingForm(id: string, values: Record<string, unknown>) {
+  return candidateRequest<{ data: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ values }),
+  })
+}
+
+export async function uploadOnboardingFormFile(id: string, fieldKey: string, file: File) {
+  const formData = new FormData()
+  formData.append("fieldKey", fieldKey)
+  formData.append("file", file)
+  return candidateRequest<{ data: unknown; form: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}/files`, {
+    method: "POST",
+    body: formData,
   })
 }
 

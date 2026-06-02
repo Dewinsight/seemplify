@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowRight, Check, Download, FileSignature, PenLine, UsersRound } from "lucide-react"
+import { ArrowRight, Check, ClipboardList, Download, FileSignature, PenLine, ShieldCheck, UsersRound } from "lucide-react"
 import { toast } from "sonner"
 import { CandidateShell, EmptyState, ProgressRail, StatusPill } from "@/components/candidate-ui"
 import { getAccessToken, getOnboarding, getStoredAccount, logout } from "@/lib/api"
@@ -13,13 +13,13 @@ import { useCandidateBrand } from "@/lib/use-candidate-brand"
 function documentAction(document: EnvelopeDocument) {
   if (document.status === "completed" || document.status === "signed") {
     return {
-      href: `/documents/${document.document}/download`,
+      href: `/documents/${document._id}/download`,
       label: "Download",
       icon: Download,
     }
   }
   return {
-    href: `/documents/${document.document}/sign`,
+    href: `/documents/${document._id}/sign`,
     label: "Review and sign",
     icon: PenLine,
   }
@@ -49,10 +49,11 @@ export default function CandidateOnboardingDetailPage() {
   const progress = useMemo(() => {
     const documents = (record?.envelopes || []).flatMap((envelope) => envelope.documents || [])
     const completed = documents.filter((document) => document.status === "completed" || document.status === "signed").length
+    const workflowPercent = record?.progress?.percent
     return {
       documents,
       completed,
-      percent: documents.length ? Math.round((completed / documents.length) * 100) : 0,
+      percent: workflowPercent ?? (documents.length ? Math.round((completed / documents.length) * 100) : 0),
     }
   }, [record])
 
@@ -101,13 +102,74 @@ export default function CandidateOnboardingDetailPage() {
                   <div className="mt-4">
                     <ProgressRail brand={brand} value={progress.percent} />
                   </div>
-                  <p className="mt-3 text-xs text-slate-500">{progress.completed} of {progress.documents.length} document(s) signed or completed.</p>
+                  <p className="mt-3 text-xs text-slate-500">
+                    {record.progress?.completedItems ?? progress.completed} of {record.progress?.totalItems ?? progress.documents.length} onboarding step(s) complete.
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="space-y-5">
+                <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
+                  <div className="border-b border-slate-200 p-5">
+                    <h3 className="text-lg font-semibold text-slate-950">Onboarding timeline</h3>
+                    <p className="mt-1 text-sm text-slate-600">Complete forms, signatures, and review steps in order.</p>
+                  </div>
+                  <div className="divide-y divide-slate-200">
+                    {(record.workflowItems || []).length === 0 ? (
+                      <div className="p-5 text-sm text-slate-500">No workflow steps have been assigned yet.</div>
+                    ) : (record.workflowItems || []).map((item) => (
+                      <div key={item._id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100">
+                            {item.type === "form" ? <ClipboardList className={`h-5 w-5 ${brand.accentTextClass}`} /> : item.type === "approval" ? <ShieldCheck className="h-5 w-5 text-amber-700" /> : <FileSignature className={`h-5 w-5 ${brand.accentTextClass}`} />}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-950">{item.title}</div>
+                            {item.description && <div className="mt-1 text-sm text-slate-600">{item.description}</div>}
+                            {item.dueAt && <div className="mt-1 text-xs text-slate-500">Due {new Date(item.dueAt).toLocaleDateString()}</div>}
+                          </div>
+                        </div>
+                        <StatusPill status={item.status} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {(record.forms || []).length > 0 && (
+                  <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
+                    <div className="border-b border-slate-200 p-5">
+                      <h3 className="text-lg font-semibold text-slate-950">Forms</h3>
+                      <p className="mt-1 text-sm text-slate-600">Fill in onboarding details before final completion.</p>
+                    </div>
+                    <div className="divide-y divide-slate-200">
+                      {(record.forms || []).map((form) => (
+                        <div key={form._id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="font-semibold text-slate-950">{form.title}</div>
+                            <div className="mt-1 text-sm text-slate-600">
+                              {form.hasSensitiveValues ? "Contains encrypted sensitive fields" : "Standard onboarding form"}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <StatusPill status={form.status} />
+                            {form.status === "draft" || form.status === "rejected" ? (
+                              <Link href={`/forms/${form._id}`} className={`inline-flex items-center gap-2 text-sm font-semibold ${brand.accentTextClass}`}>
+                                Fill form <ArrowRight className="h-4 w-4" />
+                              </Link>
+                            ) : (
+                              <Link href={`/forms/${form._id}`} className={`inline-flex items-center gap-2 text-sm font-semibold ${brand.accentTextClass}`}>
+                                View <ArrowRight className="h-4 w-4" />
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
                 {(record.envelopes || []).map((envelope) => (
                   <section key={envelope._id} className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
                     <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">

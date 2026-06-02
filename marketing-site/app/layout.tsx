@@ -84,10 +84,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f7f7fb' },
-    { media: '(prefers-color-scheme: dark)', color: '#020205' },
-  ],
+  colorScheme: 'light',
+  themeColor: '#f7f7fb',
 }
 
 export default function RootLayout({
@@ -96,7 +94,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
+    <html lang="en" className="scroll-smooth">
       <body className={`${inter.className} antialiased`}>
         <Providers>{children}</Providers>
       </body>

@@ -37,6 +37,20 @@ const CandidateOnboardingSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  template: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OnboardingTemplate'
+  },
+  templateSnapshot: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  progress: {
+    totalItems: { type: Number, default: 0 },
+    completedItems: { type: Number, default: 0 },
+    percent: { type: Number, default: 0 }
+  },
+  dueAt: Date,
   startedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -65,6 +79,22 @@ const CandidateOnboardingSchema = new mongoose.Schema({
   envelopes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OnboardingEnvelope'
+  }],
+  workflowItems: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OnboardingWorkflowItem'
+  }],
+  forms: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OnboardingFormSubmission'
+  }],
+  approvals: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OnboardingApproval'
+  }],
+  handoffs: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OnboardingHandoff'
   }]
 }, { timestamps: true });
 
