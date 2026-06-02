@@ -2,18 +2,30 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FilePlus2, FileText, Upload } from "lucide-react";
+import { FilePlus2, FileText, Trash2, Upload } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
-import { getDocuments, uploadDocument, type OnboardingDocument } from "@/services/onboardingService";
+import { deleteDocument, getDocuments, uploadDocument, type OnboardingDocument } from "@/services/onboardingService";
 import { toast } from "sonner";
 
 export default function OnboardingDocumentsPage() {
   const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
 
@@ -48,6 +60,19 @@ export default function OnboardingDocumentsPage() {
       toast.error(error.message || "Upload failed");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleDelete(document: OnboardingDocument) {
+    try {
+      setDeletingId(document._id);
+      await deleteDocument(document._id);
+      setDocuments((current) => current.filter((item) => item._id !== document._id));
+      toast.success("Document removed from library");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to remove document");
+    } finally {
+      setDeletingId("");
     }
   }
 
@@ -115,9 +140,36 @@ export default function OnboardingDocumentsPage() {
                     <TableCell className="capitalize">{document.sourceType.replace(/_/g, " ")}</TableCell>
                     <TableCell><OnboardingStatusBadge status={document.status} /></TableCell>
                     <TableCell>{new Date(document.updatedAt).toLocaleDateString()}</TableCell>
-                    <TableCell className="space-x-2 text-right">
-                      <Button asChild size="sm" variant="outline"><Link href={`/onboarding/documents/${document._id}/edit`}>Edit</Link></Button>
-                      <Button asChild size="sm"><Link href={`/onboarding/documents/${document._id}/prepare`}>Prepare</Link></Button>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button asChild size="sm" variant="outline"><Link href={`/onboarding/documents/${document._id}/edit`}>Edit</Link></Button>
+                        <Button asChild size="sm"><Link href={`/onboarding/documents/${document._id}/prepare`}>Prepare</Link></Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="outline" disabled={deletingId === document._id}>
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete document from library?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This removes {document.title} from the document library. Candidate packets that were already sent or signed keep their own document copies.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-red-600 text-white hover:bg-red-700"
+                                onClick={() => handleDelete(document)}
+                              >
+                                {deletingId === document._id ? "Deleting..." : "Delete"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

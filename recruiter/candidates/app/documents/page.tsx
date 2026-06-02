@@ -13,14 +13,14 @@ import { useCandidateBrand } from "@/lib/use-candidate-brand"
 function documentAction(document: EnvelopeDocument) {
   if (document.status === "completed" || document.status === "signed") {
     return {
-      href: `/documents/${document.document}/download`,
+      href: `/documents/${document._id}/download`,
       label: "Download",
       icon: Download,
     }
   }
 
   return {
-    href: `/documents/${document.document}/sign`,
+    href: `/documents/${document._id}/sign`,
     label: "Review and sign",
     icon: PenLine,
   }
