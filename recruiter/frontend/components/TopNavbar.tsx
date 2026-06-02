@@ -71,10 +71,10 @@ const navigationItems: NavigationItem[] = [
     children: [
       { title: "Candidates", href: "/candidates", icon: Users },
       { title: "Jobs", href: "/jobs", icon: Briefcase },
+      { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
     ],
   },
   { title: "Onboarding", href: "/onboarding", icon: GraduationCap },
-  { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
   { title: "Calendar", href: "/calendar", icon: Calendar },
 ];
 
