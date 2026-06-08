@@ -13,6 +13,7 @@ import {
   FileText,
   ImageIcon,
   ListChecks,
+  Loader2,
   Mail,
   Plus,
   Search,
@@ -20,6 +21,7 @@ import {
   Signature,
   Trash2,
   Type,
+  Upload,
   UserPlus,
   UserRound,
 } from "lucide-react";
@@ -44,6 +46,7 @@ import {
   newSignatureField,
   sendEnvelope,
   startOnboarding,
+  uploadDocument,
   type OnboardingDocument,
   type OnboardingFormField,
   type OnboardingPacketTemplate,
@@ -280,6 +283,7 @@ export default function NewOnboardingPage() {
   }, [initialCandidateId, initialCandidateIdsParam]);
   const initialCandidateKey = initialCandidateIds.join(",");
   const pageRef = useRef<HTMLDivElement | null>(null);
+  const documentUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [step, setStep] = useState<WizardStep>("process");
   const [processType, setProcessType] = useState<ProcessType>("onboarding");
   const [candidates, setCandidates] = useState<CandidateData[]>([]);
@@ -298,6 +302,9 @@ export default function NewOnboardingPage() {
   const [candidateFormDefaults, setCandidateFormDefaults] = useState<{ title: string; description?: string; fields: OnboardingFormField[] } | null>(null);
   const [candidateFormDefaultsLoading, setCandidateFormDefaultsLoading] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [documentUploadTitle, setDocumentUploadTitle] = useState("");
+  const [documentUploadFile, setDocumentUploadFile] = useState<File | null>(null);
+  const [documentUploading, setDocumentUploading] = useState(false);
   const [selectedPacketTemplateId, setSelectedPacketTemplateId] = useState("none");
   const [manualSigners, setManualSigners] = useState<WizardSigner[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -669,6 +676,60 @@ export default function NewOnboardingPage() {
 
   function toggleDocument(id: string) {
     setSelectedDocumentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function chooseDocumentUpload(file?: File | null) {
+    if (!file) {
+      setDocumentUploadFile(null);
+      return;
+    }
+
+    const allowedTypes = new Set([
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ]);
+    const allowedExtension = /\.(pdf|docx)$/i.test(file.name);
+    if (!allowedTypes.has(file.type) && !allowedExtension) {
+      toast.error("Upload a PDF or DOCX document");
+      return;
+    }
+
+    setDocumentUploadFile(file);
+    if (!documentUploadTitle.trim()) {
+      setDocumentUploadTitle(file.name.replace(/\.[^/.]+$/, ""));
+    }
+  }
+
+  async function uploadDocumentDuringStart() {
+    if (!documentUploadFile) {
+      toast.error("Choose a PDF or DOCX document first");
+      return;
+    }
+
+    try {
+      setDocumentUploading(true);
+      const formData = new FormData();
+      formData.append("document", documentUploadFile);
+      formData.append("title", documentUploadTitle.trim() || documentUploadFile.name.replace(/\.[^/.]+$/, ""));
+
+      const uploadedDocument = await uploadDocument(formData);
+      setDocuments((current) => {
+        const withoutDuplicate = current.filter((document) => document._id !== uploadedDocument._id);
+        return [uploadedDocument, ...withoutDuplicate];
+      });
+      setSelectedDocumentIds((current) => (
+        current.includes(uploadedDocument._id) ? current : [...current, uploadedDocument._id]
+      ));
+      setActiveDocumentId(uploadedDocument._id);
+      setDocumentUploadFile(null);
+      setDocumentUploadTitle("");
+      if (documentUploadInputRef.current) documentUploadInputRef.current.value = "";
+      toast.success("Document uploaded and added to this packet");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload document");
+    } finally {
+      setDocumentUploading(false);
+    }
   }
 
   function updateCandidateFormField(id: string, patch: Partial<OnboardingFormField>) {
@@ -1393,8 +1454,59 @@ export default function NewOnboardingPage() {
                   </SelectContent>
                 </Select>
                 <Button asChild variant="outline">
-                  <Link href="/people-transitions/documents/new"><FileText className="h-4 w-4" /> Build document</Link>
+                  <Link href="/people-transitions/documents/new"><FileText className="h-4 w-4" /> Build in library</Link>
                 </Button>
+              </div>
+            </div>
+            <div className="border-b p-4">
+              <div className="rounded-md border bg-slate-50 p-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-950">Upload document</div>
+                    <p className="text-xs text-slate-500">Add a PDF or DOCX directly to this packet, then place fields in the next steps.</p>
+                  </div>
+                  {documentUploadFile && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setDocumentUploadFile(null);
+                        if (documentUploadInputRef.current) documentUploadInputRef.current.value = "";
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)_auto]">
+                  <Input
+                    value={documentUploadTitle}
+                    onChange={(event) => setDocumentUploadTitle(event.target.value)}
+                    placeholder="Document title"
+                  />
+                  <input
+                    ref={documentUploadInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
+                    className="hidden"
+                    onChange={(event) => chooseDocumentUpload(event.target.files?.[0])}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => documentUploadInputRef.current?.click()}
+                    disabled={documentUploading}
+                    className="justify-start"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span className="truncate">{documentUploadFile ? documentUploadFile.name : "Choose file"}</span>
+                  </Button>
+                  <Button type="button" onClick={uploadDocumentDuringStart} disabled={!documentUploadFile || documentUploading}>
+                    {documentUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    Add to packet
+                  </Button>
+                </div>
               </div>
             </div>
             {selectedDocuments.length > 0 && (
