@@ -1,0 +1,112 @@
+/* Slide in animation for cards */
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slideInUp 0.3s ease-out forwards;
+}
+
+/* Staggered animation for list items */
+.stagger-item:nth-child(1) {
+  animation-delay: 0.05s;
+}
+.stagger-item:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.stagger-item:nth-child(3) {
+  animation-delay: 0.15s;
+}
+.stagger-item:nth-child(4) {
+  animation-delay: 0.2s;
+}
+.stagger-item:nth-child(5) {
+  animation-delay: 0.25s;
+}
+.stagger-item:nth-child(6) {
+  animation-delay: 0.3s;
+}
+.stagger-item:nth-child(7) {
+  animation-delay: 0.35s;
+}
+.stagger-item:nth-child(8) {
+  animation-delay: 0.4s;
+}
+.stagger-item:nth-child(9) {
+  animation-delay: 0.45s;
+}
+.stagger-item:nth-child(10) {
+  animation-delay: 0.5s;
+}
+
+/* Pulse animation for badges */
+@keyframes softPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.animate-soft-pulse {
+  animation: softPulse 2s infinite;
+}
+
+/* Scale animation for buttons */
+.scale-on-hover {
+  transition: transform 0.2s ease;
+}
+
+.scale-on-hover:hover {
+  transform: scale(1.05);
+}
+
+.scale-on-hover:active {
+  transform: scale(0.95);
+}
+
+/* Mobile app-like card styles */
+.mobile-card {
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.mobile-card:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Mobile bottom sheet style */
+.bottom-sheet {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile app-like button */
+.mobile-button {
+  border-radius: 50px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.mobile-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}

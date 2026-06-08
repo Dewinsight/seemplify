@@ -1,0 +1,80 @@
+/* Simple Navigation Styles */
+
+/* Smooth transitions */
+.simple-tab-transition {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Focus styles for accessibility */
+.simple-tab-focus:focus {
+  outline: none;
+  ring: 2px solid #3B82F6;
+  ring-offset: 2px;
+}
+
+/* Hover effects */
+.simple-tab-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Active tab indicator animation */
+@keyframes simple-tab-active {
+  from {
+    transform: translateX(-50%) translateY(100%) scale(0);
+  }
+  to {
+    transform: translateX(-50%) translateY(50%) scale(1);
+  }
+}
+
+.simple-tab-active-indicator {
+  animation: simple-tab-active 0.2s ease-out;
+}
+
+/* Mobile scroll styling */
+.simple-tab-scroll::-webkit-scrollbar {
+  height: 2px;
+}
+
+.simple-tab-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 1px;
+}
+
+.simple-tab-scroll::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 1px;
+}
+
+.simple-tab-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .simple-tab-transition,
+  .simple-tab-active-indicator {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .simple-tab-focus:focus {
+    outline: 3px solid currentColor;
+    outline-offset: 2px;
+  }
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .simple-tab-scroll::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  
+  .simple-tab-scroll::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.4);
+  }
+}

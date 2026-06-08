@@ -1,0 +1,11 @@
+{
+  "development": {
+    "baseUrl": "http://localhost:5001",
+    "callbackPath": "/api/interviews/oauth/callback"
+  },
+  "production": {
+    "baseUrl": "https://api.seemplifyai.com",
+    "callbackPath": "/api/interviews/oauth/callback"
+  }
+}
+

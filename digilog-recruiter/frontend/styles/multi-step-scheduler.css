@@ -1,0 +1,19 @@
+/* Multi-Step Scheduler Z-Index Fixes - DEPRECATED */
+/* This file has been replaced with multi-step-scheduler-scoped.css */
+/* The global CSS rules have been removed to prevent conflicts with other dialogs */
+
+/* NOTE: The multi-step scheduler now uses scoped CSS classes to prevent global pollution */
+/* See multi-step-scheduler-scoped.css for the properly scoped styles */
+
+/* Responsive height for scheduler modal content */
+.scheduler-modal-content {
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 640px) {
+  .scheduler-modal-content {
+    max-height: 90vh;
+  }
+}

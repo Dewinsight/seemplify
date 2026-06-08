@@ -1,0 +1,261 @@
+/* Hiring Pipeline, Interviews & Insights Nested Tabs Custom Styling */
+
+/* Container for nested tabs */
+.hiring-pipeline-tabs,
+.interviews-tabs,
+.insights-tabs {
+  width: 100%;
+}
+
+/* Tab list container */
+.hiring-pipeline-tabs-list,
+.interviews-tabs-list,
+.insights-tabs-list {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 52px;
+  padding: 4px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
+/* Hiring Pipeline gradient background */
+.hiring-pipeline-tabs-list {
+  background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+  border: 1px solid #C7D2FE;
+}
+
+/* Interviews gradient background */
+.interviews-tabs-list {
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  border: 1px solid #A7F3D0;
+}
+
+/* Insights gradient background - Blue/Purple mix */
+.insights-tabs-list {
+  background: linear-gradient(135deg, #EFF6FF 0%, #F3E8FF 100%);
+  border: 1px solid #DBEAFE;
+}
+
+/* Dark mode backgrounds */
+@media (prefers-color-scheme: dark) {
+  .hiring-pipeline-tabs-list {
+    background: linear-gradient(135deg, #1E3A8A 0%, #312E81 100%);
+    border: 1px solid #4338CA;
+  }
+  
+  .interviews-tabs-list {
+    background: linear-gradient(135deg, #064E3B 0%, #134E4A 100%);
+    border: 1px solid #047857;
+  }
+  
+  .insights-tabs-list {
+    background: linear-gradient(135deg, #1E3A8A 0%, #581C87 100%);
+    border: 1px solid #6366F1;
+  }
+}
+
+/* Individual tab triggers */
+.hiring-pipeline-tab-trigger,
+.interviews-tab-trigger,
+.insights-tab-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 8px;
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  border: none;
+  background: transparent !important;
+  outline: none;
+}
+
+.hiring-pipeline-tab-trigger {
+  color: #6366F1 !important;
+}
+
+.interviews-tab-trigger {
+  color: #10B981 !important;
+}
+
+.insights-tab-trigger {
+  color: #3B82F6 !important;
+}
+
+/* Hover state */
+.hiring-pipeline-tab-trigger:hover,
+.interviews-tab-trigger:hover,
+.insights-tab-trigger:hover {
+  background: rgba(255, 255, 255, 0.6) !important;
+  transform: translateY(-1px);
+}
+
+/* Active states - High specificity to override defaults */
+button.hiring-pipeline-tab-trigger[data-state="active"],
+button[data-state="active"].hiring-pipeline-tab-trigger,
+.hiring-pipeline-tab-trigger[data-state="active"] {
+  background-color: white !important;
+  background: white !important;
+  color: #4F46E5 !important;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15), 0 2px 4px rgba(79, 70, 229, 0.1) !important;
+  font-weight: 600 !important;
+}
+
+button.interviews-tab-trigger[data-state="active"],
+button[data-state="active"].interviews-tab-trigger,
+.interviews-tab-trigger[data-state="active"] {
+  background-color: white !important;
+  background: white !important;
+  color: #059669 !important;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.15), 0 2px 4px rgba(5, 150, 105, 0.1) !important;
+  font-weight: 600 !important;
+}
+
+button.insights-tab-trigger[data-state="active"],
+button[data-state="active"].insights-tab-trigger,
+.insights-tab-trigger[data-state="active"] {
+  background-color: white !important;
+  background: white !important;
+  color: #3B82F6 !important;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15), 0 2px 4px rgba(59, 130, 246, 0.1) !important;
+  font-weight: 600 !important;
+}
+
+/* Dark mode active state */
+@media (prefers-color-scheme: dark) {
+  .hiring-pipeline-tab-trigger[data-state="active"],
+  .interviews-tab-trigger[data-state="active"],
+  .insights-tab-trigger[data-state="active"] {
+    background: #1F2937 !important;
+    color: #F9FAFB !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  }
+  
+  .hiring-pipeline-tab-trigger:hover,
+  .interviews-tab-trigger:hover,
+  .insights-tab-trigger:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+  }
+  
+  .hiring-pipeline-tab-trigger,
+  .interviews-tab-trigger,
+  .insights-tab-trigger {
+    color: #D1D5DB !important;
+  }
+}
+
+/* Focus state for accessibility */
+.hiring-pipeline-tab-trigger:focus-visible,
+.interviews-tab-trigger:focus-visible,
+.insights-tab-trigger:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+}
+
+/* Icon styling */
+.hiring-pipeline-tab-trigger svg,
+.interviews-tab-trigger svg,
+.insights-tab-trigger svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .hiring-pipeline-tabs-list,
+  .interviews-tabs-list,
+  .insights-tabs-list {
+    height: 48px;
+    margin-bottom: 20px;
+  }
+
+  .hiring-pipeline-tab-trigger,
+  .interviews-tab-trigger,
+  .insights-tab-trigger {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+
+  .hiring-pipeline-tab-trigger svg,
+  .interviews-tab-trigger svg,
+  .insights-tab-trigger svg {
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .hiring-pipeline-tab-trigger,
+  .interviews-tab-trigger,
+  .insights-tab-trigger {
+    padding: 0 8px;
+    font-size: 13px;
+  }
+}
+
+/* Tablet */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .hiring-pipeline-tabs-list,
+  .interviews-tabs-list,
+  .insights-tabs-list {
+    height: 50px;
+    margin-bottom: 22px;
+  }
+
+  .hiring-pipeline-tab-trigger,
+  .interviews-tab-trigger,
+  .insights-tab-trigger {
+    height: 42px;
+  }
+}
+
+/* Animation for tab switching */
+.hiring-pipeline-tab-content,
+.interviews-tab-content,
+.insights-tab-content {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Loading state */
+.hiring-pipeline-tab-trigger[data-loading="true"],
+.interviews-tab-trigger[data-loading="true"],
+.insights-tab-trigger[data-loading="true"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Disabled state */
+.hiring-pipeline-tab-trigger:disabled,
+.interviews-tab-trigger:disabled,
+.insights-tab-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
