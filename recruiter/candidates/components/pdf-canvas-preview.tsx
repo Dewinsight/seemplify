@@ -23,7 +23,7 @@ function fieldLabel(field: SignatureField) {
   if (field.type === "date") return "Date signed"
   if (field.type === "name") return "Name"
   if (field.type === "email") return "Email"
-  if (field.type === "text") return field.label || "Text"
+  if (field.type === "text") return field.placeholder || field.label || "Text"
   return field.label || "Signature"
 }
 
@@ -142,11 +142,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
                   return (
                     <div
                       key={field.id}
-                      className={`absolute overflow-hidden ${
-                        showSignature
-                          ? "bg-transparent"
-                          : "border border-blue-500/70 bg-blue-50/70"
-                      }`}
+                      className="absolute overflow-hidden bg-transparent"
                       style={{
                         left: `${field.x * 100}%`,
                         top: `${field.y * 100}%`,
@@ -161,7 +157,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
                           className="h-full w-full object-contain p-1"
                         />
                       ) : (
-                        <div className="flex h-full items-center px-2 text-[11px] font-medium text-blue-800">
+                        <div className={`flex h-full px-2 text-[11px] font-medium text-blue-800 ${field.multiline ? "items-start whitespace-pre-wrap break-words py-1" : "items-center"}`}>
                           {field.type === "text" && typedValue ? typedValue : fieldLabel(field)}
                         </div>
                       )}

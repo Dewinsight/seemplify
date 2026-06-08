@@ -7,7 +7,7 @@ import { ArrowLeft, CheckCircle2, Download, Eraser, ExternalLink, FileWarning, L
 import { toast } from "sonner"
 import { CandidateShell, StatusPill } from "@/components/candidate-ui"
 import { PdfCanvasPreview } from "@/components/pdf-canvas-preview"
-import { downloadDocumentBlob, getAccessToken, getDocument, getDocumentPreviewBlob, getStoredAccount, logout, signDocument } from "@/lib/api"
+import { completeDocument, downloadDocumentBlob, getAccessToken, getDocument, getDocumentPreviewBlob, getStoredAccount, logout, signDocument } from "@/lib/api"
 import type { CandidateAccount, CandidateDocumentPayload } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
@@ -69,7 +69,7 @@ export default function CandidateSignDocumentPage() {
         setPayload(result.data)
         const nextValues: Record<string, string> = {}
         ;(result.data.document.signatureFields || [])
-          .filter((field) => field.role === "candidate" && field.type === "text")
+          .filter((field) => (field.role || "candidate") === "candidate" && field.type === "text")
           .forEach((field) => {
             nextValues[field.id] = ""
             if (field.label) nextValues[field.label] = ""
@@ -183,14 +183,15 @@ export default function CandidateSignDocumentPage() {
     setSignaturePreviewUrl("")
   }
 
-  async function submitSignature() {
+  async function submitDocument() {
+    const fillOnly = payload?.canCompleteFillOnly || payload?.actionType === "document_fill"
     const canvas = canvasRef.current
-    if (!canvas || !hasSignature) {
+    if (!fillOnly && (!canvas || !hasSignature)) {
       toast.error("Draw your signature first")
       return
     }
     const missingField = (payload?.document.signatureFields || [])
-      .filter((field) => field.role === "candidate" && field.type === "text" && field.required !== false)
+      .filter((field) => (field.role || "candidate") === "candidate" && field.type === "text" && field.required !== false)
       .find((field) => !String(fieldValues[field.id] || "").trim())
     if (missingField) {
       toast.error(`${missingField.label || "Text field"} is required`)
@@ -199,16 +200,18 @@ export default function CandidateSignDocumentPage() {
 
     try {
       setSubmitting(true)
-      const result = await signDocument(params.id, canvas.toDataURL("image/png"), fieldValues)
+      const result = fillOnly
+        ? await completeDocument(params.id, fieldValues)
+        : await signDocument(params.id, canvas?.toDataURL("image/png") || "", fieldValues)
       if (result.nextDocumentId) {
-        toast.success("Document signed. Opening next document.")
+        toast.success(fillOnly ? "Document completed. Opening next document." : "Document signed. Opening next document.")
         router.push(`/documents/${result.nextDocumentId}/sign`)
       } else {
-        toast.success("Document signed")
+        toast.success(fillOnly ? "Document completed" : "Document signed")
         router.push(`/documents/${params.id}/complete`)
       }
     } catch (error: any) {
-      toast.error(error.message || "Could not sign document")
+      toast.error(error.message || (fillOnly ? "Could not complete document" : "Could not sign document"))
     } finally {
       setSubmitting(false)
     }
@@ -231,12 +234,18 @@ export default function CandidateSignDocumentPage() {
     router.push("/login")
   }
 
+  const candidateTextFields = (payload?.document.signatureFields || [])
+    .filter((field) => (field.role || "candidate") === "candidate" && field.type === "text")
+  const isFillOnly = Boolean(payload?.canCompleteFillOnly || payload?.actionType === "document_fill")
+  const submitLabel = isFillOnly ? "Complete document" : "Sign document"
+  const submitDisabled = !payload?.canSign || submitting || (!isFillOnly && !hasSignature)
+
   return (
     <CandidateShell
       brand={brand}
       account={account}
       title={payload?.document.title || "Document signing"}
-      subtitle={payload?.envelope.title || "Review the prepared PDF and complete your signature."}
+      subtitle={payload?.envelope.title || "Review the prepared PDF and complete your document."}
       onSignOut={signOut}
     >
       <section className="mx-auto max-w-7xl">
@@ -289,7 +298,7 @@ export default function CandidateSignDocumentPage() {
                   <PdfCanvasPreview
                     blob={previewBlob}
                     title={payload.document.title}
-                    signatureFields={payload.document.signatureFields?.filter((field) => field.role === "candidate") || []}
+                    signatureFields={payload.document.signatureFields?.filter((field) => (field.role || "candidate") === "candidate") || []}
                     signaturePreviewUrl={signaturePreviewUrl}
                     fieldValues={fieldValues}
                   />
@@ -321,82 +330,112 @@ export default function CandidateSignDocumentPage() {
 
             <aside className="h-fit rounded-md border border-slate-200 bg-white p-5 shadow-soft lg:sticky lg:top-24">
               <div className="mb-5">
-                <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>Signature</div>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-950">Complete your signature</h2>
+                <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>{isFillOnly ? "Fillable fields" : "Signature"}</div>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-950">{isFillOnly ? "Complete required fields" : "Complete your signature"}</h2>
                 <p className="mt-2 text-sm text-slate-600">
-                  Your signature will be stamped into the recruiter-provided PDF with date and audit metadata.
+                  {isFillOnly
+                    ? "Your field values will be stamped into the recruiter-provided PDF with audit metadata."
+                    : "Your signature will be stamped into the recruiter-provided PDF with date and audit metadata."}
                 </p>
               </div>
 
               {!payload.canSign && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                  This document is not currently waiting for your signature. It may already be signed or waiting for another signer.
+                  This document is not currently waiting for your action. It may already be completed or waiting for another signer.
                 </div>
               )}
 
-              {(payload.document.signatureFields || []).some((field) => field.role === "candidate" && field.type === "text") && (
+              {candidateTextFields.length > 0 && (
                 <div className="mt-5 space-y-4 border-t border-slate-200 pt-5">
-                  {(payload.document.signatureFields || [])
-                    .filter((field) => field.role === "candidate" && field.type === "text")
-                    .map((field) => (
+                  {candidateTextFields.map((field) => (
                       <label key={field.id} className="block">
                         <span className="text-sm font-semibold text-slate-950">
                           {field.label || "Text field"}
                           {field.required !== false && <span className="text-rose-600"> *</span>}
                         </span>
-                        <input
-                          value={fieldValues[field.id] || ""}
-                          onChange={(event) => {
-                            const value = event.target.value
-                            setFieldValues((current) => ({
-                              ...current,
-                              [field.id]: value,
-                              ...(field.label ? { [field.label]: value } : {}),
-                            }))
-                          }}
-                          disabled={!payload.canSign}
-                          className="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
-                        />
+                        {field.multiline ? (
+                          <textarea
+                            value={fieldValues[field.id] || ""}
+                            placeholder={field.placeholder || ""}
+                            rows={Math.max(3, Math.round((field.height || 0.12) * 24))}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setFieldValues((current) => ({
+                                ...current,
+                                [field.id]: value,
+                                ...(field.label ? { [field.label]: value } : {}),
+                              }))
+                            }}
+                            disabled={!payload.canSign}
+                            className="mt-2 min-h-24 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        ) : (
+                          <input
+                            value={fieldValues[field.id] || ""}
+                            placeholder={field.placeholder || ""}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setFieldValues((current) => ({
+                                ...current,
+                                [field.id]: value,
+                                ...(field.label ? { [field.label]: value } : {}),
+                              }))
+                            }}
+                            disabled={!payload.canSign}
+                            className="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        )}
                       </label>
                     ))}
                 </div>
               )}
 
-              <div className="mt-5">
-                <canvas
-                  ref={canvasRef}
-                  width={760}
-                  height={220}
-                  className="signature-canvas h-44 w-full rounded-md border border-slate-300 bg-white"
-                  onMouseDown={(event) => start(pointFromMouse(event))}
-                  onMouseMove={(event) => move(pointFromMouse(event))}
-                  onMouseUp={stop}
-                  onMouseLeave={stop}
-                  onTouchStart={(event) => {
-                    event.preventDefault()
-                    start(pointFromTouch(event))
-                  }}
-                  onTouchMove={(event) => {
-                    event.preventDefault()
-                    move(pointFromTouch(event))
-                  }}
-                  onTouchEnd={stop}
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button onClick={clearSignature} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                    <Eraser className="h-4 w-4" />
-                    Clear
-                  </button>
-                  <button
-                    onClick={submitSignature}
-                    disabled={!payload.canSign || !hasSignature || submitting}
-                    className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${brand.primaryButtonClass}`}
-                  >
-                    <PenLine className="h-4 w-4" />
-                    {submitting ? "Signing..." : "Sign document"}
-                  </button>
+              {!isFillOnly ? (
+                <div className="mt-5">
+                  <canvas
+                    ref={canvasRef}
+                    width={760}
+                    height={220}
+                    className="signature-canvas h-44 w-full rounded-md border border-slate-300 bg-white"
+                    onMouseDown={(event) => start(pointFromMouse(event))}
+                    onMouseMove={(event) => move(pointFromMouse(event))}
+                    onMouseUp={stop}
+                    onMouseLeave={stop}
+                    onTouchStart={(event) => {
+                      event.preventDefault()
+                      start(pointFromTouch(event))
+                    }}
+                    onTouchMove={(event) => {
+                      event.preventDefault()
+                      move(pointFromTouch(event))
+                    }}
+                    onTouchEnd={stop}
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button onClick={clearSignature} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                      <Eraser className="h-4 w-4" />
+                      Clear
+                    </button>
+                    <button
+                      onClick={submitDocument}
+                      disabled={submitDisabled}
+                      className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${brand.primaryButtonClass}`}
+                    >
+                      <PenLine className="h-4 w-4" />
+                      {submitting ? "Signing..." : submitLabel}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <button
+                  onClick={submitDocument}
+                  disabled={submitDisabled}
+                  className={`mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${brand.primaryButtonClass}`}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {submitting ? "Completing..." : submitLabel}
+                </button>
+              )}
 
               <div className="mt-6 space-y-3 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                 <div className="flex items-center gap-2 font-medium text-slate-950">

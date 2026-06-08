@@ -93,6 +93,9 @@ const NotificationDropdown = () => {
       case 'people_transition_started':
       case 'people_transition_action':
       case 'people_transition_completed':
+      case 'people_transition_task_assigned':
+      case 'people_transition_due_soon':
+      case 'people_transition_overdue':
         return <FileSignature className="w-5 h-5 text-slate-700" />;
       default: 
         return <Bell className="w-5 h-5 text-gray-600" />;
@@ -221,6 +224,9 @@ const NotificationDropdown = () => {
         case 'people_transition_started':
         case 'people_transition_action':
         case 'people_transition_completed':
+        case 'people_transition_task_assigned':
+        case 'people_transition_due_soon':
+        case 'people_transition_overdue':
           if (notification.data?.transitionId || notification.data?.onboardingId) {
             router.push(`/people-transitions/${notification.data.transitionId || notification.data.onboardingId}`);
           } else {

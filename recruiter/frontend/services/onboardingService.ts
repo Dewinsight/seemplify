@@ -18,6 +18,8 @@ export interface SignatureField {
   role: "candidate" | "internal";
   type: "signature" | "date" | "name" | "email" | "text";
   label?: string;
+  placeholder?: string;
+  multiline?: boolean;
   key?: string;
   signerKey?: string;
   page: number;
@@ -115,11 +117,19 @@ export interface OnboardingWorkflowItem {
   description?: string;
   status: WorkflowItemStatus;
   ownerType: "candidate" | "user" | "system";
+  ownerUser?: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  notes?: string;
+  required?: boolean;
   order: number;
   dueAt?: string;
   sourceType?: string;
   sourceId?: string;
   lastReminderAt?: string;
+  isOverdue?: boolean;
+  isDueSoon?: boolean;
+  dependencySummary?: Array<{ _id: string; title?: string; status?: WorkflowItemStatus; type?: string }>;
   completedAt?: string;
 }
 
@@ -159,7 +169,21 @@ export interface OnboardingPacketTemplate {
   version: number;
   documents?: Array<OnboardingDocument | string>;
   formTemplates?: Array<OnboardingFormTemplate | string>;
-  workflowItems?: Array<Record<string, any>>;
+  workflowItems?: Array<{
+    id: string;
+    type: "document" | "form" | "task" | "approval" | "handoff";
+    title: string;
+    description?: string;
+    ownerType?: "candidate" | "user" | "system";
+    defaultOwnerRole?: string;
+    defaultOwnerUser?: string;
+    dueOffsetDays?: number;
+    dueInDays?: number;
+    order?: number;
+    required?: boolean;
+    dependencyKeys?: string[];
+    metadata?: Record<string, any>;
+  }>;
   reminderRules?: Array<Record<string, any>>;
   completionActions?: Array<Record<string, any>>;
   isSystem: boolean;
@@ -206,7 +230,7 @@ export interface OnboardingApproval {
 
 export interface OnboardingHandoff {
   _id: string;
-  target: "internal_employee_profile" | "exit_closeout" | "retirement_closeout" | "payroll" | "identity_provider" | "custom";
+  target: "internal_employee_profile" | "exit_closeout" | "retirement_closeout" | "payroll" | "identity_provider" | "manager_handover" | "asset_return" | "it_access_removal" | "payroll_finalization" | "custom";
   status: "pending" | "running" | "completed" | "failed";
   attempts: number;
   lastError?: string;
@@ -227,6 +251,7 @@ export interface CandidateOnboarding {
   forms?: OnboardingFormSubmission[];
   approvals?: OnboardingApproval[];
   handoffs?: OnboardingHandoff[];
+  nextAction?: PeopleTransitionNextAction;
   progress?: {
     totalItems: number;
     completedItems: number;
@@ -268,6 +293,41 @@ export async function getOnboardingRecords(params: { status?: string; search?: s
   return parseResponse<{ data: CandidateOnboarding[]; recentEvents: OnboardingAuditEvent[] }>(response, "Failed to load onboarding");
 }
 
+export interface PeopleTransitionNextAction {
+  type: "form" | "document_fill" | "document_sign" | "waiting" | "complete";
+  label: string;
+  href: string;
+  dueAt?: string;
+  status?: string;
+  processType?: ProcessType;
+  recordId: string;
+  sourceIds?: Record<string, string>;
+}
+
+export interface PeopleTransitionTask extends OnboardingWorkflowItem {
+  transition?: {
+    _id: string;
+    title: string;
+    processType?: ProcessType;
+    status: OnboardingStatus;
+    dueAt?: string;
+    candidate?: any;
+  } | null;
+}
+
+export interface PeopleTransitionAnalytics {
+  total: number;
+  completed: number;
+  active: number;
+  completionRate: number;
+  averageCompletionHours: number;
+  overdueCount: number;
+  failedHandoffs: number;
+  byProcess: Record<string, { total: number; completed: number }>;
+  pendingOwnerBuckets: Array<{ owner: string; count: number }>;
+  bottlenecksByType: Array<{ type: string; total: number; overdue: number; blocked: number; failed: number }>;
+}
+
 export async function getOnboardingDashboard(processType: ProcessType | "all" = "all") {
   const query = new URLSearchParams();
   if (processType) query.set("processType", processType);
@@ -284,9 +344,52 @@ export async function getOnboardingDashboard(processType: ProcessType | "all" = 
   return result.data;
 }
 
+export async function getPeopleTransitionTasks(params: {
+  processType?: ProcessType | "all";
+  owner?: "all" | "me" | "candidate" | "system" | "unassigned" | string;
+  due?: "all" | "overdue" | "due_soon" | "upcoming" | "none";
+  status?: WorkflowItemStatus | "all";
+} = {}) {
+  const query = new URLSearchParams();
+  if (params.processType) query.set("processType", params.processType);
+  if (params.owner) query.set("owner", params.owner);
+  if (params.due) query.set("due", params.due);
+  if (params.status) query.set("status", params.status);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/tasks${query.toString() ? `?${query}` : ""}`);
+  const result = await parseResponse<{ data: PeopleTransitionTask[] }>(response, "Failed to load people transition tasks");
+  return result.data;
+}
+
+export async function getPeopleTransitionAnalytics(params: {
+  processType?: ProcessType | "all";
+  from?: string;
+  to?: string;
+} = {}) {
+  const query = new URLSearchParams();
+  if (params.processType) query.set("processType", params.processType);
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/analytics${query.toString() ? `?${query}` : ""}`);
+  const result = await parseResponse<{ data: PeopleTransitionAnalytics }>(response, "Failed to load people transition analytics");
+  return result.data;
+}
+
 export async function getOnboarding(id: string) {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/${id}`);
   return parseResponse<{ data: CandidateOnboarding; events: OnboardingAuditEvent[] }>(response, "Failed to load onboarding");
+}
+
+export async function updatePeopleTransitionWorkflowItem(
+  onboardingId: string,
+  itemId: string,
+  data: Partial<Pick<OnboardingWorkflowItem, "ownerType" | "ownerUser" | "dueAt" | "status" | "notes" | "required">>,
+) {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/${onboardingId}/workflow-items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  const result = await parseResponse<{ data: OnboardingWorkflowItem }>(response, "Failed to update workflow item");
+  return result.data;
 }
 
 export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType } = {}) {

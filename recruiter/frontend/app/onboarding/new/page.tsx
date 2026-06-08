@@ -681,7 +681,7 @@ export default function NewOnboardingPage() {
     if (activeFieldId === id) setActiveFieldId("");
   }
 
-  function addPlacementField(typeOverride?: SignatureField["type"]) {
+  function addPlacementField(typeOverride?: SignatureField["type"], patch: Partial<SignatureField> = {}) {
     if (!activeDocument) return;
     const signer = signers.find((item) => item.key === placementSignerKey) || signers[0];
     if (!signer) {
@@ -698,12 +698,15 @@ export default function NewOnboardingPage() {
       role: signer.role,
       type: fieldType,
       label: fieldLabel(signer, fieldType),
+      placeholder: fieldType === "text" && signer.role === "candidate" ? "Type your response here" : "",
+      multiline: false,
       page: fieldPreviewPage,
       x: 0.12,
       y: fieldType === "date" ? 0.78 : 0.68,
-      width: fieldType === "signature" ? 0.32 : fieldType === "text" ? 0.3 : 0.22,
-      height: fieldType === "signature" ? 0.08 : 0.05,
+      width: fieldType === "signature" ? 0.32 : fieldType === "text" && patch.multiline ? 0.55 : fieldType === "text" ? 0.3 : 0.22,
+      height: fieldType === "signature" ? 0.08 : fieldType === "text" && patch.multiline ? 0.16 : 0.05,
       required: true,
+      ...patch,
     };
     updateActiveDocumentFields((fields) => [...fields, field]);
     setActiveFieldId(field.id);
@@ -1455,6 +1458,10 @@ export default function NewOnboardingPage() {
                       <Type className="h-4 w-4" />
                       Add candidate text
                     </Button>
+                    <Button type="button" variant="outline" className="w-full" onClick={() => addPlacementField("text", { multiline: true, label: "Long response", placeholder: "Type your full response here" })} disabled={!activeDocument || !signers.length}>
+                      <Type className="h-4 w-4" />
+                      Add long text
+                    </Button>
                   </div>
                 </div>
 
@@ -1489,6 +1496,31 @@ export default function NewOnboardingPage() {
                         <p className="text-xs leading-5 text-slate-500">Candidate fills this value before signing.</p>
                       )}
                     </div>
+                    {activeField.type === "text" && activeField.role === "candidate" && (
+                      <div className="space-y-3 rounded-md border bg-slate-50 p-3">
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(activeField.multiline)}
+                            onChange={(event) => updateField(activeField.id, {
+                              multiline: event.target.checked,
+                              height: event.target.checked ? Math.max(activeField.height, 0.14) : activeField.height,
+                            })}
+                          />
+                          Multiline response
+                        </label>
+                        <div className="space-y-2">
+                          <Label>Candidate placeholder</Label>
+                          <Textarea
+                            value={activeField.placeholder || ""}
+                            onChange={(event) => updateField(activeField.id, { placeholder: event.target.value })}
+                            placeholder="Type your response here"
+                            className="min-h-20 bg-white"
+                          />
+                        </div>
+                        <p className="text-xs leading-5 text-slate-500">Use multiline for paragraphs, notes, or dotted-line response areas. The candidate will see a textarea, and the stamped PDF will wrap text inside this field.</p>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       {(["x", "y", "width", "height"] as const).map((key) => (
                         <div key={key} className="space-y-2">

@@ -44,6 +44,14 @@ const OnboardingWorkflowItemSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  notes: {
+    type: String,
+    trim: true
+  },
+  required: {
+    type: Boolean,
+    default: true
+  },
   order: {
     type: Number,
     default: 0,
@@ -63,6 +71,8 @@ const OnboardingWorkflowItemSchema = new mongoose.Schema({
     ref: 'OnboardingWorkflowItem'
   }],
   lastReminderAt: Date,
+  lastDueSoonAlertAt: Date,
+  lastOverdueAlertAt: Date,
   completedAt: Date,
   completedBy: {
     type: mongoose.Schema.Types.ObjectId,

@@ -1,6 +1,7 @@
 const Candidate = require('../models/Candidate');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
 const OnboardingApproval = require('../models/OnboardingApproval');
+const OnboardingEnvelope = require('../models/OnboardingEnvelope');
 const OnboardingFormSubmission = require('../models/OnboardingFormSubmission');
 const OnboardingFormTemplate = require('../models/OnboardingFormTemplate');
 const OnboardingHandoff = require('../models/OnboardingHandoff');
@@ -20,6 +21,15 @@ function candidateDisplayName(candidate = {}) {
 }
 
 const PROCESS_TYPES = ['onboarding', 'exit', 'retirement'];
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
+const ACTIVE_WORKFLOW_STATUSES = ['not_started', 'pending', 'in_progress', 'blocked', 'failed'];
+
+const DEFAULT_DUE_OFFSETS = {
+  onboarding: { form: 2, document: 3, approval: 5, handoff: 7, task: 7 },
+  exit: { form: 1, document: 2, approval: 3, handoff: 3, task: 3 },
+  retirement: { form: 2, document: 3, approval: 5, handoff: 7, task: 7 }
+};
 
 const PROCESS_COPY = {
   onboarding: {
@@ -84,6 +94,232 @@ function normalizeProcessType(processType) {
 
 function processCopy(processType) {
   return PROCESS_COPY[normalizeProcessType(processType)];
+}
+
+function objectIdString(value) {
+  return String(value?._id || value || '');
+}
+
+function dueDateFromOffset(startDate, offsetDays) {
+  const offset = Number(offsetDays);
+  if (!Number.isFinite(offset)) return undefined;
+  const base = startDate ? new Date(startDate).getTime() : Date.now();
+  return new Date(base + offset * DAY_MS);
+}
+
+function workflowDueOffset(processType, type, item = {}) {
+  const normalizedProcessType = normalizeProcessType(processType);
+  const fallback = DEFAULT_DUE_OFFSETS[normalizedProcessType]?.[type] ?? 3;
+  if (Number.isFinite(Number(item.dueOffsetDays))) return Number(item.dueOffsetDays);
+  if (Number.isFinite(Number(item.dueInDays))) return Number(item.dueInDays);
+  return fallback;
+}
+
+function workflowItemKey(item = {}, index = 0) {
+  return item.id || item.key || item.metadata?.templateItemId || `${item.type || 'item'}-${index + 1}`;
+}
+
+function defaultWorkflowItemDefinitions(processType = 'onboarding') {
+  const normalizedProcessType = normalizeProcessType(processType);
+  const copy = processCopy(normalizedProcessType);
+
+  if (normalizedProcessType === 'exit') {
+    return [
+      {
+        id: 'exit-form',
+        type: 'form',
+        title: copy.formTitle,
+        description: copy.formDescription,
+        ownerType: 'candidate',
+        dueOffsetDays: 1,
+        order: 10
+      },
+      {
+        id: 'exit-documents',
+        type: 'document',
+        title: copy.documentTitle,
+        description: copy.documentDescription,
+        ownerType: 'candidate',
+        dueOffsetDays: 2,
+        order: 20
+      },
+      {
+        id: 'exit-hr-review',
+        type: 'approval',
+        title: copy.approvalTitle,
+        description: copy.approvalDescription,
+        ownerType: 'user',
+        defaultOwnerRole: 'hr',
+        dueOffsetDays: 3,
+        order: 30,
+        dependencyKeys: ['exit-form']
+      },
+      {
+        id: 'exit-manager-handover',
+        type: 'task',
+        title: 'Manager handover',
+        description: 'Confirm final responsibilities, knowledge transfer, and manager sign-off.',
+        ownerType: 'user',
+        defaultOwnerRole: 'manager',
+        dueOffsetDays: 3,
+        order: 40,
+        dependencyKeys: ['exit-form', 'exit-documents', 'exit-hr-review'],
+        metadata: { handoffTarget: 'manager_handover' }
+      },
+      {
+        id: 'exit-asset-return',
+        type: 'task',
+        title: 'Asset and property return',
+        description: 'Confirm laptop, badge, keys, equipment, and other company property are returned or accounted for.',
+        ownerType: 'user',
+        defaultOwnerRole: 'facilities',
+        dueOffsetDays: 3,
+        order: 50,
+        dependencyKeys: ['exit-form', 'exit-documents', 'exit-hr-review'],
+        metadata: { handoffTarget: 'asset_return' }
+      },
+      {
+        id: 'exit-it-access-removal',
+        type: 'task',
+        title: 'IT access removal',
+        description: 'Confirm application, device, and identity access removal is recorded.',
+        ownerType: 'user',
+        defaultOwnerRole: 'it',
+        dueOffsetDays: 3,
+        order: 60,
+        dependencyKeys: ['exit-form', 'exit-documents', 'exit-hr-review'],
+        metadata: { handoffTarget: 'it_access_removal' }
+      },
+      {
+        id: 'exit-payroll-finalization',
+        type: 'task',
+        title: 'Payroll finalization',
+        description: 'Confirm final pay, deductions, benefits, and statutory closeout are recorded.',
+        ownerType: 'user',
+        defaultOwnerRole: 'payroll',
+        dueOffsetDays: 3,
+        order: 70,
+        dependencyKeys: ['exit-form', 'exit-documents', 'exit-hr-review'],
+        metadata: { handoffTarget: 'payroll_finalization' }
+      },
+      {
+        id: 'exit-closeout',
+        type: 'handoff',
+        title: copy.handoffTitle,
+        description: copy.handoffDescription,
+        ownerType: 'system',
+        dueOffsetDays: 3,
+        order: 80,
+        dependencyKeys: [
+          'exit-manager-handover',
+          'exit-asset-return',
+          'exit-it-access-removal',
+          'exit-payroll-finalization'
+        ],
+        metadata: { handoffTarget: 'exit_closeout' }
+      }
+    ];
+  }
+
+  if (normalizedProcessType === 'retirement') {
+    return [
+      {
+        id: 'retirement-form',
+        type: 'form',
+        title: copy.formTitle,
+        description: copy.formDescription,
+        ownerType: 'candidate',
+        dueOffsetDays: 2,
+        order: 10
+      },
+      {
+        id: 'retirement-documents',
+        type: 'document',
+        title: copy.documentTitle,
+        description: copy.documentDescription,
+        ownerType: 'candidate',
+        dueOffsetDays: 3,
+        order: 20
+      },
+      {
+        id: 'retirement-hr-review',
+        type: 'approval',
+        title: copy.approvalTitle,
+        description: copy.approvalDescription,
+        ownerType: 'user',
+        defaultOwnerRole: 'hr',
+        dueOffsetDays: 5,
+        order: 30,
+        dependencyKeys: ['retirement-form']
+      },
+      {
+        id: 'retirement-benefits-review',
+        type: 'task',
+        title: 'Benefits and payroll review',
+        description: 'Confirm retirement benefits, payroll closeout, and contact details are recorded.',
+        ownerType: 'user',
+        defaultOwnerRole: 'payroll',
+        dueOffsetDays: 7,
+        order: 40,
+        dependencyKeys: ['retirement-form', 'retirement-documents', 'retirement-hr-review'],
+        metadata: { handoffTarget: 'payroll_finalization' }
+      },
+      {
+        id: 'retirement-closeout',
+        type: 'handoff',
+        title: copy.handoffTitle,
+        description: copy.handoffDescription,
+        ownerType: 'system',
+        dueOffsetDays: 7,
+        order: 50,
+        dependencyKeys: ['retirement-benefits-review'],
+        metadata: { handoffTarget: 'retirement_closeout' }
+      }
+    ];
+  }
+
+  return [
+    {
+      id: 'onboarding-form',
+      type: 'form',
+      title: copy.formTitle,
+      description: copy.formDescription,
+      ownerType: 'candidate',
+      dueOffsetDays: 2,
+      order: 10
+    },
+    {
+      id: 'onboarding-documents',
+      type: 'document',
+      title: copy.documentTitle,
+      description: copy.documentDescription,
+      ownerType: 'candidate',
+      dueOffsetDays: 3,
+      order: 20
+    },
+    {
+      id: 'onboarding-hr-review',
+      type: 'approval',
+      title: copy.approvalTitle,
+      description: copy.approvalDescription,
+      ownerType: 'user',
+      defaultOwnerRole: 'hr',
+      dueOffsetDays: 5,
+      order: 30,
+      dependencyKeys: ['onboarding-form']
+    },
+    {
+      id: 'onboarding-handoff',
+      type: 'handoff',
+      title: copy.handoffTitle,
+      description: copy.handoffDescription,
+      ownerType: 'system',
+      dueOffsetDays: 7,
+      order: 40,
+      dependencyKeys: ['onboarding-documents', 'onboarding-hr-review'],
+      metadata: { handoffTarget: 'internal_employee_profile' }
+    }
+  ];
 }
 
 function valueAtPath(source, path) {
@@ -218,102 +454,179 @@ async function updateProgress(onboardingId) {
   return { totalItems: actionable.length, completedItems: completed, percent };
 }
 
-async function initializeDefaultWorkflow({ onboarding, candidate, userId, req }) {
-  const normalizedProcessType = normalizeProcessType(onboarding.processType);
-  const copy = processCopy(normalizedProcessType);
-  const formTemplate = await ensureDefaultFormTemplate({
+async function formTemplatesForWorkflow({ onboarding, userId, processType, packetTemplate }) {
+  const formTemplateIds = (packetTemplate?.formTemplates || [])
+    .map((template) => template?._id || template)
+    .filter(Boolean);
+
+  if (formTemplateIds.length) {
+    const templates = await OnboardingFormTemplate.find({
+      _id: { $in: formTemplateIds },
+      organization: onboarding.organization,
+      status: { $ne: 'archived' }
+    });
+    if (templates.length) return templates;
+  }
+
+  return [await ensureDefaultFormTemplate({
     organization: onboarding.organization,
     userId,
-    processType: normalizedProcessType
-  });
+    processType
+  })];
+}
 
-  const submission = await OnboardingFormSubmission.create({
-    organization: onboarding.organization,
-    onboarding: onboarding._id,
-    candidate: candidate._id,
-    candidateAccount: onboarding.candidateAccount,
-    formTemplate: formTemplate._id,
-    templateSnapshot: snapshotFormTemplate(formTemplate),
-    title: formTemplate.name,
-    status: 'draft',
-    hasSensitiveValues: formTemplate.fields.some((field) => isSensitiveField(field)),
-    values: buildSubmissionValues(formTemplate, candidate)
-  });
+function sourceForWorkflowItem(item, submissions, counters) {
+  const source = { sourceType: 'manual', sourceId: undefined };
+  if (item.type === 'form') {
+    const submission = submissions[counters.form] || submissions[0];
+    counters.form += 1;
+    source.sourceType = 'form_submission';
+    source.sourceId = submission?._id;
+    return source;
+  }
+  if (item.type === 'approval') {
+    const submission = submissions.find((entry) => entry.hasSensitiveValues) || submissions[0];
+    source.sourceType = 'form_submission';
+    source.sourceId = submission?._id;
+    return source;
+  }
+  if (item.type === 'document') {
+    source.sourceType = 'envelope';
+    return source;
+  }
+  if (item.type === 'handoff') {
+    source.sourceType = 'handoff';
+    return source;
+  }
+  return source;
+}
 
-  const now = Date.now();
-  const dueAt = new Date(now + 3 * 24 * 60 * 60 * 1000);
-  const items = await OnboardingWorkflowItem.insertMany([
-    {
-      organization: onboarding.organization,
-      onboarding: onboarding._id,
-      type: 'form',
-      title: copy.formTitle,
-      description: copy.formDescription,
-      status: 'pending',
-      ownerType: 'candidate',
-      sourceType: 'form_submission',
-      sourceId: submission._id,
-      order: 10,
-      dueAt
-    },
-    {
-      organization: onboarding.organization,
-      onboarding: onboarding._id,
-      type: 'document',
-      title: copy.documentTitle,
-      description: copy.documentDescription,
-      status: 'pending',
-      ownerType: 'candidate',
-      sourceType: 'envelope',
-      order: 20,
-      dueAt
-    },
-    {
-      organization: onboarding.organization,
-      onboarding: onboarding._id,
-      type: 'approval',
-      title: copy.approvalTitle,
-      description: copy.approvalDescription,
-      status: 'blocked',
-      ownerType: 'user',
-      sourceType: 'form_submission',
-      sourceId: submission._id,
-      order: 30
-    },
-    {
-      organization: onboarding.organization,
-      onboarding: onboarding._id,
-      type: 'handoff',
-      title: copy.handoffTitle,
-      description: copy.handoffDescription,
-      status: 'blocked',
-      ownerType: 'system',
-      sourceType: 'handoff',
-      order: 40
+function initialWorkflowStatus(item) {
+  if (['not_started', 'pending', 'in_progress', 'completed', 'blocked', 'skipped', 'failed'].includes(item.status)) {
+    return item.status;
+  }
+  if ((item.dependencyKeys || []).length || ['approval', 'handoff'].includes(item.type)) return 'blocked';
+  return 'pending';
+}
+
+async function refreshBlockedWorkflowItems(onboardingId) {
+  const items = await OnboardingWorkflowItem.find({ onboarding: onboardingId });
+  const byId = new Map(items.map((item) => [objectIdString(item._id), item]));
+  const changed = [];
+
+  for (const item of items) {
+    if (item.status !== 'blocked' || !(item.dependencies || []).length) continue;
+    const ready = item.dependencies.every((dependencyId) => {
+      const dependency = byId.get(objectIdString(dependencyId));
+      return dependency && ['completed', 'skipped'].includes(dependency.status);
+    });
+    if (ready) {
+      item.status = 'pending';
+      changed.push(item.save());
     }
-  ]);
+  }
+
+  if (changed.length) await Promise.all(changed);
+  return changed.length;
+}
+
+async function initializeDefaultWorkflow({ onboarding, candidate, userId, req, packetTemplate }) {
+  const normalizedProcessType = normalizeProcessType(onboarding.processType);
+  const copy = processCopy(normalizedProcessType);
+  const formTemplates = await formTemplatesForWorkflow({
+    onboarding,
+    userId,
+    processType: normalizedProcessType,
+    packetTemplate
+  });
+
+  const submissions = [];
+  for (const formTemplate of formTemplates) {
+    submissions.push(await OnboardingFormSubmission.create({
+      organization: onboarding.organization,
+      onboarding: onboarding._id,
+      candidate: candidate._id,
+      candidateAccount: onboarding.candidateAccount,
+      formTemplate: formTemplate._id,
+      templateSnapshot: snapshotFormTemplate(formTemplate),
+      title: formTemplate.name,
+      status: 'draft',
+      hasSensitiveValues: formTemplate.fields.some((field) => isSensitiveField(field)),
+      values: buildSubmissionValues(formTemplate, candidate)
+    }));
+  }
+
+  const templateWorkflowItems = Array.isArray(packetTemplate?.workflowItems) && packetTemplate.workflowItems.length
+    ? packetTemplate.workflowItems.map((item) => (typeof item.toObject === 'function' ? item.toObject() : item))
+    : defaultWorkflowItemDefinitions(normalizedProcessType);
+  const counters = { form: 0 };
+  const itemKeys = templateWorkflowItems.map((item, index) => workflowItemKey(item, index));
+  const insertedItems = await OnboardingWorkflowItem.insertMany(templateWorkflowItems.map((item, index) => {
+    const source = sourceForWorkflowItem(item, submissions, counters);
+    const dueOffset = workflowDueOffset(normalizedProcessType, item.type, item);
+    return {
+      organization: onboarding.organization,
+      onboarding: onboarding._id,
+      type: item.type,
+      title: item.title || copy.formTitle,
+      description: item.description || '',
+      status: initialWorkflowStatus(item),
+      ownerType: ['candidate', 'user', 'system'].includes(item.ownerType) ? item.ownerType : 'candidate',
+      ownerUser: item.defaultOwnerUser || undefined,
+      required: item.required !== false,
+      notes: item.notes || '',
+      sourceType: source.sourceType,
+      sourceId: source.sourceId,
+      order: Number.isFinite(Number(item.order)) ? Number(item.order) : (index + 1) * 10,
+      dueAt: dueDateFromOffset(Date.now(), dueOffset),
+      metadata: {
+        ...(item.metadata || {}),
+        templateItemId: itemKeys[index],
+        defaultOwnerRole: item.defaultOwnerRole || '',
+        dueOffsetDays: dueOffset,
+        dependencyKeys: item.dependencyKeys || []
+      }
+    };
+  }));
+
+  const insertedByKey = new Map(insertedItems.map((item, index) => [itemKeys[index], item]));
+  await Promise.all(insertedItems.map((item, index) => {
+    const dependencyKeys = templateWorkflowItems[index].dependencyKeys || [];
+    const dependencies = dependencyKeys
+      .map((key) => insertedByKey.get(key)?._id)
+      .filter(Boolean);
+    if (!dependencies.length) return null;
+    item.dependencies = dependencies;
+    return item.save();
+  }).filter(Boolean));
 
   await CandidateOnboarding.findByIdAndUpdate(onboarding._id, {
     $addToSet: {
-      forms: submission._id,
-      workflowItems: { $each: items.map((item) => item._id) }
+      forms: { $each: submissions.map((submission) => submission._id) },
+      workflowItems: { $each: insertedItems.map((item) => item._id) }
     },
     templateSnapshot: {
       name: onboarding.templateSnapshot?.name || `Default ${copy.label.toLowerCase()} packet`,
       processType: normalizedProcessType,
       packetTemplate: onboarding.templateSnapshot?._id ? onboarding.templateSnapshot : undefined,
-      formTemplates: [snapshotFormTemplate(formTemplate)],
-      workflowItems: items.map((item) => ({
+      formTemplates: formTemplates.map((formTemplate) => snapshotFormTemplate(formTemplate)),
+      workflowItems: insertedItems.map((item) => ({
+        id: item.metadata?.templateItemId,
         type: item.type,
         title: item.title,
         ownerType: item.ownerType,
-        order: item.order
+        defaultOwnerRole: item.metadata?.defaultOwnerRole,
+        dueOffsetDays: item.metadata?.dueOffsetDays,
+        required: item.required,
+        order: item.order,
+        dependencyKeys: item.metadata?.dependencyKeys || []
       })),
       capturedAt: new Date()
     }
   });
 
   await updateProgress(onboarding._id);
+  await refreshBlockedWorkflowItems(onboarding._id);
   await logOnboardingEvent({
     req,
     organization: onboarding.organization,
@@ -322,12 +635,12 @@ async function initializeDefaultWorkflow({ onboarding, candidate, userId, req })
     actorType: 'system',
     action: 'workflow_initialized',
     metadata: {
-      workflowItems: items.length,
-      formSubmission: submission._id
+      workflowItems: insertedItems.length,
+      formSubmissions: submissions.map((submission) => submission._id)
     }
   });
 
-  return { formTemplate, submission, items };
+  return { formTemplates, submissions, items: insertedItems };
 }
 
 async function attachEnvelopeToWorkflow({ onboardingId, envelopeId }) {
@@ -361,6 +674,7 @@ async function markDocumentWorkflowComplete(onboardingId, envelopeId) {
   item.status = 'completed';
   item.completedAt = new Date();
   await item.save();
+  await refreshBlockedWorkflowItems(onboardingId);
   await updateProgress(onboardingId);
   return item;
 }
@@ -487,6 +801,7 @@ async function saveCandidateFormSubmission({ submission, values, filesByKey = {}
     await approvalItem.save();
   }
 
+  await refreshBlockedWorkflowItems(submission.onboarding);
   await updateProgress(submission.onboarding);
   await logOnboardingEvent({
     req,
@@ -568,6 +883,7 @@ async function reviewFormSubmission({ submission, decision, reviewerId, reviewer
     }
   });
 
+  await refreshBlockedWorkflowItems(submission.onboarding);
   await updateProgress(submission.onboarding);
   await tryCompleteOnboarding(submission.onboarding, { req });
   return submission;
@@ -588,60 +904,76 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
     return null;
   }
 
-  const handoffItem = items.find((item) => item.type === 'handoff');
-  const requiredItems = items.filter((item) => item.type !== 'handoff' && item.status !== 'skipped');
-  const ready = requiredItems.length > 0 && requiredItems.every((item) => item.status === 'completed');
+  const requiredItems = items.filter((item) =>
+    item.type !== 'handoff' &&
+    item.required !== false &&
+    item.status !== 'skipped'
+  );
+  const ready = requiredItems.every((item) => item.status === 'completed');
 
   if (!ready) {
     await updateProgress(onboardingId);
     return null;
   }
 
-  let handoff = await OnboardingHandoff.findOne({
-    onboarding: onboarding._id,
-    target: copy.handoffTarget
-  });
-  if (!handoff) {
-    handoff = await OnboardingHandoff.create({
-      organization: onboarding.organization,
-      onboarding: onboarding._id,
-      candidate: onboarding.candidate._id,
-      workflowItem: handoffItem?._id,
-      target: copy.handoffTarget,
-      status: 'pending',
-      payload: {
-        processType: normalizedProcessType,
-        candidateId: onboarding.candidate._id,
-        candidateEmail: onboarding.candidate.email,
-        candidateName: candidateDisplayName(onboarding.candidate),
-        onboardingId: onboarding._id,
-        completedAt: new Date()
-      }
-    });
-    onboarding.handoffs = Array.from(new Set([...(onboarding.handoffs || []), handoff._id]));
-  }
+  const handoffSources = items.filter((item) => item.type === 'handoff' || item.metadata?.handoffTarget);
+  const effectiveHandoffSources = handoffSources.length ? handoffSources : [{ metadata: { handoffTarget: copy.handoffTarget } }];
+  const completedHandoffs = [];
 
   try {
-    handoff.status = 'running';
-    handoff.attempts += 1;
-    await handoff.save();
+    for (const source of effectiveHandoffSources) {
+      const handoffTarget = source.metadata?.handoffTarget || source.metadata?.target || copy.handoffTarget;
+      let handoff = await OnboardingHandoff.findOne({
+        onboarding: onboarding._id,
+        target: handoffTarget
+      });
+      if (!handoff) {
+        handoff = await OnboardingHandoff.create({
+          organization: onboarding.organization,
+          onboarding: onboarding._id,
+          candidate: onboarding.candidate._id,
+          workflowItem: source._id,
+          target: handoffTarget,
+          status: 'pending',
+          payload: {
+            processType: normalizedProcessType,
+            target: handoffTarget,
+            candidateId: onboarding.candidate._id,
+            candidateEmail: onboarding.candidate.email,
+            candidateName: candidateDisplayName(onboarding.candidate),
+            onboardingId: onboarding._id,
+            completedAt: new Date()
+          }
+        });
+      }
+
+      if (handoff.status !== 'completed') {
+        handoff.status = 'running';
+        handoff.attempts += 1;
+        await handoff.save();
+        handoff.status = 'completed';
+        handoff.completedAt = new Date();
+        handoff.lastError = '';
+        await handoff.save();
+      }
+
+      if (source.type === 'handoff') {
+        source.status = 'completed';
+        source.completedAt = source.completedAt || new Date();
+        await source.save();
+      }
+
+      completedHandoffs.push(handoff);
+    }
 
     await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
 
-    handoff.status = 'completed';
-    handoff.completedAt = new Date();
-    handoff.lastError = '';
-    await handoff.save();
-
-    if (handoffItem) {
-      handoffItem.status = 'completed';
-      handoffItem.completedAt = new Date();
-      await handoffItem.save();
-    }
-
     onboarding.status = 'completed';
     onboarding.completedAt = onboarding.completedAt || new Date();
-    onboarding.handoffs = Array.from(new Set([...(onboarding.handoffs || []), handoff._id]));
+    onboarding.handoffs = Array.from(new Set([
+      ...(onboarding.handoffs || []).map((id) => objectIdString(id)),
+      ...completedHandoffs.map((handoff) => objectIdString(handoff._id))
+    ]));
     await onboarding.save();
 
     await updateProgress(onboardingId);
@@ -653,7 +985,7 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
       actorType: 'system',
       action: copy.handoffAction,
       metadata: {
-        handoff: handoff._id,
+        handoffs: completedHandoffs.map((handoff) => handoff._id),
         processType: normalizedProcessType,
         candidateStatus: copy.candidateStatus
       }
@@ -669,12 +1001,10 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
       priority: 'medium'
     });
   } catch (error) {
-    handoff.status = 'failed';
-    handoff.lastError = error.message;
-    await handoff.save();
-    if (handoffItem) {
-      handoffItem.status = 'failed';
-      await handoffItem.save();
+    const failedSource = effectiveHandoffSources.find((source) => source.type === 'handoff');
+    if (failedSource) {
+      failedSource.status = 'failed';
+      await failedSource.save();
     }
     await createPeopleTransitionNotifications({
       organization: onboarding.organization,
@@ -687,7 +1017,7 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
     });
   }
 
-  return handoff;
+  return completedHandoffs[0] || null;
 }
 
 function candidateCompletionUpdate(candidate, copy) {
@@ -707,7 +1037,8 @@ async function createPeopleTransitionNotifications({
   title,
   message,
   priority = 'medium',
-  actorUserId
+  actorUserId,
+  userIds
 }) {
   try {
     const organizationId = organization?._id || organization;
@@ -716,13 +1047,14 @@ async function createPeopleTransitionNotifications({
     const orgDoc = await Organization.findById(organizationId).select('name members').lean();
     if (!orgDoc) return [];
 
-    const userIds = (orgDoc.members || [])
+    const organizationUserIds = (orgDoc.members || [])
       .filter((member) => member.status === 'active' && member.user)
       .map((member) => member.user);
 
+    const recipientIds = Array.isArray(userIds) && userIds.length ? userIds : organizationUserIds;
     const uniqueUserIds = Array.from(new Set([
-      ...(actorUserId ? [String(actorUserId)] : []),
-      ...userIds.map((id) => String(id))
+      ...recipientIds.map((id) => String(id)),
+      ...(actorUserId && !(Array.isArray(userIds) && userIds.length) ? [String(actorUserId)] : [])
     ]));
     if (!uniqueUserIds.length) return [];
 
@@ -757,23 +1089,222 @@ async function createPeopleTransitionNotifications({
   }
 }
 
+function ownerName(ownerUser) {
+  if (!ownerUser || typeof ownerUser !== 'object') return '';
+  const profileName = `${ownerUser.profile?.firstName || ''} ${ownerUser.profile?.lastName || ''}`.trim();
+  return profileName || ownerUser.name || ownerUser.email || '';
+}
+
+function serializeWorkflowItem(item, now = new Date()) {
+  if (!item) return item;
+  const raw = typeof item.toObject === 'function' ? item.toObject() : item;
+  const owner = raw.ownerUser && typeof raw.ownerUser === 'object' ? raw.ownerUser : null;
+  const dueAt = raw.dueAt ? new Date(raw.dueAt) : null;
+  const active = ACTIVE_WORKFLOW_STATUSES.includes(raw.status);
+  const dependencies = (raw.dependencies || []).map((dependency) => {
+    if (dependency && typeof dependency === 'object') {
+      return {
+        _id: dependency._id,
+        title: dependency.title,
+        status: dependency.status,
+        type: dependency.type
+      };
+    }
+    return { _id: dependency };
+  });
+
+  return {
+    ...raw,
+    ownerUser: owner?._id || raw.ownerUser,
+    ownerName: ownerName(owner),
+    ownerEmail: owner?.email || '',
+    isOverdue: Boolean(active && dueAt && dueAt < now),
+    isDueSoon: Boolean(active && dueAt && dueAt >= now && dueAt <= new Date(now.getTime() + DAY_MS)),
+    dependencySummary: dependencies
+  };
+}
+
+function signerCanAct(envelope, signer) {
+  if (!signer) return false;
+  const signerOrder = Number(signer.order || 1);
+  return (envelope.signers || [])
+    .filter((item) => Number(item.order || 1) < signerOrder)
+    .every((item) => item.status === 'signed');
+}
+
+function candidateSignerForEnvelope(envelope, candidateAccountId) {
+  const candidateAccount = objectIdString(candidateAccountId);
+  return (envelope.signers || []).find((signer) =>
+    signer.role === 'candidate' &&
+    (!signer.candidateAccount || !candidateAccount || objectIdString(signer.candidateAccount) === candidateAccount)
+  ) || (envelope.signers || []).find((signer) => signer.role === 'candidate');
+}
+
+function fieldBelongsToSigner(field, signer) {
+  if ((field.role || 'candidate') !== 'candidate') return false;
+  if (signer?.key && field.signerKey) return field.signerKey === signer.key;
+  return true;
+}
+
+function documentActionType(envelopeDocument, signer) {
+  const fields = (envelopeDocument?.signatureFields || []).filter((field) => fieldBelongsToSigner(field, signer));
+  const textFields = fields.filter((field) => field.type === 'text');
+  const signatureFields = fields.filter((field) => field.type === 'signature');
+  if (textFields.length && !signatureFields.length) return 'document_fill';
+  if (signatureFields.length) return 'document_sign';
+  return null;
+}
+
+function documentWorkflowItemFor(envelope, workflowItems = []) {
+  return workflowItems.find((item) =>
+    item.type === 'document' &&
+    (!item.sourceId || objectIdString(item.sourceId) === objectIdString(envelope._id))
+  ) || workflowItems.find((item) => item.type === 'document');
+}
+
+function computeCandidateNextAction({ onboarding, workflowItems = [], formSubmissions = [], envelopes = [] }) {
+  const processType = normalizeProcessType(onboarding.processType);
+  const recordId = onboarding._id;
+  const formById = new Map(formSubmissions.map((submission) => [objectIdString(submission._id), submission]));
+  const formItems = workflowItems
+    .filter((item) => item.type === 'form' && item.ownerType === 'candidate')
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+  for (const item of formItems) {
+    const submission = formById.get(objectIdString(item.sourceId));
+    if (submission && ['draft', 'rejected'].includes(submission.status)) {
+      return {
+        type: 'form',
+        label: submission.status === 'rejected' ? `Update ${submission.title}` : `Complete ${submission.title}`,
+        href: `/forms/${submission._id}`,
+        dueAt: item.dueAt,
+        status: submission.status,
+        processType,
+        recordId,
+        sourceIds: {
+          workflowItemId: item._id,
+          formSubmissionId: submission._id
+        }
+      };
+    }
+  }
+
+  const unassignedForm = formSubmissions
+    .filter((submission) => ['draft', 'rejected'].includes(submission.status))
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))[0];
+  if (unassignedForm) {
+    return {
+      type: 'form',
+      label: unassignedForm.status === 'rejected' ? `Update ${unassignedForm.title}` : `Complete ${unassignedForm.title}`,
+      href: `/forms/${unassignedForm._id}`,
+      dueAt: undefined,
+      status: unassignedForm.status,
+      processType,
+      recordId,
+      sourceIds: {
+        formSubmissionId: unassignedForm._id
+      }
+    };
+  }
+
+  const documentActions = [];
+  for (const envelope of envelopes) {
+    if (!ACTIVE_ENVELOPE_STATUSES.includes(envelope.status)) continue;
+    const signer = candidateSignerForEnvelope(envelope, onboarding.candidateAccount);
+    if (!signer || signer.status === 'signed' || !signerCanAct(envelope, signer)) continue;
+    const workflowItem = documentWorkflowItemFor(envelope, workflowItems);
+    (envelope.documents || []).forEach((envelopeDocument, index) => {
+      if (envelopeDocument.status !== 'pending') return;
+      const type = documentActionType(envelopeDocument, signer);
+      if (!type) return;
+      documentActions.push({
+        type,
+        label: type === 'document_fill' ? `Fill ${envelopeDocument.title}` : `Sign ${envelopeDocument.title}`,
+        href: `/documents/${envelopeDocument._id}/sign`,
+        dueAt: workflowItem?.dueAt,
+        status: envelopeDocument.status,
+        processType,
+        recordId,
+        order: Number(workflowItem?.order || 0) * 1000 + index,
+        sourceIds: {
+          workflowItemId: workflowItem?._id,
+          envelopeId: envelope._id,
+          envelopeDocumentId: envelopeDocument._id
+        }
+      });
+    });
+  }
+
+  const nextFillDocument = documentActions
+    .filter((action) => action.type === 'document_fill')
+    .sort((a, b) => a.order - b.order)[0];
+  if (nextFillDocument) return nextFillDocument;
+
+  const nextSignDocument = documentActions
+    .filter((action) => action.type === 'document_sign')
+    .sort((a, b) => a.order - b.order)[0];
+  if (nextSignDocument) return nextSignDocument;
+
+  if (onboarding.status === 'completed') {
+    return {
+      type: 'complete',
+      label: 'Transition complete',
+      href: `/transitions/${recordId}`,
+      dueAt: undefined,
+      status: onboarding.status,
+      processType,
+      recordId,
+      sourceIds: {}
+    };
+  }
+
+  const waitingItem = workflowItems
+    .filter((item) => ACTIVE_WORKFLOW_STATUSES.includes(item.status))
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))[0];
+
+  return {
+    type: 'waiting',
+    label: waitingItem ? `Waiting on ${waitingItem.title}` : 'Waiting for recruiter action',
+    href: `/transitions/${recordId}`,
+    dueAt: waitingItem?.dueAt,
+    status: waitingItem?.status || onboarding.status,
+    processType,
+    recordId,
+    sourceIds: {
+      workflowItemId: waitingItem?._id
+    }
+  };
+}
+
 async function serializeOnboardingPlatform(onboarding) {
   if (!onboarding) return onboarding;
-  const [workflowItems, formSubmissions, approvals, handoffs] = await Promise.all([
-    OnboardingWorkflowItem.find({ onboarding: onboarding._id }).sort({ order: 1, createdAt: 1 }),
+  const [workflowItems, formSubmissions, approvals, handoffs, envelopes] = await Promise.all([
+    OnboardingWorkflowItem.find({ onboarding: onboarding._id })
+      .populate('ownerUser', 'email profile')
+      .populate('dependencies', 'title status type')
+      .sort({ order: 1, createdAt: 1 }),
     OnboardingFormSubmission.find({ onboarding: onboarding._id }).sort({ createdAt: 1 }),
     OnboardingApproval.find({ onboarding: onboarding._id }).sort({ createdAt: -1 }),
-    OnboardingHandoff.find({ onboarding: onboarding._id }).sort({ createdAt: -1 })
+    OnboardingHandoff.find({ onboarding: onboarding._id }).sort({ createdAt: -1 }),
+    OnboardingEnvelope.find({ onboarding: onboarding._id }).sort({ createdAt: 1 })
   ]);
 
   const raw = typeof onboarding.toObject === 'function' ? onboarding.toObject() : onboarding;
+  const serializedWorkflowItems = workflowItems.map((item) => serializeWorkflowItem(item));
   return {
     ...raw,
     processType: normalizeProcessType(raw.processType),
-    workflowItems,
+    envelopes,
+    workflowItems: serializedWorkflowItems,
     forms: formSubmissions.map((submission) => serializeSubmission(submission)),
     approvals,
-    handoffs
+    handoffs,
+    nextAction: computeCandidateNextAction({
+      onboarding: raw,
+      workflowItems: serializedWorkflowItems,
+      formSubmissions,
+      envelopes
+    })
   };
 }
 
@@ -781,16 +1312,20 @@ module.exports = {
   PROCESS_COPY,
   PROCESS_TYPES,
   attachEnvelopeToWorkflow,
+  computeCandidateNextAction,
   createPeopleTransitionNotifications,
+  defaultWorkflowItemDefinitions,
   ensureDefaultFormTemplate,
   initializeDefaultWorkflow,
   markDocumentWorkflowComplete,
   markDocumentWorkflowInProgress,
   normalizeProcessType,
   processCopy,
+  refreshBlockedWorkflowItems,
   reviewFormSubmission,
   saveCandidateFormSubmission,
   serializeOnboardingPlatform,
+  serializeWorkflowItem,
   tryCompleteOnboarding,
   updateProgress
 };

@@ -42,13 +42,15 @@ export default function CandidateDocumentCompletePage() {
     ? "This document is complete. Continue to the next document in the packet."
     : payload?.document.status === "completed"
       ? "The document is complete and ready to download."
-      : "Your signature has been recorded. The packet may still require an internal countersignature before the final PDF is available."
+      : payload?.actionType === "document_fill"
+        ? "Your document fields have been recorded. The packet may still require an internal countersignature before the final PDF is available."
+        : "Your signature has been recorded. The packet may still require an internal countersignature before the final PDF is available."
 
   return (
     <CandidateShell
       brand={brand}
       account={account}
-      title="Signature submitted"
+      title="Document completed"
       subtitle="Your portal keeps transition signing status and downloads together."
       onSignOut={signOut}
     >
@@ -59,7 +61,7 @@ export default function CandidateDocumentCompletePage() {
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50">
               <CheckCircle2 className="h-8 w-8 text-emerald-700" />
             </div>
-            <h1 className="mt-4 text-3xl font-semibold text-slate-950">Signature submitted</h1>
+            <h1 className="mt-4 text-3xl font-semibold text-slate-950">Document completed</h1>
             <p className="mt-3 text-sm leading-6 text-slate-600">
               {completionMessage}
             </p>

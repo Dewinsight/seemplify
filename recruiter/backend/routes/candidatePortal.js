@@ -117,6 +117,15 @@ function candidateFieldsForSigner(envelopeDocument, signer) {
     .filter((field) => fieldBelongsToCandidateSigner(field, signer));
 }
 
+function candidateDocumentActionType(envelopeDocument, signer) {
+  const fields = candidateFieldsForSigner(envelopeDocument, signer);
+  const textFields = fields.filter((field) => field.type === 'text');
+  const signatureFields = fields.filter((field) => field.type === 'signature');
+  if (textFields.length && !signatureFields.length) return 'document_fill';
+  if (signatureFields.length) return 'document_sign';
+  return null;
+}
+
 function isPendingCandidateDocument(envelopeDocument, signer) {
   return OPEN_DOCUMENT_STATUSES.includes(envelopeDocument?.status) &&
     candidateFieldsForSigner(envelopeDocument, signer).length > 0;
@@ -591,6 +600,7 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
     if (!envelope) return res.status(404).json({ msg: 'Document not found' });
 
     const signer = candidateSignerForEnvelope(envelope, req.candidateAccount._id);
+    const actionType = candidateDocumentActionType(envelopeDocument, signer);
     const canSign = Boolean(
       signer &&
       signer.status !== 'signed' &&
@@ -629,6 +639,8 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
         document: envelopeDocument,
         signer,
         canSign,
+        actionType,
+        canCompleteFillOnly: canSign && actionType === 'document_fill',
         nextDocumentId: findNextPendingCandidateDocumentId(envelope, envelopeDocument, signer),
         downloadUrl
       }
@@ -770,6 +782,113 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
   } catch (error) {
     console.error('Candidate document signing failed:', error);
     res.status(500).json({ msg: 'Failed to sign document', error: error.message });
+  }
+});
+
+router.post('/documents/:id/complete', candidateAuthMiddleware, async (req, res) => {
+  try {
+    const { envelope, envelopeDocument } = await findCandidateEnvelopeDocument(req, req.params.id);
+
+    if (!envelope || !envelopeDocument || envelopeDocument.status !== 'pending' || !ACTIVE_ENVELOPE_STATUSES.includes(envelope.status)) {
+      return res.status(404).json({ msg: 'Document not found or not available for completion' });
+    }
+
+    const signer = candidateSignerForEnvelope(envelope, req.candidateAccount._id);
+    if (!signer) return res.status(403).json({ msg: 'You are not assigned to this document' });
+    if (signer.status === 'signed') return res.status(400).json({ msg: 'You have already completed this envelope' });
+    if (!isPendingCandidateDocument(envelopeDocument, signer)) {
+      return res.status(400).json({ msg: 'This document is not waiting for candidate input' });
+    }
+    if (!canSignerAct(envelope, signer)) {
+      return res.status(400).json({ msg: 'Earlier signers must complete first' });
+    }
+    if (candidateDocumentActionType(envelopeDocument, signer) !== 'document_fill') {
+      return res.status(400).json({ msg: 'This document requires a signature' });
+    }
+
+    const { values: textFieldValues, error: textFieldError } = candidateTextFieldValues(
+      envelopeDocument,
+      signer,
+      req.body.fieldValues || {}
+    );
+    if (textFieldError) {
+      return res.status(400).json({ msg: textFieldError });
+    }
+
+    const sourceBuffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
+    const completedAt = new Date();
+    const stamped = await onboardingPdfService.stampSignedPdf({
+      pdfBuffer: sourceBuffer,
+      signatureFields: envelopeDocument.signatureFields,
+      signer: {
+        name: candidateName(envelope.candidate),
+        email: req.candidateAccount.email
+      },
+      signerRole: 'candidate',
+      signerKey: signer.key,
+      signatureDataUrl: null,
+      fieldValues: textFieldValues,
+      signedAt: completedAt,
+      auditText: `Completed by ${req.candidateAccount.email} via Seemplify Candidate Portal`
+    });
+
+    envelopeDocument.signedPdf = await onboardingStorageService.uploadBuffer(stamped, {
+      folder: 'onboarding/signed',
+      fileName: `${envelopeDocument.title}-candidate-completed-${Date.now()}.pdf`
+    });
+    envelopeDocument.status = envelope.signers.some((item) => item.role === 'internal') ? 'signed' : 'completed';
+    envelopeDocument.signedAt = completedAt;
+
+    const nextDocumentId = findNextPendingCandidateDocumentId(envelope, envelopeDocument, signer);
+    if (!nextDocumentId) {
+      signer.status = 'signed';
+      signer.signedAt = completedAt;
+    }
+
+    const completed = await completeEnvelopeIfReady(envelope, req);
+    await envelope.save();
+
+    await logOnboardingEvent({
+      req,
+      organization: envelope.organization._id,
+      onboarding: envelope.onboarding,
+      envelope: envelope._id,
+      document: envelopeDocument.document,
+      candidate: envelope.candidate._id,
+      actorType: 'candidate',
+      actorCandidateAccount: req.candidateAccount._id,
+      actorEmail: req.candidateAccount.email,
+      action: 'candidate_document_completed',
+      metadata: { signerKey: signer.key, completed }
+    });
+
+    if (completed) {
+      const recipients = Array.from(new Set(envelope.signers.map((item) => item.email).filter(Boolean)));
+      await Promise.all(recipients.map((recipientEmail) =>
+        onboardingEmailService.sendEnvelopeCompleted({
+          recipientEmail,
+          organization: envelope.organization,
+          envelope
+        }).catch((error) => console.error('Failed to send completion email:', error))
+      ));
+    } else if (!nextDocumentId) {
+      const readySigners = envelope.signers.filter((item) =>
+        ['pending', 'viewed'].includes(item.status) &&
+        canSignerAct(envelope, item)
+      );
+      await Promise.all(readySigners.map((item) =>
+        onboardingEmailService.sendEnvelopeSignerNotification({
+          signer: item,
+          organization: envelope.organization,
+          envelope
+        }).catch((error) => console.error('Failed to send signer notification:', error))
+      ));
+    }
+
+    res.json({ data: envelope, nextDocumentId });
+  } catch (error) {
+    console.error('Candidate document completion failed:', error);
+    res.status(500).json({ msg: 'Failed to complete document', error: error.message });
   }
 });
 

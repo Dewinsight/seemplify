@@ -31,13 +31,16 @@ const { logOnboardingEvent } = require('../services/onboardingAuditService');
 const {
   attachEnvelopeToWorkflow,
   createPeopleTransitionNotifications,
+  defaultWorkflowItemDefinitions,
   ensureDefaultFormTemplate,
   initializeDefaultWorkflow,
   markDocumentWorkflowComplete,
   markDocumentWorkflowInProgress,
   normalizeProcessType,
   processCopy,
+  refreshBlockedWorkflowItems,
   reviewFormSubmission,
+  serializeWorkflowItem,
   serializeOnboardingPlatform,
   tryCompleteOnboarding,
   updateProgress
@@ -133,22 +136,27 @@ async function ensureSystemPacketTemplates({ organization, userId }) {
       ...processTypeFilter(processType),
       status: 'active'
     });
-    if (existing) continue;
+    if (existing) {
+      existing.name = existing.name || `Default ${copy.label.toLowerCase()} packet`;
+      existing.description = `${copy.label} workflow with process-specific forms, documents, reviews, and closeout tasks.`;
+      existing.category = processType;
+      existing.processType = processType;
+      existing.formTemplates = existing.formTemplates?.length ? existing.formTemplates : [formTemplate._id];
+      existing.workflowItems = defaultWorkflowItemDefinitions(processType);
+      existing.updatedBy = userId;
+      await existing.save();
+      continue;
+    }
 
     await OnboardingTemplate.create({
       organization,
       name: `Default ${copy.label.toLowerCase()} packet`,
-      description: `${copy.label} workflow with forms, documents, HR review, and closeout.`,
+      description: `${copy.label} workflow with process-specific forms, documents, reviews, and closeout tasks.`,
       category: processType,
       processType,
       isSystem: true,
       formTemplates: [formTemplate._id],
-      workflowItems: [
-        { id: `${processType}-form`, type: 'form', title: copy.formTitle, ownerType: 'candidate', order: 10 },
-        { id: `${processType}-documents`, type: 'document', title: copy.documentTitle, ownerType: 'candidate', order: 20 },
-        { id: `${processType}-approval`, type: 'approval', title: copy.approvalTitle, ownerType: 'user', order: 30 },
-        { id: `${processType}-handoff`, type: 'handoff', title: copy.handoffTitle, ownerType: 'system', order: 40 }
-      ],
+      workflowItems: defaultWorkflowItemDefinitions(processType),
       createdBy: userId
     });
   }
@@ -244,6 +252,8 @@ function normalizeSignatureFields(fields, signers = []) {
         signerKey: resolvedSigner?.key || undefined,
         type: ['signature', 'date', 'name', 'email', 'text'].includes(field.type) ? field.type : 'signature',
         label: field.label || '',
+        placeholder: field.type === 'text' ? String(field.placeholder || '') : '',
+        multiline: field.type === 'text' ? Boolean(field.multiline) : false,
         page: Math.max(1, Number(field.page || 1)),
         x: normalizeFieldNumber(field.x, 0.1),
         y: normalizeFieldNumber(field.y, 0.1),
@@ -535,6 +545,176 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+router.get('/tasks', async (req, res) => {
+  try {
+    const organization = organizationId(req);
+    const now = new Date();
+    const processType = processTypeQueryFromRequest(req);
+    const onboardingQuery = {
+      organization,
+      ...processTypeFilter(processType)
+    };
+    const onboardingIds = await CandidateOnboarding.find(onboardingQuery).distinct('_id');
+    const taskQuery = {
+      organization,
+      onboarding: { $in: onboardingIds }
+    };
+
+    if (req.query.status && req.query.status !== 'all') {
+      taskQuery.status = req.query.status;
+    }
+
+    if (req.query.owner === 'me') {
+      taskQuery.ownerUser = req.user.id;
+    } else if (req.query.owner === 'candidate') {
+      taskQuery.ownerType = 'candidate';
+    } else if (req.query.owner === 'system') {
+      taskQuery.ownerType = 'system';
+    } else if (req.query.owner === 'unassigned') {
+      taskQuery.ownerType = 'user';
+      taskQuery.ownerUser = { $exists: false };
+    } else if (req.query.owner && req.query.owner !== 'all') {
+      taskQuery.ownerUser = req.query.owner;
+    }
+
+    if (req.query.due === 'overdue') {
+      taskQuery.status = taskQuery.status || { $in: ['pending', 'in_progress', 'blocked', 'failed'] };
+      taskQuery.dueAt = { $lt: now };
+    } else if (req.query.due === 'due_soon') {
+      taskQuery.status = taskQuery.status || { $in: ['pending', 'in_progress', 'blocked', 'failed'] };
+      taskQuery.dueAt = { $gte: now, $lte: new Date(now.getTime() + 24 * 60 * 60 * 1000) };
+    } else if (req.query.due === 'upcoming') {
+      taskQuery.dueAt = { $gt: new Date(now.getTime() + 24 * 60 * 60 * 1000) };
+    } else if (req.query.due === 'none') {
+      taskQuery.dueAt = { $exists: false };
+    }
+
+    const items = await OnboardingWorkflowItem.find(taskQuery)
+      .populate('ownerUser', 'email profile')
+      .populate('dependencies', 'title status type')
+      .populate({
+        path: 'onboarding',
+        select: 'title processType status dueAt candidate',
+        populate: { path: 'candidate', select: 'firstName lastName email status position' }
+      })
+      .sort({ dueAt: 1, order: 1, createdAt: -1 })
+      .limit(250);
+
+    const data = items.map((item) => {
+      const serialized = serializeWorkflowItem(item, now);
+      const transition = item.onboarding;
+      return {
+        ...serialized,
+        transition: transition ? {
+          _id: transition._id,
+          title: transition.title,
+          processType: normalizeProcessType(transition.processType),
+          status: transition.status,
+          dueAt: transition.dueAt,
+          candidate: transition.candidate
+        } : null
+      };
+    });
+
+    res.json({ data });
+  } catch (error) {
+    console.error('Load people transition tasks failed:', error);
+    res.status(500).json({ msg: 'Failed to load people transition tasks', error: error.message });
+  }
+});
+
+router.get('/analytics', async (req, res) => {
+  try {
+    const organization = organizationId(req);
+    const processType = processTypeQueryFromRequest(req);
+    const query = {
+      organization,
+      ...processTypeFilter(processType)
+    };
+    if (req.query.from || req.query.to) {
+      query.createdAt = {};
+      if (req.query.from) query.createdAt.$gte = new Date(req.query.from);
+      if (req.query.to) query.createdAt.$lte = new Date(req.query.to);
+    }
+
+    const records = await CandidateOnboarding.find(query)
+      .select('_id processType status createdAt completedAt')
+      .lean();
+    const recordIds = records.map((record) => record._id);
+    const now = new Date();
+    const [workflowItems, failedHandoffs] = await Promise.all([
+      OnboardingWorkflowItem.find({
+        organization,
+        onboarding: { $in: recordIds }
+      })
+        .populate('ownerUser', 'email profile')
+        .lean(),
+      OnboardingHandoff.countDocuments({
+        organization,
+        onboarding: { $in: recordIds },
+        status: 'failed'
+      })
+    ]);
+
+    const completedRecords = records.filter((record) => record.status === 'completed' && record.completedAt);
+    const averageCompletionHours = completedRecords.length
+      ? Math.round(completedRecords.reduce((sum, record) => (
+          sum + (new Date(record.completedAt).getTime() - new Date(record.createdAt).getTime()) / (60 * 60 * 1000)
+        ), 0) / completedRecords.length)
+      : 0;
+    const activeWorkflowItems = workflowItems.filter((item) => ['pending', 'in_progress', 'blocked', 'failed'].includes(item.status));
+    const overdueCount = activeWorkflowItems.filter((item) => item.dueAt && new Date(item.dueAt) < now).length;
+
+    const pendingOwnerBuckets = new Map();
+    activeWorkflowItems.forEach((item) => {
+      const owner = item.ownerUser && typeof item.ownerUser === 'object'
+        ? `${item.ownerUser.profile?.firstName || ''} ${item.ownerUser.profile?.lastName || ''}`.trim() || item.ownerUser.email
+        : item.ownerType === 'candidate'
+          ? 'Candidate'
+          : item.ownerType === 'system'
+            ? 'System'
+            : 'Unassigned internal owner';
+      pendingOwnerBuckets.set(owner, (pendingOwnerBuckets.get(owner) || 0) + 1);
+    });
+
+    const bottlenecksByType = new Map();
+    activeWorkflowItems.forEach((item) => {
+      const bucket = bottlenecksByType.get(item.type) || { type: item.type, total: 0, overdue: 0, blocked: 0, failed: 0 };
+      bucket.total += 1;
+      if (item.dueAt && new Date(item.dueAt) < now) bucket.overdue += 1;
+      if (item.status === 'blocked') bucket.blocked += 1;
+      if (item.status === 'failed') bucket.failed += 1;
+      bottlenecksByType.set(item.type, bucket);
+    });
+
+    const byProcess = records.reduce((acc, record) => {
+      const key = normalizeProcessType(record.processType);
+      acc[key] = acc[key] || { total: 0, completed: 0 };
+      acc[key].total += 1;
+      if (record.status === 'completed') acc[key].completed += 1;
+      return acc;
+    }, {});
+
+    res.json({
+      data: {
+        total: records.length,
+        completed: completedRecords.length,
+        active: records.filter((record) => !['completed', 'cancelled'].includes(record.status)).length,
+        completionRate: records.length ? Math.round((completedRecords.length / records.length) * 100) : 0,
+        averageCompletionHours,
+        overdueCount,
+        failedHandoffs,
+        byProcess,
+        pendingOwnerBuckets: Array.from(pendingOwnerBuckets, ([owner, count]) => ({ owner, count })),
+        bottlenecksByType: Array.from(bottlenecksByType.values()).sort((a, b) => b.total - a.total)
+      }
+    });
+  } catch (error) {
+    console.error('Load people transition analytics failed:', error);
+    res.status(500).json({ msg: 'Failed to load people transition analytics', error: error.message });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const { status, search, candidateId } = req.query;
@@ -664,7 +844,8 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       onboarding,
       candidate,
       userId: req.user.id,
-      req
+      req,
+      packetTemplate
     });
 
     await logOnboardingEvent({
@@ -918,11 +1099,12 @@ router.post('/reminders/run', async (req, res) => {
     const organization = organizationId(req);
     const now = new Date();
     const reminderWindow = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const dueSoonWindow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const selectedProcessType = processTypeQueryFromRequest(req);
     const reminderQuery = {
       organization,
       status: { $in: ['pending', 'in_progress', 'blocked', 'failed'] },
-      dueAt: { $lte: now },
+      dueAt: { $lte: dueSoonWindow },
       $or: [
         { lastReminderAt: { $exists: false } },
         { lastReminderAt: { $lte: reminderWindow } }
@@ -944,23 +1126,51 @@ router.post('/reminders/run', async (req, res) => {
     for (const item of items) {
       const onboarding = await CandidateOnboarding.findById(item.onboarding).populate('candidate');
       if (!onboarding?.candidate) continue;
+      const overdue = item.dueAt && item.dueAt < now;
+      const notificationType = overdue ? 'people_transition_overdue' : 'people_transition_due_soon';
+      const copy = processCopy(onboarding.processType);
       item.lastReminderAt = now;
+      if (overdue) item.lastOverdueAlertAt = now;
+      else item.lastDueSoonAlertAt = now;
       await item.save();
       sent += 1;
-      await onboardingEmailService.sendWorkflowReminder({
-        candidate: onboarding.candidate,
-        organization: organizationDoc,
-        onboarding,
-        item,
-        request: req
-      }).catch((error) => console.error('Failed to send onboarding workflow reminder:', error));
+      if (item.ownerType === 'candidate') {
+        await onboardingEmailService.sendWorkflowReminder({
+          candidate: onboarding.candidate,
+          organization: organizationDoc,
+          onboarding,
+          item,
+          request: req
+        }).catch((error) => console.error('Failed to send onboarding workflow reminder:', error));
+      } else if (item.ownerType === 'user' && item.ownerUser) {
+        await createPeopleTransitionNotifications({
+          organization,
+          onboarding,
+          candidate: onboarding.candidate,
+          notificationType,
+          title: overdue ? `${copy.label} task overdue` : `${copy.label} task due soon`,
+          message: `${item.title} for ${candidateDisplayName(onboarding.candidate)} is ${overdue ? 'overdue' : 'due soon'}.`,
+          priority: overdue ? 'high' : 'medium',
+          userIds: [item.ownerUser]
+        });
+      } else {
+        await createPeopleTransitionNotifications({
+          organization,
+          onboarding,
+          candidate: onboarding.candidate,
+          notificationType,
+          title: overdue ? `${copy.label} task overdue` : `${copy.label} task due soon`,
+          message: `${item.title} for ${candidateDisplayName(onboarding.candidate)} is ${overdue ? 'overdue' : 'due soon'}.`,
+          priority: overdue ? 'high' : 'medium'
+        });
+      }
       await logOnboardingEvent({
         req,
         organization,
         onboarding: onboarding._id,
         candidate: onboarding.candidate._id,
         actorType: 'system',
-        action: 'workflow_reminder_sent',
+        action: overdue ? 'workflow_overdue_alert_sent' : 'workflow_due_soon_alert_sent',
         metadata: { workflowItem: item._id, itemType: item.type, processType: normalizeProcessType(onboarding.processType) }
       });
     }
@@ -1741,6 +1951,127 @@ router.get('/envelopes/:id', async (req, res) => {
     res.json({ data: envelope });
   } catch (error) {
     res.status(500).json({ msg: 'Failed to load envelope', error: error.message });
+  }
+});
+
+router.patch('/:onboardingId/workflow-items/:itemId', async (req, res) => {
+  try {
+    const onboarding = await CandidateOnboarding.findOne({
+      _id: req.params.onboardingId,
+      organization: organizationId(req)
+    }).populate('candidate', 'firstName lastName email');
+    if (!onboarding) return res.status(404).json({ msg: 'Transition record not found' });
+
+    const item = await OnboardingWorkflowItem.findOne({
+      _id: req.params.itemId,
+      onboarding: onboarding._id,
+      organization: organizationId(req)
+    });
+    if (!item) return res.status(404).json({ msg: 'Workflow item not found' });
+
+    const previousOwnerUser = item.ownerUser ? String(item.ownerUser) : '';
+    const previousStatus = item.status;
+    const allowedStatuses = ['not_started', 'pending', 'in_progress', 'completed', 'blocked', 'skipped', 'failed'];
+    const allowedOwnerTypes = ['candidate', 'user', 'system'];
+
+    if (allowedOwnerTypes.includes(req.body.ownerType)) item.ownerType = req.body.ownerType;
+    if (Object.prototype.hasOwnProperty.call(req.body, 'ownerUser')) {
+      item.ownerUser = req.body.ownerUser || undefined;
+      if (req.body.ownerUser) item.ownerType = 'user';
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'dueAt')) {
+      item.dueAt = req.body.dueAt ? new Date(req.body.dueAt) : undefined;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'notes')) item.notes = req.body.notes || '';
+    if (Object.prototype.hasOwnProperty.call(req.body, 'required')) item.required = req.body.required !== false;
+    if (allowedStatuses.includes(req.body.status)) {
+      item.status = req.body.status;
+      if (req.body.status === 'completed') {
+        item.completedAt = item.completedAt || new Date();
+        item.completedBy = req.user.id;
+      } else if (previousStatus === 'completed') {
+        item.completedAt = undefined;
+        item.completedBy = undefined;
+      }
+    }
+
+    await item.save();
+
+    if (item.ownerUser && String(item.ownerUser) !== previousOwnerUser) {
+      const copy = processCopy(onboarding.processType);
+      await createPeopleTransitionNotifications({
+        organization: organizationId(req),
+        onboarding,
+        candidate: onboarding.candidate,
+        notificationType: 'people_transition_task_assigned',
+        title: `${copy.label} task assigned`,
+        message: `${item.title} is assigned to you for ${candidateDisplayName(onboarding.candidate)}.`,
+        priority: item.dueAt && item.dueAt < new Date() ? 'high' : 'medium',
+        userIds: [item.ownerUser]
+      });
+    }
+
+    if (item.status === 'completed' && item.metadata?.handoffTarget) {
+      let handoff = await OnboardingHandoff.findOne({
+        onboarding: onboarding._id,
+        target: item.metadata.handoffTarget
+      });
+      if (!handoff) {
+        handoff = await OnboardingHandoff.create({
+          organization: onboarding.organization,
+          onboarding: onboarding._id,
+          candidate: onboarding.candidate._id,
+          workflowItem: item._id,
+          target: item.metadata.handoffTarget,
+          status: 'completed',
+          payload: {
+            processType: normalizeProcessType(onboarding.processType),
+            target: item.metadata.handoffTarget,
+            candidateId: onboarding.candidate._id,
+            candidateEmail: onboarding.candidate.email,
+            candidateName: candidateDisplayName(onboarding.candidate),
+            completedBy: req.user.id,
+            completedAt: new Date()
+          },
+          attempts: 1,
+          completedAt: new Date()
+        });
+        onboarding.handoffs = Array.from(new Set([
+          ...(onboarding.handoffs || []).map((id) => String(id)),
+          String(handoff._id)
+        ]));
+        await onboarding.save();
+      }
+    }
+
+    await refreshBlockedWorkflowItems(onboarding._id);
+    await updateProgress(onboarding._id);
+    await tryCompleteOnboarding(onboarding._id, { req });
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: onboarding._id,
+      candidate: onboarding.candidate._id,
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: req.user.email,
+      action: 'workflow_item_updated',
+      metadata: {
+        workflowItem: item._id,
+        status: item.status,
+        ownerUser: item.ownerUser,
+        dueAt: item.dueAt
+      }
+    });
+
+    const populatedItem = await OnboardingWorkflowItem.findById(item._id)
+      .populate('ownerUser', 'email profile')
+      .populate('dependencies', 'title status type');
+    res.json({ data: serializeWorkflowItem(populatedItem) });
+  } catch (error) {
+    console.error('Update people transition workflow item failed:', error);
+    res.status(500).json({ msg: 'Failed to update workflow item', error: error.message });
   }
 });
 

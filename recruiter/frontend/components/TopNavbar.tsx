@@ -21,6 +21,8 @@ import {
   PlusCircle,
   ClipboardList,
   ChevronDown,
+  ListTodo,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -85,6 +87,8 @@ const navigationItems: NavigationItem[] = [
       { title: "Start Process", href: "/people-transitions/new", icon: PlusCircle },
       { title: "Documents", href: "/people-transitions/documents", icon: FileText },
       { title: "Templates", href: "/people-transitions/templates", icon: ClipboardList },
+      { title: "Tasks", href: "/people-transitions/tasks", icon: ListTodo },
+      { title: "Analytics", href: "/people-transitions/analytics", icon: BarChart3 },
     ],
   },
   { title: "Calendar", href: "/calendar", icon: Calendar },

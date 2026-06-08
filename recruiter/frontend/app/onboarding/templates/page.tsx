@@ -27,6 +27,8 @@ import {
 } from "@/services/onboardingService";
 import { toast } from "sonner";
 
+type WorkflowItemDraft = NonNullable<OnboardingPacketTemplate["workflowItems"]>[number];
+
 export default function OnboardingTemplatesPage() {
   const [templates, setTemplates] = useState<OnboardingDocumentTemplate[]>([]);
   const [packetTemplates, setPacketTemplates] = useState<OnboardingPacketTemplate[]>([]);
@@ -52,6 +54,7 @@ export default function OnboardingTemplatesPage() {
     description: "",
   });
   const [processType, setProcessType] = useState<ProcessType>("onboarding");
+  const [workflowItems, setWorkflowItems] = useState<WorkflowItemDraft[]>([]);
 
   function processLabel(value: ProcessType | string = "onboarding") {
     if (value === "exit") return "Exit";
@@ -61,12 +64,59 @@ export default function OnboardingTemplatesPage() {
 
   function processWorkflowItems(value: ProcessType) {
     const label = processLabel(value).toLowerCase();
+    if (value === "exit") {
+      return [
+        { id: "exit-form", type: "form", title: "Complete exit details", ownerType: "candidate", dueOffsetDays: 1, order: 10, required: true },
+        { id: "exit-documents", type: "document", title: "Review and sign exit documents", ownerType: "candidate", dueOffsetDays: 2, order: 20, required: true },
+        { id: "exit-hr-review", type: "approval", title: "HR review exit information", ownerType: "user", defaultOwnerRole: "hr", dueOffsetDays: 3, order: 30, required: true, dependencyKeys: ["exit-form"] },
+        { id: "exit-manager-handover", type: "task", title: "Manager handover", ownerType: "user", defaultOwnerRole: "manager", dueOffsetDays: 3, order: 40, required: true, dependencyKeys: ["exit-form", "exit-documents", "exit-hr-review"], metadata: { handoffTarget: "manager_handover" } },
+        { id: "exit-asset-return", type: "task", title: "Asset and property return", ownerType: "user", defaultOwnerRole: "facilities", dueOffsetDays: 3, order: 50, required: true, dependencyKeys: ["exit-form", "exit-documents", "exit-hr-review"], metadata: { handoffTarget: "asset_return" } },
+        { id: "exit-it-access-removal", type: "task", title: "IT access removal", ownerType: "user", defaultOwnerRole: "it", dueOffsetDays: 3, order: 60, required: true, dependencyKeys: ["exit-form", "exit-documents", "exit-hr-review"], metadata: { handoffTarget: "it_access_removal" } },
+        { id: "exit-payroll-finalization", type: "task", title: "Payroll finalization", ownerType: "user", defaultOwnerRole: "payroll", dueOffsetDays: 3, order: 70, required: true, dependencyKeys: ["exit-form", "exit-documents", "exit-hr-review"], metadata: { handoffTarget: "payroll_finalization" } },
+        { id: "exit-closeout", type: "handoff", title: "Complete exit closeout", ownerType: "system", dueOffsetDays: 3, order: 80, required: true, dependencyKeys: ["exit-manager-handover", "exit-asset-return", "exit-it-access-removal", "exit-payroll-finalization"], metadata: { handoffTarget: "exit_closeout" } },
+      ] as WorkflowItemDraft[];
+    }
+    if (value === "retirement") {
+      return [
+        { id: "retirement-form", type: "form", title: "Complete retirement details", ownerType: "candidate", dueOffsetDays: 2, order: 10, required: true },
+        { id: "retirement-documents", type: "document", title: "Review and sign retirement documents", ownerType: "candidate", dueOffsetDays: 3, order: 20, required: true },
+        { id: "retirement-hr-review", type: "approval", title: "HR review retirement information", ownerType: "user", defaultOwnerRole: "hr", dueOffsetDays: 5, order: 30, required: true, dependencyKeys: ["retirement-form"] },
+        { id: "retirement-benefits-review", type: "task", title: "Benefits and payroll review", ownerType: "user", defaultOwnerRole: "payroll", dueOffsetDays: 7, order: 40, required: true, dependencyKeys: ["retirement-form", "retirement-documents", "retirement-hr-review"], metadata: { handoffTarget: "payroll_finalization" } },
+        { id: "retirement-closeout", type: "handoff", title: "Complete retirement closeout", ownerType: "system", dueOffsetDays: 7, order: 50, required: true, dependencyKeys: ["retirement-benefits-review"], metadata: { handoffTarget: "retirement_closeout" } },
+      ] as WorkflowItemDraft[];
+    }
     return [
-      { id: `${value}-forms`, type: "form", title: `Complete ${label} details`, ownerType: "candidate", order: 10 },
-      { id: `${value}-documents`, type: "document", title: `Review and sign ${label} documents`, ownerType: "candidate", order: 20 },
-      { id: `${value}-review`, type: "approval", title: `HR review ${label} information`, ownerType: "user", order: 30 },
-      { id: `${value}-handoff`, type: "handoff", title: `Complete ${label} closeout`, ownerType: "system", order: 40 },
-    ];
+      { id: `${value}-forms`, type: "form", title: `Complete ${label} details`, ownerType: "candidate", dueOffsetDays: 2, order: 10, required: true },
+      { id: `${value}-documents`, type: "document", title: `Review and sign ${label} documents`, ownerType: "candidate", dueOffsetDays: 3, order: 20, required: true },
+      { id: `${value}-review`, type: "approval", title: `HR review ${label} information`, ownerType: "user", defaultOwnerRole: "hr", dueOffsetDays: 5, order: 30, required: true, dependencyKeys: [`${value}-forms`] },
+      { id: `${value}-handoff`, type: "handoff", title: `Complete ${label} closeout`, ownerType: "system", dueOffsetDays: 7, order: 40, required: true, dependencyKeys: [`${value}-documents`, `${value}-review`], metadata: { handoffTarget: "internal_employee_profile" } },
+    ] as WorkflowItemDraft[];
+  }
+
+  function updateWorkflowItem(index: number, updates: Partial<WorkflowItemDraft>) {
+    setWorkflowItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...updates } : item));
+  }
+
+  function addWorkflowItem() {
+    const nextOrder = workflowItems.length ? Math.max(...workflowItems.map((item) => Number(item.order || 0))) + 10 : 10;
+    setWorkflowItems((current) => [
+      ...current,
+      {
+        id: `${processType}-task-${Date.now()}`,
+        type: "task",
+        title: "Internal task",
+        ownerType: "user",
+        defaultOwnerRole: "hr",
+        dueOffsetDays: processType === "exit" ? 3 : 7,
+        order: nextOrder,
+        required: true,
+        dependencyKeys: [],
+      },
+    ]);
+  }
+
+  function removeWorkflowItem(index: number) {
+    setWorkflowItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   async function load() {
@@ -117,11 +167,12 @@ export default function OnboardingTemplatesPage() {
         processType,
         documents: packetForm.documentIds,
         formTemplates: packetForm.formTemplateIds,
-        workflowItems: processWorkflowItems(processType),
+        workflowItems,
         reminderRules: [{ name: "Candidate reminder", targetType: "candidate", delayHours: 24, repeatEveryHours: 48 }],
         completionActions: [{ target: processType === "exit" ? "exit_closeout" : processType === "retirement" ? "retirement_closeout" : "internal_employee_profile" }],
       });
       setPacketForm({ name: "", description: "", documentIds: [], formTemplateIds: [] });
+      setWorkflowItems(processWorkflowItems(processType));
       toast.success("Packet template created");
       await load();
     } catch (error: any) {
@@ -157,6 +208,7 @@ export default function OnboardingTemplatesPage() {
 
   useEffect(() => {
     load();
+    setWorkflowItems(processWorkflowItems(processType));
   }, [processType]);
 
   async function createTemplate() {
@@ -297,6 +349,105 @@ export default function OnboardingTemplatesPage() {
                       </label>
                     ))}
                   </div>
+                </div>
+              </div>
+              <div className="rounded-md border p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-950">Workflow</div>
+                    <div className="text-xs text-slate-500">Text fields in prepared documents are candidate-fillable; name, email, and date fields are auto-filled when the candidate completes or signs.</div>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={addWorkflowItem}>
+                    <Plus className="h-4 w-4" />
+                    Add item
+                  </Button>
+                </div>
+                <div className="max-h-80 overflow-auto">
+                  <table className="w-full min-w-[860px] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                      <tr>
+                        <th className="px-2 py-2">Key</th>
+                        <th className="px-2 py-2">Title</th>
+                        <th className="px-2 py-2">Type</th>
+                        <th className="px-2 py-2">Owner</th>
+                        <th className="px-2 py-2">Role</th>
+                        <th className="px-2 py-2">Due</th>
+                        <th className="px-2 py-2">Depends on</th>
+                        <th className="px-2 py-2">Req</th>
+                        <th className="px-2 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {workflowItems.map((item, index) => (
+                        <tr key={`${item.id}-${index}`}>
+                          <td className="px-2 py-2">
+                            <Input value={item.id} onChange={(event) => updateWorkflowItem(index, { id: event.target.value })} className="h-8 min-w-32" />
+                          </td>
+                          <td className="px-2 py-2">
+                            <Input value={item.title} onChange={(event) => updateWorkflowItem(index, { title: event.target.value })} className="h-8 min-w-44" />
+                          </td>
+                          <td className="px-2 py-2">
+                            <select
+                              value={item.type}
+                              onChange={(event) => updateWorkflowItem(index, { type: event.target.value as WorkflowItemDraft["type"] })}
+                              className="h-8 rounded-md border border-slate-300 bg-white px-2"
+                            >
+                              <option value="form">form</option>
+                              <option value="document">document</option>
+                              <option value="task">task</option>
+                              <option value="approval">approval</option>
+                              <option value="handoff">handoff</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-2">
+                            <select
+                              value={item.ownerType || "candidate"}
+                              onChange={(event) => updateWorkflowItem(index, { ownerType: event.target.value as WorkflowItemDraft["ownerType"] })}
+                              className="h-8 rounded-md border border-slate-300 bg-white px-2"
+                            >
+                              <option value="candidate">candidate</option>
+                              <option value="user">user</option>
+                              <option value="system">system</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-2">
+                            <Input value={item.defaultOwnerRole || ""} onChange={(event) => updateWorkflowItem(index, { defaultOwnerRole: event.target.value })} className="h-8 min-w-24" placeholder="hr" />
+                          </td>
+                          <td className="px-2 py-2">
+                            <Input
+                              type="number"
+                              min={0}
+                              value={item.dueOffsetDays ?? ""}
+                              onChange={(event) => updateWorkflowItem(index, { dueOffsetDays: Number(event.target.value || 0) })}
+                              className="h-8 w-20"
+                            />
+                          </td>
+                          <td className="px-2 py-2">
+                            <Input
+                              value={(item.dependencyKeys || []).join(", ")}
+                              onChange={(event) => updateWorkflowItem(index, {
+                                dependencyKeys: event.target.value.split(",").map((value) => value.trim()).filter(Boolean),
+                              })}
+                              className="h-8 min-w-40"
+                              placeholder="item-key"
+                            />
+                          </td>
+                          <td className="px-2 py-2">
+                            <input
+                              type="checkbox"
+                              checked={item.required !== false}
+                              onChange={(event) => updateWorkflowItem(index, { required: event.target.checked })}
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-right">
+                            <Button type="button" variant="ghost" size="sm" onClick={() => removeWorkflowItem(index)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
               <Button onClick={createPacket} disabled={packetSaving}>

@@ -43,6 +43,8 @@ export interface SignatureField {
   role: "candidate" | "internal"
   type: "signature" | "date" | "name" | "email" | "text"
   label?: string
+  placeholder?: string
+  multiline?: boolean
   key?: string
   signerKey?: string
   page: number
@@ -96,11 +98,19 @@ export interface OnboardingWorkflowItem {
   description?: string
   status: WorkflowItemStatus
   ownerType: "candidate" | "user" | "system"
+  ownerUser?: string
+  ownerName?: string
+  ownerEmail?: string
+  notes?: string
+  required?: boolean
   order: number
   dueAt?: string
   sourceType?: string
   sourceId?: string
   lastReminderAt?: string
+  isOverdue?: boolean
+  isDueSoon?: boolean
+  dependencySummary?: Array<{ _id: string; title?: string; status?: WorkflowItemStatus; type?: string }>
   completedAt?: string
 }
 
@@ -156,7 +166,7 @@ export interface OnboardingApproval {
 
 export interface OnboardingHandoff {
   _id: string
-  target: "internal_employee_profile" | "exit_closeout" | "retirement_closeout" | "payroll" | "identity_provider" | "custom"
+  target: "internal_employee_profile" | "exit_closeout" | "retirement_closeout" | "payroll" | "identity_provider" | "manager_handover" | "asset_return" | "it_access_removal" | "payroll_finalization" | "custom"
   status: "pending" | "running" | "completed" | "failed"
   attempts: number
   lastError?: string
@@ -176,6 +186,7 @@ export interface CandidateOnboarding {
   forms?: OnboardingFormSubmission[]
   approvals?: OnboardingApproval[]
   handoffs?: OnboardingHandoff[]
+  nextAction?: CandidateNextAction
   progress?: {
     totalItems: number
     completedItems: number
@@ -187,11 +198,24 @@ export interface CandidateOnboarding {
   updatedAt: string
 }
 
+export interface CandidateNextAction {
+  type: "form" | "document_fill" | "document_sign" | "waiting" | "complete"
+  label: string
+  href: string
+  dueAt?: string
+  status?: string
+  processType?: ProcessType
+  recordId: string
+  sourceIds?: Record<string, string>
+}
+
 export interface CandidateDocumentPayload {
   envelope: OnboardingEnvelope
   document: EnvelopeDocument
   signer?: EnvelopeSigner
   canSign: boolean
+  actionType?: "document_fill" | "document_sign" | null
+  canCompleteFillOnly?: boolean
   nextDocumentId?: string | null
   downloadUrl?: string
 }

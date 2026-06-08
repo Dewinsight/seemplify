@@ -18,10 +18,12 @@ function documentAction(document: EnvelopeDocument) {
       icon: Download,
     }
   }
+  const candidateFields = document.signatureFields?.filter((field) => (field.role || "candidate") === "candidate") || []
+  const fillOnly = candidateFields.some((field) => field.type === "text") && !candidateFields.some((field) => field.type === "signature")
   return {
     href: `/documents/${document._id}/sign`,
-    label: "Review and sign",
-    icon: PenLine,
+    label: fillOnly ? "Fill document" : "Review and sign",
+    icon: fillOnly ? ClipboardList : PenLine,
   }
 }
 
@@ -116,6 +118,29 @@ export default function CandidateOnboardingDetailPage() {
               </div>
             </div>
 
+            {record.nextAction && record.nextAction.type !== "complete" && (
+              <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-soft">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className={`text-xs font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>Next action</div>
+                    <h3 className="mt-1 text-lg font-semibold text-slate-950">{record.nextAction.label}</h3>
+                    {record.nextAction.dueAt && (
+                      <p className="mt-1 text-sm text-slate-600">Due {new Date(record.nextAction.dueAt).toLocaleDateString()}</p>
+                    )}
+                  </div>
+                  <Link
+                    href={record.nextAction.href}
+                    className={record.nextAction.type === "waiting"
+                      ? "inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      : `inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white ${brand.primaryButtonClass}`}
+                  >
+                    {record.nextAction.type === "waiting" ? "View status" : "Continue"}
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </div>
+            )}
+
             <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="space-y-5">
                 <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
@@ -127,7 +152,7 @@ export default function CandidateOnboardingDetailPage() {
                     {(record.workflowItems || []).length === 0 ? (
                       <div className="p-5 text-sm text-slate-500">No workflow steps have been assigned yet.</div>
                     ) : (record.workflowItems || []).map((item) => (
-                      <div key={item._id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                      <div key={item._id} className={`flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between ${item.isOverdue ? "bg-rose-50" : item.isDueSoon ? "bg-amber-50" : ""}`}>
                         <div className="flex items-start gap-3">
                           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100">
                             {item.type === "form" ? <ClipboardList className={`h-5 w-5 ${brand.accentTextClass}`} /> : item.type === "approval" ? <ShieldCheck className="h-5 w-5 text-amber-700" /> : <FileSignature className={`h-5 w-5 ${brand.accentTextClass}`} />}
@@ -135,7 +160,11 @@ export default function CandidateOnboardingDetailPage() {
                           <div>
                             <div className="font-semibold text-slate-950">{item.title}</div>
                             {item.description && <div className="mt-1 text-sm text-slate-600">{item.description}</div>}
-                            {item.dueAt && <div className="mt-1 text-xs text-slate-500">Due {new Date(item.dueAt).toLocaleDateString()}</div>}
+                            {item.dueAt && (
+                              <div className={`mt-1 text-xs ${item.isOverdue ? "font-semibold text-rose-700" : item.isDueSoon ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                {item.isOverdue ? "Overdue" : "Due"} {new Date(item.dueAt).toLocaleDateString()}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <StatusPill status={item.status} />

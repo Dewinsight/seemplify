@@ -7,6 +7,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Download, Mail, Plus, Save, Si
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import { PdfPagePreview } from "@/components/onboarding/pdf-page-preview";
@@ -158,16 +159,19 @@ export default function PrepareOnboardingDocumentPage() {
     setPreviewPageSize({ width: page.width, height: page.height });
   }, []);
 
-  function addField(role: "candidate" | "internal" = "candidate", type: SignatureField["type"] = "signature") {
+  function addField(role: "candidate" | "internal" = "candidate", type: SignatureField["type"] = "signature", patch: Partial<SignatureField> = {}) {
     const field: SignatureField = {
       ...newSignatureField(role),
       id: `${role}-${type}-${Date.now()}`,
       role,
       type,
       label: type === "text" && role === "candidate" ? "Candidate response" : fieldTypeLabel(type),
+      placeholder: type === "text" && role === "candidate" ? "Type your response here" : "",
+      multiline: false,
       page: previewPage,
-      width: type === "signature" ? 0.3 : 0.28,
-      height: type === "signature" ? 0.08 : 0.05,
+      width: type === "signature" ? 0.3 : type === "text" && patch.multiline ? 0.55 : 0.28,
+      height: type === "signature" ? 0.08 : type === "text" && patch.multiline ? 0.16 : 0.05,
+      ...patch,
     };
     setFields((current) => [...current, field]);
     setActiveFieldId(field.id);
@@ -448,6 +452,10 @@ export default function PrepareOnboardingDocumentPage() {
                   <Type className="h-4 w-4" />
                   Add fillable text
                 </Button>
+                <Button size="sm" variant="outline" onClick={() => addField("candidate", "text", { multiline: true, label: "Long response", placeholder: "Type your full response here" })}>
+                  <Type className="h-4 w-4" />
+                  Add long text
+                </Button>
                 <Button size="sm" onClick={() => addField("candidate")}>
                   <Plus className="h-4 w-4" />
                   Add
@@ -502,6 +510,32 @@ export default function PrepareOnboardingDocumentPage() {
                   <Label>Label</Label>
                   <Input value={activeField.label || ""} onChange={(event) => updateField(activeField.id, { label: event.target.value })} />
                 </div>
+
+                {activeField.type === "text" && activeField.role === "candidate" && (
+                  <div className="space-y-3 rounded-md border bg-slate-50 p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(activeField.multiline)}
+                        onChange={(event) => updateField(activeField.id, {
+                          multiline: event.target.checked,
+                          height: event.target.checked ? Math.max(activeField.height, 0.14) : activeField.height,
+                        })}
+                      />
+                      Multiline response
+                    </label>
+                    <div className="space-y-2">
+                      <Label>Candidate placeholder</Label>
+                      <Textarea
+                        value={activeField.placeholder || ""}
+                        onChange={(event) => updateField(activeField.id, { placeholder: event.target.value })}
+                        placeholder="Type your response here"
+                        className="min-h-20 bg-white"
+                      />
+                    </div>
+                    <p className="text-xs leading-5 text-slate-500">Use multiline for paragraphs, notes, or dotted-line response areas. The candidate will see a textarea, and the stamped PDF will wrap text inside this field.</p>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   {(["x", "y", "width", "height"] as const).map((key) => (

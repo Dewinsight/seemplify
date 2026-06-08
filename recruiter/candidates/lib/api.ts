@@ -218,6 +218,13 @@ export async function signDocument(id: string, signatureDataUrl: string, fieldVa
   })
 }
 
+export async function completeDocument(id: string, fieldValues: Record<string, string> = {}) {
+  return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null }>(`/api/candidate-portal/documents/${id}/complete`, {
+    method: "POST",
+    body: JSON.stringify({ fieldValues }),
+  })
+}
+
 export async function getOnboardingForm(id: string) {
   return candidateRequest<{ data: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}`)
 }

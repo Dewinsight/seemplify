@@ -62,6 +62,18 @@ export default function CandidateDashboardPage() {
     }
   }, [records])
 
+  const primaryAction = useMemo(() => {
+    const priority = { form: 1, document_fill: 2, document_sign: 3, waiting: 4, complete: 5 }
+    return records
+      .map((record) => record.nextAction ? { record, action: record.nextAction } : null)
+      .filter(Boolean)
+      .sort((a, b) => {
+        const priorityDelta = (priority[a!.action.type] || 9) - (priority[b!.action.type] || 9)
+        if (priorityDelta !== 0) return priorityDelta
+        return new Date(a!.action.dueAt || a!.record.createdAt || 0).getTime() - new Date(b!.action.dueAt || b!.record.createdAt || 0).getTime()
+      })[0] || null
+  }, [records])
+
   async function signOut() {
     await logout()
     router.push("/login")
@@ -101,6 +113,30 @@ export default function CandidateDashboardPage() {
           <MetricCard icon={<Files className="h-5 w-5" />} label="Documents shared" value={stats.documents} tone="emerald" />
           <MetricCard icon={<FileSignature className="h-5 w-5" />} label="Pending actions" value={stats.pendingActions} tone="amber" />
         </div>
+
+        {primaryAction && primaryAction.action.type !== "complete" && (
+          <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 shadow-soft">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className={`text-xs font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>Next action</div>
+                <h2 className="mt-1 text-lg font-semibold text-slate-950">{primaryAction.action.label}</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  {primaryAction.record.title}
+                  {primaryAction.action.dueAt ? ` - due ${formatDate(primaryAction.action.dueAt)}` : ""}
+                </p>
+              </div>
+              {primaryAction.action.type === "waiting" ? (
+                <Link href={primaryAction.action.href} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  View status <ArrowRight className="h-4 w-4" />
+                </Link>
+              ) : (
+                <Link href={primaryAction.action.href} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white ${brand.primaryButtonClass}`}>
+                  Continue <ArrowRight className="h-4 w-4" />
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div id="transitions" className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">

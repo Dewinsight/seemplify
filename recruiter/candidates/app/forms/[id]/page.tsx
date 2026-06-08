@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ChangeEvent, useEffect, useMemo, useState } from "react"
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, FileUp, Loader2, Save, ShieldCheck, Send } from "lucide-react"
 import { toast } from "sonner"
@@ -37,8 +37,11 @@ export default function CandidateFormPage() {
   const [values, setValues] = useState<Record<string, string | boolean>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "saving" | "error">("saved")
   const [submitting, setSubmitting] = useState(false)
   const [uploadingKey, setUploadingKey] = useState("")
+  const lastSavedSignatureRef = useRef("")
+  const hydratedRef = useRef(false)
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -56,6 +59,9 @@ export default function CandidateFormPage() {
           nextValues[field.key] = field.type === "checkbox" ? fieldValue(nextForm, field) === "true" : fieldValue(nextForm, field)
         })
         setValues(nextValues)
+        lastSavedSignatureRef.current = JSON.stringify(nextValues)
+        hydratedRef.current = true
+        setSaveStatus("saved")
       })
       .catch((error) => toast.error(error.message || "Failed to load form"))
       .finally(() => setLoading(false))
@@ -64,6 +70,32 @@ export default function CandidateFormPage() {
   const fields = useMemo(() => {
     return [...(form?.templateSnapshot?.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0))
   }, [form])
+
+  const locked = form?.status === "approved" || form?.status === "under_review"
+
+  useEffect(() => {
+    if (!form || loading || locked || submitting || !hydratedRef.current) return
+    const signature = JSON.stringify(values)
+    if (signature === lastSavedSignatureRef.current) return
+    setSaveStatus("dirty")
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        setSaving(true)
+        setSaveStatus("saving")
+        const result = await saveOnboardingForm(params.id, values)
+        setForm(result.data)
+        lastSavedSignatureRef.current = signature
+        setSaveStatus("saved")
+      } catch {
+        setSaveStatus("error")
+      } finally {
+        setSaving(false)
+      }
+    }, 1000)
+
+    return () => window.clearTimeout(timeout)
+  }, [form, loading, locked, params.id, submitting, values])
 
   function setValue(key: string, value: string | boolean) {
     setValues((current) => ({ ...current, [key]: value }))
@@ -74,8 +106,11 @@ export default function CandidateFormPage() {
       setSaving(true)
       const result = await saveOnboardingForm(params.id, values)
       setForm(result.data)
+      lastSavedSignatureRef.current = JSON.stringify(values)
+      setSaveStatus("saved")
       toast.success("Form saved")
     } catch (error: any) {
+      setSaveStatus("error")
       toast.error(error.message || "Could not save form")
     } finally {
       setSaving(false)
@@ -116,8 +151,6 @@ export default function CandidateFormPage() {
     await logout()
     router.push("/login")
   }
-
-  const locked = form?.status === "approved" || form?.status === "under_review"
 
   return (
     <CandidateShell
@@ -221,7 +254,24 @@ export default function CandidateFormPage() {
                 })}
               </div>
 
-              <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 p-5">
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 p-5">
+                <div className={`mr-auto text-xs ${
+                  saveStatus === "error"
+                    ? "font-semibold text-rose-700"
+                    : saveStatus === "dirty" || saveStatus === "saving"
+                      ? "font-semibold text-amber-700"
+                      : "text-slate-500"
+                }`}>
+                  {locked
+                    ? "Submitted"
+                    : saveStatus === "saving"
+                      ? "Autosaving..."
+                      : saveStatus === "dirty"
+                        ? "Unsaved changes"
+                        : saveStatus === "error"
+                          ? "Autosave failed"
+                          : "Draft saved"}
+                </div>
                 <button
                   type="button"
                   onClick={save}

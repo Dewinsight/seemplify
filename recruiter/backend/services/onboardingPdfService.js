@@ -486,6 +486,80 @@ function fieldRect(field, page) {
   return { x, y, width, height };
 }
 
+function splitLongWord(word, font, fontSize, maxWidth) {
+  const chunks = [];
+  let chunk = '';
+  for (const char of String(word)) {
+    const next = `${chunk}${char}`;
+    if (chunk && font.widthOfTextAtSize(next, fontSize) > maxWidth) {
+      chunks.push(chunk);
+      chunk = char;
+    } else {
+      chunk = next;
+    }
+  }
+  if (chunk) chunks.push(chunk);
+  return chunks;
+}
+
+function wrapTextToWidth(text, font, fontSize, maxWidth) {
+  const lines = [];
+  String(text || '').split(/\r?\n/).forEach((paragraph) => {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      lines.push('');
+      return;
+    }
+
+    let line = '';
+    words.forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word;
+      if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+        line = candidate;
+        return;
+      }
+      if (line) lines.push(line);
+      const wordChunks = splitLongWord(word, font, fontSize, maxWidth);
+      line = wordChunks.pop() || '';
+      lines.push(...wordChunks);
+    });
+    if (line) lines.push(line);
+  });
+  return lines;
+}
+
+function drawFieldText(page, value, rect, { font, fontSize, color, multiline = false }) {
+  const text = String(value).slice(0, 2000);
+  const x = rect.x + 5;
+  const maxWidth = Math.max(10, rect.width - 10);
+
+  if (!multiline && !text.includes('\n')) {
+    page.drawText(text.slice(0, 120), {
+      x,
+      y: rect.y + Math.max(4, rect.height / 2 - 5),
+      size: fontSize,
+      font,
+      color
+    });
+    return;
+  }
+
+  const lineHeight = fontSize * 1.25;
+  const topY = rect.y + rect.height - fontSize - 4;
+  const minY = rect.y + 4;
+  wrapTextToWidth(text, font, fontSize, maxWidth).forEach((line, index) => {
+    const y = topY - index * lineHeight;
+    if (y < minY) return;
+    page.drawText(line, {
+      x,
+      y,
+      size: fontSize,
+      font,
+      color
+    });
+  });
+}
+
 async function stampSignedPdf({
   pdfUrl,
   pdfBuffer,
@@ -530,20 +604,6 @@ async function stampSignedPdf({
       if (!page) return;
 
       const rect = fieldRect(field, page);
-      const shouldDrawFieldBox = field.type !== 'signature' || !embeddedSignature;
-
-      if (shouldDrawFieldBox) {
-        page.drawRectangle({
-          x: rect.x,
-          y: rect.y,
-          width: rect.width,
-          height: rect.height,
-          borderColor: rgb(0.15, 0.2, 0.32),
-          borderWidth: 0.4,
-          color: rgb(1, 1, 1),
-          opacity: 0.02
-        });
-      }
 
       if (field.type === 'signature' && embeddedSignature) {
         page.drawImage(embeddedSignature, {
@@ -570,11 +630,12 @@ async function stampSignedPdf({
               ? signerName
               : field.label || signerName;
 
-      page.drawText(String(value).slice(0, 120), {
-        x: rect.x + 5,
-        y: rect.y + Math.max(4, rect.height / 2 - 5),
-        size: Math.min(11, Math.max(7, rect.height * 0.32)),
-        font: field.type === 'signature' ? helveticaBold : helvetica,
+      const font = field.type === 'signature' ? helveticaBold : helvetica;
+      const fontSize = Math.min(11, Math.max(7, field.multiline ? rect.height * 0.14 : rect.height * 0.32));
+      drawFieldText(page, value, rect, {
+        font,
+        fontSize,
+        multiline: field.type === 'text' && Boolean(field.multiline),
         color: rgb(0.07, 0.1, 0.18)
       });
     });

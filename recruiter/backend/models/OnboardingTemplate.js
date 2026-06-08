@@ -14,9 +14,16 @@ const TemplateWorkflowItemSchema = new mongoose.Schema({
     enum: ['candidate', 'user', 'system'],
     default: 'candidate'
   },
+  defaultOwnerRole: { type: String, trim: true },
+  defaultOwnerUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  dueOffsetDays: Number,
   dueInDays: Number,
   order: { type: Number, default: 0 },
   required: { type: Boolean, default: true },
+  dependencyKeys: [{ type: String, trim: true }],
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
