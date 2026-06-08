@@ -45,6 +45,12 @@ const OnboardingTemplateSchema = new mongoose.Schema({
     default: 'default',
     index: true
   },
+  processType: {
+    type: String,
+    enum: ['onboarding', 'exit', 'retirement'],
+    default: 'onboarding',
+    index: true
+  },
   status: {
     type: String,
     enum: ['active', 'archived'],
@@ -92,5 +98,6 @@ const OnboardingTemplateSchema = new mongoose.Schema({
 
 OnboardingTemplateSchema.index({ organization: 1, status: 1, name: 1 });
 OnboardingTemplateSchema.index({ organization: 1, category: 1, createdAt: -1 });
+OnboardingTemplateSchema.index({ organization: 1, processType: 1, status: 1, name: 1 });
 
 module.exports = mongoose.model('OnboardingTemplate', OnboardingTemplateSchema);

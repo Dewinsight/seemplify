@@ -57,7 +57,7 @@ export function CandidateShell({
             <CandidateBrandMark brand={brand} compact />
             <div className="min-w-0">
               <div className={cn("truncate text-xs font-bold uppercase tracking-wide", brand.accentTextClass)}>{brand.dashboardEyebrow}</div>
-              <div className="truncate text-sm font-semibold text-slate-950">Candidate Portal</div>
+              <div className="truncate text-sm font-semibold text-slate-950">Transition Portal</div>
             </div>
           </div>
 
@@ -85,7 +85,7 @@ export function CandidateShell({
               <ShieldCheck className="h-4 w-4 text-emerald-700" />
               Secure signing
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-600">Your documents, signatures, and download history stay tied to this candidate account.</p>
+            <p className="mt-2 text-xs leading-5 text-slate-600">Your transition documents, signatures, and download history stay tied to this account.</p>
           </div>
         </aside>
 

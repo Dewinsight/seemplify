@@ -23,6 +23,7 @@ import {
   type OnboardingDocument,
   type OnboardingFormTemplate,
   type OnboardingPacketTemplate,
+  type ProcessType,
 } from "@/services/onboardingService";
 import { toast } from "sonner";
 
@@ -50,13 +51,30 @@ export default function OnboardingTemplatesPage() {
     name: "",
     description: "",
   });
+  const [processType, setProcessType] = useState<ProcessType>("onboarding");
+
+  function processLabel(value: ProcessType | string = "onboarding") {
+    if (value === "exit") return "Exit";
+    if (value === "retirement") return "Retirement";
+    return "Onboarding";
+  }
+
+  function processWorkflowItems(value: ProcessType) {
+    const label = processLabel(value).toLowerCase();
+    return [
+      { id: `${value}-forms`, type: "form", title: `Complete ${label} details`, ownerType: "candidate", order: 10 },
+      { id: `${value}-documents`, type: "document", title: `Review and sign ${label} documents`, ownerType: "candidate", order: 20 },
+      { id: `${value}-review`, type: "approval", title: `HR review ${label} information`, ownerType: "user", order: 30 },
+      { id: `${value}-handoff`, type: "handoff", title: `Complete ${label} closeout`, ownerType: "system", order: 40 },
+    ];
+  }
 
   async function load() {
     try {
       setLoading(true);
       const [documentTemplatesResult, packetTemplatesResult, formTemplatesResult, documentsResult] = await Promise.all([
         getDocumentTemplates(),
-        getPacketTemplates(),
+        getPacketTemplates(processType),
         getOnboardingFormTemplates(),
         getDocuments(),
       ]);
@@ -96,16 +114,12 @@ export default function OnboardingTemplatesPage() {
       await createPacketTemplate({
         name: packetForm.name,
         description: packetForm.description,
+        processType,
         documents: packetForm.documentIds,
         formTemplates: packetForm.formTemplateIds,
-        workflowItems: [
-          { id: "forms", type: "form", title: "Complete onboarding details", ownerType: "candidate", order: 10 },
-          { id: "documents", type: "document", title: "Review and sign onboarding documents", ownerType: "candidate", order: 20 },
-          { id: "review", type: "approval", title: "HR review sensitive information", ownerType: "user", order: 30 },
-          { id: "handoff", type: "handoff", title: "Create employee handoff", ownerType: "system", order: 40 },
-        ],
+        workflowItems: processWorkflowItems(processType),
         reminderRules: [{ name: "Candidate reminder", targetType: "candidate", delayHours: 24, repeatEveryHours: 48 }],
-        completionActions: [{ target: "internal_employee_profile" }],
+        completionActions: [{ target: processType === "exit" ? "exit_closeout" : processType === "retirement" ? "retirement_closeout" : "internal_employee_profile" }],
       });
       setPacketForm({ name: "", description: "", documentIds: [], formTemplateIds: [] });
       toast.success("Packet template created");
@@ -143,7 +157,7 @@ export default function OnboardingTemplatesPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [processType]);
 
   async function createTemplate() {
     if (!form.name.trim()) return toast.error("Template name is required");
@@ -168,7 +182,7 @@ export default function OnboardingTemplatesPage() {
         templateId: template._id,
       });
       toast.success("Document created from template");
-      window.location.href = `/onboarding/documents/${document._id}/edit`;
+      window.location.href = `/people-transitions/documents/${document._id}/edit`;
     } catch (error: any) {
       toast.error(error.message || "Failed to use template");
     }
@@ -190,11 +204,11 @@ export default function OnboardingTemplatesPage() {
       <div className="mx-auto max-w-screen-2xl px-4 py-6 lg:px-8">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Document templates</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600">Manage reusable onboarding templates. Default templates can be copied into editable documents.</p>
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Transition templates</h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600">Manage reusable document, form, and packet templates for onboarding, exit, and retirement.</p>
           </div>
           <Button asChild variant="outline">
-            <Link href="/onboarding/documents">
+            <Link href="/people-transitions/documents">
               <FileText className="h-4 w-4" />
               Document library
             </Link>
@@ -240,10 +254,21 @@ export default function OnboardingTemplatesPage() {
           </div>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Process</Label>
+                  <Select value={processType} onValueChange={(value) => setProcessType(value as ProcessType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="onboarding">Onboarding</SelectItem>
+                      <SelectItem value="exit">Exit</SelectItem>
+                      <SelectItem value="retirement">Retirement</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <Label>Name</Label>
-                  <Input value={packetForm.name} onChange={(event) => setPacketForm((current) => ({ ...current, name: event.target.value }))} placeholder="New hire packet" />
+                  <Input value={packetForm.name} onChange={(event) => setPacketForm((current) => ({ ...current, name: event.target.value }))} placeholder={`${processLabel(processType)} packet`} />
                 </div>
                 <div className="space-y-2">
                   <Label>Description</Label>
@@ -284,16 +309,18 @@ export default function OnboardingTemplatesPage() {
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
                     <th className="px-3 py-2">Template</th>
+                    <th className="px-3 py-2">Process</th>
                     <th className="px-3 py-2">Documents</th>
                     <th className="px-3 py-2">Forms</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {packetTemplates.length === 0 ? (
-                    <tr><td colSpan={3} className="px-3 py-5 text-center text-slate-500">No packet templates yet.</td></tr>
+                    <tr><td colSpan={4} className="px-3 py-5 text-center text-slate-500">No packet templates yet.</td></tr>
                   ) : packetTemplates.map((template) => (
                     <tr key={template._id}>
                       <td className="px-3 py-2 font-medium text-slate-950">{template.name}</td>
+                      <td className="px-3 py-2 text-slate-600">{processLabel(template.processType)}</td>
                       <td className="px-3 py-2 text-slate-600">{template.documents?.length || 0}</td>
                       <td className="px-3 py-2 text-slate-600">{template.formTemplates?.length || 0}</td>
                     </tr>
@@ -313,7 +340,7 @@ export default function OnboardingTemplatesPage() {
             <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
               <div className="space-y-2">
                 <Label>Name</Label>
-                <Input value={customForm.name} onChange={(event) => setCustomForm((current) => ({ ...current, name: event.target.value }))} placeholder="Custom onboarding form" />
+                <Input value={customForm.name} onChange={(event) => setCustomForm((current) => ({ ...current, name: event.target.value }))} placeholder="Custom transition form" />
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>

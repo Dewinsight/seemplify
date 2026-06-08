@@ -59,7 +59,7 @@ const CandidateSchema = new mongoose.Schema({
   status: { // e.g., 'New', 'Screening', 'Interviewing', 'Offered', 'Hired', 'Rejected'
     type: String,
     default: 'New',
-    enum: ['New', 'Screening', 'Interviewing', 'Technical Test', 'HR Interview', 'Offered', 'Hired', 'Rejected', 'On Hold'],
+    enum: ['New', 'Screening', 'Interviewing', 'Technical Test', 'HR Interview', 'Offered', 'Hired', 'Rejected', 'On Hold', 'Exited', 'Retired'],
   },
   source: { // How the candidate was found e.g. 'LinkedIn', 'Referral', 'Job Board', 'Uploaded CV'
     type: String,
@@ -279,6 +279,12 @@ const CandidateSchema = new mongoose.Schema({
     ref: 'Department',
   },
   hireDate: {
+    type: Date,
+  },
+  exitDate: {
+    type: Date,
+  },
+  retirementDate: {
     type: Date,
   },
   currentPosition: {

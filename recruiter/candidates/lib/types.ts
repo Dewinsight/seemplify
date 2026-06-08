@@ -1,4 +1,5 @@
 export type OnboardingStatus = "draft" | "pending" | "in_progress" | "completed" | "cancelled"
+export type ProcessType = "onboarding" | "exit" | "retirement"
 export type EnvelopeStatus = "draft" | "sent" | "viewed" | "partially_signed" | "completed" | "voided" | "expired"
 export type WorkflowItemStatus = "not_started" | "pending" | "in_progress" | "completed" | "blocked" | "skipped" | "failed"
 
@@ -43,6 +44,7 @@ export interface SignatureField {
   type: "signature" | "date" | "name" | "email" | "text"
   label?: string
   key?: string
+  signerKey?: string
   page: number
   x: number
   y: number
@@ -154,7 +156,7 @@ export interface OnboardingApproval {
 
 export interface OnboardingHandoff {
   _id: string
-  target: "internal_employee_profile" | "payroll" | "identity_provider" | "custom"
+  target: "internal_employee_profile" | "exit_closeout" | "retirement_closeout" | "payroll" | "identity_provider" | "custom"
   status: "pending" | "running" | "completed" | "failed"
   attempts: number
   lastError?: string
@@ -164,6 +166,7 @@ export interface OnboardingHandoff {
 export interface CandidateOnboarding {
   _id: string
   title: string
+  processType?: ProcessType
   status: OnboardingStatus
   notes?: string
   candidate: CandidateProfile
@@ -189,6 +192,7 @@ export interface CandidateDocumentPayload {
   document: EnvelopeDocument
   signer?: EnvelopeSigner
   canSign: boolean
+  nextDocumentId?: string | null
   downloadUrl?: string
 }
 

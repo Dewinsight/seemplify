@@ -31,7 +31,7 @@ const OnboardingHandoffSchema = new mongoose.Schema({
   },
   target: {
     type: String,
-    enum: ['internal_employee_profile', 'payroll', 'identity_provider', 'custom'],
+    enum: ['internal_employee_profile', 'exit_closeout', 'retirement_closeout', 'payroll', 'identity_provider', 'custom'],
     default: 'internal_employee_profile'
   },
   payload: {

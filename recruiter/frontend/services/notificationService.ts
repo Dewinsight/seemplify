@@ -3,7 +3,7 @@ import { apiRequest } from './apiConfig';
 interface Notification {
   _id: string;
   user: string;
-  type: 'organization_invite' | 'interview_scheduled' | 'interview_created' | 'candidate_applied' | 'candidate_uploaded' | 'job_posted' | 'job_created' | 'general';
+  type: 'organization_invite' | 'interview_scheduled' | 'interview_created' | 'candidate_applied' | 'candidate_uploaded' | 'job_posted' | 'job_created' | 'people_transition_started' | 'people_transition_action' | 'people_transition_completed' | 'general';
   title: string;
   message: string;
   data: any;

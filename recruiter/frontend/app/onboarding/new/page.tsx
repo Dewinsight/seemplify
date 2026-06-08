@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -42,11 +44,12 @@ import {
   startOnboarding,
   type OnboardingDocument,
   type OnboardingPacketTemplate,
+  type ProcessType,
   type SignatureField,
 } from "@/services/onboardingService";
 import { toast } from "sonner";
 
-type WizardStep = "candidate" | "documents" | "signers" | "fields" | "send";
+type WizardStep = "process" | "candidate" | "documents" | "signers" | "fields" | "send";
 type WizardSigner = {
   key: string;
   role: "candidate" | "internal";
@@ -78,11 +81,18 @@ type FieldInteraction =
   | { mode: "resize"; id: string; handle: FieldResizeHandle; startX: number; startY: number; startField: SignatureField };
 
 const steps: Array<{ key: WizardStep; label: string }> = [
+  { key: "process", label: "Process" },
   { key: "candidate", label: "Candidate" },
   { key: "documents", label: "Documents" },
   { key: "signers", label: "Signers" },
   { key: "fields", label: "Fields" },
   { key: "send", label: "Send" },
+];
+
+const processOptions: Array<{ value: ProcessType; label: string; description: string }> = [
+  { value: "onboarding", label: "Onboarding", description: "New hire forms, documents, signatures, and employee handoff." },
+  { value: "exit", label: "Exit", description: "Final details, property return, exit documents, and closeout." },
+  { value: "retirement", label: "Retirement", description: "Retirement details, benefits documents, signatures, and closeout." },
 ];
 
 const fieldIcons = {
@@ -114,6 +124,12 @@ function candidateName(candidate: CandidateData) {
 
 function candidateStatus(candidate: CandidateData) {
   return (candidate.status || "Candidate").replace(/_/g, " ");
+}
+
+function processLabel(processType: ProcessType) {
+  if (processType === "exit") return "Exit";
+  if (processType === "retirement") return "Retirement";
+  return "Onboarding";
 }
 
 function signerKey(prefix: string) {
@@ -157,8 +173,16 @@ function clampFieldRect(rect: Pick<SignatureField, "x" | "y" | "width" | "height
 }
 
 function fieldLabel(signer: WizardSigner, type: SignatureField["type"]) {
-  const noun = type === "signature" ? "signature" : type === "date" ? "date signed" : type;
+  const noun = type === "signature" ? "signature" : type === "date" ? "date signed" : type === "text" ? "fillable text" : type;
   return `${signer.name || signer.email || "Signer"} ${noun}`;
+}
+
+function fieldTypeLabel(type: SignatureField["type"]) {
+  if (type === "text") return "Candidate text";
+  if (type === "date") return "Date";
+  if (type === "name") return "Name";
+  if (type === "email") return "Email";
+  return "Signature";
 }
 
 function normalizeDocumentFields(document: OnboardingDocument, signers: WizardSigner[]) {
@@ -197,7 +221,8 @@ export default function NewOnboardingPage() {
   }, [initialCandidateId, initialCandidateIdsParam]);
   const initialCandidateKey = initialCandidateIds.join(",");
   const pageRef = useRef<HTMLDivElement | null>(null);
-  const [step, setStep] = useState<WizardStep>("candidate");
+  const [step, setStep] = useState<WizardStep>("process");
+  const [processType, setProcessType] = useState<ProcessType>("onboarding");
   const [candidates, setCandidates] = useState<CandidateData[]>([]);
   const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
   const [packetTemplates, setPacketTemplates] = useState<OnboardingPacketTemplate[]>([]);
@@ -235,7 +260,7 @@ export default function NewOnboardingPage() {
       try {
         const [documentResult, packetTemplateResult] = await Promise.all([
           getDocuments(),
-          getPacketTemplates(),
+          getPacketTemplates(processType),
         ]);
         setDocuments(documentResult.filter((document) => document.status !== "archived"));
         setPacketTemplates(packetTemplateResult);
@@ -245,12 +270,16 @@ export default function NewOnboardingPage() {
         const candidateResult = await getCandidatesPaginated({ page: 1, limit: 100, search: candidateSearch });
         setCandidates(candidateResult.candidates || []);
       } catch (error: any) {
-        toast.error(error.message || "Failed to load onboarding data");
+        toast.error(error.message || "Failed to load transition data");
       }
     }
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [candidateSearch, selectedCandidateListId]);
+  }, [candidateSearch, selectedCandidateListId, processType]);
+
+  useEffect(() => {
+    setSelectedPacketTemplateId("none");
+  }, [processType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -311,7 +340,7 @@ export default function NewOnboardingPage() {
         });
         setCandidateSelection(loadedCandidates.map((candidate) => candidate._id), loadedCandidates);
         setCandidateSearch(loadedCandidates.length === 1 ? candidateName(loadedCandidates[0]) : "");
-        setStep("documents");
+        setStep("process");
       } catch (error: any) {
         if (!cancelled) toast.error(error.message || "Failed to preselect candidates");
       } finally {
@@ -370,7 +399,9 @@ export default function NewOnboardingPage() {
   }, [candidateSigner, manualSigners]);
 
   const selectedDocuments = useMemo(
-    () => documents.filter((document) => selectedDocumentIds.includes(document._id)),
+    () => selectedDocumentIds
+      .map((id) => documents.find((document) => document._id === id))
+      .filter(Boolean) as OnboardingDocument[],
     [documents, selectedDocumentIds]
   );
   const recruiterMembers = useMemo(() => {
@@ -543,6 +574,17 @@ export default function NewOnboardingPage() {
     setSelectedDocumentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
 
+  function moveSelectedDocument(id: string, direction: -1 | 1) {
+    setSelectedDocumentIds((current) => {
+      const index = current.indexOf(id);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  }
+
   function applyPacketTemplate(templateId: string) {
     setSelectedPacketTemplateId(templateId);
     const template = packetTemplates.find((item) => item._id === templateId);
@@ -639,7 +681,7 @@ export default function NewOnboardingPage() {
     if (activeFieldId === id) setActiveFieldId("");
   }
 
-  function addPlacementField() {
+  function addPlacementField(typeOverride?: SignatureField["type"]) {
     if (!activeDocument) return;
     const signer = signers.find((item) => item.key === placementSignerKey) || signers[0];
     if (!signer) {
@@ -647,19 +689,20 @@ export default function NewOnboardingPage() {
       return;
     }
 
+    const fieldType = typeOverride || placementFieldType;
     const base = newSignatureField(signer.role);
     const field: SignatureField = {
       ...base,
-      id: `${signer.key}-${placementFieldType}-${Date.now()}`,
+      id: `${signer.key}-${fieldType}-${Date.now()}`,
       signerKey: signer.key,
       role: signer.role,
-      type: placementFieldType,
-      label: fieldLabel(signer, placementFieldType),
+      type: fieldType,
+      label: fieldLabel(signer, fieldType),
       page: fieldPreviewPage,
       x: 0.12,
-      y: placementFieldType === "date" ? 0.78 : 0.68,
-      width: placementFieldType === "signature" ? 0.32 : 0.22,
-      height: placementFieldType === "signature" ? 0.08 : 0.05,
+      y: fieldType === "date" ? 0.78 : 0.68,
+      width: fieldType === "signature" ? 0.32 : fieldType === "text" ? 0.3 : 0.22,
+      height: fieldType === "signature" ? 0.08 : 0.05,
       required: true,
     };
     updateActiveDocumentFields((fields) => [...fields, field]);
@@ -754,6 +797,7 @@ export default function NewOnboardingPage() {
   }
 
   function canOpenStep(target: WizardStep) {
+    if (target === "process") return true;
     if (target === "candidate") return true;
     if (!selectedCandidateCount) return false;
     if (target === "documents") return true;
@@ -789,22 +833,25 @@ export default function NewOnboardingPage() {
     try {
       setSubmitting(true);
       const createdEnvelopeIds: string[] = [];
+      const label = processLabel(processType);
+      const lowerLabel = label.toLowerCase();
 
       for (const candidate of selectedCandidates) {
         const candidateDisplayName = candidateName(candidate);
         const customTitle = title.trim();
         const onboardingTitle = selectedCandidateCount === 1
-          ? customTitle || `${candidateDisplayName} onboarding`
-          : `${candidateDisplayName} onboarding`;
+          ? customTitle || `${candidateDisplayName} ${lowerLabel}`
+          : `${candidateDisplayName} ${lowerLabel}`;
         const envelopeTitle = selectedCandidateCount === 1
-          ? customTitle || `${candidateDisplayName} onboarding packet`
+          ? customTitle || `${candidateDisplayName} ${lowerLabel} packet`
           : customTitle
             ? `${candidateDisplayName} - ${customTitle}`
-            : `${candidateDisplayName} onboarding packet`;
+            : `${candidateDisplayName} ${lowerLabel} packet`;
         const onboardingResult = await startOnboarding(candidate._id, {
           title: onboardingTitle,
           notes,
           templateId: selectedPacketTemplateId === "none" ? undefined : selectedPacketTemplateId,
+          processType,
         });
 
         if (!selectedDocumentIds.length) continue;
@@ -857,21 +904,21 @@ export default function NewOnboardingPage() {
       if (selectedDocumentIds.length > 0) {
         toast.success(
           selectedCandidateCount > 1
-            ? `${selectedCandidateCount} onboarding packets ${sendingNow ? "created and sent" : "created as drafts"}`
-            : sendingNow ? "Onboarding started and sent" : "Onboarding draft created"
+            ? `${selectedCandidateCount} ${lowerLabel} packets ${sendingNow ? "created and sent" : "created as drafts"}`
+            : sendingNow ? `${label} started and sent` : `${label} draft created`
         );
         if (selectedCandidateCount === 1 && createdEnvelopeIds.length === 1) {
-          window.location.href = `/onboarding/envelopes/${createdEnvelopeIds[0]}`;
+          window.location.href = `/people-transitions/envelopes/${createdEnvelopeIds[0]}`;
           return;
         }
-        window.location.href = "/onboarding";
+        window.location.href = "/people-transitions";
         return;
       }
 
-      toast.success(selectedCandidateCount > 1 ? `${selectedCandidateCount} onboarding records started` : "Onboarding started");
-      window.location.href = "/onboarding";
+      toast.success(selectedCandidateCount > 1 ? `${selectedCandidateCount} ${lowerLabel} records started` : `${label} started`);
+      window.location.href = "/people-transitions";
     } catch (error: any) {
-      toast.error(error.message || "Failed to start onboarding");
+      toast.error(error.message || "Failed to start transition");
     } finally {
       setSubmitting(false);
     }
@@ -883,10 +930,10 @@ export default function NewOnboardingPage() {
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <Button asChild variant="ghost" className="-ml-3 mb-2">
-              <Link href="/onboarding"><ArrowLeft className="h-4 w-4" /> Back</Link>
+              <Link href="/people-transitions"><ArrowLeft className="h-4 w-4" /> Back</Link>
             </Button>
-            <h1 className="text-3xl font-semibold text-slate-950">Begin onboarding</h1>
-            <p className="mt-2 text-sm text-slate-600">Select the candidate, documents, signers, and exact signing fields.</p>
+            <h1 className="text-3xl font-semibold text-slate-950">Start people transition</h1>
+            <p className="mt-2 text-sm text-slate-600">Select the process, candidate, documents, signers, and exact signing fields.</p>
           </div>
           <div className="hidden gap-2 xl:flex">
             {steps.map((item, index) => (
@@ -902,6 +949,31 @@ export default function NewOnboardingPage() {
             ))}
           </div>
         </div>
+
+        {step === "process" && (
+          <section className="rounded-md border bg-white">
+            <div className="border-b p-4">
+              <h2 className="text-lg font-semibold text-slate-950">Process</h2>
+              <p className="text-sm text-slate-500">Choose the transition workflow this packet belongs to.</p>
+            </div>
+            <div className="grid gap-3 p-4 md:grid-cols-3">
+              {processOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setProcessType(option.value)}
+                  className={`rounded-md border p-4 text-left ${processType === option.value ? "border-blue-500 bg-blue-50" : "bg-white hover:bg-slate-50"}`}
+                >
+                  <div className="font-semibold text-slate-950">{option.label}</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{option.description}</p>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end border-t p-4">
+              <Button onClick={() => setStep("candidate")}>Continue</Button>
+            </div>
+          </section>
+        )}
 
         {step === "candidate" && (
           <section className="rounded-md border bg-white">
@@ -943,7 +1015,7 @@ export default function NewOnboardingPage() {
             <div className="p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm text-slate-600">
-                  {selectedCandidateCount ? `${selectedCandidateCount} selected for onboarding` : `${candidates.length} visible candidates`}
+                  {selectedCandidateCount ? `${selectedCandidateCount} selected for ${processLabel(processType).toLowerCase()}` : `${candidates.length} visible candidates`}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={toggleVisibleCandidates} disabled={!candidates.length || candidateListLoading}>
@@ -1031,7 +1103,8 @@ export default function NewOnboardingPage() {
                 </table>
               </div>
             </div>
-            <div className="flex justify-end border-t p-4">
+            <div className="flex justify-between border-t p-4">
+              <Button variant="outline" onClick={() => setStep("process")}>Back</Button>
               <Button disabled={!selectedCandidateCount} onClick={() => setStep("documents")}>Continue</Button>
             </div>
           </section>
@@ -1059,10 +1132,52 @@ export default function NewOnboardingPage() {
                   </SelectContent>
                 </Select>
                 <Button asChild variant="outline">
-                  <Link href="/onboarding/documents/new"><FileText className="h-4 w-4" /> Build document</Link>
+                  <Link href="/people-transitions/documents/new"><FileText className="h-4 w-4" /> Build document</Link>
                 </Button>
               </div>
             </div>
+            {selectedDocuments.length > 0 && (
+              <div className="border-b bg-slate-50 px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-950">Signing order</div>
+                    <p className="text-xs text-slate-500">Candidates complete documents from top to bottom.</p>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  {selectedDocuments.map((document, index) => (
+                    <div key={document._id} className="flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-950">{index + 1}. {document.title}</div>
+                        <div className="text-xs text-slate-500">{documentFieldsById[document._id]?.length || document.signatureFields?.length || 0} field(s)</div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={index === 0}
+                          onClick={() => moveSelectedDocument(document._id, -1)}
+                          aria-label={`Move ${document.title} up`}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={index === selectedDocuments.length - 1}
+                          onClick={() => moveSelectedDocument(document._id, 1)}
+                          aria-label={`Move ${document.title} down`}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
               {documents.map((document) => {
                 const selected = selectedDocumentIds.includes(document._id);
@@ -1204,8 +1319,9 @@ export default function NewOnboardingPage() {
             <div className="grid gap-0 xl:grid-cols-[240px_minmax(0,1fr)_330px]">
               <aside className="border-b p-4 xl:border-b-0 xl:border-r">
                 <h2 className="text-lg font-semibold text-slate-950">Documents</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Field placement follows the signing order.</p>
                 <div className="mt-4 grid gap-2">
-                  {selectedDocuments.map((document) => (
+                  {selectedDocuments.map((document, index) => (
                     <button
                       key={document._id}
                       type="button"
@@ -1216,7 +1332,7 @@ export default function NewOnboardingPage() {
                       }}
                       className={`rounded-md border p-3 text-left text-sm ${activeDocument?._id === document._id ? "border-blue-500 bg-blue-50" : "hover:bg-slate-50"}`}
                     >
-                      <div className="font-medium text-slate-950">{document.title}</div>
+                      <div className="font-medium text-slate-950">{index + 1}. {document.title}</div>
                       <div className="text-xs text-slate-500">{documentFieldsById[document._id]?.length || 0} fields</div>
                     </button>
                   ))}
@@ -1283,7 +1399,7 @@ export default function NewOnboardingPage() {
                           }}
                         >
                           <Icon className="h-3 w-3" />
-                          <span className="truncate">{field.label || signer?.name || field.type}</span>
+                          <span className="truncate">{field.label || signer?.name || fieldTypeLabel(field.type)}</span>
                           {activeFieldId === field.id && resizeHandles.map((handle) => (
                             <span
                               key={handle}
@@ -1302,6 +1418,9 @@ export default function NewOnboardingPage() {
 
               <aside className="border-t p-4 xl:border-l xl:border-t-0">
                 <h2 className="text-lg font-semibold text-slate-950">Fields</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Candidate text fields appear as inputs in the portal. Name, email, and date fields are stamped automatically.
+                </p>
                 <div className="mt-4 space-y-3">
                   <div className="space-y-2">
                     <Label>Signer</Label>
@@ -1323,14 +1442,20 @@ export default function NewOnboardingPage() {
                         <SelectItem value="date">Date</SelectItem>
                         <SelectItem value="name">Name</SelectItem>
                         <SelectItem value="email">Email</SelectItem>
-                        <SelectItem value="text">Text</SelectItem>
+                        <SelectItem value="text">Candidate text</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button type="button" className="w-full" onClick={addPlacementField} disabled={!activeDocument || !signers.length}>
-                    <Plus className="h-4 w-4" />
-                    Add field
-                  </Button>
+                  <div className="grid gap-2">
+                    <Button type="button" className="w-full" onClick={() => addPlacementField()} disabled={!activeDocument || !signers.length}>
+                      <Plus className="h-4 w-4" />
+                      Add field
+                    </Button>
+                    <Button type="button" variant="outline" className="w-full" onClick={() => addPlacementField("text")} disabled={!activeDocument || !signers.length}>
+                      <Type className="h-4 w-4" />
+                      Add candidate text
+                    </Button>
+                  </div>
                 </div>
 
                 {activeField ? (
@@ -1360,6 +1485,9 @@ export default function NewOnboardingPage() {
                     <div className="space-y-2">
                       <Label>Label</Label>
                       <Input value={activeField.label || ""} onChange={(event) => updateField(activeField.id, { label: event.target.value })} />
+                      {activeField.type === "text" && activeField.role === "candidate" && (
+                        <p className="text-xs leading-5 text-slate-500">Candidate fills this value before signing.</p>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       {(["x", "y", "width", "height"] as const).map((key) => (
@@ -1392,7 +1520,7 @@ export default function NewOnboardingPage() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Packet title</Label>
-                  <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={selectedCandidateCount === 1 && selectedCandidate ? `${candidateName(selectedCandidate)} onboarding packet` : "Onboarding packet"} />
+                  <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={selectedCandidateCount === 1 && selectedCandidate ? `${candidateName(selectedCandidate)} ${processLabel(processType).toLowerCase()} packet` : `${processLabel(processType)} packet`} />
                 </div>
                 <div className="space-y-2">
                   <Label>Internal notes</Label>
@@ -1411,6 +1539,10 @@ export default function NewOnboardingPage() {
               <aside className="rounded-md border bg-slate-50 p-4">
                 <h2 className="font-semibold text-slate-950">Summary</h2>
                 <div className="mt-4 space-y-4 text-sm">
+                  <div>
+                    <div className="text-xs uppercase text-slate-500">Process</div>
+                    <div className="font-medium text-slate-950">{processLabel(processType)}</div>
+                  </div>
                   <div>
                     <div className="text-xs uppercase text-slate-500">Candidates</div>
                     <div className="font-medium text-slate-950">{selectedCandidateCount ? `${selectedCandidateCount} selected` : "Not selected"}</div>
@@ -1434,9 +1566,9 @@ export default function NewOnboardingPage() {
                   <div>
                     <div className="text-xs uppercase text-slate-500">Documents</div>
                     <div className="mt-2 space-y-2">
-                      {selectedDocuments.map((document) => (
+                      {selectedDocuments.map((document, index) => (
                         <div key={document._id} className="rounded border bg-white px-3 py-2">
-                          <div className="font-medium text-slate-900">{document.title}</div>
+                          <div className="font-medium text-slate-900">{index + 1}. {document.title}</div>
                           <div className="text-xs text-slate-500">{documentFieldsById[document._id]?.length || 0} fields</div>
                         </div>
                       ))}

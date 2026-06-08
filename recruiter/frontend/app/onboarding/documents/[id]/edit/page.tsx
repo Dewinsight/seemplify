@@ -24,7 +24,7 @@ export default function EditOnboardingDocumentPage() {
       const updated = await updateDocument(params.id, data);
       await renderDocument(updated._id).catch(() => null);
       toast.success("Document saved");
-      router.push(`/onboarding/documents/${updated._id}/prepare`);
+      router.push(`/people-transitions/documents/${updated._id}/prepare`);
     } catch (error: any) {
       toast.error(error.message || "Failed to save document");
     } finally {

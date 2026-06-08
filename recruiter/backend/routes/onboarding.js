@@ -30,10 +30,13 @@ const onboardingEmailService = require('../services/onboardingEmailService');
 const { logOnboardingEvent } = require('../services/onboardingAuditService');
 const {
   attachEnvelopeToWorkflow,
+  createPeopleTransitionNotifications,
   ensureDefaultFormTemplate,
   initializeDefaultWorkflow,
   markDocumentWorkflowComplete,
   markDocumentWorkflowInProgress,
+  normalizeProcessType,
+  processCopy,
   reviewFormSubmission,
   serializeOnboardingPlatform,
   tryCompleteOnboarding,
@@ -93,6 +96,62 @@ function createInviteToken() {
 
 function candidateDisplayName(candidate) {
   return `${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim() || candidate?.email || 'Candidate';
+}
+
+function processTypeFromRequest(req) {
+  return normalizeProcessType(req.body?.processType || req.query?.processType);
+}
+
+function processTypeFilter(processType, field = 'processType') {
+  const normalized = processType === 'all' ? 'all' : normalizeProcessType(processType);
+  if (normalized === 'all') return {};
+  if (normalized === 'onboarding') {
+    return {
+      $or: [
+        { [field]: 'onboarding' },
+        { [field]: { $exists: false } },
+        { [field]: null }
+      ]
+    };
+  }
+  return { [field]: normalized };
+}
+
+function processTypeQueryFromRequest(req) {
+  const value = req.query?.processType || 'all';
+  return value === 'all' ? 'all' : normalizeProcessType(value);
+}
+
+async function ensureSystemPacketTemplates({ organization, userId }) {
+  const processTypes = ['onboarding', 'exit', 'retirement'];
+  for (const processType of processTypes) {
+    const copy = processCopy(processType);
+    const formTemplate = await ensureDefaultFormTemplate({ organization, userId, processType });
+    const existing = await OnboardingTemplate.findOne({
+      organization,
+      isSystem: true,
+      ...processTypeFilter(processType),
+      status: 'active'
+    });
+    if (existing) continue;
+
+    await OnboardingTemplate.create({
+      organization,
+      name: `Default ${copy.label.toLowerCase()} packet`,
+      description: `${copy.label} workflow with forms, documents, HR review, and closeout.`,
+      category: processType,
+      processType,
+      isSystem: true,
+      formTemplates: [formTemplate._id],
+      workflowItems: [
+        { id: `${processType}-form`, type: 'form', title: copy.formTitle, ownerType: 'candidate', order: 10 },
+        { id: `${processType}-documents`, type: 'document', title: copy.documentTitle, ownerType: 'candidate', order: 20 },
+        { id: `${processType}-approval`, type: 'approval', title: copy.approvalTitle, ownerType: 'user', order: 30 },
+        { id: `${processType}-handoff`, type: 'handoff', title: copy.handoffTitle, ownerType: 'system', order: 40 }
+      ],
+      createdBy: userId
+    });
+  }
 }
 
 function systemVariables({ candidate, organization, user } = {}) {
@@ -431,6 +490,16 @@ router.get('/dashboard', async (req, res) => {
   try {
     const organization = organizationId(req);
     const now = new Date();
+    const selectedProcessType = processTypeQueryFromRequest(req);
+    const onboardingQuery = {
+      organization,
+      ...processTypeFilter(selectedProcessType)
+    };
+    const workflowQuery = { organization };
+    const relatedOnboardingIds = selectedProcessType === 'all'
+      ? null
+      : await CandidateOnboarding.find(onboardingQuery).distinct('_id');
+    if (relatedOnboardingIds) workflowQuery.onboarding = { $in: relatedOnboardingIds };
     const [
       statusCounts,
       overdueItems,
@@ -439,17 +508,17 @@ router.get('/dashboard', async (req, res) => {
       formReviews
     ] = await Promise.all([
       CandidateOnboarding.aggregate([
-        { $match: { organization } },
+        { $match: onboardingQuery },
         { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
       OnboardingWorkflowItem.countDocuments({
-        organization,
+        ...workflowQuery,
         status: { $in: ['pending', 'in_progress', 'blocked', 'failed'] },
         dueAt: { $lt: now }
       }),
-      OnboardingApproval.countDocuments({ organization, status: 'pending' }),
-      OnboardingHandoff.countDocuments({ organization, status: 'failed' }),
-      OnboardingFormSubmission.countDocuments({ organization, status: 'under_review' })
+      OnboardingApproval.countDocuments({ ...workflowQuery, status: 'pending' }),
+      OnboardingHandoff.countDocuments({ ...workflowQuery, status: 'failed' }),
+      OnboardingFormSubmission.countDocuments({ ...workflowQuery, status: 'under_review' })
     ]);
 
     res.json({
@@ -469,7 +538,11 @@ router.get('/dashboard', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { status, search, candidateId } = req.query;
-    const query = { organization: organizationId(req) };
+    const selectedProcessType = processTypeQueryFromRequest(req);
+    const query = {
+      organization: organizationId(req),
+      ...processTypeFilter(selectedProcessType)
+    };
     if (status && status !== 'all') query.status = status;
     if (candidateId) query.candidate = candidateId;
 
@@ -498,7 +571,14 @@ router.get('/', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(100);
 
-    const recentEvents = await OnboardingAuditEvent.find({ organization: organizationId(req) })
+    const recentEventQuery = { organization: organizationId(req) };
+    if (selectedProcessType !== 'all') {
+      recentEventQuery.$or = [
+        { 'metadata.processType': selectedProcessType },
+        ...(selectedProcessType === 'onboarding' ? [{ 'metadata.processType': { $exists: false } }] : [])
+      ];
+    }
+    const recentEvents = await OnboardingAuditEvent.find(recentEventQuery)
       .sort({ createdAt: -1 })
       .limit(20);
 
@@ -511,6 +591,8 @@ router.get('/', async (req, res) => {
 
 router.post('/candidates/:candidateId/start', async (req, res) => {
   try {
+    const processType = processTypeFromRequest(req);
+    const copy = processCopy(processType);
     const candidate = await Candidate.findOne({
       _id: req.params.candidateId,
       organization: organizationId(req)
@@ -522,11 +604,12 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
     const organization = await getOrganization(req);
     const account = await ensureCandidateAccount(candidate, organization);
     const invite = createInviteToken();
-    const title = req.body.title || `${candidateDisplayName(candidate)} onboarding`;
+    const title = req.body.title || `${candidateDisplayName(candidate)} ${copy.label.toLowerCase()}`;
     const packetTemplate = req.body.templateId
       ? await OnboardingTemplate.findOne({
           _id: req.body.templateId,
           organization: organizationId(req),
+          ...processTypeFilter(processType),
           status: 'active'
         })
       : null;
@@ -536,10 +619,12 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       candidate: candidate._id,
       candidateAccount: account._id,
       job: candidate.jobAppliedFor,
+      processType,
       template: packetTemplate?._id,
       templateSnapshot: packetTemplate ? {
         _id: packetTemplate._id,
         name: packetTemplate.name,
+        processType: packetTemplate.processType || processType,
         version: packetTemplate.version,
         documents: packetTemplate.documents,
         formTemplates: packetTemplate.formTemplates,
@@ -590,8 +675,19 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       actorType: 'user',
       actorUser: req.user.id,
       actorEmail: req.user.email,
-      action: 'onboarding_started',
-      metadata: { inviteEmail: candidate.email }
+      action: `${processType}_started`,
+      metadata: { inviteEmail: candidate.email, processType }
+    });
+
+    await createPeopleTransitionNotifications({
+      organization: organizationId(req),
+      onboarding,
+      candidate,
+      notificationType: 'people_transition_started',
+      title: `${copy.label} started`,
+      message: `${candidateDisplayName(candidate)} has a new ${copy.label.toLowerCase()} process.`,
+      priority: 'medium',
+      actorUserId: req.user.id
     });
 
     res.status(201).json({ data: await serializeOnboarding(onboarding), inviteUrl: portalInviteUrl });
@@ -603,8 +699,11 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
 
 router.get('/templates', async (req, res) => {
   try {
+    await ensureSystemPacketTemplates({ organization: organizationId(req), userId: req.user.id });
+    const selectedProcessType = processTypeQueryFromRequest(req);
     const templates = await OnboardingTemplate.find({
       organization: organizationId(req),
+      ...processTypeFilter(selectedProcessType),
       status: { $ne: 'archived' }
     })
       .populate('documents', 'title status sourceType')
@@ -618,11 +717,13 @@ router.get('/templates', async (req, res) => {
 
 router.post('/templates', async (req, res) => {
   try {
+    const processType = processTypeFromRequest(req);
     const template = await OnboardingTemplate.create({
       organization: organizationId(req),
       name: req.body.name,
       description: req.body.description || '',
       category: req.body.category || 'default',
+      processType,
       documents: Array.isArray(req.body.documents) ? req.body.documents : [],
       formTemplates: Array.isArray(req.body.formTemplates) ? req.body.formTemplates : [],
       workflowItems: Array.isArray(req.body.workflowItems) ? req.body.workflowItems : [],
@@ -638,7 +739,7 @@ router.post('/templates', async (req, res) => {
       actorUser: req.user.id,
       actorEmail: req.user.email,
       action: 'packet_template_created',
-      metadata: { templateId: template._id, name: template.name }
+      metadata: { templateId: template._id, name: template.name, processType }
     });
 
     res.status(201).json({ data: template });
@@ -649,21 +750,24 @@ router.post('/templates', async (req, res) => {
 
 router.patch('/templates/:id', async (req, res) => {
   try {
+    const processType = req.body.processType ? normalizeProcessType(req.body.processType) : undefined;
+    const set = {
+      name: req.body.name,
+      description: req.body.description || '',
+      category: req.body.category || 'default',
+      status: req.body.status || 'active',
+      documents: Array.isArray(req.body.documents) ? req.body.documents : [],
+      formTemplates: Array.isArray(req.body.formTemplates) ? req.body.formTemplates : [],
+      workflowItems: Array.isArray(req.body.workflowItems) ? req.body.workflowItems : [],
+      reminderRules: Array.isArray(req.body.reminderRules) ? req.body.reminderRules : [],
+      completionActions: Array.isArray(req.body.completionActions) ? req.body.completionActions : [],
+      updatedBy: req.user.id
+    };
+    if (processType) set.processType = processType;
     const template = await OnboardingTemplate.findOneAndUpdate(
       { _id: req.params.id, organization: organizationId(req), isSystem: { $ne: true } },
       {
-        $set: {
-          name: req.body.name,
-          description: req.body.description || '',
-          category: req.body.category || 'default',
-          status: req.body.status || 'active',
-          documents: Array.isArray(req.body.documents) ? req.body.documents : [],
-          formTemplates: Array.isArray(req.body.formTemplates) ? req.body.formTemplates : [],
-          workflowItems: Array.isArray(req.body.workflowItems) ? req.body.workflowItems : [],
-          reminderRules: Array.isArray(req.body.reminderRules) ? req.body.reminderRules : [],
-          completionActions: Array.isArray(req.body.completionActions) ? req.body.completionActions : [],
-          updatedBy: req.user.id
-        },
+        $set: set,
         $inc: { version: 1 }
       },
       { new: true }
@@ -691,7 +795,7 @@ router.delete('/templates/:id', async (req, res) => {
 
 router.get('/form-templates', async (req, res) => {
   try {
-    await ensureDefaultFormTemplate({ organization: organizationId(req), userId: req.user.id });
+    await ensureSystemPacketTemplates({ organization: organizationId(req), userId: req.user.id });
     const templates = await OnboardingFormTemplate.find({
       organization: organizationId(req),
       status: { $ne: 'archived' }
@@ -814,7 +918,8 @@ router.post('/reminders/run', async (req, res) => {
     const organization = organizationId(req);
     const now = new Date();
     const reminderWindow = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const items = await OnboardingWorkflowItem.find({
+    const selectedProcessType = processTypeQueryFromRequest(req);
+    const reminderQuery = {
       organization,
       status: { $in: ['pending', 'in_progress', 'blocked', 'failed'] },
       dueAt: { $lte: now },
@@ -822,7 +927,15 @@ router.post('/reminders/run', async (req, res) => {
         { lastReminderAt: { $exists: false } },
         { lastReminderAt: { $lte: reminderWindow } }
       ]
-    })
+    };
+    if (selectedProcessType !== 'all') {
+      const onboardingIds = await CandidateOnboarding.find({
+        organization,
+        ...processTypeFilter(selectedProcessType)
+      }).distinct('_id');
+      reminderQuery.onboarding = { $in: onboardingIds };
+    }
+    const items = await OnboardingWorkflowItem.find(reminderQuery)
       .sort({ dueAt: 1 })
       .limit(100);
 
@@ -848,7 +961,7 @@ router.post('/reminders/run', async (req, res) => {
         candidate: onboarding.candidate._id,
         actorType: 'system',
         action: 'workflow_reminder_sent',
-        metadata: { workflowItem: item._id, itemType: item.type }
+        metadata: { workflowItem: item._id, itemType: item.type, processType: normalizeProcessType(onboarding.processType) }
       });
     }
 
@@ -1246,7 +1359,9 @@ router.post('/envelopes', async (req, res) => {
     }).populate('candidate');
     if (!onboarding) return res.status(404).json({ msg: 'Onboarding not found' });
 
-    const documentIds = Array.isArray(req.body.documentIds) ? req.body.documentIds : [];
+    const documentIds = Array.isArray(req.body.documentIds)
+      ? [...new Set(req.body.documentIds.map((id) => String(id || '')).filter(Boolean))]
+      : [];
     if (documentIds.length === 0) {
       return res.status(400).json({ msg: 'At least one document is required' });
     }
@@ -1260,6 +1375,8 @@ router.post('/envelopes', async (req, res) => {
     if (documents.length !== documentIds.length) {
       return res.status(400).json({ msg: 'One or more documents could not be found or has been removed from the library' });
     }
+    const documentsById = new Map(documents.map((document) => [document._id.toString(), document]));
+    const orderedDocuments = documentIds.map((id) => documentsById.get(id)).filter(Boolean);
 
     const signers = buildEnvelopeSigners(req, onboarding);
     const documentFields = req.body.documentFields && typeof req.body.documentFields === 'object'
@@ -1267,7 +1384,7 @@ router.post('/envelopes', async (req, res) => {
       : {};
 
     const envelopeDocuments = [];
-    for (const document of documents) {
+    for (const document of orderedDocuments) {
       const snapshot = await renderDocumentSnapshot(document, {
         candidate: onboarding.candidate,
         organization,
@@ -1303,7 +1420,7 @@ router.post('/envelopes', async (req, res) => {
       createdBy: req.user.id
     });
 
-    onboarding.documents = Array.from(new Set([...(onboarding.documents || []), ...documents.map((doc) => doc._id)]));
+    onboarding.documents = Array.from(new Set([...(onboarding.documents || []), ...orderedDocuments.map((doc) => doc._id)]));
     onboarding.envelopes = Array.from(new Set([...(onboarding.envelopes || []), envelope._id]));
     await onboarding.save();
     await attachEnvelopeToWorkflow({ onboardingId: onboarding._id, envelopeId: envelope._id });

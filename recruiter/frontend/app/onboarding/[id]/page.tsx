@@ -32,6 +32,13 @@ function candidateName(onboarding?: CandidateOnboarding | null) {
   return `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim() || candidate.email || "Candidate";
 }
 
+function processLabel(onboarding?: CandidateOnboarding | null) {
+  const processType = onboarding?.processType || "onboarding";
+  if (processType === "exit") return "Exit";
+  if (processType === "retirement") return "Retirement";
+  return "Onboarding";
+}
+
 export default function OnboardingWorkspacePage() {
   const params = useParams<{ id: string }>();
   const [onboarding, setOnboarding] = useState<CandidateOnboarding | null>(null);
@@ -51,7 +58,7 @@ export default function OnboardingWorkspacePage() {
       setOnboarding(onboardingResult.data);
       setEvents(onboardingResult.events || []);
     } catch (error: any) {
-      toast.error(error.message || "Failed to load onboarding");
+      toast.error(error.message || "Failed to load transition");
     }
   }
 
@@ -159,7 +166,7 @@ export default function OnboardingWorkspacePage() {
   }, [selectedReviewDocument?.envelopeId, selectedReviewDocument?.document._id, reviewReloadKey]);
 
   if (!onboarding) {
-    return <div className="p-8 text-sm text-slate-500">Loading onboarding...</div>;
+    return <div className="p-8 text-sm text-slate-500">Loading transition...</div>;
   }
 
   return (
@@ -169,6 +176,7 @@ export default function OnboardingWorkspacePage() {
           <div>
             <div className="mb-2 flex items-center gap-2">
               <OnboardingStatusBadge status={onboarding.status} />
+              <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">{processLabel(onboarding)}</span>
               <span className="text-xs text-slate-500">{onboarding.candidate?.email}</span>
             </div>
             <h1 className="text-3xl font-semibold text-slate-950">{candidateName(onboarding)}</h1>
@@ -346,14 +354,14 @@ export default function OnboardingWorkspacePage() {
                   <p className="text-sm text-slate-500">Signature packets created for this candidate.</p>
                 </div>
                 <Button asChild variant="outline">
-                  <Link href="/onboarding/documents/new"><Plus className="h-4 w-4" /> New document</Link>
+                  <Link href="/people-transitions/documents/new"><Plus className="h-4 w-4" /> New document</Link>
                 </Button>
               </div>
               <div className="divide-y">
                 {(onboarding.envelopes || []).length === 0 ? (
                   <div className="p-6 text-sm text-slate-500">No envelopes yet.</div>
                 ) : (onboarding.envelopes || []).map((envelope) => (
-                  <Link key={envelope._id} href={`/onboarding/envelopes/${envelope._id}`} className="flex items-center justify-between gap-3 p-4 hover:bg-slate-50">
+                  <Link key={envelope._id} href={`/people-transitions/envelopes/${envelope._id}`} className="flex items-center justify-between gap-3 p-4 hover:bg-slate-50">
                     <div>
                       <div className="font-medium text-slate-950">{envelope.title}</div>
                       <div className="text-xs text-slate-500">{envelope.documents?.length || 0} documents · {new Date(envelope.createdAt).toLocaleString()}</div>

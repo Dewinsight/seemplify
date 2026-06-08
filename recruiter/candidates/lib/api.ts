@@ -4,6 +4,7 @@ import type {
   AuthResponse,
   CandidateAccount,
   CandidateDocumentPayload,
+  OnboardingEnvelope,
   OnboardingFormSubmission,
   CandidateOnboarding,
 } from "./types"
@@ -194,11 +195,11 @@ export async function getMe() {
 }
 
 export async function getOnboardingList() {
-  return candidateRequest<{ data: CandidateOnboarding[] }>("/api/candidate-portal/onboarding")
+  return candidateRequest<{ data: CandidateOnboarding[] }>("/api/candidate-portal/transitions")
 }
 
 export async function getOnboarding(id: string) {
-  return candidateRequest<{ data: CandidateOnboarding }>(`/api/candidate-portal/onboarding/${id}`)
+  return candidateRequest<{ data: CandidateOnboarding }>(`/api/candidate-portal/transitions/${id}`)
 }
 
 export async function getDocument(id: string) {
@@ -211,7 +212,7 @@ export async function getDocumentPreviewBlob(id: string) {
 }
 
 export async function signDocument(id: string, signatureDataUrl: string, fieldValues: Record<string, string> = {}) {
-  return candidateRequest<{ data: unknown }>(`/api/candidate-portal/documents/${id}/sign`, {
+  return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null }>(`/api/candidate-portal/documents/${id}/sign`, {
     method: "POST",
     body: JSON.stringify({ signatureDataUrl, fieldValues }),
   })
@@ -247,7 +248,7 @@ export async function uploadOnboardingFormFile(id: string, fieldKey: string, fil
 
 export async function downloadDocumentBlob(id: string) {
   const response = await candidateFileRequest(`/api/candidate-portal/documents/${id}/download`)
-  const fallbackName = `onboarding-document-${id}.pdf`
+  const fallbackName = `transition-document-${id}.pdf`
   return {
     blob: await response.blob(),
     fileName: filenameFromDisposition(response.headers.get("content-disposition"), fallbackName),

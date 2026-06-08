@@ -69,6 +69,14 @@ function clampFieldRect(rect: Pick<SignatureField, "x" | "y" | "width" | "height
   };
 }
 
+function fieldTypeLabel(type: SignatureField["type"]) {
+  if (type === "text") return "Candidate text";
+  if (type === "date") return "Date signed";
+  if (type === "name") return "Name";
+  if (type === "email") return "Email";
+  return "Signature";
+}
+
 export default function PrepareOnboardingDocumentPage() {
   const params = useParams<{ id: string }>();
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -150,8 +158,17 @@ export default function PrepareOnboardingDocumentPage() {
     setPreviewPageSize({ width: page.width, height: page.height });
   }, []);
 
-  function addField(role: "candidate" | "internal" = "candidate") {
-    const field = { ...newSignatureField(role), page: previewPage };
+  function addField(role: "candidate" | "internal" = "candidate", type: SignatureField["type"] = "signature") {
+    const field: SignatureField = {
+      ...newSignatureField(role),
+      id: `${role}-${type}-${Date.now()}`,
+      role,
+      type,
+      label: type === "text" && role === "candidate" ? "Candidate response" : fieldTypeLabel(type),
+      page: previewPage,
+      width: type === "signature" ? 0.3 : 0.28,
+      height: type === "signature" ? 0.08 : 0.05,
+    };
     setFields((current) => [...current, field]);
     setActiveFieldId(field.id);
   }
@@ -285,7 +302,7 @@ export default function PrepareOnboardingDocumentPage() {
       const updated = await updateDocument(document._id, { signatureFields: fields });
       const rendered = await renderDocument(updated._id).catch(() => updated);
       setDocument(rendered);
-      toast.success("Signature fields saved");
+      toast.success("Fields saved");
     } catch (error: any) {
       toast.error(error.message || "Failed to save fields");
     } finally {
@@ -307,7 +324,7 @@ export default function PrepareOnboardingDocumentPage() {
               <span className="text-xs uppercase tracking-wide text-slate-500">{document.sourceType.replace(/_/g, " ")}</span>
             </div>
             <h1 className="text-3xl font-semibold text-slate-950">{document.title}</h1>
-            <p className="mt-2 text-sm text-slate-600">Place signature fields using normalized coordinates. Drag a field on the page or edit exact values.</p>
+            <p className="mt-2 text-sm text-slate-600">Place signing fields and candidate-fillable text fields. Drag a field on the page or edit exact values.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             {previewUrl && (
@@ -403,7 +420,7 @@ export default function PrepareOnboardingDocumentPage() {
                       }}
                     >
                       <Icon className="h-3 w-3" />
-                      <span className="truncate">{field.label || field.type}</span>
+                      <span className="truncate">{field.label || fieldTypeLabel(field.type)}</span>
                       {activeFieldId === field.id && resizeHandles.map((handle) => (
                         <span
                           key={handle}
@@ -426,17 +443,26 @@ export default function PrepareOnboardingDocumentPage() {
                 <h2 className="text-lg font-semibold text-slate-950">Fields</h2>
                 <p className="text-xs text-slate-500">{fields.length} placed</p>
               </div>
-              <Button size="sm" onClick={() => addField("candidate")}>
-                <Plus className="h-4 w-4" />
-                Add
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => addField("candidate", "text")}>
+                  <Type className="h-4 w-4" />
+                  Add fillable text
+                </Button>
+                <Button size="sm" onClick={() => addField("candidate")}>
+                  <Plus className="h-4 w-4" />
+                  Add
+                </Button>
+              </div>
             </div>
+            <p className="mb-4 text-xs leading-5 text-slate-500">
+              Candidate text fields become inputs in the candidate portal. Name, email, and date fields are filled automatically when the signer completes the document.
+            </p>
 
             <div className="mb-5 grid gap-2">
               {fields.map((field) => (
                 <button key={field.id} type="button" onClick={() => selectField(field)} className={`rounded-md border p-3 text-left text-sm ${activeFieldId === field.id ? "border-blue-300 bg-blue-50" : "hover:bg-slate-50"}`}>
-                  <div className="font-medium text-slate-950">{field.label || field.type}</div>
-                  <div className="text-xs text-slate-500">{field.role} · page {field.page}</div>
+                  <div className="font-medium text-slate-950">{field.label || fieldTypeLabel(field.type)}</div>
+                  <div className="text-xs text-slate-500">{field.role} - page {field.page}</div>
                 </button>
               ))}
             </div>
@@ -463,9 +489,12 @@ export default function PrepareOnboardingDocumentPage() {
                         <SelectItem value="date">Date</SelectItem>
                         <SelectItem value="name">Name</SelectItem>
                         <SelectItem value="email">Email</SelectItem>
-                        <SelectItem value="text">Text</SelectItem>
+                        <SelectItem value="text">Candidate text</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs leading-5 text-slate-500">
+                      Candidate text is typed in the portal. Name, email, and date are stamped automatically.
+                    </p>
                   </div>
                 </div>
 
@@ -509,7 +538,7 @@ export default function PrepareOnboardingDocumentPage() {
 
             <div className="mt-6 border-t pt-4">
               <Button asChild variant="outline" className="w-full">
-                <Link href="/onboarding/new">Use in onboarding</Link>
+                <Link href="/people-transitions/new">Use in transition</Link>
               </Button>
             </div>
           </aside>

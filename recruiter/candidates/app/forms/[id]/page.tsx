@@ -123,8 +123,8 @@ export default function CandidateFormPage() {
     <CandidateShell
       brand={brand}
       account={account}
-      title={form?.title || "Onboarding form"}
-      subtitle="Complete the required onboarding details and submit them for review."
+      title={form?.title || "Transition form"}
+      subtitle="Complete the required details and submit them for review."
       onSignOut={signOut}
     >
       <section className="mx-auto max-w-5xl">

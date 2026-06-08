@@ -93,8 +93,7 @@ function documentPdfUrls(envelopeDocument) {
 
 function findEnvelopeDocumentByRouteId(envelope, routeId) {
   const normalizedRouteId = String(routeId);
-  return envelope.documents.find((doc) => String(doc._id) === normalizedRouteId) ||
-    envelope.documents.find((doc) => String(doc.document) === normalizedRouteId);
+  return envelope.documents.find((doc) => String(doc._id) === normalizedRouteId);
 }
 
 function candidateSignerForEnvelope(envelope, accountId) {
@@ -105,6 +104,53 @@ function candidateSignerForEnvelope(envelope, accountId) {
 }
 
 const ACTIVE_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
+const OPEN_DOCUMENT_STATUSES = ['pending'];
+
+function fieldBelongsToCandidateSigner(field, signer) {
+  if (!field) return false;
+  if (signer?.key && field.signerKey) return field.signerKey === signer.key;
+  return (field.role || 'candidate') === 'candidate';
+}
+
+function candidateFieldsForSigner(envelopeDocument, signer) {
+  return (Array.isArray(envelopeDocument?.signatureFields) ? envelopeDocument.signatureFields : [])
+    .filter((field) => fieldBelongsToCandidateSigner(field, signer));
+}
+
+function isPendingCandidateDocument(envelopeDocument, signer) {
+  return OPEN_DOCUMENT_STATUSES.includes(envelopeDocument?.status) &&
+    candidateFieldsForSigner(envelopeDocument, signer).length > 0;
+}
+
+function candidateTextValue(field, fieldValues = {}) {
+  if (fieldValues[field.id] !== undefined) return fieldValues[field.id];
+  if (field.key && fieldValues[field.key] !== undefined) return fieldValues[field.key];
+  if (field.label && fieldValues[field.label] !== undefined) return fieldValues[field.label];
+  return '';
+}
+
+function candidateTextFieldValues(envelopeDocument, signer, fieldValues = {}) {
+  const textFields = candidateFieldsForSigner(envelopeDocument, signer)
+    .filter((field) => field.type === 'text');
+  const values = {};
+
+  for (const field of textFields) {
+    const value = String(candidateTextValue(field, fieldValues) ?? '');
+    if (field.required !== false && !value.trim()) {
+      return {
+        error: `${field.label || 'Text field'} is required`,
+        values: null
+      };
+    }
+
+    const stampValue = value || ' ';
+    values[field.id] = stampValue;
+    if (field.key) values[field.key] = stampValue;
+    if (field.label) values[field.label] = stampValue;
+  }
+
+  return { values, error: null };
+}
 
 function candidateDocumentPriority(envelope, signer) {
   const active = ACTIVE_ENVELOPE_STATUSES.includes(envelope.status);
@@ -119,6 +165,17 @@ function candidateDocumentPriority(envelope, signer) {
   if (active && signer && signer.status !== 'signed') return 2;
   if (active) return 1;
   return 0;
+}
+
+function findNextPendingCandidateDocumentId(envelope, currentEnvelopeDocument, signer) {
+  const documents = Array.isArray(envelope?.documents) ? envelope.documents : [];
+  const currentId = String(currentEnvelopeDocument?._id || '');
+  const currentIndex = documents.findIndex((document) => String(document._id) === currentId);
+  const orderedDocuments = currentIndex >= 0
+    ? [...documents.slice(currentIndex + 1), ...documents.slice(0, currentIndex)]
+    : documents;
+  const nextDocument = orderedDocuments.find((document) => isPendingCandidateDocument(document, signer));
+  return nextDocument?._id?.toString() || null;
 }
 
 async function ensureEnvelopeDocumentSnapshot(envelope, envelopeDocument) {
@@ -178,10 +235,7 @@ async function findCandidateEnvelopeDocument(req, routeId) {
   }
 
   const documentMatch = {
-    $or: [
-      { 'documents._id': routeId },
-      { 'documents.document': routeId }
-    ]
+    'documents._id': routeId
   };
 
   const envelopes = await OnboardingEnvelope.find({
@@ -364,7 +418,7 @@ router.get('/me', candidateAuthMiddleware, async (req, res) => {
   res.json({ account: req.candidateAccount });
 });
 
-router.get('/onboarding', candidateAuthMiddleware, async (req, res) => {
+router.get(['/onboarding', '/transitions'], candidateAuthMiddleware, async (req, res) => {
   try {
     const onboardings = await findOnboardingsForAccount(req.candidateAccount);
     const data = await Promise.all(onboardings.map((onboarding) => serializeOnboardingPlatform(onboarding)));
@@ -374,7 +428,7 @@ router.get('/onboarding', candidateAuthMiddleware, async (req, res) => {
   }
 });
 
-router.get('/onboarding/:id', candidateAuthMiddleware, async (req, res) => {
+router.get(['/onboarding/:id', '/transitions/:id'], candidateAuthMiddleware, async (req, res) => {
   try {
     const onboarding = await CandidateOnboarding.findOne({
       _id: req.params.id,
@@ -540,6 +594,7 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
     const canSign = Boolean(
       signer &&
       signer.status !== 'signed' &&
+      isPendingCandidateDocument(envelopeDocument, signer) &&
       ACTIVE_ENVELOPE_STATUSES.includes(envelope.status) &&
       canSignerAct(envelope, signer)
     );
@@ -574,6 +629,7 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
         document: envelopeDocument,
         signer,
         canSign,
+        nextDocumentId: findNextPendingCandidateDocumentId(envelope, envelopeDocument, signer),
         downloadUrl
       }
     });
@@ -617,15 +673,27 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
 
     const { envelope, envelopeDocument } = await findCandidateEnvelopeDocument(req, req.params.id);
 
-    if (!envelope || !envelopeDocument || !ACTIVE_ENVELOPE_STATUSES.includes(envelope.status)) {
+    if (!envelope || !envelopeDocument || envelopeDocument.status !== 'pending' || !ACTIVE_ENVELOPE_STATUSES.includes(envelope.status)) {
       return res.status(404).json({ msg: 'Document not found or not available for signing' });
     }
 
     const signer = candidateSignerForEnvelope(envelope, req.candidateAccount._id);
     if (!signer) return res.status(403).json({ msg: 'You are not a signer on this document' });
     if (signer.status === 'signed') return res.status(400).json({ msg: 'You have already signed this envelope' });
+    if (!isPendingCandidateDocument(envelopeDocument, signer)) {
+      return res.status(400).json({ msg: 'This document is not waiting for candidate input' });
+    }
     if (!canSignerAct(envelope, signer)) {
       return res.status(400).json({ msg: 'Earlier signers must complete first' });
+    }
+
+    const { values: textFieldValues, error: textFieldError } = candidateTextFieldValues(
+      envelopeDocument,
+      signer,
+      req.body.fieldValues || {}
+    );
+    if (textFieldError) {
+      return res.status(400).json({ msg: textFieldError });
     }
 
     const sourceBuffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
@@ -640,7 +708,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
       signerRole: 'candidate',
       signerKey: signer.key,
       signatureDataUrl: req.body.signatureDataUrl,
-      fieldValues: req.body.fieldValues || {},
+      fieldValues: textFieldValues,
       signedAt,
       auditText: `Signed by ${req.candidateAccount.email} via Seemplify Candidate Portal`
     });
@@ -651,8 +719,12 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
     });
     envelopeDocument.status = envelope.signers.some((item) => item.role === 'internal') ? 'signed' : 'completed';
     envelopeDocument.signedAt = signedAt;
-    signer.status = 'signed';
-    signer.signedAt = signedAt;
+
+    const nextDocumentId = findNextPendingCandidateDocumentId(envelope, envelopeDocument, signer);
+    if (!nextDocumentId) {
+      signer.status = 'signed';
+      signer.signedAt = signedAt;
+    }
 
     const completed = await completeEnvelopeIfReady(envelope, req);
     await envelope.save();
@@ -680,7 +752,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
           envelope
         }).catch((error) => console.error('Failed to send completion email:', error))
       ));
-    } else {
+    } else if (!nextDocumentId) {
       const readySigners = envelope.signers.filter((item) =>
         ['pending', 'viewed'].includes(item.status) &&
         canSignerAct(envelope, item)
@@ -694,7 +766,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
       ));
     }
 
-    res.json({ data: envelope });
+    res.json({ data: envelope, nextDocumentId });
   } catch (error) {
     console.error('Candidate document signing failed:', error);
     res.status(500).json({ msg: 'Failed to sign document', error: error.message });

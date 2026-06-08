@@ -19,6 +19,7 @@ import {
   Mail, 
   Building2, 
   Calendar,
+  FileSignature,
   User,
   Briefcase,
   Check,
@@ -89,6 +90,10 @@ const NotificationDropdown = () => {
       case 'job_posted':
       case 'job_created':
         return <Briefcase className="w-5 h-5 text-purple-600" />;
+      case 'people_transition_started':
+      case 'people_transition_action':
+      case 'people_transition_completed':
+        return <FileSignature className="w-5 h-5 text-slate-700" />;
       default: 
         return <Bell className="w-5 h-5 text-gray-600" />;
     }
@@ -210,6 +215,16 @@ const NotificationDropdown = () => {
             router.push(`/interviews/${notification.data.interviewId}/transcript`);
           } else {
             router.push('/interviews');
+          }
+          break;
+
+        case 'people_transition_started':
+        case 'people_transition_action':
+        case 'people_transition_completed':
+          if (notification.data?.transitionId || notification.data?.onboardingId) {
+            router.push(`/people-transitions/${notification.data.transitionId || notification.data.onboardingId}`);
+          } else {
+            router.push('/people-transitions');
           }
           break;
         

@@ -20,7 +20,7 @@ export default function NewOnboardingDocumentPage() {
       });
       await renderDocument(document._id).catch(() => null);
       toast.success("Document created");
-      router.push(`/onboarding/documents/${document._id}/prepare`);
+      router.push(`/people-transitions/documents/${document._id}/prepare`);
     } catch (error: any) {
       toast.error(error.message || "Failed to create document");
     } finally {

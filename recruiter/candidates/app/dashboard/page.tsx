@@ -3,12 +3,19 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowRight, CheckCircle2, FileSignature, Files, UserRound } from "lucide-react"
+import { ArrowRight, FileSignature, Files, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { CandidateShell, EmptyState, MetricCard, ProgressRail, StatusPill } from "@/components/candidate-ui"
 import { fullName, getAccessToken, getOnboardingList, getStoredAccount, logout } from "@/lib/api"
 import type { CandidateAccount, CandidateOnboarding } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
+
+function processLabel(record?: CandidateOnboarding | null) {
+  const processType = record?.processType || "onboarding"
+  if (processType === "exit") return "Exit"
+  if (processType === "retirement") return "Retirement"
+  return "Onboarding"
+}
 
 function formatDate(value?: string) {
   if (!value) return "Not started"
@@ -31,7 +38,7 @@ export default function CandidateDashboardPage() {
     setAccount(getStoredAccount())
     getOnboardingList()
       .then((result) => setRecords(result.data || []))
-      .catch((error) => toast.error(error.message || "Failed to load onboarding"))
+      .catch((error) => toast.error(error.message || "Failed to load transitions"))
       .finally(() => setLoading(false))
   }, [router])
 
@@ -39,11 +46,18 @@ export default function CandidateDashboardPage() {
     const envelopes = records.flatMap((record) => record.envelopes || [])
     const documents = envelopes.flatMap((envelope) => envelope.documents || [])
     const completedDocuments = documents.filter((document) => document.status === "completed" || document.status === "signed").length
+    const pendingActions = records.reduce((count, record) => {
+      const pendingWorkflow = (record.workflowItems || []).filter((item) => item.ownerType === "candidate" && ["pending", "in_progress", "blocked"].includes(item.status)).length
+      const pendingForms = (record.forms || []).filter((form) => ["draft", "rejected"].includes(form.status)).length
+      const pendingDocuments = (record.envelopes || []).flatMap((envelope) => envelope.documents || []).filter((document) => document.status === "pending").length
+      return count + Math.max(pendingWorkflow, pendingForms + pendingDocuments)
+    }, 0)
     return {
       active: records.filter((record) => record.status !== "completed" && record.status !== "cancelled").length,
       documents: documents.length,
       completed: records.filter((record) => record.status === "completed").length,
       completedDocuments,
+      pendingActions,
       progress: documents.length ? Math.round((completedDocuments / documents.length) * 100) : 0,
     }
   }, [records])
@@ -58,7 +72,7 @@ export default function CandidateDashboardPage() {
       brand={brand}
       account={account}
       title="Candidate dashboard"
-      subtitle="Track onboarding packets, signatures, and completed downloads."
+      subtitle="Track transition packets, signatures, forms, and completed downloads."
       onSignOut={signOut}
     >
       <section className="mx-auto max-w-7xl">
@@ -67,7 +81,7 @@ export default function CandidateDashboardPage() {
             <div>
               <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>Welcome back</div>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Hi {fullName(account)}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Open an onboarding packet to review the prepared PDF, sign securely, and download the final copy when countersigning is complete.</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Open a transition packet to review forms, prepared PDFs, signatures, and final downloads.</p>
             </div>
             <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center justify-between text-sm">
@@ -83,23 +97,23 @@ export default function CandidateDashboardPage() {
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <MetricCard icon={<UserRound className="h-5 w-5" />} label="Active onboarding" value={stats.active} tone="blue" />
+          <MetricCard icon={<UserRound className="h-5 w-5" />} label="Active transitions" value={stats.active} tone="blue" />
           <MetricCard icon={<Files className="h-5 w-5" />} label="Documents shared" value={stats.documents} tone="emerald" />
-          <MetricCard icon={<CheckCircle2 className="h-5 w-5" />} label="Completed packets" value={stats.completed} tone="amber" />
+          <MetricCard icon={<FileSignature className="h-5 w-5" />} label="Pending actions" value={stats.pendingActions} tone="amber" />
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div id="documents" className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
+          <div id="transitions" className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-slate-950">Your onboarding</h2>
-                <p className="mt-1 text-sm text-slate-600">Review packets, pending signatures, and completed copies.</p>
+                <h2 className="text-lg font-semibold text-slate-950">Your transitions</h2>
+                <p className="mt-1 text-sm text-slate-600">Review packets, pending actions, and completed copies.</p>
               </div>
             </div>
 
-            {loading && <div className="p-5 text-sm text-slate-600">Loading onboarding records...</div>}
+            {loading && <div className="p-5 text-sm text-slate-600">Loading transition records...</div>}
             {!loading && records.length === 0 && (
-              <EmptyState brand={brand} title="No onboarding packets yet" description="When your recruiter sends a packet, it will appear here with its documents and signing status." />
+              <EmptyState brand={brand} title="No transition packets yet" description="When your recruiter sends a packet, it will appear here with forms, documents, and signing status." />
             )}
             {!loading && records.length > 0 && (
               <div className="max-h-[430px] overflow-auto">
@@ -107,6 +121,7 @@ export default function CandidateDashboardPage() {
                   <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-5 py-3 font-semibold">Packet</th>
+                      <th className="px-5 py-3 font-semibold">Process</th>
                       <th className="px-5 py-3 font-semibold">Organization</th>
                       <th className="px-5 py-3 font-semibold">Documents</th>
                       <th className="px-5 py-3 font-semibold">Started</th>
@@ -123,12 +138,13 @@ export default function CandidateDashboardPage() {
                             <div className="font-semibold text-slate-950">{record.title}</div>
                             <div className="mt-1 text-xs text-slate-500">{record.envelopes?.length || 0} packet(s)</div>
                           </td>
+                          <td className="px-5 py-4 text-slate-600">{processLabel(record)}</td>
                           <td className="px-5 py-4 text-slate-600">{record.organization?.name || "Recruiter"}</td>
                           <td className="px-5 py-4 text-slate-600">{documents.length}</td>
                           <td className="px-5 py-4 text-slate-600">{formatDate(record.startedAt || record.createdAt)}</td>
                           <td className="px-5 py-4"><StatusPill status={record.status} /></td>
                           <td className="px-5 py-4 text-right">
-                            <Link href={`/onboarding/${record._id}`} className={`inline-flex items-center gap-2 text-sm font-semibold ${brand.accentTextClass}`}>
+                            <Link href={`/transitions/${record._id}`} className={`inline-flex items-center gap-2 text-sm font-semibold ${brand.accentTextClass}`}>
                               Open <ArrowRight className="h-4 w-4" />
                             </Link>
                           </td>

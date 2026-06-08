@@ -1,6 +1,7 @@
 import { apiRequest } from "./apiConfig";
 
 export type OnboardingStatus = "draft" | "pending" | "in_progress" | "completed" | "cancelled";
+export type ProcessType = "onboarding" | "exit" | "retirement";
 export type EnvelopeStatus = "draft" | "sent" | "viewed" | "partially_signed" | "completed" | "voided" | "expired";
 export type DocumentSourceType = "builder" | "uploaded_pdf" | "uploaded_docx";
 export type WorkflowItemStatus = "not_started" | "pending" | "in_progress" | "completed" | "blocked" | "skipped" | "failed";
@@ -153,6 +154,7 @@ export interface OnboardingPacketTemplate {
   name: string;
   description?: string;
   category: string;
+  processType?: ProcessType;
   status: "active" | "archived";
   version: number;
   documents?: Array<OnboardingDocument | string>;
@@ -204,7 +206,7 @@ export interface OnboardingApproval {
 
 export interface OnboardingHandoff {
   _id: string;
-  target: "internal_employee_profile" | "payroll" | "identity_provider" | "custom";
+  target: "internal_employee_profile" | "exit_closeout" | "retirement_closeout" | "payroll" | "identity_provider" | "custom";
   status: "pending" | "running" | "completed" | "failed";
   attempts: number;
   lastError?: string;
@@ -214,6 +216,7 @@ export interface OnboardingHandoff {
 export interface CandidateOnboarding {
   _id: string;
   title: string;
+  processType?: ProcessType;
   status: OnboardingStatus;
   notes?: string;
   candidate: any;
@@ -253,17 +256,22 @@ async function parseResponse<T>(response: Response, fallback: string): Promise<T
   return result as T;
 }
 
-export async function getOnboardingRecords(params: { status?: string; search?: string; candidateId?: string } = {}) {
+const PEOPLE_TRANSITIONS_API = "/api/people-transitions";
+
+export async function getOnboardingRecords(params: { status?: string; search?: string; candidateId?: string; processType?: ProcessType | "all" } = {}) {
   const query = new URLSearchParams();
   if (params.status) query.set("status", params.status);
   if (params.search) query.set("search", params.search);
   if (params.candidateId) query.set("candidateId", params.candidateId);
-  const response = await apiRequest(`/api/onboarding${query.toString() ? `?${query}` : ""}`);
+  if (params.processType) query.set("processType", params.processType);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}${query.toString() ? `?${query}` : ""}`);
   return parseResponse<{ data: CandidateOnboarding[]; recentEvents: OnboardingAuditEvent[] }>(response, "Failed to load onboarding");
 }
 
-export async function getOnboardingDashboard() {
-  const response = await apiRequest("/api/onboarding/dashboard");
+export async function getOnboardingDashboard(processType: ProcessType | "all" = "all") {
+  const query = new URLSearchParams();
+  if (processType) query.set("processType", processType);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/dashboard?${query}`);
   const result = await parseResponse<{
     data: {
       statusCounts: Record<string, number>;
@@ -277,26 +285,28 @@ export async function getOnboardingDashboard() {
 }
 
 export async function getOnboarding(id: string) {
-  const response = await apiRequest(`/api/onboarding/${id}`);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/${id}`);
   return parseResponse<{ data: CandidateOnboarding; events: OnboardingAuditEvent[] }>(response, "Failed to load onboarding");
 }
 
-export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string } = {}) {
-  const response = await apiRequest(`/api/onboarding/candidates/${candidateId}/start`, {
+export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType } = {}) {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/candidates/${candidateId}/start`, {
     method: "POST",
     body: JSON.stringify(data),
   });
   return parseResponse<{ data: CandidateOnboarding; inviteUrl: string }>(response, "Failed to start onboarding");
 }
 
-export async function getPacketTemplates() {
-  const response = await apiRequest("/api/onboarding/templates");
+export async function getPacketTemplates(processType: ProcessType | "all" = "all") {
+  const query = new URLSearchParams();
+  if (processType) query.set("processType", processType);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/templates?${query}`);
   const result = await parseResponse<{ data: OnboardingPacketTemplate[] }>(response, "Failed to load packet templates");
   return result.data;
 }
 
 export async function createPacketTemplate(data: Partial<OnboardingPacketTemplate>) {
-  const response = await apiRequest("/api/onboarding/templates", {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/templates`, {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -305,7 +315,7 @@ export async function createPacketTemplate(data: Partial<OnboardingPacketTemplat
 }
 
 export async function updatePacketTemplate(id: string, data: Partial<OnboardingPacketTemplate>) {
-  const response = await apiRequest(`/api/onboarding/templates/${id}`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/templates/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -314,13 +324,13 @@ export async function updatePacketTemplate(id: string, data: Partial<OnboardingP
 }
 
 export async function getOnboardingFormTemplates() {
-  const response = await apiRequest("/api/onboarding/form-templates");
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/form-templates`);
   const result = await parseResponse<{ data: OnboardingFormTemplate[] }>(response, "Failed to load form templates");
   return result.data;
 }
 
 export async function createOnboardingFormTemplate(data: Partial<OnboardingFormTemplate>) {
-  const response = await apiRequest("/api/onboarding/form-templates", {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/form-templates`, {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -329,13 +339,13 @@ export async function createOnboardingFormTemplate(data: Partial<OnboardingFormT
 }
 
 export async function revealFormSubmission(id: string) {
-  const response = await apiRequest(`/api/onboarding/form-submissions/${id}/reveal`, { method: "POST" });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/form-submissions/${id}/reveal`, { method: "POST" });
   const result = await parseResponse<{ data: OnboardingFormSubmission }>(response, "Failed to reveal form values");
   return result.data;
 }
 
 export async function reviewFormSubmission(id: string, decision: "approved" | "rejected", notes?: string) {
-  const response = await apiRequest(`/api/onboarding/form-submissions/${id}/review`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/form-submissions/${id}/review`, {
     method: "PATCH",
     body: JSON.stringify({ decision, notes }),
   });
@@ -343,26 +353,28 @@ export async function reviewFormSubmission(id: string, decision: "approved" | "r
   return result.data;
 }
 
-export async function runOnboardingReminders() {
-  const response = await apiRequest("/api/onboarding/reminders/run", { method: "POST" });
+export async function runOnboardingReminders(processType: ProcessType | "all" = "all") {
+  const query = new URLSearchParams();
+  if (processType) query.set("processType", processType);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/reminders/run?${query}`, { method: "POST" });
   const result = await parseResponse<{ data: { scanned: number; sent: number } }>(response, "Failed to run onboarding reminders");
   return result.data;
 }
 
 export async function retryOnboardingHandoff(onboardingId: string) {
-  const response = await apiRequest(`/api/onboarding/${onboardingId}/handoff/retry`, { method: "POST" });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/${onboardingId}/handoff/retry`, { method: "POST" });
   const result = await parseResponse<{ data: OnboardingHandoff | null }>(response, "Failed to retry onboarding handoff");
   return result.data;
 }
 
 export async function getDocumentTemplates() {
-  const response = await apiRequest("/api/onboarding/document-templates");
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/document-templates`);
   const result = await parseResponse<{ data: OnboardingDocumentTemplate[] }>(response, "Failed to load templates");
   return result.data;
 }
 
 export async function createDocumentTemplate(data: Partial<OnboardingDocumentTemplate>) {
-  const response = await apiRequest("/api/onboarding/document-templates", {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/document-templates`, {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -371,7 +383,7 @@ export async function createDocumentTemplate(data: Partial<OnboardingDocumentTem
 }
 
 export async function updateDocumentTemplate(id: string, data: Partial<OnboardingDocumentTemplate>) {
-  const response = await apiRequest(`/api/onboarding/document-templates/${id}`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/document-templates/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -380,7 +392,7 @@ export async function updateDocumentTemplate(id: string, data: Partial<Onboardin
 }
 
 export async function deleteDocumentTemplate(id: string) {
-  const response = await apiRequest(`/api/onboarding/document-templates/${id}`, { method: "DELETE" });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/document-templates/${id}`, { method: "DELETE" });
   if (!response.ok) {
     const result = await response.json().catch(() => ({}));
     throw new Error(result.msg || "Failed to delete template");
@@ -388,13 +400,13 @@ export async function deleteDocumentTemplate(id: string) {
 }
 
 export async function getDocuments() {
-  const response = await apiRequest("/api/onboarding/documents");
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents`);
   const result = await parseResponse<{ data: OnboardingDocument[] }>(response, "Failed to load documents");
   return result.data;
 }
 
 export async function getDocument(id: string) {
-  const response = await apiRequest(`/api/onboarding/documents/${id}`);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents/${id}`);
   const result = await parseResponse<{ data: OnboardingDocument }>(response, "Failed to load document");
   return result.data;
 }
@@ -407,7 +419,7 @@ export async function createDocument(data: {
   variables?: Record<string, any>;
   signatureFields?: SignatureField[];
 }) {
-  const response = await apiRequest("/api/onboarding/documents", {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents`, {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -416,7 +428,7 @@ export async function createDocument(data: {
 }
 
 export async function updateDocument(id: string, data: Partial<OnboardingDocument>) {
-  const response = await apiRequest(`/api/onboarding/documents/${id}`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
@@ -425,19 +437,19 @@ export async function updateDocument(id: string, data: Partial<OnboardingDocumen
 }
 
 export async function deleteDocument(id: string) {
-  const response = await apiRequest(`/api/onboarding/documents/${id}`, { method: "DELETE" });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents/${id}`, { method: "DELETE" });
   const result = await parseResponse<{ data: OnboardingDocument }>(response, "Failed to remove document");
   return result.data;
 }
 
 export async function renderDocument(id: string) {
-  const response = await apiRequest(`/api/onboarding/documents/${id}/render`, { method: "POST" });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents/${id}/render`, { method: "POST" });
   const result = await parseResponse<{ data: OnboardingDocument }>(response, "Failed to render document");
   return result.data;
 }
 
 export async function getDocumentPreviewBlob(id: string) {
-  const response = await apiRequest(`/api/onboarding/documents/${id}/preview`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents/${id}/preview`, {
     headers: { Accept: "application/pdf" },
   });
 
@@ -451,7 +463,7 @@ export async function getDocumentPreviewBlob(id: string) {
 }
 
 export async function uploadDocument(formData: FormData) {
-  const response = await apiRequest("/api/onboarding/documents/upload", {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/documents/upload`, {
     method: "POST",
     body: formData,
   });
@@ -468,7 +480,7 @@ export async function createEnvelope(data: {
   documentFields?: Record<string, SignatureField[]>;
   internalSigner?: { name?: string; email?: string };
 }) {
-  const response = await apiRequest("/api/onboarding/envelopes", {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes`, {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -477,24 +489,24 @@ export async function createEnvelope(data: {
 }
 
 export async function getEnvelope(id: string) {
-  const response = await apiRequest(`/api/onboarding/envelopes/${id}`);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}`);
   const result = await parseResponse<{ data: OnboardingEnvelope }>(response, "Failed to load envelope");
   return result.data;
 }
 
 export async function sendEnvelope(id: string) {
-  const response = await apiRequest(`/api/onboarding/envelopes/${id}/send`, { method: "POST" });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}/send`, { method: "POST" });
   const result = await parseResponse<{ data: OnboardingEnvelope }>(response, "Failed to send envelope");
   return result.data;
 }
 
 export async function remindEnvelope(id: string) {
-  const response = await apiRequest(`/api/onboarding/envelopes/${id}/remind`, { method: "POST" });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}/remind`, { method: "POST" });
   return parseResponse<{ data: OnboardingEnvelope; reminded: number }>(response, "Failed to send reminder");
 }
 
 export async function voidEnvelope(id: string, reason?: string) {
-  const response = await apiRequest(`/api/onboarding/envelopes/${id}/void`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}/void`, {
     method: "POST",
     body: JSON.stringify({ reason }),
   });
@@ -503,7 +515,7 @@ export async function voidEnvelope(id: string, reason?: string) {
 }
 
 export async function getEnvelopeDocumentPreviewBlob(envelopeId: string, documentId: string) {
-  const response = await apiRequest(`/api/onboarding/envelopes/${envelopeId}/documents/${documentId}/preview`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${envelopeId}/documents/${documentId}/preview`, {
     headers: { Accept: "application/pdf" },
   });
 
@@ -517,7 +529,7 @@ export async function getEnvelopeDocumentPreviewBlob(envelopeId: string, documen
 }
 
 export async function countersignEnvelope(id: string, signatureDataUrl: string, signerKey?: string) {
-  const response = await apiRequest(`/api/onboarding/envelopes/${id}/countersign`, {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}/countersign`, {
     method: "POST",
     body: JSON.stringify({ signatureDataUrl, signerKey }),
   });
@@ -526,7 +538,7 @@ export async function countersignEnvelope(id: string, signatureDataUrl: string, 
 }
 
 export async function getEnvelopeAudit(id: string) {
-  const response = await apiRequest(`/api/onboarding/envelopes/${id}/audit`);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}/audit`);
   const result = await parseResponse<{ data: OnboardingAuditEvent[] }>(response, "Failed to load audit trail");
   return result.data;
 }

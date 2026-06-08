@@ -48,6 +48,21 @@ export default function CandidateSignDocumentPage() {
       return
     }
 
+    setLoading(true)
+    setPayload(null)
+    setHasSignature(false)
+    setSignaturePreviewUrl("")
+    setPreviewBlob(null)
+    setPreviewUrl("")
+    setPreviewError("")
+    setFieldValues({})
+    const canvas = canvasRef.current
+    const context = canvas?.getContext("2d")
+    if (canvas && context) {
+      context.clearRect(0, 0, canvas.width, canvas.height)
+      context.strokeStyle = "#111827"
+    }
+
     setAccount(getStoredAccount())
     getDocument(params.id)
       .then((result) => {
@@ -184,9 +199,14 @@ export default function CandidateSignDocumentPage() {
 
     try {
       setSubmitting(true)
-      await signDocument(params.id, canvas.toDataURL("image/png"), fieldValues)
-      toast.success("Document signed")
-      router.push(`/documents/${params.id}/complete`)
+      const result = await signDocument(params.id, canvas.toDataURL("image/png"), fieldValues)
+      if (result.nextDocumentId) {
+        toast.success("Document signed. Opening next document.")
+        router.push(`/documents/${result.nextDocumentId}/sign`)
+      } else {
+        toast.success("Document signed")
+        router.push(`/documents/${params.id}/complete`)
+      }
     } catch (error: any) {
       toast.error(error.message || "Could not sign document")
     } finally {
@@ -383,7 +403,7 @@ export default function CandidateSignDocumentPage() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-700" />
                   Audit trail enabled
                 </div>
-                <p>Opening and signing events are recorded against this onboarding packet.</p>
+                <p>Opening and signing events are recorded against this transition packet.</p>
               </div>
 
               <button

@@ -607,7 +607,7 @@ function CandidateDetailInnerPage() {
                           <SelectItem value="overview" className="text-base py-3 cursor-pointer">👤 Overview</SelectItem>
                           <SelectItem value="ai-insights" className="text-base py-3 cursor-pointer">✨ AI Insights</SelectItem>
                           <SelectItem value="cv" className="text-base py-3 cursor-pointer">📄 CV</SelectItem>
-                          <SelectItem value="onboarding" className="text-base py-3 cursor-pointer">Onboarding</SelectItem>
+                          <SelectItem value="onboarding" className="text-base py-3 cursor-pointer">Transitions</SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (
@@ -673,7 +673,7 @@ function CandidateDetailInnerPage() {
                           <div className="absolute inset-0 bg-amber-400 blur-xl opacity-0 group-data-[state=active]:opacity-50 transition-opacity duration-300" />
                           <GraduationCap className="relative h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-amber-600 group-data-[state=active]:text-white transition-colors" />
                         </div>
-                        <span className="text-[10px] sm:text-xs font-semibold">Onboarding</span>
+                        <span className="text-[10px] sm:text-xs font-semibold">Transitions</span>
                         {onboardingRecords.length > 0 && (
                           <span className="absolute -top-1 -right-1 h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-amber-500 ring-1 sm:ring-2 ring-white" />
                         )}
@@ -704,7 +704,7 @@ function CandidateDetailInnerPage() {
                     )}
                     {activeTab === "onboarding" && (
                       <p className="text-sm text-gray-600 animate-in fade-in duration-300">
-                        <span className="font-medium">External Onboarding</span> - documents, signatures, and candidate portal activity
+                        <span className="font-medium">People Transitions</span> - documents, signatures, and candidate portal activity
                       </p>
                     )}
                     {activeTab === "feedback" && (
@@ -1416,36 +1416,36 @@ function CandidateDetailInnerPage() {
               <div className="rounded-md border bg-white p-4 sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-950">Candidate onboarding</h3>
+                    <h3 className="text-lg font-semibold text-gray-950">People transitions</h3>
                     <p className="mt-1 text-sm text-gray-600">
-                      Start a route-based onboarding workflow or open an existing onboarding record.
+                      Start an onboarding, exit, or retirement workflow or open an existing transition record.
                     </p>
                   </div>
                   <Button asChild>
-                    <Link href={`/onboarding/new?candidateId=${candidate._id}`}>
+                    <Link href={`/people-transitions/new?candidateId=${candidate._id}`}>
                       <GraduationCap className="mr-2 h-4 w-4" />
-                      Begin onboarding
+                      Start transition
                     </Link>
                   </Button>
                 </div>
 
                 <div className="mt-5 space-y-3">
                   {loadingOnboarding && (
-                    <div className="rounded-md border border-dashed p-4 text-sm text-gray-600">Loading onboarding history...</div>
+                    <div className="rounded-md border border-dashed p-4 text-sm text-gray-600">Loading transition history...</div>
                   )}
                   {!loadingOnboarding && onboardingRecords.length === 0 && (
                     <div className="rounded-md border border-dashed p-6 text-center">
                       <GraduationCap className="mx-auto h-8 w-8 text-amber-600" />
-                      <h4 className="mt-3 font-semibold text-gray-950">No onboarding started yet</h4>
+                      <h4 className="mt-3 font-semibold text-gray-950">No transitions started yet</h4>
                       <p className="mt-1 text-sm text-gray-600">
-                        This candidate is still external. Starting onboarding creates their candidate portal invitation.
+                        Starting a transition creates their candidate portal invitation.
                       </p>
                     </div>
                   )}
                   {!loadingOnboarding && onboardingRecords.map((record) => (
                     <Link
                       key={record._id}
-                      href={`/onboarding/${record._id}`}
+                      href={`/people-transitions/${record._id}`}
                       className="flex flex-col gap-3 rounded-md border p-4 transition hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div>

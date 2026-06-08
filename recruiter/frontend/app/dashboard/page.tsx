@@ -475,8 +475,8 @@ export default function Dashboard() {
             <Card className="rounded-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                 <div>
-                  <CardTitle className="text-base">Onboarding</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">Document packets and candidate signing progress</p>
+                  <CardTitle className="text-base">People Transitions</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Onboarding, exit, retirement packets, and signing progress</p>
                 </div>
                 <GraduationCap className="h-5 w-5 text-muted-foreground" />
               </CardHeader>
@@ -501,15 +501,15 @@ export default function Dashboard() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="outline">
-                    <Link href="/onboarding">
-                      Open onboarding
+                    <Link href="/people-transitions">
+                      Open transitions
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
-                    <Link href="/onboarding/new">
+                    <Link href="/people-transitions/new">
                       <Send className="mr-2 h-4 w-4" />
-                      Begin onboarding
+                      Start process
                     </Link>
                   </Button>
                 </div>

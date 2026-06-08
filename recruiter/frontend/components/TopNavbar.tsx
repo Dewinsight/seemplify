@@ -17,6 +17,9 @@ import {
   Moon,
   Shield,
   GraduationCap,
+  FileText,
+  PlusCircle,
+  ClipboardList,
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -74,7 +77,16 @@ const navigationItems: NavigationItem[] = [
       { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
     ],
   },
-  { title: "Onboarding", href: "/onboarding", icon: GraduationCap },
+  {
+    title: "People Transitions",
+    icon: GraduationCap,
+    children: [
+      { title: "Overview", href: "/people-transitions", icon: GraduationCap },
+      { title: "Start Process", href: "/people-transitions/new", icon: PlusCircle },
+      { title: "Documents", href: "/people-transitions/documents", icon: FileText },
+      { title: "Templates", href: "/people-transitions/templates", icon: ClipboardList },
+    ],
+  },
   { title: "Calendar", href: "/calendar", icon: Calendar },
 ];
 

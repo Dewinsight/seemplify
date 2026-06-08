@@ -224,7 +224,7 @@ export default function OnboardingEnvelopePage() {
               Remind
             </Button>
             <Button asChild variant="outline">
-              <a href={`/api/onboarding/envelopes/${envelope._id}/download`} target="_blank" rel="noreferrer">
+              <a href={`/api/people-transitions/envelopes/${envelope._id}/download`} target="_blank" rel="noreferrer">
                 <Download className="h-4 w-4" />
                 Download
               </a>

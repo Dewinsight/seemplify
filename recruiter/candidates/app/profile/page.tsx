@@ -39,7 +39,7 @@ export default function CandidateProfilePage() {
       brand={brand}
       account={account}
       title="Profile"
-      subtitle="Candidate account details used for onboarding signatures and downloads."
+      subtitle="Candidate account details used for transition signatures and downloads."
       onSignOut={signOut}
     >
       <section className="mx-auto max-w-5xl">

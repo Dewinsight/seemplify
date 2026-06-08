@@ -79,26 +79,34 @@ function candidateName(candidate = {}) {
   return `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email || 'Candidate';
 }
 
+function processLabel(onboarding = {}) {
+  const processType = onboarding?.processType || 'onboarding';
+  if (processType === 'exit') return 'exit';
+  if (processType === 'retirement') return 'retirement';
+  return 'onboarding';
+}
+
 async function sendCandidateInvite({ candidate, organization, inviteToken, onboarding, request, req }) {
   const portalContext = { organization, request: request || req };
   const portalUrl = candidatePortalUrl(`/signup?token=${encodeURIComponent(inviteToken)}`, portalContext);
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
+  const label = processLabel(onboarding);
 
   await emailService.sendEmail({
     to: candidate.email,
-    subject: `Onboarding documents from ${organizationName}`,
+    subject: `${label[0].toUpperCase()}${label.slice(1)} documents from ${organizationName}`,
     organizationName,
-    text: `Hello ${name}, ${organizationName} has started your onboarding. Open ${portalUrl} to review and sign your documents.`,
+    text: `Hello ${name}, ${organizationName} has started your ${label} process. Open ${portalUrl} to review and sign your documents.`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Your onboarding is ready</h2>
+        <h2 style="margin: 0 0 12px 0;">Your ${label} process is ready</h2>
         <p>Hello ${name},</p>
-        <p>${organizationName} has started your onboarding. Use the secure portal below to review and sign your documents.</p>
+        <p>${organizationName} has started your ${label} process. Use the secure portal below to review and sign your documents.</p>
         <p style="margin: 24px 0;">
           <a href="${portalUrl}" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Open candidate portal</a>
         </p>
-        <p style="color:#64748b;font-size:13px;">This invitation is linked to onboarding ${onboarding?._id || ''}.</p>
+        <p style="color:#64748b;font-size:13px;">This invitation is linked to transition ${onboarding?._id || ''}.</p>
       </div>
     `
   });
@@ -107,7 +115,7 @@ async function sendCandidateInvite({ candidate, organization, inviteToken, onboa
 }
 
 async function sendEnvelopeNotification({ candidate, organization, envelope, request, req }) {
-  const portalUrl = candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req });
+  const portalUrl = candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req });
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
 
@@ -131,8 +139,8 @@ async function sendEnvelopeNotification({ candidate, organization, envelope, req
 
 async function sendEnvelopeReminder({ signer, organization, envelope, request, req }) {
   const portalUrl = signer.role === 'candidate'
-    ? candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req })
-    : `${recruiterFrontendBaseUrl()}/onboarding/envelopes/${envelope._id}`;
+    ? candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req })
+    : `${recruiterFrontendBaseUrl()}/people-transitions/envelopes/${envelope._id}`;
   const organizationName = organization?.name || 'Seemplify';
 
   return emailService.sendEmail({
@@ -154,8 +162,8 @@ async function sendEnvelopeReminder({ signer, organization, envelope, request, r
 
 async function sendEnvelopeSignerNotification({ signer, organization, envelope, request, req }) {
   const portalUrl = signer.role === 'candidate'
-    ? candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req })
-    : `${recruiterFrontendBaseUrl()}/onboarding/envelopes/${envelope._id}`;
+    ? candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req })
+    : `${recruiterFrontendBaseUrl()}/people-transitions/envelopes/${envelope._id}`;
   const organizationName = organization?.name || 'Seemplify';
   const name = signer.name || signer.email || 'Signer';
 
@@ -178,7 +186,7 @@ async function sendEnvelopeSignerNotification({ signer, organization, envelope, 
 }
 
 async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, request, req }) {
-  const portalUrl = candidatePortalUrl(`/onboarding/${envelope.onboarding}`, { organization, request: request || req });
+  const portalUrl = candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req });
   const organizationName = organization?.name || 'Seemplify';
 
   return emailService.sendEmail({
@@ -199,23 +207,24 @@ async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, r
 }
 
 async function sendWorkflowReminder({ candidate, organization, onboarding, item, request, req }) {
-  const portalUrl = candidatePortalUrl(`/onboarding/${onboarding._id || onboarding}`, { organization, request: request || req });
+  const portalUrl = candidatePortalUrl(`/transitions/${onboarding._id || onboarding}`, { organization, request: request || req });
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
-  const title = item?.title || onboarding?.title || 'Your onboarding';
+  const label = processLabel(onboarding);
+  const title = item?.title || onboarding?.title || `Your ${label}`;
 
   return emailService.sendEmail({
     to: candidate.email,
     subject: `Reminder: ${title}`,
     organizationName,
-    text: `Hello ${name}, ${title} is still waiting in your onboarding portal. Open ${portalUrl}`,
+    text: `Hello ${name}, ${title} is still waiting in your transition portal. Open ${portalUrl}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Onboarding reminder</h2>
+        <h2 style="margin: 0 0 12px 0;">Transition reminder</h2>
         <p>Hello ${name},</p>
-        <p><strong>${title}</strong> is still waiting in your onboarding portal.</p>
+        <p><strong>${title}</strong> is still waiting in your transition portal.</p>
         <p style="margin: 24px 0;">
-          <a href="${portalUrl}" style="background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Open onboarding</a>
+          <a href="${portalUrl}" style="background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Open portal</a>
         </p>
       </div>
     `

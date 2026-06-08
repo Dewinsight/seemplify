@@ -22,6 +22,12 @@ const CandidateOnboardingSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Job'
   },
+  processType: {
+    type: String,
+    enum: ['onboarding', 'exit', 'retirement'],
+    default: 'onboarding',
+    index: true
+  },
   status: {
     type: String,
     enum: ['draft', 'pending', 'in_progress', 'completed', 'cancelled'],
@@ -100,5 +106,6 @@ const CandidateOnboardingSchema = new mongoose.Schema({
 
 CandidateOnboardingSchema.index({ organization: 1, candidate: 1, createdAt: -1 });
 CandidateOnboardingSchema.index({ organization: 1, status: 1, createdAt: -1 });
+CandidateOnboardingSchema.index({ organization: 1, processType: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('CandidateOnboarding', CandidateOnboardingSchema);

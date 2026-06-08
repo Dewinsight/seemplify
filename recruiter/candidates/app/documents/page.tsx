@@ -26,6 +26,13 @@ function documentAction(document: EnvelopeDocument) {
   }
 }
 
+function processLabel(record: CandidateOnboarding) {
+  const processType = record.processType || "onboarding"
+  if (processType === "exit") return "Exit"
+  if (processType === "retirement") return "Retirement"
+  return "Onboarding"
+}
+
 export default function CandidateDocumentsPage() {
   const router = useRouter()
   const brand = useCandidateBrand()
@@ -77,7 +84,7 @@ export default function CandidateDocumentsPage() {
       brand={brand}
       account={account}
       title="Documents"
-      subtitle="Open documents for signing, download completed PDFs, and track packet status."
+      subtitle="Open transition documents for signing, download completed PDFs, and track packet status."
       onSignOut={signOut}
     >
       <section className="mx-auto max-w-7xl">
@@ -91,13 +98,13 @@ export default function CandidateDocumentsPage() {
           <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">Document library</h2>
-              <p className="mt-1 text-sm text-slate-600">All documents sent to this candidate portal account.</p>
+              <p className="mt-1 text-sm text-slate-600">All transition documents sent to this portal account.</p>
             </div>
           </div>
 
           {loading && <div className="p-5 text-sm text-slate-600">Loading documents...</div>}
           {!loading && rows.length === 0 && (
-            <EmptyState brand={brand} title="No documents yet" description="When a recruiter sends onboarding documents, they will appear here for review, signing, and download." />
+            <EmptyState brand={brand} title="No documents yet" description="When a recruiter sends transition documents, they will appear here for review, signing, and download." />
           )}
           {!loading && rows.length > 0 && (
             <div className="max-h-[620px] overflow-auto">
@@ -105,6 +112,7 @@ export default function CandidateDocumentsPage() {
                 <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-5 py-3 font-semibold">Document</th>
+                    <th className="px-5 py-3 font-semibold">Process</th>
                     <th className="px-5 py-3 font-semibold">Packet</th>
                     <th className="px-5 py-3 font-semibold">Envelope</th>
                     <th className="px-5 py-3 font-semibold">Fields</th>
@@ -122,6 +130,7 @@ export default function CandidateDocumentsPage() {
                           <div className="font-semibold text-slate-950">{document.title}</div>
                           <div className="mt-1 text-xs text-slate-500">Prepared PDF snapshot</div>
                         </td>
+                        <td className="px-5 py-4 text-slate-600">{processLabel(record)}</td>
                         <td className="px-5 py-4 text-slate-600">{record.title}</td>
                         <td className="px-5 py-4 text-slate-600">{envelope.title}</td>
                         <td className="px-5 py-4 text-slate-600">{document.signatureFields?.length || 0}</td>

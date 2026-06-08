@@ -25,6 +25,13 @@ function documentAction(document: EnvelopeDocument) {
   }
 }
 
+function processLabel(record?: CandidateOnboarding | null) {
+  const processType = record?.processType || "onboarding"
+  if (processType === "exit") return "Exit"
+  if (processType === "retirement") return "Retirement"
+  return "Onboarding"
+}
+
 export default function CandidateOnboardingDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -42,7 +49,7 @@ export default function CandidateOnboardingDetailPage() {
     setAccount(getStoredAccount())
     getOnboarding(params.id)
       .then((result) => setRecord(result.data))
-      .catch((error) => toast.error(error.message || "Failed to load onboarding"))
+      .catch((error) => toast.error(error.message || "Failed to load transition"))
       .finally(() => setLoading(false))
   }, [params.id, router])
 
@@ -66,8 +73,8 @@ export default function CandidateOnboardingDetailPage() {
     <CandidateShell
       brand={brand}
       account={account}
-      title={record?.title || "Onboarding packet"}
-      subtitle="Review the packet, complete each signature, and download final copies."
+      title={record?.title || "Transition packet"}
+      subtitle="Review forms, complete signatures, and download final copies."
       onSignOut={signOut}
     >
       <section className="mx-auto max-w-7xl">
@@ -75,11 +82,11 @@ export default function CandidateOnboardingDetailPage() {
           Back to dashboard
         </Link>
 
-        {loading && <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-soft">Loading onboarding...</div>}
+        {loading && <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-soft">Loading transition...</div>}
 
         {!loading && !record && (
           <div className="mt-5 rounded-md border border-slate-200 bg-white shadow-soft">
-            <EmptyState brand={brand} title="Onboarding not found" description="This packet may have expired or may not be linked to your candidate account." />
+            <EmptyState brand={brand} title="Transition not found" description="This packet may have expired or may not be linked to your candidate account." />
           </div>
         )}
 
@@ -89,10 +96,10 @@ export default function CandidateOnboardingDetailPage() {
               <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
                 <div>
                   <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>
-                    {record.organization?.name || brand.organizationName}
+                    {record.organization?.name || brand.organizationName} - {processLabel(record)}
                   </div>
                   <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{record.title}</h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Each document below opens as a prepared PDF for signing. Completed documents remain available for download from this portal.</p>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Complete each form and document assigned to this transition. Final copies remain available for download from this portal.</p>
                 </div>
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -103,7 +110,7 @@ export default function CandidateOnboardingDetailPage() {
                     <ProgressRail brand={brand} value={progress.percent} />
                   </div>
                   <p className="mt-3 text-xs text-slate-500">
-                    {record.progress?.completedItems ?? progress.completed} of {record.progress?.totalItems ?? progress.documents.length} onboarding step(s) complete.
+                    {record.progress?.completedItems ?? progress.completed} of {record.progress?.totalItems ?? progress.documents.length} transition step(s) complete.
                   </p>
                 </div>
               </div>
@@ -113,7 +120,7 @@ export default function CandidateOnboardingDetailPage() {
               <div className="space-y-5">
                 <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
                   <div className="border-b border-slate-200 p-5">
-                    <h3 className="text-lg font-semibold text-slate-950">Onboarding timeline</h3>
+                    <h3 className="text-lg font-semibold text-slate-950">Transition timeline</h3>
                     <p className="mt-1 text-sm text-slate-600">Complete forms, signatures, and review steps in order.</p>
                   </div>
                   <div className="divide-y divide-slate-200">
@@ -141,7 +148,7 @@ export default function CandidateOnboardingDetailPage() {
                   <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
                     <div className="border-b border-slate-200 p-5">
                       <h3 className="text-lg font-semibold text-slate-950">Forms</h3>
-                      <p className="mt-1 text-sm text-slate-600">Fill in onboarding details before final completion.</p>
+                      <p className="mt-1 text-sm text-slate-600">Fill in required details before final completion.</p>
                     </div>
                     <div className="divide-y divide-slate-200">
                       {(record.forms || []).map((form) => (
@@ -149,7 +156,7 @@ export default function CandidateOnboardingDetailPage() {
                           <div>
                             <div className="font-semibold text-slate-950">{form.title}</div>
                             <div className="mt-1 text-sm text-slate-600">
-                              {form.hasSensitiveValues ? "Contains encrypted sensitive fields" : "Standard onboarding form"}
+                              {form.hasSensitiveValues ? "Contains encrypted sensitive fields" : "Standard transition form"}
                             </div>
                           </div>
                           <div className="flex items-center gap-3">

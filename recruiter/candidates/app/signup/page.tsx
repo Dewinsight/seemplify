@@ -41,7 +41,7 @@ function SignupForm() {
   }
 
   return (
-    <AuthShell brand={brand} eyebrow={brand.signupEyebrow} title="Create a secure candidate account." description="Accept your recruiter invitation, set a password, then review and sign every onboarding document in one workspace.">
+    <AuthShell brand={brand} eyebrow={brand.signupEyebrow} title="Create a secure candidate account." description="Accept your recruiter invitation, set a password, then review and sign every transition document in one workspace.">
       <div className="mb-8">
         <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>{brand.signupEyebrow}</div>
         <h1 className="mt-2 text-3xl font-semibold text-slate-950">Create your portal password</h1>

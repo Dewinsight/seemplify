@@ -458,7 +458,7 @@ export default function CandidatesPage() {
       if (selectedCandidates.length === 0) return
       const params = new URLSearchParams()
       params.set("candidateIds", selectedCandidates.join(","))
-      router.push(`/onboarding/new?${params.toString()}`)
+      router.push(`/people-transitions/new?${params.toString()}`)
     }
 
     const openAddCandidateToList = (candidateId: string, event: React.MouseEvent) => {
@@ -667,7 +667,7 @@ export default function CandidatesPage() {
                       </Button>
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openBulkOnboarding}>
                         <FileSignature className="h-4 w-4 mr-2" />
-                        Begin onboarding
+                        Start transition
                       </Button>
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openAddSelectedToList}>
                         <ListPlus className="h-4 w-4 mr-2" />

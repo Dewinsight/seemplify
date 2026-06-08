@@ -82,17 +82,17 @@ export default function OnboardingDocumentsPage() {
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Document library</h1>
-            <p className="mt-2 text-sm text-slate-600">Create reusable onboarding documents or upload PDFs/DOCX files for signing.</p>
+            <p className="mt-2 text-sm text-slate-600">Create reusable transition documents or upload PDFs/DOCX files for signing.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button asChild variant="outline">
-              <Link href="/onboarding/templates">
+              <Link href="/people-transitions/templates">
                 <FileText className="h-4 w-4" />
                 Templates
               </Link>
             </Button>
             <Button asChild>
-              <Link href="/onboarding/documents/new">
+              <Link href="/people-transitions/documents/new">
                 <FilePlus2 className="h-4 w-4" />
                 Build document
               </Link>
@@ -142,8 +142,8 @@ export default function OnboardingDocumentsPage() {
                     <TableCell>{new Date(document.updatedAt).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button asChild size="sm" variant="outline"><Link href={`/onboarding/documents/${document._id}/edit`}>Edit</Link></Button>
-                        <Button asChild size="sm"><Link href={`/onboarding/documents/${document._id}/prepare`}>Prepare</Link></Button>
+                        <Button asChild size="sm" variant="outline"><Link href={`/people-transitions/documents/${document._id}/edit`}>Edit</Link></Button>
+                        <Button asChild size="sm"><Link href={`/people-transitions/documents/${document._id}/prepare`}>Prepare</Link></Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button size="sm" variant="outline" disabled={deletingId === document._id}>
