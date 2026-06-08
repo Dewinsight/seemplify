@@ -211,17 +211,17 @@ export async function getDocumentPreviewBlob(id: string) {
   return response.blob()
 }
 
-export async function signDocument(id: string, signatureDataUrl: string, fieldValues: Record<string, string> = {}) {
+export async function signDocument(id: string, signatureDataUrl: string, fieldValues: Record<string, string> = {}, imageFieldValues: Record<string, string> = {}) {
   return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null }>(`/api/candidate-portal/documents/${id}/sign`, {
     method: "POST",
-    body: JSON.stringify({ signatureDataUrl, fieldValues }),
+    body: JSON.stringify({ signatureDataUrl, fieldValues, imageFieldValues }),
   })
 }
 
-export async function completeDocument(id: string, fieldValues: Record<string, string> = {}) {
+export async function completeDocument(id: string, fieldValues: Record<string, string> = {}, imageFieldValues: Record<string, string> = {}) {
   return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null }>(`/api/candidate-portal/documents/${id}/complete`, {
     method: "POST",
-    body: JSON.stringify({ fieldValues }),
+    body: JSON.stringify({ fieldValues, imageFieldValues }),
   })
 }
 

@@ -3,7 +3,7 @@
 import { PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight, Download, Mail, Plus, Save, Signature, Type, UserRound } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Download, ImageIcon, Mail, Plus, Save, Signature, Type, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ const fieldIcons = {
   name: UserRound,
   email: Mail,
   text: Type,
+  image: ImageIcon,
 };
 
 type FieldResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
@@ -72,6 +73,7 @@ function clampFieldRect(rect: Pick<SignatureField, "x" | "y" | "width" | "height
 
 function fieldTypeLabel(type: SignatureField["type"]) {
   if (type === "text") return "Candidate text";
+  if (type === "image") return "Candidate image";
   if (type === "date") return "Date signed";
   if (type === "name") return "Name";
   if (type === "email") return "Email";
@@ -165,12 +167,12 @@ export default function PrepareOnboardingDocumentPage() {
       id: `${role}-${type}-${Date.now()}`,
       role,
       type,
-      label: type === "text" && role === "candidate" ? "Candidate response" : fieldTypeLabel(type),
-      placeholder: type === "text" && role === "candidate" ? "Type your response here" : "",
+      label: type === "text" && role === "candidate" ? "Candidate response" : type === "image" && role === "candidate" ? "Candidate image" : fieldTypeLabel(type),
+      placeholder: type === "text" && role === "candidate" ? "Type your response here" : type === "image" && role === "candidate" ? "Upload image here" : "",
       multiline: false,
       page: previewPage,
-      width: type === "signature" ? 0.3 : type === "text" && patch.multiline ? 0.55 : 0.28,
-      height: type === "signature" ? 0.08 : type === "text" && patch.multiline ? 0.16 : 0.05,
+      width: type === "signature" ? 0.3 : type === "image" ? 0.26 : type === "text" && patch.multiline ? 0.55 : 0.28,
+      height: type === "signature" ? 0.08 : type === "image" ? 0.16 : type === "text" && patch.multiline ? 0.16 : 0.05,
       ...patch,
     };
     setFields((current) => [...current, field]);
@@ -456,6 +458,10 @@ export default function PrepareOnboardingDocumentPage() {
                   <Type className="h-4 w-4" />
                   Add long text
                 </Button>
+                <Button size="sm" variant="outline" onClick={() => addField("candidate", "image")}>
+                  <ImageIcon className="h-4 w-4" />
+                  Add image
+                </Button>
                 <Button size="sm" onClick={() => addField("candidate")}>
                   <Plus className="h-4 w-4" />
                   Add
@@ -463,7 +469,7 @@ export default function PrepareOnboardingDocumentPage() {
               </div>
             </div>
             <p className="mb-4 text-xs leading-5 text-slate-500">
-              Candidate text fields become inputs in the candidate portal. Name, email, and date fields are filled automatically when the signer completes the document.
+              Candidate text and image fields become inputs in the candidate portal. Name, email, and date fields are filled automatically when the signer completes the document.
             </p>
 
             <div className="mb-5 grid gap-2">
@@ -480,7 +486,16 @@ export default function PrepareOnboardingDocumentPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Role</Label>
-                    <Select value={activeField.role} onValueChange={(value: "candidate" | "internal") => updateField(activeField.id, { role: value })}>
+                    <Select
+                      value={activeField.role}
+                      onValueChange={(value: "candidate" | "internal") => {
+                        if (activeField.type === "image" && value !== "candidate") {
+                          toast.error("Image upload fields are completed by candidates");
+                          return;
+                        }
+                        updateField(activeField.id, { role: value });
+                      }}
+                    >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="candidate">Candidate</SelectItem>
@@ -490,7 +505,13 @@ export default function PrepareOnboardingDocumentPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Type</Label>
-                    <Select value={activeField.type} onValueChange={(value: SignatureField["type"]) => updateField(activeField.id, { type: value })}>
+                    <Select
+                      value={activeField.type}
+                      onValueChange={(value: SignatureField["type"]) => updateField(activeField.id, {
+                        type: value,
+                        ...(value === "image" ? { role: "candidate" as const, label: "Candidate image", placeholder: "Upload image here" } : {}),
+                      })}
+                    >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="signature">Signature</SelectItem>
@@ -498,10 +519,11 @@ export default function PrepareOnboardingDocumentPage() {
                         <SelectItem value="name">Name</SelectItem>
                         <SelectItem value="email">Email</SelectItem>
                         <SelectItem value="text">Candidate text</SelectItem>
+                        <SelectItem value="image">Candidate image</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs leading-5 text-slate-500">
-                      Candidate text is typed in the portal. Name, email, and date are stamped automatically.
+                      Candidate text is typed in the portal, and candidate image fields request an image upload. Name, email, and date are stamped automatically.
                     </p>
                   </div>
                 </div>

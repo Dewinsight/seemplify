@@ -17,6 +17,7 @@ interface PdfCanvasPreviewProps {
   signatureFields?: SignatureField[]
   signaturePreviewUrl?: string
   fieldValues?: Record<string, string>
+  imageFieldValues?: Record<string, string>
 }
 
 function fieldLabel(field: SignatureField) {
@@ -24,10 +25,11 @@ function fieldLabel(field: SignatureField) {
   if (field.type === "name") return "Name"
   if (field.type === "email") return "Email"
   if (field.type === "text") return field.placeholder || field.label || "Text"
+  if (field.type === "image") return field.placeholder || field.label || "Image"
   return field.label || "Signature"
 }
 
-export function PdfCanvasPreview({ blob, title, signatureFields = [], signaturePreviewUrl = "", fieldValues = {} }: PdfCanvasPreviewProps) {
+export function PdfCanvasPreview({ blob, title, signatureFields = [], signaturePreviewUrl = "", fieldValues = {}, imageFieldValues = {} }: PdfCanvasPreviewProps) {
   const [pages, setPages] = useState<RenderedPage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -139,6 +141,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
                 {pageFields.map((field) => {
                   const showSignature = field.type === "signature" && Boolean(signaturePreviewUrl)
                   const typedValue = fieldValues[field.id] || (field.label ? fieldValues[field.label] : "") || ""
+                  const imageValue = imageFieldValues[field.id] || (field.label ? imageFieldValues[field.label] : "") || ""
                   return (
                     <div
                       key={field.id}
@@ -154,6 +157,12 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
                         <img
                           src={signaturePreviewUrl}
                           alt="Signature preview"
+                          className="h-full w-full object-contain p-1"
+                        />
+                      ) : field.type === "image" && imageValue ? (
+                        <img
+                          src={imageValue}
+                          alt={field.label || "Image preview"}
                           className="h-full w-full object-contain p-1"
                         />
                       ) : (

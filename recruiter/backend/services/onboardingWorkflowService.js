@@ -24,6 +24,22 @@ const PROCESS_TYPES = ['onboarding', 'exit', 'retirement'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
 const ACTIVE_WORKFLOW_STATUSES = ['not_started', 'pending', 'in_progress', 'blocked', 'failed'];
+const FORM_FIELD_TYPES = new Set([
+  'text',
+  'textarea',
+  'email',
+  'phone',
+  'date',
+  'number',
+  'select',
+  'checkbox',
+  'bank_account',
+  'routing_number',
+  'tax_id',
+  'address',
+  'file',
+  'image'
+]);
 
 const DEFAULT_DUE_OFFSETS = {
   onboarding: { form: 2, document: 3, approval: 5, handoff: 7, task: 7 },
@@ -327,6 +343,54 @@ function valueAtPath(source, path) {
   return String(path).split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), source);
 }
 
+function safeFormKey(value, fallback) {
+  return String(value || fallback || '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+(.)/g, (_match, char) => char.toUpperCase())
+    .replace(/^[^a-z]+/i, '')
+    .slice(0, 80) || fallback;
+}
+
+function safeFormFieldId(value, fallback) {
+  return String(value || fallback || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90) || fallback;
+}
+
+function normalizeFormFields(fields = []) {
+  const seenKeys = new Set();
+  return (Array.isArray(fields) ? fields : [])
+    .filter((field) => field && (field.label || field.key || field.id))
+    .map((field, index) => {
+      const label = String(field.label || field.key || field.id || `Field ${index + 1}`).trim().slice(0, 120);
+      const fallbackKey = safeFormKey(label, `field${index + 1}`);
+      let key = safeFormKey(field.key, fallbackKey);
+      if (seenKeys.has(key)) key = `${key}${index + 1}`;
+      seenKeys.add(key);
+      const type = FORM_FIELD_TYPES.has(field.type) ? field.type : 'text';
+      return {
+        id: safeFormFieldId(field.id, key),
+        key,
+        label,
+        type,
+        required: Boolean(field.required),
+        sensitive: ['file', 'image'].includes(type) ? false : Boolean(field.sensitive),
+        options: Array.isArray(field.options) ? field.options.map((option) => String(option).trim()).filter(Boolean) : [],
+        placeholder: String(field.placeholder || '').trim(),
+        helpText: String(field.helpText || '').trim(),
+        defaultValuePath: String(field.defaultValuePath || '').trim(),
+        validation: field.validation && typeof field.validation === 'object' ? field.validation : undefined,
+        order: Number.isFinite(Number(field.order)) ? Number(field.order) : (index + 1) * 10
+      };
+    })
+    .sort((a, b) => a.order - b.order);
+}
+
 function defaultFormFields(processType = 'onboarding') {
   const normalized = normalizeProcessType(processType);
   if (normalized === 'exit') {
@@ -366,7 +430,8 @@ function defaultFormFields(processType = 'onboarding') {
     { id: 'bank-routing-number', key: 'bankRoutingNumber', label: 'Bank routing number', type: 'routing_number', required: true, sensitive: true, order: 90 },
     { id: 'bank-account-number', key: 'bankAccountNumber', label: 'Bank account number', type: 'bank_account', required: true, sensitive: true, order: 100 },
     { id: 'tax-id', key: 'taxId', label: 'Tax or national insurance ID', type: 'tax_id', sensitive: true, order: 110 },
-    { id: 'supporting-document', key: 'supportingDocument', label: 'Supporting document', type: 'file', order: 120 }
+    { id: 'profile-or-id-image', key: 'profileOrIdImage', label: 'Profile or ID image', type: 'image', helpText: 'Upload a clear image requested by HR, such as a profile photo or ID scan.', order: 120 },
+    { id: 'supporting-document', key: 'supportingDocument', label: 'Supporting document', type: 'file', order: 130 }
   ];
 }
 
@@ -454,7 +519,25 @@ async function updateProgress(onboardingId) {
   return { totalItems: actionable.length, completedItems: completed, percent };
 }
 
-async function formTemplatesForWorkflow({ onboarding, userId, processType, packetTemplate }) {
+function customCandidateFormTemplate({ candidateForm, processType }) {
+  const fields = normalizeFormFields(candidateForm?.fields || []);
+  if (!fields.length) return null;
+  const copy = processCopy(processType);
+  return {
+    _id: undefined,
+    name: String(candidateForm?.title || copy.defaultTitle).trim() || copy.defaultTitle,
+    description: String(candidateForm?.description || copy.defaultDescription).trim(),
+    category: copy.category,
+    version: 1,
+    fields,
+    isSystem: false
+  };
+}
+
+async function formTemplatesForWorkflow({ onboarding, userId, processType, packetTemplate, candidateForm }) {
+  const customFormTemplate = customCandidateFormTemplate({ candidateForm, processType });
+  if (customFormTemplate) return [customFormTemplate];
+
   const formTemplateIds = (packetTemplate?.formTemplates || [])
     .map((template) => template?._id || template)
     .filter(Boolean);
@@ -530,14 +613,15 @@ async function refreshBlockedWorkflowItems(onboardingId) {
   return changed.length;
 }
 
-async function initializeDefaultWorkflow({ onboarding, candidate, userId, req, packetTemplate }) {
+async function initializeDefaultWorkflow({ onboarding, candidate, userId, req, packetTemplate, candidateForm }) {
   const normalizedProcessType = normalizeProcessType(onboarding.processType);
   const copy = processCopy(normalizedProcessType);
   const formTemplates = await formTemplatesForWorkflow({
     onboarding,
     userId,
     processType: normalizedProcessType,
-    packetTemplate
+    packetTemplate,
+    candidateForm
   });
 
   const submissions = [];
@@ -547,7 +631,7 @@ async function initializeDefaultWorkflow({ onboarding, candidate, userId, req, p
       onboarding: onboarding._id,
       candidate: candidate._id,
       candidateAccount: onboarding.candidateAccount,
-      formTemplate: formTemplate._id,
+      formTemplate: formTemplate._id || undefined,
       templateSnapshot: snapshotFormTemplate(formTemplate),
       title: formTemplate.name,
       status: 'draft',
@@ -679,12 +763,19 @@ async function markDocumentWorkflowComplete(onboardingId, envelopeId) {
   return item;
 }
 
-function validateSubmissionFields(templateSnapshot, values = {}) {
+function validateSubmissionFields(templateSnapshot, values = {}, existingValues = [], uploadedFilesByKey = {}) {
   const errors = [];
   const byKey = values || {};
+  const existingByKey = new Map((existingValues || []).map((entry) => [entry.key, entry]));
   (templateSnapshot.fields || []).forEach((field) => {
+    const existing = existingByKey.get(field.key) || {};
     const value = byKey[field.key] ?? byKey[field.id];
-    const empty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
+    const files = uploadedFilesByKey[field.key] || existing.files || [];
+    const empty = (
+      (field.type === 'file' || field.type === 'image')
+        ? !files.length
+        : value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
+    );
     if (field.required && empty) {
       errors.push(`${field.label} is required`);
     }
@@ -726,7 +817,7 @@ function buildSubmissionEntries(templateSnapshot, existingValues = [], incomingV
 }
 
 async function saveCandidateFormSubmission({ submission, values, filesByKey = {}, submit = false, req }) {
-  const errors = submit ? validateSubmissionFields(submission.templateSnapshot, values) : [];
+  const errors = submit ? validateSubmissionFields(submission.templateSnapshot, values, submission.values, filesByKey) : [];
   if (errors.length) {
     const error = new Error(errors.join('; '));
     error.statusCode = 400;
@@ -1148,9 +1239,9 @@ function fieldBelongsToSigner(field, signer) {
 
 function documentActionType(envelopeDocument, signer) {
   const fields = (envelopeDocument?.signatureFields || []).filter((field) => fieldBelongsToSigner(field, signer));
-  const textFields = fields.filter((field) => field.type === 'text');
+  const fillFields = fields.filter((field) => ['text', 'image'].includes(field.type));
   const signatureFields = fields.filter((field) => field.type === 'signature');
-  if (textFields.length && !signatureFields.length) return 'document_fill';
+  if (fillFields.length && !signatureFields.length) return 'document_fill';
   if (signatureFields.length) return 'document_sign';
   return null;
 }
@@ -1314,6 +1405,7 @@ module.exports = {
   attachEnvelopeToWorkflow,
   computeCandidateNextAction,
   createPeopleTransitionNotifications,
+  defaultFormFields,
   defaultWorkflowItemDefinitions,
   ensureDefaultFormTemplate,
   initializeDefaultWorkflow,

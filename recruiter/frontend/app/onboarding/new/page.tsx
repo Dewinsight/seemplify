@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  ImageIcon,
   ListChecks,
   Mail,
   Plus,
@@ -36,6 +37,7 @@ import { getCandidateList, getCandidateLists, type CandidateListSummary } from "
 import organizationService from "@/services/organizationService";
 import {
   createEnvelope,
+  getCandidateFormDefaults,
   getDocumentPreviewBlob,
   getDocuments,
   getPacketTemplates,
@@ -43,13 +45,14 @@ import {
   sendEnvelope,
   startOnboarding,
   type OnboardingDocument,
+  type OnboardingFormField,
   type OnboardingPacketTemplate,
   type ProcessType,
   type SignatureField,
 } from "@/services/onboardingService";
 import { toast } from "sonner";
 
-type WizardStep = "process" | "candidate" | "documents" | "signers" | "fields" | "send";
+type WizardStep = "process" | "candidate" | "details" | "documents" | "signers" | "fields" | "send";
 type WizardSigner = {
   key: string;
   role: "candidate" | "internal";
@@ -83,6 +86,7 @@ type FieldInteraction =
 const steps: Array<{ key: WizardStep; label: string }> = [
   { key: "process", label: "Process" },
   { key: "candidate", label: "Candidate" },
+  { key: "details", label: "Details" },
   { key: "documents", label: "Documents" },
   { key: "signers", label: "Signers" },
   { key: "fields", label: "Fields" },
@@ -101,7 +105,25 @@ const fieldIcons = {
   name: UserRound,
   email: Mail,
   text: Type,
+  image: ImageIcon,
 };
+
+const candidateFormFieldTypeOptions: Array<{ value: OnboardingFormField["type"]; label: string }> = [
+  { value: "text", label: "Text" },
+  { value: "textarea", label: "Long text" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
+  { value: "date", label: "Date" },
+  { value: "number", label: "Number" },
+  { value: "select", label: "Select" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "bank_account", label: "Bank account" },
+  { value: "routing_number", label: "Routing number" },
+  { value: "tax_id", label: "Tax or NI ID" },
+  { value: "address", label: "Address" },
+  { value: "file", label: "File upload" },
+  { value: "image", label: "Image upload" },
+];
 
 const resizeHandles: FieldResizeHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const resizeHandleClassNames: Record<FieldResizeHandle, string> = {
@@ -173,16 +195,53 @@ function clampFieldRect(rect: Pick<SignatureField, "x" | "y" | "width" | "height
 }
 
 function fieldLabel(signer: WizardSigner, type: SignatureField["type"]) {
-  const noun = type === "signature" ? "signature" : type === "date" ? "date signed" : type === "text" ? "fillable text" : type;
+  const noun = type === "signature" ? "signature" : type === "date" ? "date signed" : type === "text" ? "fillable text" : type === "image" ? "image upload" : type;
   return `${signer.name || signer.email || "Signer"} ${noun}`;
 }
 
 function fieldTypeLabel(type: SignatureField["type"]) {
   if (type === "text") return "Candidate text";
+  if (type === "image") return "Candidate image";
   if (type === "date") return "Date";
   if (type === "name") return "Name";
   if (type === "email") return "Email";
   return "Signature";
+}
+
+function formFieldTypeLabel(type: OnboardingFormField["type"]) {
+  return candidateFormFieldTypeOptions.find((option) => option.value === type)?.label || type;
+}
+
+function formFieldKey(label: string, fallback: string) {
+  const words = String(label || fallback)
+    .trim()
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean);
+  const key = words
+    .map((word, index) => index === 0 ? word.toLowerCase() : `${word[0]?.toUpperCase() || ""}${word.slice(1).toLowerCase()}`)
+    .join("");
+  return key || fallback;
+}
+
+function newCandidateFormField(type: OnboardingFormField["type"] = "text", order = 10): OnboardingFormField {
+  const timestamp = Date.now();
+  const label = type === "image" ? "Image upload" : type === "file" ? "Supporting file" : "New field";
+  const key = formFieldKey(label, `field${timestamp}`);
+  return {
+    id: `${key}-${timestamp}`,
+    key,
+    label,
+    type,
+    required: false,
+    sensitive: type === "bank_account" || type === "routing_number" || type === "tax_id",
+    placeholder: "",
+    helpText: type === "image" ? "Upload a clear image requested by HR." : "",
+    order,
+  };
+}
+
+function orderCandidateFormFields(fields: OnboardingFormField[]) {
+  return fields.map((field, index) => ({ ...field, order: (index + 1) * 10 }));
 }
 
 function normalizeDocumentFields(document: OnboardingDocument, signers: WizardSigner[]) {
@@ -233,6 +292,11 @@ export default function NewOnboardingPage() {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [selectedCandidateListId, setSelectedCandidateListId] = useState("all");
   const [candidateListLoading, setCandidateListLoading] = useState(false);
+  const [candidateFormTitle, setCandidateFormTitle] = useState("");
+  const [candidateFormDescription, setCandidateFormDescription] = useState("");
+  const [candidateFormFields, setCandidateFormFields] = useState<OnboardingFormField[]>([]);
+  const [candidateFormDefaults, setCandidateFormDefaults] = useState<{ title: string; description?: string; fields: OnboardingFormField[] } | null>(null);
+  const [candidateFormDefaultsLoading, setCandidateFormDefaultsLoading] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [selectedPacketTemplateId, setSelectedPacketTemplateId] = useState("none");
   const [manualSigners, setManualSigners] = useState<WizardSigner[]>([]);
@@ -279,6 +343,39 @@ export default function NewOnboardingPage() {
 
   useEffect(() => {
     setSelectedPacketTemplateId("none");
+  }, [processType]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCandidateFormDefaults() {
+      try {
+        setCandidateFormDefaultsLoading(true);
+        const defaults = await getCandidateFormDefaults(processType);
+        if (cancelled) return;
+        const orderedFields = orderCandidateFormFields(defaults.fields || []);
+        setCandidateFormDefaults({
+          title: defaults.title,
+          description: defaults.description,
+          fields: orderedFields,
+        });
+        setCandidateFormTitle(defaults.title || "");
+        setCandidateFormDescription(defaults.description || "");
+        setCandidateFormFields(orderedFields);
+      } catch (error: any) {
+        if (!cancelled) {
+          setCandidateFormDefaults(null);
+          setCandidateFormFields([]);
+          toast.error(error.message || "Failed to load candidate detail fields");
+        }
+      } finally {
+        if (!cancelled) setCandidateFormDefaultsLoading(false);
+      }
+    }
+
+    loadCandidateFormDefaults();
+    return () => {
+      cancelled = true;
+    };
   }, [processType]);
 
   useEffect(() => {
@@ -574,6 +671,52 @@ export default function NewOnboardingPage() {
     setSelectedDocumentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
 
+  function updateCandidateFormField(id: string, patch: Partial<OnboardingFormField>) {
+    setCandidateFormFields((current) => current.map((field) => {
+      if (field.id !== id) return field;
+      const next = { ...field, ...patch };
+      if (patch.label !== undefined && (!field.key || field.key.startsWith("newField") || field.label === field.key)) {
+        next.key = formFieldKey(patch.label, field.key);
+      }
+      if (patch.type && ["bank_account", "routing_number", "tax_id"].includes(patch.type)) {
+        next.sensitive = true;
+      }
+      if (patch.type && ["file", "image"].includes(patch.type)) {
+        next.sensitive = false;
+      }
+      return next;
+    }));
+  }
+
+  function addCandidateFormField(type: OnboardingFormField["type"] = "text") {
+    setCandidateFormFields((current) => orderCandidateFormFields([
+      ...current,
+      newCandidateFormField(type, (current.length + 1) * 10),
+    ]));
+  }
+
+  function removeCandidateFormField(id: string) {
+    setCandidateFormFields((current) => orderCandidateFormFields(current.filter((field) => field.id !== id)));
+  }
+
+  function moveCandidateFormField(id: string, direction: -1 | 1) {
+    setCandidateFormFields((current) => {
+      const index = current.findIndex((field) => field.id === id);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return orderCandidateFormFields(next);
+    });
+  }
+
+  function resetCandidateFormFields() {
+    if (!candidateFormDefaults) return;
+    setCandidateFormTitle(candidateFormDefaults.title || "");
+    setCandidateFormDescription(candidateFormDefaults.description || "");
+    setCandidateFormFields(orderCandidateFormFields(candidateFormDefaults.fields || []));
+  }
+
   function moveSelectedDocument(id: string, direction: -1 | 1) {
     setSelectedDocumentIds((current) => {
       const index = current.indexOf(id);
@@ -683,13 +826,15 @@ export default function NewOnboardingPage() {
 
   function addPlacementField(typeOverride?: SignatureField["type"], patch: Partial<SignatureField> = {}) {
     if (!activeDocument) return;
-    const signer = signers.find((item) => item.key === placementSignerKey) || signers[0];
+    const fieldType = typeOverride || placementFieldType;
+    const signer = fieldType === "image"
+      ? signers.find((item) => item.role === "candidate") || signers[0]
+      : signers.find((item) => item.key === placementSignerKey) || signers[0];
     if (!signer) {
       toast.error("Add a signer first");
       return;
     }
 
-    const fieldType = typeOverride || placementFieldType;
     const base = newSignatureField(signer.role);
     const field: SignatureField = {
       ...base,
@@ -698,13 +843,13 @@ export default function NewOnboardingPage() {
       role: signer.role,
       type: fieldType,
       label: fieldLabel(signer, fieldType),
-      placeholder: fieldType === "text" && signer.role === "candidate" ? "Type your response here" : "",
+      placeholder: fieldType === "text" && signer.role === "candidate" ? "Type your response here" : fieldType === "image" && signer.role === "candidate" ? "Upload image here" : "",
       multiline: false,
       page: fieldPreviewPage,
       x: 0.12,
       y: fieldType === "date" ? 0.78 : 0.68,
-      width: fieldType === "signature" ? 0.32 : fieldType === "text" && patch.multiline ? 0.55 : fieldType === "text" ? 0.3 : 0.22,
-      height: fieldType === "signature" ? 0.08 : fieldType === "text" && patch.multiline ? 0.16 : 0.05,
+      width: fieldType === "signature" ? 0.32 : fieldType === "image" ? 0.26 : fieldType === "text" && patch.multiline ? 0.55 : fieldType === "text" ? 0.3 : 0.22,
+      height: fieldType === "signature" ? 0.08 : fieldType === "image" ? 0.16 : fieldType === "text" && patch.multiline ? 0.16 : 0.05,
       required: true,
       ...patch,
     };
@@ -803,10 +948,19 @@ export default function NewOnboardingPage() {
     if (target === "process") return true;
     if (target === "candidate") return true;
     if (!selectedCandidateCount) return false;
-    if (target === "documents") return true;
+    if (target === "details") return true;
+    if (target === "documents") return candidateFormFields.length > 0;
     if (!selectedDocumentIds.length) return false;
     if (target === "signers" || target === "fields" || target === "send") return true;
     return false;
+  }
+
+  function continueFromDetails() {
+    if (!candidateFormFields.length) {
+      toast.error("Add at least one candidate detail field or reset to defaults");
+      return;
+    }
+    setStep("documents");
   }
 
   function continueFromDocuments() {
@@ -855,6 +1009,11 @@ export default function NewOnboardingPage() {
           notes,
           templateId: selectedPacketTemplateId === "none" ? undefined : selectedPacketTemplateId,
           processType,
+          candidateForm: {
+            title: candidateFormTitle.trim() || `${processLabel(processType)} details`,
+            description: candidateFormDescription.trim(),
+            fields: orderCandidateFormFields(candidateFormFields),
+          },
         });
 
         if (!selectedDocumentIds.length) continue;
@@ -1108,7 +1267,106 @@ export default function NewOnboardingPage() {
             </div>
             <div className="flex justify-between border-t p-4">
               <Button variant="outline" onClick={() => setStep("process")}>Back</Button>
-              <Button disabled={!selectedCandidateCount} onClick={() => setStep("documents")}>Continue</Button>
+              <Button disabled={!selectedCandidateCount} onClick={() => setStep("details")}>Continue</Button>
+            </div>
+          </section>
+        )}
+
+        {step === "details" && (
+          <section className="rounded-md border bg-white">
+            <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">Candidate details</h2>
+                <p className="text-sm text-slate-500">Select the data, payroll, file, and image fields candidates must complete.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => addCandidateFormField("text")}>
+                  <Plus className="h-4 w-4" />
+                  Add field
+                </Button>
+                <Button type="button" variant="outline" onClick={() => addCandidateFormField("image")}>
+                  <ImageIcon className="h-4 w-4" />
+                  Add image
+                </Button>
+                <Button type="button" variant="outline" onClick={resetCandidateFormFields} disabled={!candidateFormDefaults || candidateFormDefaultsLoading}>
+                  Reset
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 border-b p-4 lg:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Form title</Label>
+                <Input value={candidateFormTitle} onChange={(event) => setCandidateFormTitle(event.target.value)} placeholder={`${processLabel(processType)} details`} />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input value={candidateFormDescription} onChange={(event) => setCandidateFormDescription(event.target.value)} placeholder="Details candidates complete in the portal" />
+              </div>
+            </div>
+
+            <div className="divide-y">
+              {candidateFormDefaultsLoading ? (
+                <div className="p-4 text-sm text-slate-500">Loading fields...</div>
+              ) : candidateFormFields.length ? (
+                candidateFormFields.map((field, index) => (
+                  <div key={field.id} className="grid gap-3 p-4 lg:grid-cols-[40px_minmax(180px,1.2fr)_180px_140px_140px_120px] lg:items-end">
+                    <div className="flex gap-1 lg:block">
+                      <Button type="button" variant="ghost" size="icon" disabled={index === 0} onClick={() => moveCandidateFormField(field.id, -1)} aria-label={`Move ${field.label} up`}>
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" disabled={index === candidateFormFields.length - 1} onClick={() => moveCandidateFormField(field.id, 1)} aria-label={`Move ${field.label} down`}>
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Field</Label>
+                      <Input value={field.label} onChange={(event) => updateCandidateFormField(field.id, { label: event.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Type</Label>
+                      <Select value={field.type} onValueChange={(value: OnboardingFormField["type"]) => updateCandidateFormField(field.id, { type: value })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {candidateFormFieldTypeOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
+                      <Checkbox checked={Boolean(field.required)} onCheckedChange={(checked) => updateCandidateFormField(field.id, { required: Boolean(checked) })} />
+                      Required
+                    </label>
+                    <label className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm">
+                      <Checkbox
+                        checked={Boolean(field.sensitive)}
+                        disabled={field.type === "file" || field.type === "image"}
+                        onCheckedChange={(checked) => updateCandidateFormField(field.id, { sensitive: Boolean(checked) })}
+                      />
+                      Sensitive
+                    </label>
+                    <Button type="button" variant="destructive" onClick={() => removeCandidateFormField(field.id)}>
+                      <Trash2 className="h-4 w-4" />
+                      Remove
+                    </Button>
+                    <div className="lg:col-start-2 lg:col-span-5">
+                      <Input
+                        value={field.helpText || ""}
+                        onChange={(event) => updateCandidateFormField(field.id, { helpText: event.target.value })}
+                        placeholder={`${formFieldTypeLabel(field.type)} helper text shown to the candidate`}
+                      />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-sm text-slate-500">No fields selected. Add a field or reset to defaults.</div>
+              )}
+            </div>
+
+            <div className="flex justify-between border-t p-4">
+              <Button variant="outline" onClick={() => setStep("candidate")}>Back</Button>
+              <Button onClick={continueFromDetails}>Continue</Button>
             </div>
           </section>
         )}
@@ -1212,7 +1470,7 @@ export default function NewOnboardingPage() {
               })}
             </div>
             <div className="flex justify-between border-t p-4">
-              <Button variant="outline" onClick={() => setStep("candidate")}>Back</Button>
+              <Button variant="outline" onClick={() => setStep("details")}>Back</Button>
               <Button onClick={continueFromDocuments}>Continue</Button>
             </div>
           </section>
@@ -1446,6 +1704,7 @@ export default function NewOnboardingPage() {
                         <SelectItem value="name">Name</SelectItem>
                         <SelectItem value="email">Email</SelectItem>
                         <SelectItem value="text">Candidate text</SelectItem>
+                        <SelectItem value="image">Candidate image</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1462,6 +1721,10 @@ export default function NewOnboardingPage() {
                       <Type className="h-4 w-4" />
                       Add long text
                     </Button>
+                    <Button type="button" variant="outline" className="w-full" onClick={() => addPlacementField("image")} disabled={!activeDocument || !signers.length}>
+                      <ImageIcon className="h-4 w-4" />
+                      Add image
+                    </Button>
                   </div>
                 </div>
 
@@ -1474,6 +1737,10 @@ export default function NewOnboardingPage() {
                         onValueChange={(value) => {
                           const signer = signers.find((item) => item.key === value);
                           if (!signer) return;
+                          if (activeField.type === "image" && signer.role !== "candidate") {
+                            toast.error("Image upload fields are completed by candidates");
+                            return;
+                          }
                           updateField(activeField.id, {
                             signerKey: signer.key,
                             role: signer.role,
@@ -1494,6 +1761,9 @@ export default function NewOnboardingPage() {
                       <Input value={activeField.label || ""} onChange={(event) => updateField(activeField.id, { label: event.target.value })} />
                       {activeField.type === "text" && activeField.role === "candidate" && (
                         <p className="text-xs leading-5 text-slate-500">Candidate fills this value before signing.</p>
+                      )}
+                      {activeField.type === "image" && activeField.role === "candidate" && (
+                        <p className="text-xs leading-5 text-slate-500">Candidate uploads an image before completing or signing the document.</p>
                       )}
                     </div>
                     {activeField.type === "text" && activeField.role === "candidate" && (
@@ -1596,6 +1866,23 @@ export default function NewOnboardingPage() {
                     </div>
                   </div>
                   <div>
+                    <div className="text-xs uppercase text-slate-500">Candidate details</div>
+                    <div className="mt-2 rounded border bg-white px-3 py-2">
+                      <div className="font-medium text-slate-900">{candidateFormTitle || `${processLabel(processType)} details`}</div>
+                      <div className="text-xs text-slate-500">{candidateFormFields.length} field(s)</div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {candidateFormFields.slice(0, 8).map((field) => (
+                          <span key={field.id} className="rounded border bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                            {field.label} - {formFieldTypeLabel(field.type)}
+                          </span>
+                        ))}
+                        {candidateFormFields.length > 8 && (
+                          <span className="rounded border bg-slate-50 px-2 py-1 text-xs text-slate-600">+{candidateFormFields.length - 8} more</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
                     <div className="text-xs uppercase text-slate-500">Documents</div>
                     <div className="mt-2 space-y-2">
                       {selectedDocuments.map((document, index) => (
@@ -1606,7 +1893,7 @@ export default function NewOnboardingPage() {
                       ))}
                     </div>
                   </div>
-                  <Button className="w-full" onClick={submit} disabled={submitting || !selectedCandidateCount || !selectedDocumentIds.length}>
+                  <Button className="w-full" onClick={submit} disabled={submitting || !selectedCandidateCount || !candidateFormFields.length || !selectedDocumentIds.length}>
                     {sendingNow ? <Send className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                     {submitting ? "Creating..." : sendingNow ? "Create and send" : "Create draft"}
                   </Button>

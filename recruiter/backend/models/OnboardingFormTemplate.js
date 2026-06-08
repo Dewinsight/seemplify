@@ -19,7 +19,8 @@ const FormFieldSchema = new mongoose.Schema({
       'routing_number',
       'tax_id',
       'address',
-      'file'
+      'file',
+      'image'
     ],
     default: 'text'
   },

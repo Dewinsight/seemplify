@@ -119,9 +119,9 @@ function candidateFieldsForSigner(envelopeDocument, signer) {
 
 function candidateDocumentActionType(envelopeDocument, signer) {
   const fields = candidateFieldsForSigner(envelopeDocument, signer);
-  const textFields = fields.filter((field) => field.type === 'text');
+  const fillFields = fields.filter((field) => ['text', 'image'].includes(field.type));
   const signatureFields = fields.filter((field) => field.type === 'signature');
-  if (textFields.length && !signatureFields.length) return 'document_fill';
+  if (fillFields.length && !signatureFields.length) return 'document_fill';
   if (signatureFields.length) return 'document_sign';
   return null;
 }
@@ -156,6 +156,37 @@ function candidateTextFieldValues(envelopeDocument, signer, fieldValues = {}) {
     values[field.id] = stampValue;
     if (field.key) values[field.key] = stampValue;
     if (field.label) values[field.label] = stampValue;
+  }
+
+  return { values, error: null };
+}
+
+function candidateImageFieldValues(envelopeDocument, signer, imageFieldValues = {}) {
+  const imageFields = candidateFieldsForSigner(envelopeDocument, signer)
+    .filter((field) => field.type === 'image');
+  const values = {};
+
+  for (const field of imageFields) {
+    const value = imageFieldValues[field.id] ??
+      (field.key ? imageFieldValues[field.key] : undefined) ??
+      (field.label ? imageFieldValues[field.label] : undefined) ??
+      '';
+    if (field.required !== false && !String(value || '').trim()) {
+      return {
+        error: `${field.label || 'Image field'} is required`,
+        values: null
+      };
+    }
+    if (value && !String(value).match(/^data:image\/(png|jpeg|jpg);base64,/)) {
+      return {
+        error: `${field.label || 'Image field'} must be a PNG or JPG image`,
+        values: null
+      };
+    }
+    if (!value) continue;
+    values[field.id] = value;
+    if (field.key) values[field.key] = value;
+    if (field.label) values[field.label] = value;
   }
 
   return { values, error: null };
@@ -553,6 +584,9 @@ router.post('/forms/:id/files', candidateAuthMiddleware, upload.single('file'), 
     const fieldKey = req.body.fieldKey || req.body.key;
     const field = (submission.templateSnapshot?.fields || []).find((item) => item.key === fieldKey || item.id === fieldKey);
     if (!field) return res.status(400).json({ msg: 'A valid form field key is required' });
+    if (field.type === 'image' && !String(req.file.mimetype || '').startsWith('image/')) {
+      return res.status(400).json({ msg: 'This field requires an image upload' });
+    }
     if (field.sensitive) {
       return res.status(400).json({ msg: 'Sensitive file uploads require private storage before they can be accepted' });
     }
@@ -561,13 +595,13 @@ router.post('/forms/:id/files', candidateAuthMiddleware, upload.single('file'), 
       folder: 'onboarding/forms',
       fileName: `${field.key}-${Date.now()}-${req.file.originalname}`,
       mimeType: req.file.mimetype,
-      resourceType: 'raw'
+      resourceType: field.type === 'image' ? 'image' : 'raw'
     });
 
     const existing = submission.values.find((value) => value.key === field.key);
     if (existing) {
       existing.files = [...(existing.files || []), file];
-      existing.valuePreview = `${existing.files.length} file(s)`;
+      existing.valuePreview = field.type === 'image' ? `${existing.files.length} image(s)` : `${existing.files.length} file(s)`;
       existing.updatedAt = new Date();
     }
     await submission.save();
@@ -707,6 +741,14 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
     if (textFieldError) {
       return res.status(400).json({ msg: textFieldError });
     }
+    const { values: imageFieldValues, error: imageFieldError } = candidateImageFieldValues(
+      envelopeDocument,
+      signer,
+      req.body.imageFieldValues || {}
+    );
+    if (imageFieldError) {
+      return res.status(400).json({ msg: imageFieldError });
+    }
 
     const sourceBuffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
     const signedAt = new Date();
@@ -721,6 +763,7 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
       signerKey: signer.key,
       signatureDataUrl: req.body.signatureDataUrl,
       fieldValues: textFieldValues,
+      imageFieldValues,
       signedAt,
       auditText: `Signed by ${req.candidateAccount.email} via Seemplify Candidate Portal`
     });
@@ -814,6 +857,14 @@ router.post('/documents/:id/complete', candidateAuthMiddleware, async (req, res)
     if (textFieldError) {
       return res.status(400).json({ msg: textFieldError });
     }
+    const { values: imageFieldValues, error: imageFieldError } = candidateImageFieldValues(
+      envelopeDocument,
+      signer,
+      req.body.imageFieldValues || {}
+    );
+    if (imageFieldError) {
+      return res.status(400).json({ msg: imageFieldError });
+    }
 
     const sourceBuffer = await loadEnvelopeDocumentPdfBuffer(envelope, envelopeDocument);
     const completedAt = new Date();
@@ -828,6 +879,7 @@ router.post('/documents/:id/complete', candidateAuthMiddleware, async (req, res)
       signerKey: signer.key,
       signatureDataUrl: null,
       fieldValues: textFieldValues,
+      imageFieldValues,
       signedAt: completedAt,
       auditText: `Completed by ${req.candidateAccount.email} via Seemplify Candidate Portal`
     });

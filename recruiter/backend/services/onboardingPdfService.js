@@ -459,12 +459,12 @@ async function downloadPdfBuffer(url) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-function parseSignatureData(signatureDataUrl) {
-  if (!signatureDataUrl || typeof signatureDataUrl !== 'string') {
+function parseStampImageDataUrl(imageDataUrl) {
+  if (!imageDataUrl || typeof imageDataUrl !== 'string') {
     return null;
   }
 
-  const match = signatureDataUrl.match(/^data:(image\/png|image\/jpeg|image\/jpg);base64,(.+)$/);
+  const match = imageDataUrl.match(/^data:(image\/png|image\/jpeg|image\/jpg);base64,(.+)$/);
   if (!match) {
     return null;
   }
@@ -473,6 +473,14 @@ function parseSignatureData(signatureDataUrl) {
     mimeType: match[1],
     bytes: Buffer.from(match[2], 'base64')
   };
+}
+
+async function embedImageDataUrl(pdfDoc, imageDataUrl) {
+  const imageData = parseStampImageDataUrl(imageDataUrl);
+  if (!imageData) return null;
+  return imageData.mimeType.includes('jpeg') || imageData.mimeType.includes('jpg')
+    ? pdfDoc.embedJpg(imageData.bytes)
+    : pdfDoc.embedPng(imageData.bytes);
 }
 
 function fieldRect(field, page) {
@@ -560,6 +568,23 @@ function drawFieldText(page, value, rect, { font, fontSize, color, multiline = f
   });
 }
 
+function drawImageInRect(page, image, rect, padding = 4) {
+  const imageWidth = image.width;
+  const imageHeight = image.height;
+  if (!imageWidth || !imageHeight) return;
+  const maxWidth = Math.max(1, rect.width - padding * 2);
+  const maxHeight = Math.max(1, rect.height - padding * 2);
+  const scale = Math.min(maxWidth / imageWidth, maxHeight / imageHeight);
+  const width = imageWidth * scale;
+  const height = imageHeight * scale;
+  page.drawImage(image, {
+    x: rect.x + (rect.width - width) / 2,
+    y: rect.y + (rect.height - height) / 2,
+    width,
+    height
+  });
+}
+
 async function stampSignedPdf({
   pdfUrl,
   pdfBuffer,
@@ -569,6 +594,7 @@ async function stampSignedPdf({
   signerKey,
   signatureDataUrl,
   fieldValues = {},
+  imageFieldValues = {},
   signedAt = new Date(),
   auditText
 }) {
@@ -576,12 +602,7 @@ async function stampSignedPdf({
   const pdfDoc = await PdfLibDocument.load(sourceBuffer);
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const signatureImage = parseSignatureData(signatureDataUrl);
-  const embeddedSignature = signatureImage
-    ? signatureImage.mimeType.includes('jpeg') || signatureImage.mimeType.includes('jpg')
-      ? await pdfDoc.embedJpg(signatureImage.bytes)
-      : await pdfDoc.embedPng(signatureImage.bytes)
-    : null;
+  const embeddedSignature = await embedImageDataUrl(pdfDoc, signatureDataUrl);
 
   const pages = pdfDoc.getPages();
   const signerName = signer?.name || signer?.email || 'Signer';
@@ -594,51 +615,54 @@ async function stampSignedPdf({
     minute: '2-digit'
   });
 
-  signatureFields
+  for (const field of signatureFields
     .filter((field) => {
       if (signerKey && field.signerKey) return field.signerKey === signerKey;
       return (field.role || 'candidate') === signerRole;
-    })
-    .forEach((field) => {
-      const page = pages[Math.max(0, Number(field.page || 1) - 1)];
-      if (!page) return;
+    })) {
+    const page = pages[Math.max(0, Number(field.page || 1) - 1)];
+    if (!page) continue;
 
-      const rect = fieldRect(field, page);
+    const rect = fieldRect(field, page);
 
-      if (field.type === 'signature' && embeddedSignature) {
-        page.drawImage(embeddedSignature, {
-          x: rect.x + 4,
-          y: rect.y + 4,
-          width: rect.width - 8,
-          height: rect.height - 8
-        });
-        return;
-      }
+    if (field.type === 'signature' && embeddedSignature) {
+      drawImageInRect(page, embeddedSignature, rect, 4);
+      continue;
+    }
 
-      const customValue = fieldValues[field.id] ??
-        fieldValues[field.key] ??
-        (field.label ? fieldValues[field.label] : undefined);
-      const value = customValue !== undefined && customValue !== null && customValue !== ''
-        ? customValue
-        : field.type === 'date'
-        ? dateText
-        : field.type === 'email'
-          ? signerEmail
-          : field.type === 'name'
+    if (field.type === 'image') {
+      const imageValue = imageFieldValues[field.id] ??
+        imageFieldValues[field.key] ??
+        (field.label ? imageFieldValues[field.label] : undefined);
+      const embeddedImage = await embedImageDataUrl(pdfDoc, imageValue);
+      if (embeddedImage) drawImageInRect(page, embeddedImage, rect, 4);
+      continue;
+    }
+
+    const customValue = fieldValues[field.id] ??
+      fieldValues[field.key] ??
+      (field.label ? fieldValues[field.label] : undefined);
+    const value = customValue !== undefined && customValue !== null && customValue !== ''
+      ? customValue
+      : field.type === 'date'
+      ? dateText
+      : field.type === 'email'
+        ? signerEmail
+        : field.type === 'name'
+          ? signerName
+          : field.type === 'signature'
             ? signerName
-            : field.type === 'signature'
-              ? signerName
-              : field.label || signerName;
+            : field.label || signerName;
 
-      const font = field.type === 'signature' ? helveticaBold : helvetica;
-      const fontSize = Math.min(11, Math.max(7, field.multiline ? rect.height * 0.14 : rect.height * 0.32));
-      drawFieldText(page, value, rect, {
-        font,
-        fontSize,
-        multiline: field.type === 'text' && Boolean(field.multiline),
-        color: rgb(0.07, 0.1, 0.18)
-      });
+    const font = field.type === 'signature' ? helveticaBold : helvetica;
+    const fontSize = Math.min(11, Math.max(7, field.multiline ? rect.height * 0.14 : rect.height * 0.32));
+    drawFieldText(page, value, rect, {
+      font,
+      fontSize,
+      multiline: field.type === 'text' && Boolean(field.multiline),
+      color: rgb(0.07, 0.1, 0.18)
     });
+  }
 
   const lastPage = pages[pages.length - 1];
   if (lastPage && auditText) {

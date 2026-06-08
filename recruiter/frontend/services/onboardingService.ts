@@ -16,7 +16,7 @@ export interface BuilderBlock {
 export interface SignatureField {
   id: string;
   role: "candidate" | "internal";
-  type: "signature" | "date" | "name" | "email" | "text";
+  type: "signature" | "date" | "name" | "email" | "text" | "image";
   label?: string;
   placeholder?: string;
   multiline?: boolean;
@@ -137,7 +137,7 @@ export interface OnboardingFormField {
   id: string;
   key: string;
   label: string;
-  type: "text" | "textarea" | "email" | "phone" | "date" | "number" | "select" | "checkbox" | "bank_account" | "routing_number" | "tax_id" | "address" | "file";
+  type: "text" | "textarea" | "email" | "phone" | "date" | "number" | "select" | "checkbox" | "bank_account" | "routing_number" | "tax_id" | "address" | "file" | "image";
   required?: boolean;
   sensitive?: boolean;
   options?: string[];
@@ -392,7 +392,7 @@ export async function updatePeopleTransitionWorkflowItem(
   return result.data;
 }
 
-export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType } = {}) {
+export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType; candidateForm?: { title?: string; description?: string; fields?: OnboardingFormField[] } } = {}) {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/candidates/${candidateId}/start`, {
     method: "POST",
     body: JSON.stringify(data),
@@ -429,6 +429,13 @@ export async function updatePacketTemplate(id: string, data: Partial<OnboardingP
 export async function getOnboardingFormTemplates() {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/form-templates`);
   const result = await parseResponse<{ data: OnboardingFormTemplate[] }>(response, "Failed to load form templates");
+  return result.data;
+}
+
+export async function getCandidateFormDefaults(processType: ProcessType = "onboarding") {
+  const query = new URLSearchParams({ processType });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/form-field-defaults?${query}`);
+  const result = await parseResponse<{ data: { title: string; description?: string; category?: string; processType: ProcessType; fields: OnboardingFormField[] } }>(response, "Failed to load candidate form defaults");
   return result.data;
 }
 

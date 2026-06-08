@@ -41,7 +41,7 @@ export interface FileSnapshot {
 export interface SignatureField {
   id: string
   role: "candidate" | "internal"
-  type: "signature" | "date" | "name" | "email" | "text"
+  type: "signature" | "date" | "name" | "email" | "text" | "image"
   label?: string
   placeholder?: string
   multiline?: boolean
@@ -118,7 +118,7 @@ export interface OnboardingFormField {
   id: string
   key: string
   label: string
-  type: "text" | "textarea" | "email" | "phone" | "date" | "number" | "select" | "checkbox" | "bank_account" | "routing_number" | "tax_id" | "address" | "file"
+  type: "text" | "textarea" | "email" | "phone" | "date" | "number" | "select" | "checkbox" | "bank_account" | "routing_number" | "tax_id" | "address" | "file" | "image"
   required?: boolean
   sensitive?: boolean
   options?: string[]

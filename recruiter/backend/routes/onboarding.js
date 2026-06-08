@@ -31,6 +31,7 @@ const { logOnboardingEvent } = require('../services/onboardingAuditService');
 const {
   attachEnvelopeToWorkflow,
   createPeopleTransitionNotifications,
+  defaultFormFields,
   defaultWorkflowItemDefinitions,
   ensureDefaultFormTemplate,
   initializeDefaultWorkflow,
@@ -242,17 +243,21 @@ function normalizeSignatureFields(fields, signers = []) {
   return (Array.isArray(fields) ? fields : [])
     .filter((field) => field && field.id)
     .map((field) => {
-      const signer = field.signerKey ? signerByKey.get(field.signerKey) : null;
-      const role = signer?.role || (field.role === 'internal' ? 'internal' : 'candidate');
+      const type = ['signature', 'date', 'name', 'email', 'text', 'image'].includes(field.type) ? field.type : 'signature';
+      const candidateSigner = signers.find((item) => item.role === 'candidate');
+      const signer = type === 'image'
+        ? candidateSigner
+        : field.signerKey ? signerByKey.get(field.signerKey) : null;
+      const role = type === 'image' ? 'candidate' : signer?.role || (field.role === 'internal' ? 'internal' : 'candidate');
       const roleSigners = signers.filter((item) => item.role === role);
       const resolvedSigner = signer || (roleSigners.length === 1 ? roleSigners[0] : null);
       return {
         id: String(field.id),
         role,
         signerKey: resolvedSigner?.key || undefined,
-        type: ['signature', 'date', 'name', 'email', 'text'].includes(field.type) ? field.type : 'signature',
+        type,
         label: field.label || '',
-        placeholder: field.type === 'text' ? String(field.placeholder || '') : '',
+        placeholder: ['text', 'image'].includes(type) ? String(field.placeholder || '') : '',
         multiline: field.type === 'text' ? Boolean(field.multiline) : false,
         page: Math.max(1, Number(field.page || 1)),
         x: normalizeFieldNumber(field.x, 0.1),
@@ -469,6 +474,7 @@ async function renderDocumentSnapshot(document, { candidate, organization, user,
 
 async function ensureCandidateAccount(candidate, organization) {
   let account = await CandidateAccount.findOne({ email: candidate.email });
+  let created = false;
   if (!account) {
     account = new CandidateAccount({
       email: candidate.email,
@@ -479,11 +485,12 @@ async function ensureCandidateAccount(candidate, organization) {
       },
       status: 'invited'
     });
+    created = true;
   }
 
   account.linkCandidate(candidate._id, organization._id);
   await account.save();
-  return account;
+  return { account, created };
 }
 
 async function serializeOnboarding(onboarding) {
@@ -782,8 +789,8 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
     }
 
     const organization = await getOrganization(req);
-    const account = await ensureCandidateAccount(candidate, organization);
-    const invite = createInviteToken();
+    const { account, created: createdCandidateAccount } = await ensureCandidateAccount(candidate, organization);
+    const invite = createdCandidateAccount ? createInviteToken() : null;
     const title = req.body.title || `${candidateDisplayName(candidate)} ${copy.label.toLowerCase()}`;
     const packetTemplate = req.body.templateId
       ? await OnboardingTemplate.findOne({
@@ -816,26 +823,31 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       title,
       notes: req.body.notes || '',
       startedBy: req.user.id,
-      inviteTokenHash: invite.tokenHash,
-      inviteTokenExpiresAt: invite.expiresAt
+      inviteTokenHash: invite?.tokenHash,
+      inviteTokenExpiresAt: invite?.expiresAt
     });
 
     account.linkCandidate(candidate._id, organization._id);
     await account.save();
 
-    const portalInviteUrl = await onboardingEmailService.sendCandidateInvite({
-      candidate,
-      organization,
-      inviteToken: invite.token,
-      onboarding,
-      request: req
-    }).catch((error) => {
-      console.error('Failed to send onboarding invite email:', error);
-      return onboardingEmailService.candidatePortalUrl(
-        `/signup?token=${encodeURIComponent(invite.token)}`,
-        { organization, request: req }
-      );
-    });
+    const portalInviteUrl = createdCandidateAccount
+      ? await onboardingEmailService.sendCandidateInvite({
+          candidate,
+          organization,
+          inviteToken: invite.token,
+          onboarding,
+          request: req
+        }).catch((error) => {
+          console.error('Failed to send onboarding invite email:', error);
+          return onboardingEmailService.candidatePortalUrl(
+            `/signup?token=${encodeURIComponent(invite.token)}`,
+            { organization, request: req }
+          );
+        })
+      : onboardingEmailService.candidatePortalUrl(
+          `/transitions/${onboarding._id}`,
+          { organization, request: req }
+        );
 
     onboarding.portalInviteUrl = portalInviteUrl;
     await onboarding.save();
@@ -845,7 +857,8 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       candidate,
       userId: req.user.id,
       req,
-      packetTemplate
+      packetTemplate,
+      candidateForm: req.body.candidateForm
     });
 
     await logOnboardingEvent({
@@ -857,7 +870,7 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       actorUser: req.user.id,
       actorEmail: req.user.email,
       action: `${processType}_started`,
-      metadata: { inviteEmail: candidate.email, processType }
+      metadata: { inviteEmail: createdCandidateAccount ? candidate.email : undefined, processType, reusedCandidateAccount: !createdCandidateAccount }
     });
 
     await createPeopleTransitionNotifications({
@@ -1951,6 +1964,24 @@ router.get('/envelopes/:id', async (req, res) => {
     res.json({ data: envelope });
   } catch (error) {
     res.status(500).json({ msg: 'Failed to load envelope', error: error.message });
+  }
+});
+
+router.get('/form-field-defaults', async (req, res) => {
+  try {
+    const processType = processTypeQueryFromRequest(req) === 'all' ? 'onboarding' : processTypeQueryFromRequest(req);
+    const copy = processCopy(processType);
+    res.json({
+      data: {
+        title: copy.defaultTitle,
+        description: copy.defaultDescription,
+        category: copy.category,
+        processType,
+        fields: defaultFormFields(processType)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to load form field defaults', error: error.message });
   }
 });
 

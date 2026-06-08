@@ -189,7 +189,7 @@ export default function CandidateFormPage() {
                   }
 
                   return (
-                    <label key={field.key} className={field.type === "textarea" || field.type === "address" || field.type === "file" ? "md:col-span-2" : ""}>
+                    <label key={field.key} className={field.type === "textarea" || field.type === "address" || field.type === "file" || field.type === "image" ? "md:col-span-2" : ""}>
                       <span className="text-sm font-semibold text-slate-950">
                         {field.label}
                         {field.required && <span className="text-rose-600"> *</span>}
@@ -227,14 +227,15 @@ export default function CandidateFormPage() {
                           />
                           Confirm
                         </span>
-                      ) : field.type === "file" ? (
+                      ) : field.type === "file" || field.type === "image" ? (
                         <span className="mt-2 block rounded-md border border-dashed border-slate-300 bg-slate-50 p-4">
                           <span className="flex items-center gap-2 text-sm font-medium text-slate-800">
                             <FileUp className="h-4 w-4" />
-                            {saved?.valuePreview || "Upload a file"}
+                            {saved?.valuePreview || (field.type === "image" ? "Upload an image" : "Upload a file")}
                           </span>
                           <input
                             type="file"
+                            accept={field.type === "image" ? "image/*" : undefined}
                             disabled={locked || uploadingKey === field.key}
                             onChange={(event) => uploadFile(field, event)}
                             className="mt-3 block w-full text-sm text-slate-600"
