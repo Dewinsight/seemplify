@@ -3,7 +3,7 @@
 import { PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight, Download, ImageIcon, Mail, Plus, Save, Signature, Type, UserRound } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Eye, ImageIcon, Mail, MousePointer2, Plus, Save, Signature, Type, UserRound, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,7 @@ const fieldIcons = {
 };
 
 type FieldResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+type FieldCanvasMode = "edit" | "preview";
 type FieldInteraction =
   | { mode: "move"; id: string; dx: number; dy: number }
   | { mode: "resize"; id: string; handle: FieldResizeHandle; startX: number; startY: number; startField: SignatureField };
@@ -48,8 +49,8 @@ const resizeHandleClassNames: Record<FieldResizeHandle, string> = {
   se: "bottom-[-6px] right-[-6px] cursor-nwse-resize",
 };
 
-const MIN_FIELD_WIDTH = 0.06;
-const MIN_FIELD_HEIGHT = 0.035;
+const MIN_FIELD_WIDTH = 0.015;
+const MIN_FIELD_HEIGHT = 0.012;
 
 function roundUnit(value: number) {
   return Number(value.toFixed(4));
@@ -58,6 +59,12 @@ function roundUnit(value: number) {
 function clampUnit(value: number, min = 0, max = 1) {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+function displayScaleFromPercent(value: number | string, fallback: number) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return clampUnit(number / 100, 0.35, 2.5);
 }
 
 function clampFieldRect(rect: Pick<SignatureField, "x" | "y" | "width" | "height">) {
@@ -80,6 +87,15 @@ function fieldTypeLabel(type: SignatureField["type"]) {
   return "Signature";
 }
 
+function fieldPreviewValue(field: SignatureField) {
+  if (field.type === "text") return field.placeholder || field.label || "Candidate text";
+  if (field.type === "image") return field.placeholder || field.label || "Candidate image";
+  if (field.type === "date") return "Date signed";
+  if (field.type === "name") return "Signer name";
+  if (field.type === "email") return "Signer email";
+  return field.label || "Signature";
+}
+
 export default function PrepareOnboardingDocumentPage() {
   const params = useParams<{ id: string }>();
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -95,6 +111,10 @@ export default function PrepareOnboardingDocumentPage() {
   const [previewPage, setPreviewPage] = useState(1);
   const [previewPageCount, setPreviewPageCount] = useState(1);
   const [previewPageSize, setPreviewPageSize] = useState<{ width: number; height: number } | null>(null);
+  const [canvasMode, setCanvasMode] = useState<FieldCanvasMode>("edit");
+  const [canvasZoom, setCanvasZoom] = useState(1);
+  const [canvasWidthScale, setCanvasWidthScale] = useState(1);
+  const [canvasHeightScale, setCanvasHeightScale] = useState(1);
   const [interaction, setInteraction] = useState<FieldInteraction | null>(null);
 
   useEffect(() => {
@@ -153,6 +173,10 @@ export default function PrepareOnboardingDocumentPage() {
 
   const activeField = fields.find((field) => field.id === activeFieldId);
   const visibleFields = fields.filter((field) => field.page === previewPage);
+  const canvasWidthPercent = Math.round(canvasZoom * canvasWidthScale * 100);
+  const canvasAspectRatio = previewPageSize
+    ? `${previewPageSize.width * canvasWidthScale} / ${previewPageSize.height * canvasHeightScale}`
+    : `${8.5 * canvasWidthScale} / ${11 * canvasHeightScale}`;
   const handlePreviewPageCount = useCallback((count: number) => {
     setPreviewPageCount(count);
     setPreviewPage((page) => Math.max(1, Math.min(page, count)));
@@ -384,42 +408,90 @@ export default function PrepareOnboardingDocumentPage() {
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="rounded-md border bg-white p-4">
-            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm font-medium text-slate-700">Page {previewPage} of {previewPageCount}</div>
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={previewPage <= 1}
-                  onClick={() => setPreviewPage((page) => Math.max(1, page - 1))}
-                >
+            <div className="mb-3 flex flex-col gap-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="text-sm font-medium text-slate-700">Page {previewPage} of {previewPageCount}</div>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                  <Button type="button" variant={canvasMode === "edit" ? "default" : "outline"} size="sm" onClick={() => setCanvasMode("edit")}>
+                    <MousePointer2 className="h-4 w-4" />
+                    Edit
+                  </Button>
+                  <Button type="button" variant={canvasMode === "preview" ? "default" : "outline"} size="sm" onClick={() => setCanvasMode("preview")}>
+                    <Eye className="h-4 w-4" />
+                    Preview
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" size="sm" disabled={previewPage <= 1} onClick={() => setPreviewPage((page) => Math.max(1, page - 1))}>
                   <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={previewPage >= previewPageCount}
-                  onClick={() => setPreviewPage((page) => Math.min(previewPageCount, page + 1))}
-                >
+                <Button type="button" variant="outline" size="sm" disabled={previewPage >= previewPageCount} onClick={() => setPreviewPage((page) => Math.min(previewPageCount, page + 1))}>
                   Next
                   <ChevronRight className="h-4 w-4" />
                 </Button>
+                <div className="h-6 w-px bg-slate-200" />
+                <Button type="button" variant="outline" size="sm" onClick={() => setCanvasZoom((value) => clampUnit(value - 0.1, 0.35, 2.5))}>
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="w-12 text-center text-xs font-medium text-slate-600">{Math.round(canvasZoom * 100)}%</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => setCanvasZoom((value) => clampUnit(value + 0.1, 0.35, 2.5))}>
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <div className="flex items-center gap-1 text-xs text-slate-600">
+                  <span>Width</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCanvasWidthScale((value) => clampUnit(value - 0.05, 0.35, 2.5))}>-</Button>
+                  <Input
+                    type="number"
+                    min="35"
+                    max="250"
+                    value={Math.round(canvasWidthScale * 100)}
+                    onChange={(event) => setCanvasWidthScale((current) => displayScaleFromPercent(event.target.value, current))}
+                    className="h-8 w-20"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCanvasWidthScale((value) => clampUnit(value + 0.05, 0.35, 2.5))}>+</Button>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-slate-600">
+                  <span>Height</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCanvasHeightScale((value) => clampUnit(value - 0.05, 0.35, 2.5))}>-</Button>
+                  <Input
+                    type="number"
+                    min="35"
+                    max="250"
+                    value={Math.round(canvasHeightScale * 100)}
+                    onChange={(event) => setCanvasHeightScale((current) => displayScaleFromPercent(event.target.value, current))}
+                    className="h-8 w-20"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCanvasHeightScale((value) => clampUnit(value + 0.05, 0.35, 2.5))}>+</Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setCanvasZoom(1);
+                    setCanvasWidthScale(1);
+                    setCanvasHeightScale(1);
+                  }}
+                >
+                  Reset view
+                </Button>
               </div>
             </div>
-            <div
-              ref={pageRef}
-              onPointerMove={onPointerMove}
-              onPointerUp={() => setInteraction(null)}
-              onPointerCancel={() => setInteraction(null)}
-              className="relative mx-auto w-full max-w-full select-none overflow-hidden border bg-white shadow-sm sm:max-w-[760px]"
-              style={{
-                aspectRatio: previewPageSize ? `${previewPageSize.width} / ${previewPageSize.height}` : "8.5 / 11",
-                touchAction: "none",
-              }}
-            >
+            <div className="overflow-auto rounded-md bg-slate-100 p-3">
+              <div
+                ref={pageRef}
+                onPointerMove={onPointerMove}
+                onPointerUp={() => setInteraction(null)}
+                onPointerCancel={() => setInteraction(null)}
+                className="relative mx-auto min-w-[280px] select-none overflow-hidden border bg-white shadow-sm"
+                style={{
+                  width: `${canvasWidthPercent}%`,
+                  aspectRatio: canvasAspectRatio,
+                  touchAction: "none",
+                }}
+              >
               {previewLoading ? (
                 <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading document preview...</div>
               ) : previewBlob ? (
@@ -450,8 +522,22 @@ export default function PrepareOnboardingDocumentPage() {
                       key={field.id}
                       role="button"
                       tabIndex={0}
-                      onPointerDown={(event) => onMovePointerDown(event, field)}
-                      className={`pointer-events-auto absolute flex cursor-move items-center gap-1 rounded border px-2 text-left text-[11px] font-medium shadow-sm ${activeFieldId === field.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-emerald-500 bg-emerald-50 text-emerald-700"}`}
+                      onPointerDown={(event) => {
+                        if (canvasMode === "edit") {
+                          onMovePointerDown(event, field);
+                          return;
+                        }
+                        setActiveFieldId(field.id);
+                      }}
+                      className={`pointer-events-auto absolute flex min-w-0 items-center overflow-hidden rounded border px-1 text-left text-[10px] font-medium leading-tight shadow-sm ${
+                        canvasMode === "preview"
+                          ? activeFieldId === field.id
+                            ? "border-blue-500 bg-white/70 text-slate-950"
+                            : "border-slate-400 bg-white/50 text-slate-800"
+                          : activeFieldId === field.id
+                            ? "cursor-move border-blue-500 bg-blue-50 text-blue-700"
+                            : "cursor-move border-emerald-500 bg-emerald-50 text-emerald-700"
+                      }`}
                       style={{
                         left: `${field.x * 100}%`,
                         top: `${field.y * 100}%`,
@@ -459,9 +545,11 @@ export default function PrepareOnboardingDocumentPage() {
                         height: `${field.height * 100}%`,
                       }}
                     >
-                      <Icon className="h-3 w-3" />
-                      <span className="truncate">{field.label || fieldTypeLabel(field.type)}</span>
-                      {activeFieldId === field.id && resizeHandles.map((handle) => (
+                      {canvasMode === "edit" && <Icon className="h-3 w-3 shrink-0" />}
+                      <span className={`${field.multiline || canvasMode === "preview" ? "whitespace-pre-wrap break-words" : "truncate"}`}>
+                        {canvasMode === "preview" ? fieldPreviewValue(field) : field.label || fieldTypeLabel(field.type)}
+                      </span>
+                      {canvasMode === "edit" && activeFieldId === field.id && resizeHandles.map((handle) => (
                         <span
                           key={handle}
                           aria-label={`Resize ${handle}`}
@@ -474,6 +562,7 @@ export default function PrepareOnboardingDocumentPage() {
                   );
                 })}
               </div>
+            </div>
             </div>
           </section>
 
@@ -597,7 +686,7 @@ export default function PrepareOnboardingDocumentPage() {
                   {(["x", "y", "width", "height"] as const).map((key) => (
                     <div key={key} className="space-y-2">
                       <Label>{key}</Label>
-                      <Input type="number" step="0.01" min="0" max="1" value={activeField[key]} onChange={(event) => updateFieldRect(activeField.id, { [key]: Number(event.target.value) })} />
+                      <Input type="number" step="0.001" min="0" max="1" value={activeField[key]} onChange={(event) => updateFieldRect(activeField.id, { [key]: Number(event.target.value) })} />
                     </div>
                   ))}
                 </div>

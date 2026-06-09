@@ -124,7 +124,7 @@ export function PdfPagePreview({ blob, pageNumber, title, onPageCount, onPageRen
       alt={`${title} page ${renderedPage.pageNumber}`}
       width={renderedPage.width}
       height={renderedPage.height}
-      className="block h-full w-full object-contain"
+      className="block h-full w-full object-fill"
       draggable={false}
     />
   );

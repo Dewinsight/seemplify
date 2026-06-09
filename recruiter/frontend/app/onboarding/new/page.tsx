@@ -10,11 +10,14 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Eye,
   FileText,
   ImageIcon,
   ListChecks,
+  ListPlus,
   Loader2,
   Mail,
+  MousePointer2,
   Plus,
   Search,
   Send,
@@ -24,6 +27,8 @@ import {
   Upload,
   UserPlus,
   UserRound,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,10 +37,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import { PdfPagePreview } from "@/components/onboarding/pdf-page-preview";
 import { getCandidateById, getCandidatesPaginated, type CandidateData } from "@/services/candidateService";
-import { getCandidateList, getCandidateLists, type CandidateListSummary } from "@/services/candidateListService";
+import { getCandidateList, getCandidateLists, type CandidateListDetail, type CandidateListSummary } from "@/services/candidateListService";
 import organizationService from "@/services/organizationService";
 import {
   createEnvelope,
@@ -82,6 +88,7 @@ type OrganizationMember = {
   };
 };
 type FieldResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+type FieldCanvasMode = "edit" | "preview";
 type FieldInteraction =
   | { mode: "move"; id: string; dx: number; dy: number }
   | { mode: "resize"; id: string; handle: FieldResizeHandle; startX: number; startY: number; startField: SignatureField };
@@ -140,8 +147,8 @@ const resizeHandleClassNames: Record<FieldResizeHandle, string> = {
   se: "bottom-[-6px] right-[-6px] cursor-nwse-resize",
 };
 
-const MIN_FIELD_WIDTH = 0.06;
-const MIN_FIELD_HEIGHT = 0.035;
+const MIN_FIELD_WIDTH = 0.015;
+const MIN_FIELD_HEIGHT = 0.012;
 
 function candidateName(candidate: CandidateData) {
   return `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim() || candidate.email || "Candidate";
@@ -186,6 +193,12 @@ function clampUnit(value: number, min = 0, max = 1) {
   return Math.max(min, Math.min(max, value));
 }
 
+function displayScaleFromPercent(value: number | string, fallback: number) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return clampUnit(number / 100, 0.35, 2.5);
+}
+
 function clampFieldRect(rect: Pick<SignatureField, "x" | "y" | "width" | "height">) {
   const width = clampUnit(rect.width, MIN_FIELD_WIDTH, 1);
   const height = clampUnit(rect.height, MIN_FIELD_HEIGHT, 1);
@@ -209,6 +222,15 @@ function fieldTypeLabel(type: SignatureField["type"]) {
   if (type === "name") return "Name";
   if (type === "email") return "Email";
   return "Signature";
+}
+
+function fieldPreviewValue(field: SignatureField, signer?: WizardSigner) {
+  if (field.type === "text") return field.placeholder || field.label || "Candidate text";
+  if (field.type === "image") return field.placeholder || field.label || "Candidate image";
+  if (field.type === "date") return "Date signed";
+  if (field.type === "name") return signer?.name || "Signer name";
+  if (field.type === "email") return signer?.email || "Signer email";
+  return field.label || "Signature";
 }
 
 function formFieldTypeLabel(type: OnboardingFormField["type"]) {
@@ -272,6 +294,7 @@ function normalizeDocumentFields(document: OnboardingDocument, signers: WizardSi
 export default function NewOnboardingPage() {
   const searchParams = useSearchParams();
   const initialCandidateId = searchParams.get("candidateId") || "";
+  const initialCandidateListId = searchParams.get("candidateListId") || "";
   const initialCandidateIdsParam = searchParams.get("candidateIds") || "";
   const initialCandidateIds = useMemo(() => {
     const candidateIds = initialCandidateIdsParam
@@ -296,6 +319,7 @@ export default function NewOnboardingPage() {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [selectedCandidateListId, setSelectedCandidateListId] = useState("all");
   const [candidateListLoading, setCandidateListLoading] = useState(false);
+  const [candidateSegmentDialogMode, setCandidateSegmentDialogMode] = useState<"selected" | "search" | null>(null);
   const [candidateFormTitle, setCandidateFormTitle] = useState("");
   const [candidateFormDescription, setCandidateFormDescription] = useState("");
   const [candidateFormFields, setCandidateFormFields] = useState<OnboardingFormField[]>([]);
@@ -319,6 +343,10 @@ export default function NewOnboardingPage() {
   const [fieldPreviewPage, setFieldPreviewPage] = useState(1);
   const [fieldPreviewPageCount, setFieldPreviewPageCount] = useState(1);
   const [fieldPreviewPageSize, setFieldPreviewPageSize] = useState<{ width: number; height: number } | null>(null);
+  const [fieldCanvasMode, setFieldCanvasMode] = useState<FieldCanvasMode>("edit");
+  const [fieldCanvasZoom, setFieldCanvasZoom] = useState(1);
+  const [fieldCanvasWidthScale, setFieldCanvasWidthScale] = useState(1);
+  const [fieldCanvasHeightScale, setFieldCanvasHeightScale] = useState(1);
   const [interaction, setInteraction] = useState<FieldInteraction | null>(null);
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -458,6 +486,38 @@ export default function NewOnboardingPage() {
     };
   }, [initialCandidateKey]);
 
+  useEffect(() => {
+    if (!initialCandidateListId || initialCandidateKey) return;
+
+    let cancelled = false;
+
+    async function loadInitialCandidateList() {
+      try {
+        setCandidateListLoading(true);
+        const list = await getCandidateList(initialCandidateListId);
+        if (cancelled) return;
+
+        const listCandidates = list.entries
+          .map((entry) => typeof entry.candidate === "object" ? entry.candidate : null)
+          .filter(Boolean) as CandidateData[];
+        setSelectedCandidateListId(list._id);
+        setCandidateSearch("");
+        setCandidates(listCandidates);
+        setCandidateSelection(listCandidates.map((candidate) => candidate._id), listCandidates);
+        setStep("process");
+      } catch (error: any) {
+        if (!cancelled) toast.error(error.message || "Failed to load candidate segment");
+      } finally {
+        if (!cancelled) setCandidateListLoading(false);
+      }
+    }
+
+    loadInitialCandidateList();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCandidateKey, initialCandidateListId]);
+
   const selectedCandidates = useMemo(() => {
     const byId = new Map(candidates.map((candidate) => [candidate._id, candidate]));
     if (selectedCandidate && !byId.has(selectedCandidate._id)) {
@@ -469,6 +529,10 @@ export default function NewOnboardingPage() {
   }, [candidates, selectedCandidate, selectedCandidateIds]);
 
   const selectedCandidateCount = selectedCandidateIds.length;
+  const selectedCandidateList = useMemo(
+    () => candidateLists.find((list) => list._id === selectedCandidateListId) || null,
+    [candidateLists, selectedCandidateListId]
+  );
 
   const candidateSigner = useMemo<WizardSigner | null>(() => {
     if (!selectedCandidateCount) return null;
@@ -521,6 +585,10 @@ export default function NewOnboardingPage() {
   const activeDocumentFields = activeDocument ? documentFieldsById[activeDocument._id] || [] : [];
   const visibleFields = activeDocumentFields.filter((field) => field.page === fieldPreviewPage);
   const activeField = activeDocumentFields.find((field) => field.id === activeFieldId);
+  const fieldCanvasWidthPercent = Math.round(fieldCanvasZoom * fieldCanvasWidthScale * 100);
+  const fieldCanvasAspectRatio = fieldPreviewPageSize
+    ? `${fieldPreviewPageSize.width * fieldCanvasWidthScale} / ${fieldPreviewPageSize.height * fieldCanvasHeightScale}`
+    : `${8.5 * fieldCanvasWidthScale} / ${11 * fieldCanvasHeightScale}`;
 
   useEffect(() => {
     if (!selectedDocuments.length) {
@@ -698,6 +766,18 @@ export default function NewOnboardingPage() {
       toast.error(error.message || "Failed to select matching candidates");
     } finally {
       setCandidateListLoading(false);
+    }
+  }
+
+  async function handleCandidateSegmentSaved(list?: CandidateListDetail) {
+    try {
+      const lists = await getCandidateLists();
+      setCandidateLists(lists);
+      if (list?._id) {
+        await handleCandidateListChange(list._id);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Segment saved, but the segment list could not refresh");
     }
   }
 
@@ -1180,6 +1260,7 @@ export default function NewOnboardingPage() {
   }
 
   return (
+    <>
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-screen-2xl px-4 py-6 lg:px-8">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1249,13 +1330,13 @@ export default function NewOnboardingPage() {
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">Candidate</h2>
                 <p className="text-sm text-slate-500">
-                  {selectedCandidateCount ? `${selectedCandidateCount} selected` : "Choose candidates directly, from a saved list, or from the current search."}
+                  {selectedCandidateCount ? `${selectedCandidateCount} selected` : "Choose candidates directly, from a saved segment, or from the current search."}
                 </p>
               </div>
               <div className="grid gap-2 md:w-[620px] md:grid-cols-[240px_minmax(0,1fr)]">
                 <Select value={selectedCandidateListId} onValueChange={handleCandidateListChange} disabled={candidateListLoading}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Candidate list" />
+                    <SelectValue placeholder="Candidate segment" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All candidates</SelectItem>
@@ -1293,11 +1374,26 @@ export default function NewOnboardingPage() {
                   <Button type="button" variant="outline" size="sm" onClick={selectAllMatchingCandidates} disabled={candidateListLoading}>
                     Select all matching
                   </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCandidateSegmentDialogMode("selected")} disabled={!selectedCandidateCount || candidateListLoading}>
+                    <ListPlus className="h-4 w-4" />
+                    Save segment
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCandidateSegmentDialogMode("search")} disabled={candidateListLoading || selectedCandidateListId !== "all"}>
+                    Save search
+                  </Button>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href="/people-transitions/segments">Manage segments</Link>
+                  </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setCandidateSelection([])} disabled={!selectedCandidateCount}>
                     Clear
                   </Button>
                 </div>
               </div>
+              {selectedCandidateList ? (
+                <div className="mb-3 rounded-md border bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  Using segment <span className="font-medium text-slate-950">{selectedCandidateList.name}</span> with {selectedCandidateList.candidateCount} candidate{selectedCandidateList.candidateCount === 1 ? "" : "s"}.
+                </div>
+              ) : null}
               <div className="h-[440px] overflow-auto rounded-md border">
                 <table className="w-full min-w-[760px] caption-bottom text-sm">
                   <TableHeader className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgba(226,232,240,1)]">
@@ -1759,9 +1855,21 @@ export default function NewOnboardingPage() {
               </aside>
 
               <main className="min-w-0 p-3 sm:p-4">
-                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-sm font-medium text-slate-700">Page {fieldPreviewPage} of {fieldPreviewPageCount}</div>
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                <div className="mb-3 flex flex-col gap-3">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div className="text-sm font-medium text-slate-700">Page {fieldPreviewPage} of {fieldPreviewPageCount}</div>
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                      <Button type="button" variant={fieldCanvasMode === "edit" ? "default" : "outline"} size="sm" onClick={() => setFieldCanvasMode("edit")}>
+                        <MousePointer2 className="h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button type="button" variant={fieldCanvasMode === "preview" ? "default" : "outline"} size="sm" onClick={() => setFieldCanvasMode("preview")}>
+                        <Eye className="h-4 w-4" />
+                        Preview
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button type="button" variant="outline" size="sm" disabled={fieldPreviewPage <= 1} onClick={() => setFieldPreviewPage((page) => Math.max(1, page - 1))}>
                       <ChevronLeft className="h-4 w-4" />
                       Previous
@@ -1770,19 +1878,67 @@ export default function NewOnboardingPage() {
                       Next
                       <ChevronRight className="h-4 w-4" />
                     </Button>
+                    <div className="h-6 w-px bg-slate-200" />
+                    <Button type="button" variant="outline" size="sm" onClick={() => setFieldCanvasZoom((value) => clampUnit(value - 0.1, 0.35, 2.5))}>
+                      <ZoomOut className="h-4 w-4" />
+                    </Button>
+                    <span className="w-12 text-center text-xs font-medium text-slate-600">{Math.round(fieldCanvasZoom * 100)}%</span>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setFieldCanvasZoom((value) => clampUnit(value + 0.1, 0.35, 2.5))}>
+                      <ZoomIn className="h-4 w-4" />
+                    </Button>
+                    <div className="flex items-center gap-1 text-xs text-slate-600">
+                      <span>Width</span>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setFieldCanvasWidthScale((value) => clampUnit(value - 0.05, 0.35, 2.5))}>-</Button>
+                      <Input
+                        type="number"
+                        min="35"
+                        max="250"
+                        value={Math.round(fieldCanvasWidthScale * 100)}
+                        onChange={(event) => setFieldCanvasWidthScale((current) => displayScaleFromPercent(event.target.value, current))}
+                        className="h-8 w-20"
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={() => setFieldCanvasWidthScale((value) => clampUnit(value + 0.05, 0.35, 2.5))}>+</Button>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-slate-600">
+                      <span>Height</span>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setFieldCanvasHeightScale((value) => clampUnit(value - 0.05, 0.35, 2.5))}>-</Button>
+                      <Input
+                        type="number"
+                        min="35"
+                        max="250"
+                        value={Math.round(fieldCanvasHeightScale * 100)}
+                        onChange={(event) => setFieldCanvasHeightScale((current) => displayScaleFromPercent(event.target.value, current))}
+                        className="h-8 w-20"
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={() => setFieldCanvasHeightScale((value) => clampUnit(value + 0.05, 0.35, 2.5))}>+</Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setFieldCanvasZoom(1);
+                        setFieldCanvasWidthScale(1);
+                        setFieldCanvasHeightScale(1);
+                      }}
+                    >
+                      Reset view
+                    </Button>
                   </div>
                 </div>
-                <div
-                  ref={pageRef}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={() => setInteraction(null)}
-                  onPointerCancel={() => setInteraction(null)}
-                  className="relative mx-auto w-full max-w-full select-none overflow-hidden border bg-white shadow-sm sm:max-w-[760px]"
-                  style={{
-                    aspectRatio: fieldPreviewPageSize ? `${fieldPreviewPageSize.width} / ${fieldPreviewPageSize.height}` : "8.5 / 11",
-                    touchAction: "none",
-                  }}
-                >
+                <div className="overflow-auto rounded-md bg-slate-100 p-3">
+                  <div
+                    ref={pageRef}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={() => setInteraction(null)}
+                    onPointerCancel={() => setInteraction(null)}
+                    className="relative mx-auto min-w-[280px] select-none overflow-hidden border bg-white shadow-sm"
+                    style={{
+                      width: `${fieldCanvasWidthPercent}%`,
+                      aspectRatio: fieldCanvasAspectRatio,
+                      touchAction: "none",
+                    }}
+                  >
                   {fieldPreviewLoading ? (
                     <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading document preview...</div>
                   ) : fieldPreviewBlob && activeDocument ? (
@@ -1808,8 +1964,22 @@ export default function NewOnboardingPage() {
                           key={field.id}
                           role="button"
                           tabIndex={0}
-                          onPointerDown={(event) => onMovePointerDown(event, field)}
-                          className={`pointer-events-auto absolute flex cursor-move items-center gap-1 rounded border px-2 text-left text-[11px] font-medium shadow-sm ${activeFieldId === field.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-emerald-500 bg-emerald-50 text-emerald-700"}`}
+                          onPointerDown={(event) => {
+                            if (fieldCanvasMode === "edit") {
+                              onMovePointerDown(event, field);
+                              return;
+                            }
+                            setActiveFieldId(field.id);
+                          }}
+                          className={`pointer-events-auto absolute flex min-w-0 items-center overflow-hidden rounded border px-1 text-left text-[10px] font-medium leading-tight shadow-sm ${
+                            fieldCanvasMode === "preview"
+                              ? activeFieldId === field.id
+                                ? "border-blue-500 bg-white/70 text-slate-950"
+                                : "border-slate-400 bg-white/50 text-slate-800"
+                              : activeFieldId === field.id
+                                ? "cursor-move border-blue-500 bg-blue-50 text-blue-700"
+                                : "cursor-move border-emerald-500 bg-emerald-50 text-emerald-700"
+                          }`}
                           style={{
                             left: `${field.x * 100}%`,
                             top: `${field.y * 100}%`,
@@ -1817,9 +1987,11 @@ export default function NewOnboardingPage() {
                             height: `${field.height * 100}%`,
                           }}
                         >
-                          <Icon className="h-3 w-3" />
-                          <span className="truncate">{field.label || signer?.name || fieldTypeLabel(field.type)}</span>
-                          {activeFieldId === field.id && resizeHandles.map((handle) => (
+                          {fieldCanvasMode === "edit" && <Icon className="h-3 w-3 shrink-0" />}
+                          <span className={`${field.multiline || fieldCanvasMode === "preview" ? "whitespace-pre-wrap break-words" : "truncate"}`}>
+                            {fieldCanvasMode === "preview" ? fieldPreviewValue(field, signer) : field.label || signer?.name || fieldTypeLabel(field.type)}
+                          </span>
+                          {fieldCanvasMode === "edit" && activeFieldId === field.id && resizeHandles.map((handle) => (
                             <span
                               key={handle}
                               aria-label={`Resize ${handle}`}
@@ -1832,6 +2004,7 @@ export default function NewOnboardingPage() {
                       );
                     })}
                   </div>
+                </div>
                 </div>
               </main>
 
@@ -1953,7 +2126,7 @@ export default function NewOnboardingPage() {
                       {(["x", "y", "width", "height"] as const).map((key) => (
                         <div key={key} className="space-y-2">
                           <Label>{key}</Label>
-                          <Input type="number" step="0.01" min="0" max="1" value={activeField[key]} onChange={(event) => updateFieldRect(activeField.id, { [key]: Number(event.target.value) })} />
+                          <Input type="number" step="0.001" min="0" max="1" value={activeField[key]} onChange={(event) => updateFieldRect(activeField.id, { [key]: Number(event.target.value) })} />
                         </div>
                       ))}
                     </div>
@@ -2062,5 +2235,24 @@ export default function NewOnboardingPage() {
         )}
       </div>
     </div>
+    <AddToCandidateListDialog
+      open={candidateSegmentDialogMode !== null}
+      onOpenChange={(open) => {
+        if (!open) setCandidateSegmentDialogMode(null);
+      }}
+      candidateIds={candidateSegmentDialogMode === "selected" ? selectedCandidateIds : []}
+      query={candidateSegmentDialogMode === "search" ? { search: candidateSearch.trim() || undefined, limit: 5000 } : undefined}
+      source="onboarding"
+      sourceRef={{ area: "people_transitions", processType }}
+      defaultName={`${processLabel(processType)} segment`}
+      defaultDescription={`Saved recipient segment for ${processLabel(processType).toLowerCase()} transition packets.`}
+      countLabel={
+        candidateSegmentDialogMode === "search"
+          ? "Candidates matching this search will be saved as a reusable segment."
+          : `${selectedCandidateCount} selected candidate${selectedCandidateCount === 1 ? "" : "s"} will be saved as a reusable segment.`
+      }
+      onCompleted={handleCandidateSegmentSaved}
+    />
+    </>
   );
 }

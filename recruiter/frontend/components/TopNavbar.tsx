@@ -21,6 +21,7 @@ import {
   PlusCircle,
   ClipboardList,
   ChevronDown,
+  ListChecks,
   ListTodo,
   BarChart3,
 } from "lucide-react";
@@ -85,6 +86,7 @@ const navigationItems: NavigationItem[] = [
     children: [
       { title: "Overview", href: "/people-transitions", icon: GraduationCap },
       { title: "Start Process", href: "/people-transitions/new", icon: PlusCircle },
+      { title: "Segments", href: "/people-transitions/segments", icon: ListChecks },
       { title: "Documents", href: "/people-transitions/documents", icon: FileText },
       { title: "Templates", href: "/people-transitions/templates", icon: ClipboardList },
       { title: "Tasks", href: "/people-transitions/tasks", icon: ListTodo },

@@ -538,13 +538,14 @@ function wrapTextToWidth(text, font, fontSize, maxWidth) {
 
 function drawFieldText(page, value, rect, { font, fontSize, color, multiline = false }) {
   const text = String(value).slice(0, 2000);
-  const x = rect.x + 5;
-  const maxWidth = Math.max(10, rect.width - 10);
+  const padding = Math.min(5, Math.max(1, Math.min(rect.width, rect.height) * 0.15));
+  const x = rect.x + padding;
+  const maxWidth = Math.max(1, rect.width - padding * 2);
 
   if (!multiline && !text.includes('\n')) {
     page.drawText(text.slice(0, 120), {
       x,
-      y: rect.y + Math.max(4, rect.height / 2 - 5),
+      y: rect.y + Math.max(1, (rect.height - fontSize) / 2),
       size: fontSize,
       font,
       color
@@ -553,8 +554,8 @@ function drawFieldText(page, value, rect, { font, fontSize, color, multiline = f
   }
 
   const lineHeight = fontSize * 1.25;
-  const topY = rect.y + rect.height - fontSize - 4;
-  const minY = rect.y + 4;
+  const topY = rect.y + rect.height - fontSize - padding;
+  const minY = rect.y + padding;
   wrapTextToWidth(text, font, fontSize, maxWidth).forEach((line, index) => {
     const y = topY - index * lineHeight;
     if (y < minY) return;
@@ -655,7 +656,7 @@ async function stampSignedPdf({
             : field.label || signerName;
 
     const font = field.type === 'signature' ? helveticaBold : helvetica;
-    const fontSize = Math.min(11, Math.max(7, field.multiline ? rect.height * 0.14 : rect.height * 0.32));
+    const fontSize = Math.min(11, Math.max(4, field.multiline ? rect.height * 0.16 : rect.height * 0.38));
     drawFieldText(page, value, rect, {
       font,
       fontSize,

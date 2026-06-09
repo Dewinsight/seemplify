@@ -27,6 +27,7 @@ import {
   createCandidateList,
   createCandidateListFromQuery,
   getCandidateLists,
+  type CandidateListDetail,
   type CandidateListSource,
   type CandidateListSummary,
 } from "@/services/candidateListService";
@@ -58,7 +59,7 @@ type AddToCandidateListDialogProps = {
   defaultName?: string;
   defaultDescription?: string;
   countLabel?: string;
-  onCompleted?: () => void;
+  onCompleted?: (list?: CandidateListDetail) => void;
 };
 
 const CREATE_NEW_VALUE = "__create_new__";
@@ -137,8 +138,9 @@ export function AddToCandidateListDialog({
 
     setIsSaving(true);
     try {
+      let savedList: CandidateListDetail | undefined;
       if (query) {
-        await createCandidateListFromQuery({
+        savedList = await createCandidateListFromQuery({
           name: name.trim(),
           description,
           search: query.search,
@@ -146,7 +148,7 @@ export function AddToCandidateListDialog({
           limit: query.limit,
         });
       } else if (selectedListId === CREATE_NEW_VALUE) {
-        await createCandidateList({
+        savedList = await createCandidateList({
           name: name.trim(),
           description,
           source,
@@ -155,7 +157,7 @@ export function AddToCandidateListDialog({
           entries,
         });
       } else {
-        await addCandidatesToList(selectedListId, {
+        savedList = await addCandidatesToList(selectedListId, {
           candidateIds,
           entries,
           source,
@@ -166,7 +168,7 @@ export function AddToCandidateListDialog({
         title: "Candidate list saved",
         description: query ? "A new list was created from the current candidate set." : "The selected candidates were added.",
       });
-      onCompleted?.();
+      onCompleted?.(savedList);
       onOpenChange(false);
     } catch (error) {
       toast({
