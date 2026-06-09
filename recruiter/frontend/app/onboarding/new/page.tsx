@@ -605,6 +605,33 @@ export default function NewOnboardingPage() {
     setFieldPreviewPageSize({ width: page.width, height: page.height });
   }, []);
 
+  function visiblePageFieldRect(width: number, height: number) {
+    const page = pageRef.current?.getBoundingClientRect();
+    if (!page || page.width <= 0 || page.height <= 0 || typeof window === "undefined") {
+      return clampFieldRect({ x: 0.12, y: 0.12, width, height });
+    }
+
+    const visibleLeft = Math.max(page.left, 0);
+    const visibleRight = Math.min(page.right, window.innerWidth);
+    const visibleTop = Math.max(page.top, 0);
+    const visibleBottom = Math.min(page.bottom, window.innerHeight);
+    const centerX = visibleRight > visibleLeft
+      ? (visibleLeft + visibleRight) / 2
+      : Math.max(page.left, Math.min(page.right, window.innerWidth / 2));
+    const centerY = visibleBottom > visibleTop
+      ? (visibleTop + visibleBottom) / 2
+      : Math.max(page.top, Math.min(page.bottom, window.innerHeight / 2));
+    const fieldsOnPage = activeDocumentFields.filter((field) => field.page === fieldPreviewPage).length;
+    const stagger = (fieldsOnPage % 4) * Math.min(height + 0.012, 0.055);
+
+    return clampFieldRect({
+      x: (centerX - page.left) / page.width - width / 2,
+      y: (centerY - page.top) / page.height - height / 2 + stagger,
+      width,
+      height,
+    });
+  }
+
   function setCandidateSelection(nextIds: string[], candidatePool = candidates) {
     const uniqueIds = [...new Set(nextIds)];
     setSelectedCandidateIds(uniqueIds);
@@ -897,6 +924,11 @@ export default function NewOnboardingPage() {
     }
 
     const base = newSignatureField(signer.role);
+    const defaultWidth = fieldType === "signature" ? 0.32 : fieldType === "image" ? 0.26 : fieldType === "text" && patch.multiline ? 0.55 : fieldType === "text" ? 0.3 : 0.22;
+    const defaultHeight = fieldType === "signature" ? 0.08 : fieldType === "image" ? 0.16 : fieldType === "text" && patch.multiline ? 0.16 : 0.05;
+    const width = patch.width ?? defaultWidth;
+    const height = patch.height ?? defaultHeight;
+    const rect = visiblePageFieldRect(width, height);
     const field: SignatureField = {
       ...base,
       id: `${signer.key}-${fieldType}-${Date.now()}`,
@@ -907,10 +939,10 @@ export default function NewOnboardingPage() {
       placeholder: fieldType === "text" && signer.role === "candidate" ? "Type your response here" : fieldType === "image" && signer.role === "candidate" ? "Upload image here" : "",
       multiline: false,
       page: fieldPreviewPage,
-      x: 0.12,
-      y: fieldType === "date" ? 0.78 : 0.68,
-      width: fieldType === "signature" ? 0.32 : fieldType === "image" ? 0.26 : fieldType === "text" && patch.multiline ? 0.55 : fieldType === "text" ? 0.3 : 0.22,
-      height: fieldType === "signature" ? 0.08 : fieldType === "image" ? 0.16 : fieldType === "text" && patch.multiline ? 0.16 : 0.05,
+      x: patch.x ?? rect.x,
+      y: patch.y ?? rect.y,
+      width,
+      height,
       required: true,
       ...patch,
     };
@@ -1171,6 +1203,19 @@ export default function NewOnboardingPage() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:hidden">
+          {steps.map((item, index) => (
+            <button
+              key={item.key}
+              type="button"
+              disabled={!canOpenStep(item.key)}
+              onClick={() => canOpenStep(item.key) && setStep(item.key)}
+              className={`min-w-0 rounded-md border px-3 py-2 text-left text-sm ${step === item.key ? "border-blue-500 bg-blue-50 text-blue-700" : "bg-white text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"}`}
+            >
+              <span className="block truncate">{index + 1}. {item.label}</span>
+            </button>
+          ))}
         </div>
 
         {step === "process" && (
@@ -1690,8 +1735,8 @@ export default function NewOnboardingPage() {
 
         {step === "fields" && (
           <section className="rounded-md border bg-white">
-            <div className="grid gap-0 xl:grid-cols-[240px_minmax(0,1fr)_330px]">
-              <aside className="border-b p-4 xl:border-b-0 xl:border-r">
+            <div className="grid gap-0 lg:grid-cols-[220px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)_330px]">
+              <aside className="border-b p-4 lg:border-b-0 lg:border-r">
                 <h2 className="text-lg font-semibold text-slate-950">Documents</h2>
                 <p className="mt-1 text-xs leading-5 text-slate-500">Field placement follows the signing order.</p>
                 <div className="mt-4 grid gap-2">
@@ -1704,19 +1749,19 @@ export default function NewOnboardingPage() {
                         setFieldPreviewPage(1);
                         setActiveFieldId("");
                       }}
-                      className={`rounded-md border p-3 text-left text-sm ${activeDocument?._id === document._id ? "border-blue-500 bg-blue-50" : "hover:bg-slate-50"}`}
+                      className={`w-full min-w-0 rounded-md border p-3 text-left text-sm ${activeDocument?._id === document._id ? "border-blue-500 bg-blue-50" : "hover:bg-slate-50"}`}
                     >
-                      <div className="font-medium text-slate-950">{index + 1}. {document.title}</div>
+                      <div className="min-w-0 break-words font-medium leading-5 text-slate-950">{index + 1}. {document.title}</div>
                       <div className="text-xs text-slate-500">{documentFieldsById[document._id]?.length || 0} fields</div>
                     </button>
                   ))}
                 </div>
               </aside>
 
-              <main className="p-4">
+              <main className="min-w-0 p-3 sm:p-4">
                 <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm font-medium text-slate-700">Page {fieldPreviewPage} of {fieldPreviewPageCount}</div>
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                     <Button type="button" variant="outline" size="sm" disabled={fieldPreviewPage <= 1} onClick={() => setFieldPreviewPage((page) => Math.max(1, page - 1))}>
                       <ChevronLeft className="h-4 w-4" />
                       Previous
@@ -1732,7 +1777,7 @@ export default function NewOnboardingPage() {
                   onPointerMove={onPointerMove}
                   onPointerUp={() => setInteraction(null)}
                   onPointerCancel={() => setInteraction(null)}
-                  className="relative mx-auto w-full max-w-[760px] select-none overflow-hidden border bg-white shadow-sm"
+                  className="relative mx-auto w-full max-w-full select-none overflow-hidden border bg-white shadow-sm sm:max-w-[760px]"
                   style={{
                     aspectRatio: fieldPreviewPageSize ? `${fieldPreviewPageSize.width} / ${fieldPreviewPageSize.height}` : "8.5 / 11",
                     touchAction: "none",
@@ -1790,7 +1835,7 @@ export default function NewOnboardingPage() {
                 </div>
               </main>
 
-              <aside className="border-t p-4 xl:border-l xl:border-t-0">
+              <aside className="border-t p-4 lg:col-span-2 2xl:col-span-1 2xl:border-l 2xl:border-t-0">
                 <h2 className="text-lg font-semibold text-slate-950">Fields</h2>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
                   Candidate text fields appear as inputs in the portal. Name, email, and date fields are stamped automatically.

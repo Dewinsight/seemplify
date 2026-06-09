@@ -161,7 +161,39 @@ export default function PrepareOnboardingDocumentPage() {
     setPreviewPageSize({ width: page.width, height: page.height });
   }, []);
 
+  function visiblePageFieldRect(width: number, height: number) {
+    const page = pageRef.current?.getBoundingClientRect();
+    if (!page || page.width <= 0 || page.height <= 0 || typeof window === "undefined") {
+      return clampFieldRect({ x: 0.12, y: 0.12, width, height });
+    }
+
+    const visibleLeft = Math.max(page.left, 0);
+    const visibleRight = Math.min(page.right, window.innerWidth);
+    const visibleTop = Math.max(page.top, 0);
+    const visibleBottom = Math.min(page.bottom, window.innerHeight);
+    const centerX = visibleRight > visibleLeft
+      ? (visibleLeft + visibleRight) / 2
+      : Math.max(page.left, Math.min(page.right, window.innerWidth / 2));
+    const centerY = visibleBottom > visibleTop
+      ? (visibleTop + visibleBottom) / 2
+      : Math.max(page.top, Math.min(page.bottom, window.innerHeight / 2));
+    const fieldsOnPage = fields.filter((field) => field.page === previewPage).length;
+    const stagger = (fieldsOnPage % 4) * Math.min(height + 0.012, 0.055);
+
+    return clampFieldRect({
+      x: (centerX - page.left) / page.width - width / 2,
+      y: (centerY - page.top) / page.height - height / 2 + stagger,
+      width,
+      height,
+    });
+  }
+
   function addField(role: "candidate" | "internal" = "candidate", type: SignatureField["type"] = "signature", patch: Partial<SignatureField> = {}) {
+    const defaultWidth = type === "signature" ? 0.3 : type === "image" ? 0.26 : type === "text" && patch.multiline ? 0.55 : 0.28;
+    const defaultHeight = type === "signature" ? 0.08 : type === "image" ? 0.16 : type === "text" && patch.multiline ? 0.16 : 0.05;
+    const width = patch.width ?? defaultWidth;
+    const height = patch.height ?? defaultHeight;
+    const rect = visiblePageFieldRect(width, height);
     const field: SignatureField = {
       ...newSignatureField(role),
       id: `${role}-${type}-${Date.now()}`,
@@ -171,8 +203,10 @@ export default function PrepareOnboardingDocumentPage() {
       placeholder: type === "text" && role === "candidate" ? "Type your response here" : type === "image" && role === "candidate" ? "Upload image here" : "",
       multiline: false,
       page: previewPage,
-      width: type === "signature" ? 0.3 : type === "image" ? 0.26 : type === "text" && patch.multiline ? 0.55 : 0.28,
-      height: type === "signature" ? 0.08 : type === "image" ? 0.16 : type === "text" && patch.multiline ? 0.16 : 0.05,
+      x: patch.x ?? rect.x,
+      y: patch.y ?? rect.y,
+      width,
+      height,
       ...patch,
     };
     setFields((current) => [...current, field]);
@@ -352,7 +386,7 @@ export default function PrepareOnboardingDocumentPage() {
           <section className="rounded-md border bg-white p-4">
             <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm font-medium text-slate-700">Page {previewPage} of {previewPageCount}</div>
-              <div className="flex items-center gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                 <Button
                   type="button"
                   variant="outline"
@@ -380,7 +414,7 @@ export default function PrepareOnboardingDocumentPage() {
               onPointerMove={onPointerMove}
               onPointerUp={() => setInteraction(null)}
               onPointerCancel={() => setInteraction(null)}
-              className="relative mx-auto w-full max-w-[760px] select-none overflow-hidden border bg-white shadow-sm"
+              className="relative mx-auto w-full max-w-full select-none overflow-hidden border bg-white shadow-sm sm:max-w-[760px]"
               style={{
                 aspectRatio: previewPageSize ? `${previewPageSize.width} / ${previewPageSize.height}` : "8.5 / 11",
                 touchAction: "none",
@@ -449,7 +483,7 @@ export default function PrepareOnboardingDocumentPage() {
                 <h2 className="text-lg font-semibold text-slate-950">Fields</h2>
                 <p className="text-xs text-slate-500">{fields.length} placed</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button size="sm" variant="outline" onClick={() => addField("candidate", "text")}>
                   <Type className="h-4 w-4" />
                   Add fillable text
@@ -474,8 +508,8 @@ export default function PrepareOnboardingDocumentPage() {
 
             <div className="mb-5 grid gap-2">
               {fields.map((field) => (
-                <button key={field.id} type="button" onClick={() => selectField(field)} className={`rounded-md border p-3 text-left text-sm ${activeFieldId === field.id ? "border-blue-300 bg-blue-50" : "hover:bg-slate-50"}`}>
-                  <div className="font-medium text-slate-950">{field.label || fieldTypeLabel(field.type)}</div>
+                <button key={field.id} type="button" onClick={() => selectField(field)} className={`w-full min-w-0 rounded-md border p-3 text-left text-sm ${activeFieldId === field.id ? "border-blue-300 bg-blue-50" : "hover:bg-slate-50"}`}>
+                  <div className="min-w-0 break-words font-medium text-slate-950">{field.label || fieldTypeLabel(field.type)}</div>
                   <div className="text-xs text-slate-500">{field.role} - page {field.page}</div>
                 </button>
               ))}
