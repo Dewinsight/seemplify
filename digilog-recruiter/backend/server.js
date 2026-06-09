@@ -379,6 +379,14 @@ app.get('/api/health', (req, res) => {
   res.status(health.healthy ? 200 : 503).json(health);
 });
 
+// On Vercel (serverless) we cannot bind a port or keep WebSockets/workers
+// alive, so export the Express app as the request handler and stop here.
+// Locally (and on any always-on host), VERCEL is unset and the server starts normally.
+if (process.env.VERCEL) {
+  module.exports = app;
+  return;
+}
+
 server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 WebSocket available at ws://localhost:${PORT}/ws/assistant`);
