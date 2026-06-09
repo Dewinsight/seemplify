@@ -638,6 +638,29 @@ export async function getEnvelopeDocumentPreviewBlob(envelopeId: string, documen
   return new Blob([blob], { type: "application/pdf" });
 }
 
+export async function getEnvelopeDocumentDownloadBlob(envelopeId: string, documentId: string) {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${envelopeId}/documents/${documentId}/download`, {
+    headers: { Accept: "application/pdf" },
+  });
+
+  if (!response.ok) {
+    const result = await response.clone().json().catch(() => ({}));
+    throw new Error(result.msg || result.error || "Failed to download envelope document");
+  }
+
+  const disposition = response.headers.get("content-disposition") || "";
+  const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+  const rawFilename = filenameMatch ? filenameMatch[1].replace(/"$/g, "") : "";
+  let filename = rawFilename;
+  try {
+    filename = rawFilename ? decodeURIComponent(rawFilename) : "";
+  } catch {
+    filename = rawFilename;
+  }
+  const blob = await response.blob();
+  return { blob: new Blob([blob], { type: "application/pdf" }), filename };
+}
+
 export async function countersignEnvelope(id: string, signatureDataUrl: string, signerKey?: string) {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}/countersign`, {
     method: "POST",

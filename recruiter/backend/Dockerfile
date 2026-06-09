@@ -1,6 +1,20 @@
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 WORKDIR /app
+
+# Install LibreOffice and common fonts so uploaded DOCX files can be converted
+# to PDF without rebuilding the document from raw text.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    libreoffice-writer \
+    fontconfig \
+    fonts-dejavu \
+    fonts-liberation \
+    fonts-noto-core \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV LIBREOFFICE_PATH=/usr/bin/soffice
+ENV HOME=/tmp
 
 # Copy package files
 COPY package*.json ./

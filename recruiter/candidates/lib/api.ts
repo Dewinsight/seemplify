@@ -4,9 +4,9 @@ import type {
   AuthResponse,
   CandidateAccount,
   CandidateDocumentPayload,
+  CandidateOnboarding,
   OnboardingEnvelope,
   OnboardingFormSubmission,
-  CandidateOnboarding,
 } from "./types"
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_RECRUITER_API_BASE_URL || "").replace(/\/$/, "")
@@ -203,7 +203,7 @@ export async function getOnboarding(id: string) {
 }
 
 export async function getDocument(id: string) {
-  return candidateRequest<{ data: CandidateDocumentPayload }>(`/api/candidate-portal/documents/${id}`)
+  return candidateRequest<{ data: CandidateDocumentPayload; transition?: CandidateOnboarding | null }>(`/api/candidate-portal/documents/${id}`)
 }
 
 export async function getDocumentPreviewBlob(id: string) {
@@ -212,32 +212,32 @@ export async function getDocumentPreviewBlob(id: string) {
 }
 
 export async function signDocument(id: string, signatureDataUrl: string, fieldValues: Record<string, string> = {}, imageFieldValues: Record<string, string> = {}) {
-  return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null }>(`/api/candidate-portal/documents/${id}/sign`, {
+  return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null; transition?: CandidateOnboarding | null }>(`/api/candidate-portal/documents/${id}/sign`, {
     method: "POST",
     body: JSON.stringify({ signatureDataUrl, fieldValues, imageFieldValues }),
   })
 }
 
 export async function completeDocument(id: string, fieldValues: Record<string, string> = {}, imageFieldValues: Record<string, string> = {}) {
-  return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null }>(`/api/candidate-portal/documents/${id}/complete`, {
+  return candidateRequest<{ data: OnboardingEnvelope; nextDocumentId?: string | null; transition?: CandidateOnboarding | null }>(`/api/candidate-portal/documents/${id}/complete`, {
     method: "POST",
     body: JSON.stringify({ fieldValues, imageFieldValues }),
   })
 }
 
 export async function getOnboardingForm(id: string) {
-  return candidateRequest<{ data: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}`)
+  return candidateRequest<{ data: OnboardingFormSubmission; transition?: CandidateOnboarding | null }>(`/api/candidate-portal/forms/${id}`)
 }
 
 export async function saveOnboardingForm(id: string, values: Record<string, unknown>) {
-  return candidateRequest<{ data: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}/save`, {
+  return candidateRequest<{ data: OnboardingFormSubmission; transition?: CandidateOnboarding | null }>(`/api/candidate-portal/forms/${id}/save`, {
     method: "POST",
     body: JSON.stringify({ values }),
   })
 }
 
 export async function submitOnboardingForm(id: string, values: Record<string, unknown>) {
-  return candidateRequest<{ data: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}/submit`, {
+  return candidateRequest<{ data: OnboardingFormSubmission; transition?: CandidateOnboarding | null }>(`/api/candidate-portal/forms/${id}/submit`, {
     method: "POST",
     body: JSON.stringify({ values }),
   })
@@ -247,7 +247,7 @@ export async function uploadOnboardingFormFile(id: string, fieldKey: string, fil
   const formData = new FormData()
   formData.append("fieldKey", fieldKey)
   formData.append("file", file)
-  return candidateRequest<{ data: unknown; form: OnboardingFormSubmission }>(`/api/candidate-portal/forms/${id}/files`, {
+  return candidateRequest<{ data: unknown; form: OnboardingFormSubmission; transition?: CandidateOnboarding | null }>(`/api/candidate-portal/forms/${id}/files`, {
     method: "POST",
     body: formData,
   })

@@ -128,7 +128,7 @@ function candidateDocumentActionType(envelopeDocument, signer) {
 
 function isPendingCandidateDocument(envelopeDocument, signer) {
   return OPEN_DOCUMENT_STATUSES.includes(envelopeDocument?.status) &&
-    candidateFieldsForSigner(envelopeDocument, signer).length > 0;
+    Boolean(candidateDocumentActionType(envelopeDocument, signer));
 }
 
 function candidateTextValue(field, fieldValues = {}) {
@@ -240,6 +240,10 @@ async function ensureEnvelopeDocumentSnapshot(envelope, envelopeDocument) {
     return;
   }
 
+  if (sourceDocument.sourceType === 'uploaded_docx') {
+    throw new Error('Uploaded DOCX document is missing its preserved PDF snapshot. Re-upload as PDF or configure DOCX conversion.');
+  }
+
   const buffer = await onboardingPdfService.renderBuilderDocumentToBuffer({
     title: sourceDocument.title || envelopeDocument.title,
     builderBlocks: sourceDocument.builderBlocks,
@@ -330,6 +334,7 @@ async function completeEnvelopeIfReady(envelope, req) {
     envelope.documents.forEach((doc) => {
       if (doc.status === 'signed') doc.status = 'completed';
     });
+    await envelope.save();
     await markDocumentWorkflowComplete(envelope.onboarding, envelope._id);
     await tryCompleteOnboarding(envelope.onboarding, { req });
     return true;
@@ -527,11 +532,35 @@ async function findCandidateFormSubmission(req, id) {
   });
 }
 
+async function serializeCandidateTransitionForAccount(req, onboardingId) {
+  if (!onboardingId || !mongoose.Types.ObjectId.isValid(String(onboardingId))) return null;
+  const onboarding = await CandidateOnboarding.findOne({
+    _id: onboardingId,
+    candidateAccount: req.candidateAccount._id
+  })
+    .populate('candidate', 'firstName lastName email phone position status')
+    .populate('organization', 'name logo')
+    .populate('envelopes');
+
+  return onboarding ? serializeOnboardingPlatform(onboarding) : null;
+}
+
+async function serializeSubmissionResponse(req, submission) {
+  return {
+    data: serializeSubmission(submission),
+    transition: await serializeCandidateTransitionForAccount(req, submission.onboarding)
+  };
+}
+
+async function serializeEnvelopeTransition(req, envelope) {
+  return serializeCandidateTransitionForAccount(req, envelope?.onboarding?._id || envelope?.onboarding);
+}
+
 router.get('/forms/:id', candidateAuthMiddleware, async (req, res) => {
   try {
     const submission = await findCandidateFormSubmission(req, req.params.id);
     if (!submission) return res.status(404).json({ msg: 'Onboarding form not found' });
-    res.json({ data: serializeSubmission(submission) });
+    res.json(await serializeSubmissionResponse(req, submission));
   } catch (error) {
     res.status(500).json({ msg: 'Failed to load onboarding form', error: error.message });
   }
@@ -550,7 +579,7 @@ router.post('/forms/:id/save', candidateAuthMiddleware, async (req, res) => {
       submit: false,
       req
     });
-    res.json({ data: serializeSubmission(saved) });
+    res.json(await serializeSubmissionResponse(req, saved));
   } catch (error) {
     res.status(error.statusCode || 500).json({ msg: error.message || 'Failed to save onboarding form' });
   }
@@ -569,7 +598,7 @@ router.post('/forms/:id/submit', candidateAuthMiddleware, async (req, res) => {
       submit: true,
       req
     });
-    res.json({ data: serializeSubmission(saved) });
+    res.json(await serializeSubmissionResponse(req, saved));
   } catch (error) {
     res.status(error.statusCode || 500).json({ msg: error.message || 'Failed to submit onboarding form' });
   }
@@ -622,7 +651,11 @@ router.post('/forms/:id/files', candidateAuthMiddleware, upload.single('file'), 
       }
     });
 
-    res.status(201).json({ data: file, form: serializeSubmission(submission) });
+    res.status(201).json({
+      data: file,
+      form: serializeSubmission(submission),
+      transition: await serializeCandidateTransitionForAccount(req, submission.onboarding)
+    });
   } catch (error) {
     res.status(500).json({ msg: 'Failed to upload onboarding form file', error: error.message });
   }
@@ -677,7 +710,8 @@ router.get('/documents/:id', candidateAuthMiddleware, async (req, res) => {
         canCompleteFillOnly: canSign && actionType === 'document_fill',
         nextDocumentId: findNextPendingCandidateDocumentId(envelope, envelopeDocument, signer),
         downloadUrl
-      }
+      },
+      transition: await serializeEnvelopeTransition(req, envelope)
     });
   } catch (error) {
     res.status(500).json({ msg: 'Failed to load document', error: error.message });
@@ -821,7 +855,11 @@ router.post('/documents/:id/sign', candidateAuthMiddleware, async (req, res) => 
       ));
     }
 
-    res.json({ data: envelope, nextDocumentId });
+    res.json({
+      data: envelope,
+      nextDocumentId,
+      transition: await serializeEnvelopeTransition(req, envelope)
+    });
   } catch (error) {
     console.error('Candidate document signing failed:', error);
     res.status(500).json({ msg: 'Failed to sign document', error: error.message });
@@ -937,7 +975,11 @@ router.post('/documents/:id/complete', candidateAuthMiddleware, async (req, res)
       ));
     }
 
-    res.json({ data: envelope, nextDocumentId });
+    res.json({
+      data: envelope,
+      nextDocumentId,
+      transition: await serializeEnvelopeTransition(req, envelope)
+    });
   } catch (error) {
     console.error('Candidate document completion failed:', error);
     res.status(500).json({ msg: 'Failed to complete document', error: error.message });

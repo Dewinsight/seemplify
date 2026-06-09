@@ -82,7 +82,7 @@ export default function OnboardingDocumentsPage() {
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Document library</h1>
-            <p className="mt-2 text-sm text-slate-600">Create reusable transition documents or upload PDFs/DOCX files for signing.</p>
+            <p className="mt-2 text-sm text-slate-600">Create reusable transition documents or upload files for signing. PDFs keep the exact final layout; DOCX files are converted with their page setup and A4 layout preserved.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button asChild variant="outline">
@@ -109,6 +109,7 @@ export default function OnboardingDocumentsPage() {
               {uploading ? "Uploading..." : "Upload"}
             </Button>
           </div>
+          <p className="mt-2 text-xs text-slate-500">For exact final output, upload the PDF. DOCX uploads use server-side LibreOffice conversion and keep the document page setup instead of rebuilding from text.</p>
         </section>
 
         <section className="rounded-md border bg-white">

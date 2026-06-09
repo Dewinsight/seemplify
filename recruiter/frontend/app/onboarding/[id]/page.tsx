@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowRight, CheckCircle2, Eye, Plus, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock, Download, Eye, FileSignature, ListChecks, Plus, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdfDocumentPreview } from "@/components/onboarding/pdf-document-preview";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
 import {
+  getEnvelopeDocumentDownloadBlob,
   getEnvelopeDocumentPreviewBlob,
   getOnboarding,
   revealFormSubmission,
@@ -49,6 +50,7 @@ export default function OnboardingWorkspacePage() {
   const [reviewingFormId, setReviewingFormId] = useState("");
   const [retryingHandoff, setRetryingHandoff] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [downloadingReviewKey, setDownloadingReviewKey] = useState("");
   const [reviewError, setReviewError] = useState("");
   const [reviewReloadKey, setReviewReloadKey] = useState(0);
 
@@ -103,6 +105,25 @@ export default function OnboardingWorkspacePage() {
     }
   }
 
+  async function downloadReviewDocument(item: SignedReviewDocument) {
+    try {
+      setDownloadingReviewKey(item.key);
+      const { blob, filename } = await getEnvelopeDocumentDownloadBlob(item.envelopeId, item.document._id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename || `${item.document.title || "signed-document"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to download document");
+    } finally {
+      setDownloadingReviewKey("");
+    }
+  }
+
   useEffect(() => {
     load();
   }, [params.id]);
@@ -123,6 +144,19 @@ export default function OnboardingWorkspacePage() {
     );
   }, [onboarding?.envelopes]);
   const selectedReviewDocument = signedReviewDocuments.find((item) => item.key === selectedReviewKey) || signedReviewDocuments[0];
+  const transitionSummary = useMemo(() => {
+    const workflowItems = onboarding?.workflowItems || [];
+    const documents = (onboarding?.envelopes || []).flatMap((envelope) => envelope.documents || []);
+    const completedWorkflow = workflowItems.filter((item) => ["completed", "skipped"].includes(item.status)).length;
+    const overdueWorkflow = workflowItems.filter((item) => item.isOverdue).length;
+    const completedDocuments = documents.filter((document) => ["signed", "completed"].includes(document.status)).length;
+    return {
+      workflow: `${completedWorkflow}/${workflowItems.length}`,
+      forms: onboarding?.forms?.length || 0,
+      documents: `${completedDocuments}/${documents.length}`,
+      overdue: overdueWorkflow,
+    };
+  }, [onboarding]);
 
   useEffect(() => {
     if (signedReviewDocuments.length === 0) {
@@ -184,9 +218,40 @@ export default function OnboardingWorkspacePage() {
           </div>
           {onboarding.portalInviteUrl && (
             <Button asChild variant="outline">
-              <a href={onboarding.portalInviteUrl} target="_blank" rel="noreferrer">Open invite link</a>
+              <a href={onboarding.portalInviteUrl} target="_blank" rel="noreferrer">Share invite link</a>
             </Button>
           )}
+        </div>
+
+        <div className="mb-5 grid gap-3 md:grid-cols-4">
+          <div className="rounded-md border bg-white p-4">
+            <div className="flex items-center justify-between gap-3 text-sm text-slate-500">
+              <span>Workflow</span>
+              <ListChecks className="h-4 w-4" />
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-slate-950">{transitionSummary.workflow}</div>
+          </div>
+          <div className="rounded-md border bg-white p-4">
+            <div className="flex items-center justify-between gap-3 text-sm text-slate-500">
+              <span>Forms</span>
+              <ShieldCheck className="h-4 w-4" />
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-slate-950">{transitionSummary.forms}</div>
+          </div>
+          <div className="rounded-md border bg-white p-4">
+            <div className="flex items-center justify-between gap-3 text-sm text-slate-500">
+              <span>Documents</span>
+              <FileSignature className="h-4 w-4" />
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-slate-950">{transitionSummary.documents}</div>
+          </div>
+          <div className="rounded-md border bg-white p-4">
+            <div className="flex items-center justify-between gap-3 text-sm text-slate-500">
+              <span>Overdue</span>
+              <Clock className="h-4 w-4" />
+            </div>
+            <div className={`mt-2 text-2xl font-semibold ${transitionSummary.overdue ? "text-rose-700" : "text-slate-950"}`}>{transitionSummary.overdue}</div>
+          </div>
         </div>
 
         <main className="space-y-5">
@@ -204,7 +269,7 @@ export default function OnboardingWorkspacePage() {
                       <div className="font-medium text-slate-950">{item.title}</div>
                       <div className="mt-1 text-sm text-slate-500">
                         {item.type} item owned by {item.ownerType}
-                        {item.dueAt ? ` · due ${new Date(item.dueAt).toLocaleDateString()}` : ""}
+                        {item.dueAt ? ` - due ${new Date(item.dueAt).toLocaleDateString()}` : ""}
                       </div>
                     </div>
                     <OnboardingStatusBadge status={item.status} />
@@ -240,7 +305,7 @@ export default function OnboardingWorkspacePage() {
                             <h3 className="font-semibold text-slate-950">{form.title}</h3>
                           </div>
                           <div className="mt-1 text-sm text-slate-500">
-                            {form.hasSensitiveValues ? "Contains encrypted fields" : "No sensitive fields"} · {form.values?.length || 0} fields
+                            {form.hasSensitiveValues ? "Contains encrypted fields" : "No sensitive fields"} - {form.values?.length || 0} fields
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -300,10 +365,21 @@ export default function OnboardingWorkspacePage() {
                   <p className="text-sm text-slate-500">Review completed candidate documents without leaving Recruiter.</p>
                 </div>
                 {selectedReviewDocument && (
-                  <Button type="button" variant="outline" onClick={() => setReviewReloadKey((key) => key + 1)} disabled={reviewLoading}>
-                    <RefreshCw className={`h-4 w-4 ${reviewLoading ? "animate-spin" : ""}`} />
-                    Refresh
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => downloadReviewDocument(selectedReviewDocument)}
+                      disabled={downloadingReviewKey === selectedReviewDocument.key}
+                    >
+                      <Download className="h-4 w-4" />
+                      {downloadingReviewKey === selectedReviewDocument.key ? "Downloading..." : "Download"}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setReviewReloadKey((key) => key + 1)} disabled={reviewLoading}>
+                      <RefreshCw className={`h-4 w-4 ${reviewLoading ? "animate-spin" : ""}`} />
+                      Refresh
+                    </Button>
+                  </div>
                 )}
               </div>
 
@@ -364,7 +440,7 @@ export default function OnboardingWorkspacePage() {
                   <Link key={envelope._id} href={`/people-transitions/envelopes/${envelope._id}`} className="flex items-center justify-between gap-3 p-4 hover:bg-slate-50">
                     <div>
                       <div className="font-medium text-slate-950">{envelope.title}</div>
-                      <div className="text-xs text-slate-500">{envelope.documents?.length || 0} documents · {new Date(envelope.createdAt).toLocaleString()}</div>
+                      <div className="text-xs text-slate-500">{envelope.documents?.length || 0} documents - {new Date(envelope.createdAt).toLocaleString()}</div>
                     </div>
                     <OnboardingStatusBadge status={envelope.status} />
                   </Link>
@@ -382,7 +458,7 @@ export default function OnboardingWorkspacePage() {
                 ) : events.map((event) => (
                   <div key={event._id} className="p-4">
                     <div className="text-sm font-medium text-slate-950">{event.action.replace(/_/g, " ")}</div>
-                    <div className="text-xs text-slate-500">{event.actorEmail || event.actorType} · {new Date(event.createdAt).toLocaleString()}</div>
+                    <div className="text-xs text-slate-500">{event.actorEmail || event.actorType} - {new Date(event.createdAt).toLocaleString()}</div>
                   </div>
                 ))}
               </div>

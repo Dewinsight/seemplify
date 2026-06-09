@@ -1463,7 +1463,7 @@ export default function NewOnboardingPage() {
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="text-sm font-semibold text-slate-950">Upload document</div>
-                    <p className="text-xs text-slate-500">Add a PDF or DOCX directly to this packet, then place fields in the next steps.</p>
+                    <p className="text-xs text-slate-500">Add a PDF or DOCX directly to this packet, then place fields in the next steps. PDFs keep the exact final layout.</p>
                   </div>
                   {documentUploadFile && (
                     <Button
@@ -1507,6 +1507,7 @@ export default function NewOnboardingPage() {
                     Add to packet
                   </Button>
                 </div>
+                <p className="mt-2 text-xs text-slate-500">DOCX uploads use server-side LibreOffice conversion and keep the document page setup, including A4, instead of rebuilding from text.</p>
               </div>
             </div>
             {selectedDocuments.length > 0 && (

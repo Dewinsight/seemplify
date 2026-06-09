@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
-const mammoth = require('mammoth');
 
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
@@ -27,6 +26,7 @@ const CloudinaryUploadService = require('../services/cloudinaryUploadService');
 const onboardingStorageService = require('../services/onboardingStorageService');
 const onboardingPdfService = require('../services/onboardingPdfService');
 const onboardingEmailService = require('../services/onboardingEmailService');
+const documentConversionService = require('../services/documentConversionService');
 const { logOnboardingEvent } = require('../services/onboardingAuditService');
 const {
   attachEnvelopeToWorkflow,
@@ -451,6 +451,13 @@ async function renderDocumentSnapshot(document, { candidate, organization, user,
     if (document.originalFile?.url || document.originalFile?.downloadUrl) {
       return document.originalFile;
     }
+  }
+
+  if (document.sourceType === 'uploaded_docx') {
+    if (document.pdfSnapshot?.url || document.pdfSnapshot?.downloadUrl) {
+      return document.pdfSnapshot;
+    }
+    throw new Error('Uploaded DOCX document is missing its preserved PDF snapshot. Re-upload as PDF or configure DOCX conversion.');
   }
 
   const variables = {
@@ -1376,29 +1383,22 @@ router.post('/documents/upload', upload.single('document'), async (req, res) => 
       pdfSnapshot = originalFile;
     } else {
       sourceType = 'uploaded_docx';
-      const extracted = await mammoth.extractRawText({ path: req.file.path });
-      builderBlocks = [
-        { id: 'heading-upload', type: 'heading', content: { text: title } },
-        { id: 'text-upload', type: 'text', content: { text: extracted.value || '' } },
-        { id: 'signature-upload', type: 'signature', content: { label: 'Signature' } }
-      ];
-      const buffer = await onboardingPdfService.renderBuilderDocumentToBuffer({
-        title,
-        builderBlocks,
-        variables: {}
+      const buffer = await documentConversionService.convertUploadedDocxToPdfBuffer(req.file.path, { title });
+      const originalBuffer = await fs.readFile(req.file.path);
+      originalFile = await onboardingStorageService.uploadBuffer(originalBuffer, {
+        folder: 'onboarding/originals',
+        fileName: `${title}-${Date.now()}${path.extname(req.file.originalname) || '.docx'}`,
+        mimeType: req.file.mimetype,
+        resourceType: 'raw'
       });
+      originalFile.originalName = req.file.originalname;
       pdfSnapshot = await onboardingStorageService.uploadBuffer(buffer, {
         folder: 'onboarding/documents',
         fileName: `${title}-${Date.now()}.pdf`,
-        mimeType: 'application/pdf'
+        mimeType: 'application/pdf',
+        resourceType: 'raw'
       });
-      originalFile = {
-        url: '',
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        bytes: req.file.size,
-        renderedAt: new Date()
-      };
+      pdfSnapshot.originalName = `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.pdf`;
     }
 
     const document = await OnboardingDocument.create({
@@ -1419,7 +1419,7 @@ router.post('/documents/upload', upload.single('document'), async (req, res) => 
   } catch (error) {
     await fs.unlink(req.file.path).catch(() => {});
     console.error('Upload onboarding document failed:', error);
-    res.status(500).json({ msg: 'Failed to upload onboarding document', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: error.message || 'Failed to upload onboarding document', error: error.message });
   }
 });
 
@@ -1812,6 +1812,39 @@ router.get('/envelopes/:id/documents/:documentId/preview', async (req, res) => {
   } catch (error) {
     console.error('Envelope document preview failed:', error);
     res.status(500).json({ msg: 'Failed to preview envelope document', error: error.message });
+  }
+});
+
+router.get('/envelopes/:id/documents/:documentId/download', async (req, res) => {
+  try {
+    const envelope = await OnboardingEnvelope.findOne({
+      _id: req.params.id,
+      organization: organizationId(req)
+    });
+    if (!envelope) return res.status(404).json({ msg: 'Envelope not found' });
+
+    const envelopeDocument = envelope.documents.id(req.params.documentId) ||
+      envelope.documents.find((doc) => doc.document.toString() === req.params.documentId);
+    if (!envelopeDocument) return res.status(404).json({ msg: 'Envelope document not found' });
+
+    const buffer = await loadEnvelopeDocumentPdfBuffer(envelopeDocument);
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: envelope.onboarding,
+      envelope: envelope._id,
+      document: envelopeDocument.document,
+      candidate: envelope.candidate,
+      actorType: 'user',
+      actorUser: req.user.id,
+      action: 'internal_document_downloaded'
+    });
+
+    sendPdf(res, buffer, { title: envelopeDocument.title, disposition: 'attachment' });
+  } catch (error) {
+    console.error('Envelope document download failed:', error);
+    res.status(500).json({ msg: 'Failed to download envelope document', error: error.message });
   }
 });
 

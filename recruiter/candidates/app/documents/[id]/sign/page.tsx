@@ -7,8 +7,10 @@ import { ArrowLeft, CheckCircle2, Crop, Download, Eraser, ExternalLink, FileWarn
 import { toast } from "sonner"
 import { CandidateShell, StatusPill } from "@/components/candidate-ui"
 import { PdfCanvasPreview } from "@/components/pdf-canvas-preview"
+import { TransitionFlowNav, TransitionFlowTopNav } from "@/components/transition-flow-nav"
 import { completeDocument, downloadDocumentBlob, getAccessToken, getDocument, getDocumentPreviewBlob, getStoredAccount, logout, signDocument } from "@/lib/api"
-import type { CandidateAccount, CandidateDocumentPayload } from "@/lib/types"
+import { transitionActionHref } from "@/lib/transition-flow"
+import type { CandidateAccount, CandidateDocumentPayload, CandidateOnboarding } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 type SignatureMode = "draw" | "upload"
@@ -79,6 +81,7 @@ export default function CandidateSignDocumentPage() {
   const uploadedSignatureUrlRef = useRef("")
   const [account, setAccount] = useState<CandidateAccount | null>(null)
   const [payload, setPayload] = useState<CandidateDocumentPayload | null>(null)
+  const [transition, setTransition] = useState<CandidateOnboarding | null>(null)
   const [loading, setLoading] = useState(true)
   const [signatureMode, setSignatureMode] = useState<SignatureMode>("draw")
   const [drawing, setDrawing] = useState(false)
@@ -143,6 +146,7 @@ export default function CandidateSignDocumentPage() {
 
     setLoading(true)
     setPayload(null)
+    setTransition(null)
     setSignatureMode("draw")
     setHasSignature(false)
     setSignaturePreviewUrl("")
@@ -170,6 +174,7 @@ export default function CandidateSignDocumentPage() {
     getDocument(params.id)
       .then((result) => {
         setPayload(result.data)
+        setTransition(result.transition || null)
         const nextValues: Record<string, string> = {}
         ;(result.data.document.signatureFields || [])
           .filter((field) => (field.role || "candidate") === "candidate" && field.type === "text")
@@ -533,7 +538,12 @@ export default function CandidateSignDocumentPage() {
         router.push(`/documents/${result.nextDocumentId}/sign`)
       } else {
         toast.success(fillOnly ? "Document completed" : "Document signed")
-        router.push(`/documents/${params.id}/complete`)
+        const nextActionType = result.transition?.nextAction?.type
+        if (nextActionType && nextActionType !== "waiting" && nextActionType !== "complete") {
+          router.push(transitionActionHref(result.transition, `/documents/${params.id}/complete`))
+        } else {
+          router.push(`/documents/${params.id}/complete`)
+        }
       }
     } catch (error: any) {
       toast.error(error.message || (fillOnly ? "Could not complete document" : "Could not sign document"))
@@ -576,14 +586,18 @@ export default function CandidateSignDocumentPage() {
       onSignOut={signOut}
     >
       <section className="mx-auto max-w-7xl">
-        <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950">
+        <Link href={transition?._id ? `/transitions/${transition._id}` : "/dashboard"} className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950">
           <ArrowLeft className="h-4 w-4" />
-          Dashboard
+          {transition?._id ? "Back to packet" : "Dashboard"}
         </Link>
 
         {loading && <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-soft">Loading document...</div>}
 
         {!loading && payload && (
+          <>
+          <div className="mt-5 lg:hidden">
+            <TransitionFlowTopNav brand={brand} record={transition} currentStepId={`document:${payload.document._id}`} />
+          </div>
           <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
             <section className="min-h-[760px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
               <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -656,7 +670,11 @@ export default function CandidateSignDocumentPage() {
               </div>
             </section>
 
-            <aside className="h-fit rounded-md border border-slate-200 bg-white p-5 shadow-soft lg:sticky lg:top-24">
+            <aside className="h-fit space-y-4 lg:sticky lg:top-24">
+              <div className="hidden lg:block">
+                <TransitionFlowNav brand={brand} record={transition} currentStepId={payload ? `document:${payload.document._id}` : undefined} />
+              </div>
+              <section className="rounded-md border border-slate-200 bg-white p-5 shadow-soft">
               <div className="mb-5">
                 <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>{isFillOnly ? "Fillable fields" : "Signature"}</div>
                 <h2 className="mt-2 text-2xl font-semibold text-slate-950">{isFillOnly ? "Complete required fields" : "Complete your signature"}</h2>
@@ -1004,8 +1022,10 @@ export default function CandidateSignDocumentPage() {
                 {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 {downloading ? "Preparing PDF..." : "Download available copy"}
               </button>
+              </section>
             </aside>
           </div>
+          </>
         )}
       </section>
     </CandidateShell>

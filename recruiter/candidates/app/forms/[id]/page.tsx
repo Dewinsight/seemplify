@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, FileUp, Loader2, Save, ShieldCheck, Send } from "lucide-react"
 import { toast } from "sonner"
 import { CandidateShell, StatusPill } from "@/components/candidate-ui"
+import { TransitionFlowNav, TransitionFlowTopNav } from "@/components/transition-flow-nav"
 import {
   getAccessToken,
   getOnboardingForm,
@@ -15,7 +16,8 @@ import {
   submitOnboardingForm,
   uploadOnboardingFormFile,
 } from "@/lib/api"
-import type { CandidateAccount, OnboardingFormField, OnboardingFormSubmission } from "@/lib/types"
+import { transitionActionHref } from "@/lib/transition-flow"
+import type { CandidateAccount, CandidateOnboarding, OnboardingFormField, OnboardingFormSubmission } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 function fieldValue(form: OnboardingFormSubmission | null, field: OnboardingFormField) {
@@ -34,6 +36,7 @@ export default function CandidateFormPage() {
   const brand = useCandidateBrand()
   const [account, setAccount] = useState<CandidateAccount | null>(null)
   const [form, setForm] = useState<OnboardingFormSubmission | null>(null)
+  const [transition, setTransition] = useState<CandidateOnboarding | null>(null)
   const [values, setValues] = useState<Record<string, string | boolean>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -54,6 +57,7 @@ export default function CandidateFormPage() {
       .then((result) => {
         const nextForm = result.data
         setForm(nextForm)
+        setTransition(result.transition || null)
         const nextValues: Record<string, string | boolean> = {}
         ;(nextForm.templateSnapshot?.fields || []).forEach((field) => {
           nextValues[field.key] = field.type === "checkbox" ? fieldValue(nextForm, field) === "true" : fieldValue(nextForm, field)
@@ -85,6 +89,7 @@ export default function CandidateFormPage() {
         setSaveStatus("saving")
         const result = await saveOnboardingForm(params.id, values)
         setForm(result.data)
+        setTransition(result.transition || null)
         lastSavedSignatureRef.current = signature
         setSaveStatus("saved")
       } catch {
@@ -106,6 +111,7 @@ export default function CandidateFormPage() {
       setSaving(true)
       const result = await saveOnboardingForm(params.id, values)
       setForm(result.data)
+      setTransition(result.transition || null)
       lastSavedSignatureRef.current = JSON.stringify(values)
       setSaveStatus("saved")
       toast.success("Form saved")
@@ -122,8 +128,9 @@ export default function CandidateFormPage() {
       setSubmitting(true)
       const result = await submitOnboardingForm(params.id, values)
       setForm(result.data)
+      setTransition(result.transition || null)
       toast.success(result.data.status === "under_review" ? "Form submitted for HR review" : "Form submitted")
-      router.push("/dashboard")
+      router.push(transitionActionHref(result.transition, result.transition?._id ? `/transitions/${result.transition._id}` : "/dashboard"))
     } catch (error: any) {
       toast.error(error.message || "Could not submit form")
     } finally {
@@ -138,6 +145,7 @@ export default function CandidateFormPage() {
       setUploadingKey(field.key)
       const result = await uploadOnboardingFormFile(params.id, field.key, file)
       setForm(result.form)
+      setTransition(result.transition || null)
       toast.success("File uploaded")
     } catch (error: any) {
       toast.error(error.message || "Could not upload file")
@@ -160,15 +168,19 @@ export default function CandidateFormPage() {
       subtitle="Complete the required details and submit them for review."
       onSignOut={signOut}
     >
-      <section className="mx-auto max-w-5xl">
-        <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950">
+      <section className="mx-auto max-w-7xl">
+        <Link href={transition?._id ? `/transitions/${transition._id}` : "/dashboard"} className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950">
           <ArrowLeft className="h-4 w-4" />
-          Dashboard
+          {transition?._id ? "Back to packet" : "Dashboard"}
         </Link>
 
         {loading ? (
           <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-soft">Loading form...</div>
         ) : form ? (
+          <>
+          <div className="mt-5 lg:hidden">
+            <TransitionFlowTopNav brand={brand} record={transition} currentStepId={`form:${form._id}`} />
+          </div>
           <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
             <section className="rounded-md border border-slate-200 bg-white shadow-soft">
               <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -294,16 +306,22 @@ export default function CandidateFormPage() {
               </div>
             </section>
 
-            <aside className="h-fit rounded-md border border-slate-200 bg-white p-5 shadow-soft">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                <ShieldCheck className="h-4 w-4 text-emerald-700" />
-                Secure review
+            <aside className="h-fit space-y-4 lg:sticky lg:top-24">
+              <div className="hidden lg:block">
+                <TransitionFlowNav brand={brand} record={transition} currentStepId={form ? `form:${form._id}` : undefined} />
               </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Bank and tax values are stored encrypted. Recruiters see masked values unless they explicitly reveal them for review.
-              </p>
+              <section className="rounded-md border border-slate-200 bg-white p-5 shadow-soft">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                  <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                  Secure review
+                </div>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  Bank and tax values are stored encrypted. Recruiters see masked values unless they explicitly reveal them for review.
+                </p>
+              </section>
             </aside>
           </div>
+          </>
         ) : (
           <div className="mt-5 rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-soft">Form not found.</div>
         )}

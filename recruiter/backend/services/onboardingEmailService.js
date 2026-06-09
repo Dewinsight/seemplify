@@ -1,7 +1,17 @@
+const CandidateOnboarding = require('../models/CandidateOnboarding');
 const emailService = require('./emailService');
+const { processCopy } = require('./onboardingWorkflowService');
 
 const DEFAULT_CANDIDATE_PORTAL_URL = 'https://candidate.seemplifyai.com';
 const DEFAULT_AKWA_IBOM_CANDIDATE_PORTAL_URL = 'https://candidate-ibom.aiinnigeria.com';
+
+const HTML_ESCAPE_MAP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+};
 
 function normalizeBaseUrl(value) {
   return String(value || '').trim().replace(/\/$/, '');
@@ -79,11 +89,181 @@ function candidateName(candidate = {}) {
   return `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email || 'Candidate';
 }
 
-function processLabel(onboarding = {}) {
-  const processType = onboarding?.processType || 'onboarding';
-  if (processType === 'exit') return 'exit';
-  if (processType === 'retirement') return 'retirement';
-  return 'onboarding';
+function escapeHtml(value = '') {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ESCAPE_MAP[char]);
+}
+
+function compactText(value = '') {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(date);
+}
+
+function safeProcessCopy(processType) {
+  try {
+    return processCopy(processType || 'onboarding');
+  } catch (error) {
+    return { label: 'Onboarding' };
+  }
+}
+
+async function transitionSummary(onboardingOrEnvelope = {}) {
+  const rawTransition = onboardingOrEnvelope && onboardingOrEnvelope.onboarding !== undefined
+    ? onboardingOrEnvelope.onboarding
+    : onboardingOrEnvelope;
+  const rawTransitionId = rawTransition?._id || rawTransition || '';
+
+  let transition = null;
+  if (rawTransition && typeof rawTransition === 'object' && rawTransition.processType) {
+    transition = rawTransition;
+  } else if (rawTransitionId) {
+    transition = await CandidateOnboarding.findById(rawTransitionId)
+      .select('_id title processType dueAt')
+      .lean()
+      .catch(() => null);
+  }
+
+  const copy = safeProcessCopy(transition?.processType || rawTransition?.processType);
+  const id = transition?._id || rawTransitionId;
+  const label = copy.label || 'Transition';
+
+  return {
+    id: id ? String(id) : '',
+    label,
+    lowerLabel: label.toLowerCase(),
+    title: transition?.title || `${label} process`
+  };
+}
+
+function transitionPortalPath(transition) {
+  return `/transitions/${encodeURIComponent(transition.id)}`;
+}
+
+function renderDetails(details = []) {
+  const rows = details
+    .filter((detail) => detail && detail.value !== undefined && detail.value !== null && String(detail.value).trim())
+    .map((detail) => `
+      <tr>
+        <td style="padding: 9px 0; color: #6b7280; font-size: 13px; line-height: 18px; width: 38%;">${escapeHtml(detail.label)}</td>
+        <td style="padding: 9px 0; color: #111827; font-size: 13px; line-height: 18px; font-weight: 600;">${escapeHtml(detail.value)}</td>
+      </tr>
+    `)
+    .join('');
+
+  if (!rows) return '';
+
+  return `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; margin: 22px 0;">
+      ${rows}
+    </table>
+  `;
+}
+
+function renderTransitionEmail({
+  organizationName,
+  processLabel,
+  preheader,
+  title,
+  greeting,
+  body = [],
+  details = [],
+  actionLabel,
+  actionUrl,
+  note
+}) {
+  const safeActionUrl = actionUrl ? escapeHtml(actionUrl) : '';
+  const paragraphs = body
+    .filter((paragraph) => paragraph !== undefined && paragraph !== null && String(paragraph).trim())
+    .map((paragraph) => `<p style="margin: 0 0 14px 0; color: #374151; font-size: 15px; line-height: 23px;">${escapeHtml(paragraph)}</p>`)
+    .join('');
+
+  return `<!doctype html>
+<html>
+  <body style="margin: 0; padding: 0; background: #f6f7f9;">
+    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">${escapeHtml(preheader || title)}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: #f6f7f9; padding: 32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 640px;">
+            <tr>
+              <td style="padding: 0 0 12px 0;">
+                <div style="color: #111827; font-family: Helvetica, sans-serif; font-size: 15px; font-weight: 700; line-height: 20px;">${escapeHtml(organizationName)}</div>
+                <div style="color: #6b7280; font-family: Helvetica, sans-serif; font-size: 12px; line-height: 18px;">People Transitions / ${escapeHtml(processLabel)}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; padding: 28px;">
+                <h1 style="margin: 0 0 16px 0; color: #111827; font-family: Helvetica, sans-serif; font-size: 22px; line-height: 29px; font-weight: 700;">${escapeHtml(title)}</h1>
+                <p style="margin: 0 0 14px 0; color: #111827; font-family: Helvetica, sans-serif; font-size: 15px; line-height: 23px;">${escapeHtml(greeting)}</p>
+                ${paragraphs}
+                ${renderDetails(details)}
+                ${safeActionUrl ? `
+                  <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 22px 0 18px 0;">
+                    <tr>
+                      <td>
+                        <a href="${safeActionUrl}" style="display: inline-block; background: #111827; color: #ffffff; font-family: Helvetica, sans-serif; font-size: 14px; line-height: 18px; font-weight: 700; text-decoration: none; padding: 12px 16px; border-radius: 8px;">${escapeHtml(actionLabel || 'Open')}</a>
+                      </td>
+                    </tr>
+                  </table>
+                  <p style="margin: 0; color: #6b7280; font-family: Helvetica, sans-serif; font-size: 12px; line-height: 18px;">If the button does not work, copy this link into your browser:<br><a href="${safeActionUrl}" style="color: #374151; word-break: break-all;">${safeActionUrl}</a></p>
+                ` : ''}
+                ${note ? `<p style="margin: 18px 0 0 0; color: #6b7280; font-family: Helvetica, sans-serif; font-size: 12px; line-height: 18px;">${escapeHtml(note)}</p>` : ''}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 14px 0 0 0; color: #6b7280; font-family: Helvetica, sans-serif; font-size: 12px; line-height: 18px;">
+                Sent by Seemplify on behalf of ${escapeHtml(organizationName)}.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+function renderTextEmail({ title, greeting, body = [], details = [], actionLabel, actionUrl, note }) {
+  const lines = [
+    compactText(title),
+    '',
+    compactText(greeting),
+    ...body.map(compactText).filter(Boolean),
+    '',
+    ...details
+      .filter((detail) => detail && detail.value !== undefined && detail.value !== null && String(detail.value).trim())
+      .map((detail) => `${compactText(detail.label)}: ${compactText(detail.value)}`),
+    '',
+    actionUrl ? `${compactText(actionLabel || 'Open')}: ${actionUrl}` : '',
+    note ? `\n${compactText(note)}` : ''
+  ].filter((line, index, all) => line || all[index - 1]);
+
+  return lines.join('\n').trim();
+}
+
+function envelopeTitle(envelope = {}) {
+  return envelope.title || 'Document packet';
+}
+
+function signerActionUrl({ signer, envelope, transition, organization, request, req }) {
+  if (signer?.role === 'internal') {
+    return `${recruiterFrontendBaseUrl()}/people-transitions/envelopes/${envelope._id}`;
+  }
+  return candidatePortalUrl(transitionPortalPath(transition), { organization, request: request || req });
+}
+
+function envelopeDocumentCount(envelope = {}) {
+  const count = Array.isArray(envelope.documents) ? envelope.documents.length : 0;
+  if (!count) return '';
+  return `${count} document${count === 1 ? '' : 's'}`;
 }
 
 async function sendCandidateInvite({ candidate, organization, inviteToken, onboarding, request, req }) {
@@ -91,143 +271,242 @@ async function sendCandidateInvite({ candidate, organization, inviteToken, onboa
   const portalUrl = candidatePortalUrl(`/signup?token=${encodeURIComponent(inviteToken)}`, portalContext);
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
-  const label = processLabel(onboarding);
+  const transition = await transitionSummary(onboarding);
+  const title = `Your ${transition.lowerLabel} process is ready`;
+  const greeting = `Hello ${name},`;
+  const body = [
+    `${organizationName} has started your ${transition.lowerLabel} process in the candidate portal.`,
+    'Use the secure link below to review your tasks, complete any requested forms, and sign documents when they are ready.'
+  ];
+  const details = [
+    { label: 'Process', value: transition.label },
+    { label: 'Transition', value: transition.title }
+  ];
 
   await emailService.sendEmail({
     to: candidate.email,
-    subject: `${label[0].toUpperCase()}${label.slice(1)} documents from ${organizationName}`,
+    subject: `${transition.label} process from ${organizationName}`,
     organizationName,
-    text: `Hello ${name}, ${organizationName} has started your ${label} process. Open ${portalUrl} to review and sign your documents.`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Your ${label} process is ready</h2>
-        <p>Hello ${name},</p>
-        <p>${organizationName} has started your ${label} process. Use the secure portal below to review and sign your documents.</p>
-        <p style="margin: 24px 0;">
-          <a href="${portalUrl}" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Open candidate portal</a>
-        </p>
-        <p style="color:#64748b;font-size:13px;">This invitation is linked to transition ${onboarding?._id || ''}.</p>
-      </div>
-    `
+    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Open candidate portal', actionUrl: portalUrl }),
+    html: renderTransitionEmail({
+      organizationName,
+      processLabel: transition.label,
+      preheader: `${organizationName} has started your ${transition.lowerLabel} process.`,
+      title,
+      greeting,
+      body,
+      details,
+      actionLabel: 'Open candidate portal',
+      actionUrl: portalUrl
+    })
   });
 
   return portalUrl;
 }
 
 async function sendEnvelopeNotification({ candidate, organization, envelope, request, req }) {
-  const portalUrl = candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req });
+  const transition = await transitionSummary(envelope);
+  const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization, request: request || req });
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
+  const packetTitle = envelopeTitle(envelope);
+  const title = 'Documents are ready';
+  const greeting = `Hello ${name},`;
+  const body = [
+    `${organizationName} sent a document packet for your ${transition.lowerLabel} process.`,
+    'Review each document in the candidate portal. The portal will guide you through the packet in order.'
+  ];
+  const details = [
+    { label: 'Process', value: transition.label },
+    { label: 'Packet', value: packetTitle },
+    { label: 'Documents', value: envelopeDocumentCount(envelope) }
+  ];
 
   return emailService.sendEmail({
     to: candidate.email,
-    subject: `Documents ready for signature: ${envelope.title}`,
+    subject: `${transition.label} documents ready: ${packetTitle}`,
     organizationName,
-    text: `Hello ${name}, documents are ready for your signature. Open ${portalUrl}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Documents ready for signature</h2>
-        <p>Hello ${name},</p>
-        <p>${organizationName} sent you <strong>${envelope.title}</strong> for review and signature.</p>
-        <p style="margin: 24px 0;">
-          <a href="${portalUrl}" style="background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Review and sign</a>
-        </p>
-      </div>
-    `
+    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Review documents', actionUrl: portalUrl }),
+    html: renderTransitionEmail({
+      organizationName,
+      processLabel: transition.label,
+      preheader: `${packetTitle} is ready for review.`,
+      title,
+      greeting,
+      body,
+      details,
+      actionLabel: 'Review documents',
+      actionUrl: portalUrl
+    })
   });
 }
 
 async function sendEnvelopeReminder({ signer, organization, envelope, request, req }) {
-  const portalUrl = signer.role === 'candidate'
-    ? candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req })
-    : `${recruiterFrontendBaseUrl()}/people-transitions/envelopes/${envelope._id}`;
+  const transition = await transitionSummary(envelope);
+  const portalUrl = signerActionUrl({ signer, envelope, transition, organization, request, req });
   const organizationName = organization?.name || 'Seemplify';
+  const name = signer.name || signer.email || 'there';
+  const packetTitle = envelopeTitle(envelope);
+  const title = 'Signature reminder';
+  const greeting = `Hello ${name},`;
+  const body = [
+    `${packetTitle} is still waiting for your signature.`,
+    signer.role === 'internal'
+      ? 'Open the recruiter workspace to review the packet and complete your signing step.'
+      : 'Open the candidate portal to continue from the next pending document.'
+  ];
+  const details = [
+    { label: 'Process', value: transition.label },
+    { label: 'Packet', value: packetTitle },
+    { label: 'Status', value: 'Waiting for signature' }
+  ];
 
   return emailService.sendEmail({
     to: signer.email,
-    subject: `Reminder: ${envelope.title} needs your signature`,
+    subject: `Reminder: ${packetTitle} needs your signature`,
     organizationName,
-    text: `Reminder: ${envelope.title} needs your signature. Open ${portalUrl}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Signature reminder</h2>
-        <p>${envelope.title} is still waiting for your signature.</p>
-        <p style="margin: 24px 0;">
-          <a href="${portalUrl}" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Open document</a>
-        </p>
-      </div>
-    `
+    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Open document packet', actionUrl: portalUrl }),
+    html: renderTransitionEmail({
+      organizationName,
+      processLabel: transition.label,
+      preheader: `${packetTitle} is still waiting for your signature.`,
+      title,
+      greeting,
+      body,
+      details,
+      actionLabel: 'Open document packet',
+      actionUrl: portalUrl
+    })
   });
 }
 
 async function sendEnvelopeSignerNotification({ signer, organization, envelope, request, req }) {
-  const portalUrl = signer.role === 'candidate'
-    ? candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req })
-    : `${recruiterFrontendBaseUrl()}/people-transitions/envelopes/${envelope._id}`;
+  const transition = await transitionSummary(envelope);
+  const portalUrl = signerActionUrl({ signer, envelope, transition, organization, request, req });
   const organizationName = organization?.name || 'Seemplify';
-  const name = signer.name || signer.email || 'Signer';
+  const name = signer.name || signer.email || 'there';
+  const packetTitle = envelopeTitle(envelope);
+  const title = 'Your signature is requested';
+  const greeting = `Hello ${name},`;
+  const body = [
+    `${organizationName} sent ${packetTitle} for your review and signature.`,
+    signer.role === 'internal'
+      ? 'This packet is ready for your internal signing step.'
+      : 'The candidate portal will take you to the next document that needs your action.'
+  ];
+  const details = [
+    { label: 'Process', value: transition.label },
+    { label: 'Packet', value: packetTitle },
+    { label: 'Signer role', value: signer.role === 'internal' ? 'Internal signer' : 'Candidate' }
+  ];
 
   return emailService.sendEmail({
     to: signer.email,
-    subject: `Documents ready for signature: ${envelope.title}`,
+    subject: `${transition.label} signature requested: ${packetTitle}`,
     organizationName,
-    text: `Hello ${name}, ${envelope.title} is ready for your signature. Open ${portalUrl}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Documents ready for signature</h2>
-        <p>Hello ${name},</p>
-        <p>${organizationName} sent you <strong>${envelope.title}</strong> for review and signature.</p>
-        <p style="margin: 24px 0;">
-          <a href="${portalUrl}" style="background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Review and sign</a>
-        </p>
-      </div>
-    `
+    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Review and sign', actionUrl: portalUrl }),
+    html: renderTransitionEmail({
+      organizationName,
+      processLabel: transition.label,
+      preheader: `${packetTitle} is ready for your signature.`,
+      title,
+      greeting,
+      body,
+      details,
+      actionLabel: 'Review and sign',
+      actionUrl: portalUrl
+    })
   });
 }
 
 async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, request, req }) {
-  const portalUrl = candidatePortalUrl(`/transitions/${envelope.onboarding}`, { organization, request: request || req });
+  const transition = await transitionSummary(envelope);
+  const recipientSigner = Array.isArray(envelope.signers)
+    ? envelope.signers.find((signer) => String(signer.email || '').toLowerCase() === String(recipientEmail || '').toLowerCase())
+    : null;
+  const portalUrl = signerActionUrl({
+    signer: recipientSigner || { role: 'candidate' },
+    envelope,
+    transition,
+    organization,
+    request,
+    req
+  });
   const organizationName = organization?.name || 'Seemplify';
+  const packetTitle = envelopeTitle(envelope);
+  const name = recipientSigner?.name || recipientEmail || 'there';
+  const title = 'Documents completed';
+  const greeting = `Hello ${name},`;
+  const body = [
+    `${packetTitle} has been completed for the ${transition.lowerLabel} process.`,
+    recipientSigner?.role === 'internal'
+      ? 'Open the recruiter workspace to review the completed envelope.'
+      : 'You can open the candidate portal to view or download the completed documents.'
+  ];
+  const details = [
+    { label: 'Process', value: transition.label },
+    { label: 'Packet', value: packetTitle },
+    { label: 'Status', value: 'Completed' }
+  ];
 
   return emailService.sendEmail({
     to: recipientEmail,
-    subject: `Completed documents: ${envelope.title}`,
+    subject: `Completed ${transition.lowerLabel} documents: ${packetTitle}`,
     organizationName,
-    text: `${envelope.title} has been completed. Open ${portalUrl} to download the signed documents.`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Documents completed</h2>
-        <p>${envelope.title} has been completed.</p>
-        <p style="margin: 24px 0;">
-          <a href="${portalUrl}" style="background:#16a34a;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Download documents</a>
-        </p>
-      </div>
-    `
+    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Open completed documents', actionUrl: portalUrl }),
+    html: renderTransitionEmail({
+      organizationName,
+      processLabel: transition.label,
+      preheader: `${packetTitle} has been completed.`,
+      title,
+      greeting,
+      body,
+      details,
+      actionLabel: 'Open completed documents',
+      actionUrl: portalUrl
+    })
   });
 }
 
 async function sendWorkflowReminder({ candidate, organization, onboarding, item, request, req }) {
-  const portalUrl = candidatePortalUrl(`/transitions/${onboarding._id || onboarding}`, { organization, request: request || req });
+  const transition = await transitionSummary(onboarding);
+  const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization, request: request || req });
   const name = candidateName(candidate);
   const organizationName = organization?.name || 'Seemplify';
-  const label = processLabel(onboarding);
-  const title = item?.title || onboarding?.title || `Your ${label}`;
+  const taskTitle = item?.title || transition.title;
+  const dueAt = item?.dueAt ? new Date(item.dueAt) : null;
+  const isOverdue = dueAt && !Number.isNaN(dueAt.getTime()) && dueAt < new Date();
+  const title = isOverdue ? 'Action overdue' : 'Action due soon';
+  const greeting = `Hello ${name},`;
+  const body = [
+    `${taskTitle} is waiting in your transition portal.`,
+    isOverdue
+      ? 'Please complete it as soon as possible so the process can continue.'
+      : 'Please complete it before the due date so the process stays on track.'
+  ];
+  const details = [
+    { label: 'Process', value: transition.label },
+    { label: 'Task', value: taskTitle },
+    { label: 'Due date', value: formatDate(item?.dueAt) },
+    { label: 'Status', value: isOverdue ? 'Overdue' : 'Due soon' }
+  ];
 
   return emailService.sendEmail({
     to: candidate.email,
-    subject: `Reminder: ${title}`,
+    subject: `${isOverdue ? 'Overdue' : 'Due soon'}: ${taskTitle}`,
     organizationName,
-    text: `Hello ${name}, ${title} is still waiting in your transition portal. Open ${portalUrl}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px;">
-        <h2 style="margin: 0 0 12px 0;">Transition reminder</h2>
-        <p>Hello ${name},</p>
-        <p><strong>${title}</strong> is still waiting in your transition portal.</p>
-        <p style="margin: 24px 0;">
-          <a href="${portalUrl}" style="background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Open portal</a>
-        </p>
-      </div>
-    `
+    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Open transition portal', actionUrl: portalUrl }),
+    html: renderTransitionEmail({
+      organizationName,
+      processLabel: transition.label,
+      preheader: `${taskTitle} is ${isOverdue ? 'overdue' : 'due soon'}.`,
+      title,
+      greeting,
+      body,
+      details,
+      actionLabel: 'Open transition portal',
+      actionUrl: portalUrl
+    })
   });
 }
 

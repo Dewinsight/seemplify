@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation"
 import { ArrowRight, Check, ClipboardList, Download, FileSignature, PenLine, ShieldCheck, UsersRound } from "lucide-react"
 import { toast } from "sonner"
 import { CandidateShell, EmptyState, ProgressRail, StatusPill } from "@/components/candidate-ui"
+import { TransitionFlowNav, TransitionFlowTopNav } from "@/components/transition-flow-nav"
 import { getAccessToken, getOnboarding, getStoredAccount, logout } from "@/lib/api"
 import type { CandidateAccount, CandidateOnboarding, EnvelopeDocument } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
@@ -141,6 +142,10 @@ export default function CandidateOnboardingDetailPage() {
               </div>
             )}
 
+            <div className="mt-5 xl:hidden">
+              <TransitionFlowTopNav brand={brand} record={record} />
+            </div>
+
             <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="space-y-5">
                 <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-soft">
@@ -263,22 +268,27 @@ export default function CandidateOnboardingDetailPage() {
                 ))}
               </div>
 
-              <aside className="h-fit rounded-md border border-slate-200 bg-white p-5 shadow-soft">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                  <UsersRound className={`h-4 w-4 ${brand.accentTextClass}`} />
-                  Signing order
+              <aside className="h-fit space-y-4 xl:sticky xl:top-24">
+                <div className="hidden xl:block">
+                  <TransitionFlowNav brand={brand} record={record} />
                 </div>
-                <div className="mt-4 space-y-3">
-                  {(record.envelopes || []).flatMap((envelope) => envelope.signers || []).map((signer) => (
-                    <div key={signer._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-slate-950">{signer.name || signer.email}</div>
-                        <div className="truncate text-xs text-slate-500">{signer.role} signer</div>
+                <section className="rounded-md border border-slate-200 bg-white p-5 shadow-soft">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                    <UsersRound className={`h-4 w-4 ${brand.accentTextClass}`} />
+                    Signing order
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {(record.envelopes || []).flatMap((envelope) => envelope.signers || []).map((signer) => (
+                      <div key={signer._id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-950">{signer.name || signer.email}</div>
+                          <div className="truncate text-xs text-slate-500">{signer.role} signer</div>
+                        </div>
+                        <StatusPill status={signer.status} />
                       </div>
-                      <StatusPill status={signer.status} />
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </section>
               </aside>
             </div>
           </>

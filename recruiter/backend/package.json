@@ -72,6 +72,8 @@
     "compare-cv-models": "node scripts/compareCvExtractionModels.js",
     "test:bulk-pipeline": "node scripts/testBulkPipeline.js",
     "test:llm": "node scripts/verifyLlmDeployment.js",
+    "test:candidate-transition-flow": "node scripts/verifyCandidateTransitionFlow.js",
+    "test:candidate-portal-integration": "node scripts/verifyCandidatePortalIntegration.js",
     "audit:credits": "node scripts/auditCreditEconomics.js",
     "apply:credits": "node scripts/applyCreditEconomics2026.js --dry-run",
     "apply:credits:force": "node scripts/applyCreditEconomics2026.js --apply",
@@ -87,6 +89,7 @@
   "description": "",
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.11.2",
+    "mongodb-memory-server": "^10.1.4",
     "nodemon": "^3.1.11"
   }
 }

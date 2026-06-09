@@ -224,7 +224,7 @@ export default function OnboardingDashboardPage() {
               ) : events.map((event) => (
                 <div key={event._id} className="border-b pb-3 last:border-0">
                   <div className="text-sm font-medium text-slate-900">{event.action.replace(/_/g, " ")}</div>
-                  <div className="text-xs text-slate-500">{event.actorEmail || event.actorType} · {new Date(event.createdAt).toLocaleString()}</div>
+                  <div className="text-xs text-slate-500">{event.actorEmail || event.actorType} - {new Date(event.createdAt).toLocaleString()}</div>
                 </div>
               ))}
             </div>

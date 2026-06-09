@@ -1299,7 +1299,7 @@ function computeCandidateNextAction({ onboarding, workflowItems = [], formSubmis
   }
 
   const documentActions = [];
-  for (const envelope of envelopes) {
+  for (const [envelopeIndex, envelope] of envelopes.entries()) {
     if (!ACTIVE_ENVELOPE_STATUSES.includes(envelope.status)) continue;
     const signer = candidateSignerForEnvelope(envelope, onboarding.candidateAccount);
     if (!signer || signer.status === 'signed' || !signerCanAct(envelope, signer)) continue;
@@ -1316,7 +1316,7 @@ function computeCandidateNextAction({ onboarding, workflowItems = [], formSubmis
         status: envelopeDocument.status,
         processType,
         recordId,
-        order: Number(workflowItem?.order || 0) * 1000 + index,
+        order: Number(workflowItem?.order || 0) * 100000 + envelopeIndex * 1000 + index,
         sourceIds: {
           workflowItemId: workflowItem?._id,
           envelopeId: envelope._id,
@@ -1326,15 +1326,8 @@ function computeCandidateNextAction({ onboarding, workflowItems = [], formSubmis
     });
   }
 
-  const nextFillDocument = documentActions
-    .filter((action) => action.type === 'document_fill')
-    .sort((a, b) => a.order - b.order)[0];
-  if (nextFillDocument) return nextFillDocument;
-
-  const nextSignDocument = documentActions
-    .filter((action) => action.type === 'document_sign')
-    .sort((a, b) => a.order - b.order)[0];
-  if (nextSignDocument) return nextSignDocument;
+  const nextDocumentAction = documentActions.sort((a, b) => a.order - b.order)[0];
+  if (nextDocumentAction) return nextDocumentAction;
 
   if (onboarding.status === 'completed') {
     return {
