@@ -15,6 +15,7 @@ const AzureOpenAIService = require('../services/azureOpenAIService');
 const emailService = require('../services/emailService');
 const pdfService = require('../services/pdfService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationBrand } = require('../utils/organizationBrand');
 const { handleNylasError, handleInterviewError } = require('../utils/errorHandler');
 const timezoneUtils = require('../utils/timezoneUtils');
 const mongoose = require('mongoose');
@@ -340,7 +341,7 @@ function buildTeamsPreflightError({ provider, grantVerification }) {
 async function resolveOrganizationName({
   interviewer = null,
   organizationId = null,
-  fallback = process.env.DEFAULT_ORGANIZATION_NAME || process.env.ORGANIZATION_NAME || process.env.BREVO_SENDER_NAME || 'Organization'
+  fallback = resolveOrganizationBrand()
 } = {}) {
   try {
     const fromInterviewer = interviewer?.organization?.name;

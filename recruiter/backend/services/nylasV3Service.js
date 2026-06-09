@@ -1,11 +1,8 @@
 const Nylas = require('nylas').default;
 const configLoader = require('../config/configLoader');
 const emailService = require('./emailService');
-const DEFAULT_ORGANIZATION_NAME =
-  process.env.DEFAULT_ORGANIZATION_NAME ||
-  process.env.ORGANIZATION_NAME ||
-  process.env.BREVO_SENDER_NAME ||
-  'Organization';
+const { resolveOrganizationBrand } = require('../utils/organizationBrand');
+const DEFAULT_ORGANIZATION_NAME = resolveOrganizationBrand();
 
 class NylasV3Service {
   constructor() {

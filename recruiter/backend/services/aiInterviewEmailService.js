@@ -5,6 +5,7 @@ const AIInterviewSession = require('../models/AIInterviewSession');
 const Organization = require('../models/Organization');
 const emailService = require('./emailService');
 const creditsService = require('./creditsService');
+const { resolveOrganizationBrand } = require('../utils/organizationBrand');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
 
@@ -201,7 +202,7 @@ class AIInterviewEmailService {
     const organizationName =
       interview.organization?.name ||
       (await Organization.findById(organizationId).select('name'))?.name ||
-      'Organization';
+      resolveOrganizationBrand();
     const jobTitle = interview.job?.title || 'the role';
     const candidateName = session.candidateSnapshot?.name || candidateEmail;
 

@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Candidate = require('../models/Candidate');
 const Organization = require('../models/Organization');
 const emailService = require('./emailService');
+const { resolveOrganizationBrand } = require('../utils/organizationBrand');
 const mongoose = require('mongoose');
 
 class InterviewFeedbackEmailService {
@@ -179,11 +180,7 @@ class InterviewFeedbackEmailService {
       const { decodeHtmlEntities } = require('../utils/htmlDecode');
       const job = interview.jobId;
       const jobTitle = job ? decodeHtmlEntities(job.title) : 'Position';
-      let organizationName =
-        process.env.DEFAULT_ORGANIZATION_NAME ||
-        process.env.ORGANIZATION_NAME ||
-        process.env.BREVO_SENDER_NAME ||
-        'Organization';
+      let organizationName = resolveOrganizationBrand();
       if (interview.organizationId && mongoose.Types.ObjectId.isValid(String(interview.organizationId))) {
         const org = await Organization.findById(interview.organizationId).select('name');
         if (org?.name) {

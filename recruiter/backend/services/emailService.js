@@ -1,5 +1,6 @@
 const Handlebars = require('handlebars');
 const { decodeHtmlEntities, decodeObjectHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationBrand } = require('../utils/organizationBrand');
 const {
   isHtmlLike,
   escapeHtml,
@@ -35,13 +36,7 @@ class EmailService {
   }
 
   getOrganizationBrand(organizationName = null) {
-    return decodeHtmlEntities(
-      organizationName ||
-      process.env.DEFAULT_ORGANIZATION_NAME ||
-      process.env.ORGANIZATION_NAME ||
-      process.env.BREVO_SENDER_NAME ||
-      'Organization'
-    );
+    return resolveOrganizationBrand(organizationName);
   }
 
   ensureOrganizationSubject(subject, organizationName = null) {

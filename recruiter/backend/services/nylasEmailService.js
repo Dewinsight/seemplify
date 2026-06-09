@@ -2,6 +2,7 @@ const Nylas = require('nylas').default;
 const Handlebars = require('handlebars');
 const configLoader = require('../config/configLoader');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationBrand } = require('../utils/organizationBrand');
 const {
   isHtmlLike,
   sanitizeEmailHtml,
@@ -36,13 +37,7 @@ class NylasEmailService {
     if (!content) {
       return content;
     }
-    const brand = decodeHtmlEntities(
-      organizationName ||
-      process.env.DEFAULT_ORGANIZATION_NAME ||
-      process.env.ORGANIZATION_NAME ||
-      process.env.BREVO_SENDER_NAME ||
-      'Organization'
-    );
+    const brand = resolveOrganizationBrand(organizationName);
     // Replace only standalone SmartHR labels in text content.
     // Do NOT replace when SmartHR is part of URLs/domains/emails (e.g. smarthr.aiinnigeria.com).
     return String(content).replace(
@@ -181,13 +176,7 @@ class NylasEmailService {
         });
       }
 
-      const organizationName = decodeHtmlEntities(
-        templateData.organizationName ||
-        process.env.DEFAULT_ORGANIZATION_NAME ||
-        process.env.ORGANIZATION_NAME ||
-        process.env.BREVO_SENDER_NAME ||
-        'Organization'
-      );
+      const organizationName = resolveOrganizationBrand(templateData.organizationName);
       const brandedHtmlContent = this.applyOrganizationBrand(htmlContent, organizationName);
       const baseSubject = decodeHtmlEntities(customSubject || `Interview Invitation: ${templateData.jobTitle} - ${templateData.interviewDate}`);
       const normalizedSubject = baseSubject.toLowerCase();

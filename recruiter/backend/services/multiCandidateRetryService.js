@@ -11,15 +11,12 @@ const emailService = require('./emailService');
 const pdfService = require('./pdfService');
 const interviewFeedbackEmailService = require('./interviewQuestionEmailService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationBrand } = require('../utils/organizationBrand');
 
 const RETRY_BACKOFF_MINUTES = [2, 10];
 const MAX_TASKS_PER_TICK = 20;
 const STALE_PROCESSING_TIMEOUT_MINUTES = 15;
-const DEFAULT_ORGANIZATION_NAME =
-  process.env.DEFAULT_ORGANIZATION_NAME ||
-  process.env.ORGANIZATION_NAME ||
-  process.env.BREVO_SENDER_NAME ||
-  'Organization';
+const DEFAULT_ORGANIZATION_NAME = resolveOrganizationBrand();
 
 class MultiCandidateRetryService {
   constructor() {
