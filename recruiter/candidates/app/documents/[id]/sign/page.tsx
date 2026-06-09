@@ -574,6 +574,7 @@ export default function CandidateSignDocumentPage() {
   const candidateImageFields = (payload?.document.signatureFields || [])
     .filter((field) => (field.role || "candidate") === "candidate" && field.type === "image")
   const isFillOnly = Boolean(payload?.canCompleteFillOnly || payload?.actionType === "document_fill")
+  const hasCandidateInputFields = candidateTextFields.length > 0 || candidateImageFields.length > 0
   const submitLabel = isFillOnly ? "Complete document" : "Sign document"
   const submitDisabled = !payload?.canSign || submitting || (!isFillOnly && !signaturePreviewUrl)
 
@@ -676,11 +677,13 @@ export default function CandidateSignDocumentPage() {
               </div>
               <section className="rounded-md border border-slate-200 bg-white p-5 shadow-soft">
               <div className="mb-5">
-                <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>{isFillOnly ? "Fillable fields" : "Signature"}</div>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-950">{isFillOnly ? "Complete required fields" : "Complete your signature"}</h2>
+                <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>{isFillOnly ? (hasCandidateInputFields ? "Fillable fields" : "Document completion") : "Signature"}</div>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-950">{isFillOnly ? (hasCandidateInputFields ? "Complete required fields" : "Review and complete") : "Complete your signature"}</h2>
                 <p className="mt-2 text-sm text-slate-600">
                   {isFillOnly
-                    ? "Your field values will be stamped into the recruiter-provided PDF with audit metadata."
+                    ? hasCandidateInputFields
+                      ? "Your field values will be stamped into the recruiter-provided PDF with audit metadata."
+                      : "Your name, email, or date fields will be stamped into the recruiter-provided PDF with audit metadata."
                     : "Your signature will be stamped into the recruiter-provided PDF with date and audit metadata."}
                 </p>
               </div>
@@ -1010,7 +1013,7 @@ export default function CandidateSignDocumentPage() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-700" />
                   Audit trail enabled
                 </div>
-                <p>Opening and signing events are recorded against this transition packet.</p>
+                <p>Opening and {isFillOnly ? "completion" : "signing"} events are recorded against this transition packet.</p>
               </div>
 
               <button

@@ -119,10 +119,9 @@ function candidateFieldsForSigner(envelopeDocument, signer) {
 
 function candidateDocumentActionType(envelopeDocument, signer) {
   const fields = candidateFieldsForSigner(envelopeDocument, signer);
-  const fillFields = fields.filter((field) => ['text', 'image'].includes(field.type));
   const signatureFields = fields.filter((field) => field.type === 'signature');
-  if (fillFields.length && !signatureFields.length) return 'document_fill';
   if (signatureFields.length) return 'document_sign';
+  if (fields.length) return 'document_fill';
   return null;
 }
 

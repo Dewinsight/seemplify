@@ -1239,11 +1239,16 @@ function fieldBelongsToSigner(field, signer) {
 
 function documentActionType(envelopeDocument, signer) {
   const fields = (envelopeDocument?.signatureFields || []).filter((field) => fieldBelongsToSigner(field, signer));
-  const fillFields = fields.filter((field) => ['text', 'image'].includes(field.type));
   const signatureFields = fields.filter((field) => field.type === 'signature');
-  if (fillFields.length && !signatureFields.length) return 'document_fill';
   if (signatureFields.length) return 'document_sign';
+  if (fields.length) return 'document_fill';
   return null;
+}
+
+function documentHasCandidateInputFields(envelopeDocument, signer) {
+  return (envelopeDocument?.signatureFields || [])
+    .filter((field) => fieldBelongsToSigner(field, signer))
+    .some((field) => ['text', 'image'].includes(field.type));
 }
 
 function documentWorkflowItemFor(envelope, workflowItems = []) {
@@ -1308,9 +1313,12 @@ function computeCandidateNextAction({ onboarding, workflowItems = [], formSubmis
       if (envelopeDocument.status !== 'pending') return;
       const type = documentActionType(envelopeDocument, signer);
       if (!type) return;
+      const hasCandidateInputFields = type === 'document_fill' && documentHasCandidateInputFields(envelopeDocument, signer);
       documentActions.push({
         type,
-        label: type === 'document_fill' ? `Fill ${envelopeDocument.title}` : `Sign ${envelopeDocument.title}`,
+        label: type === 'document_fill'
+          ? `${hasCandidateInputFields ? 'Fill' : 'Complete'} ${envelopeDocument.title}`
+          : `Sign ${envelopeDocument.title}`,
         href: `/documents/${envelopeDocument._id}/sign`,
         dueAt: workflowItem?.dueAt,
         status: envelopeDocument.status,
