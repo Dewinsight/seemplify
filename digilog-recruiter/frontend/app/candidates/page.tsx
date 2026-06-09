@@ -162,7 +162,7 @@ function Pagination({
                 size="sm"
                 onClick={() => onPageChange(page as number)}
                 className={currentPage === page 
-                  ? "bg-blue-600 hover:bg-blue-700 text-white" 
+                  ? "bg-[#754BE5] hover:bg-[#6935CF] text-white" 
                   : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
                 }
               >
@@ -204,11 +204,11 @@ export default function CandidatesPage() {
         <div className="flex items-center justify-between mt-2 gap-2">
           <button className="px-3 py-1.5 rounded border text-sm text-gray-700 hover:bg-gray-100" onClick={() => setCurrentStep(Math.max(0, (currentStep ?? 0) - 1))}>Prev</button>
           <div className="flex items-center gap-1">
-            {Array.from({ length: total }).map((_, i) => (<span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-blue-600' : 'bg-gray-300'}`}></span>))}
+            {Array.from({ length: total }).map((_, i) => (<span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-[#754BE5]' : 'bg-gray-300'}`}></span>))}
           </div>
           <div className="flex items-center gap-2">
             <button className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700" onClick={() => setIsOpen(false)}>Skip</button>
-            <button className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700" onClick={() => { if ((currentStep ?? 0) + 1 < total) setCurrentStep((currentStep ?? 0) + 1); else setIsOpen(false) }}>{(currentStep ?? 0) + 1 < total ? 'Next' : 'Done'}</button>
+            <button className="px-3 py-1.5 rounded bg-[#754BE5] text-white text-sm hover:bg-[#6935CF]" onClick={() => { if ((currentStep ?? 0) + 1 < total) setCurrentStep((currentStep ?? 0) + 1); else setIsOpen(false) }}>{(currentStep ?? 0) + 1 < total ? 'Next' : 'Done'}</button>
           </div>
         </div>
       </div>
@@ -549,10 +549,10 @@ export default function CandidatesPage() {
 
     if (loading) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 flex items-center justify-center">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-[#F1ECFF]/30 dark:from-gray-950 dark:via-gray-900 dark:to-[#1E0059]/30 flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
-              <Users className="h-8 w-8 text-blue-500 dark:text-blue-400 animate-pulse" />
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#754BE5]/10 to-[#6935CF]/10 dark:from-[#754BE5]/20 dark:to-[#6935CF]/20 flex items-center justify-center mx-auto mb-4">
+              <Users className="h-8 w-8 text-primary animate-pulse" />
             </div>
             <p className="text-lg font-medium text-gray-600 dark:text-gray-400">Loading candidates...</p>
           </div>
@@ -561,12 +561,12 @@ export default function CandidatesPage() {
     }
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 p-4 lg:p-8 candidates-container">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-[#F1ECFF]/30 dark:from-gray-950 dark:via-gray-900 dark:to-[#1E0059]/30 p-4 lg:p-8 candidates-container">
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Header */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent candidate-page-title">
+              <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 bg-gradient-to-r from-[#1E0059] to-[#754BE5] bg-clip-text text-transparent candidate-page-title">
                 Candidate Management
               </h1>
               <p className="text-lg text-gray-600 dark:text-gray-400 mt-2 candidate-page-description">
@@ -581,7 +581,7 @@ export default function CandidatesPage() {
                   Candidate Lists
                 </Link>
               </Button>
-              <Button asChild variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50" data-tutorial="add-candidate-btn">
+              <Button asChild variant="outline" className="border-[#754BE5]/30 text-[#754BE5] hover:bg-[#754BE5]/10" data-tutorial="add-candidate-btn">
                 <Link href="/bulk-upload">
                   <Upload className="h-4 w-4 mr-2" />
                   Add Candidates
@@ -595,7 +595,7 @@ export default function CandidatesPage() {
             <CardHeader className="pb-4">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  <Users className="h-6 w-6 text-primary" />
                   <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                     Candidates Overview
                   </CardTitle>
@@ -659,7 +659,7 @@ export default function CandidatesPage() {
                       {selectedCandidates.length} candidate(s) selected
                     </span>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50">
+                      <Button size="sm" variant="outline" className="border-[#754BE5]/30 text-[#754BE5] hover:bg-[#754BE5]/10">
                         Export Selected
                       </Button>
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 disabled:opacity-50" onClick={openBulkShortlist}>
@@ -744,7 +744,7 @@ export default function CandidatesPage() {
                               onClick={(e) => e.stopPropagation()}
                             />
                             <Avatar className="h-12 w-12 ring-2 ring-gray-200 dark:ring-gray-700">
-                              <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                              <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white font-semibold">
                                 {candidate.firstName?.charAt(0) || ""}
                                 {candidate.lastName?.charAt(0) || ""}
                               </AvatarFallback>
@@ -796,7 +796,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("name")}
                         >
                           Candidate
@@ -805,7 +805,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("position")}
                         >
                           Position
@@ -814,7 +814,7 @@ export default function CandidatesPage() {
                       </TableHead>
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("experience")}
                         >
                           Experience
@@ -824,7 +824,7 @@ export default function CandidatesPage() {
 
                       <TableHead>
                         <button
-                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          className="flex items-center text-gray-900 dark:text-gray-100 font-semibold hover:text-primary transition-colors"
                           onClick={() => requestSort("createdAt")}
                         >
                           Added
@@ -852,7 +852,7 @@ export default function CandidatesPage() {
                           <TableCell>
                             <div className="flex items-center space-x-3">
                               <Avatar className="h-10 w-10 ring-2 ring-gray-200 dark:ring-gray-700">
-                                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                                <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white font-semibold">
                                   {candidate.firstName?.charAt(0) || ""}
                                   {candidate.lastName?.charAt(0) || ""}
                                 </AvatarFallback>
@@ -946,7 +946,7 @@ export default function CandidatesPage() {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={(e) => handleOpenAddToShortlist(candidate, e)}
-                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer"
+                                  className="text-primary hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer"
                                 >
                                   Add to Shortlist
                                 </DropdownMenuItem>
@@ -989,8 +989,8 @@ export default function CandidatesPage() {
               {/* Empty State */}
               {candidates.length === 0 && (
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
-                    <Users className="h-8 w-8 text-blue-500 dark:text-blue-400" />
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#754BE5]/10 to-[#6935CF]/10 dark:from-[#754BE5]/20 dark:to-[#6935CF]/20 flex items-center justify-center mx-auto mb-4">
+                    <Users className="h-8 w-8 text-primary" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
                     No candidates found
@@ -1002,7 +1002,7 @@ export default function CandidatesPage() {
                     }
                   </p>
                   {!searchTerm && (
-                    <Button asChild className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
+                    <Button asChild className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]">
                       <Link href="/candidates/new">
                         <Plus className="h-4 w-4 mr-2" />
                         Add Your First Candidate
@@ -1054,7 +1054,7 @@ export default function CandidatesPage() {
           <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                <div className="h-10 w-10 rounded-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] flex items-center justify-center">
                   <Star className="h-5 w-5 text-white" />
                 </div>
                 Add Candidate to Shortlist

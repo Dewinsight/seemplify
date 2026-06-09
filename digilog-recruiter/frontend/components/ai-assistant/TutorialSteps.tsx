@@ -26,7 +26,7 @@ export function TutorialSteps({ steps }: TutorialStepsProps) {
         {steps.map((step, index) => (
           <li key={index} className="flex gap-3 group">
             {/* Step Number Circle */}
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center text-sm font-bold shadow-md group-hover:scale-110 transition-transform">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white flex items-center justify-center text-sm font-bold shadow-md group-hover:scale-110 transition-transform">
               {step.number}
             </div>
             

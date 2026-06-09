@@ -269,7 +269,7 @@ const NotificationDropdown = () => {
             <div className="flex items-center gap-3">
               <div className="relative">
                 <div className="absolute inset-0 bg-blue-500 rounded-lg blur-md opacity-20"></div>
-                <div className="relative bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-lg">
+                <div className="relative bg-gradient-to-br from-[#754BE5] to-[#6935CF] p-2 rounded-lg">
                   <Bell className="h-4 w-4 text-white" />
                 </div>
               </div>
@@ -359,7 +359,7 @@ const NotificationDropdown = () => {
                     <div className="flex-shrink-0 relative">
                       <div className={`p-2.5 rounded-xl transition-all ${
                         !notification.read 
-                          ? 'bg-gradient-to-br from-blue-50 to-indigo-50 group-hover:from-blue-100 group-hover:to-indigo-100' 
+                          ? 'bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB] group-hover:from-[#E9E2FB] group-hover:to-[#E9E2FB]' 
                           : 'bg-gray-50 group-hover:bg-gray-100'
                       }`}>
                         {getNotificationIcon(notification.type)}

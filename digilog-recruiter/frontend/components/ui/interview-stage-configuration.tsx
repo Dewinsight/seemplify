@@ -614,7 +614,7 @@ export function InterviewStageConfiguration({
                             handleCreateDefaultStages()
                           }
                         }}
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                        className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]"
                       >
                         {customTemplates.find(t => t._id === selectedTemplate)
                           ? `Apply ${customTemplates.find(t => t._id === selectedTemplate)?.name}`
@@ -870,7 +870,7 @@ export function InterviewStageConfiguration({
                           }
                         }}
                         disabled={stages.length > 0}
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                        className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]"
                       >
                         {customTemplates.find(t => t._id === selectedTemplate)
                           ? `Apply ${customTemplates.find(t => t._id === selectedTemplate)?.name}`

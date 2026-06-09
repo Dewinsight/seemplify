@@ -45,7 +45,7 @@ export default function LoginPage() {
   const linkBg = jet ? 'bg-white/50 border-slate-200/50 hover:bg-white/80 hover:border-slate-300/50' : 'bg-white/10 border-white/20 hover:bg-white/20 hover:border-white/30';
   const accentGrad = jet ? 'from-green-600 to-amber-600' : 'from-[#A284F1] via-[#754BE5] to-[#6935CF]';
   const btnGrad = jet ? 'bg-gradient-to-r from-green-700 to-green-900 hover:from-green-800 hover:to-green-950 focus:ring-2 focus:ring-green-400/50' : 'bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2bb8] focus:ring-2 focus:ring-[#754BE5]/50';
-  const iconGrad = jet ? 'bg-gradient-to-br from-green-500 to-amber-600' : 'bg-gradient-to-br from-blue-400 to-purple-500';
+  const iconGrad = jet ? 'bg-gradient-to-br from-green-500 to-amber-600' : 'bg-gradient-to-br from-[#754BE5] to-[#6935CF]';
   const orb1 = jet ? 'bg-green-500/18' : 'bg-blue-500/20';
   const orb2 = jet ? 'bg-amber-400/18' : 'bg-purple-500/20';
   const orb3 = jet ? 'bg-yellow-400/14' : 'bg-pink-500/20';
@@ -349,7 +349,7 @@ export default function LoginPage() {
             >
               <Card className={`backdrop-blur-2xl overflow-hidden relative ${cardBg}`}>
                 {/* Subtle Animated Border */}
-                <div className={`absolute inset-0 rounded-lg animate-pulse opacity-30 ${jet ? 'bg-gradient-to-r from-green-500/12 via-amber-500/12 to-yellow-500/10' : 'bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10'}`}></div>
+                <div className={`absolute inset-0 rounded-lg animate-pulse opacity-30 ${jet ? 'bg-gradient-to-r from-green-500/12 via-amber-500/12 to-yellow-500/10' : 'bg-gradient-to-r from-[#754BE5]/10 via-[#6935CF]/10 to-[#A284F1]/10'}`}></div>
 
                 <CardHeader className="space-y-1 text-center pb-6 relative z-10">
                   <motion.div
@@ -473,7 +473,7 @@ export default function LoginPage() {
               >
                 {/* Animated background gradient */}
                 <motion.div
-                  className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${jet ? 'bg-gradient-to-r from-teal-500/12 to-cyan-500/12' : 'bg-gradient-to-r from-blue-500/10 to-purple-500/10'}`}
+                  className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${jet ? 'bg-gradient-to-r from-teal-500/12 to-cyan-500/12' : 'bg-gradient-to-r from-[#754BE5]/10 to-[#6935CF]/10'}`}
                   animate={{
                     backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
                   }}

@@ -406,9 +406,9 @@ function CandidateDetailInnerPage() {
   const matchScore = calculateMatchScore(candidate)
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#F1ECFF] to-[#E9E2FB]">
       {/* Stunning Hero Header */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-blue-700 to-gray-800 text-white">
+      <div className="relative overflow-hidden bg-gradient-to-r from-[#754BE5] via-[#6935CF] to-gray-800 text-white">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGRlZnM+CjxwYXR0ZXJuIGlkPSJncmlkIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHBhdHRlcm5Vbml0cz0idXNlclNwYWNlT25Vc2UiPgo8cGF0aCBkPSJNIDYwIDAgTCAwIDAgMCA2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiIHN0cm9rZS13aWR0aD0iMSIvPgo8L3BhdHRlcm4+CjwvZGVmcz4KPHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNncmlkKSIvPgo8L3N2Zz4=')] opacity-20" />
         
         <div className="relative px-4 py-12 sm:px-6 lg:px-8">
@@ -423,7 +423,7 @@ function CandidateDetailInnerPage() {
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <h1 className="text-4xl font-bold tracking-tight">
-                <span className="bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-white to-[#D9CCF8] bg-clip-text text-transparent">
                   Candidate Profile
                 </span>
               </h1>
@@ -431,7 +431,7 @@ function CandidateDetailInnerPage() {
             
             {/* Candidate Header Info */}
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6 mb-8">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-3xl shadow-lg">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center text-white font-bold text-3xl shadow-lg">
                 {candidate.firstName?.[0] || ""}{candidate.lastName?.[0] || ""}
               </div>
               <div className="flex-1">
@@ -459,7 +459,7 @@ function CandidateDetailInnerPage() {
         {/* Sidebar */}
         <div className="space-y-6">
           <Card className="border-0 bg-white/60 backdrop-blur-xl shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg">
+            <CardHeader className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white rounded-t-lg">
               <CardTitle className="text-xl font-semibold flex items-center gap-2">
                 <User className="h-5 w-5" />
                 Candidate Details
@@ -467,7 +467,7 @@ function CandidateDetailInnerPage() {
             </CardHeader>
             <CardContent className="p-6 space-y-6">
               <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 transition-all duration-200">
+                <div className="p-4 rounded-xl bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB] hover:from-[#E9E2FB] hover:to-[#D9CCF8] transition-all duration-200">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
                       <Mail className="h-5 w-5 text-white" />
@@ -491,7 +491,7 @@ function CandidateDetailInnerPage() {
                   </div>
                 </div>
                 
-                <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 transition-all duration-200">
+                <div className="p-4 rounded-xl bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB] hover:from-[#E9E2FB] hover:to-[#D9CCF8] transition-all duration-200">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
                       <Calendar className="h-5 w-5 text-white" />
@@ -519,7 +519,7 @@ function CandidateDetailInnerPage() {
                   </div>
                 </div>
                 
-                <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 transition-all duration-200">
+                <div className="p-4 rounded-xl bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB] hover:from-[#E9E2FB] hover:to-[#D9CCF8] transition-all duration-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
@@ -595,7 +595,7 @@ function CandidateDetailInnerPage() {
                   {/* Modern Tab Navigation */}
                   <div className="relative">
                     {/* Background decoration */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-2xl opacity-50" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#F1ECFF] via-[#E9E2FB] to-[#F3E8FF] rounded-2xl opacity-50" />
                     
                     {isMobile ? (
                       /* Mobile Dropdown Navigation */
@@ -616,7 +616,7 @@ function CandidateDetailInnerPage() {
                       {/* Overview Tab */}
                       <TabsTrigger 
                         value="overview"
-                        className="group relative flex flex-col items-center gap-1 sm:gap-1.5 px-2 py-2 sm:px-3 sm:py-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-xl rounded-lg sm:rounded-xl font-medium transition-all duration-300 hover:bg-blue-50"
+                        className="group relative flex flex-col items-center gap-1 sm:gap-1.5 px-2 py-2 sm:px-3 sm:py-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-[#F1ECFF]0 data-[state=active]:to-[#6935CF] data-[state=active]:text-white data-[state=active]:shadow-xl rounded-lg sm:rounded-xl font-medium transition-all duration-300 hover:bg-blue-50"
                       >
                         <div className="relative">
                           <div className="absolute inset-0 bg-blue-400 blur-xl opacity-0 group-data-[state=active]:opacity-50 transition-opacity duration-300" />
@@ -682,7 +682,7 @@ function CandidateDetailInnerPage() {
                     )}
                     
                     {/* Active Tab Indicator Line */}
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-50 blur-sm" />
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#F1ECFF]0 to-transparent opacity-50 blur-sm" />
                   </div>
                   
                   {/* Tab Description */}
@@ -732,7 +732,7 @@ function CandidateDetailInnerPage() {
                   <CardContent className="space-y-6">
                     {/* Experience Summary */}
                     {candidate.workExperience.experienceSummary && (
-                      <div className="rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 p-4 dark:from-blue-950/20 dark:to-indigo-950/20">
+                      <div className="rounded-lg border bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] p-4 dark:from-[#1E0059]/20 dark:to-[#1E0059]/20">
                         <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Career Summary</h3>
                         <p className="text-blue-800 dark:text-blue-200 leading-relaxed">
                           {candidate.workExperience.experienceSummary}
@@ -897,7 +897,7 @@ function CandidateDetailInnerPage() {
                           <GraduationCap className="h-4 w-4 text-indigo-600" />
                           Technical Expertise Assessment
                         </h3>
-                        <div className="rounded-lg border bg-gradient-to-r from-indigo-50 to-purple-50 p-4 dark:from-indigo-950/20 dark:to-purple-950/20">
+                        <div className="rounded-lg border bg-gradient-to-r from-[#F1ECFF] to-purple-50 p-4 dark:from-[#1E0059]/20 dark:to-purple-950/20">
                           <p className="text-indigo-800 dark:text-indigo-200 leading-relaxed">
                             {candidate.workExperience.technicalDepth}
                           </p>
@@ -908,7 +908,7 @@ function CandidateDetailInnerPage() {
                 </Card>
               )}
               <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+                <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] rounded-t-lg">
                   <CardTitle className="flex items-center gap-2">
                     <FileText className="h-5 w-5 text-blue-600" />
                     Professional Summary
@@ -920,7 +920,7 @@ function CandidateDetailInnerPage() {
               </Card>
 
               <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-t-lg">
+                <CardHeader className="bg-gradient-to-r from-purple-50 to-[#F1ECFF] rounded-t-lg">
                   <CardTitle className="flex items-center gap-2">
                     <Briefcase className="h-5 w-5 text-purple-600" />
                     Experience Overview
@@ -1007,7 +1007,7 @@ function CandidateDetailInnerPage() {
               {/* Languages */}
               {candidate.languages && candidate.languages.length > 0 && (
                 <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                  <CardHeader className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-t-lg">
+                  <CardHeader className="bg-gradient-to-r from-cyan-50 to-[#F1ECFF] rounded-t-lg">
                     <CardTitle className="flex items-center gap-2">
                       <Globe className="h-5 w-5 text-cyan-600" />
                       Languages ({candidate.languages.length})
@@ -1055,7 +1055,7 @@ function CandidateDetailInnerPage() {
               {/* Projects */}
               {candidate.projects && candidate.projects.length > 0 && (
                 <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                  <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-t-lg">
+                  <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-purple-50 rounded-t-lg">
                     <CardTitle className="flex items-center gap-2">
                       <Code className="h-5 w-5 text-indigo-600" />
                       Projects ({candidate.projects.length})
@@ -1108,7 +1108,7 @@ function CandidateDetailInnerPage() {
               {/* Publications */}
               {candidate.publications && candidate.publications.length > 0 && (
                 <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                  <CardHeader className="bg-gradient-to-r from-rose-50 to-pink-50 rounded-t-lg">
+                  <CardHeader className="bg-gradient-to-r from-rose-50 to-[#F1ECFF] rounded-t-lg">
                     <CardTitle className="flex items-center gap-2">
                       <BookOpen className="h-5 w-5 text-rose-600" />
                       Publications ({candidate.publications.length})
@@ -1192,7 +1192,7 @@ function CandidateDetailInnerPage() {
               {/* Portfolio Links */}
               {candidate.portfolioLinks && Object.keys(candidate.portfolioLinks).some((key: string) => candidate.portfolioLinks[key]) && (
                 <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                  <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+                  <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] rounded-t-lg">
                     <CardTitle className="flex items-center gap-2">
                       <LinkIcon className="h-5 w-5 text-blue-600" />
                       Online Presence
@@ -1273,7 +1273,7 @@ function CandidateDetailInnerPage() {
               {candidate.aiAnalysis && (
                 <>
                   <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                    <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-t-lg">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-[#F1ECFF] rounded-t-lg">
                       <CardTitle className="flex items-center gap-2">
                         <Brain className="h-5 w-5 text-purple-600" />
                         AI Analysis Summary
@@ -1287,7 +1287,7 @@ function CandidateDetailInnerPage() {
                   </Card>
 
                   <Card className="border-0 shadow-sm hover:shadow-md transition-shadow duration-300">
-                    <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-t-lg">
+                    <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] rounded-t-lg">
                       <CardTitle className="flex items-center gap-2">
                         <BarChart3 className="h-5 w-5 text-blue-600" />
                         Strengths & Areas of Concern

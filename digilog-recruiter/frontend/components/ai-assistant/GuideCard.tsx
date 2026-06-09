@@ -52,7 +52,7 @@ export function GuideCard({ title, description, primaryButton, secondaryButton }
   const SecondaryIcon = secondaryButton ? getIcon(secondaryButton.icon) : null
 
   return (
-    <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 dark:from-blue-950/20 dark:to-indigo-950/20 shadow-lg hover:shadow-xl transition-all duration-300">
+    <Card className="border-2 border-blue-200 bg-gradient-to-br from-[#F1ECFF] via-[#E9E2FB] to-[#F1ECFF] dark:from-[#1E0059]/20 dark:to-[#1E0059]/20 shadow-lg hover:shadow-xl transition-all duration-300">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
           {title}
@@ -64,7 +64,7 @@ export function GuideCard({ title, description, primaryButton, secondaryButton }
       <CardContent className="space-y-2">
         <Button 
           asChild 
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md hover:shadow-lg transition-all"
+          className="w-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white shadow-md hover:shadow-lg transition-all"
         >
           <Link href={primaryButton.url}>
             <PrimaryIcon className="mr-2 h-4 w-4" />

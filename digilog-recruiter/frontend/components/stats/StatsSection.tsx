@@ -11,14 +11,14 @@ const stats = [
     icon: <Users className="w-8 h-8" />,
     value: "10,000+",
     label: "Companies Trust Us",
-    gradient: "from-blue-500 to-cyan-400",
+    gradient: "from-[#F1ECFF]0 to-cyan-400",
     delay: 0.1
   },
   {
     icon: <TrendingUp className="w-8 h-8" />,
     value: "95.8%",
     label: "Match Accuracy",
-    gradient: "from-purple-500 to-pink-400",
+    gradient: "from-purple-500 to-[#9B7BEC]",
     delay: 0.2
   },
   {

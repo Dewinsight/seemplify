@@ -166,7 +166,7 @@ export default function OrganizationCheckPage() {
             <p className="text-slate-300 mb-6">{error}</p>
             <button 
               onClick={() => window.location.reload()}
-              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg font-medium"
+              className="px-6 py-3 bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white rounded-lg hover:from-[#6935CF] hover:to-[#5a2cb5] transition-all shadow-lg font-medium"
             >
               Try Again
             </button>
@@ -177,7 +177,7 @@ export default function OrganizationCheckPage() {
             {/* Brand Logo */}
             <div className="mb-8 flex justify-center">
               <div className="relative">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-purple-600 rounded-xl flex items-center justify-center shadow-2xl">
+                <div className="w-16 h-16 bg-gradient-to-br from-[#754BE5] to-[#6935CF] rounded-xl flex items-center justify-center shadow-2xl">
                   <span className="font-extrabold text-white text-2xl tracking-tighter">HR</span>
                 </div>
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-slate-900 animate-pulse"></div>
@@ -205,7 +205,7 @@ export default function OrganizationCheckPage() {
               {/* Loading Progress Bar */}
               <div className="w-48 h-1 bg-white/10 rounded-full mx-auto mt-6 overflow-hidden">
                 <div 
-                  className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                  className="h-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] rounded-full"
                   style={{
                     width: `${((loadingStage + 1) / loadingStages.length) * 100}%`,
                     transition: 'width 0.5s ease-out'

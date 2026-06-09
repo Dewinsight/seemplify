@@ -26,7 +26,7 @@ const variantStyles = {
   success: 'border-green-300 dark:border-green-700 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-950/20 dark:to-emerald-950/20 shadow-md hover:shadow-lg',
   warning: 'border-yellow-300 dark:border-yellow-700 bg-gradient-to-br from-yellow-100 to-amber-100 dark:from-yellow-950/20 dark:to-amber-950/20 shadow-md hover:shadow-lg',
   danger: 'border-red-300 dark:border-red-700 bg-gradient-to-br from-red-100 to-rose-100 dark:from-red-950/20 dark:to-rose-950/20 shadow-md hover:shadow-lg',
-  info: 'border-blue-300 bg-gradient-to-br from-blue-100 to-indigo-100 dark:border-blue-700 dark:from-blue-950/20 dark:to-indigo-950/20 shadow-md hover:shadow-lg',
+  info: 'border-blue-300 bg-gradient-to-br from-[#E9E2FB] to-[#D9CCF8] dark:border-blue-700 dark:from-[#1E0059]/20 dark:to-[#1E0059]/20 shadow-md hover:shadow-lg',
 }
 
 const sizeStyles = {

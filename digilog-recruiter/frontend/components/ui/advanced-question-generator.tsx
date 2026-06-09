@@ -455,7 +455,7 @@ export function AdvancedQuestionGenerator({
                 </div>
 
                 {/* Optimization Preview */}
-                <Card className="bg-gradient-to-r from-blue-50 to-purple-50">
+                <Card className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB]">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <TrendingUp className="h-4 w-4 text-blue-600" />

@@ -354,7 +354,7 @@ export function TranscriptViewer({
     <div className="space-y-6">
       {/* Multi-Candidate Interview Controls */}
       {isMultiCandidate && (
-        <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200 mb-4">
+        <Card className="bg-gradient-to-r from-purple-50 to-[#F1ECFF] border-purple-200 mb-4">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -436,7 +436,7 @@ export function TranscriptViewer({
       )}
 
       {/* Status Header */}
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+      <Card className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] border-blue-200">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -887,7 +887,7 @@ export function TranscriptViewer({
                     </div>
 
                     {multiCandidateAnalysis.hasComparativeAnalysis && (
-                      <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+                      <Card className="bg-gradient-to-r from-purple-50 to-[#F1ECFF] border-purple-200">
                         <CardHeader>
                           <CardTitle className="text-lg text-purple-900">
                             🏆 Session Summary

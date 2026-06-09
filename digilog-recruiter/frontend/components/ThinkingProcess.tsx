@@ -111,8 +111,8 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({
       {/* Header */}
       <div className="flex items-center gap-2 mb-4">
         <div className="relative">
-          <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse"></div>
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-ping opacity-40"></div>
+          <div className="w-3 h-3 bg-gradient-to-r from-[#754BE5] to-[#6935CF] rounded-full animate-pulse"></div>
+          <div className="absolute inset-0 bg-gradient-to-r from-[#754BE5] to-[#6935CF] rounded-full animate-ping opacity-40"></div>
         </div>
         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
           AI Assistant is thinking...
@@ -207,7 +207,7 @@ const ThinkingProcess: React.FC<ThinkingProcessProps> = ({
               Processing step {thinkingMessages.length}...
             </span>
             <div className="w-16 h-1 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse"></div>
+              <div className="h-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] rounded-full animate-pulse"></div>
             </div>
           </div>
         </div>

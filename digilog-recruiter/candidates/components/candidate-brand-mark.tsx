@@ -20,8 +20,8 @@ export function CandidateBrandMark({ brand, compact = false }: CandidateBrandMar
     <div
       className={
         compact
-          ? "flex h-10 w-10 items-center justify-center rounded-md bg-slate-950 text-sm font-semibold text-white"
-          : "flex h-14 w-14 items-center justify-center rounded-md bg-slate-950 text-base font-semibold text-white"
+          ? "flex h-10 w-10 items-center justify-center rounded-md bg-[#1E0059] text-sm font-semibold text-white"
+          : "flex h-14 w-14 items-center justify-center rounded-md bg-[#1E0059] text-base font-semibold text-white"
       }
     >
       {brand.shortName}

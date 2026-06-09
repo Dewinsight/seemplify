@@ -11,9 +11,24 @@ interface GradientMeshProps {
 export const GradientMesh: React.FC<GradientMeshProps> = ({ className }) => {
   const brand = useBrandConfig();
   const jet = brand.id === 'jetstone';
+  const dig = brand.id === 'digilog';
   const reduceMotion = useReducedMotion();
   /** Jetstone portal: static orbs only — animated blurs were a major scroll/jank source. */
   const staticOrbs = jet || reduceMotion;
+
+  // diGiLog light theme: soft, low-opacity purple/indigo orbs on a near-white canvas.
+  if (dig) {
+    return (
+      <div className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`}>
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#754BE5]/[0.12] rounded-full blur-3xl" />
+        <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-[#A284F1]/[0.14] rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-[#1E0059]/[0.06] rounded-full blur-3xl" />
+        <div className="absolute top-2/3 right-1/3 w-80 h-80 bg-[#754BE5]/[0.10] rounded-full blur-3xl" />
+        {/* Grid Overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1E005908_1px,transparent_1px),linear-gradient(to_bottom,#1E005908_1px,transparent_1px)] bg-[size:48px_48px]" />
+      </div>
+    );
+  }
 
   return (
     <div className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`}>

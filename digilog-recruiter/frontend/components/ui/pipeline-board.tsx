@@ -494,7 +494,7 @@ export function PipelineBoard({
                     {/* Candidate Info */}
                     <div className="flex items-center gap-3">
                       <Avatar className="h-14 w-14 ring-2 ring-gray-100 shadow-sm">
-                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold text-lg">
+                        <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white font-semibold text-lg">
                                       {getInitials(applicant?.candidate?.firstName || '', applicant?.candidate?.lastName || '')}
                                     </AvatarFallback>
                                   </Avatar>
@@ -1006,11 +1006,11 @@ export function PipelineBoard({
           {selectedApplicant && (
             <div className="space-y-8">
               {/* Header Section with Avatar and Basic Info */}
-              <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6">
+              <div className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] rounded-2xl p-6">
                 <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
                   <div className="flex-shrink-0">
                     <Avatar className="h-32 w-32 ring-4 ring-white shadow-2xl">
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold text-4xl">
+                      <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white font-bold text-4xl">
                         {getInitials(selectedApplicant?.candidate?.firstName || '', selectedApplicant?.candidate?.lastName || '')}
                       </AvatarFallback>
                     </Avatar>
@@ -1333,7 +1333,7 @@ export function PipelineBoard({
                   window.open(`/candidates/${selectedApplicant.candidate._id}?from=job-pipeline&jobId=${jobId}`, '_blank')
                 }
               }}
-              className="px-6 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+              className="px-6 bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white"
             >
               View Full Profile
             </Button>

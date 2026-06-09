@@ -806,7 +806,7 @@ export function CommunicationStep({
                 <Button
                   onClick={handleGenerateQuestions}
                   disabled={isGenerating}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  className="w-full bg-gradient-to-r from-purple-600 to-[#6935CF] hover:from-purple-700 hover:to-[#5A2CB5]"
                 >
                   {isGenerating ? (
                     <>

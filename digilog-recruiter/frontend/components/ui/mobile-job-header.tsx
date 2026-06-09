@@ -77,7 +77,7 @@ export function MobileJobHeader({
     return (
       <>
         {/* Mobile Header */}
-        <div className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 via-blue-700 to-gray-800 text-white" data-tutorial="job-header">
+        <div className="sticky top-0 z-50 bg-gradient-to-r from-[#754BE5] via-[#6935CF] to-gray-800 text-white" data-tutorial="job-header">
           <div className="px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
@@ -207,7 +207,7 @@ export function MobileJobHeader({
 
   // Desktop header
   return (
-    <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-blue-700 to-gray-800 text-white dark:from-slate-800 dark:via-slate-800 dark:to-gray-800" data-tutorial="job-header">
+    <div className="relative overflow-hidden bg-gradient-to-r from-[#754BE5] via-[#6935CF] to-gray-800 text-white dark:from-slate-800 dark:via-slate-800 dark:to-gray-800" data-tutorial="job-header">
       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGRlZnM+CjxwYXR0ZXJuIGlkPSJncmlkIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHBhdHRlcm5Vbml0cz0idXNlclNwYWNlT25Vc2UiPgo8cGF0aCBkPSJNIDYwIDAgTCAwIDAgMCA2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiIHN0cm9rZS13aWR0aD0iMSIvPgo8L3BhdHRlcm4+CjwvZGVmcz4KPHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNncmlkKSIvPgo8L3N2Zz4=')] opacity-20" />
       
       <div className="relative px-4 py-12 sm:px-6 lg:px-8">
@@ -224,7 +224,7 @@ export function MobileJobHeader({
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 lg:gap-8">
             <div className="flex-1 min-w-0">
               <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-xl sm:text-2xl shadow-lg flex-shrink-0">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center text-white font-bold text-xl sm:text-2xl shadow-lg flex-shrink-0">
                   {jobData.title.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">

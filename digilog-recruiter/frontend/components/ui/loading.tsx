@@ -63,16 +63,16 @@ export function PageLoader({
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-[#F1ECFF]/30 dark:from-gray-950 dark:via-gray-900 dark:to-[#1E0059]/30 flex items-center justify-center">
       <div className="text-center">
-        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-6 shadow-lg">
+        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#E9E2FB] to-[#D9CCF8] dark:from-[#2E1568]/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-6 shadow-lg">
           {getIcon()}
         </div>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">{message}</h2>
         <p className="text-gray-600 dark:text-gray-400">Please wait while we load your content</p>
         <div className="mt-4">
           <div className="w-48 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse"></div>
+            <div className="h-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] rounded-full animate-pulse"></div>
           </div>
         </div>
       </div>
@@ -254,7 +254,7 @@ export function EmptyState({
 }) {
   return (
     <div className="text-center py-12">
-      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
+      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#E9E2FB] to-[#D9CCF8] dark:from-[#2E1568]/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
         <Icon className="h-8 w-8 text-blue-500 dark:text-blue-400" />
       </div>
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">

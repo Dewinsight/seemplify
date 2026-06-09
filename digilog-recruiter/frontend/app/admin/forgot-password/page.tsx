@@ -62,7 +62,7 @@ export default function AdminForgotPasswordPage() {
         <Card className="w-full max-w-md mx-4 relative z-10 border-gray-700 bg-gray-800/50 backdrop-blur-xl">
           <CardHeader className="space-y-1">
             <div className="flex items-center justify-center mb-4">
-              <div className="p-3 bg-gradient-to-br from-green-500 to-blue-600 rounded-full">
+              <div className="p-3 bg-gradient-to-br from-green-500 to-[#6935CF] rounded-full">
                 <Send className="h-8 w-8 text-white" />
               </div>
             </div>
@@ -89,7 +89,7 @@ export default function AdminForgotPasswordPage() {
             
             <Button
               onClick={() => router.push(`/admin/reset-password?email=${encodeURIComponent(sentEmail)}`)}
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold"
+              className="w-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white font-semibold"
             >
               Continue to OTP Verification
             </Button>
@@ -116,7 +116,7 @@ export default function AdminForgotPasswordPage() {
       <Card className="w-full max-w-md mx-4 relative z-10 border-gray-700 bg-gray-800/50 backdrop-blur-xl">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full">
+            <div className="p-3 bg-gradient-to-br from-[#754BE5] to-[#6935CF] rounded-full">
               <Shield className="h-8 w-8 text-white" />
             </div>
           </div>
@@ -157,7 +157,7 @@ export default function AdminForgotPasswordPage() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold"
+              className="w-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white font-semibold"
             >
               {loading ? (
                 <div className="flex items-center space-x-2">

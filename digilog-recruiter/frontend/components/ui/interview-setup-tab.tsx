@@ -177,7 +177,7 @@ export function InterviewSetupTab({
         
         {/* Single Interview Card */}
         <Card 
-          className="transition-all duration-300 border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 dark:from-blue-950/20 dark:to-indigo-950/20 overflow-hidden relative"
+          className="transition-all duration-300 border-2 border-blue-200 bg-gradient-to-br from-[#F1ECFF] via-[#E9E2FB] to-[#F1ECFF] dark:from-[#1E0059]/20 dark:to-[#1E0059]/20 overflow-hidden relative"
         >
           {/* Decorative element - hide on mobile */}
           <div className="hidden sm:block absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -mr-16 -mt-16"></div>
@@ -186,7 +186,7 @@ export function InterviewSetupTab({
             <div className="space-y-4 sm:space-y-5 lg:space-y-6">
               {/* Icon and Title */}
               <div className="flex items-start gap-3 sm:gap-4">
-                <div className="p-3 sm:p-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-lg">
+                <div className="p-3 sm:p-4 bg-gradient-to-br from-[#754BE5] to-[#6935CF] rounded-2xl shadow-lg">
                   <Calendar className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 text-white" />
                 </div>
                 <div className="flex-1">
@@ -530,7 +530,7 @@ export function InterviewSetupTab({
               {/* CTA */}
               <div className="pt-3 sm:pt-4">
                 <Button 
-                  className="w-full h-12 sm:h-11 lg:h-10 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg text-sm sm:text-base"
+                  className="w-full h-12 sm:h-11 lg:h-10 bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white shadow-lg text-sm sm:text-base"
                   disabled={!canStartSingle}
                   onClick={() => setSchedulerMode('single')}
                 >

@@ -17,6 +17,8 @@ export interface BrandConfig {
   gradient: string;
   patterns: string[];
   logo?: string;
+  /** Dark-on-light logo variant, used on light surfaces (e.g. the light marketing header/footer) */
+  logoDark?: string;
   /** Icon-only mark used in the top-nav Logo box (falls back to gradient shortName box) */
   iconLogo?: string;
   secondaryLogo?: string;
@@ -50,6 +52,7 @@ export const BRANDS: Record<string, BrandConfig> = {
     gradient: 'from-[#754BE5] to-[#6935CF]',
     patterns: ['digilog', 'digiteam', 'localhost', '127.0.0.1'],
     logo: '/digilog-logo.svg',
+    logoDark: '/digilog-logo-dark.svg',
     iconLogo: '/digilog-icon.svg',
     useImageLogo: true,
     metaTitle: 'diGiLog',
@@ -57,6 +60,8 @@ export const BRANDS: Record<string, BrandConfig> = {
     footerText: '© 2026 diGiLog. All rights reserved.',
     loginHeading: 'diGiLog',
     loginSubheading: 'Smart HR & Recruitment',
+    landingRootClass:
+      'min-h-screen bg-gradient-to-b from-[#F1ECFF] via-[#FAF9FE] to-white text-[#1E0059] overflow-x-hidden relative digilog-light-theme',
     authShellClass: 'bg-gradient-to-br from-[#1E0059] via-[#3a1f8f] to-[#1E0059]',
   },
   smarthr: {

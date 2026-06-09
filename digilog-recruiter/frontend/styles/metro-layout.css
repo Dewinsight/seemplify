@@ -494,13 +494,15 @@
 
 /* Color Variants */
 .metro-tile-indigo {
-  --tile-from: #6366f1;
-  --tile-to: #4f46e5;
+  /* diGiLog brand purple */
+  --tile-from: #754be5;
+  --tile-to: #6935cf;
 }
 
 .metro-tile-teal {
-  --tile-from: #14b8a6;
-  --tile-to: #0d9488;
+  /* diGiLog deep indigo/navy */
+  --tile-from: #1e0059;
+  --tile-to: #3a1f8f;
 }
 
 .metro-tile-slate {

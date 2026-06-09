@@ -177,7 +177,7 @@ const EnhancedTabTrigger: React.FC<EnhancedTabTriggerProps> = ({
               "hover:shadow-md hover:-translate-y-0.5 focus-ring",
               "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
               isActive
-                ? "border-blue-500 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg scale-105"
+                ? "border-blue-500 bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white shadow-lg scale-105"
                 : "border-transparent hover:border-blue-200 hover:bg-blue-50 text-slate-700"
             )}
             onClick={onClick}
@@ -395,7 +395,7 @@ const MobileTabNavigation: React.FC<{
         {/* Current Tab Display with Touch-Friendly UI */}
         <div className="p-4 space-y-4">
           {/* Large Tab Indicator */}
-          <div className="flex items-center justify-center space-x-2 py-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl">
+          <div className="flex items-center justify-center space-x-2 py-4 bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] rounded-xl">
             <div className="text-2xl">{activeTabData?.icon}</div>
             <div className="flex flex-col">
               <div className="font-medium text-slate-900">{activeTabData?.label}</div>
@@ -701,7 +701,7 @@ export const EnhancedTabNavigation: React.FC<EnhancedTabNavigationProps> = ({
                aria-valuemax={100}
                aria-label="Job setup completion progress">
             <div
-              className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full transition-all duration-500 progress-animated"
+              className="bg-gradient-to-r from-[#F1ECFF]0 to-green-500 h-2 rounded-full transition-all duration-500 progress-animated"
               style={{ 
                 width: `${Math.round(tabStatuses.reduce((acc, tab) => acc + (tab.progress || 0), 0) / tabStatuses.length)}%` 
               }}

@@ -9,13 +9,12 @@ import useSmoothScroll from '@/hooks/useSmoothScroll';
 import StickyHeader from '@/components/StickyHeader';
 import ActiveLink from '@/components/ActiveLink';
 import { 
-  ArrowRight, CheckCircle, Zap, BarChart3, Users, Shield, Calendar, Briefcase, 
+  ArrowRight, Zap, BarChart3, Users, Shield, Calendar, Briefcase,
   FileCheck, ChartPie, Award, Cpu, HeartHandshake, GraduationCap, Sparkles, 
   LineChart, Clock, Target, Star, BadgeCheck, Check, Database, Menu, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import AtsComparisonSection from '@/components/AtsComparisonSection';
-import PricingSection from '@/components/PricingSection';
 import WorkflowSection from '@/components/WorkflowSection';
 import GlassmorphicCard from '@/components/ui/glassmorphic-card';
 import ScrollReveal from '@/components/animations/ScrollReveal';
@@ -80,7 +79,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-4 flex justify-between items-center">
           {/* Dynamic Logo */}
           <div className="flex items-center">
-            <DynamicLogoIcon size="md" />
+            <DynamicLogoIcon size="md" onLight />
           </div>
           
           {/* Desktop Navigation Links */}
@@ -92,7 +91,6 @@ export default function LandingPage() {
               <li><ActiveLink href="#ats-comparison">Why {brand.name}</ActiveLink></li>
               <li><ActiveLink href="#workflow">Workflow</ActiveLink></li>
               <li><ActiveLink href="#interview-tech">Interview Tech</ActiveLink></li>
-              <li><ActiveLink href="#pricing">Pricing</ActiveLink></li>
             </ul>
           </nav>
           
@@ -212,15 +210,6 @@ export default function LandingPage() {
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         Interview Tech
-                      </a>
-                    </li>
-                    <li>
-                      <a 
-                        href="#pricing" 
-                        className="block py-3 text-lg text-slate-300 hover:text-white transition-colors border-b border-white/10"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                      >
-                        Pricing
                       </a>
                     </li>
                   </ul>
@@ -723,11 +712,6 @@ export default function LandingPage() {
         <WorkflowSection />
       </div>
 
-      {/* Pricing Section */}
-      <div id="pricing">
-        <PricingSection />
-      </div>
-      
       {/* Interview and Feedback Technology Section */}
       <section id="interview-tech" className="relative z-10 container mx-auto px-4 py-20">
         {/* Background decoration */}
@@ -927,63 +911,12 @@ export default function LandingPage() {
       {/* FAQ Section */}
       <FAQSection />
 
-      {/* Enhanced CTA Section */}
-      <section id="get-started" className="relative z-10 container mx-auto px-4 py-24">
-        <ScrollReveal>
-          <GlassmorphicCard variant="elevated" className="p-12 md:p-16 overflow-hidden relative" hover={false}>
-            {/* Background animation */}
-            <motion.div 
-              className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10"
-              animate={{ 
-                backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-              }}
-              transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
-              style={{ backgroundSize: '200% 200%' }}
-            />
-            
-            <div className="flex flex-col items-center text-center gap-8 relative z-10">
-              <div className="space-y-6 max-w-3xl">
-                <h2 className={`text-4xl md:text-5xl lg:text-6xl font-black bg-clip-text text-transparent ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-green-900 via-amber-800 to-green-900' : 'bg-gradient-to-r from-white via-blue-100 to-purple-100'}`}>
-                  Ready to Transform Your Hiring?
-                </h2>
-                <p className="text-slate-200 text-xl md:text-2xl leading-relaxed">
-                  Transform your hiring process with AI-powered recruitment tools.
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-slate-300">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                    <span>14-day free trial</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                    <span>No credit card required</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-green-400" />
-                    <span>Enterprise-grade security</span>
-                  </div>
-                </div>
-              </div>
-              
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
-                <Button 
-                  className={`text-white border-0 h-14 px-10 text-lg font-semibold shadow-2xl ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-green-700 via-green-800 to-green-900 hover:from-green-800 hover:via-green-900 hover:to-green-950 shadow-green-500/50 hover:shadow-green-500/70' : 'bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 shadow-purple-500/50 hover:shadow-purple-500/70'}`}
-                  onClick={() => router.push('/signup')}
-                >
-                  Start Free Trial <ArrowRight className="ml-2 w-5 h-5" />
-                </Button>
-              </motion.div>
-            </div>
-          </GlassmorphicCard>
-        </ScrollReveal>
-      </section>
-
       {/* Enhanced Footer - update logo */}
       <footer className="relative z-10 container mx-auto px-4 py-16 border-t border-white/10 mt-16">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
           <div className="space-y-4">
             <div className="flex items-center">
-              <DynamicLogoIcon size="md" showPulse={false} />
+              <DynamicLogoIcon size="md" showPulse={false} onLight />
               <h3 className="ml-3 text-white text-xl font-heading font-bold">{brand.name}</h3>
             </div>
             <p className="text-slate-300 text-sm leading-relaxed">
@@ -1011,9 +944,6 @@ export default function LandingPage() {
                 <span className="text-slate-300">Features</span>
               </li>
               <li>
-                <span className="text-slate-300">Pricing</span>
-              </li>
-              <li>
                 <Link href="/public/jobs" className="text-slate-300 hover:text-white transition-colors">Browse Jobs</Link>
               </li>
               <li>
@@ -1023,34 +953,10 @@ export default function LandingPage() {
           </div>
           
           <div>
-            <h4 className="font-bold text-white mb-4">Company</h4>
-            <ul className="space-y-3">
-              <li>
-                <span className="text-slate-300">About</span>
-              </li>
-              <li>
-                <span className="text-slate-300">Contact</span>
-              </li>
-            </ul>
-          </div>
-          
-          <div>
             <h4 className="font-bold text-white mb-4">Legal</h4>
             <ul className="space-y-3">
               <li>
-                <Link href="/terms" className="text-slate-300 hover:text-white transition-colors">Terms of Service</Link>
-              </li>
-              <li>
-                <Link href="/privacy" className="text-slate-300 hover:text-white transition-colors">Privacy Policy</Link>
-              </li>
-              <li>
                 <Link href="/cookies" className="text-slate-300 hover:text-white transition-colors">Cookies</Link>
-              </li>
-              <li>
-                <Link href="/privacy" className="text-slate-300 hover:text-white transition-colors">Data Processing</Link>
-              </li>
-              <li>
-                <Link href="/terms" className="text-slate-300 hover:text-white transition-colors">Licenses</Link>
               </li>
             </ul>
           </div>
@@ -1063,8 +969,6 @@ export default function LandingPage() {
               <Shield className="w-3 h-3" />
               <span>Enterprise-grade security</span>
             </div>
-            <Link href="/privacy" className="text-slate-300 text-sm hover:text-white transition-colors">Privacy Policy</Link>
-            <Link href="/terms" className="text-slate-300 text-sm hover:text-white transition-colors">Terms of Service</Link>
           </div>
         </div>
       </footer>

@@ -64,7 +64,7 @@ export function ProfileCompletionModal({ open, onOpenChange }: ProfileCompletion
         <div className="flex-1 overflow-y-auto p-6 pt-6">
           <div className="space-y-6">
           {/* Progress Overview */}
-          <Card className="border-0 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 shadow-lg">
+          <Card className="border-0 bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB] dark:from-[#1E0059]/30 dark:to-[#1E0059]/30 shadow-lg">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -83,7 +83,7 @@ export function ProfileCompletionModal({ open, onOpenChange }: ProfileCompletion
               <div className="space-y-4">
                 <div className="relative">
                   <Progress value={completionPercentage} className="h-4 bg-blue-200 dark:bg-blue-900" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full opacity-20 blur-sm"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#754BE5] to-[#6935CF] rounded-full opacity-20 blur-sm"></div>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
@@ -103,7 +103,7 @@ export function ProfileCompletionModal({ open, onOpenChange }: ProfileCompletion
 
           {/* Missing Fields */}
           {missingFields.length > 0 && (
-            <Card className="border-0 bg-gradient-to-br from-rose-50 to-pink-100 dark:from-rose-950/30 dark:to-pink-950/30 shadow-lg">
+            <Card className="border-0 bg-gradient-to-br from-rose-50 to-[#E9E2FB] dark:from-rose-950/30 dark:to-[#1E0059]/30 shadow-lg">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-rose-100 dark:bg-rose-900/50 rounded-xl">
@@ -189,7 +189,7 @@ export function ProfileCompletionModal({ open, onOpenChange }: ProfileCompletion
 
 
           {/* Benefits */}
-          <Card className="border-0 bg-gradient-to-br from-violet-50 via-purple-50 to-indigo-100 dark:from-violet-950/30 dark:via-purple-950/30 dark:to-indigo-950/30 shadow-lg overflow-hidden">
+          <Card className="border-0 bg-gradient-to-br from-violet-50 via-purple-50 to-[#E9E2FB] dark:from-violet-950/30 dark:via-purple-950/30 dark:to-[#1E0059]/30 shadow-lg overflow-hidden">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
                 <div className="p-3 bg-violet-100 dark:bg-violet-900/50 rounded-2xl">

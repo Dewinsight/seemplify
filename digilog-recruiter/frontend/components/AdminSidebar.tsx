@@ -126,7 +126,7 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       <div className="flex items-center justify-between p-4 border-b border-gray-700">
         {!collapsed && (
           <div className="flex items-center space-x-2">
-            <Shield className="h-8 w-8 text-blue-500" />
+            <Shield className="h-8 w-8 text-[#754BE5]" />
             <span className="text-xl font-bold text-white">Admin Portal</span>
           </div>
         )}
@@ -177,7 +177,7 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
                   className={cn(
                     "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
                     isActive
-                      ? "bg-blue-600 text-white"
+                      ? "bg-[#754BE5] text-white"
                       : "text-gray-300 hover:bg-gray-700 hover:text-white",
                     collapsed && "justify-center"
                   )}

@@ -205,7 +205,7 @@ export function EnhancedCandidatePopup({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-full max-w-full h-[100vh] sm:max-w-[95vw] sm:h-[95vh] md:max-w-[90vw] md:h-[90vh] lg:max-w-6xl xl:max-w-7xl lg:max-h-[85vh] overflow-hidden p-0 gap-0 bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 dark:from-slate-900 dark:via-slate-800/50 dark:to-slate-700/30 border-0 sm:border shadow-2xl animate-in fade-in-0 zoom-in-95 duration-300 flex flex-col rounded-none sm:rounded-lg md:rounded-xl">
+      <DialogContent className="w-full max-w-full h-[100vh] sm:max-w-[95vw] sm:h-[95vh] md:max-w-[90vw] md:h-[90vh] lg:max-w-6xl xl:max-w-7xl lg:max-h-[85vh] overflow-hidden p-0 gap-0 bg-gradient-to-br from-white via-slate-50/50 to-[#F1ECFF]/30 dark:from-slate-900 dark:via-slate-800/50 dark:to-slate-700/30 border-0 sm:border shadow-2xl animate-in fade-in-0 zoom-in-95 duration-300 flex flex-col rounded-none sm:rounded-lg md:rounded-xl">
         
         {/* Hidden DialogTitle for accessibility */}
         <DialogHeader className="sr-only">
@@ -220,7 +220,7 @@ export function EnhancedCandidatePopup({
         {/* Modern Header Section */}
         <div className="relative overflow-hidden border-b border-slate-200/60 dark:border-slate-700/60 flex-shrink-0">
           {/* Animated Background Pattern */}
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 via-purple-600/5 to-indigo-600/5 animate-gradient-x" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#754BE5]/5 via-[#6935CF]/5 to-[#1E0059]/5 animate-gradient-x" />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.3),rgba(255,255,255,0))] opacity-30" />
           
           <div className="relative px-3 sm:px-4 md:px-6 py-3 sm:py-4 backdrop-blur-sm">
@@ -235,7 +235,7 @@ export function EnhancedCandidatePopup({
                       alt={`${candidate.firstName} ${candidate.lastName}`} 
                       className="object-cover transition-all duration-300 group-hover:scale-105"
                     />
-                    <AvatarFallback className="bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 text-white text-lg sm:text-xl font-bold">
+                    <AvatarFallback className="bg-gradient-to-br from-[#754BE5] via-[#6935CF] to-[#1E0059] text-white text-lg sm:text-xl font-bold">
                   {getInitials(candidate)}
                 </AvatarFallback>
               </Avatar>
@@ -305,7 +305,7 @@ export function EnhancedCandidatePopup({
 
               {/* Current Stage Card (simplified) */}
               <div className="hidden lg:block lg:min-w-[280px] xl:min-w-[320px]">
-                <div className="bg-gradient-to-r from-white/95 to-blue-50/95 dark:from-slate-800/95 dark:to-slate-700/95 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white/50 dark:border-slate-600/50 transition-all duration-300">
+                <div className="bg-gradient-to-r from-white/95 to-[#F1ECFF]/95 dark:from-slate-800/95 dark:to-slate-700/95 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white/50 dark:border-slate-600/50 transition-all duration-300">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Current Stage</span>
                     <div className="flex items-center gap-1.5">
@@ -370,7 +370,7 @@ export function EnhancedCandidatePopup({
                 
                 {/* Quick Stats Overview */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-                  <div className="bg-gradient-to-br from-white/90 to-blue-50/90 dark:from-slate-800/90 dark:to-slate-700/90 backdrop-blur-sm rounded-lg p-2 sm:p-3 shadow-md border border-white/20">
+                  <div className="bg-gradient-to-br from-white/90 to-[#F1ECFF]/90 dark:from-slate-800/90 dark:to-slate-700/90 backdrop-blur-sm rounded-lg p-2 sm:p-3 shadow-md border border-white/20">
                     <div className="flex items-center gap-2">
                       <div className="p-1.5 sm:p-2 bg-blue-500/10 rounded-lg">
                         <Target className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
@@ -423,7 +423,7 @@ export function EnhancedCandidatePopup({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                   {/* Skills Card */}
                 {candidate.skills && (
-                    <div className="bg-gradient-to-br from-white/90 to-indigo-50/90 dark:from-slate-800/90 dark:to-slate-700/90 backdrop-blur-sm rounded-xl p-3 sm:p-4 shadow-lg border border-white/20">
+                    <div className="bg-gradient-to-br from-white/90 to-[#F1ECFF]/90 dark:from-slate-800/90 dark:to-slate-700/90 backdrop-blur-sm rounded-xl p-3 sm:p-4 shadow-lg border border-white/20">
                       <div className="flex items-center gap-2 mb-2 sm:mb-3">
                         <div className="p-1.5 sm:p-2 bg-indigo-500/10 rounded-lg">
                           <Target className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-600" />
@@ -851,7 +851,7 @@ export function EnhancedCandidatePopup({
                   </div>
                   
                   <div className="grid grid-cols-1 gap-2">
-                    <div className="bg-gradient-to-br from-white/90 to-blue-50/90 dark:from-slate-800/90 dark:to-slate-700/90 backdrop-blur-sm rounded-lg p-3 text-center shadow-md border border-white/30">
+                    <div className="bg-gradient-to-br from-white/90 to-[#F1ECFF]/90 dark:from-slate-800/90 dark:to-slate-700/90 backdrop-blur-sm rounded-lg p-3 text-center shadow-md border border-white/30">
                       <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
                         {Math.floor((new Date().getTime() - new Date(candidate.applicationDate).getTime()) / (1000 * 60 * 60 * 24))}
                       </div>
@@ -864,7 +864,7 @@ export function EnhancedCandidatePopup({
                       <div className="text-xs font-medium text-slate-600 dark:text-slate-400">Interviews</div>
                     </div>
                     {candidate.aiInsights && (
-                      <div className="bg-gradient-to-br from-purple-50/90 to-indigo-50/90 dark:from-purple-900/30 dark:to-indigo-900/30 backdrop-blur-sm rounded-lg p-3 text-center shadow-md border border-purple-200/30">
+                      <div className="bg-gradient-to-br from-purple-50/90 to-[#F1ECFF]/90 dark:from-purple-900/30 dark:to-[#2E1568]/30 backdrop-blur-sm rounded-lg p-3 text-center shadow-md border border-purple-200/30">
                         <div className="text-xl font-bold text-purple-600 dark:text-purple-400">
                           {Math.round(candidate.aiInsights.overallScore || 0)}%
                         </div>
@@ -875,7 +875,7 @@ export function EnhancedCandidatePopup({
                 </div>
                 
                 {/* Enhanced Move to Stage Section */}
-                <div className="bg-gradient-to-br from-white/95 to-blue-50/95 dark:from-slate-800/95 dark:to-slate-700/95 backdrop-blur-sm rounded-xl p-3 sm:p-4 shadow-lg border border-white/50 dark:border-slate-600/50">
+                <div className="bg-gradient-to-br from-white/95 to-[#F1ECFF]/95 dark:from-slate-800/95 dark:to-slate-700/95 backdrop-blur-sm rounded-xl p-3 sm:p-4 shadow-lg border border-white/50 dark:border-slate-600/50">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="p-1.5 bg-blue-500/10 rounded-lg">
                       <ArrowRight className="h-4 w-4 text-blue-600" />
@@ -949,7 +949,7 @@ export function EnhancedCandidatePopup({
                 <Button 
                   onClick={handleMoveToStage} 
                   disabled={!selectedStage || isMoving}
-                      className="w-full h-12 sm:h-auto bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-200"
+                      className="w-full h-12 sm:h-auto bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] shadow-lg hover:shadow-xl transition-all duration-200"
                       size="lg"
                 >
                   {isMoving ? (

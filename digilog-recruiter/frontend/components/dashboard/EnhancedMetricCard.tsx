@@ -35,8 +35,8 @@ const variantStyles = {
     border: 'hover:border-gray-300 dark:hover:border-gray-600',
   },
   primary: {
-    icon: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400',
-    border: 'hover:border-indigo-300 dark:hover:border-indigo-600',
+    icon: 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary',
+    border: 'hover:border-primary/40 dark:hover:border-primary/40',
   },
   success: {
     icon: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',

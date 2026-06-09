@@ -776,7 +776,7 @@ export default function AIInterviewsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-[#F1ECFF]/60 to-[#F1ECFF]/70 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="container max-w-screen-2xl space-y-6 py-6">
         <div className="rounded-2xl border border-white/70 bg-white/85 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">

@@ -433,7 +433,7 @@ export default function SettingsPage() {
             <TabsList className="flex w-full overflow-x-auto pb-px mb-0 sm:grid sm:grid-cols-5 gap-0">
               <TabsTrigger 
                 value="profile" 
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-[#754BE5]"
               >
                 <User className="h-4 w-4" />
                 <span>Profile</span>
@@ -441,7 +441,7 @@ export default function SettingsPage() {
               
               <TabsTrigger 
                 value="preferences" 
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-[#754BE5]"
               >
                 <SettingsIcon className="h-4 w-4" />
                 <span>Preferences</span>
@@ -449,7 +449,7 @@ export default function SettingsPage() {
               
               <TabsTrigger 
                 value="security" 
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-[#754BE5]"
               >
                 <Shield className="h-4 w-4" />
                 <span>Security</span>
@@ -457,7 +457,7 @@ export default function SettingsPage() {
 
               <TabsTrigger 
                 value="tutorial" 
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-[#754BE5]"
               >
                 <GraduationCap className="h-4 w-4" />
                 <span className="hidden xs:inline">Getting Started</span>
@@ -466,7 +466,7 @@ export default function SettingsPage() {
               
               <TabsTrigger 
                 value="embeddings" 
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-[#754BE5]"
               >
                 <Database className="h-4 w-4" />
                 <span className="hidden xs:inline">AI Embeddings</span>
@@ -955,7 +955,7 @@ export default function SettingsPage() {
                   }
                 ].map((step, index) => (
                   <Card key={index} className="p-4">
-                    <div className="flex items-center justify-center w-12 h-12 mb-4 rounded-lg bg-blue-100 text-blue-600">
+                    <div className="flex items-center justify-center w-12 h-12 mb-4 rounded-lg bg-primary/10 text-primary">
                       {step.icon}
                     </div>
                     <h3 className="font-semibold mb-2">{step.title}</h3>

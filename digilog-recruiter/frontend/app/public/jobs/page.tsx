@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import StickyHeader from '@/components/StickyHeader'
+import { useBrandConfig } from '@/context/BrandContext'
 import { apiRequest } from '@/services/apiConfig'
 import { 
   Search, MapPin, Briefcase, Building2, DollarSign, Clock, 
@@ -62,6 +63,11 @@ interface PaginationData {
 
 export default function PublicJobsPage() {
   const router = useRouter()
+  const brand = useBrandConfig()
+  const rootBase =
+    brand.id === 'digilog'
+      ? 'min-h-screen bg-gradient-to-b from-[#F1ECFF] via-[#FAF9FE] to-white text-[#1E0059] digilog-light-theme'
+      : 'min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white'
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [jobs, setJobs] = useState<Job[]>([])
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
@@ -266,7 +272,7 @@ export default function PublicJobsPage() {
   )
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-x-hidden">
+    <div className={`${rootBase} overflow-x-hidden`}>
       {/* Background Effects */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
       <div className="absolute top-1/4 left-1/4 w-full max-w-[24rem] aspect-square bg-blue-500/20 rounded-full blur-3xl animate-pulse pointer-events-none"></div>
@@ -293,7 +299,6 @@ export default function PublicJobsPage() {
           <nav className="hidden xl:flex items-center justify-center">
             <ul className="flex space-x-6">
               <li><Link href="/#features" className="text-slate-300 hover:text-white transition-colors">Features</Link></li>
-              <li><Link href="/#pricing" className="text-slate-300 hover:text-white transition-colors">Pricing</Link></li>
               <li><Link href="/public/jobs" className="text-blue-400 hover:text-blue-300 transition-colors font-medium">Browse Jobs</Link></li>
             </ul>
           </nav>
@@ -369,17 +374,8 @@ export default function PublicJobsPage() {
                       </Link>
                     </li>
                     <li>
-                      <Link 
-                        href="/#pricing" 
-                        className="block py-3 text-lg text-slate-300 hover:text-white transition-colors border-b border-white/10"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                      >
-                        Pricing
-                      </Link>
-                    </li>
-                    <li>
-                      <Link 
-                        href="/public/jobs" 
+                      <Link
+                        href="/public/jobs"
                         className="block py-3 text-lg text-blue-400 hover:text-blue-300 transition-colors border-b border-white/10 font-medium"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
@@ -867,7 +863,7 @@ export default function PublicJobsPage() {
       
       {/* Footer */}
       <footer className="relative z-10 container mx-auto px-4 py-16 border-t border-white/10 mt-16">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
           <div className="space-y-4">
             <div className="flex items-center">
               <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-lg flex items-center justify-center shadow-lg">
@@ -884,24 +880,13 @@ export default function PublicJobsPage() {
             <h4 className="font-bold text-white mb-4">Product</h4>
             <ul className="space-y-3">
               <li><Link href="/#features" className="text-slate-300 hover:text-white transition-colors">Features</Link></li>
-              <li><Link href="/#pricing" className="text-slate-300 hover:text-white transition-colors">Pricing</Link></li>
               <li><Link href="/public/jobs" className="text-slate-300 hover:text-white transition-colors">Browse Jobs</Link></li>
-            </ul>
-          </div>
-          
-          <div>
-            <h4 className="font-bold text-white mb-4">Company</h4>
-            <ul className="space-y-3">
-              <li><span className="text-slate-300">About</span></li>
-              <li><span className="text-slate-300">Contact</span></li>
             </ul>
           </div>
           
           <div>
             <h4 className="font-bold text-white mb-4">Legal</h4>
             <ul className="space-y-3">
-              <li><Link href="/terms" className="text-slate-300 hover:text-white transition-colors">Terms of Service</Link></li>
-              <li><Link href="/privacy" className="text-slate-300 hover:text-white transition-colors">Privacy Policy</Link></li>
               <li><Link href="/cookies" className="text-slate-300 hover:text-white transition-colors">Cookies</Link></li>
             </ul>
           </div>

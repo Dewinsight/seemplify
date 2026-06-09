@@ -14,7 +14,7 @@ export function statusClass(status: string) {
   if (status === "completed" || status === "signed") return "border-emerald-200 bg-emerald-50 text-emerald-700"
   if (status === "cancelled" || status === "voided" || status === "declined") return "border-rose-200 bg-rose-50 text-rose-700"
   if (status === "in_progress" || status === "sent" || status === "viewed" || status === "partially_signed") {
-    return "border-blue-200 bg-blue-50 text-blue-700"
+    return "border-[#D9CCF8] bg-[#F1ECFF] text-[#6935CF]"
   }
   return "border-slate-200 bg-slate-50 text-slate-700"
 }
@@ -155,7 +155,7 @@ export function MetricCard({
   tone?: "blue" | "emerald" | "amber" | "slate"
 }) {
   const tones = {
-    blue: "bg-blue-50 text-blue-700",
+    blue: "bg-[#F1ECFF] text-[#6935CF]",
     emerald: "bg-emerald-50 text-emerald-700",
     amber: "bg-amber-50 text-amber-700",
     slate: "bg-slate-100 text-slate-700",

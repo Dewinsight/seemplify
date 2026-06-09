@@ -42,7 +42,7 @@ export function StatCard({ title, value, icon, trend, variant = "default", class
 
   const iconGradientClass = {
     default: "from-gray-500 to-gray-600 dark:from-gray-400 dark:to-gray-500",     // Primary (60%) - Gray
-    secondary: "from-indigo-500 to-indigo-600 dark:from-indigo-400 dark:to-indigo-500", // Secondary (30%) - Indigo  
+    secondary: "from-[#F1ECFF]0 to-[#6935CF] dark:from-[#9B7BEC] dark:to-[#F1ECFF]0", // Secondary (30%) - Indigo  
     accent: "from-teal-500 to-teal-600 dark:from-teal-400 dark:to-teal-500",     // Accent (10%) - Teal
   }
 

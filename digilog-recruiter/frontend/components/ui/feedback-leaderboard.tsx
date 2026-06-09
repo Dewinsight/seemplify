@@ -387,7 +387,7 @@ export function FeedbackLeaderboard({ jobId }: FeedbackLeaderboardProps) {
   return (
     <div className="space-y-6">
       {/* Header with Statistics */}
-      <Card className="border-0 bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-xl">
+      <Card className="border-0 bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white shadow-xl">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>

@@ -261,7 +261,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
             </Button>
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-[#754BE5] to-[#6935CF] bg-clip-text text-transparent">
               Edit Job
             </h1>
             <p className="text-muted-foreground text-lg mt-1 truncate">
@@ -272,7 +272,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
         {/* Progress Indicator */}
         <div className="w-full bg-gray-100 rounded-full h-1.5">
           <div 
-            className="bg-gradient-to-r from-blue-500 to-purple-500 h-1.5 rounded-full transition-all duration-300"
+            className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] h-1.5 rounded-full transition-all duration-300"
             style={{ width: activeTab === 'basic' ? '25%' : activeTab === 'description' ? '50%' : activeTab === 'requirements' ? '75%' : '100%' }}
           />
         </div>
@@ -315,7 +315,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
             {/* Basic Information Tab */}
             <TabsContent value="basic" className="space-y-6 mt-6">
               <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-gray-50/50">
-                <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-t-lg border-b">
+                <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] rounded-t-lg border-b">
                   <CardTitle className="text-xl flex items-center gap-2">
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                     Basic Information
@@ -702,7 +702,7 @@ export default function EditJobPage({ params }: EditJobPageProps) {
             {/* Compensation Tab */}
             <TabsContent value="compensation" className="space-y-6 mt-6">
               <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-gray-50/50">
-                <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-t-lg border-b">
+                <CardHeader className="bg-gradient-to-r from-purple-50 to-[#F1ECFF] rounded-t-lg border-b">
                   <CardTitle className="text-xl flex items-center gap-2">
                     <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
                     Compensation & Benefits

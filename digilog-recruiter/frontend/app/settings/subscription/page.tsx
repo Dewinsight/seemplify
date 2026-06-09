@@ -294,7 +294,7 @@ export default function SubscriptionPage() {
                     key={plan.code}
                     className={`relative group overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${
                       orgPlan === plan.code
-                        ? 'ring-2 ring-blue-500 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50' 
+                        ? 'ring-2 ring-blue-500 shadow-lg bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB]' 
                         : 'hover:ring-1 hover:ring-gray-300 bg-white'
                     }`}
                   >
@@ -369,7 +369,7 @@ export default function SubscriptionPage() {
                         <Button 
                           className={`w-full h-12 font-semibold transition-all duration-200 ${
                             orgPlan === plan.code
-                              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white cursor-default ring-2 ring-blue-200' 
+                              ? 'bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white cursor-default ring-2 ring-blue-200' 
                               : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl'
                           }`}
                           disabled={orgPlan === plan.code}

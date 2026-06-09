@@ -239,7 +239,7 @@ const InvitationsPage = () => {
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-4">
                     <Avatar className="w-12 h-12">
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                      <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white">
                         <Building2 className="w-6 h-6" />
                       </AvatarFallback>
                     </Avatar>

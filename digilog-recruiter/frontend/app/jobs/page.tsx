@@ -100,7 +100,7 @@ function JobCard({
       case 'active': return 'from-emerald-500 to-teal-600'
       case 'draft': return 'from-amber-500 to-orange-600'
       case 'closed': return 'from-slate-500 to-gray-600'
-      case 'paused': return 'from-blue-500 to-indigo-600'
+      case 'paused': return 'from-[#754BE5] to-[#6935CF]'
       default: return 'from-gray-500 to-slate-600'
     }
   }
@@ -110,7 +110,7 @@ function JobCard({
       case 'active': return 'from-emerald-400 to-teal-500'
       case 'draft': return 'from-amber-400 to-orange-500'
       case 'closed': return 'from-slate-400 to-gray-500'
-      case 'paused': return 'from-blue-400 to-indigo-500'
+      case 'paused': return 'from-[#754BE5] to-[#6935CF]'
       default: return 'from-gray-400 to-slate-500'
     }
   }
@@ -136,7 +136,7 @@ function JobCard({
         <div className="p-5 space-y-4">
           {/* Header: Icon + Title + Menu */}
           <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md flex-shrink-0">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center text-white font-bold text-lg shadow-md flex-shrink-0">
               {job.title.charAt(0).toUpperCase()}
             </div>
             
@@ -262,13 +262,13 @@ function JobsInnerPage() {
           >Prev</button>
           <div className="flex items-center gap-1">
             {Array.from({ length: total }).map((_, i) => (
-              <span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-blue-600' : 'bg-gray-300'}`}></span>
+              <span key={i} className={`h-2 w-2 rounded-full ${i === currentStep ? 'bg-[#754BE5]' : 'bg-gray-300'}`}></span>
             ))}
           </div>
           <div className="flex items-center gap-2">
             <button className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700" onClick={() => setIsOpen(false)}>Skip</button>
             <button
-              className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+              className="px-3 py-1.5 rounded bg-[#754BE5] text-white text-sm hover:bg-[#6935CF]"
               onClick={() => {
                 if ((currentStep ?? 0) + 1 < total) setCurrentStep((currentStep ?? 0) + 1); else setIsOpen(false)
               }}
@@ -483,12 +483,12 @@ function JobsInnerPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 p-3 sm:p-4 lg:p-8 jobs-container">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-[#F1ECFF]/30 dark:from-gray-950 dark:via-gray-900 dark:to-[#1E0059]/30 p-3 sm:p-4 lg:p-8 jobs-container">
       <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 lg:space-y-8">
         {/* Header - Mobile Optimized */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 lg:gap-6">
           <div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-gray-100 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent job-page-title">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-gray-100 bg-gradient-to-r from-[#1E0059] to-[#754BE5] bg-clip-text text-transparent job-page-title">
               Job Management
             </h1>
             <p className="text-sm sm:text-base lg:text-lg text-gray-600 dark:text-gray-400 mt-1 sm:mt-2 job-page-description">
@@ -499,7 +499,7 @@ function JobsInnerPage() {
             <Button variant="outline" size="sm" className="hidden sm:flex" onClick={() => { setCurrentStep(0); setIsOpen(true) }}>
               Guided Tour
             </Button>
-            <Button asChild size="sm" className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-200 w-full sm:w-auto" data-tutorial="create-job-btn">
+            <Button asChild size="sm" className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] shadow-lg hover:shadow-xl transition-all duration-200 w-full sm:w-auto" data-tutorial="create-job-btn">
               <Link href="/jobs/new">
                 <Plus className="h-4 w-4 mr-2" />
                 <span className="hidden sm:inline">Post New Job</span>
@@ -511,9 +511,9 @@ function JobsInnerPage() {
 
         {/* Analytics Stats Cards - Mobile Optimized 2x2 Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-blue-200 dark:border-blue-700 shadow-md hover:shadow-lg transition-shadow">
+          <div className="bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB] dark:from-[#2E1568]/30 dark:to-[#46208C]/30 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-blue-200 dark:border-blue-700 shadow-md hover:shadow-lg transition-shadow">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500 dark:bg-blue-600 flex items-center justify-center">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500 dark:bg-[#754BE5] flex items-center justify-center">
                 <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
               <div>
@@ -743,7 +743,7 @@ function JobsInnerPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-semibold">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center text-white text-sm font-semibold">
                           {job.title.charAt(0).toUpperCase()}
                         </div>
                         <div>
@@ -830,7 +830,7 @@ function JobsInnerPage() {
         {!loading && filteredJobs.length === 0 && (
           <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 shadow-lg">
             <CardContent className="text-center py-12">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#E9E2FB] to-[#D9CCF8] dark:from-[#2E1568]/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
                 <Briefcase className="h-8 w-8 text-blue-500 dark:text-blue-400" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
@@ -843,7 +843,7 @@ function JobsInnerPage() {
                 }
               </p>
               {(!searchQuery && selectedTab === "all") && (
-                <Button asChild className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
+                <Button asChild className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]">
                   <Link href="/jobs/new">
                     <Plus className="h-4 w-4 mr-2" />
                     Post Your First Job

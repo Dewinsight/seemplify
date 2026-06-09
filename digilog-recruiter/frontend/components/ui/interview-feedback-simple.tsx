@@ -582,7 +582,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg">
+            <div className="p-2 bg-gradient-to-r from-[#754BE5] to-[#6935CF] rounded-lg">
               <BarChart3 className="h-6 w-6 text-white" />
             </div>
             <div>
@@ -657,7 +657,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
           <Button
             size="sm"
             onClick={() => window.open(getPublicFeedbackUrl(), '_blank')}
-            className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+            className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]"
           >
             <ExternalLink className="h-4 w-4 mr-2" />
             Submit Feedback
@@ -671,7 +671,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
           {/* Key Metrics Overview */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Overall Score */}
-            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+            <Card className="bg-gradient-to-br from-[#F1ECFF] to-[#E9E2FB] border-blue-200">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -963,7 +963,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
           return (
             <Card key={userKey} className="overflow-hidden border-l-4 border-l-blue-500">
               {/* Enhanced User Header */}
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+              <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB]">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <Avatar className="h-12 w-12 border-2 border-white shadow-md">
@@ -1147,7 +1147,7 @@ export function InterviewFeedbackSimple({ interviewId }: InterviewFeedbackProps)
             <Button 
               onClick={() => window.open(getPublicFeedbackUrl(), '_blank')}
               size="lg"
-              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+              className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]"
             >
               <ExternalLink className="h-5 w-5 mr-2" />
               Submit Detailed Feedback

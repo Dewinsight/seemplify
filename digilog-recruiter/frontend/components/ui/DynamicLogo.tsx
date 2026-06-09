@@ -10,15 +10,19 @@ interface DynamicLogoProps {
   className?: string;
   showPulse?: boolean;
   linkTo?: string;
+  /** Render the dark-on-light logo variant (brand.logoDark) for light surfaces */
+  onLight?: boolean;
 }
 
-export const DynamicLogo = ({ 
-  size = 'md', 
-  className, 
+export const DynamicLogo = ({
+  size = 'md',
+  className,
   showPulse = true,
-  linkTo = '/dashboard' 
+  linkTo = '/dashboard',
+  onLight = false,
 }: DynamicLogoProps) => {
   const brand = useBrandConfig();
+  const logoSrc = onLight && brand.logoDark ? brand.logoDark : brand.logo;
 
   const sizeClasses = {
     sm: {
@@ -49,9 +53,9 @@ export const DynamicLogo = ({
   const LogoContent = () => (
     <div className="flex items-center gap-3">
       <div className="relative">
-        {brand.useImageLogo && brand.logo ? (
+        {brand.useImageLogo && logoSrc ? (
           <Image
-            src={brand.logo}
+            src={logoSrc}
             alt={brand.name}
             width={200}
             height={selectedSize.imgHeight}
@@ -105,12 +109,14 @@ export const DynamicLogo = ({
   );
 };
 
-export const DynamicLogoIcon = ({ 
+export const DynamicLogoIcon = ({
   size = 'md',
   showPulse = true,
-  className
+  className,
+  onLight = false,
 }: Omit<DynamicLogoProps, 'linkTo'>) => {
   const brand = useBrandConfig();
+  const logoSrc = onLight && brand.logoDark ? brand.logoDark : brand.logo;
 
   const sizeClasses = {
     sm: { container: "w-8 h-8", imgHeight: 32, text: "text-xs", pulse: "w-2.5 h-2.5" },
@@ -120,11 +126,11 @@ export const DynamicLogoIcon = ({
 
   const selectedSize = sizeClasses[size];
 
-  if (brand.useImageLogo && brand.logo) {
+  if (brand.useImageLogo && logoSrc) {
     return (
       <div className={cn("relative flex items-center", className)}>
         <Image
-          src={brand.logo}
+          src={logoSrc}
           alt={brand.name}
           width={200}
           height={selectedSize.imgHeight}

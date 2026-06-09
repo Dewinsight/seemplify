@@ -84,7 +84,7 @@ export function GPTCacheMonitor() {
 
   return (
     <Card className="border-0 bg-white/60 shadow-lg backdrop-blur-xl">
-      <CardHeader className="rounded-t-lg bg-gradient-to-r from-blue-600 to-indigo-700 text-white">
+      <CardHeader className="rounded-t-lg bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white">
         <CardTitle className="flex items-center justify-between text-xl font-semibold">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />

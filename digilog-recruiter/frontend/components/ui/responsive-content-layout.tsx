@@ -89,7 +89,7 @@ export function ResponsiveCard({
   const getVariantClasses = () => {
     switch (variant) {
       case 'gradient':
-        return 'bg-gradient-to-br from-white via-blue-50 to-purple-50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border-0 shadow-xl'
+        return 'bg-gradient-to-br from-white via-[#F1ECFF] to-purple-50 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border-0 shadow-xl'
       case 'glass':
         return 'bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border-0 shadow-lg'
       case 'bordered':
@@ -120,7 +120,7 @@ export function ResponsiveCard({
       {(title || subtitle || headerActions) && (
         <CardHeader className={cn(
           "space-y-2",
-          variant === 'gradient' && "bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg -m-px mb-0"
+          variant === 'gradient' && "bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white rounded-t-lg -m-px mb-0"
         )}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 min-w-0 flex-1">

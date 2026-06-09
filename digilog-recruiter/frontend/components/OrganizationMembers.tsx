@@ -863,7 +863,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
                             src={member.user?.profile?.avatar} 
                             alt={`${member.user?.profile?.firstName || ''} ${member.user?.profile?.lastName || ''}`}
                           />
-                          <AvatarFallback className="text-sm font-medium bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                          <AvatarFallback className="text-sm font-medium bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white">
                             {(member.user?.profile?.firstName?.charAt(0)?.toUpperCase()) || 
                              (member.user?.email?.charAt(0)?.toUpperCase()) || 'U'}
                             {(member.user?.profile?.lastName?.charAt(0)?.toUpperCase()) || ''}
@@ -1048,7 +1048,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
           <div className="flex items-center gap-4 py-4 border-b">
             <Avatar className="w-16 h-16">
                 <AvatarImage src={selectedMemberForActions?.user?.profile?.avatar} />
-              <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-lg">
+              <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white text-lg">
                   {selectedMemberForActions?.user?.profile?.firstName?.charAt(0) || 
                    selectedMemberForActions?.user?.email?.charAt(0) || 'U'}
                 </AvatarFallback>

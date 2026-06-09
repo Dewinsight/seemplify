@@ -275,7 +275,7 @@ export default function TestAIMatchingPage() {
   return (
     <div className="container mx-auto py-8 max-w-7xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+        <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-[#754BE5] to-[#6935CF] bg-clip-text text-transparent">
           AI Matching Test with Embeddings
         </h1>
         <p className="text-gray-600">
@@ -626,7 +626,7 @@ export default function TestAIMatchingPage() {
                               candidate.similarityPercentage
                             )}
                             disabled={isAddingThis || !selectedStageId}
-                            className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white"
+                            className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#6935CF] text-white"
                           >
                             {isAddingThis ? (
                               <>

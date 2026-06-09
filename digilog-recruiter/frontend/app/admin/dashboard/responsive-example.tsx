@@ -105,7 +105,7 @@ export default function ResponsiveExample() {
       value: 1248, 
       icon: <Users className="h-5 w-5" />, 
       change: 12,
-      color: 'from-blue-500 to-blue-600'
+      color: 'from-[#754BE5] to-[#6935CF]'
     },
     { 
       title: 'Organizations', 
@@ -331,7 +331,7 @@ export default function ResponsiveExample() {
         {selectedUser && (
           <div className="space-y-4">
             <div className="bg-gray-700 p-4 rounded-md flex items-center space-x-4">
-              <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+              <div className="h-16 w-16 rounded-full bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center text-white text-2xl font-bold">
                 {selectedUser.name.charAt(0)}
               </div>
               <div>

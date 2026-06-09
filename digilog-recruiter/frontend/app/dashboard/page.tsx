@@ -320,7 +320,7 @@ export default function Dashboard() {
             <Button
               size="sm"
               asChild
-              className="bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-sm hover:from-slate-800 hover:to-slate-600"
+              className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white shadow-sm hover:from-[#6935CF] hover:to-[#5a2cb5]"
             >
               <a href="/settings/organization">
                 <LayoutGrid className="h-4 w-4 mr-2" />

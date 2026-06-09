@@ -196,7 +196,7 @@ function SummaryContent({
             <Button
               onClick={generateComprehensiveReport}
               disabled={generatingReport}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+              className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white"
             >
               {generatingReport ? (
                 <>
@@ -256,7 +256,7 @@ function SummaryContent({
       {/* Comprehensive Report Card */}
       {showReport && reportData && (
         <Card className="mt-6 border-2 border-blue-200">
-          <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50">
+          <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB]">
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl">Comprehensive Interview Report</CardTitle>
               <Badge variant="outline" className="text-sm">

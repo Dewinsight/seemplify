@@ -582,7 +582,7 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
 
       {showAuthHelper && (
         <div className="fixed right-4 lg:right-8 top-1/2 -translate-y-1/2 z-[12000] w-[400px] max-w-[calc(100vw-2rem)] rounded-2xl border border-blue-200 bg-white shadow-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-t-2xl">
+          <div className="px-5 py-4 border-b border-blue-100 bg-gradient-to-r from-[#F1ECFF] via-[#E9E2FB] to-[#F1ECFF] rounded-t-2xl">
             <div className="flex items-center gap-2 text-blue-900 font-semibold">
               <ExternalLink className="h-4 w-4" />
               Authentication Guide

@@ -59,7 +59,7 @@ const AdminHeader = ({ children }: AdminHeaderProps) => {
                 variant="ghost"
                 className="flex items-center space-x-2 text-gray-300 hover:text-white hover:bg-gray-700 p-1 sm:p-2"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-sm font-semibold">
                     {admin?.name?.charAt(0).toUpperCase()}
                   </span>

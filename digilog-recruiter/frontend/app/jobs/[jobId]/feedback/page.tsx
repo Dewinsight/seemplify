@@ -389,7 +389,7 @@ export default function FullFeedbackPage() {
                   return (
                     <Card key={candidate._id} className="overflow-hidden">
                       {/* Candidate Header */}
-                      <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 border-b">
+                      <CardHeader className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] border-b">
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-12 w-12">

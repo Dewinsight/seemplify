@@ -79,7 +79,7 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
       className
     )} data-tutorial="dashboard-profile-card-inner">
       {/* Modern header with gradient */}
-      <div className="relative h-24 sm:h-28 md:h-32 lg:h-28 xl:h-32 2xl:h-36 bg-gradient-to-br from-indigo-500 via-indigo-600 to-teal-600">
+      <div className="relative h-24 sm:h-28 md:h-32 lg:h-28 xl:h-32 2xl:h-36 bg-gradient-to-br from-[#754BE5] via-[#6935CF] to-[#1E0059]">
         <div className="absolute inset-0 bg-black/20" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
         
@@ -108,7 +108,7 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
           <div className="relative">
             <Avatar className="h-16 w-16 sm:h-18 sm:w-18 md:h-20 md:w-20 lg:h-18 lg:w-18 xl:h-20 xl:w-20 2xl:h-24 2xl:w-24 border-4 border-background shadow-xl">
               <AvatarImage src={getUserAvatar() || undefined} alt={getUserDisplayName()} />
-              <AvatarFallback className="text-xl font-semibold bg-gradient-to-br from-indigo-500 to-teal-600 text-white">
+              <AvatarFallback className="text-xl font-semibold bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white">
                 {getUserDisplayName().charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -198,7 +198,7 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
               className="h-2 bg-muted"
             />
             <div 
-              className="absolute inset-0 h-2 rounded-full bg-gradient-to-r from-indigo-500 to-teal-500 opacity-20"
+              className="absolute inset-0 h-2 rounded-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] opacity-20"
               style={{ width: `${completionPercentage}%` }}
             />
           </div>
@@ -222,7 +222,7 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
               )}
               <Button 
                 asChild 
-                className="w-full bg-gradient-to-r from-indigo-500 to-teal-600 hover:from-indigo-600 hover:to-teal-700 text-white shadow-md hover:shadow-lg transition-all duration-300" 
+                className="w-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white shadow-md hover:shadow-lg transition-all duration-300" 
                 size="sm"
               >
                 <Link href="/settings">

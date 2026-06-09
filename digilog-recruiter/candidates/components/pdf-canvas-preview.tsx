@@ -94,7 +94,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center gap-3 p-6 text-sm text-slate-600">
-        <Loader2 className="h-5 w-5 animate-spin text-blue-700" />
+        <Loader2 className="h-5 w-5 animate-spin text-[#6935CF]" />
         Rendering PDF preview...
       </div>
     )
@@ -145,7 +145,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
                       className={`absolute overflow-hidden ${
                         showSignature
                           ? "bg-transparent"
-                          : "border border-blue-500/70 bg-blue-50/70"
+                          : "border border-[#754BE5]/70 bg-[#F1ECFF]/70"
                       }`}
                       style={{
                         left: `${field.x * 100}%`,
@@ -161,7 +161,7 @@ export function PdfCanvasPreview({ blob, title, signatureFields = [], signatureP
                           className="h-full w-full object-contain p-1"
                         />
                       ) : (
-                        <div className="flex h-full items-center px-2 text-[11px] font-medium text-blue-800">
+                        <div className="flex h-full items-center px-2 text-[11px] font-medium text-[#6935CF]">
                           {field.type === "text" && typedValue ? typedValue : fieldLabel(field)}
                         </div>
                       )}

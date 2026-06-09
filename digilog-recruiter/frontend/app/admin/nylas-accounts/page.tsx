@@ -215,7 +215,7 @@ export default function NylasAccountsPage() {
           </div>
 
           {/* Capacity Overview Card */}
-          <Card className="p-6 mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <Card className="p-6 mb-6 bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] border-blue-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 mb-1">System-Wide Capacity</p>
@@ -245,7 +245,7 @@ export default function NylasAccountsPage() {
                 className={`h-full transition-all duration-500 ${
                   totalCapacity.utilizationPercentage > 90 ? 'bg-red-500' :
                   totalCapacity.utilizationPercentage > 75 ? 'bg-amber-500' :
-                  'bg-gradient-to-r from-blue-500 to-indigo-600'
+                  'bg-gradient-to-r from-[#754BE5] to-[#6935CF]'
                 }`}
                 style={{ width: `${totalCapacity.utilizationPercentage}%` }}
               />

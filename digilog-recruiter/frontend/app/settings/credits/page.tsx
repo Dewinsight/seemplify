@@ -593,7 +593,7 @@ export default function CreditsSettingsPage() {
       </Tabs>
 
       {/* Full Analytics Link */}
-      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950 border-blue-200 dark:border-blue-800">
+      <Card className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] dark:from-[#1E0059] dark:to-purple-950 border-blue-200 dark:border-blue-800">
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>

@@ -151,7 +151,7 @@ export default function SignupSuccessPage() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
           >
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-[#754BE5] to-[#6935CF] rounded-full flex items-center justify-center mx-auto mb-4">
               <Loader2 className="h-10 w-10 animate-spin text-white" />
             </div>
             <p className="text-xl text-white font-medium">Loading your account...</p>
@@ -179,7 +179,7 @@ export default function SignupSuccessPage() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
           >
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-[#754BE5] to-[#6935CF] rounded-full flex items-center justify-center mx-auto mb-4">
               <Loader2 className="h-10 w-10 animate-spin text-white" />
             </div>
             <p className="text-xl text-white font-medium">Redirecting...</p>
@@ -224,7 +224,7 @@ export default function SignupSuccessPage() {
           transition={{ duration: 0.6 }}
         >
           <Card className="bg-white/15 backdrop-blur-2xl border-white/30 shadow-2xl overflow-hidden relative">
-            <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 via-blue-500/10 to-purple-500/10 rounded-lg animate-pulse opacity-30"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 via-[#F1ECFF]0/10 to-purple-500/10 rounded-lg animate-pulse opacity-30"></div>
             
             <CardHeader className="text-center pb-6 relative z-10">
               <motion.div
@@ -318,7 +318,7 @@ export default function SignupSuccessPage() {
               >
                 <Button 
                   onClick={handleContinue}
-                  className="w-full bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white py-6 rounded-lg font-medium text-base flex items-center justify-center gap-2 transition-all duration-300 border-0 shadow-lg hover:shadow-xl"
+                  className="w-full bg-gradient-to-r from-[#F1ECFF]0 to-green-500 hover:from-[#6935CF] hover:to-green-600 text-white py-6 rounded-lg font-medium text-base flex items-center justify-center gap-2 transition-all duration-300 border-0 shadow-lg hover:shadow-xl"
                 >
                   Continue to Login
                   <ArrowRight className="h-4 w-4" />

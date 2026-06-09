@@ -533,7 +533,7 @@ export function ImprovedPipelineBoard({
           <Button
             onClick={() => onNavigateToStages?.()}
             size="lg"
-            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+            className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]"
           >
             <Settings className="mr-2 h-4 w-4" />
             Configure Stages
@@ -638,7 +638,7 @@ export function ImprovedPipelineBoard({
               </Button>
               <Button
                 onClick={() => setShowBulkMoveModal(true)}
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5]"
               >
                 <ArrowRight className="h-4 w-4 mr-2" />
                 Move Selected
@@ -927,7 +927,7 @@ export function ImprovedPipelineBoard({
                 <Button
                   size="lg"
                   onClick={() => setShowBulkMoveModal(true)}
-                  className="rounded-full shadow-2xl hover:shadow-blue-500/50 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 text-white border-2 border-white/20 h-16 px-6 gap-3 group"
+                  className="rounded-full shadow-2xl hover:shadow-blue-500/50 bg-gradient-to-r from-[#754BE5] via-[#6935CF] to-[#1E0059] hover:from-[#6935CF] hover:via-[#5a2cb5] hover:to-[#1E0059] text-white border-2 border-white/20 h-16 px-6 gap-3 group"
                 >
                   <div className="flex items-center gap-3">
                     <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm">

@@ -105,7 +105,7 @@ function ResetPasswordForm() {
         <Card className="w-full max-w-md mx-4 relative z-10 border-gray-700 bg-gray-800/50 backdrop-blur-xl">
           <CardHeader className="space-y-1">
             <div className="flex items-center justify-center mb-4">
-              <div className="p-3 bg-gradient-to-br from-green-500 to-blue-600 rounded-full">
+              <div className="p-3 bg-gradient-to-br from-green-500 to-[#6935CF] rounded-full">
                 <Lock className="h-8 w-8 text-white" />
               </div>
             </div>
@@ -164,7 +164,7 @@ function ResetPasswordForm() {
 
               <Button
                 type="submit"
-                className="w-full bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white font-medium"
+                className="w-full bg-gradient-to-r from-green-500 to-[#6935CF] hover:from-green-600 hover:to-[#5A2CB5] text-white font-medium"
                 disabled={loading}
               >
                 {loading ? 'Setting Password...' : 'Set New Password'}
@@ -193,7 +193,7 @@ function ResetPasswordForm() {
       <Card className="w-full max-w-md mx-4 relative z-10 border-gray-700 bg-gray-800/50 backdrop-blur-xl">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="p-3 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full">
+            <div className="p-3 bg-gradient-to-br from-[#754BE5] to-[#6935CF] rounded-full">
               <Shield className="h-8 w-8 text-white" />
             </div>
           </div>
@@ -245,7 +245,7 @@ function ResetPasswordForm() {
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium"
+              className="w-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] text-white font-medium"
               disabled={loading}
             >
               {loading ? 'Verifying...' : 'Verify Code'}

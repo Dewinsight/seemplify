@@ -95,7 +95,7 @@ const suggestedPrompts = [
     text: "How do I create a job posting?",
     icon: <Briefcase className="h-5 w-5" />,
     category: "job_creation",
-    gradient: "from-blue-500 to-cyan-500",
+    gradient: "from-[#F1ECFF]0 to-cyan-500",
     followUp: "I'll show you how to create a job posting step-by-step with a navigation button.",
     action: "navigate"
   },
@@ -103,7 +103,7 @@ const suggestedPrompts = [
     text: "Where can I find candidates?",
     icon: <Users className="h-5 w-5" />,
     category: "candidate_search", 
-    gradient: "from-purple-500 to-pink-500",
+    gradient: "from-purple-500 to-[#F1ECFF]0",
     followUp: "I'll direct you to the Candidates page where you can search and filter candidates."
   },
   {
@@ -124,14 +124,14 @@ const suggestedPrompts = [
     text: "Generate interview questions for a role",
     icon: <FileText className="h-5 w-5" />,
     category: "content_generation",
-    gradient: "from-indigo-500 to-purple-500",
+    gradient: "from-[#F1ECFF]0 to-purple-500",
     followUp: "I can generate interview questions for any role. What position are you hiring for?"
   },
   {
     text: "How do I schedule an interview?",
     icon: <Clock className="h-5 w-5" />,
     category: "interview_guide",
-    gradient: "from-teal-500 to-blue-500",
+    gradient: "from-teal-500 to-[#F1ECFF]0",
     followUp: "I'll guide you through the interview scheduling process."
   },
 ]
@@ -175,21 +175,21 @@ function ChatSessionItem({
       onClick={onClick}
       className={`group relative flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 ease-out transform hover:scale-[1.02] ${
         isActive
-          ? "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 shadow-lg border border-blue-200/50 dark:border-blue-700/50"
+          ? "bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] dark:from-[#2E1568]/20 dark:to-[#2E1568]/20 shadow-lg border border-blue-200/50 dark:border-blue-700/50"
           : "hover:bg-white/80 dark:hover:bg-gray-800/80 hover:shadow-md backdrop-blur-sm"
       }`}
     >
       {/* Active indicator */}
       {isActive && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-r-full" />
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-[#754BE5] to-[#6935CF] rounded-r-full" />
       )}
       
       {/* Conversation Icon */}
       <div className={`flex items-center gap-3 flex-1 min-w-0 ${isActive ? 'ml-3' : ''}`}>
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
           isActive 
-            ? 'bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg' 
-            : 'bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 group-hover:from-blue-100 group-hover:to-indigo-100 dark:group-hover:from-blue-900/30 dark:group-hover:to-indigo-900/30'
+            ? 'bg-gradient-to-br from-[#754BE5] to-[#6935CF] shadow-lg' 
+            : 'bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 group-hover:from-[#E9E2FB] group-hover:to-[#E9E2FB] dark:group-hover:from-[#2E1568]/30 dark:group-hover:to-[#2E1568]/30'
         }`}>
           <MessageCircle className={`h-5 w-5 transition-colors duration-300 ${
             isActive ? 'text-white' : 'text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
@@ -1463,7 +1463,7 @@ export default function AssistantPage() {
 
   return (
     <>
-      <div className="fixed top-16 inset-x-0 bottom-0 bg-gradient-to-br from-white via-blue-50/50 to-indigo-50/60 dark:from-gray-950 dark:via-blue-950/20 dark:to-indigo-950/30 overflow-hidden">
+      <div className="fixed top-16 inset-x-0 bottom-0 bg-gradient-to-br from-white via-[#F1ECFF]/50 to-[#F1ECFF]/60 dark:from-gray-950 dark:via-[#1E0059]/20 dark:to-[#1E0059]/30 overflow-hidden">
         {/* Modern geometric background pattern */}
         <div className="absolute inset-0 opacity-30 dark:opacity-10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(59,130,246,0.15)_1px,transparent_0)] bg-[length:24px_24px]" />
@@ -1471,9 +1471,9 @@ export default function AssistantPage() {
         </div>
         
         {/* Enhanced floating elements with better positioning */}
-        <div className="absolute top-20 left-20 w-32 h-32 bg-gradient-to-br from-blue-400/10 via-purple-400/10 to-pink-400/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-32 right-32 w-40 h-40 bg-gradient-to-br from-indigo-400/10 via-blue-400/10 to-cyan-400/10 rounded-full blur-3xl animate-pulse delay-1000" />
-        <div className="absolute top-1/3 right-1/4 w-24 h-24 bg-gradient-to-br from-purple-400/10 via-pink-400/10 to-rose-400/10 rounded-full blur-2xl animate-pulse delay-500" />
+        <div className="absolute top-20 left-20 w-32 h-32 bg-gradient-to-br from-[#754BE5]/10 via-[#6935CF]/10 to-[#A284F1]/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-32 right-32 w-40 h-40 bg-gradient-to-br from-[#9B7BEC]/10 via-[#9B7BEC]/10 to-cyan-400/10 rounded-full blur-3xl animate-pulse delay-1000" />
+        <div className="absolute top-1/3 right-1/4 w-24 h-24 bg-gradient-to-br from-purple-400/10 via-[#9B7BEC]/10 to-rose-400/10 rounded-full blur-2xl animate-pulse delay-500" />
         <div className="absolute bottom-1/4 left-1/3 w-28 h-28 bg-gradient-to-br from-emerald-400/10 via-teal-400/10 to-cyan-400/10 rounded-full blur-2xl animate-pulse delay-700" />
 
         <div className="flex h-full relative z-10">
@@ -1494,10 +1494,10 @@ export default function AssistantPage() {
         border-r border-gray-200/30 dark:border-gray-700/30 flex flex-col
         shadow-2xl lg:shadow-xl overflow-hidden`}>
           {/* Modern gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-50/20 via-white/10 to-indigo-50/20 dark:from-blue-950/20 dark:via-gray-900/10 dark:to-indigo-950/20 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#F1ECFF]/20 via-white/10 to-[#F1ECFF]/20 dark:from-[#1E0059]/20 dark:via-gray-900/10 dark:to-[#1E0059]/20 pointer-events-none" />
           
           {/* Animated border glow */}
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-500/10 via-purple-500/5 to-indigo-500/10 opacity-0 hover:opacity-100 transition-all duration-700 blur-xl" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#754BE5]/10 via-[#6935CF]/5 to-[#1E0059]/10 opacity-0 hover:opacity-100 transition-all duration-700 blur-xl" />
           
           {/* Modern Sidebar Header */}
           <div className="relative px-4 py-4 border-b border-gray-200/30 dark:border-gray-700/30 bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl">
@@ -1519,7 +1519,7 @@ export default function AssistantPage() {
                     <Button
                       onClick={createNewChatSession}
                       size="icon"
-                      className="h-8 w-8 bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 hover:from-blue-600 hover:via-purple-600 hover:to-indigo-700 shadow-lg hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 border-0 rounded-lg transform hover:scale-105"
+                      className="h-8 w-8 bg-gradient-to-r from-[#754BE5] via-[#6935CF] to-[#1E0059] hover:from-[#6935CF] hover:via-[#5a2cb5] hover:to-[#1E0059] shadow-lg hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 border-0 rounded-lg transform hover:scale-105"
                       title="Start New Chat"
                     >
                       <Plus className="h-4 w-4" />
@@ -1557,7 +1557,7 @@ export default function AssistantPage() {
                   <Button
                     onClick={createNewChatSession}
                     size="icon"
-                    className="h-10 w-10 bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 hover:from-blue-600 hover:via-purple-600 hover:to-indigo-700 shadow-lg hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 border-0 rounded-lg transform hover:scale-105"
+                    className="h-10 w-10 bg-gradient-to-r from-[#754BE5] via-[#6935CF] to-[#1E0059] hover:from-[#6935CF] hover:via-[#5a2cb5] hover:to-[#1E0059] shadow-lg hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 border-0 rounded-lg transform hover:scale-105"
                     title="Start New Chat"
                   >
                     <Plus className="h-5 w-5" />
@@ -1575,10 +1575,10 @@ export default function AssistantPage() {
                   <div className="flex items-center justify-center py-16">
                     <div className="text-center">
                       <div className="relative mb-4">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center mx-auto shadow-lg">
                           <Loader2 className="h-6 w-6 animate-spin text-white" />
                         </div>
-                        <div className="absolute inset-0 w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 animate-ping opacity-20 mx-auto" />
+                        <div className="absolute inset-0 w-12 h-12 rounded-xl bg-gradient-to-br from-[#754BE5] to-[#6935CF] animate-ping opacity-20 mx-auto" />
                       </div>
                       <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">Loading conversations</h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400">Fetching your chat history...</p>
@@ -1591,7 +1591,7 @@ export default function AssistantPage() {
                   </div>
                 ) : chatSessions.length === 0 ? (
                   <div className="text-center py-16">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-100 via-purple-100 to-indigo-100 dark:from-blue-900/30 dark:via-purple-900/30 dark:to-indigo-900/30 flex items-center justify-center mx-auto mb-6 shadow-lg">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#E9E2FB] via-[#D9CCF8] to-[#D9CCF8] dark:from-[#2E1568]/30 dark:via-purple-900/30 dark:to-[#2E1568]/30 flex items-center justify-center mx-auto mb-6 shadow-lg">
                       <MessageCircle className="h-8 w-8 text-blue-500 dark:text-blue-400" />
                     </div>
                     <h3 className="text-base font-bold text-gray-800 dark:text-gray-200 mb-2">No conversations yet</h3>
@@ -1601,7 +1601,7 @@ export default function AssistantPage() {
                     <Button
                       onClick={createNewChatSession}
                       size="sm"
-                      className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-300"
+                      className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] hover:from-[#6935CF] hover:to-[#5a2cb5] shadow-lg hover:shadow-xl transition-all duration-300"
                     >
                       <Plus className="h-3 w-3 mr-2" />
                       Start Chatting
@@ -1687,7 +1687,7 @@ export default function AssistantPage() {
                 <Menu className="h-4 w-4" />
               </Button>
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center">
                   <Bot className="h-4 w-4 text-white" />
                 </div>
                 <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">
@@ -1727,14 +1727,14 @@ export default function AssistantPage() {
                   <div
                     className={`flex ${message.isJobForm ? 'w-[80%] mx-auto' : 'max-w-[95%] sm:max-w-[90%] lg:max-w-[85%]'} gap-2 sm:gap-3 lg:gap-4 rounded-2xl p-3 sm:p-4 lg:p-5 message-bubble group transition-all duration-300 hover:shadow-xl relative ${
                       message.type === "user"
-                        ? "bg-gradient-to-br from-blue-500 via-blue-600 to-purple-600 text-white shadow-lg"
+                        ? "bg-gradient-to-br from-[#754BE5] via-[#6935CF] to-[#6935CF] text-white shadow-lg"
                         : "bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 shadow-lg"
                     }`}
                     style={{ pointerEvents: 'auto' }}
                   >
                     {message.type === "assistant" && (
                       <Avatar className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 flex-shrink-0 ring-2 ring-gray-200 dark:ring-gray-700">
-                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-xs">
+                        <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white text-xs">
                           <Bot className="h-3 w-3 sm:h-3.5 sm:w-3.5 lg:h-4 lg:w-4" />
                         </AvatarFallback>
                       </Avatar>
@@ -1909,7 +1909,7 @@ export default function AssistantPage() {
           {/* Input Area */}
           <div className="border-t bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-gray-200/50 dark:border-gray-700/50 p-3 input-container flex-shrink-0 z-20 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.05)] dark:shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.2)]">
             {/* Gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-blue-50/10 via-transparent to-transparent dark:from-blue-950/10 dark:via-transparent dark:to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#F1ECFF]/10 via-transparent to-transparent dark:from-[#1E0059]/10 dark:via-transparent dark:to-transparent pointer-events-none" />
             
             <div className="max-w-4xl mx-auto relative">
               {/* Hidden file input */}
@@ -1925,7 +1925,7 @@ export default function AssistantPage() {
               {false && messages.length <= 1 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#754BE5] to-[#6935CF] flex items-center justify-center">
                       <Sparkles className="h-4 w-4 text-white" />
                     </div>
                     <div>
@@ -1970,7 +1970,7 @@ export default function AssistantPage() {
                     <div className={`relative w-2.5 h-2.5 rounded-full transition-all duration-300 ${
                       isConnected 
                         ? 'bg-gradient-to-r from-green-400 to-emerald-500 shadow-lg shadow-green-400/50' 
-                        : 'bg-gradient-to-r from-red-400 to-pink-500 shadow-lg shadow-red-400/50'
+                        : 'bg-gradient-to-r from-red-400 to-[#F1ECFF]0 shadow-lg shadow-red-400/50'
                     }`}>
                       {isConnected && (
                         <div className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 animate-ping opacity-75" />
@@ -2029,7 +2029,7 @@ export default function AssistantPage() {
                       size="icon"
                       onClick={handleSendMessage}
                       disabled={inputValue.trim() === "" || isAssistantTyping || isProcessing || !isConnected || isFileParsing}
-                      className="h-10 w-10 bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 hover:from-blue-600 hover:via-purple-600 hover:to-indigo-700 shadow-lg hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 rounded-lg border-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="h-10 w-10 bg-gradient-to-r from-[#754BE5] via-[#6935CF] to-[#1E0059] hover:from-[#6935CF] hover:via-[#5a2cb5] hover:to-[#1E0059] shadow-lg hover:shadow-xl hover:shadow-blue-500/30 transition-all duration-300 rounded-lg border-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isAssistantTyping || isProcessing ? (
                         <Loader2 className="h-4 w-4 animate-spin text-white" />

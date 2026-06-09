@@ -661,7 +661,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       {/* Bulk Action Bar - Portal to body level for true fixed positioning */}
       {selectedCandidates.size > 0 && (
         <div className="fixed top-2 sm:top-4 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-full max-w-6xl z-[9999] px-2 sm:px-4">
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-3 sm:p-4 rounded-lg shadow-2xl backdrop-blur-md border border-purple-400/30">
+          <div className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white p-3 sm:p-4 rounded-lg shadow-2xl backdrop-blur-md border border-purple-400/30">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* Selection count */}
               <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -724,7 +724,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
       )}
 
     <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
-      <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg p-4 sm:p-6">
+      <CardHeader className="bg-gradient-to-r from-[#754BE5] to-[#6935CF] text-white rounded-t-lg p-4 sm:p-6">
         <div className="flex flex-col gap-4">
           {/* Title row */}
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
@@ -913,10 +913,10 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
               key={candidateId || `candidate-${index}`} 
               className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 cursor-pointer ${
                 isSelected
-                  ? 'border-blue-500 dark:border-blue-400 bg-gradient-to-br from-blue-50 via-blue-100/50 to-blue-50 dark:from-blue-950/50 dark:via-blue-900/50 dark:to-blue-950/30 shadow-lg shadow-blue-500/30 ring-2 ring-blue-500/50'
+                  ? 'border-blue-500 dark:border-blue-400 bg-gradient-to-br from-[#F1ECFF] via-[#E9E2FB]/50 to-[#F1ECFF] dark:from-[#1E0059]/50 dark:via-[#2E1568]/50 dark:to-[#1E0059]/30 shadow-lg shadow-blue-500/30 ring-2 ring-blue-500/50'
                   : match.status === 'rejected' 
                   ? 'border-red-300 dark:border-red-700 bg-gradient-to-br from-red-50/80 via-gray-50/50 to-red-50/30 dark:from-red-950/50 dark:via-slate-700/50 dark:to-red-950/30 hover:shadow-lg hover:shadow-red-500/20 opacity-75' 
-                  : 'border-gray-200 dark:border-slate-600 bg-gradient-to-br from-white via-gray-50/50 to-blue-50/30 dark:from-slate-800 dark:via-slate-700/50 dark:to-slate-600/30 hover:shadow-xl hover:shadow-blue-500/10 hover:border-blue-300 dark:hover:border-blue-500 hover:scale-[1.01]'
+                  : 'border-gray-200 dark:border-slate-600 bg-gradient-to-br from-white via-gray-50/50 to-[#F1ECFF]/30 dark:from-slate-800 dark:via-slate-700/50 dark:to-slate-600/30 hover:shadow-xl hover:shadow-blue-500/10 hover:border-blue-300 dark:hover:border-blue-500 hover:scale-[1.01]'
               }`}
               onClick={(e) => {
                 // Allow clicking on card to select/deselect, but not if clicking buttons or other interactive elements
@@ -936,7 +936,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
               <div className={`absolute inset-0 bg-gradient-to-r from-transparent via-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${
                 match.status === 'rejected' 
                   ? 'to-red-500/10' 
-                  : 'to-blue-500/5'
+                  : 'to-[#F1ECFF]0/5'
               }`} />
               
               {/* Rejected overlay indicator */}
@@ -975,7 +975,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                     {/* Enhanced Avatar */}
                     <div className="relative flex-shrink-0">
                       <Avatar className="h-12 w-12 sm:h-16 sm:w-16 ring-2 sm:ring-4 ring-white/80 shadow-lg group-hover:ring-blue-200 transition-all duration-300">
-                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-sm sm:text-lg font-bold shadow-inner">
+                        <AvatarFallback className="bg-gradient-to-br from-[#754BE5] to-[#6935CF] text-white text-sm sm:text-lg font-bold shadow-inner">
                           {getCandidateName(match) !== 'Unnamed Candidate' ? getCandidateName(match).split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'N/A'}
                         </AvatarFallback>
                       </Avatar>
@@ -1100,7 +1100,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                 </div>
 
                 {/* AI Match Score Section */}
-                <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 rounded-lg sm:rounded-xl p-3 sm:p-4 mb-4 border border-blue-100 dark:border-blue-800/30">
+                <div className="bg-gradient-to-r from-[#F1ECFF] to-[#E9E2FB] dark:from-[#1E0059]/20 dark:to-purple-950/20 rounded-lg sm:rounded-xl p-3 sm:p-4 mb-4 border border-blue-100 dark:border-blue-800/30">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
                       <Award className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
@@ -1190,7 +1190,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
                             handleMoveToPipeline(getCandidateId(match), getCandidateName(match))
                           }}
                           disabled={movingToPipeline.has(getCandidateId(match))}
-                          className="h-8 sm:h-9 px-2 sm:px-4 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 text-xs sm:text-sm"
+                          className="h-8 sm:h-9 px-2 sm:px-4 bg-gradient-to-r from-green-600 to-[#6935CF] hover:from-green-700 hover:to-[#5A2CB5] text-white shadow-lg hover:shadow-xl transition-all duration-200 text-xs sm:text-sm"
                         >
                           {movingToPipeline.has(getCandidateId(match)) ? (
                             <Loader2 className="animate-spin h-3 w-3 sm:h-4 sm:w-4" />
@@ -1295,7 +1295,7 @@ export function ShortlistCard({ jobId, jobTitle, onCandidateMoved }: ShortlistCa
         <DialogContent className="w-[95vw] max-w-4xl max-h-[85vh] sm:max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-800 border-0 dark:border-slate-700 p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-lg sm:text-2xl font-bold flex items-center gap-2 sm:gap-3 text-gray-900 dark:text-gray-100">
-              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gradient-to-r from-[#754BE5] to-[#6935CF] flex items-center justify-center flex-shrink-0">
                 <UserPlus className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
               </div>
               <span className="truncate">Add Candidates to Shortlist</span>

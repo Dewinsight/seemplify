@@ -1282,7 +1282,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 bg-gray-200 dark:bg-slate-700 rounded-full h-2">
                                   <div 
-                                    className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500"
+                                    className="h-2 rounded-full bg-gradient-to-r from-[#754BE5] to-[#6935CF]"
                                     style={{ width: `${explanation.dataQuality.completeness}%` }}
                                   ></div>
                                 </div>
@@ -1313,7 +1313,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
                           {/* LLM-enhanced insights */}
                           {explanation.gptEnhanced && (
-                            <div className="space-y-3 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-700">
+                            <div className="space-y-3 bg-gradient-to-br from-purple-50 to-[#F1ECFF] dark:from-purple-900/20 dark:to-[#2E1568]/20 p-4 rounded-lg border border-purple-200 dark:border-purple-700">
                               <h5 className="font-semibold text-purple-800 dark:text-purple-300 flex items-center gap-2 text-sm">
                                 <Brain className="h-4 w-4" />
                                 🧠 AI-enhanced analysis
@@ -1339,7 +1339,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-200 dark:bg-purple-700 rounded-full h-2">
                                       <div 
-                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500"
+                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-[#F1ECFF]0"
                                         style={{ width: `${explanation.gptEnhanced.skillMatchPercentage}%` }}
                                       ></div>
                                     </div>
@@ -1354,7 +1354,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-200 dark:bg-purple-700 rounded-full h-2">
                                       <div 
-                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500"
+                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-[#F1ECFF]0"
                                         style={{ width: `${explanation.gptEnhanced.experienceFit * 10}%` }}
                                       ></div>
                                     </div>
@@ -1369,7 +1369,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-200 dark:bg-purple-700 rounded-full h-2">
                                       <div 
-                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500"
+                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-[#F1ECFF]0"
                                         style={{ width: `${explanation.gptEnhanced.culturalAlignment * 10}%` }}
                                       ></div>
                                     </div>
@@ -1384,7 +1384,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 bg-purple-200 dark:bg-purple-700 rounded-full h-2">
                                       <div 
-                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500"
+                                        className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-[#F1ECFF]0"
                                         style={{ width: `${explanation.gptEnhanced.growthPotential * 10}%` }}
                                       ></div>
                                     </div>
