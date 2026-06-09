@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import organizationService, { PendingInvitation, UserPendingInvitation } from '@/services/organizationService';
 
+const ACTIVE_ORGANIZATION_STORAGE_KEY = 'seemplify_active_organization_id';
+
 interface Organization {
   _id: string;
   name: string;
@@ -100,6 +102,19 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [needsOrganizationSetup, setNeedsOrganizationSetup] = useState(false);
   const [organizationLimits, setOrganizationLimits] = useState<OrganizationLimits | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (currentOrganization?._id) {
+      localStorage.setItem(ACTIVE_ORGANIZATION_STORAGE_KEY, currentOrganization._id);
+      return;
+    }
+
+    if (hasInitialized && !isLoading) {
+      localStorage.removeItem(ACTIVE_ORGANIZATION_STORAGE_KEY);
+    }
+  }, [currentOrganization?._id, hasInitialized, isLoading]);
   
   // Check if we're on an admin route (SSR-safe)
   const isAdminRoute = pathname?.startsWith('/admin') || false;
@@ -313,6 +328,9 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     try {
       console.log('🔄 Starting organization switch to:', organizationId);
       setError(null);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(ACTIVE_ORGANIZATION_STORAGE_KEY, organizationId);
+      }
       
       // Don't set loading to true as it might trigger setup modal check
       // setIsLoading(true);
@@ -359,6 +377,13 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     } catch (err: any) {
       console.error('❌ Error switching organization:', err);
+      if (typeof window !== 'undefined') {
+        if (currentOrganization?._id) {
+          localStorage.setItem(ACTIVE_ORGANIZATION_STORAGE_KEY, currentOrganization._id);
+        } else {
+          localStorage.removeItem(ACTIVE_ORGANIZATION_STORAGE_KEY);
+        }
+      }
       setError(err.message || 'Failed to switch organization');
       throw err;
     }

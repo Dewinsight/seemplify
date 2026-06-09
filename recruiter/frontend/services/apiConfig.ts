@@ -4,6 +4,13 @@ import { tokenManager } from '../utils/tokenManager';
 import { handleCreditError, extractCreditError } from '../utils/creditErrorHandler';
 
 const isBrowser = typeof window !== 'undefined';
+const ACTIVE_ORGANIZATION_STORAGE_KEY = 'seemplify_active_organization_id';
+
+function activeOrganizationHeader() {
+  if (!isBrowser) return {};
+  const activeOrganizationId = localStorage.getItem(ACTIVE_ORGANIZATION_STORAGE_KEY);
+  return activeOrganizationId ? { 'X-Organization-Id': activeOrganizationId } : {};
+}
 
 // Use runtime configuration
 let FALLBACK_API = 'https://api.seemplifyai.com';
@@ -157,6 +164,7 @@ export const getAuthHeaders = () => {
   return {
     'Content-Type': 'application/json',
     ...(token && { 'Authorization': `Bearer ${token}` }),
+    ...activeOrganizationHeader(),
   };
 };
 
@@ -266,6 +274,7 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
     const token = isBrowser ? tokenManager.getAccessToken() : null;
     finalHeaders = {
       ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...activeOrganizationHeader(),
       ...requestHeaders
     };
     console.log('📎 File upload detected - letting browser set Content-Type automatically');

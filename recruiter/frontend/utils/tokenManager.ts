@@ -7,6 +7,8 @@ interface TokenData {
   expiresAt?: number; // timestamp when token expires
 }
 
+const ACTIVE_ORGANIZATION_STORAGE_KEY = 'seemplify_active_organization_id';
+
 class TokenManager {
   private refreshTimer: NodeJS.Timeout | null = null;
   private tokenData: TokenData | null = null;
@@ -228,6 +230,7 @@ class TokenManager {
       localStorage.removeItem('jwt');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('tokenExpiresAt');
+      localStorage.removeItem(ACTIVE_ORGANIZATION_STORAGE_KEY);
     }
 
     this.tokenData = null;
