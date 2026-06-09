@@ -33,7 +33,6 @@ import { DashboardProfileCard } from "@/components/ui/dashboard-profile-card"
 import { ProgressiveDisclosure } from "@/components/ui/progressive-disclosure"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getIdpBaseUrl } from "@/utils/env"
 import { getOnboardingRecords, type CandidateOnboarding } from "@/services/onboardingService"
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
 
@@ -323,13 +322,9 @@ export default function Dashboard() {
               asChild
               className="bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-sm hover:from-slate-800 hover:to-slate-600"
             >
-              <a
-                href={getIdpBaseUrl()}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href="/settings/organization">
                 <LayoutGrid className="h-4 w-4 mr-2" />
-                App Hub
+                Organization
               </a>
             </Button>
 

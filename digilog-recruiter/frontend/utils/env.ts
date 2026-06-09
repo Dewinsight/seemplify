@@ -108,7 +108,9 @@ export function getWsBaseUrl(): string {
 }
 
 export function getIdpBaseUrl(): string {
-  return getRuntimeConfig().NEXT_PUBLIC_IDP_URL;
+  // Digilog recruiter is fully self-contained — organizations, members, and
+  // invitations are managed in-app, with no external Identity Provider.
+  return '';
 }
 
 export function getInactivityTimeout(): number {

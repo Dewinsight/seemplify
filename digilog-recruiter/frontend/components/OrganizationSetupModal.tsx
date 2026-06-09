@@ -13,7 +13,6 @@ import organizationService from '@/services/organizationService';
 import { toast } from 'sonner';
 import { Building2, Loader2, LogOut, Mail, Users, Check, X } from 'lucide-react';
 import OrganizationForm from './OrganizationForm';
-import { getIdpBaseUrl } from '@/utils/env';
 
 interface OrganizationSetupModalProps {
   isOpen: boolean;
@@ -30,7 +29,6 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
 }) => {
   const { createOrganization, isLoading: contextLoading, getUserPendingInvitations, acceptInvite, organizationLimits } = useOrganization();
   const { logout, isAuthenticated } = useAuth();
-  const idpUrl = getIdpBaseUrl();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -159,14 +157,6 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
       onClose();
     } catch (error: any) {
       console.error('❌ Failed to create organization:', error);
-
-      // Handle IdP redirect scenarios
-      if (error.code === 'idp_managed' || error.code === 'idp_required') {
-        toast.info('Redirecting to Identity Provider for organization creation...');
-        // Don't show error toast - the redirect is expected behavior
-        return;
-      }
-
       toast.error(error.message || 'Failed to create organization');
     } finally {
       setIsLoading(false);
@@ -280,34 +270,6 @@ const OrganizationSetupModal: React.FC<OrganizationSetupModalProps> = ({
                   Create your own organization workspace to manage jobs, candidates, and collaborate with your team.
                 </p>
 
-                {/* IdP Primary Option - Recommended */}
-                {idpUrl && (
-                  <div className="mt-3 rounded-md border-2 border-blue-300 bg-blue-50 p-4">
-                    <div className="flex items-start gap-3">
-                      <Building2 className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1">
-                        <h4 className="font-medium text-blue-900">Recommended: Create via Identity Provider</h4>
-                        <p className="text-sm text-blue-700 mt-1">
-                          Organizations are managed through the Identity Provider for enhanced security and centralized management.
-                        </p>
-                        <Button
-                          type="button"
-                          className="mt-3 bg-blue-600 hover:bg-blue-700"
-                          onClick={() => window.open(`${idpUrl.replace(/\/$/, '')}/organizations`, '_blank')}
-                        >
-                          <Building2 className="w-4 h-4 mr-2" />
-                          Open Identity Provider
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {idpUrl && (
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <p className="text-xs text-gray-500 mb-2">Or create directly (will sync with Identity Provider):</p>
-                  </div>
-                )}
               </div>
 
               <OrganizationForm

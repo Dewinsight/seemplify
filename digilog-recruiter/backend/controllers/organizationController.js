@@ -5,7 +5,6 @@ const Notification = require('../models/Notification');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const planService = require('../services/planService');
-const idpService = require('../services/idpService');
 
 // Create organization - REQUIRES IdP as the source of truth
 exports.createOrganization = async (req, res) => {
@@ -258,17 +257,10 @@ exports.inviteUser = async (req, res) => {
       return res.status(400).json({ msg: 'No current organization set' });
     }
 
-    // Get organization first to check for IdP link
+    // Get organization
     const organization = await Organization.findById(organizationId);
-
-    // If organization is linked to IdP, redirect to IdP for member management
-    if (organization && organization.idpOrganizationId) {
-      return res.status(410).json({
-        msg: 'Member invitations are now managed through the Identity Provider',
-        code: 'idp_managed',
-        redirectUrl: idpService.getIdpManagementUrl(organization.idpOrganizationId, 'invitations'),
-        idpOrganizationId: organization.idpOrganizationId
-      });
+    if (!organization) {
+      return res.status(404).json({ msg: 'Organization not found' });
     }
 
     // Check if user has permission to invite
@@ -493,67 +485,36 @@ exports.getOrganization = async (req, res) => {
       return res.status(400).json({ msg: 'No current organization set' });
     }
 
-    console.log('🌐 Fetching current organization from IdP:', organizationId);
-
-    // Get local org to find IdP ID
+    // Fetch the current organization from this app's own database (no Identity Provider)
     const localOrg = await Organization.findById(organizationId);
     if (!localOrg) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    // Organizations MUST be linked to IdP
-    if (!localOrg.idpOrganizationId) {
-      console.error('⚠️ Organization not linked to IdP:', localOrg.name);
-      return res.status(400).json({
-        msg: 'Organization not linked to Identity Provider. Please contact your administrator.',
-        code: 'idp_not_linked'
-      });
-    }
+    const member = (localOrg.members || []).find(
+      (m) => m.user && m.user.toString() === userId.toString()
+    );
+    const activeMembers = (localOrg.members || []).filter((m) => m.status === 'active').length;
 
-    try {
-      // Fetch organization details from IdP
-      const idpOrg = await idpService.getOrganization(localOrg.idpOrganizationId, userId);
+    const organization = {
+      _id: localOrg._id,
+      name: localOrg.name,
+      description: localOrg.description,
+      industry: localOrg.industry,
+      size: localOrg.size,
+      website: localOrg.website,
+      owner: localOrg.owner,
+      memberCount: activeMembers,
+      userRole: member ? member.role : 'member',
+      subscription: localOrg.subscription,
+      settings: localOrg.settings || {},
+      createdAt: localOrg.createdAt
+    };
 
-      console.log('✅ IdP returned organization:', idpOrg.name);
+    // Enhance with plan details
+    const enhancedOrg = await planService.enhanceOrganizationWithPlan(organization);
 
-      // Merge IdP data with local plan data
-      const organization = {
-        _id: localOrg._id, // Local ID for compatibility
-        idpOrganizationId: idpOrg.id,
-        name: idpOrg.name,
-        description: idpOrg.description,
-        owner: idpOrg.owner,
-        memberCount: idpOrg.memberCount,
-        ownerCount: idpOrg.ownerCount,
-        userRole: idpOrg.yourRole,
-        // SmartHR-specific data from local record
-        subscription: localOrg.subscription,
-        settings: localOrg.settings,
-        createdAt: idpOrg.createdAt
-      };
-
-      // Enhance with plan details
-      const enhancedOrg = await planService.enhanceOrganizationWithPlan(organization);
-
-      console.log('📤 Returning current organization:', {
-        name: enhancedOrg.name,
-        plan: enhancedOrg.subscription?.plan,
-        memberCount: enhancedOrg.memberCount,
-        userRole: enhancedOrg.userRole
-      });
-
-      res.json(enhancedOrg);
-
-    } catch (idpError) {
-      console.error('❌ Failed to fetch organization from IdP:', idpError.message);
-
-      // NO FALLBACK - If IdP fails, return error
-      return res.status(503).json({
-        msg: 'Identity Provider unavailable. Please try again later.',
-        code: 'idp_unavailable',
-        error: idpError.message
-      });
-    }
+    res.json(enhancedOrg);
 
   } catch (error) {
     console.error('Error fetching organization:', error);
@@ -760,70 +721,40 @@ exports.getOrganizationMembers = async (req, res) => {
       return res.status(400).json({ msg: 'No current organization set' });
     }
 
-    const organization = await Organization.findById(organizationId);
+    const organization = await Organization.findById(organizationId)
+      .populate('members.user', 'email profile')
+      .populate('members.invitedBy', 'profile');
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    // If organization has IdP link, fetch members from IdP
-    if (organization.idpOrganizationId) {
-      try {
-        console.log('📡 Fetching members from IdP for org:', organization.idpOrganizationId);
-        const idpData = await idpService.getOrganizationMembers(
-          organization.idpOrganizationId,
-          userId
-        );
+    const yourMember = (organization.members || []).find(
+      (m) => m.user && m.user._id && m.user._id.toString() === userId.toString()
+    );
 
-        console.log('✅ IdP returned', idpData.memberCount, 'members');
+    // Build member list from this app's own database (no Identity Provider)
+    const members = (organization.members || [])
+      .filter((m) => m.user)
+      .map((m) => ({
+        _id: m.user._id,
+        user: {
+          _id: m.user._id,
+          email: m.user.email,
+          profile: m.user.profile || {}
+        },
+        role: m.role,
+        status: m.status,
+        joinedAt: m.joinedAt,
+        invitedBy: m.invitedBy ? { profile: m.invitedBy.profile || {} } : null,
+        isOwner: organization.owner && organization.owner.toString() === m.user._id.toString()
+      }));
 
-        // Transform IdP response to match expected frontend format
-        const members = idpData.members.map(m => ({
-          _id: m.id,  // Member-level _id for frontend compatibility (used in SelectItem key/value)
-          user: {
-            _id: m.id,
-            email: m.email,
-            profile: {
-              firstName: m.name?.split(' ')[0] || '',
-              lastName: m.name?.split(' ').slice(1).join(' ') || ''
-            }
-          },
-          role: m.role,
-          status: 'active',
-          joinedAt: m.joinedAt,
-          invitedBy: m.invitedBy ? {
-            profile: {
-              firstName: m.invitedBy.name?.split(' ')[0] || '',
-              lastName: m.invitedBy.name?.split(' ').slice(1).join(' ') || ''
-            }
-          } : null,
-          isOwner: m.isOwner
-        }));
-
-        return res.json({
-          members,
-          memberCount: idpData.memberCount,
-          source: 'idp',
-          yourRole: idpData.yourRole,
-          idpManagementUrl: idpService.getIdpManagementUrl(organization.idpOrganizationId, 'members')
-        });
-      } catch (idpError) {
-        console.error('❌ IdP member fetch failed:', idpError.message);
-        // Return error - IdP is the source of truth, no fallback
-        return res.status(503).json({
-          msg: 'Identity Provider unavailable. Please try again later.',
-          code: 'idp_unavailable',
-          error: idpError.message
-        });
-      }
-    }
-
-    // Organization without IdP link - return error asking user to migrate
-    console.log('⚠️ Organization not linked to IdP:', organizationId);
-    return res.status(400).json({
-      msg: 'Organization not linked to Identity Provider. Please contact your administrator to migrate this organization.',
-      code: 'idp_not_linked',
-      idpManagementUrl: null
+    return res.json({
+      members,
+      memberCount: members.filter((m) => m.status === 'active').length,
+      source: 'local',
+      yourRole: yourMember ? yourMember.role : 'member'
     });
   } catch (error) {
     console.error('Error fetching organization members:', error);
@@ -841,16 +772,6 @@ exports.removeMember = async (req, res) => {
     const organization = await Organization.findById(organizationId);
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
-    }
-
-    // If organization is linked to IdP, redirect to IdP for member management
-    if (organization.idpOrganizationId) {
-      return res.status(410).json({
-        msg: 'Member management is now handled through the Identity Provider',
-        code: 'idp_managed',
-        redirectUrl: idpService.getIdpManagementUrl(organization.idpOrganizationId, 'members'),
-        idpOrganizationId: organization.idpOrganizationId
-      });
     }
 
     const user = await User.findById(userId);
@@ -953,16 +874,6 @@ exports.updateMemberRole = async (req, res) => {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    // If organization is linked to IdP, redirect to IdP for role management
-    if (organization.idpOrganizationId) {
-      return res.status(410).json({
-        msg: 'Role management is now handled through the Identity Provider',
-        code: 'idp_managed',
-        redirectUrl: idpService.getIdpManagementUrl(organization.idpOrganizationId, 'members'),
-        idpOrganizationId: organization.idpOrganizationId
-      });
-    }
-
     const user = await User.findById(userId);
     if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
@@ -1042,15 +953,8 @@ exports.cancelInvitation = async (req, res) => {
     }
 
     const organization = await Organization.findById(organizationId);
-
-    // If organization is linked to IdP, redirect to IdP for invitation management
-    if (organization && organization.idpOrganizationId) {
-      return res.status(410).json({
-        msg: 'Invitation management is now handled through the Identity Provider',
-        code: 'idp_managed',
-        redirectUrl: idpService.getIdpManagementUrl(organization.idpOrganizationId, 'invitations'),
-        idpOrganizationId: organization.idpOrganizationId
-      });
+    if (!organization) {
+      return res.status(404).json({ msg: 'Organization not found' });
     }
 
     // Check if user has permission to manage invitations
@@ -1172,16 +1076,6 @@ exports.transferOwnership = async (req, res) => {
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
-    }
-
-    // If organization is linked to IdP, redirect to IdP for ownership transfer
-    if (organization.idpOrganizationId) {
-      return res.status(410).json({
-        msg: 'Ownership transfer is now handled through the Identity Provider',
-        code: 'idp_managed',
-        redirectUrl: idpService.getIdpManagementUrl(organization.idpOrganizationId, 'members'),
-        idpOrganizationId: organization.idpOrganizationId
-      });
     }
 
     if (!newOwnerId) {

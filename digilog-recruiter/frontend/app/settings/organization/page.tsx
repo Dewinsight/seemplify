@@ -26,7 +26,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useOrganization } from '@/context/OrganizationContext';
-import { getIdpBaseUrl } from '@/utils/env';
+import OrganizationSetupModal from '@/components/OrganizationSetupModal';
 import OrganizationSettings from '@/components/OrganizationSettings';
 import OrganizationMembers from '@/components/OrganizationMembers';
 import DeleteOrganizationDialog from '@/components/DeleteOrganizationDialog';
@@ -60,7 +60,7 @@ export default function OrganizationPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // IDP URL for organization management
-  const idpUrl = getIdpBaseUrl();
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [organizationToDelete, setOrganizationToDelete] = useState<any>(null);
   const [organizationToLeave, setOrganizationToLeave] = useState<any>(null);
@@ -149,16 +149,13 @@ export default function OrganizationPage() {
     }
   };
 
-  const handleEditClick = (organization: any) => {
-    // Redirect to IDP for organization editing
-    if (idpUrl && organization.idpOrganizationId) {
-      window.open(`${idpUrl.replace(/\/$/, '')}/organizations/${organization.idpOrganizationId}`, '_blank');
-      toast.info('Opening Identity Provider to edit organization...');
-    } else if (idpUrl) {
-      window.open(`${idpUrl.replace(/\/$/, '')}/organizations`, '_blank');
-      toast.info('Opening Identity Provider to manage organizations...');
-    } else {
-      toast.error('Identity Provider URL not configured');
+  const handleEditClick = async (organization: any) => {
+    // Edit organizations in-app: switch to the org, then open the Settings tab
+    try {
+      await switchOrganization(organization._id);
+      setActiveTab('settings');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to open organization settings');
     }
   };
 
@@ -507,14 +504,7 @@ export default function OrganizationPage() {
                   Organization Management
                 </CardTitle>
                 <Button
-                  onClick={() => {
-                    if (idpUrl) {
-                      window.open(`${idpUrl.replace(/\/$/, '')}/organizations`, '_blank');
-                      toast.info('Opening Identity Provider to create organization...');
-                    } else {
-                      toast.error('Identity Provider URL not configured');
-                    }
-                  }}
+                  onClick={() => setShowCreateModal(true)}
                   className="flex items-center gap-2"
                   size="sm"
                 >
@@ -683,16 +673,7 @@ export default function OrganizationPage() {
                 <CardDescription className="mb-4">
                   You don't belong to any organizations yet. Create your first organization to get started.
                 </CardDescription>
-                <Button
-                  onClick={() => {
-                    if (idpUrl) {
-                      window.open(`${idpUrl.replace(/\/$/, '')}/organizations`, '_blank');
-                      toast.info('Opening Identity Provider to create organization...');
-                    } else {
-                      toast.error('Identity Provider URL not configured');
-                    }
-                  }}
-                >
+                <Button onClick={() => setShowCreateModal(true)}>
                   <Plus className="w-4 h-4 mr-2" />
                   Create Organization
                 </Button>
@@ -701,6 +682,12 @@ export default function OrganizationPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      <OrganizationSetupModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        mode="create"
+      />
 
       {/* Modals and Dialogs */}
 

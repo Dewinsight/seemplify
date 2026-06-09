@@ -89,7 +89,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
     jobCount: 0,
     candidateCount: 0
   });
-  const [memberSource, setMemberSource] = useState<'idp'>('idp');
+  const [memberSource, setMemberSource] = useState<'idp' | 'local'>('local');
   const [idpManagementUrl, setIdpManagementUrl] = useState<string | null>(null);
   
   // Member detail modal states
