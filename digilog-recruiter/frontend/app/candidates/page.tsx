@@ -454,13 +454,6 @@ export default function CandidatesPage() {
       setShowAddToListDialog(true)
     }
 
-    const openBulkOnboarding = () => {
-      if (selectedCandidates.length === 0) return
-      const params = new URLSearchParams()
-      params.set("candidateIds", selectedCandidates.join(","))
-      router.push(`/onboarding/new?${params.toString()}`)
-    }
-
     const openAddCandidateToList = (candidateId: string, event: React.MouseEvent) => {
       event.stopPropagation()
       setListDialogCandidateIds([candidateId])
@@ -664,10 +657,6 @@ export default function CandidatesPage() {
                       </Button>
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 disabled:opacity-50" onClick={openBulkShortlist}>
                         Move to Shortlist
-                      </Button>
-                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openBulkOnboarding}>
-                        <FileSignature className="h-4 w-4 mr-2" />
-                        Begin onboarding
                       </Button>
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openAddSelectedToList}>
                         <ListPlus className="h-4 w-4 mr-2" />

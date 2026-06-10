@@ -63,7 +63,6 @@ import { SourceChip } from "@/components/source-chip"
 import { Checkbox } from "@/components/ui/checkbox"
 import { CardFooter } from "@/components/ui/card"
 import { getCandidateById, getAccessibleResumeUrl, type CandidateData } from "@/services/candidateService"
-import { getOnboardingRecords, type CandidateOnboarding } from "@/services/onboardingService"
 import { embeddingService } from "@/services/embeddingService"
 import interviewService, { Interview } from "@/services/interviewService"
 import { toast } from "sonner"
@@ -194,8 +193,6 @@ function CandidateDetailInnerPage() {
   const [creatingEmbedding, setCreatingEmbedding] = useState(false)
   const [interviews, setInterviews] = useState<Interview[]>([])
   const [loadingInterviews, setLoadingInterviews] = useState(false)
-  const [onboardingRecords, setOnboardingRecords] = useState<CandidateOnboarding[]>([])
-  const [loadingOnboarding, setLoadingOnboarding] = useState(false)
   
   // Smart navigation logic
   const getBackNavigationPath = useCallback(() => {
@@ -264,9 +261,6 @@ function CandidateDetailInnerPage() {
       
       // Load candidate interviews
       await loadCandidateInterviews(id)
-
-      // Load external onboarding history without embedding the workflow here
-      await loadCandidateOnboarding(id)
     } catch (error) {
       console.error("Error fetching candidate:", error)
       toast.error("Failed to fetch candidate details")
@@ -284,18 +278,6 @@ function CandidateDetailInnerPage() {
       console.error("Error loading candidate interviews:", error)
     } finally {
       setLoadingInterviews(false)
-    }
-  }
-
-  const loadCandidateOnboarding = async (candidateId: string) => {
-    try {
-      setLoadingOnboarding(true)
-      const result = await getOnboardingRecords({ candidateId })
-      setOnboardingRecords(result.data || [])
-    } catch (error) {
-      console.warn("Error loading candidate onboarding:", error)
-    } finally {
-      setLoadingOnboarding(false)
     }
   }
 
@@ -607,12 +589,11 @@ function CandidateDetailInnerPage() {
                           <SelectItem value="overview" className="text-base py-3 cursor-pointer">👤 Overview</SelectItem>
                           <SelectItem value="ai-insights" className="text-base py-3 cursor-pointer">✨ AI Insights</SelectItem>
                           <SelectItem value="cv" className="text-base py-3 cursor-pointer">📄 CV</SelectItem>
-                          <SelectItem value="onboarding" className="text-base py-3 cursor-pointer">Onboarding</SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (
                       /* Desktop Tab List Container */
-                      <TabsList className="relative grid w-full grid-cols-4 gap-1 sm:gap-2 bg-white/80 backdrop-blur-sm p-1 sm:p-2 rounded-2xl shadow-lg border border-gray-100/50 h-auto">
+                      <TabsList className="relative grid w-full grid-cols-3 gap-1 sm:gap-2 bg-white/80 backdrop-blur-sm p-1 sm:p-2 rounded-2xl shadow-lg border border-gray-100/50 h-auto">
                       {/* Overview Tab */}
                       <TabsTrigger 
                         value="overview"
@@ -664,20 +645,6 @@ function CandidateDetailInnerPage() {
                           <span className="absolute -top-1 -right-1 h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-emerald-500 ring-1 sm:ring-2 ring-white" />
                         )}
                       </TabsTrigger>
-
-                      <TabsTrigger
-                        value="onboarding"
-                        className="group relative flex flex-col items-center gap-1 sm:gap-1.5 px-2 py-2 sm:px-3 sm:py-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-xl rounded-lg sm:rounded-xl font-medium transition-all duration-300 hover:bg-amber-50"
-                      >
-                        <div className="relative">
-                          <div className="absolute inset-0 bg-amber-400 blur-xl opacity-0 group-data-[state=active]:opacity-50 transition-opacity duration-300" />
-                          <GraduationCap className="relative h-4 w-4 sm:h-5 sm:w-5 mb-0.5 text-amber-600 group-data-[state=active]:text-white transition-colors" />
-                        </div>
-                        <span className="text-[10px] sm:text-xs font-semibold">Onboarding</span>
-                        {onboardingRecords.length > 0 && (
-                          <span className="absolute -top-1 -right-1 h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-amber-500 ring-1 sm:ring-2 ring-white" />
-                        )}
-                      </TabsTrigger>
                       </TabsList>
                     )}
                     
@@ -700,11 +667,6 @@ function CandidateDetailInnerPage() {
                     {activeTab === "cv" && (
                       <p className="text-sm text-gray-600 animate-in fade-in duration-300">
                         <span className="font-medium">Curriculum Vitae</span> • Candidate's resume and professional profile
-                      </p>
-                    )}
-                    {activeTab === "onboarding" && (
-                      <p className="text-sm text-gray-600 animate-in fade-in duration-300">
-                        <span className="font-medium">External Onboarding</span> - documents, signatures, and candidate portal activity
                       </p>
                     )}
                     {activeTab === "feedback" && (
@@ -1411,56 +1373,6 @@ function CandidateDetailInnerPage() {
                 </CardContent>
               </Card>
             </TabsContent>
-
-            <TabsContent value="onboarding" className="space-y-6 animate-in fade-in-50 duration-500">
-              <div className="rounded-md border bg-white p-4 sm:p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-950">Candidate onboarding</h3>
-                    <p className="mt-1 text-sm text-gray-600">
-                      Start a route-based onboarding workflow or open an existing onboarding record.
-                    </p>
-                  </div>
-                  <Button asChild>
-                    <Link href={`/onboarding/new?candidateId=${candidate._id}`}>
-                      <GraduationCap className="mr-2 h-4 w-4" />
-                      Begin onboarding
-                    </Link>
-                  </Button>
-                </div>
-
-                <div className="mt-5 space-y-3">
-                  {loadingOnboarding && (
-                    <div className="rounded-md border border-dashed p-4 text-sm text-gray-600">Loading onboarding history...</div>
-                  )}
-                  {!loadingOnboarding && onboardingRecords.length === 0 && (
-                    <div className="rounded-md border border-dashed p-6 text-center">
-                      <GraduationCap className="mx-auto h-8 w-8 text-amber-600" />
-                      <h4 className="mt-3 font-semibold text-gray-950">No onboarding started yet</h4>
-                      <p className="mt-1 text-sm text-gray-600">
-                        This candidate is still external. Starting onboarding creates their candidate portal invitation.
-                      </p>
-                    </div>
-                  )}
-                  {!loadingOnboarding && onboardingRecords.map((record) => (
-                    <Link
-                      key={record._id}
-                      href={`/onboarding/${record._id}`}
-                      className="flex flex-col gap-3 rounded-md border p-4 transition hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div>
-                        <div className="font-semibold text-gray-950">{record.title}</div>
-                        <div className="mt-1 text-sm text-gray-600">
-                          Started {record.createdAt ? new Date(record.createdAt).toLocaleDateString() : "recently"} - {record.envelopes?.length || 0} signing packet(s)
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="w-fit capitalize">{record.status.replace("_", " ")}</Badge>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </TabsContent>
-
 
           </Tabs>
             </CardContent>

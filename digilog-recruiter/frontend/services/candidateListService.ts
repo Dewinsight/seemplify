@@ -6,7 +6,6 @@ export type CandidateListSource =
   | 'candidates'
   | 'ai_matching'
   | 'ai_interview'
-  | 'onboarding'
   | 'imported';
 
 export type CandidateListEntry = {

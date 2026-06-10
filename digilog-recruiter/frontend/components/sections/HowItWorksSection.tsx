@@ -41,9 +41,9 @@ const steps = [
   },
   {
     icon: HeartHandshake,
-    title: "Hire & Onboard",
-    description: "Streamlined hiring and digital onboarding experience",
-    details: "One-click offer letters, e-signature integration, and automated onboarding workflows. Get new hires productive faster with structured 30-60-90 day plans.",
+    title: "Hire",
+    description: "Streamlined hiring experience",
+    details: "One-click offer letters and e-signature integration.",
     color: "from-amber-500 to-orange-400",
     iconColor: "text-amber-400"
   }

@@ -51,7 +51,7 @@ const CandidateListSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['manual', 'candidates', 'ai_matching', 'ai_interview', 'onboarding', 'imported'],
+    enum: ['manual', 'candidates', 'ai_matching', 'ai_interview', 'imported'],
     default: 'manual',
   },
   sourceRef: {

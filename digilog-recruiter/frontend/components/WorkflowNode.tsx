@@ -510,7 +510,7 @@ export default function WorkflowNode({ data }: WorkflowNodeProps) {
                   </div>
                 </div>
                 <div className={`h-1/2 pt-1 border-t mt-1 ${jet ? 'border-slate-200' : 'border-white/10'}`}>
-                  <div className={`text-[7px] ${pvSub}`}>Onboarding Progress</div>
+                  <div className={`text-[7px] ${pvSub}`}>Hiring Progress</div>
                   <div className={`w-full h-1.5 rounded-full mt-1 ${jet ? 'bg-slate-200' : 'bg-white/10'}`}>
                     <motion.div 
                       className={`h-full ${barFillClass} rounded-full`}

@@ -74,7 +74,6 @@ const navigationItems: NavigationItem[] = [
       { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
     ],
   },
-  { title: "Onboarding", href: "/onboarding", icon: GraduationCap },
   { title: "Calendar", href: "/calendar", icon: Calendar },
 ];
 

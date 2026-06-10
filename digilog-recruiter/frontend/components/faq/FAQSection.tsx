@@ -19,7 +19,7 @@ const faqs = [
   },
   {
     question: "How long does it take to set up?",
-    answer: "Most companies are up and running in under 30 minutes. Our onboarding wizard guides you through adding your first job, uploading candidates, and configuring your team. Plus, we offer white-glove setup assistance for enterprise clients."
+    answer: "Most companies are up and running in under 30 minutes. Our setup wizard guides you through adding your first job, uploading candidates, and configuring your team. Plus, we offer white-glove setup assistance for enterprise clients."
   },
   {
     question: "What integrations do you support?",

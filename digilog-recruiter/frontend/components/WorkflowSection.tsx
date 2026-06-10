@@ -105,14 +105,13 @@ export default function WorkflowSection() {
     },
     {
       id: 7,
-      title: "Decision & Onboarding",
-      description: "Compare candidates, make hiring decisions, and onboard",
+      title: "Decision & Hire",
+      description: "Compare candidates and make confident hiring decisions",
       icon: <CheckCircle2 className="w-8 h-8" />,
       color: isJetstone ? "green" : "green",
       features: [
         { text: "Analytics dashboard", icon: "dashboard" },
-        { text: "Candidate comparison", icon: "compare" },
-        { text: "Onboarding process", icon: "onboard" }
+        { text: "Candidate comparison", icon: "compare" }
       ],
       image: "/workflow/decision.png",
     },
@@ -182,7 +181,7 @@ export default function WorkflowSection() {
         <p className={`text-base sm:text-lg max-w-3xl mx-auto ${isJetstone ? 'text-slate-700' : 'text-slate-300'}`}>
           {isJetstone
             ? 'Built for hiring teams: manage applicants from intake through screening, interviews, and decisions — with structured stages and full visibility.'
-            : 'Experience a seamless end-to-end recruitment process, from candidate sourcing to onboarding, powered by advanced technology at every step.'}
+            : 'Experience a seamless end-to-end recruitment process, from candidate sourcing to hire, powered by advanced technology at every step.'}
         </p>
       </motion.div>
 

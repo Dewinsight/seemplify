@@ -33,16 +33,9 @@ import { DashboardProfileCard } from "@/components/ui/dashboard-profile-card"
 import { ProgressiveDisclosure } from "@/components/ui/progressive-disclosure"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getOnboardingRecords, type CandidateOnboarding } from "@/services/onboardingService"
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
 
 type WorkQueueSummary = {
-  onboarding: {
-    total: number;
-    active: number;
-    sentPackets: number;
-    completed: number;
-  };
   aiInterviews: {
     total: number;
     open: number;
@@ -52,12 +45,6 @@ type WorkQueueSummary = {
 };
 
 const emptyWorkQueueSummary: WorkQueueSummary = {
-  onboarding: {
-    total: 0,
-    active: 0,
-    sentPackets: 0,
-    completed: 0,
-  },
   aiInterviews: {
     total: 0,
     open: 0,
@@ -65,19 +52,6 @@ const emptyWorkQueueSummary: WorkQueueSummary = {
     completedSessions: 0,
   },
 };
-
-function summarizeOnboarding(records: CandidateOnboarding[]) {
-  return {
-    total: records.length,
-    active: records.filter((record) => ["pending", "in_progress"].includes(record.status)).length,
-    sentPackets: records.reduce(
-      (count, record) =>
-        count + (record.envelopes || []).filter((envelope) => ["sent", "viewed", "partially_signed"].includes(envelope.status)).length,
-      0
-    ),
-    completed: records.filter((record) => record.status === "completed").length,
-  };
-}
 
 function summarizeAIInterviews(interviews: AIInterview[]) {
   return {
@@ -127,15 +101,11 @@ export default function Dashboard() {
     async function loadWorkQueues() {
       try {
         setWorkQueuesLoading(true);
-        const [onboardingResult, aiInterviews] = await Promise.all([
-          getOnboardingRecords(),
-          aiInterviewService.list(),
-        ]);
+        const aiInterviews = await aiInterviewService.list();
 
         if (!mounted) return;
 
         setWorkQueues({
-          onboarding: summarizeOnboarding(onboardingResult.data || []),
           aiInterviews: summarizeAIInterviews(aiInterviews || []),
         });
       } catch (error) {
@@ -467,50 +437,6 @@ export default function Dashboard() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card className="rounded-md">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
-                <div>
-                  <CardTitle className="text-base">Onboarding</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">Document packets and candidate signing progress</p>
-                </div>
-                <GraduationCap className="h-5 w-5 text-muted-foreground" />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.total}</div>
-                    <div className="text-xs text-muted-foreground">Total</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.active}</div>
-                    <div className="text-xs text-muted-foreground">Active</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.sentPackets}</div>
-                    <div className="text-xs text-muted-foreground">Sent</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.completed}</div>
-                    <div className="text-xs text-muted-foreground">Complete</div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/onboarding">
-                      Open onboarding
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/onboarding/new">
-                      <Send className="mr-2 h-4 w-4" />
-                      Begin onboarding
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
             <Card className="rounded-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                 <div>
