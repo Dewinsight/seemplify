@@ -1966,6 +1966,15 @@ const connectCalendar = async (req, res) => {
           });
         }
         
+        // Configuration / out-of-sync problems: return a clear, actionable
+        // message instead of a misleading generic 500.
+        if (['NO_NYLAS_ACCOUNT', 'NO_CALENDAR_CAPACITY', 'GRANT_COUNT_OUT_OF_SYNC'].includes(rotationError.code)) {
+          return res.status(rotationError.statusCode || 503).json({
+            error: rotationError.code,
+            message: rotationError.message
+          });
+        }
+
         // Other rotation errors
         throw rotationError;
       }

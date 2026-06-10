@@ -22,7 +22,12 @@ const connectDB = async () => {
     
     // Remove unique email index if it exists
     await removeEmailUniqueIndex();
-    
+
+    // Ensure a default Nylas calendar account exists from env vars (no manual
+    // admin setup required). Never throws — calendar features are optional.
+    const { ensureDefaultNylasAccountFromEnv } = require('../services/nylasAccountBootstrap');
+    await ensureDefaultNylasAccountFromEnv();
+
   } catch (error) {
     console.error(`Error: ${error.message}`);
     process.exit(1);

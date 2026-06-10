@@ -319,6 +319,30 @@ class GrantManagementService {
         };
       }
 
+      // No account had a free slot. findAvailableAccount() returns null both when
+      // accounts are genuinely full AND when there are no active/verified accounts
+      // (or maxGrants is misconfigured to 0). Distinguish those so we don't throw a
+      // misleading "grant count inconsistency" error for what is really a setup issue.
+      const activeAccounts = await NylasAccount.find({ active: true, verified: true }).select('maxGrants name');
+      const activeAccountCount = activeAccounts.length;
+      const totalCapacity = activeAccounts.reduce((sum, acc) => sum + (acc.maxGrants || 0), 0);
+
+      if (activeAccountCount === 0) {
+        console.error('No active, verified Nylas account is configured — cannot connect a calendar.');
+        const noAccountError = new Error('No calendar provider account is configured yet. An administrator needs to add and verify a Nylas account before calendars can be connected.');
+        noAccountError.code = 'NO_NYLAS_ACCOUNT';
+        noAccountError.statusCode = 503;
+        throw noAccountError;
+      }
+
+      if (totalCapacity === 0) {
+        console.error(`Nylas account(s) configured but total capacity (maxGrants) is 0 across ${activeAccountCount} account(s).`);
+        const noCapacityError = new Error('Calendar capacity is misconfigured: the connected Nylas account(s) have 0 grant slots (maxGrants). An administrator needs to set a positive maxGrants value.');
+        noCapacityError.code = 'NO_CALENDAR_CAPACITY';
+        noCapacityError.statusCode = 503;
+        throw noCapacityError;
+      }
+
       // STEP 2: All accounts full - rotate out least recently used grant
       const systemCapacity = await multiNylasService.getSystemCapacity();
       console.log('All Nylas accounts are at capacity. Running LRU rotation...');
@@ -327,8 +351,11 @@ class GrantManagementService {
       const rotationCandidate = await this.findOldestGrantAcrossAllAccounts();
       
       if (!rotationCandidate) {
-        console.error('No grants found to remove despite system being at capacity.');
-        throw new Error('Grant count inconsistency detected. Please contact support.');
+        console.error(`Accounts report full (${activeAccountCount} active, capacity ${totalCapacity}) but no active grants were found to rotate — stored grant counters are likely out of sync with the actual User grant records.`);
+        const outOfSyncError = new Error('Calendar accounts are reported as full, but no active calendar grants were found to free up. This usually means the stored grant counts are out of sync with the actual connections — an administrator can re-sync grant counts from the admin panel and try again.');
+        outOfSyncError.code = 'GRANT_COUNT_OUT_OF_SYNC';
+        outOfSyncError.statusCode = 409;
+        throw outOfSyncError;
       }
 
       const connectedAtText = rotationCandidate.connectedAt
