@@ -9,14 +9,14 @@ import {
 import { absoluteUrl, siteConfig } from '../site-config'
 
 export const metadata: Metadata = {
-  title: 'HR Software for Africa',
+  title: 'AI Software for Africa',
   description:
-    'Discover Seemplify HR software for Africa, with dedicated market positioning for Nigeria, Ghana, Kenya, South Africa, and English-speaking African teams.',
+    'Discover Seemplify AI software for Africa, with dedicated market positioning for Nigeria, Ghana, Kenya, South Africa, and English-speaking African teams.',
   keywords: [
-    'HR software Africa',
-    'HR platform Africa',
-    'people operations software Africa',
-    'HR software English-speaking Africa',
+    'AI software Africa',
+    'AI platform Africa',
+    'team operations software Africa',
+    'AI software English-speaking Africa',
   ],
   alternates: {
     canonical: '/africa',
@@ -25,9 +25,9 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: 'HR Software for Africa | Seemplify',
+    title: 'AI Software for Africa | Seemplify',
     description:
-      'Seemplify helps African HR teams centralize recruiting, onboarding, leave, performance, and people operations.',
+      'Seemplify helps African teams centralize recruiting, onboarding, leave, performance, and operations.',
     url: '/africa',
     siteName: siteConfig.name,
     type: 'website',
@@ -36,13 +36,13 @@ export const metadata: Metadata = {
         url: siteConfig.ogImage,
         width: 1200,
         height: 630,
-        alt: 'Seemplify HR software for Africa',
+        alt: 'Seemplify AI software for Africa',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'HR Software for Africa | Seemplify',
+    title: 'AI Software for Africa | Seemplify',
     description:
       'Explore Seemplify market pages for Nigeria, Ghana, Kenya, South Africa, and English-speaking African teams.',
     images: [siteConfig.ogImage],
@@ -54,10 +54,10 @@ const africaStructuredData = {
   '@graph': [
     {
       '@type': 'WebPage',
-      name: 'HR Software for Africa',
+      name: 'AI Software for Africa',
       url: absoluteUrl('/africa'),
       description:
-        'Market overview page for HR software across Africa, focused on Nigeria, Ghana, Kenya, South Africa, and English-speaking African countries.',
+        'Market overview page for AI software across Africa, focused on Nigeria, Ghana, Kenya, South Africa, and English-speaking African countries.',
     },
     {
       '@type': 'FAQPage',
@@ -84,10 +84,10 @@ export default function AfricaPage() {
             Africa Coverage
           </p>
           <h1 className="mt-4 font-display text-5xl tracking-tight md:text-6xl">
-            HR software for Nigeria, Ghana, Kenya, South Africa, and English-speaking Africa.
+            AI software for Nigeria, Ghana, Kenya, South Africa, and English-speaking Africa.
           </h1>
           <p className="mt-6 max-w-3xl text-lg text-zinc-700 dark:text-white/75">
-            Explore how Seemplify supports HR teams across key African growth markets. Use the
+            Explore how Seemplify supports teams across key African growth markets. Use the
             country pages below to see the product in the context of your operating footprint.
           </p>
         </div>
@@ -138,7 +138,7 @@ export default function AfricaPage() {
           <div className="rounded-3xl border border-black/10 bg-[#0b2f29] p-10 text-white dark:border-white/10">
             <p className="text-xs uppercase tracking-[0.35em] text-white/60">What Teams Need</p>
             <h2 className="mt-4 font-display text-4xl">
-              Core priorities for growing HR teams across Africa.
+              Core priorities for growing teams across Africa.
             </h2>
             <ul className="mt-6 grid gap-4 text-sm text-white/75">
               <li>Faster hiring coordination</li>

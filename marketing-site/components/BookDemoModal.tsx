@@ -162,7 +162,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
                                             <input
                                                 type="text"
                                                 className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition focus:border-violet-500/50 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
-                                                placeholder="HR Manager, CTO, etc."
+                                                placeholder="Operations Lead, CTO, etc."
                                                 value={formData.role}
                                                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                                             />

@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
-import { getSiteConfig } from './site-config'
+import { akwaIbomConfig, getSiteConfig } from './site-config'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -62,7 +62,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: config.ogImage,
           width: 1200,
           height: 630,
-          alt: `${config.name} HR software`,
+          alt: `${config.name} ${config === akwaIbomConfig ? 'HR software' : 'AI software'}`,
         },
       ],
     },

@@ -27,6 +27,7 @@ The ACCESS-GUIDE.md includes URLs, CLI commands, credential locations, and troub
 | Cloudflare DNS | ACCESS-GUIDE.md Section 2 |
 | Azure VM (SSH) | ACCESS-GUIDE.md Section 3 or SERVER-ACCESS.md |
 | **Azure budget VM** (separate dev box) | **[azure-budget-vm/](./azure-budget-vm/README.md)** — keys + docs |
+| **diGiLog Recruiter** (deploy + ops) | **[DIGILOG-RECRUITER-DEPLOYMENT.md](./DIGILOG-RECRUITER-DEPLOYMENT.md)** — Vercel frontends + budget-VM backend + self-hosted Mongo + CI/CD |
 | GitHub Repository | ACCESS-GUIDE.md Section 4 or GITHUB-SECRETS-SETUP-GUIDE.md |
 
 ---
@@ -47,6 +48,7 @@ The ACCESS-GUIDE.md includes URLs, CLI commands, credential locations, and troub
 || **CREDENTIALS-UPDATE-SUMMARY.md** | Credentials update history |
 || **CLOUDFLARE-API-ISSUE.md** | Cloudflare API troubleshooting |
 || **azure-budget-vm/** | Budget Azure Linux VM: SSH keys + [AZURE-BUDGET-VM-ACCESS.md](./azure-budget-vm/AZURE-BUDGET-VM-ACCESS.md) |
+|| **DIGILOG-RECRUITER-DEPLOYMENT.md** | diGiLog deployment runbook: Vercel frontends, Azure budget-VM backend, self-hosted Mongo, GitHub Actions CI/CD (no Seemplify IdP / no api.seemplifyai.com) |
 
 ---
 

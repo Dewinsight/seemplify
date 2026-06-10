@@ -562,7 +562,7 @@ function getHomeStructuredData(config: any, hostname: string) {
         '@type': 'SoftwareApplication',
         name: config.name,
         applicationCategory: 'BusinessApplication',
-        applicationSubCategory: 'Human Resources Software',
+        applicationSubCategory: 'AI Software',
         operatingSystem: 'Web',
         url: config.url,
         description: config.description,
@@ -639,17 +639,17 @@ export default function HomePage() {
     : false
 
   const heroEyebrow = personalizedMarket
-    ? `${personalizedMarket.country} HR Software`
-    : 'Global HR Software'
-  const heroTitle = personalizedMarket ? `AI HR software for ${personalizedMarket.country}` : 'AI HR software'
+    ? `${personalizedMarket.country} AI Software`
+    : 'Global AI Software'
+  const heroTitle = personalizedMarket ? `AI software for ${personalizedMarket.country}` : 'AI software'
   const heroSubtitle = personalizedMarket
     ? 'built for modern teams.'
-    : 'for modern people ops.'
+    : 'for modern teams.'
   const heroDescription = personalizedMarket
     ? `${personalizedMarket.intro} Manage recruiting, onboarding, leave, performance, time, and payroll workflows in one operating system.`
     : 'Seemplify unifies recruiting, onboarding, leave, performance, time, and payroll workflows for modern teams across regions in one operating system.'
   const heroTags = personalizedMarket
-    ? [personalizedMarket.country, 'People Ops', 'Approvals', 'Performance', 'Localized Workflows']
+    ? [personalizedMarket.country, 'Operations', 'Approvals', 'Performance', 'Localized Workflows']
     : ['Global teams', 'Multi-country ops', 'Recruiting', 'Performance', 'Payroll']
   const africaSectionTitle = personalizedMarket
     ? isAfricaPersonalization
@@ -660,7 +660,7 @@ export default function HomePage() {
     ? isAfricaPersonalization
       ? `This visit is highlighting ${personalizedMarket.country}, while still giving you access to Seemplify's broader Africa coverage for regional and multi-country teams.`
       : `This visit is highlighting the ${personalizedMarket.country}. Seemplify still supports multi-country operating models, including teams expanding into or working with African markets.`
-    : 'Whether you manage one country or several, Seemplify gives HR teams a consistent operating model across Nigeria, Ghana, Kenya, South Africa, and other English-speaking African markets.'
+    : 'Whether you manage one country or several, Seemplify gives teams a consistent operating model across Nigeria, Ghana, Kenya, South Africa, and other English-speaking African markets.'
   const prioritizedMarkets = personalizedMarket
     ? isAfricaPersonalization
     ? [
@@ -862,7 +862,7 @@ export default function HomePage() {
                 <div className="relative z-10 rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
                   <Image
                     src={HRProfessionalsImage}
-                    alt="HR Professionals collaborating"
+                    alt="Professionals collaborating"
                     width={700}
                     height={500}
                     className="w-full object-cover rounded-2xl"
@@ -917,7 +917,7 @@ export default function HomePage() {
                     {
                       eyebrow: '01',
                       title: 'Connect',
-                      description: 'Sync HRIS, payroll, ATS, and time signals into one secure graph.',
+                      description: 'Sync core systems, payroll, ATS, and time signals into one secure graph.',
                     },
                     {
                       eyebrow: '02',
@@ -1112,7 +1112,7 @@ export default function HomePage() {
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-zinc-700 dark:text-white/60">Platform Layer</p>
                 <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
-                  A single operating surface for people ops.
+                  A single operating surface for modern teams.
                 </h2>
                 <p className="mt-4 text-zinc-900 dark:text-white/75">
                   The platform connects identity, recruiting, performance, time, payroll, and learning
@@ -1247,9 +1247,9 @@ export default function HomePage() {
                   className="rounded-3xl border border-black/10 bg-[#0b2f29] p-8 text-white transition hover:-translate-y-1 dark:border-white/10"
                 >
                   <p className="text-xs uppercase tracking-[0.35em] text-white/60">Africa Overview</p>
-                  <h3 className="mt-4 font-display text-3xl">HR Software for Africa</h3>
+                  <h3 className="mt-4 font-display text-3xl">AI Software for Africa</h3>
                   <p className="mt-4 text-sm text-white/75">
-                    See how Seemplify supports multi-country HR teams across Africa.
+                    See how Seemplify supports multi-country teams across Africa.
                   </p>
                 </Link>
 
@@ -1280,7 +1280,7 @@ export default function HomePage() {
             <div className="max-w-3xl">
               <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">SEO FAQ</p>
               <h2 className="mt-4 font-display text-4xl text-zinc-900 dark:text-white md:text-5xl">
-                Answers for high-intent African HR software queries.
+                Answers for high-intent African AI software queries.
               </h2>
               <p className="mt-4 text-zinc-700 dark:text-white/75">
                 This section supports long-tail search intent and feeds matching FAQ structured data
@@ -1325,7 +1325,7 @@ export default function HomePage() {
                   <InfoCard
                     eyebrow="Speed"
                     title="Automation Coverage"
-                    description="Prebuilt workflows cover 90% of HR operations out of the box."
+                    description="Prebuilt workflows cover 90% of core operations out of the box."
                   />
                   <InfoCard
                     eyebrow="Quality"
@@ -1340,7 +1340,7 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="rounded-3xl border border-black/10 bg-white p-10 text-center backdrop-blur-xl dark:border-white/20 dark:bg-white/[0.06] md:p-14">
-                <h3 className="font-display text-3xl text-zinc-900 dark:text-white md:text-4xl">Ready to run a cinematic HR stack?</h3>
+                <h3 className="font-display text-3xl text-zinc-900 dark:text-white md:text-4xl">Ready to run a cinematic AI stack?</h3>
                 <p className="mt-4 text-zinc-700 dark:text-white/75">
                   Book a walkthrough or jump straight into the platform. We will map your workforce
                   workflows in days, not quarters.

@@ -28,10 +28,10 @@ export async function generateMetadata({ params }: MarketPageProps): Promise<Met
     description: page.description,
     keywords: [
       `${page.headline}`,
-      `HR management software ${page.country}`,
-      `HRIS ${page.country}`,
+      `AI workflow automation ${page.country}`,
+      `AI platform ${page.country}`,
       `employee management software ${page.country}`,
-      'HR software Africa',
+      'AI software Africa',
     ],
     alternates: {
       canonical: `/africa/${page.slug}`,
@@ -118,7 +118,7 @@ export default async function MarketPage({ params }: MarketPageProps) {
         '@type': 'SoftwareApplication',
         name: siteConfig.name,
         applicationCategory: 'BusinessApplication',
-        applicationSubCategory: 'Human Resources Software',
+        applicationSubCategory: 'AI Software',
         operatingSystem: 'Web',
         description: page.description,
         url: absoluteUrl(`/africa/${page.slug}`),
@@ -182,7 +182,7 @@ export default async function MarketPage({ params }: MarketPageProps) {
           <div className="rounded-3xl border border-black/10 bg-[#0b2f29] p-10 text-white dark:border-white/10">
             <p className="text-xs uppercase tracking-[0.35em] text-white/60">Best Fit Teams</p>
             <h2 className="mt-4 font-display text-4xl">
-              Common sectors searching for modern HR software in {page.country}.
+              Common sectors searching for modern AI software in {page.country}.
             </h2>
             <div className="mt-8 grid gap-3">
               {page.industries.map((industry) => (

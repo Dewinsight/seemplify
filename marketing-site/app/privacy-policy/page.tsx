@@ -29,7 +29,7 @@ export default function PrivacyPolicy() {
             content: (
                 <p>
                     Welcome to Seemplify ("we," "our," or "us"). We are committed to protecting your personal information and your right to privacy.
-                    When you use our HR ecosystem and related services, you trust us with your personal data. We take that trust seriously.
+                    When you use our platform and related services, you trust us with your personal data. We take that trust seriously.
                     This privacy policy seeks to explain to you in the clearest way possible what information we collect, how we use it,
                     and what rights you have in relation to it.
                 </p>
@@ -45,7 +45,7 @@ export default function PrivacyPolicy() {
                         on the Services, or otherwise when you contact us.</p>
                     <ul className="list-disc pl-5 space-y-2 text-zinc-600 dark:text-zinc-300">
                         <li><strong>Personal Identity Information:</strong> Name, contact details, job title, and company information.</li>
-                        <li><strong>HR Data:</strong> Information related to your employment, performance reviews, and organizational role if applicable.</li>
+                        <li><strong>Employment Data:</strong> Information related to your employment, performance reviews, and organizational role if applicable.</li>
                         <li><strong>Credentials:</strong> Passwords, password hints, and similar security information used for authentication.</li>
                     </ul>
                 </div>
