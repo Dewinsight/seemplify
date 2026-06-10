@@ -1,26 +1,17 @@
 // Runtime configuration for deployment
-// Dynamically detects environment from hostname
+// diGiLog talks to its own self-hosted backend (Azure VM) — no Seemplify IdP, no api.seemplifyai.com.
 (function () {
   var hostname = window.location.hostname;
   var isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-  var isDev = hostname.includes('-dev') || hostname.includes('.dev.') || isLocal;
 
-  // White-label domains that proxy to the same production backend
-  var isWhiteLabel = hostname.includes('jetstone.aiinnigeria.com') || hostname.includes('akwaibom.aiinnigeria.com');
+  // Self-hosted digiLog backend on the Azure VM (HTTPS via nip.io)
+  var apiBase = 'https://172-182-227-84.nip.io';
+  var wsBase = 'wss://172-182-227-84.nip.io';
 
-  var apiBase = isDev ? 'https://api-dev.seemplifyai.com' : 'https://api.seemplifyai.com';
-  var wsBase = isDev ? 'wss://api-dev.seemplifyai.com' : 'wss://api.seemplifyai.com';
-
-  // For localhost, use local backend
+  // Local development uses a local backend
   if (isLocal) {
     apiBase = 'http://localhost:5001';
     wsBase = 'ws://localhost:5001';
-  }
-
-  // White-label domains use production backend
-  if (isWhiteLabel) {
-    apiBase = 'https://api.seemplifyai.com';
-    wsBase = 'wss://api.seemplifyai.com';
   }
 
   window.__RUNTIME_CONFIG__ = {
@@ -30,10 +21,5 @@
     NEXT_PUBLIC_INACTIVITY_WARNING_TIME: '300000'
   };
 
-  console.log('Runtime config loaded:', {
-    hostname: hostname,
-    isDev: isDev,
-    isWhiteLabel: isWhiteLabel,
-    apiBase: apiBase
-  });
+  console.log('Runtime config loaded:', { hostname: hostname, apiBase: apiBase });
 })();
