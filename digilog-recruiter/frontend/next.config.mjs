@@ -2,7 +2,7 @@
 const API_PROXY_TARGET = (
   process.env.API_PROXY_TARGET ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.NODE_ENV === 'development' ? 'http://localhost:5001' : 'https://api.seemplifyai.com')
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:5001' : 'https://172-182-227-84.nip.io')
 ).replace(/\/$/, '')
 
 const nextConfig = {

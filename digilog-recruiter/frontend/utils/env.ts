@@ -44,27 +44,10 @@ function getDefaultsForHostname(hostname: string): {
     };
   }
 
-  const isDevHost = hostname.includes('-dev') || hostname.includes('.dev.');
-  if (isDevHost) {
-    return {
-      apiBase: 'https://api-dev.seemplifyai.com',
-      wsBase: 'wss://api-dev.seemplifyai.com',
-      idpBase: '',
-    };
-  }
-
-  const isAkwaIbom = hostname.includes('ibom') || hostname.includes('akwa') || hostname.includes('jetstone');
-  if (isAkwaIbom) {
-    return {
-      apiBase: 'https://api.seemplifyai.com',
-      wsBase: 'wss://api.seemplifyai.com',
-      idpBase: '',
-    };
-  }
-
+  // diGiLog uses its own self-hosted backend on the Azure VM. No Seemplify IdP.
   return {
-    apiBase: 'https://api.seemplifyai.com',
-    wsBase: 'wss://api.seemplifyai.com',
+    apiBase: 'https://172-182-227-84.nip.io',
+    wsBase: 'wss://172-182-227-84.nip.io',
     idpBase: '',
   };
 }
@@ -76,17 +59,19 @@ export function getRuntimeConfig(): RuntimeConfig {
   const runtimeCfg = typeof window !== 'undefined' ? window.__RUNTIME_CONFIG__ || {} : {};
 
   return {
+    // Prefer the build-time env (baked by Vercel) over the cached runtime-config
+    // script, so a stale cached __runtime_config__.js can never override the API URL.
     NEXT_PUBLIC_API_BASE_URL:
-      runtimeCfg.NEXT_PUBLIC_API_BASE_URL ||
       process.env.NEXT_PUBLIC_API_BASE_URL ||
+      runtimeCfg.NEXT_PUBLIC_API_BASE_URL ||
       defaults.apiBase,
     NEXT_PUBLIC_WS_BASE_URL:
-      runtimeCfg.NEXT_PUBLIC_WS_BASE_URL ||
       process.env.NEXT_PUBLIC_WS_BASE_URL ||
+      runtimeCfg.NEXT_PUBLIC_WS_BASE_URL ||
       defaults.wsBase,
     NEXT_PUBLIC_IDP_URL:
-      runtimeCfg.NEXT_PUBLIC_IDP_URL ||
       process.env.NEXT_PUBLIC_IDP_URL ||
+      runtimeCfg.NEXT_PUBLIC_IDP_URL ||
       defaults.idpBase,
     NEXT_PUBLIC_INACTIVITY_TIMEOUT:
       runtimeCfg.NEXT_PUBLIC_INACTIVITY_TIMEOUT ||
