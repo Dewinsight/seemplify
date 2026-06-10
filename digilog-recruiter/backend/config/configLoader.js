@@ -50,9 +50,20 @@ class ConfigLoader {
   }
 
   /**
-   * Get the base URL for the current environment
+   * Get the base URL for the current environment.
+   * Can be overridden per-deployment via env (so the public backend URL used to
+   * build the Nylas OAuth callback doesn't depend on a hardcoded domain). The URL
+   * MUST be the address the frontend/Nylas reach this backend at, and the resulting
+   * callback URL must be registered in the Nylas app's Callback URIs.
    */
   getBaseUrl() {
+    const envBase =
+      process.env.OAUTH_CALLBACK_BASE_URL ||
+      process.env.PUBLIC_BACKEND_URL ||
+      process.env.BACKEND_PUBLIC_URL;
+    if (envBase) {
+      return envBase.replace(/\/+$/, ''); // strip trailing slash(es)
+    }
     const config = this.getCurrentConfig();
     return config.baseUrl;
   }
@@ -62,7 +73,7 @@ class ConfigLoader {
    */
   getCallbackUrl() {
     const config = this.getCurrentConfig();
-    return `${config.baseUrl}${config.callbackPath}`;
+    return `${this.getBaseUrl()}${config.callbackPath}`;
   }
 
   /**
