@@ -972,15 +972,6 @@ function JobDetailInnerPage() {
       />
       </div>
 
-      <div className="mx-auto flex w-full max-w-screen-2xl justify-end px-4 pt-4 sm:px-6 lg:px-8">
-        <Button asChild className="w-full sm:w-auto">
-          <Link href={`/ai-interviews?jobId=${jobData._id}`}>
-            <Bot className="mr-2 h-4 w-4" />
-            Create AI Interview
-          </Link>
-        </Button>
-      </div>
-
       {/* Guided Tour Button moved into header actions */}
 
       {/* Responsive Main Content */}
@@ -2137,6 +2128,14 @@ function JobDetailInnerPage() {
                     </TabsContent>
 
                     <TabsContent value="setup" className="mt-0">
+                      <div className="mb-4 flex justify-end">
+                        <Button asChild className="w-full sm:w-auto">
+                          <Link href={`/ai-interviews?jobId=${jobData._id}`}>
+                            <Bot className="mr-2 h-4 w-4" />
+                            Create AI Interview
+                          </Link>
+                        </Button>
+                      </div>
                       <InterviewSetupTab
                         jobId={jobData?._id}
                         jobTitle={jobData?.title}
