@@ -717,8 +717,18 @@ export default function AIInterviewsPage() {
   };
 
   const submit = async () => {
-    if (!form.jobId || selectedRecipientCount === 0 || selectedQuestionIds.length === 0) {
-      toast.error("Select a job, add at least one recipient, and select at least one question");
+    // Tell the user exactly what's missing before scheduling
+    const missing: string[] = [];
+    if (!form.jobId) missing.push("a job");
+    if (selectedRecipientCount === 0) missing.push("at least one recipient (candidate or guest)");
+    if (selectedQuestionIds.length === 0) missing.push("at least one interview question");
+    if (!form.sendAt || !form.expiresAt) missing.push("a send time and an expiry time");
+    if (missing.length > 0) {
+      toast.error(`Cannot schedule yet — please add ${missing.join(", ")}.`);
+      return;
+    }
+    if (costEstimate?.enoughCredits === false) {
+      toast.error("Not enough credits to schedule this interview. Reduce the questions/recipients or top up your credits.");
       return;
     }
 
@@ -1544,7 +1554,7 @@ export default function AIInterviewsPage() {
                       </div>
                     )}
 
-                    <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600" onClick={submit} disabled={saving || costEstimate?.enoughCredits === false}>
+                    <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600" onClick={submit} disabled={saving}>
                       {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                       Schedule AI Interview
                     </Button>
