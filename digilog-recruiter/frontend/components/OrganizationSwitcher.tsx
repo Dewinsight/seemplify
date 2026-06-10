@@ -17,7 +17,7 @@ import { Building2, ChevronDown, Check, Settings, Plus, Coins, TrendingUp } from
 import { toast } from 'sonner';
 import { getCreditStatus, CreditStatus } from '@/services/creditsService';
 import { useRouter } from 'next/navigation';
-import { getIdpBaseUrl } from '@/utils/env';
+import OrganizationSetupModal from '@/components/OrganizationSetupModal';
 
 interface OrganizationSwitcherProps {
   className?: string;
@@ -43,8 +43,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
   const [loadingCredits, setLoadingCredits] = useState(false);
   const router = useRouter();
 
-  // IDP URL for organization management
-  const idpUrl = getIdpBaseUrl();
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Load credits when organization changes
   useEffect(() => {
@@ -305,15 +304,7 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
         
         {showCreateOption && (
           <DropdownMenuItem
-            onClick={() => {
-              if (idpUrl) {
-                // Redirect to IDP hub for organization creation
-                window.open(`${idpUrl.replace(/\/$/, '')}/organizations`, '_blank');
-                toast.info('Opening Identity Provider to create organization...');
-              } else {
-                toast.error('Identity Provider URL not configured');
-              }
-            }}
+            onClick={() => setShowCreateModal(true)}
             className="flex items-center space-x-2 cursor-pointer"
             disabled={organizationLimits ? !organizationLimits.canCreateMore : false}
           >
@@ -328,6 +319,12 @@ const OrganizationSwitcher: React.FC<OrganizationSwitcherProps> = ({
         )}
       </DropdownMenuContent>
       </DropdownMenu>
+
+      <OrganizationSetupModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        mode="create"
+      />
     </>
   );
 };

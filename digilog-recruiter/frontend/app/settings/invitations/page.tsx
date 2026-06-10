@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import organizationService from '@/services/organizationService';
 import { useOrganization } from '@/context/OrganizationContext';
-import { getIdpBaseUrl } from '@/utils/env';
 
 interface PendingInvite {
   _id: string;
@@ -49,7 +48,6 @@ interface PendingInvite {
 
 const InvitationsPage = () => {
   const { loadOrganizations } = useOrganization();
-  const idpUrl = getIdpBaseUrl();
   const [invitations, setInvitations] = useState<PendingInvite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [processingInvites, setProcessingInvites] = useState<Set<string>>(new Set());
@@ -205,17 +203,6 @@ const InvitationsPage = () => {
         <p className="text-sm text-muted-foreground">
           View and manage organization invitations sent to you.
         </p>
-        {idpUrl && (
-          <div className="mt-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.open(`${idpUrl.replace(/\/$/, '')}/organizations`, '_blank')}
-            >
-              Manage in Identity Provider
-            </Button>
-          </div>
-        )}
       </div>
       <Separator />
 

@@ -1,5 +1,4 @@
 import { apiRequest } from './apiConfig';
-import { getIdpBaseUrl } from '@/utils/env';
 
 interface Organization {
   _id: string;
@@ -133,31 +132,6 @@ class OrganizationService {
           statusText: response.statusText,
           error
         });
-
-        // Handle IdP-managed response (410 Gone) - organization creation requires IdP
-        if (response.status === 410 && error.code === 'idp_managed') {
-          const idpError = new Error(error.msg || 'Organization creation is managed through the Identity Provider');
-          (idpError as any).code = 'idp_managed';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          (idpError as any).action = error.action;
-          throw idpError;
-        }
-
-        // Handle IdP required (503) - IdP is unavailable
-        if (response.status === 503 && error.code === 'idp_required') {
-          const idpError = new Error(error.msg || 'Organization creation requires the Identity Provider');
-          (idpError as any).code = 'idp_required';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          throw idpError;
-        }
-
-        // Handle IdP auth required (401)
-        if (response.status === 401 && error.code === 'idp_auth_required') {
-          const idpError = new Error(error.msg || 'Your Identity Provider session has expired');
-          (idpError as any).code = 'idp_auth_required';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          throw idpError;
-        }
 
         throw new Error(error.msg || error.message || 'Failed to create organization');
       }
@@ -421,15 +395,6 @@ class OrganizationService {
       if (!response.ok) {
         const error = await response.json();
         console.error('❌ Invite user error:', error);
-        
-        // Handle IdP-managed response (410 Gone)
-        if (response.status === 410 && error.code === 'idp_managed') {
-          const idpError = new Error(error.msg || 'Member invitations are managed through the Identity Provider');
-          (idpError as any).code = 'idp_managed';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          throw idpError;
-        }
-        
         throw new Error(error.msg || 'Failed to invite user');
       }
 
@@ -493,9 +458,8 @@ class OrganizationService {
   async getOrganizationMembers(): Promise<{
     members: any[];
     memberCount: number;
-    source?: 'idp';
+    source?: string;
     yourRole?: string;
-    idpManagementUrl?: string;
   }> {
     console.log('👥 OrganizationService.getOrganizationMembers called');
     
@@ -503,38 +467,13 @@ class OrganizationService {
 
     if (!response.ok) {
       const error = await response.json();
-      // Handle IdP-managed response
-      if (response.status === 410 && error.code === 'idp_managed') {
-        console.log('🔗 Organization is IdP-managed, returning with redirect URL');
-        return {
-          members: [],
-          memberCount: 0,
-          source: 'idp',
-          idpManagementUrl: error.redirectUrl
-        };
-      }
-      // Handle IdP unavailable error
-      if (response.status === 503 && error.code === 'idp_unavailable') {
-        console.error('❌ Identity Provider unavailable');
-        const idpError = new Error(error.msg || 'Identity Provider unavailable');
-        (idpError as any).code = 'idp_unavailable';
-        throw idpError;
-      }
-      // Handle organization not linked to IdP
-      if (response.status === 400 && error.code === 'idp_not_linked') {
-        console.error('⚠️ Organization not linked to IdP');
-        const linkError = new Error(error.msg || 'Organization not linked to Identity Provider');
-        (linkError as any).code = 'idp_not_linked';
-        throw linkError;
-      }
       throw new Error(error.msg || 'Failed to fetch organization members');
     }
 
     const result = await response.json();
-    console.log('✅ Organization members fetched:', { 
-      memberCount: result.memberCount, 
-      source: result.source,
-      hasIdpUrl: !!result.idpManagementUrl 
+    console.log('✅ Organization members fetched:', {
+      memberCount: result.memberCount,
+      source: result.source
     });
     return result;
   }
@@ -562,15 +501,6 @@ class OrganizationService {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         console.error('❌ Remove member error:', error);
-        
-        // Handle IdP-managed response (410 Gone)
-        if (response.status === 410 && error.code === 'idp_managed') {
-          const idpError = new Error(error.msg || 'Member management is handled through the Identity Provider');
-          (idpError as any).code = 'idp_managed';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          throw idpError;
-        }
-        
         throw new Error(error.msg || error.message || `Failed to remove member (${response.status})`);
       }
 
@@ -609,15 +539,6 @@ class OrganizationService {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         console.error('❌ Update member role error:', error);
-        
-        // Handle IdP-managed response (410 Gone)
-        if (response.status === 410 && error.code === 'idp_managed') {
-          const idpError = new Error(error.msg || 'Role management is handled through the Identity Provider');
-          (idpError as any).code = 'idp_managed';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          throw idpError;
-        }
-        
         throw new Error(error.msg || error.message || `Failed to update member role (${response.status})`);
       }
 
@@ -673,15 +594,6 @@ class OrganizationService {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         console.error('❌ Transfer ownership error:', error);
-        
-        // Handle IdP-managed response (410 Gone)
-        if (response.status === 410 && error.code === 'idp_managed') {
-          const idpError = new Error(error.msg || 'Ownership transfer is handled through the Identity Provider');
-          (idpError as any).code = 'idp_managed';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          throw idpError;
-        }
-        
         throw new Error(error.msg || error.message || `Failed to transfer ownership (${response.status})`);
       }
 
@@ -857,15 +769,6 @@ class OrganizationService {
       if (!response.ok) {
         const error = await response.json();
         console.error('❌ Cancel invitation error:', error);
-        
-        // Handle IdP-managed response (410 Gone)
-        if (response.status === 410 && error.code === 'idp_managed') {
-          const idpError = new Error(error.msg || 'Invitation management is handled through the Identity Provider');
-          (idpError as any).code = 'idp_managed';
-          (idpError as any).redirectUrl = error.redirectUrl;
-          throw idpError;
-        }
-        
         throw new Error(error.msg || 'Failed to cancel invitation');
       }
 
@@ -912,49 +815,6 @@ class OrganizationService {
     }
   }
 
-  /**
-   * Get the IdP URL for organization management
-   * @param section - Optional section to navigate to (organizations, members, invitations)
-   * @param orgId - Optional organization ID for specific org management
-   */
-  getIdpManagementUrl(section: string = 'organizations', orgId?: string): string {
-    const baseUrl = getIdpBaseUrl();
-
-    if (!baseUrl) {
-      console.warn('⚠️ No IDP URL configured');
-      return '';
-    }
-
-    // Remove trailing slash from base URL
-    const cleanBaseUrl = baseUrl.replace(/\/$/, '');
-
-    if (orgId) {
-      switch (section) {
-        case 'members':
-          return `${cleanBaseUrl}/organizations/${orgId}/members`;
-        case 'invitations':
-          return `${cleanBaseUrl}/organizations/${orgId}/invitations`;
-        case 'teams':
-          return `${cleanBaseUrl}/organizations/${orgId}/teams`;
-        default:
-          return `${cleanBaseUrl}/organizations/${orgId}`;
-      }
-    }
-
-    return `${cleanBaseUrl}/organizations`;
-  }
-
-  /**
-   * Open the IdP management URL in a new tab
-   */
-  openIdpManagement(section: string = 'organizations', orgId?: string): void {
-    const url = this.getIdpManagementUrl(section, orgId);
-    if (url) {
-      window.open(url, '_blank');
-    } else {
-      console.error('❌ Cannot open IdP - no URL configured');
-    }
-  }
 }
 
 export type { Organization, PendingInvitation, UserPendingInvitation };

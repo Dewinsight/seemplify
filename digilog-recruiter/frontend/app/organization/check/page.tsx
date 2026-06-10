@@ -18,8 +18,6 @@ export default function OrganizationCheckPage() {
   } = useOrganization();
   const [loadingMessage, setLoadingMessage] = useState('Setting up your workspace');
   const [error, setError] = useState<string | null>(null);
-  const IDP_REDIRECT_GUARD_KEY = 'organization_check_last_idp_redirect';
-  const IDP_REDIRECT_COOLDOWN_MS = 15000;
 
   // Main organization check flow
   useEffect(() => {
@@ -44,7 +42,6 @@ export default function OrganizationCheckPage() {
 
         // If user has an organization, go straight to dashboard
         if (organizations.length > 0 && currentOrganization) {
-          sessionStorage.removeItem(IDP_REDIRECT_GUARD_KEY);
           console.log('User has organization, redirecting to dashboard');
           setLoadingMessage('Loading your dashboard...');
           await new Promise(resolve => setTimeout(resolve, 500));

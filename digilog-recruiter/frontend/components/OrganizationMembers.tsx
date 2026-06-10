@@ -40,7 +40,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { getIdpBaseUrl } from '@/utils/env';
 import { 
   Users, 
   UserPlus, 
@@ -68,8 +67,7 @@ interface OrganizationMembersProps {
 
 const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "", onInviteSuccess }) => {
   const { currentOrganization, inviteUser, removeMember, updateMemberRole, transferOwnership, loadOrganizations, forceRefresh } = useOrganization();
-  const idpUrl = getIdpBaseUrl();
-  
+
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isRemoveMemberDialogOpen, setIsRemoveMemberDialogOpen] = useState(false);
   const [isChangeRoleDialogOpen, setIsChangeRoleDialogOpen] = useState(false);
@@ -90,7 +88,6 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
     candidateCount: 0
   });
   const [memberSource, setMemberSource] = useState<'idp' | 'local'>('local');
-  const [idpManagementUrl, setIdpManagementUrl] = useState<string | null>(null);
   
   // Member detail modal states
   const [selectedMemberForActions, setSelectedMemberForActions] = useState<any>(null);
@@ -141,11 +138,6 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
           setMemberSource(response.source);
         }
         
-        // Store IdP management URL if provided
-        if (response.idpManagementUrl) {
-          setIdpManagementUrl(response.idpManagementUrl);
-        }
-        
         // Filter out any invalid members to prevent rendering errors
         // Handle both IdP format (user object) and local format
         const validMembers = (response.members || []).filter(member => {
@@ -174,15 +166,7 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
         setMembers(validMembers);
       } catch (error: any) {
         console.error('Failed to load members:', error);
-        // Show appropriate error message based on error type
-        if (error?.code === 'idp_unavailable') {
-          toast.error('Identity Provider is currently unavailable. Please try again later.');
-        } else if (error?.code === 'idp_not_linked') {
-          toast.error('Organization not linked to Identity Provider. Please contact your administrator.');
-        } else {
-          toast.error('Failed to load organization members');
-        }
-        // No fallback - IdP is the source of truth
+        toast.error('Failed to load organization members');
         setMembers([]);
       } finally {
         setIsLoading(false);
@@ -397,18 +381,6 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
     } catch (error: any) {
       console.error('Invite error:', error);
       
-      // Check if this is an IdP-managed response (410)
-      if (error.code === 'idp_managed' || error.message?.includes('Identity Provider')) {
-        setIsInviteModalOpen(false);
-        toast.info('Member invitations are managed through the Identity Provider');
-        if (error.redirectUrl) {
-          window.open(error.redirectUrl, '_blank');
-        } else if (idpManagementUrl) {
-          window.open(idpManagementUrl, '_blank');
-        }
-        return;
-      }
-      
       // Check if this is a member limit error
       if (error.message?.includes('Member limit reached')) {
         const limitMatch = error.message.match(/allows (\d+) members/);
@@ -504,75 +476,19 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* IdP Banner - shown when members are managed by IdP */}
-      {memberSource === 'idp' && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Shield className="w-5 h-5 text-blue-600 flex-shrink-0" />
-              <div>
-                <h3 className="font-medium text-blue-900">Members managed by Identity Provider</h3>
-                <p className="text-sm text-blue-700">
-                  Member invitations, roles, and removals are handled through the Identity Provider for enhanced security.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2 w-full sm:w-auto">
-              {(idpManagementUrl || idpUrl) && (
-                <Button
-                  onClick={() => window.open(idpManagementUrl || `${idpUrl?.replace(/\/$/, '')}/organizations`, '_blank')}
-                  className="bg-blue-600 hover:bg-blue-700 flex-1 sm:flex-none"
-                >
-                  Manage Members in IdP
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Team Members</h1>
           <p className="text-gray-600">
-            {memberSource === 'idp' 
-              ? 'View your organization\'s team members (managed by Identity Provider)'
-              : 'Manage your organization\'s team members and their roles'
-            }
+            Manage your organization&apos;s team members and their roles
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {(idpUrl || idpManagementUrl) && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.open(idpManagementUrl || `${idpUrl?.replace(/\/$/, '')}/organizations`, '_blank')}
-            >
-              Open Identity Provider
-            </Button>
-          )}
         {canManageMembers && (() => {
           const memberLimit = currentOrganization?.subscription?.memberLimit || 5;
           const activeMembers = members.filter(m => m.status === 'active').length;
           const isAtCapacity = typeof memberLimit === 'number' && activeMembers >= memberLimit;
-
-          // If IdP is the source of truth, show button that redirects to IdP
-          if (memberSource === 'idp') {
-            return (
-              <Button
-                className="flex items-center space-x-2"
-                onClick={() => {
-                  const url = idpManagementUrl || `${idpUrl?.replace(/\/$/, '')}/organizations`;
-                  window.open(url, '_blank');
-                  toast.info('Opening Identity Provider to manage invitations...');
-                }}
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Invite via IdP</span>
-              </Button>
-            );
-          }
 
           return (
             <Dialog open={isInviteModalOpen} onOpenChange={setIsInviteModalOpen}>
@@ -1112,27 +1028,8 @@ const OrganizationMembers: React.FC<OrganizationMembersProps> = ({ className = "
           <div className="space-y-2">
             <h4 className="text-sm font-medium text-gray-500 mb-3">Actions</h4>
 
-            {/* IdP Managed - Show link to IdP instead of local actions */}
-            {memberSource === 'idp' && canManageMembers && selectedMemberForActions?.role !== 'owner' && (
-              <Button
-                variant="outline"
-                className="w-full justify-start text-left h-12 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-blue-200 dark:border-blue-800"
-                onClick={() => {
-                  const url = idpManagementUrl || `${idpUrl?.replace(/\/$/, '')}/organizations`;
-                  window.open(url, '_blank');
-                  setShowMemberDetailModal(false);
-                }}
-              >
-                <Shield className="h-4 w-4 mr-3" />
-                <div className="flex-1">
-                  <div className="font-medium">Manage in Identity Provider</div>
-                  <div className="text-xs text-blue-500">Change roles, remove member, or transfer ownership</div>
-                </div>
-              </Button>
-            )}
-
-            {/* Local management actions - only show when NOT IdP managed */}
-            {memberSource !== 'idp' && (
+            {/* Member management actions */}
+            {canManageMembers && (
               <>
                 {/* Change Role Button */}
                 {selectedMemberForActions?.role !== 'owner' && canManageMembers && (

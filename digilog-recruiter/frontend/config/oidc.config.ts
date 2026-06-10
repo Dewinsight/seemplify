@@ -5,8 +5,6 @@
  * This allows SmartHR to integrate with external identity providers.
  */
 
-const isProduction = process.env.NODE_ENV === 'production';
-const DEFAULT_IDP_URL = isProduction ? 'https://auth.seemplifyai.com' : 'http://localhost:4000';
 
 export const oidcConfig = {
   // Digilog recruiter manages its own login/registration locally — no external IDP.
@@ -14,10 +12,7 @@ export const oidcConfig = {
   buttonText: 'Login with aiin',
   providerName: 'AIIN Identity',
   showDivider: true,
-  identityProviderUrl:
-    process.env.NEXT_PUBLIC_IDP_URL ||
-    process.env.NEXT_PUBLIC_OIDC_ISSUER ||
-    DEFAULT_IDP_URL,
+  identityProviderUrl: '',
 } as const;
 
 export function getOidcDisplayConfig(brandId?: string) {

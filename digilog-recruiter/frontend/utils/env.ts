@@ -40,7 +40,7 @@ function getDefaultsForHostname(hostname: string): {
     return {
       apiBase: 'http://localhost:5001',
       wsBase: 'ws://localhost:5001',
-      idpBase: 'http://localhost:4000',
+      idpBase: '',
     };
   }
 
@@ -49,7 +49,7 @@ function getDefaultsForHostname(hostname: string): {
     return {
       apiBase: 'https://api-dev.seemplifyai.com',
       wsBase: 'wss://api-dev.seemplifyai.com',
-      idpBase: 'https://auth-dev.seemplifyai.com',
+      idpBase: '',
     };
   }
 
@@ -58,14 +58,14 @@ function getDefaultsForHostname(hostname: string): {
     return {
       apiBase: 'https://api.seemplifyai.com',
       wsBase: 'wss://api.seemplifyai.com',
-      idpBase: 'https://akwa.aiinnigeria.com',
+      idpBase: '',
     };
   }
 
   return {
     apiBase: 'https://api.seemplifyai.com',
     wsBase: 'wss://api.seemplifyai.com',
-    idpBase: 'https://auth.seemplifyai.com',
+    idpBase: '',
   };
 }
 

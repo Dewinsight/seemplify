@@ -251,24 +251,6 @@ export const OrganizationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     } catch (err: any) {
       console.error('❌ Error creating organization:', err);
 
-      // Handle IdP-managed responses - redirect to IdP
-      if (err.code === 'idp_managed' || err.code === 'idp_required') {
-        console.log('🔗 Organization creation requires IdP, redirecting...');
-        if (err.redirectUrl) {
-          // Open IdP in new tab for organization creation
-          window.open(err.redirectUrl, '_blank');
-        }
-        setError('Please create your organization in the Identity Provider. A new tab has been opened.');
-        throw err;
-      }
-
-      // Handle IdP auth required
-      if (err.code === 'idp_auth_required') {
-        console.log('🔐 IdP authentication required');
-        setError('Your Identity Provider session has expired. Please log in again.');
-        throw err;
-      }
-
       // Handle authentication errors differently
       if (err.message?.includes('Token has expired')) {
         setError('Your session has expired. Please log in again.');

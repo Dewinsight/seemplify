@@ -275,81 +275,15 @@ router.get('/users', adminAuth, requirePermission('manageUsers'), async (req, re
 router.get('/organizations', adminAuth, requirePermission('manageOrganizations'), async (req, res) => {
   try {
     const { page = 1, limit = 20, search, plan, status } = req.query;
-    const idpService = require('../services/idpService');
 
-    // Step 1: Fetch all organizations from IdP
-    const idpOrgsResult = await idpService.getAllOrganizations({ search });
-    const idpOrganizations = idpOrgsResult.organizations || [];
-
-    console.log(`📥 Fetched ${idpOrganizations.length} organizations from IdP`);
-
-    // Step 2: Get existing local organizations
-    const existingLocalOrgs = await Organization.find({
-      idpOrganizationId: { $in: idpOrganizations.map(o => o.id) }
-    });
-    const existingIdpIds = new Set(existingLocalOrgs.map(o => o.idpOrganizationId));
-
-    // Step 3: Create local records for new IdP organizations
-    const newIdpOrgs = idpOrganizations.filter(o => !existingIdpIds.has(o.id));
-
-    if (newIdpOrgs.length > 0) {
-      console.log(`🔄 Creating ${newIdpOrgs.length} new local organizations from IdP`);
-
-      for (const idpOrg of newIdpOrgs) {
-        try {
-          const newOrg = new Organization({
-            name: idpOrg.name,
-            description: idpOrg.description || '',
-            idpOrganizationId: idpOrg.id,
-            subscription: {
-              plan: 'free', // Default plan
-              memberLimit: 5,
-              licenseStatus: 'active',
-              licenseStartDate: new Date(),
-              creditUsage: {
-                totalCredits: 100,
-                usedCredits: 0,
-                remainingCredits: 100,
-                currentCycleStart: new Date(),
-                currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-                transactions: [],
-                rolloverCredits: 0,
-                creditPurchases: [],
-                lowCreditWarning: { enabled: true, threshold: 20 }
-              },
-              adminNotes: [{
-                note: 'Auto-created from IdP sync',
-                addedAt: new Date()
-              }]
-            },
-            isActive: true,
-            createdAt: idpOrg.createdAt || new Date()
-          });
-          await newOrg.save();
-          console.log(`✅ Created local org for IdP org: ${idpOrg.name}`);
-        } catch (createErr) {
-          console.error(`❌ Failed to create local org for ${idpOrg.name}:`, createErr.message);
-        }
-      }
-    }
-
-    // Step 4: Build query for local organizations with filters
-    // Only show IdP-linked organizations (filter out legacy orgs without idpOrganizationId)
-    let query = {
-      idpOrganizationId: { $exists: true, $ne: null }
-    };
+    // List organizations from this app's own database (no Identity Provider)
+    const query = {};
 
     if (search) {
-      query.$and = [
-        { idpOrganizationId: { $exists: true, $ne: null } },
-        {
-          $or: [
-            { name: { $regex: search, $options: 'i' } },
-            { description: { $regex: search, $options: 'i' } }
-          ]
-        }
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
       ];
-      delete query.idpOrganizationId; // Remove duplicate filter when using $and
     }
 
     if (plan) {
@@ -360,37 +294,24 @@ router.get('/organizations', adminAuth, requirePermission('manageOrganizations')
       query['subscription.licenseStatus'] = status;
     }
 
-    // Step 5: Execute query with pagination
     const organizations = await Organization.find(query)
+      .populate('owner', 'email profile.firstName profile.lastName')
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .sort({ createdAt: -1 });
 
     const count = await Organization.countDocuments(query);
 
-    // Step 6: Merge with IdP data for member counts
     const orgsWithStats = organizations.map(org => {
       const orgObj = org.toObject();
-
-      // Find matching IdP org for member count
-      const idpOrg = idpOrganizations.find(io => io.id === org.idpOrganizationId);
-
-      if (org.idpOrganizationId) {
-        orgObj.memberCount = idpOrg?.memberCount || 0;
-        orgObj.isIdpManaged = true;
-        orgObj.memberSource = 'idp';
-      } else {
-        orgObj.memberCount = org.members?.filter(m => m.status === 'active').length || 0;
-        orgObj.isIdpManaged = false;
-        orgObj.memberSource = 'local';
-      }
-
+      orgObj.memberCount = org.members?.filter(m => m.status === 'active').length || 0;
+      orgObj.isIdpManaged = false;
+      orgObj.memberSource = 'local';
       orgObj.usagePercentage = {
         members: orgObj.memberCount > 0
           ? (orgObj.memberCount / (org.subscription?.memberLimit || 5)) * 100
           : 0
       };
-
       return orgObj;
     });
 
@@ -398,8 +319,7 @@ router.get('/organizations', adminAuth, requirePermission('manageOrganizations')
       organizations: orgsWithStats,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
-      totalOrganizations: count,
-      syncedFromIdp: newIdpOrgs.length
+      totalOrganizations: count
     });
   } catch (err) {
     console.error('Error fetching organizations:', err);
@@ -418,32 +338,13 @@ router.get('/organizations/:id', adminAuth, requirePermission('manageOrganizatio
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
+    // Always use local member data (no Identity Provider)
+    await organization.populate('owner', 'email profile.firstName profile.lastName');
+    await organization.populate('members.user', 'email profile.firstName profile.lastName');
     const orgObj = organization.toObject();
-
-    // If organization is linked to IdP, fetch members from IdP
-    if (organization.idpOrganizationId) {
-      try {
-        const idpService = require('../services/idpService');
-        // Note: Admin doesn't have user token, so we can't fetch detailed member data
-        // We'll just mark it as IdP-managed and show basic info
-        orgObj.memberCount = 0; // Placeholder - actual count should be fetched with proper auth
-        orgObj.isIdpManaged = true;
-        orgObj.memberSource = 'idp';
-        orgObj.membersNote = 'Members managed by Identity Provider. Member count requires user authentication.';
-      } catch (idpError) {
-        console.warn('Could not fetch IdP data for org:', organization.name);
-        orgObj.memberCount = 0;
-        orgObj.isIdpManaged = true;
-        orgObj.memberSource = 'idp';
-      }
-    } else {
-      // Legacy organization - use local member data
-      await organization.populate('owner', 'email profile.firstName profile.lastName');
-      await organization.populate('members.user', 'email profile.firstName profile.lastName');
-      orgObj.memberCount = organization.members?.filter(m => m.status === 'active').length || 0;
-      orgObj.isIdpManaged = false;
-      orgObj.memberSource = 'local';
-    }
+    orgObj.memberCount = organization.members?.filter(m => m.status === 'active').length || 0;
+    orgObj.isIdpManaged = false;
+    orgObj.memberSource = 'local';
 
     orgObj.usagePercentage = {
       members: orgObj.memberCount > 0
