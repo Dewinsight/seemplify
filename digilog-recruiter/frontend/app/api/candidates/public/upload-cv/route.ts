@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     try {
       const backendBaseUrl =
         process.env.BACKEND_URL ||
-        (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
+        (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://172-182-227-84.nip.io');
       const backendResponse = await fetch(`${backendBaseUrl}/api/candidates/public/upload-cv`, {
         method: 'POST',
         body: backendFormData,

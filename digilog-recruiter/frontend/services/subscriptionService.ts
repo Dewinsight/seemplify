@@ -186,7 +186,7 @@ export const getInvoicePdfUrl = (requestId: string): string => {
   const shouldUseFallback = typeof window !== 'undefined' && window.location.href.includes('sterling');
   
   if (shouldUseFallback) {
-    return `https://api.seemplifyai.com/api/subscription/invoice/${requestId}/pdf`;
+    return `https://172-182-227-84.nip.io/api/subscription/invoice/${requestId}/pdf`;
   }
   
   return `${getCurrentApiBaseUrl()}/api/subscription/invoice/${requestId}/pdf`;

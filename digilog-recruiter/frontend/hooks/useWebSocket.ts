@@ -10,12 +10,12 @@ const getFallbackWsUrl = async (): Promise<string> => {
     const response = await fetch('/fallback-config.json');
     if (response.ok) {
       const config = await response.json();
-      return config.NEXT_PUBLIC_WS_BASE_URL || 'wss://api.seemplifyai.com';
+      return config.NEXT_PUBLIC_WS_BASE_URL || 'wss://172-182-227-84.nip.io';
     }
   } catch (error) {
     console.warn('Failed to load fallback config for WebSocket');
   }
-  return 'wss://api.seemplifyai.com';
+  return 'wss://172-182-227-84.nip.io';
 };
 
 export interface WebSocketMessage {

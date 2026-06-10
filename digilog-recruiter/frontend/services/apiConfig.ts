@@ -6,8 +6,8 @@ import { handleCreditError, extractCreditError } from '../utils/creditErrorHandl
 const isBrowser = typeof window !== 'undefined';
 
 // Use runtime configuration
-let FALLBACK_API = 'https://api.seemplifyai.com';
-let FALLBACK_WS = 'wss://api.seemplifyai.com';
+let FALLBACK_API = 'https://172-182-227-84.nip.io';
+let FALLBACK_WS = 'wss://172-182-227-84.nip.io';
 
 // Attempt to load fallback-config.json at startup (best-effort, browser only)
 if (isBrowser) {

@@ -10,7 +10,7 @@ export async function GET(
     // Forward the request to the backend
     const backendBaseUrl =
       process.env.BACKEND_URL ||
-      (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
+      (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://172-182-227-84.nip.io');
     const backendResponse = await fetch(`${backendBaseUrl}/api/jobs/public/${jobId}`, {
       method: 'GET',
       headers: {
