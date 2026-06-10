@@ -82,7 +82,7 @@ const upload = multer({
 router.use(authMiddleware, requireOrganization);
 
 function organizationId(req) {
-  return req.user.currentOrganization;
+  return req.activeOrganization || req.user.currentOrganization;
 }
 
 function sha256(value) {

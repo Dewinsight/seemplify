@@ -46,11 +46,11 @@ function StepContent({
       )}>
         {done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-start justify-between gap-2">
-          <span>
-            <span className="block text-sm font-semibold text-slate-950">{index + 1}. {step.label}</span>
-            <span className="mt-1 block text-xs text-slate-500">
+      <span className="min-w-0 flex-1 overflow-hidden">
+        <span className="flex min-w-0 items-start justify-between gap-2">
+          <span className="min-w-0 flex-1 overflow-hidden">
+            <span className="block whitespace-normal break-words text-sm font-semibold text-slate-950">{index + 1}. {step.label}</span>
+            <span className="mt-1 block whitespace-normal break-words text-xs text-slate-500">
               {step.meta}
               {step.dueAt ? ` - due ${dateLabel(step.dueAt)}` : ""}
             </span>

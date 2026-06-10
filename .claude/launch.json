@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "C:/Users/Michael/Documents/GitHub/seemplify/digilog-recruiter/frontend", "dev"],
+      "port": 5000
+    },
+    {
+      "name": "candidates",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "C:/Users/Michael/Documents/GitHub/seemplify/digilog-recruiter/candidates", "dev"],
+      "port": 5300
+    }
+  ]
+}

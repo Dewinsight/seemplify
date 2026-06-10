@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
+const Organization = require('../models/Organization');
 const emailService = require('./emailService');
 const { processCopy } = require('./onboardingWorkflowService');
 
@@ -95,6 +97,37 @@ function escapeHtml(value = '') {
 
 function compactText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function organizationIdFrom(value) {
+  if (!value) return '';
+  if (typeof value === 'object') {
+    return value._id || value.id || '';
+  }
+  return value;
+}
+
+async function resolveOrganization(organization) {
+  if (!organization) return null;
+  if (typeof organization === 'object' && compactText(organization.name)) {
+    return organization;
+  }
+
+  const organizationId = organizationIdFrom(organization);
+  if (!organizationId || !mongoose.Types.ObjectId.isValid(String(organizationId))) {
+    return typeof organization === 'object' ? organization : null;
+  }
+
+  const resolved = await Organization.findById(organizationId)
+    .select('name logo website idpOrganizationId')
+    .lean()
+    .catch(() => null);
+
+  return resolved || (typeof organization === 'object' ? organization : null);
+}
+
+function organizationDisplayName(organization) {
+  return compactText(organization?.name) || 'Seemplify';
 }
 
 function formatDate(value) {
@@ -267,10 +300,11 @@ function envelopeDocumentCount(envelope = {}) {
 }
 
 async function sendCandidateInvite({ candidate, organization, inviteToken, onboarding, request, req }) {
-  const portalContext = { organization, request: request || req };
+  const resolvedOrganization = await resolveOrganization(organization);
+  const portalContext = { organization: resolvedOrganization || organization, request: request || req };
   const portalUrl = candidatePortalUrl(`/signup?token=${encodeURIComponent(inviteToken)}`, portalContext);
   const name = candidateName(candidate);
-  const organizationName = organization?.name || 'Seemplify';
+  const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const transition = await transitionSummary(onboarding);
   const title = `Your ${transition.lowerLabel} process is ready`;
   const greeting = `Hello ${name},`;
@@ -305,10 +339,11 @@ async function sendCandidateInvite({ candidate, organization, inviteToken, onboa
 }
 
 async function sendEnvelopeNotification({ candidate, organization, envelope, request, req }) {
+  const resolvedOrganization = await resolveOrganization(organization);
   const transition = await transitionSummary(envelope);
-  const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization, request: request || req });
+  const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization: resolvedOrganization || organization, request: request || req });
   const name = candidateName(candidate);
-  const organizationName = organization?.name || 'Seemplify';
+  const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const packetTitle = envelopeTitle(envelope);
   const title = 'Documents are ready';
   const greeting = `Hello ${name},`;
@@ -342,9 +377,10 @@ async function sendEnvelopeNotification({ candidate, organization, envelope, req
 }
 
 async function sendEnvelopeReminder({ signer, organization, envelope, request, req }) {
+  const resolvedOrganization = await resolveOrganization(organization);
   const transition = await transitionSummary(envelope);
-  const portalUrl = signerActionUrl({ signer, envelope, transition, organization, request, req });
-  const organizationName = organization?.name || 'Seemplify';
+  const portalUrl = signerActionUrl({ signer, envelope, transition, organization: resolvedOrganization || organization, request, req });
+  const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const name = signer.name || signer.email || 'there';
   const packetTitle = envelopeTitle(envelope);
   const title = 'Signature reminder';
@@ -381,9 +417,10 @@ async function sendEnvelopeReminder({ signer, organization, envelope, request, r
 }
 
 async function sendEnvelopeSignerNotification({ signer, organization, envelope, request, req }) {
+  const resolvedOrganization = await resolveOrganization(organization);
   const transition = await transitionSummary(envelope);
-  const portalUrl = signerActionUrl({ signer, envelope, transition, organization, request, req });
-  const organizationName = organization?.name || 'Seemplify';
+  const portalUrl = signerActionUrl({ signer, envelope, transition, organization: resolvedOrganization || organization, request, req });
+  const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const name = signer.name || signer.email || 'there';
   const packetTitle = envelopeTitle(envelope);
   const title = 'Your signature is requested';
@@ -420,6 +457,7 @@ async function sendEnvelopeSignerNotification({ signer, organization, envelope, 
 }
 
 async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, request, req }) {
+  const resolvedOrganization = await resolveOrganization(organization);
   const transition = await transitionSummary(envelope);
   const recipientSigner = Array.isArray(envelope.signers)
     ? envelope.signers.find((signer) => String(signer.email || '').toLowerCase() === String(recipientEmail || '').toLowerCase())
@@ -428,11 +466,11 @@ async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, r
     signer: recipientSigner || { role: 'candidate' },
     envelope,
     transition,
-    organization,
+    organization: resolvedOrganization || organization,
     request,
     req
   });
-  const organizationName = organization?.name || 'Seemplify';
+  const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const packetTitle = envelopeTitle(envelope);
   const name = recipientSigner?.name || recipientEmail || 'there';
   const title = 'Documents completed';
@@ -469,10 +507,11 @@ async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, r
 }
 
 async function sendWorkflowReminder({ candidate, organization, onboarding, item, request, req }) {
+  const resolvedOrganization = await resolveOrganization(organization);
   const transition = await transitionSummary(onboarding);
-  const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization, request: request || req });
+  const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization: resolvedOrganization || organization, request: request || req });
   const name = candidateName(candidate);
-  const organizationName = organization?.name || 'Seemplify';
+  const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const taskTitle = item?.title || transition.title;
   const dueAt = item?.dueAt ? new Date(item.dueAt) : null;
   const isOverdue = dueAt && !Number.isNaN(dueAt.getTime()) && dueAt < new Date();

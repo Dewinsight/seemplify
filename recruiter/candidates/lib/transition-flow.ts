@@ -39,10 +39,12 @@ function candidateSignerCanAct(envelope: OnboardingEnvelope) {
   return !(envelope.signers || []).some((signer) => Number(signer.order || 1) < Number(candidateSigner.order || 1) && signer.status !== "signed")
 }
 
+const FILL_ONLY_FIELD_TYPES = new Set(["text", "image", "name", "email", "date"])
+
 function documentCandidateActionType(document: EnvelopeDocument): "document_fill" | "document_sign" | null {
   const candidateFields = (document.signatureFields || []).filter((field) => (field.role || "candidate") === "candidate")
   const hasSignature = candidateFields.some((field) => field.type === "signature")
-  const hasFillField = candidateFields.some((field) => field.type === "text" || field.type === "image")
+  const hasFillField = candidateFields.some((field) => FILL_ONLY_FIELD_TYPES.has(field.type))
   if (hasFillField && !hasSignature) return "document_fill"
   if (hasSignature) return "document_sign"
   return null
