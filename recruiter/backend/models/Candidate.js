@@ -1,6 +1,14 @@
 const mongoose = require('mongoose');
 const { normalizeNumericValue } = require('../utils/normalizeCvExtraction');
 
+// Recruiting-only fields (phone, applied position, experience, education) are
+// required for external applicants but not for internal employees onboarded via
+// the IdP, who arrive without an application. `this` is the document on save/create.
+const requiredForExternal = (message) => [
+  function () { return !this.isInternalCandidate; },
+  message,
+];
+
 const CandidateSchema = new mongoose.Schema({
   firstName: {
     type: String,
@@ -21,21 +29,21 @@ const CandidateSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: [true, 'Phone number is required'],
+    required: requiredForExternal('Phone number is required'),
     trim: true,
   },
   position: { // Position applied for
     type: String,
-    required: [true, 'Position applied for is required'],
+    required: requiredForExternal('Position applied for is required'),
     trim: true,
   },
   experience: { // Years of experience (e.g., "0-2", "3-5", "5-10", "10+")
     type: String,
-    required: [true, 'Experience level is required'],
+    required: requiredForExternal('Experience level is required'),
   },
   education: { // Highest education level (e.g., "high-school", "bachelors")
     type: String,
-    required: [true, 'Education level is required'],
+    required: requiredForExternal('Education level is required'),
   },
   skills: { // Comma-separated string of skills
     type: String,
@@ -294,6 +302,24 @@ const CandidateSchema = new mongoose.Schema({
   manager: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+  },
+
+  // IdP linkage for internal employees. Stored as opaque strings (the IdP is a
+  // separate app/DB) to avoid reintroducing cross-app model coupling.
+  idpAccountId: {
+    type: String,
+    trim: true,
+    sparse: true,
+    index: true,
+  },
+  idpMemberId: {
+    type: String,
+    trim: true,
+    sparse: true,
+  },
+  idpOrganizationId: {
+    type: String,
+    trim: true,
   }
 });
 
@@ -308,5 +334,6 @@ CandidateSchema.index({ organization: 1 });
 CandidateSchema.index({ organization: 1, status: 1 });
 CandidateSchema.index({ organization: 1, createdAt: -1 });
 CandidateSchema.index({ organization: 1, email: 1 });
+CandidateSchema.index({ organization: 1, idpAccountId: 1 });
 
 module.exports = mongoose.model('Candidate', CandidateSchema);

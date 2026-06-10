@@ -58,6 +58,14 @@ const OnboardingTemplateSchema = new mongoose.Schema({
     default: 'onboarding',
     index: true
   },
+  // Content/purpose axis absorbed from the retired IdP onboarding feature.
+  // Orthogonal to processType (life-event axis); keep category free-text.
+  workflowType: {
+    type: String,
+    enum: ['onboarding', 'agreement', 'policy', 'general'],
+    default: 'onboarding',
+    index: true
+  },
   status: {
     type: String,
     enum: ['active', 'archived'],
@@ -106,5 +114,6 @@ const OnboardingTemplateSchema = new mongoose.Schema({
 OnboardingTemplateSchema.index({ organization: 1, status: 1, name: 1 });
 OnboardingTemplateSchema.index({ organization: 1, category: 1, createdAt: -1 });
 OnboardingTemplateSchema.index({ organization: 1, processType: 1, status: 1, name: 1 });
+OnboardingTemplateSchema.index({ organization: 1, workflowType: 1, status: 1, name: 1 });
 
 module.exports = mongoose.model('OnboardingTemplate', OnboardingTemplateSchema);

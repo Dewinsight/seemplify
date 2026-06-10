@@ -9,6 +9,7 @@ import { CandidateShell, EmptyState, MetricCard, StatusPill } from "@/components
 import { getAccessToken, getOnboardingList, getStoredAccount, logout } from "@/lib/api"
 import type { CandidateAccount, CandidateOnboarding, EnvelopeDocument } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
+import { transitionLabel } from "@/lib/labels"
 
 function documentAction(document: EnvelopeDocument) {
   if (document.status === "completed" || document.status === "signed") {
@@ -26,12 +27,6 @@ function documentAction(document: EnvelopeDocument) {
   }
 }
 
-function processLabel(record: CandidateOnboarding) {
-  const processType = record.processType || "onboarding"
-  if (processType === "exit") return "Exit"
-  if (processType === "retirement") return "Retirement"
-  return "Onboarding"
-}
 
 export default function CandidateDocumentsPage() {
   const router = useRouter()
@@ -130,7 +125,7 @@ export default function CandidateDocumentsPage() {
                           <div className="font-semibold text-slate-950">{document.title}</div>
                           <div className="mt-1 text-xs text-slate-500">Prepared PDF snapshot</div>
                         </td>
-                        <td className="px-5 py-4 text-slate-600">{processLabel(record)}</td>
+                        <td className="px-5 py-4 text-slate-600">{transitionLabel(record)}</td>
                         <td className="px-5 py-4 text-slate-600">{record.title}</td>
                         <td className="px-5 py-4 text-slate-600">{envelope.title}</td>
                         <td className="px-5 py-4 text-slate-600">{document.signatureFields?.length || 0}</td>

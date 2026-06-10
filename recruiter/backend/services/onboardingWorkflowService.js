@@ -112,6 +112,55 @@ function processCopy(processType) {
   return PROCESS_COPY[normalizeProcessType(processType)];
 }
 
+// workflowType is the content/purpose axis absorbed from the retired IdP
+// onboarding feature. It is ORTHOGONAL to processType (the life-event axis:
+// onboarding/exit/retirement). Agreement/policy/general flows leave processType
+// as 'onboarding' and must NOT mutate Candidate.status on completion.
+const WORKFLOW_TYPES = ['onboarding', 'agreement', 'policy', 'general'];
+
+const WORKFLOW_TYPE_COPY = {
+  onboarding: {
+    label: 'Onboarding',
+    category: 'candidate-data'
+  },
+  agreement: {
+    label: 'Agreement',
+    category: 'agreement',
+    documentTitle: 'Review and sign agreement',
+    documentDescription: 'Review and sign the prepared agreement document.'
+  },
+  policy: {
+    label: 'Policy acknowledgement',
+    category: 'policy',
+    documentTitle: 'Acknowledge policy',
+    documentDescription: 'Read and acknowledge the policy document.'
+  },
+  general: {
+    label: 'Document workflow',
+    category: 'general',
+    formTitle: 'Complete required details',
+    formDescription: 'Provide the information requested for this workflow.',
+    documentTitle: 'Review and complete document',
+    documentDescription: 'Review and complete the prepared document.'
+  }
+};
+
+function normalizeWorkflowType(workflowType) {
+  return WORKFLOW_TYPES.includes(workflowType) ? workflowType : 'onboarding';
+}
+
+function workflowTypeCopy(workflowType) {
+  return WORKFLOW_TYPE_COPY[normalizeWorkflowType(workflowType)];
+}
+
+// True for onboarding/exit/retirement processes (all of which carry
+// workflowType 'onboarding'); false for agreement/policy/general. This is the
+// single guard that decides whether completion may change employee status /
+// fire an IdP handoff.
+function isOnboardingWorkflow(workflowType) {
+  return normalizeWorkflowType(workflowType) === 'onboarding';
+}
+
 function objectIdString(value) {
   return String(value?._id || value || '');
 }
@@ -338,6 +387,46 @@ function defaultWorkflowItemDefinitions(processType = 'onboarding') {
   ];
 }
 
+// Default workflow items for the content axis. For 'onboarding' we delegate to
+// the life-event definitions above so existing behavior is byte-identical.
+// Agreement/policy/general are document-centric and deliberately omit any
+// 'handoff' item (no employee-status change / no IdP write-back).
+function defaultWorkflowItemDefinitionsForWorkflowType(workflowType = 'onboarding', processType = 'onboarding') {
+  const normalizedWorkflowType = normalizeWorkflowType(workflowType);
+  if (normalizedWorkflowType === 'onboarding') {
+    return defaultWorkflowItemDefinitions(processType);
+  }
+
+  const copy = workflowTypeCopy(normalizedWorkflowType);
+
+  if (normalizedWorkflowType === 'general') {
+    return [
+      {
+        id: 'general-form',
+        type: 'form',
+        title: copy.formTitle,
+        description: copy.formDescription,
+        ownerType: 'candidate',
+        dueOffsetDays: 3,
+        order: 10
+      }
+    ];
+  }
+
+  // agreement & policy: a single document to sign / acknowledge
+  return [
+    {
+      id: `${normalizedWorkflowType}-document`,
+      type: 'document',
+      title: copy.documentTitle,
+      description: copy.documentDescription,
+      ownerType: 'candidate',
+      dueOffsetDays: 3,
+      order: 10
+    }
+  ];
+}
+
 function valueAtPath(source, path) {
   if (!path) return undefined;
   return String(path).split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), source);
@@ -435,6 +524,23 @@ function defaultFormFields(processType = 'onboarding') {
   ];
 }
 
+// 'onboarding' delegates to the life-event form fields above. 'general' uses a
+// light free-form set; agreement/policy are document-driven and collect no
+// standalone form by default.
+function defaultFormFieldsForWorkflowType(workflowType = 'onboarding', processType = 'onboarding') {
+  const normalizedWorkflowType = normalizeWorkflowType(workflowType);
+  if (normalizedWorkflowType === 'onboarding') {
+    return defaultFormFields(processType);
+  }
+  if (normalizedWorkflowType === 'general') {
+    return [
+      { id: 'details', key: 'details', label: 'Details', type: 'textarea', required: true, order: 10 },
+      { id: 'supporting-document', key: 'supportingDocument', label: 'Supporting document', type: 'file', order: 20 }
+    ];
+  }
+  return [];
+}
+
 function candidatePrefill(candidate = {}) {
   return {
     candidate: {
@@ -448,24 +554,34 @@ function candidatePrefill(candidate = {}) {
   };
 }
 
-async function ensureDefaultFormTemplate({ organization, userId, processType = 'onboarding' }) {
+async function ensureDefaultFormTemplate({ organization, userId, processType = 'onboarding', workflowType = 'onboarding' }) {
   const normalizedProcessType = normalizeProcessType(processType);
+  const normalizedWorkflowType = normalizeWorkflowType(workflowType);
+  const isOnboarding = normalizedWorkflowType === 'onboarding';
   const copy = processCopy(normalizedProcessType);
+  const wfCopy = workflowTypeCopy(normalizedWorkflowType);
+
+  // Onboarding keeps the existing per-processType category so prior system
+  // templates resolve unchanged; other workflow types get their own category.
+  const category = isOnboarding ? copy.category : (wfCopy.category || 'general');
+  const name = isOnboarding ? copy.defaultTitle : `${wfCopy.label} details`;
+  const description = isOnboarding ? copy.defaultDescription : `Reusable form for ${wfCopy.label.toLowerCase()} workflows.`;
+
   let template = await OnboardingFormTemplate.findOne({
     organization,
     isSystem: true,
-    category: copy.category,
+    category,
     status: 'active'
   });
 
   if (!template) {
     template = await OnboardingFormTemplate.create({
       organization,
-      name: copy.defaultTitle,
-      description: copy.defaultDescription,
-      category: copy.category,
+      name,
+      description,
+      category,
       isSystem: true,
-      fields: defaultFormFields(normalizedProcessType),
+      fields: defaultFormFieldsForWorkflowType(normalizedWorkflowType, normalizedProcessType),
       createdBy: userId
     });
   }
@@ -519,23 +635,27 @@ async function updateProgress(onboardingId) {
   return { totalItems: actionable.length, completedItems: completed, percent };
 }
 
-function customCandidateFormTemplate({ candidateForm, processType }) {
+function customCandidateFormTemplate({ candidateForm, processType, workflowType = 'onboarding' }) {
   const fields = normalizeFormFields(candidateForm?.fields || []);
   if (!fields.length) return null;
+  const normalizedWorkflowType = normalizeWorkflowType(workflowType);
   const copy = processCopy(processType);
+  const wfCopy = workflowTypeCopy(normalizedWorkflowType);
+  const isOnboarding = normalizedWorkflowType === 'onboarding';
+  const fallbackTitle = isOnboarding ? copy.defaultTitle : `${wfCopy.label} details`;
   return {
     _id: undefined,
-    name: String(candidateForm?.title || copy.defaultTitle).trim() || copy.defaultTitle,
-    description: String(candidateForm?.description || copy.defaultDescription).trim(),
-    category: copy.category,
+    name: String(candidateForm?.title || fallbackTitle).trim() || fallbackTitle,
+    description: String(candidateForm?.description || (isOnboarding ? copy.defaultDescription : '')).trim(),
+    category: isOnboarding ? copy.category : (wfCopy.category || 'general'),
     version: 1,
     fields,
     isSystem: false
   };
 }
 
-async function formTemplatesForWorkflow({ onboarding, userId, processType, packetTemplate, candidateForm }) {
-  const customFormTemplate = customCandidateFormTemplate({ candidateForm, processType });
+async function formTemplatesForWorkflow({ onboarding, userId, processType, workflowType = 'onboarding', packetTemplate, candidateForm }) {
+  const customFormTemplate = customCandidateFormTemplate({ candidateForm, processType, workflowType });
   if (customFormTemplate) return [customFormTemplate];
 
   const formTemplateIds = (packetTemplate?.formTemplates || [])
@@ -554,7 +674,8 @@ async function formTemplatesForWorkflow({ onboarding, userId, processType, packe
   return [await ensureDefaultFormTemplate({
     organization: onboarding.organization,
     userId,
-    processType
+    processType,
+    workflowType
   })];
 }
 
@@ -615,14 +736,31 @@ async function refreshBlockedWorkflowItems(onboardingId) {
 
 async function initializeDefaultWorkflow({ onboarding, candidate, userId, req, packetTemplate, candidateForm }) {
   const normalizedProcessType = normalizeProcessType(onboarding.processType);
+  const normalizedWorkflowType = normalizeWorkflowType(onboarding.workflowType);
   const copy = processCopy(normalizedProcessType);
-  const formTemplates = await formTemplatesForWorkflow({
-    onboarding,
-    userId,
-    processType: normalizedProcessType,
-    packetTemplate,
-    candidateForm
-  });
+
+  const templateWorkflowItems = Array.isArray(packetTemplate?.workflowItems) && packetTemplate.workflowItems.length
+    ? packetTemplate.workflowItems.map((item) => (typeof item.toObject === 'function' ? item.toObject() : item))
+    : defaultWorkflowItemDefinitionsForWorkflowType(normalizedWorkflowType, normalizedProcessType);
+
+  // Only create form submissions when the workflow actually consumes one (a
+  // form/approval item, or an explicitly provided custom/packet form). This
+  // keeps agreement/policy document-only flows free of orphan submissions while
+  // leaving onboarding/exit/retirement (which always include a form) unchanged.
+  const needsFormSubmission = templateWorkflowItems.some((item) => item.type === 'form' || item.type === 'approval')
+    || Boolean(candidateForm?.fields?.length)
+    || Boolean(packetTemplate?.formTemplates?.length);
+
+  const formTemplates = needsFormSubmission
+    ? await formTemplatesForWorkflow({
+        onboarding,
+        userId,
+        processType: normalizedProcessType,
+        workflowType: normalizedWorkflowType,
+        packetTemplate,
+        candidateForm
+      })
+    : [];
 
   const submissions = [];
   for (const formTemplate of formTemplates) {
@@ -640,9 +778,6 @@ async function initializeDefaultWorkflow({ onboarding, candidate, userId, req, p
     }));
   }
 
-  const templateWorkflowItems = Array.isArray(packetTemplate?.workflowItems) && packetTemplate.workflowItems.length
-    ? packetTemplate.workflowItems.map((item) => (typeof item.toObject === 'function' ? item.toObject() : item))
-    : defaultWorkflowItemDefinitions(normalizedProcessType);
   const counters = { form: 0 };
   const itemKeys = templateWorkflowItems.map((item, index) => workflowItemKey(item, index));
   const insertedItems = await OnboardingWorkflowItem.insertMany(templateWorkflowItems.map((item, index) => {
@@ -692,6 +827,7 @@ async function initializeDefaultWorkflow({ onboarding, candidate, userId, req, p
     templateSnapshot: {
       name: onboarding.templateSnapshot?.name || `Default ${copy.label.toLowerCase()} packet`,
       processType: normalizedProcessType,
+      workflowType: normalizedWorkflowType,
       packetTemplate: onboarding.templateSnapshot?._id ? onboarding.templateSnapshot : undefined,
       formTemplates: formTemplates.map((formTemplate) => snapshotFormTemplate(formTemplate)),
       workflowItems: insertedItems.map((item) => ({
@@ -985,13 +1121,19 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
   if (!onboarding || onboarding.status === 'cancelled') return null;
   const normalizedProcessType = normalizeProcessType(onboarding.processType);
   const copy = processCopy(normalizedProcessType);
+  // Only onboarding/exit/retirement (all carry workflowType 'onboarding') may
+  // change the employee's status or trigger an IdP handoff. Agreement/policy/
+  // general complete silently without touching the Candidate record.
+  const applyCandidateStatus = isOnboardingWorkflow(onboarding.workflowType);
 
   const items = await OnboardingWorkflowItem.find({ onboarding: onboardingId });
   if (!items.length) {
     onboarding.status = 'completed';
     onboarding.completedAt = onboarding.completedAt || new Date();
     await onboarding.save();
-    await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
+    if (applyCandidateStatus) {
+      await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
+    }
     return null;
   }
 
@@ -1008,7 +1150,9 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
   }
 
   const handoffSources = items.filter((item) => item.type === 'handoff' || item.metadata?.handoffTarget);
-  const effectiveHandoffSources = handoffSources.length ? handoffSources : [{ metadata: { handoffTarget: copy.handoffTarget } }];
+  const effectiveHandoffSources = handoffSources.length
+    ? handoffSources
+    : (applyCandidateStatus ? [{ metadata: { handoffTarget: copy.handoffTarget } }] : []);
   const completedHandoffs = [];
 
   try {
@@ -1039,13 +1183,24 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
       }
 
       if (handoff.status !== 'completed') {
-        handoff.status = 'running';
-        handoff.attempts += 1;
-        await handoff.save();
-        handoff.status = 'completed';
-        handoff.completedAt = new Date();
-        handoff.lastError = '';
-        await handoff.save();
+        // Lazy-require avoids a load-time circular dependency.
+        const { isIdpTarget, executeHandoff } = require('./onboardingHandoffService');
+        if (isIdpTarget(handoffTarget)) {
+          // Push collected profile data + onboarded status into the IdP. The
+          // executor records running/completed/failed and never throws, so a
+          // failed push leaves the handoff retryable without blocking completion.
+          const executed = await executeHandoff(handoff._id, { userId: onboarding.startedBy, req });
+          if (executed) handoff = executed;
+        } else {
+          // Non-IdP targets (exit/asset/IT/payroll closeout) remain internal.
+          handoff.status = 'running';
+          handoff.attempts += 1;
+          await handoff.save();
+          handoff.status = 'completed';
+          handoff.completedAt = new Date();
+          handoff.lastError = '';
+          await handoff.save();
+        }
       }
 
       if (source.type === 'handoff') {
@@ -1057,7 +1212,9 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
       completedHandoffs.push(handoff);
     }
 
-    await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
+    if (applyCandidateStatus) {
+      await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
+    }
 
     onboarding.status = 'completed';
     onboarding.completedAt = onboarding.completedAt || new Date();
@@ -1403,17 +1560,24 @@ async function serializeOnboardingPlatform(onboarding) {
 module.exports = {
   PROCESS_COPY,
   PROCESS_TYPES,
+  WORKFLOW_TYPES,
+  WORKFLOW_TYPE_COPY,
   attachEnvelopeToWorkflow,
   computeCandidateNextAction,
   createPeopleTransitionNotifications,
   defaultFormFields,
+  defaultFormFieldsForWorkflowType,
   defaultWorkflowItemDefinitions,
+  defaultWorkflowItemDefinitionsForWorkflowType,
   ensureDefaultFormTemplate,
   initializeDefaultWorkflow,
+  isOnboardingWorkflow,
   markDocumentWorkflowComplete,
   markDocumentWorkflowInProgress,
   normalizeProcessType,
+  normalizeWorkflowType,
   processCopy,
+  workflowTypeCopy,
   refreshBlockedWorkflowItems,
   reviewFormSubmission,
   saveCandidateFormSubmission,

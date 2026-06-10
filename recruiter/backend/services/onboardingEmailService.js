@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
 const Organization = require('../models/Organization');
 const emailService = require('./emailService');
-const { processCopy } = require('./onboardingWorkflowService');
+const { processCopy, workflowTypeCopy } = require('./onboardingWorkflowService');
 
 const DEFAULT_CANDIDATE_PORTAL_URL = 'https://candidate.seemplifyai.com';
 const DEFAULT_AKWA_IBOM_CANDIDATE_PORTAL_URL = 'https://candidate-ibom.aiinnigeria.com';
@@ -148,6 +148,14 @@ function safeProcessCopy(processType) {
   }
 }
 
+function safeWorkflowCopy(workflowType) {
+  try {
+    return workflowTypeCopy(workflowType || 'onboarding');
+  } catch (error) {
+    return { label: 'Onboarding' };
+  }
+}
+
 async function transitionSummary(onboardingOrEnvelope = {}) {
   const rawTransition = onboardingOrEnvelope && onboardingOrEnvelope.onboarding !== undefined
     ? onboardingOrEnvelope.onboarding
@@ -159,12 +167,17 @@ async function transitionSummary(onboardingOrEnvelope = {}) {
     transition = rawTransition;
   } else if (rawTransitionId) {
     transition = await CandidateOnboarding.findById(rawTransitionId)
-      .select('_id title processType dueAt')
+      .select('_id title processType workflowType audience dueAt')
       .lean()
       .catch(() => null);
   }
 
-  const copy = safeProcessCopy(transition?.processType || rawTransition?.processType);
+  // For agreement/policy/general the content axis is the meaningful label; for
+  // onboarding/exit/retirement fall back to the life-event copy.
+  const workflowType = transition?.workflowType || rawTransition?.workflowType || 'onboarding';
+  const copy = workflowType !== 'onboarding'
+    ? safeWorkflowCopy(workflowType)
+    : safeProcessCopy(transition?.processType || rawTransition?.processType);
   const id = transition?._id || rawTransitionId;
   const label = copy.label || 'Transition';
 
@@ -172,7 +185,8 @@ async function transitionSummary(onboardingOrEnvelope = {}) {
     id: id ? String(id) : '',
     label,
     lowerLabel: label.toLowerCase(),
-    title: transition?.title || `${label} process`
+    title: transition?.title || `${label} process`,
+    audience: transition?.audience || rawTransition?.audience || 'external'
   };
 }
 
@@ -306,22 +320,24 @@ async function sendCandidateInvite({ candidate, organization, inviteToken, onboa
   const name = candidateName(candidate);
   const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const transition = await transitionSummary(onboarding);
+  const portalLabel = transition.audience === 'internal' ? 'employee portal' : 'candidate portal';
   const title = `Your ${transition.lowerLabel} process is ready`;
   const greeting = `Hello ${name},`;
   const body = [
-    `${organizationName} has started your ${transition.lowerLabel} process in the candidate portal.`,
+    `${organizationName} has started your ${transition.lowerLabel} process in the ${portalLabel}.`,
     'Use the secure link below to review your tasks, complete any requested forms, and sign documents when they are ready.'
   ];
   const details = [
     { label: 'Process', value: transition.label },
     { label: 'Transition', value: transition.title }
   ];
+  const actionLabel = `Open ${portalLabel}`;
 
   await emailService.sendEmail({
     to: candidate.email,
     subject: `${transition.label} process from ${organizationName}`,
     organizationName,
-    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Open candidate portal', actionUrl: portalUrl }),
+    text: renderTextEmail({ title, greeting, body, details, actionLabel, actionUrl: portalUrl }),
     html: renderTransitionEmail({
       organizationName,
       processLabel: transition.label,
@@ -330,7 +346,7 @@ async function sendCandidateInvite({ candidate, organization, inviteToken, onboa
       greeting,
       body,
       details,
-      actionLabel: 'Open candidate portal',
+      actionLabel,
       actionUrl: portalUrl
     })
   });

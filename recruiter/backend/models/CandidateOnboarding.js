@@ -28,6 +28,22 @@ const CandidateOnboardingSchema = new mongoose.Schema({
     default: 'onboarding',
     index: true
   },
+  // Orthogonal to processType (the life-event axis). workflowType is the
+  // content/purpose axis absorbed from the retired IdP onboarding feature.
+  workflowType: {
+    type: String,
+    enum: ['onboarding', 'agreement', 'policy', 'general'],
+    default: 'onboarding',
+    index: true
+  },
+  // Denormalized from candidate.isInternalCandidate at start time so
+  // dashboards/portal can branch copy/branding without a populate.
+  audience: {
+    type: String,
+    enum: ['external', 'internal'],
+    default: 'external',
+    index: true
+  },
   status: {
     type: String,
     enum: ['draft', 'pending', 'in_progress', 'completed', 'cancelled'],
@@ -107,5 +123,7 @@ const CandidateOnboardingSchema = new mongoose.Schema({
 CandidateOnboardingSchema.index({ organization: 1, candidate: 1, createdAt: -1 });
 CandidateOnboardingSchema.index({ organization: 1, status: 1, createdAt: -1 });
 CandidateOnboardingSchema.index({ organization: 1, processType: 1, status: 1, createdAt: -1 });
+CandidateOnboardingSchema.index({ organization: 1, workflowType: 1, status: 1, createdAt: -1 });
+CandidateOnboardingSchema.index({ organization: 1, audience: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('CandidateOnboarding', CandidateOnboardingSchema);

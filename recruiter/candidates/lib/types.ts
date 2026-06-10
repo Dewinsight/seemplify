@@ -1,5 +1,7 @@
 export type OnboardingStatus = "draft" | "pending" | "in_progress" | "completed" | "cancelled"
 export type ProcessType = "onboarding" | "exit" | "retirement"
+export type WorkflowType = "onboarding" | "agreement" | "policy" | "general"
+export type Audience = "external" | "internal"
 export type EnvelopeStatus = "draft" | "sent" | "viewed" | "partially_signed" | "completed" | "voided" | "expired"
 export type WorkflowItemStatus = "not_started" | "pending" | "in_progress" | "completed" | "blocked" | "skipped" | "failed"
 
@@ -177,6 +179,8 @@ export interface CandidateOnboarding {
   _id: string
   title: string
   processType?: ProcessType
+  workflowType?: WorkflowType
+  audience?: Audience
   status: OnboardingStatus
   notes?: string
   candidate: CandidateProfile

@@ -2,6 +2,8 @@ import { apiRequest } from "./apiConfig";
 
 export type OnboardingStatus = "draft" | "pending" | "in_progress" | "completed" | "cancelled";
 export type ProcessType = "onboarding" | "exit" | "retirement";
+export type WorkflowType = "onboarding" | "agreement" | "policy" | "general";
+export type Audience = "external" | "internal";
 export type EnvelopeStatus = "draft" | "sent" | "viewed" | "partially_signed" | "completed" | "voided" | "expired";
 export type DocumentSourceType = "builder" | "uploaded_pdf" | "uploaded_docx";
 export type WorkflowItemStatus = "not_started" | "pending" | "in_progress" | "completed" | "blocked" | "skipped" | "failed";
@@ -165,6 +167,7 @@ export interface OnboardingPacketTemplate {
   description?: string;
   category: string;
   processType?: ProcessType;
+  workflowType?: WorkflowType;
   status: "active" | "archived";
   version: number;
   documents?: Array<OnboardingDocument | string>;
@@ -241,6 +244,8 @@ export interface CandidateOnboarding {
   _id: string;
   title: string;
   processType?: ProcessType;
+  workflowType?: WorkflowType;
+  audience?: Audience;
   status: OnboardingStatus;
   notes?: string;
   candidate: any;
@@ -283,12 +288,14 @@ async function parseResponse<T>(response: Response, fallback: string): Promise<T
 
 const PEOPLE_TRANSITIONS_API = "/api/people-transitions";
 
-export async function getOnboardingRecords(params: { status?: string; search?: string; candidateId?: string; processType?: ProcessType | "all" } = {}) {
+export async function getOnboardingRecords(params: { status?: string; search?: string; candidateId?: string; processType?: ProcessType | "all"; workflowType?: WorkflowType | "all"; audience?: Audience | "all" } = {}) {
   const query = new URLSearchParams();
   if (params.status) query.set("status", params.status);
   if (params.search) query.set("search", params.search);
   if (params.candidateId) query.set("candidateId", params.candidateId);
   if (params.processType) query.set("processType", params.processType);
+  if (params.workflowType) query.set("workflowType", params.workflowType);
+  if (params.audience) query.set("audience", params.audience);
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}${query.toString() ? `?${query}` : ""}`);
   return parseResponse<{ data: CandidateOnboarding[]; recentEvents: OnboardingAuditEvent[] }>(response, "Failed to load onboarding");
 }
@@ -392,7 +399,7 @@ export async function updatePeopleTransitionWorkflowItem(
   return result.data;
 }
 
-export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType; candidateForm?: { title?: string; description?: string; fields?: OnboardingFormField[] } } = {}) {
+export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType; workflowType?: WorkflowType; candidateForm?: { title?: string; description?: string; fields?: OnboardingFormField[] } } = {}) {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/candidates/${candidateId}/start`, {
     method: "POST",
     body: JSON.stringify(data),
@@ -400,9 +407,10 @@ export async function startOnboarding(candidateId: string, data: { title?: strin
   return parseResponse<{ data: CandidateOnboarding; inviteUrl: string }>(response, "Failed to start onboarding");
 }
 
-export async function getPacketTemplates(processType: ProcessType | "all" = "all") {
+export async function getPacketTemplates(processType: ProcessType | "all" = "all", workflowType: WorkflowType | "all" = "all") {
   const query = new URLSearchParams();
   if (processType) query.set("processType", processType);
+  if (workflowType) query.set("workflowType", workflowType);
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/templates?${query}`);
   const result = await parseResponse<{ data: OnboardingPacketTemplate[] }>(response, "Failed to load packet templates");
   return result.data;
@@ -432,11 +440,55 @@ export async function getOnboardingFormTemplates() {
   return result.data;
 }
 
-export async function getCandidateFormDefaults(processType: ProcessType = "onboarding") {
-  const query = new URLSearchParams({ processType });
+export async function getCandidateFormDefaults(processType: ProcessType = "onboarding", workflowType: WorkflowType = "onboarding") {
+  const query = new URLSearchParams({ processType, workflowType });
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/form-field-defaults?${query}`);
-  const result = await parseResponse<{ data: { title: string; description?: string; category?: string; processType: ProcessType; fields: OnboardingFormField[] } }>(response, "Failed to load candidate form defaults");
+  const result = await parseResponse<{ data: { title: string; description?: string; category?: string; processType: ProcessType; workflowType?: WorkflowType; fields: OnboardingFormField[] } }>(response, "Failed to load candidate form defaults");
   return result.data;
+}
+
+export interface InternalEmployee {
+  idpAccountId: string;
+  email: string;
+  name: string;
+  designation?: string;
+  employeeId?: string;
+  role?: string;
+  department?: string;
+  onboardingStatus?: string;
+  alreadyHasCandidate?: boolean;
+}
+
+export async function getInternalEmployees(options: { refresh?: boolean } = {}) {
+  const query = new URLSearchParams();
+  if (options.refresh) query.set("refresh", "1");
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/internal-employees${query.toString() ? `?${query}` : ""}`);
+  return parseResponse<{ data: InternalEmployee[]; idpAvailable: boolean; msg?: string }>(response, "Failed to load internal employees");
+}
+
+export async function resolveInternalCandidates(members: InternalEmployee[]) {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/internal-candidates/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ members }),
+  });
+  return parseResponse<{ data: Array<{ idpAccountId: string | null; candidateId: string; email: string }>; errors: Array<{ member: string | null; error: string }> }>(response, "Failed to resolve internal employees");
+}
+
+export async function bulkStartOnboarding(data: {
+  candidateIds?: string[];
+  members?: InternalEmployee[];
+  processType?: ProcessType;
+  workflowType?: WorkflowType;
+  title?: string;
+  notes?: string;
+  templateId?: string;
+  candidateForm?: { title?: string; description?: string; fields?: OnboardingFormField[] };
+}) {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/bulk-start`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return parseResponse<{ data: Array<{ candidateId: string; onboardingId: string; inviteUrl: string }>; errors: Array<{ candidateId?: string; member?: string | null; error: string }> }>(response, "Failed to bulk start processes");
 }
 
 export async function createOnboardingFormTemplate(data: Partial<OnboardingFormTemplate>) {

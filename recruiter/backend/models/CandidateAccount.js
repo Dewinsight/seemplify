@@ -42,6 +42,18 @@ const CandidateAccountSchema = new mongoose.Schema({
     default: 'invited',
     index: true
   },
+  // Set when an internal employee is provisioned via IdP SSO (no password).
+  idpAccountId: {
+    type: String,
+    trim: true,
+    sparse: true,
+    index: true
+  },
+  provisionedVia: {
+    type: String,
+    enum: ['invite', 'idp_sso'],
+    default: 'invite'
+  },
   lastLoginAt: Date,
   lastPasswordChangeAt: Date,
   refreshTokenVersion: {

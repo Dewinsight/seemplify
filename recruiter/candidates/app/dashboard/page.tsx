@@ -9,13 +9,7 @@ import { CandidateShell, EmptyState, MetricCard, ProgressRail, StatusPill } from
 import { fullName, getAccessToken, getOnboardingList, getStoredAccount, logout } from "@/lib/api"
 import type { CandidateAccount, CandidateOnboarding } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
-
-function processLabel(record?: CandidateOnboarding | null) {
-  const processType = record?.processType || "onboarding"
-  if (processType === "exit") return "Exit"
-  if (processType === "retirement") return "Retirement"
-  return "Onboarding"
-}
+import { transitionLabel } from "@/lib/labels"
 
 function formatDate(value?: string) {
   if (!value) return "Not started"
@@ -174,7 +168,7 @@ export default function CandidateDashboardPage() {
                             <div className="font-semibold text-slate-950">{record.title}</div>
                             <div className="mt-1 text-xs text-slate-500">{record.envelopes?.length || 0} packet(s)</div>
                           </td>
-                          <td className="px-5 py-4 text-slate-600">{processLabel(record)}</td>
+                          <td className="px-5 py-4 text-slate-600">{transitionLabel(record)}</td>
                           <td className="px-5 py-4 text-slate-600">{record.organization?.name || "Recruiter"}</td>
                           <td className="px-5 py-4 text-slate-600">{documents.length}</td>
                           <td className="px-5 py-4 text-slate-600">{formatDate(record.startedAt || record.createdAt)}</td>

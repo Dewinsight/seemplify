@@ -48,16 +48,21 @@ import {
   getCandidateFormDefaults,
   getDocumentPreviewBlob,
   getDocuments,
+  getInternalEmployees,
   getPacketTemplates,
   newSignatureField,
+  resolveInternalCandidates,
   sendEnvelope,
   startOnboarding,
   uploadDocument,
+  type Audience,
+  type InternalEmployee,
   type OnboardingDocument,
   type OnboardingFormField,
   type OnboardingPacketTemplate,
   type ProcessType,
   type SignatureField,
+  type WorkflowType,
 } from "@/services/onboardingService";
 import { toast } from "sonner";
 
@@ -107,6 +112,22 @@ const processOptions: Array<{ value: ProcessType; label: string; description: st
   { value: "onboarding", label: "Onboarding", description: "New hire forms, documents, signatures, and employee handoff." },
   { value: "exit", label: "Exit", description: "Final details, property return, exit documents, and closeout." },
   { value: "retirement", label: "Retirement", description: "Retirement details, benefits documents, signatures, and closeout." },
+];
+
+// Content/purpose axis (orthogonal to the life-event process above), absorbed
+// from the retired IdP onboarding feature. 'onboarding' is the default and
+// keeps the full life-event behaviour; the others are document-centric and do
+// not change employee status on completion.
+const workflowOptions: Array<{ value: WorkflowType; label: string; description: string }> = [
+  { value: "onboarding", label: "Onboarding / lifecycle", description: "Full forms + documents + handoff for the selected process." },
+  { value: "agreement", label: "Agreement", description: "Send a document to review and sign (e.g. a contract or addendum)." },
+  { value: "policy", label: "Policy acknowledgement", description: "Have people read and acknowledge a policy document." },
+  { value: "general", label: "General workflow", description: "A flexible form/document workflow for any other purpose." },
+];
+
+const audienceOptions: Array<{ value: Audience; label: string; description: string }> = [
+  { value: "external", label: "External candidate", description: "A new hire or applicant from the recruiting pipeline." },
+  { value: "internal", label: "Internal employee", description: "An existing employee from your Identity Provider directory." },
 ];
 
 const fieldIcons = {
@@ -162,6 +183,30 @@ function processLabel(processType: ProcessType) {
   if (processType === "exit") return "Exit";
   if (processType === "retirement") return "Retirement";
   return "Onboarding";
+}
+
+// For non-onboarding workflow types the content axis is what users think of as
+// the "process"; for onboarding we fall back to the life-event label.
+function transitionLabel(processType: ProcessType, workflowType: WorkflowType) {
+  if (workflowType === "agreement") return "Agreement";
+  if (workflowType === "policy") return "Policy acknowledgement";
+  if (workflowType === "general") return "Workflow";
+  return processLabel(processType);
+}
+
+// Map an IdP employee into the CandidateData shape the selection table expects.
+// _id is the idpAccountId placeholder; real Candidate ids are resolved at submit.
+function internalEmployeeToCandidate(employee: InternalEmployee): CandidateData {
+  const parts = (employee.name || employee.email || "Employee").trim().split(/\s+/);
+  return {
+    _id: employee.idpAccountId || employee.email,
+    firstName: parts[0] || employee.email,
+    lastName: parts.slice(1).join(" "),
+    email: employee.email,
+    position: employee.designation || "",
+    status: "Hired",
+    isInternalCandidate: true,
+  } as unknown as CandidateData;
 }
 
 function signerKey(prefix: string) {
@@ -309,6 +354,10 @@ export default function NewOnboardingPage() {
   const documentUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [step, setStep] = useState<WizardStep>("process");
   const [processType, setProcessType] = useState<ProcessType>("onboarding");
+  const [workflowType, setWorkflowType] = useState<WorkflowType>("onboarding");
+  const [audience, setAudience] = useState<Audience>("external");
+  const [internalEmployees, setInternalEmployees] = useState<InternalEmployee[]>([]);
+  const [idpAvailable, setIdpAvailable] = useState(true);
   const [candidates, setCandidates] = useState<CandidateData[]>([]);
   const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
   const [packetTemplates, setPacketTemplates] = useState<OnboardingPacketTemplate[]>([]);
@@ -359,10 +408,19 @@ export default function NewOnboardingPage() {
       try {
         const [documentResult, packetTemplateResult] = await Promise.all([
           getDocuments(),
-          getPacketTemplates(processType),
+          getPacketTemplates(processType, workflowType),
         ]);
         setDocuments(documentResult.filter((document) => document.status !== "archived"));
         setPacketTemplates(packetTemplateResult);
+
+        if (audience === "internal") {
+          const internal = await getInternalEmployees();
+          setIdpAvailable(internal.idpAvailable !== false);
+          const employees = internal.data || [];
+          setInternalEmployees(employees);
+          setCandidates(employees.map(internalEmployeeToCandidate));
+          return;
+        }
 
         if (selectedCandidateListId !== "all") return;
 
@@ -374,18 +432,18 @@ export default function NewOnboardingPage() {
     }
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [candidateSearch, selectedCandidateListId, processType]);
+  }, [candidateSearch, selectedCandidateListId, processType, workflowType, audience]);
 
   useEffect(() => {
     setSelectedPacketTemplateId("none");
-  }, [processType]);
+  }, [processType, workflowType]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadCandidateFormDefaults() {
       try {
         setCandidateFormDefaultsLoading(true);
-        const defaults = await getCandidateFormDefaults(processType);
+        const defaults = await getCandidateFormDefaults(processType, workflowType);
         if (cancelled) return;
         const orderedFields = orderCandidateFormFields(defaults.fields || []);
         setCandidateFormDefaults({
@@ -411,7 +469,20 @@ export default function NewOnboardingPage() {
     return () => {
       cancelled = true;
     };
-  }, [processType]);
+  }, [processType, workflowType]);
+
+  // Switching audience changes the candidate pool entirely; reset selection so
+  // external candidate ids and internal employee placeholders never mix.
+  useEffect(() => {
+    setCandidateSelection([]);
+    setSelectedCandidateListId("all");
+    setCandidateSearch("");
+  }, [audience]);
+
+  // Agreement/policy/general are not life events; pin processType to onboarding.
+  useEffect(() => {
+    if (workflowType !== "onboarding") setProcessType("onboarding");
+  }, [workflowType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1163,10 +1234,36 @@ export default function NewOnboardingPage() {
     try {
       setSubmitting(true);
       const createdEnvelopeIds: string[] = [];
-      const label = processLabel(processType);
+      const label = transitionLabel(processType, workflowType);
       const lowerLabel = label.toLowerCase();
 
+      // Internal employees are selected as idpAccountId placeholders; materialise
+      // real Candidate records before starting their processes.
+      const realIdByPlaceholder = new Map<string, string>();
+      if (audience === "internal") {
+        const selectedMembers = internalEmployees.filter((employee) =>
+          selectedCandidateIds.includes(employee.idpAccountId || employee.email));
+        const resolved = await resolveInternalCandidates(selectedMembers);
+        resolved.data.forEach((entry) => {
+          const placeholder = selectedMembers.find((m) =>
+            (entry.idpAccountId && m.idpAccountId === entry.idpAccountId) ||
+            (entry.email && m.email === entry.email));
+          if (placeholder) realIdByPlaceholder.set(placeholder.idpAccountId || placeholder.email, entry.candidateId);
+        });
+        if (resolved.errors?.length) {
+          toast.error(`${resolved.errors.length} employee(s) could not be prepared`);
+        }
+        if (!realIdByPlaceholder.size) {
+          setSubmitting(false);
+          return toast.error("Could not prepare the selected employees");
+        }
+      }
+
       for (const candidate of selectedCandidates) {
+        const realCandidateId = audience === "internal"
+          ? realIdByPlaceholder.get(candidate._id)
+          : candidate._id;
+        if (!realCandidateId) continue;
         const candidateDisplayName = candidateName(candidate);
         const customTitle = title.trim();
         const onboardingTitle = selectedCandidateCount === 1
@@ -1177,11 +1274,12 @@ export default function NewOnboardingPage() {
           : customTitle
             ? `${candidateDisplayName} - ${customTitle}`
             : `${candidateDisplayName} ${lowerLabel} packet`;
-        const onboardingResult = await startOnboarding(candidate._id, {
+        const onboardingResult = await startOnboarding(realCandidateId, {
           title: onboardingTitle,
           notes,
           templateId: selectedPacketTemplateId === "none" ? undefined : selectedPacketTemplateId,
           processType,
+          workflowType,
           candidateForm: {
             title: candidateFormTitle.trim() || `${processLabel(processType)} details`,
             description: candidateFormDescription.trim(),
@@ -1303,21 +1401,42 @@ export default function NewOnboardingPage() {
           <section className="rounded-md border bg-white">
             <div className="border-b p-4">
               <h2 className="text-lg font-semibold text-slate-950">Process</h2>
-              <p className="text-sm text-slate-500">Choose the transition workflow this packet belongs to.</p>
+              <p className="text-sm text-slate-500">Choose the workflow type, and for lifecycle workflows the specific life event.</p>
             </div>
-            <div className="grid gap-3 p-4 md:grid-cols-3">
-              {processOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setProcessType(option.value)}
-                  className={`rounded-md border p-4 text-left ${processType === option.value ? "border-blue-500 bg-blue-50" : "bg-white hover:bg-slate-50"}`}
-                >
-                  <div className="font-semibold text-slate-950">{option.label}</div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{option.description}</p>
-                </button>
-              ))}
+            <div className="space-y-2 p-4">
+              <Label>Workflow type</Label>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {workflowOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setWorkflowType(option.value)}
+                    className={`rounded-md border p-4 text-left ${workflowType === option.value ? "border-blue-500 bg-blue-50" : "bg-white hover:bg-slate-50"}`}
+                  >
+                    <div className="font-semibold text-slate-950">{option.label}</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{option.description}</p>
+                  </button>
+                ))}
+              </div>
             </div>
+            {workflowType === "onboarding" && (
+              <div className="space-y-2 border-t p-4">
+                <Label>Life event</Label>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {processOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setProcessType(option.value)}
+                      className={`rounded-md border p-4 text-left ${processType === option.value ? "border-blue-500 bg-blue-50" : "bg-white hover:bg-slate-50"}`}
+                    >
+                      <div className="font-semibold text-slate-950">{option.label}</div>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">{option.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex justify-end border-t p-4">
               <Button onClick={() => setStep("candidate")}>Continue</Button>
             </div>
@@ -1326,64 +1445,92 @@ export default function NewOnboardingPage() {
 
         {step === "candidate" && (
           <section className="rounded-md border bg-white">
-            <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">Candidate</h2>
-                <p className="text-sm text-slate-500">
-                  {selectedCandidateCount ? `${selectedCandidateCount} selected` : "Choose candidates directly, from a saved segment, or from the current search."}
-                </p>
-              </div>
-              <div className="grid gap-2 md:w-[620px] md:grid-cols-[240px_minmax(0,1fr)]">
-                <Select value={selectedCandidateListId} onValueChange={handleCandidateListChange} disabled={candidateListLoading}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Candidate segment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All candidates</SelectItem>
-                    {candidateLists.map((list) => (
-                      <SelectItem key={list._id} value={list._id}>
-                        {list.name} ({list.candidateCount})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    value={candidateSearch}
-                    onChange={(event) => {
-                      setSelectedCandidateListId("all");
-                      setCandidateSearch(event.target.value);
-                    }}
-                    placeholder="Search candidates"
-                    className="pl-9"
-                  />
+            <div className="flex flex-col gap-3 border-b p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">{audience === "internal" ? "Employee" : "Candidate"}</h2>
+                  <p className="text-sm text-slate-500">
+                    {selectedCandidateCount
+                      ? `${selectedCandidateCount} selected`
+                      : audience === "internal"
+                        ? "Choose existing employees from your Identity Provider directory."
+                        : "Choose candidates directly, from a saved segment, or from the current search."}
+                  </p>
+                </div>
+                <div className="inline-flex shrink-0 rounded-md border bg-slate-50 p-1">
+                  {audienceOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setAudience(option.value)}
+                      className={`rounded px-3 py-1.5 text-sm font-medium ${audience === option.value ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
+              {audience === "external" ? (
+                <div className="grid gap-2 md:w-[620px] md:grid-cols-[240px_minmax(0,1fr)]">
+                  <Select value={selectedCandidateListId} onValueChange={handleCandidateListChange} disabled={candidateListLoading}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Candidate segment" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All candidates</SelectItem>
+                      {candidateLists.map((list) => (
+                        <SelectItem key={list._id} value={list._id}>
+                          {list.name} ({list.candidateCount})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      value={candidateSearch}
+                      onChange={(event) => {
+                        setSelectedCandidateListId("all");
+                        setCandidateSearch(event.target.value);
+                      }}
+                      placeholder="Search candidates"
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+              ) : !idpAvailable ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  Could not reach the Identity Provider directory. Internal employees may be unavailable right now.
+                </div>
+              ) : null}
             </div>
             <div className="p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm text-slate-600">
-                  {selectedCandidateCount ? `${selectedCandidateCount} selected for ${processLabel(processType).toLowerCase()}` : `${candidates.length} visible candidates`}
+                  {selectedCandidateCount ? `${selectedCandidateCount} selected for ${transitionLabel(processType, workflowType).toLowerCase()}` : `${candidates.length} ${audience === "internal" ? "employees" : "visible candidates"}`}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={toggleVisibleCandidates} disabled={!candidates.length || candidateListLoading}>
                     <ListChecks className="h-4 w-4" />
                     {candidates.length && candidates.every((candidate) => selectedCandidateIds.includes(candidate._id)) ? "Clear visible" : "Select visible"}
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={selectAllMatchingCandidates} disabled={candidateListLoading}>
-                    Select all matching
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setCandidateSegmentDialogMode("selected")} disabled={!selectedCandidateCount || candidateListLoading}>
-                    <ListPlus className="h-4 w-4" />
-                    Save segment
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setCandidateSegmentDialogMode("search")} disabled={candidateListLoading || selectedCandidateListId !== "all"}>
-                    Save search
-                  </Button>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href="/people-transitions/segments">Manage segments</Link>
-                  </Button>
+                  {audience === "external" && (
+                    <>
+                      <Button type="button" variant="outline" size="sm" onClick={selectAllMatchingCandidates} disabled={candidateListLoading}>
+                        Select all matching
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setCandidateSegmentDialogMode("selected")} disabled={!selectedCandidateCount || candidateListLoading}>
+                        <ListPlus className="h-4 w-4" />
+                        Save segment
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setCandidateSegmentDialogMode("search")} disabled={candidateListLoading || selectedCandidateListId !== "all"}>
+                        Save search
+                      </Button>
+                      <Button asChild variant="ghost" size="sm">
+                        <Link href="/people-transitions/segments">Manage segments</Link>
+                      </Button>
+                    </>
+                  )}
                   <Button type="button" variant="ghost" size="sm" onClick={() => setCandidateSelection([])} disabled={!selectedCandidateCount}>
                     Clear
                   </Button>

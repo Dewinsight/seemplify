@@ -27,24 +27,31 @@ const onboardingStorageService = require('../services/onboardingStorageService')
 const onboardingPdfService = require('../services/onboardingPdfService');
 const onboardingEmailService = require('../services/onboardingEmailService');
 const documentConversionService = require('../services/documentConversionService');
+const idpService = require('../services/idpService');
+const onboardingHandoffService = require('../services/onboardingHandoffService');
 const { logOnboardingEvent } = require('../services/onboardingAuditService');
 const {
+  WORKFLOW_TYPES,
   attachEnvelopeToWorkflow,
   createPeopleTransitionNotifications,
   defaultFormFields,
+  defaultFormFieldsForWorkflowType,
   defaultWorkflowItemDefinitions,
+  defaultWorkflowItemDefinitionsForWorkflowType,
   ensureDefaultFormTemplate,
   initializeDefaultWorkflow,
   markDocumentWorkflowComplete,
   markDocumentWorkflowInProgress,
   normalizeProcessType,
+  normalizeWorkflowType,
   processCopy,
   refreshBlockedWorkflowItems,
   reviewFormSubmission,
   serializeWorkflowItem,
   serializeOnboardingPlatform,
   tryCompleteOnboarding,
-  updateProgress
+  updateProgress,
+  workflowTypeCopy
 } = require('../services/onboardingWorkflowService');
 const { serializeSubmission } = require('../services/onboardingSecurityService');
 
@@ -126,22 +133,68 @@ function processTypeQueryFromRequest(req) {
   return value === 'all' ? 'all' : normalizeProcessType(value);
 }
 
+function workflowTypeFromRequest(req) {
+  return normalizeWorkflowType(req.body?.workflowType || req.query?.workflowType);
+}
+
+// Mirrors processTypeFilter: legacy rows predate the workflowType field, so the
+// 'onboarding' bucket must also match missing/null values.
+function workflowTypeFilter(workflowType, field = 'workflowType') {
+  const normalized = workflowType === 'all' ? 'all' : normalizeWorkflowType(workflowType);
+  if (normalized === 'all') return {};
+  if (normalized === 'onboarding') {
+    return {
+      $or: [
+        { [field]: 'onboarding' },
+        { [field]: { $exists: false } },
+        { [field]: null }
+      ]
+    };
+  }
+  return { [field]: normalized };
+}
+
+function audienceFilter(audience, field = 'audience') {
+  const normalized = audience === 'internal' ? 'internal' : (audience === 'external' ? 'external' : 'all');
+  if (normalized === 'all') return {};
+  if (normalized === 'external') {
+    return {
+      $or: [
+        { [field]: 'external' },
+        { [field]: { $exists: false } },
+        { [field]: null }
+      ]
+    };
+  }
+  return { [field]: normalized };
+}
+
 async function ensureSystemPacketTemplates({ organization, userId }) {
+  // Life-event packets (workflowType 'onboarding'). These existed before the
+  // workflowType field, so the filter treats missing workflowType as onboarding
+  // and we stamp it explicitly to upgrade legacy rows in place.
   const processTypes = ['onboarding', 'exit', 'retirement'];
   for (const processType of processTypes) {
     const copy = processCopy(processType);
     const formTemplate = await ensureDefaultFormTemplate({ organization, userId, processType });
+    // $and (not spread) so the two $or filters don't clobber each other; this
+    // also excludes the agreement/policy/general rows, which share
+    // processType 'onboarding' but carry a non-onboarding workflowType.
     const existing = await OnboardingTemplate.findOne({
       organization,
       isSystem: true,
-      ...processTypeFilter(processType),
-      status: 'active'
+      status: 'active',
+      $and: [
+        processTypeFilter(processType),
+        workflowTypeFilter('onboarding')
+      ]
     });
     if (existing) {
       existing.name = existing.name || `Default ${copy.label.toLowerCase()} packet`;
       existing.description = `${copy.label} workflow with process-specific forms, documents, reviews, and closeout tasks.`;
       existing.category = processType;
       existing.processType = processType;
+      existing.workflowType = 'onboarding';
       existing.formTemplates = existing.formTemplates?.length ? existing.formTemplates : [formTemplate._id];
       existing.workflowItems = defaultWorkflowItemDefinitions(processType);
       existing.updatedBy = userId;
@@ -155,9 +208,56 @@ async function ensureSystemPacketTemplates({ organization, userId }) {
       description: `${copy.label} workflow with process-specific forms, documents, reviews, and closeout tasks.`,
       category: processType,
       processType,
+      workflowType: 'onboarding',
       isSystem: true,
       formTemplates: [formTemplate._id],
       workflowItems: defaultWorkflowItemDefinitions(processType),
+      createdBy: userId
+    });
+  }
+
+  // Content-type packets absorbed from the IdP (agreement / policy / general).
+  // These carry processType 'onboarding' (they are not life events) and never
+  // change employee status on completion — see the completion guard.
+  const contentWorkflowTypes = WORKFLOW_TYPES.filter((type) => type !== 'onboarding');
+  for (const workflowType of contentWorkflowTypes) {
+    const copy = workflowTypeCopy(workflowType);
+    const workflowItems = defaultWorkflowItemDefinitionsForWorkflowType(workflowType);
+    const needsForm = workflowItems.some((item) => item.type === 'form' || item.type === 'approval');
+    const formTemplate = needsForm
+      ? await ensureDefaultFormTemplate({ organization, userId, workflowType })
+      : null;
+    const formTemplates = formTemplate ? [formTemplate._id] : [];
+
+    const existing = await OnboardingTemplate.findOne({
+      organization,
+      isSystem: true,
+      workflowType,
+      status: 'active'
+    });
+    if (existing) {
+      existing.name = existing.name || `Default ${copy.label.toLowerCase()} packet`;
+      existing.description = `${copy.label} workflow.`;
+      existing.category = workflowType;
+      existing.processType = 'onboarding';
+      existing.workflowType = workflowType;
+      existing.formTemplates = existing.formTemplates?.length ? existing.formTemplates : formTemplates;
+      existing.workflowItems = workflowItems;
+      existing.updatedBy = userId;
+      await existing.save();
+      continue;
+    }
+
+    await OnboardingTemplate.create({
+      organization,
+      name: `Default ${copy.label.toLowerCase()} packet`,
+      description: `${copy.label} workflow.`,
+      category: workflowType,
+      processType: 'onboarding',
+      workflowType,
+      isSystem: true,
+      formTemplates,
+      workflowItems,
       createdBy: userId
     });
   }
@@ -733,10 +833,23 @@ router.get('/', async (req, res) => {
   try {
     const { status, search, candidateId } = req.query;
     const selectedProcessType = processTypeQueryFromRequest(req);
-    const query = {
-      organization: organizationId(req),
-      ...processTypeFilter(selectedProcessType)
-    };
+    const selectedWorkflowType = req.query.workflowType && req.query.workflowType !== 'all'
+      ? normalizeWorkflowType(req.query.workflowType)
+      : 'all';
+    const selectedAudience = (req.query.audience === 'internal' || req.query.audience === 'external')
+      ? req.query.audience
+      : 'all';
+
+    // Each filter independently returns {} when 'all'; combine the rest under
+    // $and so the per-field $or clauses don't overwrite one another.
+    const typeFilters = [
+      processTypeFilter(selectedProcessType),
+      workflowTypeFilter(selectedWorkflowType),
+      audienceFilter(selectedAudience)
+    ].filter((filter) => Object.keys(filter).length);
+
+    const query = { organization: organizationId(req) };
+    if (typeFilters.length) query.$and = typeFilters;
     if (status && status !== 'all') query.status = status;
     if (candidateId) query.candidate = candidateId;
 
@@ -783,118 +896,363 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/candidates/:candidateId/start', async (req, res) => {
-  try {
-    const processType = processTypeFromRequest(req);
-    const copy = processCopy(processType);
-    const candidate = await Candidate.findOne({
-      _id: req.params.candidateId,
-      organization: organizationId(req)
+// Shared by the single-candidate start route and the bulk-start route. Throws
+// an Error with `.statusCode` on expected failures (e.g. candidate not found).
+async function startProcessForCandidate({ req, candidateId, processType, workflowType, body = {} }) {
+  const normalizedProcessType = normalizeProcessType(processType);
+  const normalizedWorkflowType = normalizeWorkflowType(workflowType);
+  const copy = processCopy(normalizedProcessType);
+  const orgId = organizationId(req);
+
+  const candidate = await Candidate.findOne({ _id: candidateId, organization: orgId });
+  if (!candidate) {
+    const err = new Error('Candidate not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const audience = candidate.isInternalCandidate ? 'internal' : 'external';
+  const organization = await getOrganization(req);
+  const { account, created: createdCandidateAccount } = await ensureCandidateAccount(candidate, organization);
+  const invite = createdCandidateAccount ? createInviteToken() : null;
+  const title = body.title || `${candidateDisplayName(candidate)} ${copy.label.toLowerCase()}`;
+  let packetTemplate = body.templateId
+    ? await OnboardingTemplate.findOne({
+        _id: body.templateId,
+        organization: orgId,
+        status: 'active',
+        // $and (not spread) so the processType and workflowType $or filters
+        // don't overwrite each other.
+        $and: [
+          processTypeFilter(normalizedProcessType),
+          workflowTypeFilter(normalizedWorkflowType)
+        ]
+      })
+    : null;
+  // Honor an explicit template choice even if its stored type doesn't match the
+  // request's filter (e.g. a legacy template without a workflowType), rather
+  // than silently dropping it and using the generic default workflow.
+  if (body.templateId && !packetTemplate) {
+    packetTemplate = await OnboardingTemplate.findOne({
+      _id: body.templateId,
+      organization: orgId,
+      status: 'active'
     });
-    if (!candidate) {
-      return res.status(404).json({ msg: 'Candidate not found' });
-    }
+  }
 
-    const organization = await getOrganization(req);
-    const { account, created: createdCandidateAccount } = await ensureCandidateAccount(candidate, organization);
-    const invite = createdCandidateAccount ? createInviteToken() : null;
-    const title = req.body.title || `${candidateDisplayName(candidate)} ${copy.label.toLowerCase()}`;
-    const packetTemplate = req.body.templateId
-      ? await OnboardingTemplate.findOne({
-          _id: req.body.templateId,
-          organization: organizationId(req),
-          ...processTypeFilter(processType),
-          status: 'active'
-        })
-      : null;
+  const onboarding = await CandidateOnboarding.create({
+    organization: orgId,
+    candidate: candidate._id,
+    candidateAccount: account._id,
+    job: candidate.jobAppliedFor,
+    processType: normalizedProcessType,
+    workflowType: normalizedWorkflowType,
+    audience,
+    template: packetTemplate?._id,
+    templateSnapshot: packetTemplate ? {
+      _id: packetTemplate._id,
+      name: packetTemplate.name,
+      processType: packetTemplate.processType || normalizedProcessType,
+      workflowType: packetTemplate.workflowType || normalizedWorkflowType,
+      version: packetTemplate.version,
+      documents: packetTemplate.documents,
+      formTemplates: packetTemplate.formTemplates,
+      workflowItems: packetTemplate.workflowItems,
+      reminderRules: packetTemplate.reminderRules,
+      completionActions: packetTemplate.completionActions,
+      capturedAt: new Date()
+    } : undefined,
+    title,
+    notes: body.notes || '',
+    startedBy: req.user.id,
+    inviteTokenHash: invite?.tokenHash,
+    inviteTokenExpiresAt: invite?.expiresAt
+  });
 
-    const onboarding = await CandidateOnboarding.create({
-      organization: organizationId(req),
-      candidate: candidate._id,
-      candidateAccount: account._id,
-      job: candidate.jobAppliedFor,
-      processType,
-      template: packetTemplate?._id,
-      templateSnapshot: packetTemplate ? {
-        _id: packetTemplate._id,
-        name: packetTemplate.name,
-        processType: packetTemplate.processType || processType,
-        version: packetTemplate.version,
-        documents: packetTemplate.documents,
-        formTemplates: packetTemplate.formTemplates,
-        workflowItems: packetTemplate.workflowItems,
-        reminderRules: packetTemplate.reminderRules,
-        completionActions: packetTemplate.completionActions,
-        capturedAt: new Date()
-      } : undefined,
-      title,
-      notes: req.body.notes || '',
-      startedBy: req.user.id,
-      inviteTokenHash: invite?.tokenHash,
-      inviteTokenExpiresAt: invite?.expiresAt
-    });
+  account.linkCandidate(candidate._id, organization._id);
+  await account.save();
 
-    account.linkCandidate(candidate._id, organization._id);
-    await account.save();
-
-    const portalInviteUrl = createdCandidateAccount
-      ? await onboardingEmailService.sendCandidateInvite({
-          candidate,
-          organization,
-          inviteToken: invite.token,
-          onboarding,
-          request: req
-        }).catch((error) => {
-          console.error('Failed to send onboarding invite email:', error);
-          return onboardingEmailService.candidatePortalUrl(
-            `/signup?token=${encodeURIComponent(invite.token)}`,
-            { organization, request: req }
-          );
-        })
-      : onboardingEmailService.candidatePortalUrl(
-          `/transitions/${onboarding._id}`,
+  const portalInviteUrl = createdCandidateAccount
+    ? await onboardingEmailService.sendCandidateInvite({
+        candidate,
+        organization,
+        inviteToken: invite.token,
+        onboarding,
+        request: req,
+        audience,
+        workflowType: normalizedWorkflowType
+      }).catch((error) => {
+        console.error('Failed to send onboarding invite email:', error);
+        return onboardingEmailService.candidatePortalUrl(
+          `/signup?token=${encodeURIComponent(invite.token)}`,
           { organization, request: req }
         );
+      })
+    : onboardingEmailService.candidatePortalUrl(
+        `/transitions/${onboarding._id}`,
+        { organization, request: req }
+      );
 
-    onboarding.portalInviteUrl = portalInviteUrl;
-    await onboarding.save();
+  onboarding.portalInviteUrl = portalInviteUrl;
+  await onboarding.save();
 
-    await initializeDefaultWorkflow({
-      onboarding,
-      candidate,
-      userId: req.user.id,
+  await initializeDefaultWorkflow({
+    onboarding,
+    candidate,
+    userId: req.user.id,
+    req,
+    packetTemplate,
+    candidateForm: body.candidateForm
+  });
+
+  await logOnboardingEvent({
+    req,
+    organization: orgId,
+    onboarding: onboarding._id,
+    candidate: candidate._id,
+    actorType: 'user',
+    actorUser: req.user.id,
+    actorEmail: req.user.email,
+    action: `${normalizedProcessType}_started`,
+    metadata: {
+      inviteEmail: createdCandidateAccount ? candidate.email : undefined,
+      processType: normalizedProcessType,
+      workflowType: normalizedWorkflowType,
+      audience,
+      reusedCandidateAccount: !createdCandidateAccount
+    }
+  });
+
+  await createPeopleTransitionNotifications({
+    organization: orgId,
+    onboarding,
+    candidate,
+    notificationType: 'people_transition_started',
+    title: `${copy.label} started`,
+    message: `${candidateDisplayName(candidate)} has a new ${copy.label.toLowerCase()} process.`,
+    priority: 'medium',
+    actorUserId: req.user.id
+  });
+
+  return { onboarding, candidate, inviteUrl: portalInviteUrl };
+}
+
+router.post('/candidates/:candidateId/start', async (req, res) => {
+  try {
+    const result = await startProcessForCandidate({
       req,
-      packetTemplate,
-      candidateForm: req.body.candidateForm
+      candidateId: req.params.candidateId,
+      processType: processTypeFromRequest(req),
+      workflowType: workflowTypeFromRequest(req),
+      body: req.body
     });
-
-    await logOnboardingEvent({
-      req,
-      organization: organizationId(req),
-      onboarding: onboarding._id,
-      candidate: candidate._id,
-      actorType: 'user',
-      actorUser: req.user.id,
-      actorEmail: req.user.email,
-      action: `${processType}_started`,
-      metadata: { inviteEmail: createdCandidateAccount ? candidate.email : undefined, processType, reusedCandidateAccount: !createdCandidateAccount }
-    });
-
-    await createPeopleTransitionNotifications({
-      organization: organizationId(req),
-      onboarding,
-      candidate,
-      notificationType: 'people_transition_started',
-      title: `${copy.label} started`,
-      message: `${candidateDisplayName(candidate)} has a new ${copy.label.toLowerCase()} process.`,
-      priority: 'medium',
-      actorUserId: req.user.id
-    });
-
-    res.status(201).json({ data: await serializeOnboarding(onboarding), inviteUrl: portalInviteUrl });
+    res.status(201).json({ data: await serializeOnboarding(result.onboarding), inviteUrl: result.inviteUrl });
   } catch (error) {
+    if (error.statusCode === 404) return res.status(404).json({ msg: error.message });
     console.error('Start onboarding failed:', error);
     res.status(500).json({ msg: 'Failed to start onboarding', error: error.message });
+  }
+});
+
+function splitName(fullName = '') {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
+// Map an IdP organization member to a recruiter Candidate (isInternalCandidate),
+// creating it if needed and keeping the IdP linkage fresh. Matches on
+// idpAccountId first, then email, so re-running is idempotent.
+async function ensureInternalCandidateFromMember(member, organization) {
+  const orgId = organization._id;
+  const idpAccountId = String(member?.idpAccountId || member?.id || member?.sub || '').trim();
+  const email = String(member?.email || '').trim().toLowerCase();
+  // Candidate.email is required + format-validated, so an email is mandatory.
+  if (!email) {
+    const err = new Error('Employee is missing an email address and cannot be onboarded');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let candidate = idpAccountId
+    ? await Candidate.findOne({ organization: orgId, idpAccountId })
+    : null;
+  if (!candidate) {
+    candidate = await Candidate.findOne({ organization: orgId, email, isInternalCandidate: true });
+  }
+
+  const { firstName, lastName } = splitName(member?.name);
+  if (!candidate) {
+    candidate = new Candidate({
+      organization: orgId,
+      firstName: firstName || email.split('@')[0],
+      lastName: lastName || '',
+      email,
+      isInternalCandidate: true,
+      employeeId: member?.employeeId || undefined,
+      currentPosition: member?.designation || undefined,
+      idpAccountId: idpAccountId || undefined,
+      idpMemberId: idpAccountId || undefined,
+      idpOrganizationId: organization.idpOrganizationId || undefined,
+      status: 'Hired',
+      source: 'Internal'
+    });
+    await candidate.save();
+    return candidate;
+  }
+
+  let dirty = false;
+  if (!candidate.isInternalCandidate) { candidate.isInternalCandidate = true; dirty = true; }
+  if (idpAccountId && candidate.idpAccountId !== idpAccountId) { candidate.idpAccountId = idpAccountId; dirty = true; }
+  if (member?.employeeId && candidate.employeeId !== member.employeeId) { candidate.employeeId = member.employeeId; dirty = true; }
+  if (organization.idpOrganizationId && candidate.idpOrganizationId !== organization.idpOrganizationId) {
+    candidate.idpOrganizationId = organization.idpOrganizationId; dirty = true;
+  }
+  if (dirty) await candidate.save();
+  return candidate;
+}
+
+// Small TTL cache so wizard interactions don't hammer the IdP. Member lists are
+// small and change slowly; ?refresh=1 bypasses.
+const INTERNAL_EMPLOYEE_CACHE_TTL_MS = 90 * 1000;
+const internalEmployeeCache = new Map();
+
+router.get('/internal-employees', async (req, res) => {
+  try {
+    const organization = await getOrganization(req);
+    if (!organization) return res.status(404).json({ msg: 'Organization not found' });
+    if (!organization.idpOrganizationId) {
+      return res.json({ data: [], idpAvailable: false, msg: 'Organization is not linked to the Identity Provider' });
+    }
+
+    const cacheKey = String(organization.idpOrganizationId);
+    const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    const cached = internalEmployeeCache.get(cacheKey);
+    let members;
+
+    if (!refresh && cached && cached.expiresAt > Date.now()) {
+      members = cached.data;
+    } else {
+      try {
+        const payload = await idpService.getOrganizationMembers(organization.idpOrganizationId, req.user.id);
+        members = Array.isArray(payload?.members) ? payload.members : (Array.isArray(payload) ? payload : []);
+        internalEmployeeCache.set(cacheKey, { expiresAt: Date.now() + INTERNAL_EMPLOYEE_CACHE_TTL_MS, data: members });
+      } catch (error) {
+        console.error('Failed to load IdP members:', error.message);
+        if (cached) {
+          members = cached.data; // serve stale on IdP error
+        } else {
+          return res.json({ data: [], idpAvailable: false, msg: 'Unable to reach the Identity Provider' });
+        }
+      }
+    }
+
+    members = members || [];
+    const emails = members.map((m) => String(m.email || '').trim().toLowerCase()).filter(Boolean);
+    const existing = emails.length
+      ? await Candidate.find({ organization: organization._id, isInternalCandidate: true, email: { $in: emails } }).select('email')
+      : [];
+    const existingByEmail = new Set(existing.map((c) => c.email));
+
+    const data = members.map((m) => ({
+      idpAccountId: String(m.id || m.sub || ''),
+      email: m.email || '',
+      name: m.name || '',
+      designation: m.designation || '',
+      employeeId: m.employeeId || '',
+      role: m.role || '',
+      department: m.departmentName || '',
+      onboardingStatus: m.onboardingStatus || '',
+      alreadyHasCandidate: existingByEmail.has(String(m.email || '').trim().toLowerCase())
+    }));
+
+    res.json({ data, idpAvailable: true });
+  } catch (error) {
+    console.error('Get internal employees failed:', error);
+    res.status(500).json({ msg: 'Failed to load internal employees', error: error.message });
+  }
+});
+
+router.post('/internal-candidates/resolve', async (req, res) => {
+  try {
+    const members = Array.isArray(req.body?.members) ? req.body.members : [];
+    if (!members.length) return res.status(400).json({ msg: 'No members provided' });
+    const organization = await getOrganization(req);
+    if (!organization) return res.status(404).json({ msg: 'Organization not found' });
+
+    const data = [];
+    const errors = [];
+    for (const member of members) {
+      try {
+        const candidate = await ensureInternalCandidateFromMember(member, organization);
+        data.push({ idpAccountId: candidate.idpAccountId || null, candidateId: candidate._id, email: candidate.email });
+      } catch (error) {
+        errors.push({ member: member?.email || member?.id || null, error: error.message });
+      }
+    }
+
+    res.json({ data, errors });
+  } catch (error) {
+    console.error('Resolve internal candidates failed:', error);
+    res.status(500).json({ msg: 'Failed to resolve internal employees', error: error.message });
+  }
+});
+
+router.post('/bulk-start', async (req, res) => {
+  try {
+    const processType = processTypeFromRequest(req);
+    const workflowType = workflowTypeFromRequest(req);
+    const body = req.body || {};
+
+    let candidateIds = Array.isArray(body.candidateIds) ? body.candidateIds.filter(Boolean).map(String) : [];
+    const resolveErrors = [];
+
+    // Optionally resolve IdP members into internal candidates first.
+    if (Array.isArray(body.members) && body.members.length) {
+      const organization = await getOrganization(req);
+      if (!organization) return res.status(404).json({ msg: 'Organization not found' });
+      for (const member of body.members) {
+        try {
+          const candidate = await ensureInternalCandidateFromMember(member, organization);
+          candidateIds.push(String(candidate._id));
+        } catch (error) {
+          resolveErrors.push({ member: member?.email || member?.id || null, error: error.message });
+        }
+      }
+    }
+
+    candidateIds = Array.from(new Set(candidateIds));
+    if (!candidateIds.length) {
+      return res.status(400).json({ msg: 'No candidates or employees to start', data: [], errors: resolveErrors });
+    }
+
+    const sharedBody = {
+      title: body.title,
+      notes: body.notes,
+      templateId: body.templateId,
+      candidateForm: body.candidateForm
+    };
+
+    const results = await Promise.allSettled(candidateIds.map((candidateId) =>
+      startProcessForCandidate({ req, candidateId, processType, workflowType, body: sharedBody })
+    ));
+
+    const data = [];
+    const errors = [...resolveErrors];
+    results.forEach((result, index) => {
+      const candidateId = candidateIds[index];
+      if (result.status === 'fulfilled') {
+        data.push({ candidateId, onboardingId: result.value.onboarding._id, inviteUrl: result.value.inviteUrl });
+      } else {
+        errors.push({ candidateId, error: result.reason?.message || 'Failed to start' });
+      }
+    });
+
+    res.status(data.length ? 201 : 422).json({ data, errors });
+  } catch (error) {
+    console.error('Bulk start failed:', error);
+    res.status(500).json({ msg: 'Failed to bulk start processes', error: error.message });
   }
 });
 
@@ -902,11 +1260,19 @@ router.get('/templates', async (req, res) => {
   try {
     await ensureSystemPacketTemplates({ organization: organizationId(req), userId: req.user.id });
     const selectedProcessType = processTypeQueryFromRequest(req);
-    const templates = await OnboardingTemplate.find({
+    const selectedWorkflowType = req.query.workflowType && req.query.workflowType !== 'all'
+      ? normalizeWorkflowType(req.query.workflowType)
+      : 'all';
+    const typeFilters = [
+      processTypeFilter(selectedProcessType),
+      workflowTypeFilter(selectedWorkflowType)
+    ].filter((filter) => Object.keys(filter).length);
+    const query = {
       organization: organizationId(req),
-      ...processTypeFilter(selectedProcessType),
       status: { $ne: 'archived' }
-    })
+    };
+    if (typeFilters.length) query.$and = typeFilters;
+    const templates = await OnboardingTemplate.find(query)
       .populate('documents', 'title status sourceType')
       .populate('formTemplates', 'name category fields')
       .sort({ isSystem: -1, name: 1 });
@@ -919,12 +1285,14 @@ router.get('/templates', async (req, res) => {
 router.post('/templates', async (req, res) => {
   try {
     const processType = processTypeFromRequest(req);
+    const workflowType = workflowTypeFromRequest(req);
     const template = await OnboardingTemplate.create({
       organization: organizationId(req),
       name: req.body.name,
       description: req.body.description || '',
       category: req.body.category || 'default',
       processType,
+      workflowType,
       documents: Array.isArray(req.body.documents) ? req.body.documents : [],
       formTemplates: Array.isArray(req.body.formTemplates) ? req.body.formTemplates : [],
       workflowItems: Array.isArray(req.body.workflowItems) ? req.body.workflowItems : [],
@@ -1201,6 +1569,17 @@ router.post('/reminders/run', async (req, res) => {
   }
 });
 
+// Cron-style runner: retry pending/failed IdP handoffs for the organization.
+// Schedule alongside POST /reminders/run.
+router.post('/handoffs/run', async (req, res) => {
+  try {
+    const result = await onboardingHandoffService.executePendingHandoffs(organizationId(req), { userId: req.user.id });
+    res.json({ data: result });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to run onboarding handoffs', error: error.message });
+  }
+});
+
 router.post('/:onboardingId/handoff/retry', async (req, res) => {
   try {
     const onboarding = await CandidateOnboarding.findOne({
@@ -1208,8 +1587,24 @@ router.post('/:onboardingId/handoff/retry', async (req, res) => {
       organization: organizationId(req)
     });
     if (!onboarding) return res.status(404).json({ msg: 'Onboarding not found' });
+
+    // Retry the IdP-bound handoff directly if one exists; otherwise re-evaluate
+    // completion (which will create + execute it).
+    const handoffs = await OnboardingHandoff.find({
+      onboarding: onboarding._id,
+      organization: organizationId(req)
+    });
+    const idpHandoffs = handoffs.filter((handoff) =>
+      onboardingHandoffService.isIdpTarget(handoff.target) && handoff.status !== 'completed');
+
+    if (idpHandoffs.length) {
+      const results = await Promise.all(idpHandoffs.map((handoff) =>
+        onboardingHandoffService.executeHandoff(handoff._id, { userId: req.user.id, req })));
+      return res.json({ data: results });
+    }
+
     const handoff = await tryCompleteOnboarding(onboarding._id, { req });
-    res.json({ data: handoff });
+    res.json({ data: handoff ? [handoff] : [] });
   } catch (error) {
     res.status(500).json({ msg: 'Failed to retry onboarding handoff', error: error.message });
   }
@@ -2003,14 +2398,20 @@ router.get('/envelopes/:id', async (req, res) => {
 router.get('/form-field-defaults', async (req, res) => {
   try {
     const processType = processTypeQueryFromRequest(req) === 'all' ? 'onboarding' : processTypeQueryFromRequest(req);
+    const workflowType = req.query.workflowType && req.query.workflowType !== 'all'
+      ? normalizeWorkflowType(req.query.workflowType)
+      : 'onboarding';
+    const isOnboarding = workflowType === 'onboarding';
     const copy = processCopy(processType);
+    const wfCopy = workflowTypeCopy(workflowType);
     res.json({
       data: {
-        title: copy.defaultTitle,
-        description: copy.defaultDescription,
-        category: copy.category,
+        title: isOnboarding ? copy.defaultTitle : `${wfCopy.label} details`,
+        description: isOnboarding ? copy.defaultDescription : '',
+        category: isOnboarding ? copy.category : (wfCopy.category || 'general'),
         processType,
-        fields: defaultFormFields(processType)
+        workflowType,
+        fields: defaultFormFieldsForWorkflowType(workflowType, processType)
       }
     });
   } catch (error) {

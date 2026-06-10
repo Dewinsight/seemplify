@@ -1,12 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { FormEvent, useState } from "react"
+import { FormEvent, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowRight, Lock, Mail } from "lucide-react"
 import { toast } from "sonner"
 import { AuthShell } from "@/components/candidate-ui"
-import { login } from "@/lib/api"
+import { exchangeIdpToken, login } from "@/lib/api"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
 
 export default function CandidateLoginPage() {
@@ -15,6 +15,31 @@ export default function CandidateLoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [exchanging, setExchanging] = useState(false)
+  // Guards against React StrictMode double-invoking the effect (which would
+  // replay the one-time token and surface a spurious error on a good login).
+  const exchangedRef = useRef(false)
+
+  // Internal employees arrive from the Identity Provider with ?idp_token; trade
+  // it for a session and strip it from the URL so it is not bookmarked/leaked.
+  useEffect(() => {
+    if (exchangedRef.current) return
+    const params = new URLSearchParams(window.location.search)
+    const idpToken = params.get("idp_token")
+    if (!idpToken) return
+    exchangedRef.current = true
+    setExchanging(true)
+    exchangeIdpToken(idpToken)
+      .then(() => {
+        window.history.replaceState({}, "", window.location.pathname)
+        router.replace("/dashboard")
+      })
+      .catch((error: any) => {
+        toast.error(error.message || "Single sign-on failed. Please sign in.")
+        window.history.replaceState({}, "", window.location.pathname)
+        setExchanging(false)
+      })
+  }, [router])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -27,6 +52,17 @@ export default function CandidateLoginPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (exchanging) {
+    return (
+      <AuthShell brand={brand} eyebrow={brand.loginEyebrow} title={brand.loginHeading} description={brand.loginDescription}>
+        <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 text-center">
+          <div className={`h-8 w-8 animate-spin rounded-full border-2 border-slate-200 ${brand.accentBorderClass}`} style={{ borderTopColor: "transparent" }} />
+          <p className="text-sm text-slate-600">Signing you in&hellip;</p>
+        </div>
+      </AuthShell>
+    )
   }
 
   return (

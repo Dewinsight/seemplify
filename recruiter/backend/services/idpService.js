@@ -229,6 +229,43 @@ const getAllOrganizations = async (options = {}) => {
   }
 };
 
+/**
+ * Push collected onboarding profile data (name/personalInfo/banking/dependents)
+ * to an existing IdP member via the payroll-sync endpoint. The IdP remains the
+ * source of truth for the employee profile.
+ * @param {string} idpOrganizationId
+ * @param {string} memberId - IdP account id (or sub)
+ * @param {Object} profilePayload - payroll-sync body
+ * @param {string} userId - recruiter User id whose IdP token authenticates the call
+ */
+const updateEmployeeProfile = async (idpOrganizationId, memberId, profilePayload, userId) => {
+  return executeWithTokenRefresh(userId, async (client) => {
+    const response = await client.put(
+      `/api/organizations/${idpOrganizationId}/members/${memberId}/payroll-sync`,
+      profilePayload
+    );
+    return response.data;
+  });
+};
+
+/**
+ * Set an IdP member's onboarding status override (e.g. mark as completed once a
+ * recruiter onboarding finishes).
+ * @param {string} idpOrganizationId
+ * @param {string} memberId - IdP account id (or sub)
+ * @param {string} status - one of not_started|pending|in_progress|completed
+ * @param {string} userId - recruiter User id whose IdP token authenticates the call
+ */
+const setMemberOnboardingStatus = async (idpOrganizationId, memberId, status, userId) => {
+  return executeWithTokenRefresh(userId, async (client) => {
+    const response = await client.put(
+      `/api/organizations/${idpOrganizationId}/members/${memberId}/onboarding-status`,
+      { status }
+    );
+    return response.data;
+  });
+};
+
 module.exports = {
   getOrganizationMembers,
   getOrganizationMember,
@@ -239,6 +276,8 @@ module.exports = {
   isIdpAvailable,
   getIdpManagementUrl,
   executeWithTokenRefresh,
+  updateEmployeeProfile,
+  setMemberOnboardingStatus,
   getAllOrganizations
 };
 

@@ -98,7 +98,9 @@ function waitingStep(record: CandidateOnboarding, item: OnboardingWorkflowItem):
     label: item.title,
     href: `/transitions/${record._id}`,
     status: item.status,
-    meta: item.ownerType === "candidate" ? "Candidate task" : "Internal task",
+    meta: item.ownerType === "candidate"
+      ? (record.audience === "internal" ? "Employee task" : "Candidate task")
+      : "Internal task",
     dueAt: item.dueAt,
     actionable: false,
     disabled: item.ownerType !== "candidate",

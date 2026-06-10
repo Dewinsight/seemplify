@@ -10,6 +10,7 @@ import { TransitionFlowNav, TransitionFlowTopNav } from "@/components/transition
 import { getAccessToken, getOnboarding, getStoredAccount, logout } from "@/lib/api"
 import type { CandidateAccount, CandidateOnboarding, EnvelopeDocument } from "@/lib/types"
 import { useCandidateBrand } from "@/lib/use-candidate-brand"
+import { transitionLabel } from "@/lib/labels"
 
 function documentAction(document: EnvelopeDocument) {
   if (document.status === "completed" || document.status === "signed") {
@@ -28,12 +29,6 @@ function documentAction(document: EnvelopeDocument) {
   }
 }
 
-function processLabel(record?: CandidateOnboarding | null) {
-  const processType = record?.processType || "onboarding"
-  if (processType === "exit") return "Exit"
-  if (processType === "retirement") return "Retirement"
-  return "Onboarding"
-}
 
 export default function CandidateOnboardingDetailPage() {
   const params = useParams<{ id: string }>()
@@ -99,7 +94,7 @@ export default function CandidateOnboardingDetailPage() {
               <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
                 <div>
                   <div className={`text-sm font-semibold uppercase tracking-wide ${brand.accentTextClass}`}>
-                    {record.organization?.name || brand.organizationName} - {processLabel(record)}
+                    {record.organization?.name || brand.organizationName} - {transitionLabel(record)}
                   </div>
                   <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{record.title}</h2>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Complete each form and document assigned to this transition. Final copies remain available for download from this portal.</p>

@@ -182,6 +182,17 @@ export async function login(email: string, password: string) {
   return result
 }
 
+// Exchange an IdP-minted SSO token (passed as ?idp_token) for a candidate
+// session. Used by internal employees arriving from the Identity Provider.
+export async function exchangeIdpToken(idpToken: string) {
+  const result = await candidateRequest<AuthResponse>("/api/candidate-portal/auth/idp-exchange", {
+    method: "POST",
+    body: JSON.stringify({ idpToken }),
+  }, false)
+  storeAuth(result)
+  return result
+}
+
 export async function logout() {
   try {
     await candidateRequest<{ msg: string }>("/api/candidate-portal/auth/logout", { method: "POST" })

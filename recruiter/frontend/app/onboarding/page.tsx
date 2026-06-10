@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
-import { getOnboardingDashboard, getOnboardingRecords, runOnboardingReminders, type CandidateOnboarding, type OnboardingAuditEvent, type ProcessType } from "@/services/onboardingService";
+import { getOnboardingDashboard, getOnboardingRecords, runOnboardingReminders, type Audience, type CandidateOnboarding, type OnboardingAuditEvent, type ProcessType, type WorkflowType } from "@/services/onboardingService";
 import { toast } from "sonner";
 
 const processOptions: Array<{ value: ProcessType | "all"; label: string }> = [
@@ -16,6 +16,20 @@ const processOptions: Array<{ value: ProcessType | "all"; label: string }> = [
   { value: "onboarding", label: "Onboarding" },
   { value: "exit", label: "Exit" },
   { value: "retirement", label: "Retirement" },
+];
+
+const workflowOptions: Array<{ value: WorkflowType | "all"; label: string }> = [
+  { value: "all", label: "All types" },
+  { value: "onboarding", label: "Lifecycle" },
+  { value: "agreement", label: "Agreements" },
+  { value: "policy", label: "Policies" },
+  { value: "general", label: "General" },
+];
+
+const audienceOptions: Array<{ value: Audience | "all"; label: string }> = [
+  { value: "all", label: "Everyone" },
+  { value: "external", label: "Candidates" },
+  { value: "internal", label: "Employees" },
 ];
 
 function candidateName(onboarding: CandidateOnboarding) {
@@ -38,13 +52,15 @@ export default function OnboardingDashboardPage() {
   const [reminding, setReminding] = useState(false);
   const [search, setSearch] = useState("");
   const [processType, setProcessType] = useState<ProcessType | "all">("all");
+  const [workflowType, setWorkflowType] = useState<WorkflowType | "all">("all");
+  const [audience, setAudience] = useState<Audience | "all">("all");
 
   useEffect(() => {
     let mounted = true;
     async function load() {
       try {
         setLoading(true);
-        const result = await getOnboardingRecords({ search, processType });
+        const result = await getOnboardingRecords({ search, processType, workflowType, audience });
         const dashboardResult = await getOnboardingDashboard(processType);
         if (!mounted) return;
         setRecords(result.data || []);
@@ -61,7 +77,7 @@ export default function OnboardingDashboardPage() {
       mounted = false;
       clearTimeout(timer);
     };
-  }, [search, processType]);
+  }, [search, processType, workflowType, audience]);
 
   const stats = useMemo(() => {
     const total = records.length;
@@ -113,7 +129,7 @@ export default function OnboardingDashboardPage() {
           </div>
         </div>
 
-        <div className="mb-5 flex flex-wrap gap-2">
+        <div className="mb-3 flex flex-wrap gap-2">
           {processOptions.map((option) => (
             <Button
               key={option.value}
@@ -121,6 +137,36 @@ export default function OnboardingDashboardPage() {
               size="sm"
               variant={processType === option.value ? "default" : "outline"}
               onClick={() => setProcessType(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Type</span>
+          {workflowOptions.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={workflowType === option.value ? "default" : "outline"}
+              onClick={() => setWorkflowType(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">People</span>
+          {audienceOptions.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={audience === option.value ? "default" : "outline"}
+              onClick={() => setAudience(option.value)}
             >
               {option.label}
             </Button>

@@ -8,7 +8,10 @@ const multer = require('multer');
 
 const candidateAuthMiddleware = require('../middleware/candidateAuthMiddleware');
 const CandidateAccount = require('../models/CandidateAccount');
+const Candidate = require('../models/Candidate');
+const Organization = require('../models/Organization');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
+const { verifyCandidateSsoToken, consumeCandidateSsoToken } = require('../services/candidateSsoService');
 const OnboardingDocument = require('../models/OnboardingDocument');
 const OnboardingEnvelope = require('../models/OnboardingEnvelope');
 const OnboardingFormSubmission = require('../models/OnboardingFormSubmission');
@@ -426,6 +429,76 @@ router.post('/auth/login', async (req, res) => {
     res.json({ ...createTokens(account), account });
   } catch (error) {
     res.status(500).json({ msg: 'Candidate login failed', error: error.message });
+  }
+});
+
+// Exchange a short-lived IdP-minted SSO token for a normal candidate session.
+// Lets an existing IdP employee enter the portal without a password.
+router.post('/auth/idp-exchange', async (req, res) => {
+  try {
+    const idpToken = req.body?.idpToken || req.body?.token;
+    if (!idpToken) return res.status(400).json({ msg: 'Missing SSO token' });
+
+    let identity;
+    try {
+      identity = verifyCandidateSsoToken(idpToken);
+      consumeCandidateSsoToken(identity.jti, identity.exp);
+    } catch (error) {
+      const status = error.code === 'CANDIDATE_SSO_NOT_CONFIGURED' ? 503 : 401;
+      return res.status(status).json({ msg: error.message || 'Invalid SSO token' });
+    }
+
+    const organization = await Organization.findOne({ idpOrganizationId: identity.idpOrganizationId });
+    if (!organization) {
+      return res.status(404).json({ msg: 'Organization is not linked to the recruiter app' });
+    }
+
+    // Upsert the candidate account by IdP id, then email. No password is set.
+    let account = await CandidateAccount.findOne({ idpAccountId: identity.idpAccountId });
+    if (!account) {
+      account = await CandidateAccount.findOne({ email: identity.email });
+    }
+    if (!account) {
+      const [firstName, ...rest] = identity.name.split(/\s+/);
+      account = new CandidateAccount({
+        email: identity.email,
+        profile: { firstName: firstName || identity.email, lastName: rest.join(' ') },
+        status: 'active',
+        idpAccountId: identity.idpAccountId,
+        provisionedVia: 'idp_sso'
+      });
+    } else {
+      if (!account.idpAccountId) account.idpAccountId = identity.idpAccountId;
+      if (account.status !== 'active') account.status = 'active';
+    }
+
+    // Ensure an internal Candidate exists and is linked to the account.
+    const [first, ...last] = identity.name.split(/\s+/);
+    let candidate = await Candidate.findOne({ organization: organization._id, idpAccountId: identity.idpAccountId })
+      || await Candidate.findOne({ organization: organization._id, email: identity.email, isInternalCandidate: true });
+    if (!candidate) {
+      candidate = await Candidate.create({
+        organization: organization._id,
+        firstName: first || identity.email,
+        lastName: last.join(' '),
+        email: identity.email,
+        isInternalCandidate: true,
+        employeeId: identity.employeeId || undefined,
+        idpAccountId: identity.idpAccountId,
+        idpMemberId: identity.idpAccountId,
+        idpOrganizationId: identity.idpOrganizationId,
+        status: 'Hired',
+        source: 'Internal'
+      });
+    }
+
+    account.linkCandidate(candidate._id, organization._id);
+    account.lastLoginAt = new Date();
+    await account.save();
+
+    res.json({ ...createTokens(account), account });
+  } catch (error) {
+    res.status(500).json({ msg: 'SSO exchange failed', error: error.message });
   }
 });
 
