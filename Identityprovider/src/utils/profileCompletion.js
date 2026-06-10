@@ -1,5 +1,6 @@
 import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
 import { normalizeOnboardingStatus } from './onboardingStatus.js'
+import { isRedirectMode } from '../middleware/onboardingMode.js'
 
 const PROFILE_COMPLETION_STEPS = [
   {
@@ -232,7 +233,10 @@ export function getProfileCompletion(account = {}, options = {}) {
     complete: completionByKey[step.key] === true
   }))
 
-  if (onboarding.required) {
+  // Onboarding has moved to the recruiter app: in redirect mode keep only the
+  // IdP-owned profile steps (Personal/Banking/Dependents) so percent recomputes
+  // cleanly without the retired onboarding step.
+  if (onboarding.required && !isRedirectMode()) {
     steps.push({
       ...ONBOARDING_PROFILE_COMPLETION_STEP,
       complete: onboarding.complete,
@@ -303,6 +307,11 @@ export async function getProfileCompletionForAccount(account = {}, options = {})
 
   if (!organizationId || !accountId) {
     return getProfileCompletion(account, options)
+  }
+
+  // Skip the retired onboarding-assignment lookup when redirecting to recruiter.
+  if (isRedirectMode()) {
+    return getProfileCompletion(account, { ...options, onboardingAssignments: [] })
   }
 
   const onboardingAssignments = await OnboardingAssignment.find({

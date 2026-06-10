@@ -461,6 +461,8 @@ import membersRouter from './routes/members.js'
 import teamsRouter from './routes/teams.js'
 import notificationsRouter from './routes/notifications.js'
 import onboardingRouter from './routes/onboarding.js'
+import { isRedirectMode } from './middleware/onboardingMode.js'
+import { recruiterMyTransitionsUrl, recruiterWorkspaceUrl } from './utils/recruiterLinks.js'
 // Subscription Management Routes
 import adminPlansRouter from './routes/adminPlans.js'
 import adminSubscriptionRequestsRouter from './routes/adminSubscriptionRequests.js'
@@ -5587,6 +5589,25 @@ app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
 app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
+
+// Retired onboarding UI: in redirect mode, send the legacy onboarding pages to
+// the recruiter app. Document viewer/download routes (/onboarding/assignments/*)
+// are intentionally left alive for legacy email links. Registered before the
+// page routes below so it takes precedence. See middleware/onboardingMode.js.
+app.use((req, res, next) => {
+  if (!isRedirectMode()) return next()
+  const path = req.path
+  const employeeUrl = recruiterMyTransitionsUrl()
+  const workspaceUrl = recruiterWorkspaceUrl()
+  if ((path === '/onboarding' || path === '/documents/my' || path === '/profile/documents') && employeeUrl) {
+    return res.redirect(302, employeeUrl)
+  }
+  if ((path === '/documents/workspace' || /^\/organizations\/[^/]+\/onboarding(\/.*)?$/.test(path)) && workspaceUrl) {
+    return res.redirect(302, workspaceUrl)
+  }
+  return next()
+})
+
 app.use('/api', onboardingRouter)
 
 // Subscription Management API Routes

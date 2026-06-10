@@ -10,8 +10,17 @@ import { emailService } from '../services/emailService.js'
 import cloudinary, { uploadBufferToCloudinary, isCloudinaryConfigured, deleteFromCloudinary } from '../services/cloudinaryService.js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { normalizeManualOnboardingStatus } from '../utils/onboardingStatus.js'
+import { freezeWritesMiddleware } from '../middleware/onboardingMode.js'
 
 const router = express.Router()
+
+// During cutover to the recruiter app, freeze mutating onboarding endpoints
+// (reads stay available so existing data and the document viewer keep working).
+// Toggled by ONBOARDING_FREEZE_WRITES / ONBOARDING_MODE.
+router.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next()
+  return freezeWritesMiddleware(req, res, next)
+})
 
 const upload = multer({
   storage: multer.memoryStorage(),

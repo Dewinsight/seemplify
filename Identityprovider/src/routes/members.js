@@ -1,4 +1,6 @@
 import express from 'express'
+import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
 import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
@@ -715,6 +717,122 @@ router.put('/:orgId/members/:memberId/payroll-sync',
         })
       }
       res.status(500).json({ error: error.message || 'Failed to update member payroll sync data' })
+    }
+  }
+)
+
+/**
+ * Set a member's onboarding status override.
+ * PUT /api/organizations/:orgId/members/:memberId/onboarding-status
+ * Accepts session auth or Bearer token (for write-back from the recruiter app
+ * when an onboarding completes). memberId may be the account id or sub.
+ */
+router.put('/:orgId/members/:memberId/onboarding-status',
+  requireAuthOrAPIToken,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      }
+
+      const organization = await Organization.findById(req.params.orgId)
+        .populate('members.account', 'sub email')
+
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+
+      const member = organization.members.find(
+        entry => entry.status === 'active' && matchesMemberIdentity(entry.account, req.params.memberId)
+      )
+
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' })
+      }
+
+      const status = String(req.body?.status || '').trim().toLowerCase()
+      try {
+        await organization.setMemberOnboardingStatusOverride(member.account._id, status, req.user._id)
+      } catch (error) {
+        return res.status(400).json({ error: error.message || 'Invalid onboarding status' })
+      }
+
+      res.json({
+        id: member.account._id,
+        sub: member.account.sub,
+        email: member.account.email,
+        onboardingStatusOverride: status || null
+      })
+    } catch (error) {
+      console.error('Update member onboarding status error:', error)
+      res.status(500).json({ error: error.message || 'Failed to update member onboarding status' })
+    }
+  }
+)
+
+/**
+ * Mint a short-lived SSO token + deep-link so a member can open their onboarding
+ * tasks in the recruiter candidate portal without a separate password.
+ * POST /api/organizations/:orgId/members/:memberId/onboarding-sso-token
+ * Allowed for owner/admin/hr_manager (any member) or the member themselves.
+ */
+router.post('/:orgId/members/:memberId/onboarding-sso-token',
+  requireAuthOrAPIToken,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      const organization = await Organization.findById(req.params.orgId)
+        .populate('members.account', 'sub email profile')
+
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+
+      const member = organization.members.find(
+        entry => entry.status === 'active' && matchesMemberIdentity(entry.account, req.params.memberId)
+      )
+
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' })
+      }
+
+      const isSelf = member.account._id.toString() === (req.user?._id?.toString?.() || '')
+      const isManager = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
+      if (!isSelf && !isManager) {
+        return res.status(403).json({ error: 'Not allowed to generate a portal link for this member' })
+      }
+
+      const secret = String(process.env.IDP_CANDIDATE_SSO_SECRET || process.env.OIDC_CLIENT_SECRET || '').trim()
+      if (!secret) {
+        return res.status(503).json({ error: 'Candidate SSO is not configured' })
+      }
+
+      const token = jwt.sign(
+        {
+          idpAccountId: member.account._id.toString(),
+          email: member.account.email,
+          name: member.account.profile?.name || member.account.email,
+          idpOrganizationId: organization._id.toString(),
+          employeeId: member.employeeId || '',
+          jti: crypto.randomUUID()
+        },
+        secret,
+        {
+          algorithm: 'HS256',
+          issuer: String(process.env.IDP_CANDIDATE_SSO_ISSUER || 'aiin-idp'),
+          audience: String(process.env.IDP_CANDIDATE_SSO_AUDIENCE || 'recruiter-candidate-portal'),
+          expiresIn: process.env.IDP_CANDIDATE_SSO_TTL || '5m'
+        }
+      )
+
+      const portalBase = String(process.env.RECRUITER_PORTAL_URL || '').replace(/\/+$/, '')
+      const url = portalBase ? `${portalBase}/login?idp_token=${encodeURIComponent(token)}` : null
+
+      res.json({ token, url })
+    } catch (error) {
+      console.error('Mint candidate SSO token error:', error)
+      res.status(500).json({ error: error.message || 'Failed to generate portal link' })
     }
   }
 )
