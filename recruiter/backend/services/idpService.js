@@ -266,6 +266,25 @@ const setMemberOnboardingStatus = async (idpOrganizationId, memberId, status, us
   });
 };
 
+/**
+ * Provision a recruiter-onboarded person as an IdP member with a chosen role.
+ * Creates an invitation (or reports an existing member). Authenticated with the
+ * recruiter staff user's IdP token (they must hold owner/admin/hr_manager).
+ * @param {string} idpOrganizationId
+ * @param {Object} payload - { email, name, role, designation, employeeId }
+ * @param {string} userId - recruiter User id whose IdP token authenticates the call
+ * @returns {Promise<Object>} { status: 'invited'|'already_member'|'invite_pending', memberId?, inviteId?, role }
+ */
+const provisionEmployee = async (idpOrganizationId, payload, userId) => {
+  return executeWithTokenRefresh(userId, async (client) => {
+    const response = await client.post(
+      `/api/organizations/${idpOrganizationId}/members/provision`,
+      payload
+    );
+    return response.data;
+  });
+};
+
 module.exports = {
   getOrganizationMembers,
   getOrganizationMember,
@@ -278,6 +297,7 @@ module.exports = {
   executeWithTokenRefresh,
   updateEmployeeProfile,
   setMemberOnboardingStatus,
+  provisionEmployee,
   getAllOrganizations
 };
 

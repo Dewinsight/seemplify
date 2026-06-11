@@ -246,6 +246,7 @@ export interface CandidateOnboarding {
   processType?: ProcessType;
   workflowType?: WorkflowType;
   audience?: Audience;
+  idpProvision?: IdpProvision;
   status: OnboardingStatus;
   notes?: string;
   candidate: any;
@@ -525,8 +526,34 @@ export async function runOnboardingReminders(processType: ProcessType | "all" = 
 
 export async function retryOnboardingHandoff(onboardingId: string) {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/${onboardingId}/handoff/retry`, { method: "POST" });
-  const result = await parseResponse<{ data: OnboardingHandoff | null }>(response, "Failed to retry onboarding handoff");
+  const result = await parseResponse<{ data: OnboardingHandoff[] }>(response, "Failed to retry onboarding handoff");
   return result.data;
+}
+
+export type IdpRole = "admin" | "hr_manager" | "recruiter" | "interviewer" | "staff";
+
+export interface IdpProvision {
+  status: "invited" | "invite_pending" | "already_member";
+  role?: string;
+  inviteId?: string;
+  memberId?: string;
+  provisionedAt?: string;
+}
+
+// HR-triggered: invite/create this person in the Identity Provider with a role
+// (or push their profile back if they are already a member).
+export async function provisionInIdp(
+  onboardingId: string,
+  body: { role: IdpRole; designation?: string; employeeId?: string }
+) {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/${onboardingId}/provision-idp`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return parseResponse<{ data: IdpProvision; writeBackError?: string }>(
+    response,
+    "Failed to provision in the Identity Provider"
+  );
 }
 
 export async function getDocumentTemplates() {

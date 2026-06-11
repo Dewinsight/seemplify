@@ -117,7 +117,17 @@ const CandidateOnboardingSchema = new mongoose.Schema({
   handoffs: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OnboardingHandoff'
-  }]
+  }],
+  // Manual IdP provisioning: a recruiter invites this person into the IdP with a
+  // role once onboarding is done (distinct from the automatic profile write-back).
+  idpProvision: {
+    status: { type: String, enum: ['invited', 'invite_pending', 'already_member'] },
+    role: { type: String, trim: true },
+    inviteId: { type: String, trim: true },
+    memberId: { type: String, trim: true },
+    provisionedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    provisionedAt: { type: Date }
+  }
 }, { timestamps: true });
 
 CandidateOnboardingSchema.index({ organization: 1, candidate: 1, createdAt: -1 });

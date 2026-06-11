@@ -772,6 +772,113 @@ router.put('/:orgId/members/:memberId/onboarding-status',
 )
 
 /**
+ * Provision a recruiter-onboarded person as an IdP member by creating an
+ * invitation with the chosen role (or reporting an existing member). Callable
+ * from the recruiter app via API token after a candidate finishes onboarding.
+ * Department defaults to the org's first department; team is optional.
+ * POST /api/organizations/:orgId/members/provision
+ */
+router.post('/:orgId/members/provision',
+  requireAuthOrAPIToken,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      }
+
+      const organization = req.organization
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found' })
+      }
+
+      const email = String(req.body?.email || '').trim().toLowerCase()
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: 'Valid email is required' })
+      }
+
+      const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
+      const role = String(req.body?.role || 'staff').trim()
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+      }
+
+      const designation = String(req.body?.designation || '').trim() || 'Employee'
+      const employeeId = String(req.body?.employeeId || '').trim()
+
+      // Already an active member? Nothing to invite — report it so the caller
+      // can write the profile back instead.
+      const existingAccount = await Account.findOne({ email }).select('_id')
+      if (existingAccount) {
+        const member = organization.members.find(
+          m => m.account && m.account.toString() === existingAccount._id.toString() && m.status === 'active'
+        )
+        if (member) {
+          return res.json({ status: 'already_member', memberId: existingAccount._id, role: member.role })
+        }
+      }
+
+      // Idempotent: surface a pending invite rather than duplicating it.
+      const pending = await OrganizationInvite.findOne({
+        organization: req.params.orgId,
+        email,
+        status: 'pending',
+        expiresAt: { $gt: new Date() }
+      }).select('_id role')
+      if (pending) {
+        return res.json({ status: 'invite_pending', inviteId: pending._id, role: pending.role })
+      }
+
+      // department is required on the invite model; default to the org's first.
+      const departments = organization.departments || []
+      const departmentId = String(req.body?.department || '').trim() || (departments[0]?._id?.toString() || '')
+      if (!departmentId) {
+        return res.status(400).json({ error: 'Organization has no department to assign. Create a department in the Identity Provider first.' })
+      }
+
+      const { plainToken, tokenHash } = await OrganizationInvite.generateToken()
+      const invitation = await OrganizationInvite.create({
+        organization: req.params.orgId,
+        email,
+        role,
+        designation,
+        employeeId: employeeId || undefined,
+        department: departmentId,
+        team: String(req.body?.team || '').trim() || null,
+        tokenHash,
+        invitedBy: req.user._id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      })
+
+      const inviteUrl = `${process.env.ISSUER_URL}/invitations/accept?token=${plainToken}`
+      try {
+        await emailService.sendEmail({
+          to: email,
+          subject: `You're invited to join ${organization.name}`,
+          html: `
+            <h2>You've been invited to join ${organization.name}</h2>
+            <p><strong>Role:</strong> ${role}</p>
+            <p><strong>Designation:</strong> ${designation}</p>
+            ${employeeId ? `<p><strong>Employee ID:</strong> ${employeeId}</p>` : ''}
+            <p>Click below to set up your account and complete your join:</p>
+            <p><a href="${inviteUrl}" style="display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#60a5fa,#a855f7);color:#fff;text-decoration:none;border-radius:8px;">Accept invitation</a></p>
+            <p style="color:#666;font-size:12px;">This invitation expires in 7 days.</p>
+          `
+        })
+      } catch (emailError) {
+        console.error('Provision invite email failed:', emailError)
+        // Don't fail the request — the invitation is created either way.
+      }
+
+      res.status(201).json({ status: 'invited', inviteId: invitation._id, role, inviteUrl })
+    } catch (error) {
+      console.error('Provision member error:', error)
+      res.status(500).json({ error: error.message || 'Failed to provision member' })
+    }
+  }
+)
+
+/**
  * Mint a short-lived SSO token + deep-link so a member can open their onboarding
  * tasks in the recruiter candidate portal without a separate password.
  * POST /api/organizations/:orgId/members/:memberId/onboarding-sso-token

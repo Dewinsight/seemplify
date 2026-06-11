@@ -1610,6 +1610,100 @@ router.post('/:onboardingId/handoff/retry', async (req, res) => {
   }
 });
 
+// Manually provision the person into the Identity Provider with a chosen role
+// (HR-triggered after a candidate finishes onboarding). Invites a new IdP
+// member, or — if they already are one — pushes the collected profile back.
+router.post('/:onboardingId/provision-idp', async (req, res) => {
+  try {
+    const onboarding = await CandidateOnboarding.findOne({
+      _id: req.params.onboardingId,
+      organization: organizationId(req)
+    }).populate('candidate');
+    if (!onboarding) return res.status(404).json({ msg: 'Onboarding not found' });
+
+    const candidate = onboarding.candidate;
+    if (!candidate?.email) {
+      return res.status(400).json({ msg: 'Candidate has no email address to invite' });
+    }
+
+    const organization = await Organization.findById(organizationId(req));
+    if (!organization?.idpOrganizationId) {
+      return res.status(400).json({ msg: 'Organization is not linked to the Identity Provider' });
+    }
+
+    const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'];
+    const role = String(req.body?.role || 'staff').trim();
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ msg: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
+    }
+
+    const name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email;
+    let result;
+    try {
+      result = await idpService.provisionEmployee(organization.idpOrganizationId, {
+        email: candidate.email,
+        name,
+        role,
+        designation: String(req.body?.designation || candidate.currentPosition || candidate.position || '').trim() || undefined,
+        employeeId: String(req.body?.employeeId || candidate.employeeId || '').trim() || undefined
+      }, req.user.id);
+    } catch (idpError) {
+      const status = idpError.response?.status;
+      const message = idpError.response?.data?.error || idpError.message || 'Failed to provision in the Identity Provider';
+      return res.status(status && status < 500 ? status : 502).json({ msg: message });
+    }
+
+    onboarding.idpProvision = {
+      status: result.status,
+      role: result.role || role,
+      inviteId: result.inviteId ? String(result.inviteId) : undefined,
+      memberId: result.memberId ? String(result.memberId) : undefined,
+      provisionedBy: req.user.id,
+      provisionedAt: new Date()
+    };
+    if (!candidate.isInternalCandidate) {
+      candidate.isInternalCandidate = true;
+      candidate.idpOrganizationId = organization.idpOrganizationId;
+    }
+    if (result.memberId && !candidate.idpAccountId) {
+      candidate.idpAccountId = String(result.memberId);
+    }
+    await Promise.all([onboarding.save(), candidate.save()]);
+
+    await logOnboardingEvent({
+      req,
+      organization: onboarding.organization,
+      onboarding: onboarding._id,
+      candidate: candidate._id,
+      actorType: 'user',
+      actorUser: req.user.id,
+      action: 'idp_provisioned',
+      metadata: { status: result.status, role: result.role || role }
+    });
+
+    // If they already exist in the IdP, push the collected profile/banking now.
+    let writeBackError;
+    if (result.status === 'already_member') {
+      const handoff = await OnboardingHandoff.findOne({
+        onboarding: onboarding._id,
+        target: { $in: ['internal_employee_profile', 'identity_provider'] }
+      }) || await OnboardingHandoff.create({
+        organization: onboarding.organization,
+        onboarding: onboarding._id,
+        candidate: candidate._id,
+        target: 'identity_provider',
+        status: 'pending'
+      });
+      const executed = await onboardingHandoffService.executeHandoff(handoff._id, { userId: req.user.id, req });
+      if (executed && executed.status === 'failed') writeBackError = executed.lastError;
+    }
+
+    res.json({ data: onboarding.idpProvision, writeBackError });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to provision in the Identity Provider', error: error.message });
+  }
+});
+
 router.get('/document-templates', async (req, res) => {
   try {
     const templates = await OnboardingDocumentTemplate.find({ organization: organizationId(req) })

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowRight, CheckCircle2, Clock, Download, Eye, FileSignature, ListChecks, Plus, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock, Download, Eye, FileSignature, ListChecks, Plus, RefreshCw, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdfDocumentPreview } from "@/components/onboarding/pdf-document-preview";
 import { OnboardingStatusBadge } from "@/components/onboarding/status-badge";
@@ -11,10 +11,13 @@ import {
   getEnvelopeDocumentDownloadBlob,
   getEnvelopeDocumentPreviewBlob,
   getOnboarding,
+  provisionInIdp,
   revealFormSubmission,
   retryOnboardingHandoff,
   reviewFormSubmission,
   type CandidateOnboarding,
+  type IdpProvision,
+  type IdpRole,
   type OnboardingAuditEvent,
   type OnboardingEnvelopeDocument,
   type OnboardingFormSubmission,
@@ -33,6 +36,13 @@ function candidateName(onboarding?: CandidateOnboarding | null) {
   return `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim() || candidate.email || "Candidate";
 }
 
+function idpProvisionLabel(provision: IdpProvision) {
+  const role = provision.role ? ` as ${provision.role.replace("_", " ")}` : "";
+  if (provision.status === "invited") return `IdP invite sent${role}`;
+  if (provision.status === "invite_pending") return `IdP invite pending${role}`;
+  return `In Identity Provider${role}`;
+}
+
 function processLabel(onboarding?: CandidateOnboarding | null) {
   const processType = onboarding?.processType || "onboarding";
   if (processType === "exit") return "Exit";
@@ -49,6 +59,8 @@ export default function OnboardingWorkspacePage() {
   const [revealedForms, setRevealedForms] = useState<Record<string, OnboardingFormSubmission>>({});
   const [reviewingFormId, setReviewingFormId] = useState("");
   const [retryingHandoff, setRetryingHandoff] = useState(false);
+  const [provisionRole, setProvisionRole] = useState<IdpRole>("staff");
+  const [provisioning, setProvisioning] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [downloadingReviewKey, setDownloadingReviewKey] = useState("");
   const [reviewError, setReviewError] = useState("");
@@ -102,6 +114,23 @@ export default function OnboardingWorkspacePage() {
       toast.error(error.message || "Failed to retry handoff");
     } finally {
       setRetryingHandoff(false);
+    }
+  }
+
+  async function handleProvision() {
+    try {
+      setProvisioning(true);
+      const result = await provisionInIdp(params.id, { role: provisionRole });
+      const status = result.data?.status;
+      if (status === "already_member") toast.success("Already in the Identity Provider - profile synced");
+      else if (status === "invite_pending") toast.success("An Identity Provider invitation is already pending");
+      else toast.success("Identity Provider invitation sent");
+      if (result.writeBackError) toast.error(`Profile sync issue: ${result.writeBackError}`);
+      await load();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to provision in the Identity Provider");
+    } finally {
+      setProvisioning(false);
     }
   }
 
@@ -216,11 +245,39 @@ export default function OnboardingWorkspacePage() {
             <h1 className="text-3xl font-semibold text-slate-950">{candidateName(onboarding)}</h1>
             <p className="mt-2 text-sm text-slate-600">{onboarding.title}</p>
           </div>
-          {onboarding.portalInviteUrl && (
-            <Button asChild variant="outline">
-              <a href={onboarding.portalInviteUrl} target="_blank" rel="noreferrer">Share invite link</a>
-            </Button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {onboarding.portalInviteUrl && (
+              <Button asChild variant="outline">
+                <a href={onboarding.portalInviteUrl} target="_blank" rel="noreferrer">Share invite link</a>
+              </Button>
+            )}
+            {onboarding.idpProvision ? (
+              <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700">
+                <UserPlus className="h-3.5 w-3.5" />
+                {idpProvisionLabel(onboarding.idpProvision)}
+              </span>
+            ) : (
+              <div className="flex items-center gap-2">
+                <select
+                  value={provisionRole}
+                  onChange={(event) => setProvisionRole(event.target.value as IdpRole)}
+                  disabled={provisioning}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700"
+                  aria-label="Identity Provider role"
+                >
+                  <option value="staff">Staff</option>
+                  <option value="interviewer">Interviewer</option>
+                  <option value="recruiter">Recruiter</option>
+                  <option value="hr_manager">HR manager</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <Button type="button" onClick={handleProvision} disabled={provisioning}>
+                  <UserPlus className="h-4 w-4" />
+                  {provisioning ? "Provisioning..." : "Provision in IdP"}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mb-5 grid gap-3 md:grid-cols-4">
