@@ -169,7 +169,18 @@ function audienceFilter(audience, field = 'audience') {
   return { [field]: normalized };
 }
 
-async function ensureSystemPacketTemplates({ organization, userId }) {
+async function ensureSystemPacketTemplates(opts) {
+  // Seeding is best-effort: a failure (e.g. a shared Mongo cluster at its
+  // collection cap, which can't create a new collection) must not break the
+  // whole templates endpoint and cascade into the wizard's data load.
+  try {
+    await seedSystemPacketTemplates(opts);
+  } catch (error) {
+    console.warn('System packet template seeding skipped:', error.message);
+  }
+}
+
+async function seedSystemPacketTemplates({ organization, userId }) {
   // Life-event packets (workflowType 'onboarding'). These existed before the
   // workflowType field, so the filter treats missing workflowType as onboarding
   // and we stamp it explicitly to upgrade legacy rows in place.

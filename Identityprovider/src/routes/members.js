@@ -1,5 +1,5 @@
 import express from 'express'
-import jwt from 'jsonwebtoken'
+import { SignJWT } from 'jose'
 import crypto from 'crypto'
 import { Account } from '../models/Account.js'
 import { Organization } from '../models/Organization.js'
@@ -915,23 +915,21 @@ router.post('/:orgId/members/:memberId/onboarding-sso-token',
         return res.status(503).json({ error: 'Candidate SSO is not configured' })
       }
 
-      const token = jwt.sign(
-        {
-          idpAccountId: member.account._id.toString(),
-          email: member.account.email,
-          name: member.account.profile?.name || member.account.email,
-          idpOrganizationId: organization._id.toString(),
-          employeeId: member.employeeId || '',
-          jti: crypto.randomUUID()
-        },
-        secret,
-        {
-          algorithm: 'HS256',
-          issuer: String(process.env.IDP_CANDIDATE_SSO_ISSUER || 'aiin-idp'),
-          audience: String(process.env.IDP_CANDIDATE_SSO_AUDIENCE || 'recruiter-candidate-portal'),
-          expiresIn: process.env.IDP_CANDIDATE_SSO_TTL || '5m'
-        }
-      )
+      const token = await new SignJWT({
+        idpAccountId: member.account._id.toString(),
+        email: member.account.email,
+        name: member.account.profile?.name || member.account.email,
+        idpOrganizationId: organization._id.toString(),
+        employeeId: member.employeeId || '',
+        jti: crypto.randomUUID()
+      })
+        .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+        .setIssuer(String(process.env.IDP_CANDIDATE_SSO_ISSUER || 'aiin-idp'))
+        .setAudience(String(process.env.IDP_CANDIDATE_SSO_AUDIENCE || 'recruiter-candidate-portal'))
+        .setSubject(member.account._id.toString())
+        .setIssuedAt()
+        .setExpirationTime(String(process.env.IDP_CANDIDATE_SSO_TTL || '5m'))
+        .sign(new TextEncoder().encode(secret))
 
       const portalBase = String(process.env.RECRUITER_PORTAL_URL || '').replace(/\/+$/, '')
       const url = portalBase ? `${portalBase}/login?idp_token=${encodeURIComponent(token)}` : null
