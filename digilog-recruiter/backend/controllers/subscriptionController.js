@@ -1,11 +1,53 @@
-const SubscriptionRequest = require('../models/SubscriptionRequest');
-const User = require('../models/User');
-const Organization = require('../models/Organization');
-const Admin = require('../models/Admin');
-const Plan = require('../models/Plan');
+const prisma = require('../db/client');
+const { isObjectIdLike } = require('../db/objectId');
+const orgAccess = require('../db/orgAccess');
 const emailService = require('../services/emailService');
 const pdfService = require('../services/pdfService');
 const path = require('path');
+
+/**
+ * Stitch the .populate(...) replacements that the Mongoose version produced on
+ * SubscriptionRequest rows. Each requested ref overwrites the matching id field
+ * with the looked-up document (matching mongoose's populate behaviour).
+ *   - organization -> overwrites `organizationId` with Organization { name }
+ *   - approvedBy    -> overwrites `approvedBy` with Admin { name, email }
+ *   - user          -> overwrites `userId` with User { profile/email }
+ */
+async function stitchSubscriptionRequestRefs(rows, { organization, approvedBy, user } = {}) {
+  const orgIds = organization ? [...new Set(rows.map(r => r.organizationId).filter(Boolean))] : [];
+  const adminIds = approvedBy ? [...new Set(rows.map(r => r.approvedById).filter(Boolean))] : [];
+  const userIds = user ? [...new Set(rows.map(r => r.userId).filter(Boolean))] : [];
+  const [orgs, admins, users] = await Promise.all([
+    orgIds.length ? prisma.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } }) : [],
+    adminIds.length ? prisma.admin.findMany({ where: { id: { in: adminIds } }, select: { id: true, name: true, email: true } }) : [],
+    userIds.length ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, profile: true, email: true } }) : []
+  ]);
+  const orgMap = new Map(orgs.map(o => [o.id, o]));
+  const adminMap = new Map(admins.map(a => [a.id, a]));
+  const userMap = new Map(users.map(u => [u.id, u]));
+  return rows.map(r => {
+    const out = { ...r };
+    if (organization && r.organizationId) out.organizationId = orgMap.get(r.organizationId) || r.organizationId;
+    if (approvedBy && r.approvedById) out.approvedBy = adminMap.get(r.approvedById) || null;
+    if (user && r.userId) out.userId = userMap.get(r.userId) || r.userId;
+    return out;
+  });
+}
+
+/**
+ * Read-modify-write the subscription Json column on a User/Organization to set the
+ * plan + timestamps (replaces the dotted `subscription.plan` $set updates).
+ */
+async function setSubscriptionPlan(delegate, id, requestedPlan) {
+  if (!id) return;
+  const row = await delegate.findUnique({ where: { id } });
+  if (!row) return;
+  const subscription = { ...(row.subscription || {}) };
+  subscription.plan = requestedPlan;
+  subscription.updatedAt = Date.now();
+  subscription.startDate = Date.now();
+  await delegate.update({ where: { id }, data: { subscription } });
+}
 
 /**
  * Helper function to grant credits from a plan to an organization
@@ -20,7 +62,7 @@ async function grantPlanCredits(organizationId, planCode, reason = 'Plan subscri
     console.log(`💳 Granting credits from plan "${planCode}" to organization ${organizationId}`);
     
     // Fetch the plan
-    const plan = await Plan.findOne({ code: planCode.toLowerCase() });
+    const plan = await prisma.plan.findFirst({ where: { code: planCode.toLowerCase() } });
     if (!plan) {
       console.error(`❌ Plan not found: ${planCode}`);
       return { 
@@ -43,7 +85,7 @@ async function grantPlanCredits(organizationId, planCode, reason = 'Plan subscri
     }
     
     // Fetch organization
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       console.error(`❌ Organization not found: ${organizationId}`);
       return { 
@@ -98,8 +140,11 @@ async function grantPlanCredits(organizationId, planCode, reason = 'Plan subscri
       }
     });
     
-    await organization.save();
-    
+    await prisma.organization.update({
+      where: { id: organization.id },
+      data: { subscription: organization.subscription }
+    });
+
     console.log(`✅ Granted ${creditsToGrant} credits to organization ${organization.name}. New balance: ${newBalance}`);
     
     return {
@@ -158,7 +203,7 @@ exports.createUpgradeRequest = async (req, res) => {
     }
     
     // Verify the requested plan exists and is published
-    const plan = await Plan.findOne({ code: requestedPlan, isPublished: true });
+    const plan = await prisma.plan.findFirst({ where: { code: requestedPlan, isPublished: true } });
     if (!plan) {
       return res.status(400).json({
         success: false,
@@ -182,10 +227,12 @@ exports.createUpgradeRequest = async (req, res) => {
     }
 
     // Check if there's already a pending request
-    const existingRequest = await SubscriptionRequest.findOne({
-      userId,
-      ...(requestType === 'organization' ? { organizationId } : {}),
-      status: 'pending'
+    const existingRequest = await prisma.subscriptionRequest.findFirst({
+      where: {
+        userId,
+        ...(requestType === 'organization' ? { organizationId } : {}),
+        status: 'pending'
+      }
     });
 
     if (existingRequest) {
@@ -200,16 +247,13 @@ exports.createUpgradeRequest = async (req, res) => {
     let currentPlan = '';
     
     if (requestType === 'organization') {
-      // Verify user belongs to this organization
-      const organization = await Organization.findOne({
-        _id: organizationId,
-        $or: [
-          { owner: userId },
-          { members: { $elemMatch: { userId, role: 'admin' } } }
-        ]
-      });
+      // Verify user belongs to this organization (owner or admin member)
+      const organization = isObjectIdLike(organizationId)
+        ? await prisma.organization.findUnique({ where: { id: organizationId } })
+        : null;
+      const role = organization ? await orgAccess.getOrgRole(userId, organizationId) : null;
 
-      if (!organization) {
+      if (!organization || !(role === 'owner' || role === 'admin')) {
         return res.status(403).json({
           success: false,
           message: 'You do not have permission to request upgrades for this organization'
@@ -217,13 +261,15 @@ exports.createUpgradeRequest = async (req, res) => {
       }
 
       currentPlan = organization?.subscription?.plan || '';
-      
+
       // If organization has no plan or invalid plan, find default organization plan
       if (!currentPlan) {
-        const defaultPlan = await Plan.findOne({ 
-          planType: 'organization', 
-          isDefault: true,
-          isPublished: true
+        const defaultPlan = await prisma.plan.findFirst({
+          where: {
+            planType: 'organization',
+            isDefault: true,
+            isPublished: true
+          }
         });
         
         if (defaultPlan) {
@@ -239,21 +285,23 @@ exports.createUpgradeRequest = async (req, res) => {
     }
 
     // Create the request
-    const subscriptionRequest = new SubscriptionRequest({
-      requestType,
-      userId,
-      organizationId: requestType === 'organization' ? organizationId : null,
-      currentPlan,
-      requestedPlan,
-      notes,
-      status: 'pending'
+    const subscriptionRequest = await prisma.subscriptionRequest.create({
+      data: {
+        requestType,
+        userId,
+        organizationId: requestType === 'organization' ? organizationId : null,
+        currentPlan,
+        requestedPlan,
+        notes,
+        status: 'pending'
+      }
     });
-
-    await subscriptionRequest.save();
 
     // Notify admins of new request
     try {
-      const admins = await Admin.find({ isSuperAdmin: true });
+      // TODO[pg]: legacy query filtered Admin by `isSuperAdmin` (not a column; matched
+      // no docs in Mongo). Preserving the empty-result behavior with an impossible filter.
+      const admins = await prisma.admin.findMany({ where: { id: { equals: null } } });
       for (const admin of admins) {
         await emailService.sendAdminNotification(
           admin.email,
@@ -287,10 +335,11 @@ exports.createUpgradeRequest = async (req, res) => {
 exports.getUserRequests = async (req, res) => {
   try {
     const userId = req.user.id;
-    const requests = await SubscriptionRequest.find({ userId })
-      .sort({ createdAt: -1 })
-      .populate('organizationId', 'name')
-      .populate('approvedBy', 'name email');
+    const rawRequests = await prisma.subscriptionRequest.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    });
+    const requests = await stitchSubscriptionRequestRefs(rawRequests, { organization: true, approvedBy: true });
 
     res.status(200).json({
       success: true,
@@ -314,29 +363,27 @@ exports.getOrganizationRequests = async (req, res) => {
     const { organizationId } = req.params;
     const userId = req.user.id;
 
-    // Verify user has permission to view org requests
-    const organization = await Organization.findOne({
-      _id: organizationId,
-      $or: [
-        { owner: userId },
-        { members: { $elemMatch: { userId, role: { $in: ['admin', 'owner'] } } } }
-      ]
-    });
+    // Verify user has permission to view org requests (owner or admin/owner member)
+    const organization = isObjectIdLike(organizationId)
+      ? await prisma.organization.findUnique({ where: { id: organizationId } })
+      : null;
+    const role = organization ? await orgAccess.getOrgRole(userId, organizationId) : null;
 
-    if (!organization) {
+    if (!organization || !(role === 'owner' || role === 'admin')) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to view requests for this organization'
       });
     }
 
-    const requests = await SubscriptionRequest.find({ 
-      organizationId,
-      requestType: 'organization'
-    })
-      .sort({ createdAt: -1 })
-      .populate('userId', 'firstName lastName email')
-      .populate('approvedBy', 'name email');
+    const rawRequests = await prisma.subscriptionRequest.findMany({
+      where: {
+        organizationId,
+        requestType: 'organization'
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    const requests = await stitchSubscriptionRequestRefs(rawRequests, { user: true, approvedBy: true });
 
     res.status(200).json({
       success: true,
@@ -360,10 +407,12 @@ exports.cancelRequest = async (req, res) => {
     const { requestId } = req.params;
     const userId = req.user.id;
 
-    const request = await SubscriptionRequest.findOne({
-      _id: requestId,
-      userId,
-      status: 'pending'
+    const request = await prisma.subscriptionRequest.findFirst({
+      where: {
+        id: requestId,
+        userId,
+        status: 'pending'
+      }
     });
 
     if (!request) {
@@ -373,7 +422,7 @@ exports.cancelRequest = async (req, res) => {
       });
     }
 
-    await SubscriptionRequest.findByIdAndDelete(requestId);
+    await prisma.subscriptionRequest.delete({ where: { id: request.id } });
 
     res.status(200).json({
       success: true,
@@ -396,15 +445,15 @@ exports.getAllRequests = async (req, res) => {
   try {
     const { status, type } = req.query;
     const query = {};
-    
+
     if (status) query.status = status;
     if (type) query.requestType = type;
 
-    const requests = await SubscriptionRequest.find(query)
-      .sort({ createdAt: -1 })
-      .populate('userId', 'firstName lastName email')
-      .populate('organizationId', 'name')
-      .populate('approvedBy', 'name email');
+    const rawRequests = await prisma.subscriptionRequest.findMany({
+      where: query,
+      orderBy: { createdAt: 'desc' }
+    });
+    const requests = await stitchSubscriptionRequestRefs(rawRequests, { user: true, organization: true, approvedBy: true });
 
     res.status(200).json({
       success: true,
@@ -428,15 +477,17 @@ exports.generateInvoice = async (req, res) => {
     const { requestId } = req.params;
     
     // Find the subscription request
-    const request = await SubscriptionRequest.findById(requestId);
-    
+    const request = isObjectIdLike(requestId)
+      ? await prisma.subscriptionRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
       return res.status(404).json({
         success: false,
         message: 'Subscription request not found'
       });
     }
-    
+
     // Check if request has invoice status
     if (request.status !== 'invoiced' || !request.invoiceDetails) {
       return res.status(400).json({
@@ -444,28 +495,33 @@ exports.generateInvoice = async (req, res) => {
         message: 'No invoice available for this request'
       });
     }
-    
+
     // Get user and organization data
-    const user = await User.findById(request.userId);
+    const user = request.userId
+      ? await prisma.user.findUnique({ where: { id: request.userId } })
+      : null;
     let organization = null;
-    
+
     if (request.organizationId) {
-      organization = await Organization.findById(request.organizationId);
+      organization = await prisma.organization.findUnique({ where: { id: request.organizationId } });
     }
-    
+
     // Generate PDF
     const pdfDetails = await pdfService.generateInvoicePdf(request, user, organization);
-    
+
     // Update request with invoice URL if not already set
     if (!request.invoiceDetails.invoiceUrl) {
-      request.invoiceDetails.invoiceUrl = `/api/subscription/invoice/${request._id}/pdf`;
-      await request.save();
+      request.invoiceDetails.invoiceUrl = `/api/subscription/invoice/${request.id}/pdf`;
+      await prisma.subscriptionRequest.update({
+        where: { id: request.id },
+        data: { invoiceDetails: request.invoiceDetails }
+      });
     }
-    
+
     res.json({
       success: true,
       message: 'Invoice generated successfully',
-      invoiceUrl: `/api/subscription/invoice/${request._id}/pdf`,
+      invoiceUrl: `/api/subscription/invoice/${request.id}/pdf`,
       invoiceNumber: pdfDetails.invoiceId
     });
     
@@ -485,15 +541,17 @@ exports.getInvoicePdf = async (req, res) => {
     const { requestId } = req.params;
     
     // Find the subscription request
-    const request = await SubscriptionRequest.findById(requestId);
-    
+    const request = isObjectIdLike(requestId)
+      ? await prisma.subscriptionRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
       return res.status(404).json({
         success: false,
         message: 'Subscription request not found'
       });
     }
-    
+
     // Check if request has invoice status
     if (request.status !== 'invoiced' || !request.invoiceDetails) {
       return res.status(400).json({
@@ -501,15 +559,17 @@ exports.getInvoicePdf = async (req, res) => {
         message: 'No invoice available for this request'
       });
     }
-    
+
     // Get user and organization data
-    const user = await User.findById(request.userId);
+    const user = request.userId
+      ? await prisma.user.findUnique({ where: { id: request.userId } })
+      : null;
     let organization = null;
-    
+
     if (request.organizationId) {
-      organization = await Organization.findById(request.organizationId);
+      organization = await prisma.organization.findUnique({ where: { id: request.organizationId } });
     }
-    
+
     // Generate PDF on-the-fly
     const pdfDetails = await pdfService.generateInvoicePdf(request, user, organization);
     
@@ -536,16 +596,25 @@ exports.emailInvoice = async (req, res) => {
     const { requestId } = req.params;
     
     // Find the subscription request with populated user
-    const request = await SubscriptionRequest.findById(requestId)
-      .populate('userId', 'email profile');
-    
+    const request = isObjectIdLike(requestId)
+      ? await prisma.subscriptionRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
       return res.status(404).json({
         success: false,
         message: 'Subscription request not found'
       });
     }
-    
+
+    // Stitch populate('userId', 'email profile')
+    if (request.userId) {
+      request.userId = await prisma.user.findUnique({
+        where: { id: request.userId },
+        select: { id: true, email: true, profile: true }
+      });
+    }
+
     // Check if request has invoice status
     if (request.status !== 'invoiced' || !request.invoiceDetails) {
       return res.status(400).json({
@@ -553,11 +622,11 @@ exports.emailInvoice = async (req, res) => {
         message: 'No invoice available for this request'
       });
     }
-    
+
     // Get organization data if needed
     let organization = null;
     if (request.organizationId) {
-      organization = await Organization.findById(request.organizationId);
+      organization = await prisma.organization.findUnique({ where: { id: request.organizationId } });
     }
     
     // Generate PDF
@@ -626,8 +695,11 @@ exports.emailInvoice = async (req, res) => {
     
     // Update request with sent timestamp
     request.invoiceDetails.invoiceSentAt = Date.now();
-    await request.save();
-    
+    await prisma.subscriptionRequest.update({
+      where: { id: request.id },
+      data: { invoiceDetails: request.invoiceDetails }
+    });
+
     res.json({
       success: true,
       message: 'Invoice email sent successfully with attachment',
@@ -657,8 +729,10 @@ exports.updateRequestStatus = async (req, res) => {
       });
     }
 
-    const request = await SubscriptionRequest.findById(requestId);
-    
+    const request = isObjectIdLike(requestId)
+      ? await prisma.subscriptionRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
       return res.status(404).json({
         success: false,
@@ -667,27 +741,19 @@ exports.updateRequestStatus = async (req, res) => {
     }
 
     // Update request
-    request.status = status;
-    if (adminNotes) request.adminNotes = adminNotes;
-    
+    const data = { status };
+    if (adminNotes) data.adminNotes = adminNotes;
+
     if (status === 'approved') {
-      request.approvedBy = adminId;
-      request.approvalDate = Date.now();
-      
+      data.approvedById = adminId;
+      data.approvalDate = new Date();
+
       // Update the actual subscription plan
       if (request.requestType === 'user') {
-        await User.findByIdAndUpdate(request.userId, {
-          'subscription.plan': request.requestedPlan,
-          'subscription.updatedAt': Date.now(),
-          'subscription.startDate': Date.now()
-        });
+        await setSubscriptionPlan(prisma.user, request.userId, request.requestedPlan);
       } else if (request.requestType === 'organization') {
-        await Organization.findByIdAndUpdate(request.organizationId, {
-          'subscription.plan': request.requestedPlan,
-          'subscription.updatedAt': Date.now(),
-          'subscription.startDate': Date.now()
-        });
-        
+        await setSubscriptionPlan(prisma.organization, request.organizationId, request.requestedPlan);
+
         // Grant credits from the new plan (TOP UP behavior)
         console.log(`💳 Granting credits for approved plan: ${request.requestedPlan}`);
         const creditResult = await grantPlanCredits(
@@ -696,30 +762,34 @@ exports.updateRequestStatus = async (req, res) => {
           'Subscription plan upgrade approved',
           adminId
         );
-        
+
         if (creditResult.success) {
           console.log(`✅ Credits granted: ${creditResult.creditsGranted}, New balance: ${creditResult.newBalance}`);
-          // Store credit info in request for reference
-          request.creditInfo = {
-            creditsGranted: creditResult.creditsGranted,
-            newBalance: creditResult.newBalance
-          };
+          // Note: legacy code set request.creditInfo here, but creditInfo is not a
+          // persisted SubscriptionRequest field (Mongo strict schema dropped it), so
+          // it is intentionally not written.
         } else {
           console.error(`❌ Failed to grant credits: ${creditResult.message}`);
         }
       }
     } else if (status === 'invoiced' && invoiceDetails) {
-      request.invoiceDetails = {
+      data.invoiceDetails = {
         ...invoiceDetails,
         paid: false
       };
     }
 
-    await request.save();
+    const updatedRequest = await prisma.subscriptionRequest.update({
+      where: { id: request.id },
+      data
+    });
+    Object.assign(request, updatedRequest);
 
     // Notify user of status change
     try {
-      const user = await User.findById(request.userId);
+      const user = request.userId
+        ? await prisma.user.findUnique({ where: { id: request.userId } })
+        : null;
       if (user && user.email) {
         let emailSubject, emailContent;
         
@@ -763,8 +833,10 @@ exports.markInvoicePaid = async (req, res) => {
     const { requestId } = req.params;
     const adminId = req.admin.id;
 
-    const request = await SubscriptionRequest.findById(requestId);
-    
+    const request = isObjectIdLike(requestId)
+      ? await prisma.subscriptionRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
       return res.status(404).json({
         success: false,
@@ -779,28 +851,29 @@ exports.markInvoicePaid = async (req, res) => {
       });
     }
 
-    // Update invoice status and approve the request
-    request.invoiceDetails.paid = true;
+    // Update invoice status and approve the request (invoiceDetails is a Json column)
+    const invoiceDetails = { ...(request.invoiceDetails || {}), paid: true };
+    request.invoiceDetails = invoiceDetails;
     request.status = 'approved';
-    request.approvedBy = adminId;
-    request.approvalDate = Date.now();
-    
-    await request.save();
+    request.approvalDate = new Date();
+
+    const updatedRequest = await prisma.subscriptionRequest.update({
+      where: { id: request.id },
+      data: {
+        invoiceDetails,
+        status: 'approved',
+        approvedById: adminId,
+        approvalDate: request.approvalDate
+      }
+    });
+    Object.assign(request, updatedRequest);
 
     // Update the actual subscription plan
     if (request.requestType === 'user') {
-      await User.findByIdAndUpdate(request.userId, {
-        'subscription.plan': request.requestedPlan,
-        'subscription.updatedAt': Date.now(),
-        'subscription.startDate': Date.now()
-      });
+      await setSubscriptionPlan(prisma.user, request.userId, request.requestedPlan);
     } else if (request.requestType === 'organization') {
-      await Organization.findByIdAndUpdate(request.organizationId, {
-        'subscription.plan': request.requestedPlan,
-        'subscription.updatedAt': Date.now(),
-        'subscription.startDate': Date.now()
-      });
-      
+      await setSubscriptionPlan(prisma.organization, request.organizationId, request.requestedPlan);
+
       // Grant credits from the new plan (TOP UP behavior)
       console.log(`💳 Granting credits after invoice payment: ${request.requestedPlan}`);
       const creditResult = await grantPlanCredits(
@@ -809,15 +882,11 @@ exports.markInvoicePaid = async (req, res) => {
         'Subscription plan upgrade (invoice paid)',
         adminId
       );
-      
+
       if (creditResult.success) {
         console.log(`✅ Credits granted after payment: ${creditResult.creditsGranted}, New balance: ${creditResult.newBalance}`);
-        // Store credit info in request for reference
-        request.creditInfo = {
-          creditsGranted: creditResult.creditsGranted,
-          newBalance: creditResult.newBalance
-        };
-        await request.save();
+        // Note: creditInfo is not a persisted SubscriptionRequest field (dropped by the
+        // Mongo strict schema), so it is intentionally not written.
       } else {
         console.error(`❌ Failed to grant credits after payment: ${creditResult.message}`);
       }
@@ -825,7 +894,9 @@ exports.markInvoicePaid = async (req, res) => {
 
     // Notify user
     try {
-      const user = await User.findById(request.userId);
+      const user = request.userId
+        ? await prisma.user.findUnique({ where: { id: request.userId } })
+        : null;
       if (user && user.email) {
         const emailSubject = 'Your Subscription Has Been Upgraded';
         const emailContent = `Your payment for the ${request.requestedPlan} plan has been received and your subscription has been upgraded.`;

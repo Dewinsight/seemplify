@@ -1,4 +1,4 @@
-const ChatSession = require('../models/ChatSession');
+const prisma = require('../db/client');
 const memoryService = require('./memoryService');
 const AzureOpenAIService = require('./azureOpenAIService'); // Added for LLM title generation
 
@@ -14,17 +14,18 @@ class ChatSessionService {
         throw new Error('Organization ID is required for creating chat sessions');
       }
       
-      const chatSession = new ChatSession({
-        sessionId,
-        userId,
-        organizationId,
-        title,
-        description: '',
-        isActive: true,
-        messageCount: 0
+      const chatSession = await prisma.chatSession.create({
+        data: {
+          sessionId,
+          userId,
+          organizationId,
+          title,
+          description: '',
+          isActive: true,
+          messageCount: 0
+        }
       });
 
-      await chatSession.save();
       console.log(`💬 Created new chat session: ${sessionId} for user: ${userId}, organization: ${organizationId}`);
       
       return chatSession;
@@ -49,10 +50,11 @@ class ChatSessionService {
         query.organizationId = organizationId;
       }
       
-      const sessions = await ChatSession.find(query)
-      .sort({ isPinned: -1, lastActivity: -1 })
-      .limit(limit)
-      .lean();
+      const sessions = await prisma.chatSession.findMany({
+        where: query,
+        orderBy: [{ isPinned: 'desc' }, { lastActivity: 'desc' }],
+        take: limit
+      });
 
       console.log(`📚 Retrieved ${sessions.length} chat sessions for user: ${userId}, organization: ${organizationId}`);
       return sessions;
@@ -74,7 +76,7 @@ class ChatSessionService {
         query.organizationId = organizationId;
       }
       
-      const session = await ChatSession.findOne(query).lean();
+      const session = await prisma.chatSession.findFirst({ where: query });
       return session;
     } catch (error) {
       console.error('❌ Error getting chat session:', error);
@@ -87,6 +89,27 @@ class ChatSessionService {
    */
   async updateChatSession(sessionId, messageContent, messageType = 'user', metadata = {}) {
     try {
+      // Fetch existing session so we can read-modify-write the Json metadata column
+      const existing = await prisma.chatSession.findFirst({ where: { sessionId, isActive: true } });
+      if (!existing) {
+        return null;
+      }
+
+      const nextMetadata = { ...(existing.metadata || {}) };
+      // Update metadata if provided
+      if (metadata.intent) {
+        nextMetadata.intent = metadata.intent;
+      }
+      if (metadata.topics && metadata.topics.length > 0) {
+        nextMetadata.topics = metadata.topics;
+      }
+      if (metadata.confidence) {
+        nextMetadata.avgConfidence = metadata.confidence;
+      }
+      if (metadata.dataUsed) {
+        nextMetadata.dataUsed = metadata.dataUsed;
+      }
+
       const updateData = {
         lastMessage: {
           content: messageContent.substring(0, 200), // Truncate for storage
@@ -94,28 +117,14 @@ class ChatSessionService {
           type: messageType
         },
         lastActivity: new Date(),
-        $inc: { messageCount: 1 }
+        messageCount: { increment: 1 },
+        metadata: nextMetadata
       };
 
-      // Update metadata if provided
-      if (metadata.intent) {
-        updateData['metadata.intent'] = metadata.intent;
-      }
-      if (metadata.topics && metadata.topics.length > 0) {
-        updateData['metadata.topics'] = metadata.topics;
-      }
-      if (metadata.confidence) {
-        updateData['metadata.avgConfidence'] = metadata.confidence;
-      }
-      if (metadata.dataUsed) {
-        updateData['metadata.dataUsed'] = metadata.dataUsed;
-      }
-
-      const session = await ChatSession.findOneAndUpdate(
-        { sessionId, isActive: true },
-        updateData,
-        { new: true }
-      );
+      const session = await prisma.chatSession.update({
+        where: { id: existing.id },
+        data: updateData
+      });
 
       if (session) {
         console.log(`📝 Updated chat session: ${sessionId}`);
@@ -133,11 +142,13 @@ class ChatSessionService {
    */
   async updateChatSessionTitle(sessionId, userId, title) {
     try {
-      const session = await ChatSession.findOneAndUpdate(
-        { sessionId, userId, isActive: true },
-        { title, updatedAt: new Date() },
-        { new: true }
-      );
+      const existing = await prisma.chatSession.findFirst({ where: { sessionId, userId, isActive: true } });
+      const session = existing
+        ? await prisma.chatSession.update({
+            where: { id: existing.id },
+            data: { title, updatedAt: new Date() }
+          })
+        : null;
 
       if (session) {
         console.log(`📝 Updated chat session title: ${sessionId} -> ${title}`);
@@ -155,14 +166,16 @@ class ChatSessionService {
    */
   async toggleChatSessionPin(sessionId, userId) {
     try {
-      const session = await ChatSession.findOne({ sessionId, userId, isActive: true });
-      
-      if (!session) {
+      const existing = await prisma.chatSession.findFirst({ where: { sessionId, userId, isActive: true } });
+
+      if (!existing) {
         throw new Error('Chat session not found');
       }
 
-      session.isPinned = !session.isPinned;
-      await session.save();
+      const session = await prisma.chatSession.update({
+        where: { id: existing.id },
+        data: { isPinned: !existing.isPinned }
+      });
 
       console.log(`📌 ${session.isPinned ? 'Pinned' : 'Unpinned'} chat session: ${sessionId}`);
       return session;
@@ -177,11 +190,13 @@ class ChatSessionService {
    */
   async deleteChatSession(sessionId, userId) {
     try {
-      const session = await ChatSession.findOneAndUpdate(
-        { sessionId, userId, isActive: true },
-        { isActive: false, updatedAt: new Date() },
-        { new: true }
-      );
+      const existing = await prisma.chatSession.findFirst({ where: { sessionId, userId, isActive: true } });
+      const session = existing
+        ? await prisma.chatSession.update({
+            where: { id: existing.id },
+            data: { isActive: false, updatedAt: new Date() }
+          })
+        : null;
 
       if (session) {
         // Also clear the memory for this chat session
@@ -254,10 +269,10 @@ class ChatSessionService {
       }
 
       // Update the session title
-      await ChatSession.findOneAndUpdate(
-        { sessionId, isActive: true },
-        { title: finalTitle, updatedAt: new Date() }
-      );
+      await prisma.chatSession.updateMany({
+        where: { sessionId, isActive: true },
+        data: { title: finalTitle, updatedAt: new Date() }
+      });
 
       console.log(`🏷️ Auto-generated title for ${sessionId} (source: ${titleSource}): ${finalTitle}`);
       return finalTitle;
@@ -265,10 +280,10 @@ class ChatSessionService {
       console.error('❌ Error in autoGenerateTitle:', error);
       // Attempt to save with a very basic fallback if all else fails
       try {
-        await ChatSession.findOneAndUpdate(
-          { sessionId, isActive: true },
-          { title: 'Chat Session', updatedAt: new Date() }
-        );
+        await prisma.chatSession.updateMany({
+          where: { sessionId, isActive: true },
+          data: { title: 'Chat Session', updatedAt: new Date() }
+        });
       } catch (dbError) {
         console.error('❌❌ Failed to even save basic fallback title:', dbError);
       }
@@ -281,24 +296,30 @@ class ChatSessionService {
    */
   async getChatSessionStats(userId) {
     try {
-      const stats = await ChatSession.aggregate([
-        { $match: { userId, isActive: true } },
-        {
-          $group: {
-            _id: null,
-            totalSessions: { $sum: 1 },
-            totalMessages: { $sum: '$messageCount' },
-            pinnedSessions: { $sum: { $cond: ['$isPinned', 1, 0] } },
-            avgMessagesPerSession: { $avg: '$messageCount' }
-          }
-        }
-      ]);
+      const rows = await prisma.chatSession.findMany({
+        where: { userId, isActive: true },
+        select: { messageCount: true, isPinned: true }
+      });
 
-      return stats[0] || {
-        totalSessions: 0,
-        totalMessages: 0,
-        pinnedSessions: 0,
-        avgMessagesPerSession: 0
+      if (rows.length === 0) {
+        return {
+          totalSessions: 0,
+          totalMessages: 0,
+          pinnedSessions: 0,
+          avgMessagesPerSession: 0
+        };
+      }
+
+      const totalSessions = rows.length;
+      const totalMessages = rows.reduce((sum, r) => sum + (r.messageCount || 0), 0);
+      const pinnedSessions = rows.reduce((sum, r) => sum + (r.isPinned ? 1 : 0), 0);
+      const avgMessagesPerSession = totalMessages / totalSessions;
+
+      return {
+        totalSessions,
+        totalMessages,
+        pinnedSessions,
+        avgMessagesPerSession
       };
     } catch (error) {
       console.error('❌ Error getting chat session stats:', error);
@@ -314,13 +335,15 @@ class ChatSessionService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
-      const result = await ChatSession.deleteMany({
-        isActive: false,
-        updatedAt: { $lt: cutoffDate }
+      const result = await prisma.chatSession.deleteMany({
+        where: {
+          isActive: false,
+          updatedAt: { lt: cutoffDate }
+        }
       });
 
-      console.log(`🧹 Cleaned up ${result.deletedCount} old chat sessions`);
-      return result.deletedCount;
+      console.log(`🧹 Cleaned up ${result.count} old chat sessions`);
+      return result.count;
     } catch (error) {
       console.error('❌ Error cleaning up old sessions:', error);
       throw error;
@@ -332,14 +355,16 @@ class ChatSessionService {
    */
   async migrateSessionOwnership(sessionId, newUserId) {
     try {
-      const session = await ChatSession.findOneAndUpdate(
-        { sessionId, isActive: true },
-        { 
-          userId: newUserId,
-          lastActivity: new Date()
-        },
-        { new: true }
-      ).lean();
+      const existing = await prisma.chatSession.findFirst({ where: { sessionId, isActive: true } });
+      const session = existing
+        ? await prisma.chatSession.update({
+            where: { id: existing.id },
+            data: {
+              userId: newUserId,
+              lastActivity: new Date()
+            }
+          })
+        : null;
 
       if (session) {
         console.log(`✅ Migrated session ${sessionId} to user ${newUserId}`);

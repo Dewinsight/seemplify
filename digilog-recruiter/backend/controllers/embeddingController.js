@@ -1,6 +1,5 @@
 const embeddingService = require('../services/embeddingService');
-const Job = require('../models/Job');
-const Candidate = require('../models/Candidate');
+const prisma = require('../db/client');
 
 /**
  * Re-embed all jobs (fixes skills parsing issue)
@@ -79,29 +78,33 @@ exports.getEmbeddingStatus = async (req, res) => {
     console.log('📊 Getting embedding status overview...');
     
     // Get job embedding status
-    const totalJobs = await Job.countDocuments();
-    const embeddedJobs = await Job.countDocuments({ isEmbedded: true });
-    
+    const totalJobs = await prisma.job.count();
+    const embeddedJobs = await prisma.job.count({ where: { isEmbedded: true } });
+
     // Get candidate embedding status
-    const totalCandidates = await Candidate.countDocuments();
-    const embeddedCandidates = await Candidate.countDocuments({ isEmbedded: true });
-    
+    const totalCandidates = await prisma.candidate.count();
+    const embeddedCandidates = await prisma.candidate.count({ where: { isEmbedded: true } });
+
     // Get recent embedding activity
-    const recentJobEmbeddings = await Job.find({ 
-      isEmbedded: true,
-      embeddingCreatedAt: { $exists: true }
-    })
-    .sort({ embeddingCreatedAt: -1 })
-    .limit(5)
-    .select('title embeddingCreatedAt');
-    
-    const recentCandidateEmbeddings = await Candidate.find({ 
-      isEmbedded: true,
-      embeddingCreatedAt: { $exists: true }
-    })
-    .sort({ embeddingCreatedAt: -1 })
-    .limit(5)
-    .select('firstName lastName embeddingCreatedAt');
+    const recentJobEmbeddings = await prisma.job.findMany({
+      where: {
+        isEmbedded: true,
+        embeddingCreatedAt: { not: null }
+      },
+      orderBy: { embeddingCreatedAt: 'desc' },
+      take: 5,
+      select: { id: true, title: true, embeddingCreatedAt: true }
+    });
+
+    const recentCandidateEmbeddings = await prisma.candidate.findMany({
+      where: {
+        isEmbedded: true,
+        embeddingCreatedAt: { not: null }
+      },
+      orderBy: { embeddingCreatedAt: 'desc' },
+      take: 5,
+      select: { id: true, firstName: true, lastName: true, embeddingCreatedAt: true }
+    });
     
     const status = {
       jobs: {
@@ -140,7 +143,7 @@ exports.reEmbedJob = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const job = await Job.findById(id);
+    const job = await prisma.job.findUnique({ where: { id } });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
@@ -159,16 +162,17 @@ exports.reEmbedJob = async (req, res) => {
     await embeddingService.createJobEmbedding(job);
     
     // Update job document
-    job.isEmbedded = true;
-    job.embeddingCreatedAt = new Date();
-    await job.save();
-    
+    const updatedJob = await prisma.job.update({
+      where: { id: job.id },
+      data: { isEmbedded: true, embeddingCreatedAt: new Date() }
+    });
+
     res.json({
       msg: 'Job re-embedded successfully',
       job: {
-        id: job._id,
-        title: job.title,
-        embeddingCreatedAt: job.embeddingCreatedAt
+        id: updatedJob._id,
+        title: updatedJob.title,
+        embeddingCreatedAt: updatedJob.embeddingCreatedAt
       }
     });
     
@@ -188,7 +192,7 @@ exports.reEmbedCandidate = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const candidate = await Candidate.findById(id);
+    const candidate = await prisma.candidate.findUnique({ where: { id } });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
@@ -207,16 +211,17 @@ exports.reEmbedCandidate = async (req, res) => {
     await embeddingService.createCandidateEmbedding(candidate);
     
     // Update candidate document
-    candidate.isEmbedded = true;
-    candidate.embeddingCreatedAt = new Date();
-    await candidate.save();
-    
+    const updatedCandidate = await prisma.candidate.update({
+      where: { id: candidate.id },
+      data: { isEmbedded: true, embeddingCreatedAt: new Date() }
+    });
+
     res.json({
       msg: 'Candidate re-embedded successfully',
       candidate: {
-        id: candidate._id,
-        name: `${candidate.firstName} ${candidate.lastName}`,
-        embeddingCreatedAt: candidate.embeddingCreatedAt
+        id: updatedCandidate._id,
+        name: `${updatedCandidate.firstName} ${updatedCandidate.lastName}`,
+        embeddingCreatedAt: updatedCandidate.embeddingCreatedAt
       }
     });
     

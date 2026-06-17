@@ -1,6 +1,4 @@
-const Interview = require('../models/Interview');
-const User = require('../models/User');
-const NylasAccount = require('../models/NylasAccount');
+const prisma = require('../db/client');
 const nylasV3Service = require('../services/nylasV3Service');
 const emailService = require('../services/emailService');
 const { handleInterviewError } = require('../utils/errorHandler');
@@ -10,8 +8,8 @@ const transcriptSegmentationService = require('../services/transcriptSegmentatio
 // Helper function to get account credentials for a user
 async function getAccountCredentials(user) {
   if (!user.nylasAccountId) return null;
-  
-  const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+
+  const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
   if (!nylasAccount) return null;
   
   return {
@@ -59,10 +57,10 @@ const handleNotetakerWebhook = async (req, res) => {
       case 'notetaker.created':
         // Notetaker was successfully created
         console.log('Notetaker created:', notetakerId);
-        await Interview.findOneAndUpdate(
-          { notetakerId: notetakerId },
-          { notetakerStatus: 'scheduled' }
-        );
+        await prisma.interview.updateMany({
+          where: { notetakerId: notetakerId },
+          data: { notetakerStatus: 'scheduled' }
+        });
         break;
         
       case 'notetaker.meeting_state':
@@ -74,29 +72,31 @@ const handleNotetakerWebhook = async (req, res) => {
         
         // Update interview based on meeting state
         const mappedStatus = mapNotetakerStatus(meetingState, state);
-        const interview = await Interview.findOneAndUpdate(
-          { notetakerId: notetakerId },
-          { 
-            notetakerStatus: mappedStatus
-          },
-          { new: true }
-        );
-        
+        let interview = await prisma.interview.findFirst({ where: { notetakerId: notetakerId } });
+        if (interview) {
+          interview = await prisma.interview.update({
+            where: { id: interview.id },
+            data: {
+              notetakerStatus: mappedStatus
+            }
+          });
+        }
+
         // If notetaker status becomes 'completed', check if we should complete the interview
         if (interview && mappedStatus === 'completed' && interview.status !== 'completed') {
           console.log(`🤖 [AUTO-COMPLETE] Notetaker completed for interview ${interview._id}, checking for completion...`);
-          
+
           // Check if we have transcript content or if enough time has passed since meeting end
-          const shouldComplete = interview.transcript?.content || 
+          const shouldComplete = interview.transcript?.content ||
                                 interview.transcriptAvailableAt ||
-                                (interview.scheduledAt && 
+                                (interview.scheduledAt &&
                                  new Date() > new Date(interview.scheduledAt.getTime() + (interview.duration + 10) * 60 * 1000));
-          
+
           if (shouldComplete) {
             console.log(`✅ [AUTO-COMPLETE] Completing interview ${interview._id} - notetaker finished and conditions met`);
             interview.status = 'completed';
-            await interview.save();
-            
+            await prisma.interview.update({ where: { id: interview.id }, data: { status: 'completed' } });
+
             // Update pipeline status
             await updatePipelineStatusOnCompletion(interview);
           } else {
@@ -108,19 +108,27 @@ const handleNotetakerWebhook = async (req, res) => {
         if (meetingState === 'failed_entry') {
           const diagnosticMessage = 'Notetaker failed_entry: bot could not join the meeting. Check Teams lobby policy, join-before-host, and Nylas Teams prerequisites.';
           console.error('Notetaker failed to join meeting - may need approval or meeting settings issue');
-          const failedInterview = await Interview.findOneAndUpdate(
-            { notetakerId: notetakerId },
-            { 
-              notetakerStatus: 'failed',
-              notetakerError: diagnosticMessage
-            },
-            { new: true }
-          );
+          const existingFailed = await prisma.interview.findFirst({ where: { notetakerId: notetakerId } });
+          const failedInterview = existingFailed
+            ? await prisma.interview.update({
+                where: { id: existingFailed.id },
+                data: {
+                  notetakerStatus: 'failed',
+                  notetakerError: diagnosticMessage
+                }
+              })
+            : null;
 
           try {
             const interviewWithInterviewer = failedInterview
-              ? await Interview.findById(failedInterview._id).populate('interviewerId', 'email name')
+              ? await prisma.interview.findUnique({ where: { id: failedInterview.id } })
               : null;
+            if (interviewWithInterviewer && interviewWithInterviewer.interviewerId) {
+              interviewWithInterviewer.interviewerId = await prisma.user.findUnique({
+                where: { id: interviewWithInterviewer.interviewerId },
+                select: { email: true, profile: true }
+              });
+            }
 
             const recipient = interviewWithInterviewer?.interviewerId?.email;
             if (recipient) {
@@ -156,21 +164,23 @@ const handleNotetakerWebhook = async (req, res) => {
         
         if (mediaState === 'available' && notetaker.media) {
           // Media is ready for download
-          const interview = await Interview.findOneAndUpdate(
-            { notetakerId: notetakerId },
-            {
-              status: 'completed',
-              notetakerStatus: 'completed',
-              transcriptAvailableAt: new Date(),
-              recordingUrl: notetaker.media.recording,
-              transcript: {
-                url: notetaker.media.transcript,
-                available: true
-              }
-            },
-            { new: true }
-          );
-          
+          const existingMedia = await prisma.interview.findFirst({ where: { notetakerId: notetakerId } });
+          const interview = existingMedia
+            ? await prisma.interview.update({
+                where: { id: existingMedia.id },
+                data: {
+                  status: 'completed',
+                  notetakerStatus: 'completed',
+                  transcriptAvailableAt: new Date(),
+                  recordingUrl: notetaker.media.recording,
+                  transcript: {
+                    url: notetaker.media.transcript,
+                    available: true
+                  }
+                }
+              })
+            : null;
+
           if (interview) {
             console.log(`✅ Interview ${interview._id} automatically completed - media available`);
             console.log(`📹 Recording URL: ${notetaker.media.recording}`);
@@ -181,10 +191,10 @@ const handleNotetakerWebhook = async (req, res) => {
             await updatePipelineStatusOnCompletion(interview);
           }
         } else if (mediaState === 'processing') {
-          await Interview.findOneAndUpdate(
-            { notetakerId: notetakerId },
-            { notetakerStatus: 'processing' }
-          );
+          await prisma.interview.updateMany({
+            where: { notetakerId: notetakerId },
+            data: { notetakerStatus: 'processing' }
+          });
         }
         break;
         
@@ -198,26 +208,29 @@ const handleNotetakerWebhook = async (req, res) => {
         }
         
         if (Object.keys(updatedFields).length > 0) {
-          const updatedInterview = await Interview.findOneAndUpdate(
-            { notetakerId: notetakerId },
-            updatedFields,
-            { new: true }
-          );
-          
+          const existingUpdated = await prisma.interview.findFirst({ where: { notetakerId: notetakerId } });
+          let updatedInterview = null;
+          if (existingUpdated) {
+            updatedInterview = await prisma.interview.update({
+              where: { id: existingUpdated.id },
+              data: updatedFields
+            });
+          }
+
           // Check if this update should trigger completion
           if (updatedInterview && updatedFields.notetakerStatus === 'completed' && updatedInterview.status !== 'completed') {
             console.log(`🤖 [AUTO-COMPLETE] Notetaker updated to completed for interview ${updatedInterview._id}`);
-            
+
             // Check if we should complete the interview
-            const shouldComplete = updatedInterview.transcript?.content || 
+            const shouldComplete = updatedInterview.transcript?.content ||
                                   updatedInterview.transcriptAvailableAt ||
-                                  (updatedInterview.scheduledAt && 
+                                  (updatedInterview.scheduledAt &&
                                    new Date() > new Date(updatedInterview.scheduledAt.getTime() + (updatedInterview.duration + 10) * 60 * 1000));
-            
+
             if (shouldComplete) {
               console.log(`✅ [AUTO-COMPLETE] Completing interview ${updatedInterview._id} from notetaker.updated`);
               updatedInterview.status = 'completed';
-              await updatedInterview.save();
+              await prisma.interview.update({ where: { id: updatedInterview.id }, data: { status: 'completed' } });
               await updatePipelineStatusOnCompletion(updatedInterview);
             }
           }
@@ -227,13 +240,13 @@ const handleNotetakerWebhook = async (req, res) => {
       case 'notetaker.deleted':
         // Notetaker was deleted
         console.log('Notetaker deleted:', notetakerId);
-        await Interview.findOneAndUpdate(
-          { notetakerId: notetakerId },
-          { 
+        await prisma.interview.updateMany({
+          where: { notetakerId: notetakerId },
+          data: {
             notetakerStatus: 'deleted',
             notetakerEnabled: false
           }
-        );
+        });
         break;
         
       default:
@@ -342,15 +355,32 @@ const getTranscript = async (req, res) => {
     const { interviewId } = req.params;
     const { includeOverflow = true, viewFullSession = false } = req.query;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId')
-      .populate('candidateId', 'firstName lastName email')
-      .populate('jobId', 'title company');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+
+    // Stitch soft-ref relations to preserve the populated shape
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
+    if (interview.candidateId) {
+      interview.candidateId = await prisma.candidate.findUnique({
+        where: { id: interview.candidateId },
+        select: { id: true, firstName: true, lastName: true, email: true }
+      });
+    }
+    if (interview.jobId) {
+      interview.jobId = await prisma.job.findUnique({
+        where: { id: interview.jobId },
+        select: { id: true, title: true }
+      });
+    }
+
     // Handle multi-candidate interview transcripts
     if (interview.isMultiCandidate) {
       try {
@@ -428,7 +458,7 @@ const getTranscript = async (req, res) => {
           if (media.recording && media.recording.url) {
             recordingUrl = media.recording.url;
             interview.recordingUrl = recordingUrl;
-            await interview.save();
+            await prisma.interview.update({ where: { id: interview.id }, data: { recordingUrl } });
           }
         } catch (mediaError) {
           console.log('Could not fetch recording URL:', mediaError.message);
@@ -477,14 +507,14 @@ const getTranscript = async (req, res) => {
         
         // Update the interview to reflect that the notetaker is no longer available
         interview.notetakerStatus = 'deleted';
-        await interview.save();
-        
+        await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: 'deleted' } });
+
         return res.status(404).json({
           error: 'Notetaker was automatically cleaned up (likely due to meeting not starting or timeout)',
           suggestion: 'You can create a new notetaker if you need to record a meeting'
         });
       }
-      
+
       if (media.status === 'fulfilled' && media.value.recording) {
         recordingUrl = media.value.recording.url;
       }
@@ -496,14 +526,14 @@ const getTranscript = async (req, res) => {
         
         // Update the interview to reflect that the notetaker is no longer available
         interview.notetakerStatus = 'deleted';
-        await interview.save();
-        
+        await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: 'deleted' } });
+
         return res.status(404).json({
           error: 'Notetaker was automatically cleaned up (likely due to meeting not starting or timeout)',
           suggestion: 'You can create a new notetaker if you need to record a meeting'
         });
       }
-      
+
       console.error('Error fetching transcript/media:', error);
       throw error;
     }
@@ -540,17 +570,26 @@ const getTranscript = async (req, res) => {
       if (recordingUrl) {
         interview.recordingUrl = recordingUrl;
       }
-      
+
       // Automatically mark interview as completed when transcript is available
       if (interview.status !== 'completed') {
         console.log(`✅ [AUTO-COMPLETE] Marking interview ${interview._id} as completed - transcript content available`);
         interview.status = 'completed';
-        
+
         // Update pipeline status as well
         await updatePipelineStatusOnCompletion(interview);
       }
-      
-      await interview.save();
+
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: {
+          transcript: interview.transcript,
+          transcriptAvailableAt: interview.transcriptAvailableAt,
+          notetakerType: interview.notetakerType,
+          recordingUrl: interview.recordingUrl,
+          status: interview.status
+        }
+      });
     }
     
     console.log(`📤 Sending transcript response:`, {
@@ -597,13 +636,18 @@ const enableNotetaker = async (req, res) => {
       return res.status(400).json({ error: 'Meeting link is required' });
     }
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
+
     if (interview.notetakerEnabled && interview.notetakerId) {
       return res.status(400).json({ error: 'Notetaker already enabled for this interview' });
     }
@@ -611,8 +655,7 @@ const enableNotetaker = async (req, res) => {
     // Get account credentials if interviewer has a linked Nylas account
     let accountCredentials = null;
     if (interview.interviewerId?.nylasAccountId) {
-      const NylasAccount = require('../models/NylasAccount');
-      const nylasAccount = await NylasAccount.findById(interview.interviewerId.nylasAccountId).select('+apiKey');
+      const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interview.interviewerId.nylasAccountId } });
       if (nylasAccount) {
         accountCredentials = {
           apiKey: nylasAccount.apiKey,
@@ -644,8 +687,16 @@ const enableNotetaker = async (req, res) => {
     interview.notetakerId = notetakerId;
     interview.notetakerType = 'standalone';
     interview.notetakerStatus = 'enabled';
-    await interview.save();
-    
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: {
+        notetakerEnabled: true,
+        notetakerId: notetakerId,
+        notetakerType: 'standalone',
+        notetakerStatus: 'enabled'
+      }
+    });
+
     res.json({
       success: true,
       notetakerId: notetakerId,
@@ -665,13 +716,18 @@ const cancelNotetaker = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
+
     if (!interview.notetakerId) {
       return res.status(400).json({ error: 'No notetaker to cancel' });
     }
@@ -711,9 +767,16 @@ const cancelNotetaker = async (req, res) => {
       interview.notetakerEnabled = false;
       interview.notetakerType = 'standalone';
       interview.notetakerStatus = 'cancelled';
-      await interview.save();
-      
-      res.json({ 
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: {
+          notetakerEnabled: false,
+          notetakerType: 'standalone',
+          notetakerStatus: 'cancelled'
+        }
+      });
+
+      res.json({
         success: true,
         message: `Notetaker ${actionTaken}`,
         previousState: notetakerState
@@ -726,8 +789,14 @@ const cancelNotetaker = async (req, res) => {
       // Update interview to reflect cancellation attempt
       interview.notetakerEnabled = false;
       interview.notetakerStatus = 'cancelled';
-      await interview.save();
-      
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: {
+          notetakerEnabled: false,
+          notetakerStatus: 'cancelled'
+        }
+      });
+
       // Return success since we've updated our records
       res.json({ 
         success: true,
@@ -750,13 +819,18 @@ const joinMeetingNow = async (req, res) => {
     const { interviewId } = req.params;
     const { meetingLink } = req.body;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
+
     // Get the meeting link - from request body or interview data
     const meetingUrl = meetingLink || 
                       interview.conferencing?.details?.url || 
@@ -793,7 +867,10 @@ const joinMeetingNow = async (req, res) => {
           if (interview.notetakerStatus !== mappedStatus) {
             interview.notetakerStatus = mappedStatus;
             interview.notetakerType = 'standalone';
-            await interview.save();
+            await prisma.interview.update({
+              where: { id: interview.id },
+              data: { notetakerStatus: mappedStatus, notetakerType: 'standalone' }
+            });
           }
 
           return res.json({
@@ -815,12 +892,18 @@ const joinMeetingNow = async (req, res) => {
             interview.notetakerId = null;
             interview.notetakerStatus = 'cancelled';
             interview.notetakerType = 'standalone';
-            await interview.save();
+            await prisma.interview.update({
+              where: { id: interview.id },
+              data: { notetakerId: null, notetakerStatus: 'cancelled', notetakerType: 'standalone' }
+            });
           } catch (cancelError) {
             if (cancelError?.message?.includes('NOTETAKER_NOT_FOUND')) {
               interview.notetakerStatus = 'deleted';
               interview.notetakerId = null;
-              await interview.save();
+              await prisma.interview.update({
+                where: { id: interview.id },
+                data: { notetakerStatus: 'deleted', notetakerId: null }
+              });
             } else {
               console.warn(
                 `Cannot safely replace existing notetaker ${existingNotetakerId} for interview ${interview._id}:`,
@@ -842,7 +925,10 @@ const joinMeetingNow = async (req, res) => {
         if (statusError?.message?.includes('NOTETAKER_NOT_FOUND')) {
           interview.notetakerStatus = 'deleted';
           interview.notetakerId = null;
-          await interview.save();
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notetakerStatus: 'deleted', notetakerId: null }
+          });
         } else {
           console.warn(
             `Failed to check existing notetaker status for interview ${interview._id}:`,
@@ -882,9 +968,18 @@ const joinMeetingNow = async (req, res) => {
       interview.notetakerType = 'standalone';
       interview.notetakerStatus = 'joining';
       interview.notetakerError = null;
-      await interview.save();
-      
-      res.json({ 
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: {
+          notetakerEnabled: true,
+          notetakerId: notetakerId,
+          notetakerType: 'standalone',
+          notetakerStatus: 'joining',
+          notetakerError: null
+        }
+      });
+
+      res.json({
         success: true,
         notetakerId,
         status: 'joining',
@@ -917,16 +1012,21 @@ const getRealtimeTranscript = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        error: 'Interview not found' 
+        error: 'Interview not found'
       });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
+
     // Check if notetaker is enabled
     if (!interview.notetakerEnabled) {
       return res.json({
@@ -974,9 +1074,12 @@ const getRealtimeTranscript = async (req, res) => {
       if (interview.notetakerStatus !== mappedStatus) {
         interview.notetakerStatus = mappedStatus;
         interview.notetakerType = 'standalone';
-        await interview.save();
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { notetakerStatus: mappedStatus, notetakerType: 'standalone' }
+        });
       }
-      
+
       // Check if transcript is available
       let transcriptData = null;
       let isTranscriptReady = false;
@@ -1009,8 +1112,16 @@ const getRealtimeTranscript = async (req, res) => {
               if (media.recording && media.recording.url) {
                 interview.recordingUrl = media.recording.url;
               }
-              
-              await interview.save();
+
+              await prisma.interview.update({
+                where: { id: interview.id },
+                data: {
+                  transcript: interview.transcript,
+                  transcriptAvailableAt: interview.transcriptAvailableAt,
+                  notetakerType: interview.notetakerType,
+                  recordingUrl: interview.recordingUrl
+                }
+              });
               console.log('✅ Transcript saved to database');
             }
             
@@ -1075,8 +1186,8 @@ const getRealtimeTranscript = async (req, res) => {
         
         // Update the interview to reflect that the notetaker is no longer available
         interview.notetakerStatus = 'deleted';
-        await interview.save();
-        
+        await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: 'deleted' } });
+
         return res.json({
           success: false,
           message: 'Notetaker was automatically cleaned up (likely due to meeting not starting or timeout)',
@@ -1114,15 +1225,20 @@ const getNotetakerStatus = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
 
     if (!interview.notetakerId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'No notetaker associated with this interview',
         notetakerEnabled: interview.notetakerEnabled || false,
         status: 'not_enabled'
@@ -1147,7 +1263,10 @@ const getNotetakerStatus = async (req, res) => {
       if (interview.notetakerStatus !== mappedStatus) {
         interview.notetakerStatus = mappedStatus;
         interview.notetakerType = 'standalone';
-        await interview.save();
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { notetakerStatus: mappedStatus, notetakerType: 'standalone' }
+        });
       }
 
       res.json({
@@ -1167,8 +1286,8 @@ const getNotetakerStatus = async (req, res) => {
         
         // Update the interview to reflect that the notetaker is no longer available
         interview.notetakerStatus = 'deleted';
-        await interview.save();
-        
+        await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: 'deleted' } });
+
         return res.json({
           notetakerId: interview.notetakerId,
           status: 'deleted',
@@ -1200,13 +1319,18 @@ async function syncNotetakerStatus(req, res) {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
+
     // Only sync if notetaker is enabled but ID is missing
     if (!interview.notetakerEnabled || interview.notetakerId) {
       return res.status(400).json({ 
@@ -1246,7 +1370,15 @@ async function syncNotetakerStatus(req, res) {
     interview.notetakerId = notetakerId;
     interview.notetakerType = 'standalone';
     interview.notetakerStatus = 'enabled';
-    await interview.save();
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: {
+        notetakerEnabled: true,
+        notetakerId: notetakerId,
+        notetakerType: 'standalone',
+        notetakerStatus: 'enabled'
+      }
+    });
 
     return res.json({
       success: true,
@@ -1290,12 +1422,25 @@ const cleanupStaleNotetakers = async (req, res) => {
     console.log('🧹 Starting cleanup of stale notetakers...');
     
     // Find all interviews with notetakers
-    const interviews = await Interview.find({
-      notetakerEnabled: true,
-      notetakerId: { $ne: null },
-      notetakerStatus: { $nin: ['deleted', 'cancelled'] }
-    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interviews = await prisma.interview.findMany({
+      where: {
+        notetakerEnabled: true,
+        notetakerId: { not: null },
+        notetakerStatus: { notIn: ['deleted', 'cancelled'] }
+      }
+    });
+    const interviewerIds = [...new Set(interviews.map(i => i.interviewerId).filter(Boolean))];
+    const interviewers = interviewerIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: interviewerIds } },
+          select: { id: true, nylasGrantId: true, nylasAccountId: true }
+        })
+      : [];
+    const interviewerById = new Map(interviewers.map(u => [u.id, u]));
+    for (const i of interviews) {
+      if (i.interviewerId) i.interviewerId = interviewerById.get(i.interviewerId) || null;
+    }
+
     console.log(`Found ${interviews.length} interviews with notetakers to check`);
     
     let cleanedCount = 0;
@@ -1314,8 +1459,8 @@ const cleanupStaleNotetakers = async (req, res) => {
           
           // Update interview to mark notetaker as deleted
           interview.notetakerStatus = 'deleted';
-          await interview.save();
-          
+          await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: 'deleted' } });
+
           cleanedCount++;
         } else {
           console.error(`Error checking notetaker ${interview.notetakerId}:`, error.message);

@@ -1,7 +1,6 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const Candidate = require('../models/Candidate');
-const CandidateList = require('../models/CandidateList');
+const prisma = require('../db/client');
+const { isObjectIdLike } = require('../db/objectId');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 
@@ -10,7 +9,10 @@ const router = express.Router();
 router.use(authMiddleware);
 router.use(requireOrganization);
 
-const candidateSelect = 'firstName lastName email phone position status source skills location createdAt updatedAt';
+const candidateSelect = {
+  firstName: true, lastName: true, email: true, phone: true, position: true,
+  status: true, source: true, skills: true, location: true, createdAt: true, updatedAt: true,
+};
 const MAX_QUERY_LIST_SIZE = 5000;
 
 function escapeRegex(value = '') {
@@ -18,7 +20,7 @@ function escapeRegex(value = '') {
 }
 
 function buildCandidateQuery(organizationId, { search, status } = {}) {
-  const query = { organization: organizationId };
+  const query = { organizationId: organizationId };
 
   if (status && status !== 'all') {
     query.status = status;
@@ -26,21 +28,21 @@ function buildCandidateQuery(organizationId, { search, status } = {}) {
 
   if (search && search.trim()) {
     const terms = search.trim().split(/\s+/).filter(Boolean).map(escapeRegex);
-    const searchRegex = new RegExp(terms.join('|'), 'i');
-    query.$or = [
-      { firstName: searchRegex },
-      { lastName: searchRegex },
-      { email: searchRegex },
-      { phone: searchRegex },
-      { position: searchRegex },
-      { skills: searchRegex },
-      { experience: searchRegex },
-      { education: searchRegex },
-      { location: searchRegex },
-      { resumeText: searchRegex },
-      { coverLetter: searchRegex },
-      { source: searchRegex },
-      { status: searchRegex },
+    const pattern = terms.join('|');
+    query.OR = [
+      { firstName: { contains: pattern, mode: 'insensitive' } },
+      { lastName: { contains: pattern, mode: 'insensitive' } },
+      { email: { contains: pattern, mode: 'insensitive' } },
+      { phone: { contains: pattern, mode: 'insensitive' } },
+      { position: { contains: pattern, mode: 'insensitive' } },
+      { skills: { contains: pattern, mode: 'insensitive' } },
+      { experience: { contains: pattern, mode: 'insensitive' } },
+      { education: { contains: pattern, mode: 'insensitive' } },
+      { location: { contains: pattern, mode: 'insensitive' } },
+      { resumeText: { contains: pattern, mode: 'insensitive' } },
+      { coverLetter: { contains: pattern, mode: 'insensitive' } },
+      { source: { contains: pattern, mode: 'insensitive' } },
+      { status: { contains: pattern, mode: 'insensitive' } },
     ];
   }
 
@@ -51,19 +53,19 @@ function normalizeCandidateId(value) {
   const id = typeof value === 'object' && value !== null
     ? value.candidateId || value.candidate || value.id || value._id
     : value;
-  return id && mongoose.Types.ObjectId.isValid(id) ? String(id) : null;
+  return id && isObjectIdLike(id) ? String(id) : null;
 }
 
 async function getValidCandidateIds(candidateIds, organizationId) {
   const uniqueIds = [...new Set((candidateIds || []).map(normalizeCandidateId).filter(Boolean))];
   if (!uniqueIds.length) return [];
 
-  const candidates = await Candidate.find({
-    _id: { $in: uniqueIds },
-    organization: organizationId,
-  }).select('_id').lean();
+  const candidates = await prisma.candidate.findMany({
+    where: { id: { in: uniqueIds }, organizationId: organizationId },
+    select: { id: true },
+  });
 
-  const allowed = new Set(candidates.map(candidate => String(candidate._id)));
+  const allowed = new Set(candidates.map(candidate => String(candidate.id)));
   return uniqueIds.filter(id => allowed.has(id));
 }
 
@@ -140,12 +142,32 @@ function mergeEntries(existingEntries = [], nextEntries = [], allowedCandidateId
   });
 }
 
-async function populateList(query) {
-  return query.populate('entries.candidate', candidateSelect);
+// Stitch each entry's `candidate` id (soft ref in the Json entries array) into a
+// candidate object (replaces Mongoose `.populate('entries.candidate', candidateSelect)`).
+async function populateList(list) {
+  if (!list) return list;
+  const entries = Array.isArray(list.entries) ? list.entries : [];
+  const candidateIds = [...new Set(
+    entries.map(entry => entry && (entry.candidate?._id || entry.candidate)).filter(Boolean).map(String)
+  )];
+  if (candidateIds.length) {
+    const candidates = await prisma.candidate.findMany({
+      where: { id: { in: candidateIds } },
+      select: { id: true, ...candidateSelect },
+    });
+    const candidateMap = new Map(candidates.map(c => [c.id, c]));
+    list.entries = entries.map(entry => {
+      const cid = entry && (entry.candidate?._id || entry.candidate);
+      return cid && candidateMap.has(String(cid))
+        ? { ...entry, candidate: candidateMap.get(String(cid)) }
+        : entry;
+    });
+  }
+  return list;
 }
 
 function summarizeList(list) {
-  const plain = typeof list.toObject === 'function' ? list.toObject({ virtuals: true }) : list;
+  const plain = list;
   return {
     ...plain,
     candidateCount: plain.entries?.length || 0,
@@ -155,10 +177,14 @@ function summarizeList(list) {
 router.get('/', async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const lists = await CandidateList.find({ organization: organizationId })
-      .sort({ updatedAt: -1 })
-      .select('name description source sourceRef entries createdBy updatedBy createdAt updatedAt')
-      .lean({ virtuals: true });
+    const lists = await prisma.candidateList.findMany({
+      where: { organizationId: organizationId },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true, name: true, description: true, source: true, sourceRef: true,
+        entries: true, createdBy: true, updatedBy: true, createdAt: true, updatedAt: true,
+      },
+    });
 
     res.json({
       lists: lists.map(list => ({
@@ -175,9 +201,8 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const list = await populateList(CandidateList.findOne({
-      _id: req.params.id,
-      organization: req.user.currentOrganization,
+    const list = await populateList(await prisma.candidateList.findFirst({
+      where: { id: req.params.id, organizationId: req.user.currentOrganization },
     }));
 
     if (!list) {
@@ -218,18 +243,20 @@ router.post('/', async (req, res) => {
       organizationId
     );
 
-    const list = await CandidateList.create({
-      organization: organizationId,
-      name: name.trim(),
-      description,
-      source,
-      sourceRef,
-      entries: mergeEntries([], requestedEntries, validCandidateIds),
-      createdBy: req.user.id,
-      updatedBy: req.user.id,
+    const list = await prisma.candidateList.create({
+      data: {
+        organizationId: organizationId,
+        name: name.trim(),
+        description,
+        source,
+        sourceRef,
+        entries: mergeEntries([], requestedEntries, validCandidateIds),
+        createdBy: req.user.id,
+        updatedBy: req.user.id,
+      },
     });
 
-    const populated = await populateList(CandidateList.findById(list._id));
+    const populated = await populateList(await prisma.candidateList.findUnique({ where: { id: list.id } }));
     res.status(201).json({ list: summarizeList(populated) });
   } catch (error) {
     console.error('Error creating candidate list:', error);
@@ -253,32 +280,35 @@ router.post('/from-query', async (req, res) => {
     }
 
     const safeLimit = Math.min(Math.max(Number(limit) || MAX_QUERY_LIST_SIZE, 1), MAX_QUERY_LIST_SIZE);
-    const candidates = await Candidate.find(buildCandidateQuery(organizationId, { search, status }))
-      .sort({ createdAt: -1 })
-      .limit(safeLimit)
-      .select('_id')
-      .lean();
+    const candidates = await prisma.candidate.findMany({
+      where: buildCandidateQuery(organizationId, { search, status }),
+      orderBy: { createdAt: 'desc' },
+      take: safeLimit,
+      select: { id: true },
+    });
 
     const entries = candidates.map((candidate, index) => ({
-      candidate: candidate._id,
+      candidate: candidate.id,
       rank: index + 1,
       source: 'candidates',
       addedBy: req.user.id,
       addedAt: new Date(),
     }));
 
-    const list = await CandidateList.create({
-      organization: organizationId,
-      name: name.trim(),
-      description,
-      source: 'candidates',
-      sourceRef: { search, status, limit: safeLimit },
-      entries,
-      createdBy: req.user.id,
-      updatedBy: req.user.id,
+    const list = await prisma.candidateList.create({
+      data: {
+        organizationId: organizationId,
+        name: name.trim(),
+        description,
+        source: 'candidates',
+        sourceRef: { search, status, limit: safeLimit },
+        entries,
+        createdBy: req.user.id,
+        updatedBy: req.user.id,
+      },
     });
 
-    const populated = await populateList(CandidateList.findById(list._id));
+    const populated = await populateList(await prisma.candidateList.findUnique({ where: { id: list.id } }));
     res.status(201).json({ list: summarizeList(populated) });
   } catch (error) {
     console.error('Error creating candidate list from query:', error);
@@ -295,11 +325,16 @@ router.patch('/:id', async (req, res) => {
     if (req.body.sourceRef && typeof req.body.sourceRef === 'object') updates.sourceRef = req.body.sourceRef;
     updates.updatedBy = req.user.id;
 
-    const list = await populateList(CandidateList.findOneAndUpdate(
-      { _id: req.params.id, organization: req.user.currentOrganization },
-      { $set: updates },
-      { new: true, runValidators: true }
-    ));
+    const existing = await prisma.candidateList.findFirst({
+      where: { id: req.params.id, organizationId: req.user.currentOrganization },
+      select: { id: true },
+    });
+    const list = existing
+      ? await populateList(await prisma.candidateList.update({
+          where: { id: existing.id },
+          data: updates,
+        }))
+      : null;
 
     if (!list) {
       return res.status(404).json({ msg: 'Candidate list not found' });
@@ -315,12 +350,13 @@ router.patch('/:id', async (req, res) => {
 router.post('/:id/candidates', async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const list = await CandidateList.findOne({ _id: req.params.id, organization: organizationId });
+    const list = await prisma.candidateList.findFirst({ where: { id: req.params.id, organizationId: organizationId } });
 
     if (!list) {
       return res.status(404).json({ msg: 'Candidate list not found' });
     }
 
+    const existingEntries = Array.isArray(list.entries) ? list.entries : [];
     const requestedEntries = buildEntries({
       candidateIds: req.body.candidateIds || [],
       entries: req.body.entries || [],
@@ -328,16 +364,20 @@ router.post('/:id/candidates', async (req, res) => {
       source: req.body.source || list.source || 'manual',
     });
     const allCandidateIds = [
-      ...list.entries.map(entry => entry.candidate),
+      ...existingEntries.map(entry => entry.candidate),
       ...requestedEntries.map(entry => entry.candidate),
     ];
     const validCandidateIds = await getValidCandidateIds(allCandidateIds, organizationId);
 
-    list.entries = mergeEntries(list.entries, requestedEntries, validCandidateIds);
-    list.updatedBy = req.user.id;
-    await list.save();
+    const updated = await prisma.candidateList.update({
+      where: { id: list.id },
+      data: {
+        entries: mergeEntries(existingEntries, requestedEntries, validCandidateIds),
+        updatedBy: req.user.id,
+      },
+    });
 
-    const populated = await populateList(CandidateList.findById(list._id));
+    const populated = await populateList(await prisma.candidateList.findUnique({ where: { id: updated.id } }));
     res.json({ list: summarizeList(populated) });
   } catch (error) {
     console.error('Error adding candidates to list:', error);
@@ -348,17 +388,22 @@ router.post('/:id/candidates', async (req, res) => {
 router.delete('/:id/candidates', async (req, res) => {
   try {
     const candidateIds = new Set((req.body.candidateIds || []).map(normalizeCandidateId).filter(Boolean));
-    const list = await CandidateList.findOne({ _id: req.params.id, organization: req.user.currentOrganization });
+    const list = await prisma.candidateList.findFirst({ where: { id: req.params.id, organizationId: req.user.currentOrganization } });
 
     if (!list) {
       return res.status(404).json({ msg: 'Candidate list not found' });
     }
 
-    list.entries = list.entries.filter(entry => !candidateIds.has(String(entry.candidate)));
-    list.updatedBy = req.user.id;
-    await list.save();
+    const existingEntries = Array.isArray(list.entries) ? list.entries : [];
+    const updated = await prisma.candidateList.update({
+      where: { id: list.id },
+      data: {
+        entries: existingEntries.filter(entry => !candidateIds.has(String(entry.candidate))),
+        updatedBy: req.user.id,
+      },
+    });
 
-    const populated = await populateList(CandidateList.findById(list._id));
+    const populated = await populateList(await prisma.candidateList.findUnique({ where: { id: updated.id } }));
     res.json({ list: summarizeList(populated) });
   } catch (error) {
     console.error('Error removing candidates from list:', error);
@@ -368,12 +413,11 @@ router.delete('/:id/candidates', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const result = await CandidateList.findOneAndDelete({
-      _id: req.params.id,
-      organization: req.user.currentOrganization,
+    const { count } = await prisma.candidateList.deleteMany({
+      where: { id: req.params.id, organizationId: req.user.currentOrganization },
     });
 
-    if (!result) {
+    if (!count) {
       return res.status(404).json({ msg: 'Candidate list not found' });
     }
 

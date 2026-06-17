@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const interviewStageService = require('../services/interviewStageService');
+const prisma = require('../db/client');
 
 // Create default stages for a job
 router.post('/jobs/:jobId/stages/default', authMiddleware, async (req, res) => {
@@ -70,21 +71,28 @@ router.get('/jobs/:jobId/stages', authMiddleware, async (req, res) => {
 // Get single stage
 router.get('/stages/:stageId', authMiddleware, async (req, res) => {
   try {
-    const InterviewStage = require('../models/InterviewStage');
-    const stage = await InterviewStage.findById(req.params.stageId)
-      .populate('defaultQuestions')
-      .populate('createdBy', 'profile.firstName profile.lastName');
-    
+    const stage = await prisma.interviewStage.findUnique({ where: { id: req.params.stageId } });
+
     if (!stage) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Stage not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Stage not found'
       });
     }
-    
-    res.json({ 
-      success: true, 
-      stage 
+
+    // Stitch defaultQuestions (question ids) + createdBy (user id) — replaces .populate
+    const qIds = Array.isArray(stage.defaultQuestions) ? stage.defaultQuestions.filter(Boolean) : [];
+    const [questionDocs, creatorDoc] = await Promise.all([
+      qIds.length ? prisma.interviewQuestion.findMany({ where: { id: { in: qIds } } }) : [],
+      stage.createdBy ? prisma.user.findUnique({ where: { id: stage.createdBy }, select: { id: true, profile: true } }) : null
+    ]);
+    const qMap = new Map(questionDocs.map(q => [q.id, q]));
+    stage.defaultQuestions = qIds.map(id => qMap.get(id) || id);
+    stage.createdBy = creatorDoc || stage.createdBy;
+
+    res.json({
+      success: true,
+      stage
     });
   } catch (error) {
     console.error('Error getting stage:', error);
@@ -369,24 +377,25 @@ router.put('/jobs/:jobId/stages/bulk', authMiddleware, async (req, res) => {
 // Toggle stage active status
 router.patch('/stages/:stageId/toggle-active', authMiddleware, async (req, res) => {
   try {
-    const InterviewStage = require('../models/InterviewStage');
-    const stage = await InterviewStage.findById(req.params.stageId);
-    
+    const stage = await prisma.interviewStage.findUnique({ where: { id: req.params.stageId } });
+
     if (!stage) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Stage not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Stage not found'
       });
     }
-    
-    stage.isActive = !stage.isActive;
-    stage.updatedBy = req.user._id;
-    await stage.save();
-    
-    res.json({ 
-      success: true, 
-      message: `Stage ${stage.isActive ? 'activated' : 'deactivated'} successfully`,
-      stage 
+
+    // `updatedBy` is not a column on InterviewStage; only toggle isActive.
+    const updatedStage = await prisma.interviewStage.update({
+      where: { id: stage.id },
+      data: { isActive: !stage.isActive }
+    });
+
+    res.json({
+      success: true,
+      message: `Stage ${updatedStage.isActive ? 'activated' : 'deactivated'} successfully`,
+      stage: updatedStage
     });
   } catch (error) {
     console.error('Error toggling stage status:', error);
@@ -403,42 +412,45 @@ router.put('/stages/:stageId/feedback-config', authMiddleware, async (req, res) 
     const { stageId } = req.params;
     const { useTemplate, templateId, overrides } = req.body;
     
-    const InterviewStage = require('../models/InterviewStage');
-    const stage = await InterviewStage.findById(stageId);
-    
+    const stage = await prisma.interviewStage.findUnique({ where: { id: stageId } });
+
     if (!stage) {
       return res.status(404).json({
         success: false,
         error: 'Stage not found'
       });
     }
-    
-    // Update configuration
-    if (!stage.feedbackFormConfig) {
-      stage.feedbackFormConfig = {};
-    }
-    
+
+    // Update configuration (feedbackFormConfig is a Json column — read-modify-write)
+    const feedbackFormConfig = { ...(stage.feedbackFormConfig || {}) };
+
     if (useTemplate !== undefined) {
-      stage.feedbackFormConfig.useTemplate = useTemplate;
+      feedbackFormConfig.useTemplate = useTemplate;
     }
-    
+
     if (templateId !== undefined) {
-      stage.feedbackFormConfig.templateId = templateId || null;
+      feedbackFormConfig.templateId = templateId || null;
     }
-    
+
     if (overrides !== undefined) {
-      stage.feedbackFormConfig.overrides = overrides;
+      feedbackFormConfig.overrides = overrides;
     }
-    
-    await stage.save();
-    
-    // Populate and return
-    await stage.populate('feedbackFormConfig.templateId');
-    
+
+    const updatedStage = await prisma.interviewStage.update({
+      where: { id: stage.id },
+      data: { feedbackFormConfig }
+    });
+
+    // Populate and return (replaces .populate('feedbackFormConfig.templateId'))
+    const responseConfig = { ...(updatedStage.feedbackFormConfig || {}) };
+    if (responseConfig.templateId) {
+      responseConfig.templateId = (await prisma.feedbackFormTemplate.findUnique({ where: { id: responseConfig.templateId } })) || responseConfig.templateId;
+    }
+
     res.json({
       success: true,
       message: 'Stage feedback configuration updated successfully',
-      data: stage.feedbackFormConfig
+      data: responseConfig
     });
   } catch (error) {
     console.error('Error updating stage feedback config:', error);
@@ -454,20 +466,24 @@ router.get('/stages/:stageId/feedback-config', authMiddleware, async (req, res) 
   try {
     const { stageId } = req.params;
     
-    const InterviewStage = require('../models/InterviewStage');
-    const stage = await InterviewStage.findById(stageId)
-      .populate('feedbackFormConfig.templateId');
-    
+    const stage = await prisma.interviewStage.findUnique({ where: { id: stageId } });
+
     if (!stage) {
       return res.status(404).json({
         success: false,
         error: 'Stage not found'
       });
     }
-    
+
+    // Populate feedbackFormConfig.templateId (replaces .populate)
+    let data = stage.feedbackFormConfig || null;
+    if (data && data.templateId) {
+      data = { ...data, templateId: (await prisma.feedbackFormTemplate.findUnique({ where: { id: data.templateId } })) || data.templateId };
+    }
+
     res.json({
       success: true,
-      data: stage.feedbackFormConfig || null
+      data
     });
   } catch (error) {
     console.error('Error getting stage feedback config:', error);

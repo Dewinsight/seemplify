@@ -2,7 +2,7 @@
 // This service will be used by the CandidateAgent to interact with the database
 // and embedding services for candidate-related operations.
 
-const Candidate = require('../models/Candidate');
+const prisma = require('../db/client');
 const embeddingService = require('./embeddingService');
 const AzureOpenAIService = require('./azureOpenAIService');
 
@@ -67,7 +67,7 @@ class AiCandidateService {
 
             // Get full candidate data for the results
             const candidateIds = results.map(result => result.metadata.candidateId);
-            const candidates = await Candidate.find({ _id: { $in: candidateIds } });
+            const candidates = await prisma.candidate.findMany({ where: { id: { in: candidateIds } } });
 
             // Combine with similarity scores
             const enrichedResults = results.map(result => {
@@ -98,21 +98,21 @@ class AiCandidateService {
         console.log(`[AiCandidateService] Using fallback search for: "${query}"`);
         
         const searchFilters = { ...filters };
-        
-        // Create regex pattern for flexible matching
-        const regex = new RegExp(query.split(' ').join('|'), 'i');
-        
-        searchFilters.$or = [
-            { firstName: regex },
-            { lastName: regex },
-            { position: regex },
-            { skills: regex },
-            { education: regex },
-            { location: regex },
-            { resumeText: regex }
+
+        // Create pattern for flexible matching
+        const pattern = query.split(' ').join('|');
+
+        searchFilters.OR = [
+            { firstName: { contains: pattern, mode: 'insensitive' } },
+            { lastName: { contains: pattern, mode: 'insensitive' } },
+            { position: { contains: pattern, mode: 'insensitive' } },
+            { skills: { contains: pattern, mode: 'insensitive' } },
+            { education: { contains: pattern, mode: 'insensitive' } },
+            { location: { contains: pattern, mode: 'insensitive' } },
+            { resumeText: { contains: pattern, mode: 'insensitive' } }
         ];
 
-        const candidates = await Candidate.find(searchFilters).limit(limit);
+        const candidates = await prisma.candidate.findMany({ where: searchFilters, take: limit });
         
         return candidates.map(candidate => ({
             candidate,
@@ -137,11 +137,13 @@ class AiCandidateService {
         
         try {
             const skip = (page - 1) * limit;
-            const totalCandidates = await Candidate.countDocuments(filters);
-            const candidates = await Candidate.find(filters)
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(limit);
+            const totalCandidates = await prisma.candidate.count({ where: filters });
+            const candidates = await prisma.candidate.findMany({
+                where: filters,
+                orderBy: { createdAt: 'desc' },
+                skip: skip,
+                take: limit
+            });
 
             return {
                 candidates,
@@ -168,7 +170,7 @@ class AiCandidateService {
         console.log(`[AiCandidateService] Getting candidate by ID: ${candidateId}`);
         
         try {
-            const candidate = await Candidate.findById(candidateId);
+            const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
             return candidate;
         } catch (error) {
             console.error('[AiCandidateService] Error getting candidate by ID:', error);
@@ -187,15 +189,17 @@ class AiCandidateService {
         console.log(`[AiCandidateService] Updating candidate: ${candidateId}`);
         
         try {
-            const updatedCandidate = await Candidate.findByIdAndUpdate(
-                candidateId,
-                { 
-                    ...updateData, 
-                    updatedBy: userId,
-                    updatedAt: new Date()
-                },
-                { new: true }
-            );
+            const existing = await prisma.candidate.findUnique({ where: { id: candidateId }, select: { id: true } });
+            const updatedCandidate = existing
+                ? await prisma.candidate.update({
+                    where: { id: candidateId },
+                    data: {
+                        ...updateData,
+                        updatedBy: userId,
+                        updatedAt: new Date()
+                    }
+                })
+                : null;
 
             if (updatedCandidate) {
                 // Update embedding if candidate was found and updated
@@ -219,8 +223,9 @@ class AiCandidateService {
         console.log(`[AiCandidateService] Deleting candidate: ${candidateId}`);
         
         try {
-            const result = await Candidate.findByIdAndDelete(candidateId);
-            
+            const { count } = await prisma.candidate.deleteMany({ where: { id: candidateId } });
+            const result = count > 0;
+
             if (result) {
                 // Also delete the embedding
                 // await embeddingService.deleteEmbedding({
@@ -248,20 +253,21 @@ class AiCandidateService {
         console.log(`[AiCandidateService] Adding note to candidate: ${candidateId}`);
         
         try {
-            const candidate = await Candidate.findByIdAndUpdate(
-                candidateId,
-                {
-                    $push: {
-                        notes: {
-                            note: noteText,
-                            date: new Date()
-                        }
-                    },
-                    updatedBy: userId,
-                    updatedAt: new Date()
-                },
-                { new: true }
-            );
+            const existing = await prisma.candidate.findUnique({ where: { id: candidateId }, select: { id: true, notes: true } });
+            const candidate = existing
+                ? await prisma.candidate.update({
+                    where: { id: candidateId },
+                    data: {
+                        // read-modify-write the Json notes array (replaces Mongo $push)
+                        notes: [
+                            ...(Array.isArray(existing.notes) ? existing.notes : []),
+                            { note: noteText, date: new Date() }
+                        ],
+                        updatedBy: userId,
+                        updatedAt: new Date()
+                    }
+                })
+                : null;
 
             if (candidate) {
                 // Update embedding to include the new note
@@ -338,12 +344,15 @@ class AiCandidateService {
             }
 
             // Update candidate with AI analysis
-            await Candidate.findByIdAndUpdate(candidate._id, {
-                aiAnalysis: {
-                    summary: parsedAnalysis.summary,
-                    strengths: parsedAnalysis.strengths || [],
-                    potentialFlags: parsedAnalysis.potentialConcerns || [],
-                    matchingScore: parsedAnalysis.fitAssessment?.overallFit || 50
+            await prisma.candidate.update({
+                where: { id: candidate._id },
+                data: {
+                    aiAnalysis: {
+                        summary: parsedAnalysis.summary,
+                        strengths: parsedAnalysis.strengths || [],
+                        potentialFlags: parsedAnalysis.potentialConcerns || [],
+                        matchingScore: parsedAnalysis.fitAssessment?.overallFit || 50
+                    }
                 }
             });
 

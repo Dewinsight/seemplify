@@ -1,37 +1,30 @@
-const Department = require('../models/Department');
-const Job = require('../models/Job');
-const User = require('../models/User');
+// Department controller — PostgreSQL/Prisma (migrated from Mongoose).
+const prisma = require('../db/client');
+const orgAccess = require('../db/orgAccess');
 
 const resolveCurrentOrganization = async (req) => {
-  let organizationId = req.user?.currentOrganization;
+  if (req.user?.currentOrganization) return req.user.currentOrganization;
+  if (!req.user?.id) return null;
 
-  if (organizationId) {
-    return organizationId;
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { currentOrganizationId: true },
+  });
+  if (user?.currentOrganizationId) {
+    req.user.currentOrganization = user.currentOrganizationId;
+    return user.currentOrganizationId;
   }
 
-  if (!req.user?.id) {
-    return null;
+  const active = await orgAccess.getActiveMemberships(req.user.id);
+  if (active.length > 0) {
+    const orgId = active[0].organizationId;
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { currentOrganizationId: orgId, hasCompletedOrganizationSetup: true },
+    });
+    req.user.currentOrganization = orgId;
+    return orgId;
   }
-
-  const user = await User.findById(req.user.id).select('currentOrganization organizationMemberships hasCompletedOrganizationSetup');
-  if (!user) {
-    return null;
-  }
-
-  if (user.currentOrganization) {
-    req.user.currentOrganization = user.currentOrganization;
-    return user.currentOrganization;
-  }
-
-  const activeMembership = user.organizationMemberships?.find((membership) => membership.isActive);
-  if (activeMembership?.organization) {
-    user.currentOrganization = activeMembership.organization;
-    user.hasCompletedOrganizationSetup = true;
-    await user.save();
-    req.user.currentOrganization = user.currentOrganization;
-    return user.currentOrganization;
-  }
-
   return null;
 };
 
@@ -39,21 +32,20 @@ const resolveCurrentOrganization = async (req) => {
 exports.getDepartments = async (req, res) => {
   try {
     const organizationId = await resolveCurrentOrganization(req);
-    
     if (!organizationId) {
       return res.json({
         success: true,
         departments: [],
         message: 'No organization selected',
-        requiresOrganizationSetup: true
+        requiresOrganizationSetup: true,
       });
     }
 
-    const departments = await Department.find({ 
-      organization: organizationId, 
-      isActive: true 
-    }).sort({ name: 1 });
-    
+    const departments = await prisma.department.findMany({
+      where: { organizationId, isActive: true },
+      orderBy: { name: 'asc' },
+    });
+
     res.json({ success: true, departments });
   } catch (error) {
     console.error('Error fetching departments:', error);
@@ -66,44 +58,33 @@ exports.createDepartment = async (req, res) => {
   try {
     const { name, description } = req.body;
     const organizationId = req.user.currentOrganization;
-    
+
     if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'No organization selected'
-      });
+      return res.status(400).json({ success: false, error: 'No organization selected' });
     }
-
     if (!name || name.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Department name is required'
-      });
+      return res.status(400).json({ success: false, error: 'Department name is required' });
     }
 
-    // Check if department already exists
-    const existingDepartment = await Department.findOne({
-      organization: organizationId,
-      name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
-      isActive: true
+    const existingDepartment = await prisma.department.findFirst({
+      where: { organizationId, isActive: true, name: { equals: name.trim(), mode: 'insensitive' } },
     });
-    
     if (existingDepartment) {
-      return res.status(400).json({
-        success: false,
-        error: 'Department with this name already exists'
-      });
+      return res.status(400).json({ success: false, error: 'Department with this name already exists' });
     }
-    
-    const department = new Department({
-      name: name.trim(),
-      description: description?.trim() || '',
-      organization: organizationId,
-      createdBy: req.user.id
-    });
-    
-    await department.save();
-    
+
+    let department;
+    try {
+      department = await prisma.department.create({
+        data: { name: name.trim(), description: description?.trim() || '', organizationId, createdById: req.user.id },
+      });
+    } catch (e) {
+      if (e.code === 'P2002') {
+        return res.status(400).json({ success: false, error: 'Department with this name already exists' });
+      }
+      throw e;
+    }
+
     console.log(`✅ Department created: ${department.name} for organization ${organizationId}`);
     res.status(201).json({ success: true, department });
   } catch (error) {
@@ -118,53 +99,31 @@ exports.updateDepartment = async (req, res) => {
     const { id } = req.params;
     const { name, description } = req.body;
     const organizationId = req.user.currentOrganization;
-    
+
     if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'No organization selected'
-      });
+      return res.status(400).json({ success: false, error: 'No organization selected' });
     }
-
     if (!name || name.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Department name is required'
-      });
+      return res.status(400).json({ success: false, error: 'Department name is required' });
     }
 
-    // Check if another department with the same name exists
-    const existingDepartment = await Department.findOne({
-      organization: organizationId,
-      name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
-      isActive: true,
-      _id: { $ne: id }
+    const duplicate = await prisma.department.findFirst({
+      where: { organizationId, isActive: true, name: { equals: name.trim(), mode: 'insensitive' }, id: { not: id } },
     });
-    
-    if (existingDepartment) {
-      return res.status(400).json({
-        success: false,
-        error: 'Department with this name already exists'
-      });
+    if (duplicate) {
+      return res.status(400).json({ success: false, error: 'Department with this name already exists' });
     }
-    
-    const department = await Department.findOneAndUpdate(
-      { _id: id, organization: organizationId, isActive: true },
-      { 
-        name: name.trim(), 
-        description: description?.trim() || '',
-        updatedAt: Date.now() 
-      },
-      { new: true }
-    );
-    
-    if (!department) {
-      return res.status(404).json({
-        success: false,
-        error: 'Department not found'
-      });
+
+    const existing = await prisma.department.findFirst({ where: { id, organizationId, isActive: true } });
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Department not found' });
     }
-    
+
+    const department = await prisma.department.update({
+      where: { id },
+      data: { name: name.trim(), description: description?.trim() || '' },
+    });
+
     console.log(`✅ Department updated: ${department.name} for organization ${organizationId}`);
     res.json({ success: true, department });
   } catch (error) {
@@ -173,51 +132,28 @@ exports.updateDepartment = async (req, res) => {
   }
 };
 
-// Delete department
+// Delete department (soft)
 exports.deleteDepartment = async (req, res) => {
   try {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
-    
+
     if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'No organization selected'
-      });
+      return res.status(400).json({ success: false, error: 'No organization selected' });
     }
-    
-    // Check if department exists
-    const department = await Department.findOne({
-      _id: id,
-      organization: organizationId,
-      isActive: true
-    });
-    
+
+    const department = await prisma.department.findFirst({ where: { id, organizationId, isActive: true } });
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        error: 'Department not found'
-      });
+      return res.status(404).json({ success: false, error: 'Department not found' });
     }
-    
-    // Check if department is used in any jobs
-    const jobCount = await Job.countDocuments({
-      organization: organizationId,
-      department: id
-    });
-    
+
+    const jobCount = await prisma.job.count({ where: { organizationId, departmentId: id } });
     if (jobCount > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Cannot delete department. It is used in ${jobCount} job(s)`
-      });
+      return res.status(400).json({ success: false, error: `Cannot delete department. It is used in ${jobCount} job(s)` });
     }
-    
-    // Soft delete the department
-    department.isActive = false;
-    department.updatedAt = Date.now();
-    await department.save();
-    
+
+    await prisma.department.update({ where: { id }, data: { isActive: false } });
+
     console.log(`✅ Department deleted: ${department.name} for organization ${organizationId}`);
     res.json({ success: true, message: 'Department deleted successfully' });
   } catch (error) {
@@ -231,27 +167,16 @@ exports.getDepartmentById = async (req, res) => {
   try {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
-    
+
     if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'No organization selected'
-      });
+      return res.status(400).json({ success: false, error: 'No organization selected' });
     }
-    
-    const department = await Department.findOne({
-      _id: id,
-      organization: organizationId,
-      isActive: true
-    });
-    
+
+    const department = await prisma.department.findFirst({ where: { id, organizationId, isActive: true } });
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        error: 'Department not found'
-      });
+      return res.status(404).json({ success: false, error: 'Department not found' });
     }
-    
+
     res.json({ success: true, department });
   } catch (error) {
     console.error('Error fetching department:', error);

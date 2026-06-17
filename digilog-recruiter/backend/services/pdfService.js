@@ -1,7 +1,7 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
-const Plan = require('../models/Plan');
+const prisma = require('../db/client');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { isHtmlLike, htmlToText } = require('../utils/emailHtmlSanitizer');
 
@@ -34,8 +34,8 @@ const generateInvoicePdf = async (request, user, organization = null) => {
       
       // Get plan details from the database
       // Look up the plans in the database
-      const currentPlanDoc = await Plan.findOne({ code: request.currentPlan });
-      const requestedPlanDoc = await Plan.findOne({ code: request.requestedPlan });
+      const currentPlanDoc = await prisma.plan.findFirst({ where: { code: request.currentPlan } });
+      const requestedPlanDoc = await prisma.plan.findFirst({ where: { code: request.requestedPlan } });
       
       // Use the database values or fallback to defaults
       const currentPlanDetails = currentPlanDoc ? {

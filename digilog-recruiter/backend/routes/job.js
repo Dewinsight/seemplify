@@ -6,9 +6,9 @@ const { requireOrganization, requirePermission } = require('../middleware/organi
 const { requireCredits, deductCredits } = require('../middleware/creditsMiddleware');
 const multer = require('multer');
 const path = require('path');
-const Job = require('../models/Job');
-const Notification = require('../models/Notification');
-const User = require('../models/User');
+const prisma = require('../db/client');
+const { oid, isObjectIdLike, newId } = require('../db/objectId');
+const Notification = require('../db/notify');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -55,32 +55,31 @@ router.get('/public', async (req, res) => {
 
     // Text search (title, description, requirements, skills)
     if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { requirements: { $regex: search, $options: 'i' } },
-        { skills: { $regex: search, $options: 'i' } }
+      query.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { requirements: { contains: search, mode: 'insensitive' } },
+        { skills: { contains: search, mode: 'insensitive' } }
       ];
     }
 
     // Location filter (comma-separated values)
     if (location) {
       const locations = location.split(',').map(l => l.trim());
-      query.location = { $in: locations };
+      query.location = { in: locations };
     }
 
     // Department filter (comma-separated values)
     if (department) {
       const departmentNames = department.split(',').map(d => d.trim());
-      const Department = require('../models/Department');
-      const departmentIds = await Department.find({ name: { $in: departmentNames } }).select('_id');
-      query.department = { $in: departmentIds.map(d => d._id) };
+      const departmentIds = await prisma.department.findMany({ where: { name: { in: departmentNames } }, select: { id: true } });
+      query.departmentId = { in: departmentIds.map(d => d.id) };
     }
 
     // Type filter (comma-separated values)
     if (type) {
       const types = type.split(',').map(t => t.trim());
-      query.type = { $in: types };
+      query.type = { in: types };
     }
 
     // Remote filter
@@ -91,16 +90,16 @@ router.get('/public', async (req, res) => {
     // Company filter (organization IDs)
     if (company) {
       const companies = company.split(',').map(c => c.trim());
-      query.organization = { $in: companies };
+      query.organizationId = { in: companies };
     }
 
     // orgName filter — case-insensitive partial match on organization name
     if (orgName) {
-      const Organization = require('../models/Organization');
-      const matchedOrgs = await Organization.find({
-        name: { $regex: orgName, $options: 'i' }
-      }).select('_id');
-      query.organization = { $in: matchedOrgs.map(o => o._id) };
+      const matchedOrgs = await prisma.organization.findMany({
+        where: { name: { contains: orgName, mode: 'insensitive' } },
+        select: { id: true }
+      });
+      query.organizationId = { in: matchedOrgs.map(o => o.id) };
     }
 
     // Pagination
@@ -110,65 +109,81 @@ router.get('/public', async (req, res) => {
 
     // Sort options
     const sortOptions = {};
-    sortOptions[sort] = order === 'asc' ? 1 : -1;
+    sortOptions[sort] = order === 'asc' ? 'asc' : 'desc';
 
     // Execute query
-    const jobs = await Job.find(query)
-      .populate('organization', 'name logo website industry size')
-      .populate('department', 'name')
-      .select(
-        'title department location type level description requirements ' +
-        'skills experience education salary benefits remote openings ' +
-        'applicationDeadline createdAt'
-      )
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(limitNum)
-      .lean();
+    let jobs = await prisma.job.findMany({
+      where: query,
+      select: {
+        id: true, title: true, departmentId: true, location: true, type: true, level: true,
+        description: true, requirements: true, skills: true, experience: true, education: true,
+        salary: true, benefits: true, remote: true, openings: true, applicationDeadline: true,
+        createdAt: true, organizationId: true
+      },
+      orderBy: sortOptions,
+      skip,
+      take: limitNum
+    });
+
+    // Stitch organization + department soft-ref populates
+    {
+      const jobOrgIds = [...new Set(jobs.map(j => j.organizationId).filter(Boolean))];
+      const jobDeptIds = [...new Set(jobs.map(j => j.departmentId).filter(Boolean))];
+      const [jobOrgs, jobDepts] = await Promise.all([
+        jobOrgIds.length ? prisma.organization.findMany({ where: { id: { in: jobOrgIds } }, select: { id: true, name: true, logo: true, website: true, industry: true, size: true } }) : [],
+        jobDeptIds.length ? prisma.department.findMany({ where: { id: { in: jobDeptIds } }, select: { id: true, name: true } }) : []
+      ]);
+      const jobOrgMap = new Map(jobOrgs.map(o => [o.id, o]));
+      const jobDeptMap = new Map(jobDepts.map(d => [d.id, d]));
+      jobs = jobs.map(j => ({
+        ...j,
+        organization: j.organizationId ? (jobOrgMap.get(j.organizationId) || null) : null,
+        department: j.departmentId ? (jobDeptMap.get(j.departmentId) || null) : null
+      }));
+    }
 
     // Get total count for pagination
-    const total = await Job.countDocuments(query);
+    const total = await prisma.job.count({ where: query });
 
     // Get unique filter options (for dropdown lists)
     // Fetch each job individually and populate, skipping ones with errors
-    const allPublicJobsRaw = await Job.find({ isPublic: true, status: 'active' })
-      .select('location department type organization')
-      .lean();
+    const allPublicJobsRaw = await prisma.job.findMany({
+      where: { isPublic: true, status: 'active' },
+      select: { id: true, location: true, departmentId: true, type: true, organizationId: true }
+    });
 
     console.log('[Filters] Fetched', allPublicJobsRaw.length, 'public jobs');
 
     // Populate departments manually to handle invalid ObjectIds gracefully
-    const Department = require('../models/Department');
     const allPublicJobs = [];
-    
+
     for (const job of allPublicJobsRaw) {
       const jobCopy = { ...job };
-      
+
       // Populate organization
-      if (job.organization) {
+      if (job.organizationId) {
         try {
-          const Organization = require('../models/Organization');
-          const org = await Organization.findById(job.organization).select('name').lean();
+          const org = await prisma.organization.findUnique({ where: { id: job.organizationId }, select: { id: true, name: true } });
           if (org) jobCopy.organization = org;
         } catch (e) {
           console.warn('[Filters] Invalid organization for job:', job._id);
         }
       }
-      
+
       // Populate department
-      if (job.department) {
+      if (job.departmentId) {
         try {
-          const dept = await Department.findById(job.department).select('name').lean();
+          const dept = await prisma.department.findUnique({ where: { id: job.departmentId }, select: { id: true, name: true } });
           if (dept) {
             jobCopy.department = dept;
           } else {
-            console.warn('[Filters] Department not found for job:', job._id, 'deptId:', job.department);
+            console.warn('[Filters] Department not found for job:', job._id, 'deptId:', job.departmentId);
           }
         } catch (e) {
-          console.warn('[Filters] Invalid department ObjectId for job:', job._id, 'value:', job.department);
+          console.warn('[Filters] Invalid department ObjectId for job:', job._id, 'value:', job.departmentId);
         }
       }
-      
+
       allPublicJobs.push(jobCopy);
     }
 
@@ -228,25 +243,32 @@ router.get('/public/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const job = await Job.findOne({ 
-      _id: id,
-      isPublic: true,
-      status: 'active'
-    }).select(
-      'title department location type level description requirements responsibilities ' +
-      'skills experience education salary benefits remote openings applicationDeadline ' +
-      'publicSlug publicUrl createdAt organization candidateApplyLimit publicApplicationCount'
-    ).populate('department', 'name')
-     .populate('organization', 'name logo website industry size');
+    const job = await prisma.job.findFirst({
+      where: { id, isPublic: true, status: 'active' },
+      select: {
+        id: true, title: true, departmentId: true, location: true, type: true, level: true,
+        description: true, requirements: true, responsibilities: true, skills: true, experience: true,
+        education: true, salary: true, benefits: true, remote: true, openings: true, applicationDeadline: true,
+        publicSlug: true, publicUrl: true, createdAt: true, organizationId: true,
+        candidateApplyLimit: true, publicApplicationCount: true, analytics: true
+      }
+    });
 
     if (!job) {
       return res.status(404).json({ msg: 'Public job not found' });
     }
 
-    // Increment public view count
-    await Job.findByIdAndUpdate(job._id, {
-      $inc: { 'analytics.publicViews': 1 }
-    });
+    // Stitch department + organization soft-ref populates
+    job.department = job.departmentId ? await prisma.department.findUnique({ where: { id: job.departmentId }, select: { id: true, name: true } }) : null;
+    job.organization = job.organizationId ? await prisma.organization.findUnique({ where: { id: job.organizationId }, select: { id: true, name: true, logo: true, website: true, industry: true, size: true } }) : null;
+
+    // Increment public view count (analytics is a Json column -> read-modify-write)
+    const analytics = job.analytics || {};
+    analytics.publicViews = (analytics.publicViews || 0) + 1;
+    await prisma.job.update({ where: { id: job.id }, data: { analytics } });
+
+    // analytics was only fetched for the view-count increment; not part of the response shape
+    delete job.analytics;
 
     res.json(job);
   } catch (error) {
@@ -276,7 +298,7 @@ router.post('/public/apply', async (req, res) => {
     }
 
     // Find the job
-    const job = await Job.findById(jobId);
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
@@ -287,40 +309,33 @@ router.post('/public/apply', async (req, res) => {
     }
 
     // Create or find candidate
-    const Candidate = require('../models/Candidate');
-    let candidate = await Candidate.findOne({ email });
-    
+    let candidate = await prisma.candidate.findFirst({ where: { email } });
+
     if (!candidate) {
-      // Create new candidate
-      candidate = new Candidate({
-        firstName,
-        lastName,
-        email,
-        phone,
-        position: cvData?.personalInfo?.position || '',
-        experience: cvData?.experience || '',
-        skills: cvData?.skills ? cvData.skills.join(', ') : '',
-        education: cvData?.education || '',
-        location: cvData?.personalInfo?.location || '',
-        source: source || 'public',
-        notes: coverLetter || '',
-        // Store parsed CV data
-        cvData: {
-          resumeText: cvData?.resumeText || '',
-          summary: cvData?.summary || '',
-          strengths: cvData?.strengths || [],
-          parseSuccess: cvData?.parseSuccess || false,
-          aiSuccess: cvData?.aiSuccess || false
-        },
-        isInternalCandidate: Boolean(isOrganizationStaff)
+      // Create new candidate.
+      // NOTE[pg]: `cvData` is not a Candidate column (Mongoose strict mode dropped it);
+      // computed for parity but not persisted to avoid a Prisma unknown-field error.
+      candidate = await prisma.candidate.create({
+        data: {
+          firstName,
+          lastName,
+          email,
+          phone,
+          position: cvData?.personalInfo?.position || '',
+          experience: cvData?.experience || '',
+          skills: cvData?.skills ? cvData.skills.join(', ') : '',
+          education: cvData?.education || '',
+          location: cvData?.personalInfo?.location || '',
+          source: source || 'public',
+          notes: coverLetter || '',
+          isInternalCandidate: Boolean(isOrganizationStaff)
+        }
       });
-      
-      await candidate.save();
 
       // Create activity notification for all organization members
       try {
-        if (job.createdBy) {
-          await Notification.createCandidateUploadedNotification(job.createdBy, candidate);
+        if (job.createdById) {
+          await Notification.createCandidateUploadedNotification(job.createdById, candidate);
           console.log(`📢 Public candidate application notifications sent to organization for: ${candidate.firstName} ${candidate.lastName}`);
         }
       } catch (notificationError) {
@@ -329,24 +344,28 @@ router.post('/public/apply', async (req, res) => {
       }
     } else {
       // Update existing candidate with new information if provided
-      if (phone && !candidate.phone) candidate.phone = phone;
-      if (cvData?.personalInfo?.position && !candidate.position) candidate.position = cvData.personalInfo.position;
-      if (cvData?.experience && !candidate.experience) candidate.experience = cvData.experience;
-      if (cvData?.skills && !candidate.skills) candidate.skills = cvData.skills.join(', ');
-      if (cvData?.education && !candidate.education) candidate.education = cvData.education;
-      if (cvData?.personalInfo?.location && !candidate.location) candidate.location = cvData.personalInfo.location;
+      const candidateUpdate = {};
+      if (phone && !candidate.phone) candidateUpdate.phone = phone;
+      if (cvData?.personalInfo?.position && !candidate.position) candidateUpdate.position = cvData.personalInfo.position;
+      if (cvData?.experience && !candidate.experience) candidateUpdate.experience = cvData.experience;
+      if (cvData?.skills && !candidate.skills) candidateUpdate.skills = cvData.skills.join(', ');
+      if (cvData?.education && !candidate.education) candidateUpdate.education = cvData.education;
+      if (cvData?.personalInfo?.location && !candidate.location) candidateUpdate.location = cvData.personalInfo.location;
       if (typeof isOrganizationStaff !== 'undefined') {
-        candidate.isInternalCandidate = typeof isOrganizationStaff === 'string'
+        candidateUpdate.isInternalCandidate = typeof isOrganizationStaff === 'string'
           ? isOrganizationStaff.toLowerCase() === 'true'
           : Boolean(isOrganizationStaff);
       }
-      
-      await candidate.save();
+
+      candidate = await prisma.candidate.update({ where: { id: candidate.id }, data: candidateUpdate });
     }
 
+    const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+    job.applicants = applicantsArr;
+
     // Check if candidate is already applied to this job
-    const existingApplication = job.applicants.find(app => 
-      app.candidate.toString() === candidate._id.toString()
+    const existingApplication = applicantsArr.find(app =>
+      app.candidate && app.candidate.toString() === candidate._id.toString()
     );
 
     if (existingApplication) {
@@ -355,7 +374,7 @@ router.post('/public/apply', async (req, res) => {
 
     // Check if job has reached its candidate apply limit
     if (job.candidateApplyLimit > 0 && job.publicApplicationCount >= job.candidateApplyLimit) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         msg: 'This job has reached its maximum number of applications',
         error: 'APPLICATION_LIMIT_REACHED',
         limit: job.candidateApplyLimit
@@ -363,17 +382,17 @@ router.post('/public/apply', async (req, res) => {
     }
 
     // Check if pipeline stages exist
-    const InterviewStage = require('../models/InterviewStage');
-    const firstStage = await InterviewStage.findOne({ 
-      jobId: job._id, 
-      isActive: true 
-    }).sort('order');
-    
+    const firstStage = await prisma.interviewStage.findFirst({
+      where: { jobId: job.id, isActive: true },
+      orderBy: { order: 'asc' }
+    });
+
     // Build applicant data
     // For public applications, use job's createdBy or organization as changedBy for statusHistory
-    const statusHistoryChangedBy = job.createdBy || job.organization;
-    
+    const statusHistoryChangedBy = job.createdById || job.organizationId;
+
     const applicantData = {
+      _id: newId(),
       candidate: candidate._id,
       status: 'applied',
       appliedAt: new Date(),
@@ -416,13 +435,17 @@ router.post('/public/apply', async (req, res) => {
     job.analytics.publicApplications = (job.analytics.publicApplications || 0) + 1;
     job.analytics.applications = (job.analytics.applications || 0) + 1;
 
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: {
+      applicants: job.applicants,
+      publicApplicationCount: job.publicApplicationCount,
+      analytics: job.analytics
+    } });
 
     // Send application confirmation email
     try {
       // Populate job organization for email service
-      await job.populate('organization');
-      
+      job.organization = job.organizationId ? await prisma.organization.findUnique({ where: { id: job.organizationId } }) : null;
+
       const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
       await candidateEmailNotificationService.sendApplicationConfirmationEmail({
         candidate,
@@ -437,7 +460,8 @@ router.post('/public/apply', async (req, res) => {
     // Send notification if job just reached limit
     if (isNowFull) {
       try {
-        await job.populate(['organization', 'hiringManager']);
+        job.organization = job.organizationId ? await prisma.organization.findUnique({ where: { id: job.organizationId } }) : null;
+        job.hiringManager = job.hiringManagerId ? await prisma.user.findUnique({ where: { id: job.hiringManagerId } }) : null;
         const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
         await candidateEmailNotificationService.sendJobApplicationLimitReachedEmail({ job });
         console.log(`📧 Sent application limit reached notification for job: ${job.title}`);
@@ -552,29 +576,29 @@ router.post('/admin/fix-public-counts', authMiddleware, requireOrganization, asy
     const organizationId = req.user.currentOrganization;
     
     // Find all public jobs for this organization
-    const publicJobs = await Job.find({ 
-      organization: organizationId,
-      isPublic: true 
+    const publicJobs = await prisma.job.findMany({
+      where: { organizationId, isPublic: true }
     });
-    
+
     let fixed = 0;
     let skipped = 0;
     const results = [];
-    
+
     for (const job of publicJobs) {
       // Count applicants with 'public' source
-      const publicApplicants = job.applicants.filter(app => 
-        app.source === 'public' || 
+      const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+      const publicApplicants = applicantsArr.filter(app =>
+        app.source === 'public' ||
         (app.statusHistory && app.statusHistory.some(h => h.notes?.includes('public') || h.notes?.includes('Public')))
       );
-      
+
       const actualCount = publicApplicants.length;
       const currentCount = job.publicApplicationCount || 0;
-      
+
       if (actualCount !== currentCount) {
         job.publicApplicationCount = actualCount;
-        await job.save();
-        
+        await prisma.job.update({ where: { id: job.id }, data: { publicApplicationCount: actualCount } });
+
         results.push({
           jobId: job._id,
           title: job.title,

@@ -1,7 +1,10 @@
+// JWT access/refresh session service — PostgreSQL/Prisma (migrated from Mongoose).
+// Public API and behaviour are preserved exactly; only the data layer changed.
+// Accepts either a Prisma user or a (legacy) Mongoose user document for createSession.
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const UserSession = require('../models/UserSession');
-const User = require('../models/User');
+const prisma = require('../db/client');
+const { oid } = require('../db/objectId');
 
 const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_TTL || '10m';
 const REFRESH_TOKEN_TTL_MS = parseInt(process.env.JWT_REFRESH_TTL_MS || `${30 * 24 * 60 * 60 * 1000}`, 10); // default 30 days
@@ -14,13 +17,18 @@ function generateRandomToken(bytes = 48) {
   return crypto.randomBytes(bytes).toString('base64url');
 }
 
+// user may be a Prisma row (id is a string) or a Mongoose doc (id is the hex virtual).
+function userIdOf(user) {
+  return oid(user.id || user._id);
+}
+
 async function createSession({ user, fingerprint, userAgent, ip }) {
   const sessionId = crypto.randomUUID();
   const refreshToken = generateRandomToken();
   const refreshTokenHash = hashToken(refreshToken);
 
   const accessTokenPayload = {
-    user: { id: user.id },
+    user: { id: userIdOf(user) },
     jti: sessionId,
     sessionVersion: user.security?.sessionVersion || 1,
   };
@@ -29,53 +37,52 @@ async function createSession({ user, fingerprint, userAgent, ip }) {
     expiresIn: ACCESS_TOKEN_TTL,
   });
 
-  const session = await UserSession.create({
-    user: user._id,
-    fingerprint,
-    userAgent,
-    ip,
-    refreshTokenHash,
-    accessTokenId: sessionId,
-    expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
-    lastActivityAt: new Date(),
+  const session = await prisma.userSession.create({
+    data: {
+      userId: userIdOf(user),
+      fingerprint,
+      userAgent,
+      ip,
+      refreshTokenHash,
+      accessTokenId: sessionId,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      lastActivityAt: new Date(),
+    },
   });
-      
-      return {
-    accessToken,
-    refreshToken,
-    session,
-  };
+
+  return { accessToken, refreshToken, session };
 }
 
 async function revokeSessionById(sessionId, reason = 'revoked') {
-  const session = await UserSession.findOneAndUpdate(
-    { accessTokenId: sessionId, revoked: { $ne: true } },
-    { revoked: true, revokedAt: new Date(), reason },
-    { new: true }
-  );
-  return session;
+  const session = await prisma.userSession.findFirst({
+    where: { accessTokenId: sessionId, revoked: false },
+  });
+  if (!session) return null;
+  return prisma.userSession.update({
+    where: { id: session.id },
+    data: { revoked: true, revokedAt: new Date(), reason },
+  });
 }
 
 async function revokeSessionsByFingerprint(userId, fingerprint, reason = 'device_removed') {
-  const result = await UserSession.updateMany(
-    { user: userId, fingerprint, revoked: { $ne: true } },
-    { revoked: true, revokedAt: new Date(), reason }
-  );
-  return result;
+  return prisma.userSession.updateMany({
+    where: { userId: oid(userId), fingerprint, revoked: false },
+    data: { revoked: true, revokedAt: new Date(), reason },
+  });
 }
 
 async function revokeAllSessionsExcept(userId, sessionId, reason = 'security_reset') {
-  await UserSession.updateMany(
-    { user: userId, accessTokenId: { $ne: sessionId } },
-    { revoked: true, revokedAt: new Date(), reason }
-  );
+  await prisma.userSession.updateMany({
+    where: { userId: oid(userId), accessTokenId: { not: sessionId } },
+    data: { revoked: true, revokedAt: new Date(), reason },
+  });
 }
 
 async function validateAccessToken(token) {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
-  const session = await UserSession.findOne({ accessTokenId: decoded.jti });
-      
-      if (!session) {
+  const session = await prisma.userSession.findFirst({ where: { accessTokenId: decoded.jti } });
+
+  if (!session) {
     throw new Error('session_not_found');
   }
 
@@ -83,7 +90,10 @@ async function validateAccessToken(token) {
     throw new Error('session_revoked');
   }
 
-  const user = await User.findById(decoded.user.id).select('security');
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.user.id },
+    select: { id: true, security: true },
+  });
   if (!user) {
     throw new Error('user_not_found');
   }
@@ -98,7 +108,7 @@ async function validateAccessToken(token) {
 
 async function refreshSession(refreshToken, fingerprint, userAgent, ip) {
   const refreshHash = hashToken(refreshToken);
-  const session = await UserSession.findOne({ refreshTokenHash: refreshHash });
+  const session = await prisma.userSession.findFirst({ where: { refreshTokenHash: refreshHash } });
   if (!session) {
     throw new Error('invalid_refresh_token');
   }
@@ -111,23 +121,27 @@ async function refreshSession(refreshToken, fingerprint, userAgent, ip) {
     throw new Error('refresh_expired');
   }
 
-  const user = await User.findById(session.user);
+  const user = await prisma.user.findUnique({ where: { id: session.userId } });
   if (!user) {
     throw new Error('user_not_found');
   }
 
   // Rotate refresh token
   const newRefreshToken = generateRandomToken();
-  session.refreshTokenHash = hashToken(newRefreshToken);
-  session.userAgent = userAgent;
-  session.ip = ip;
-  session.fingerprint = fingerprint;
-  session.lastActivityAt = new Date();
-  await session.save();
+  const updatedSession = await prisma.userSession.update({
+    where: { id: session.id },
+    data: {
+      refreshTokenHash: hashToken(newRefreshToken),
+      userAgent,
+      ip,
+      fingerprint,
+      lastActivityAt: new Date(),
+    },
+  });
 
   const accessTokenPayload = {
     user: { id: user.id },
-    jti: session.accessTokenId,
+    jti: updatedSession.accessTokenId,
     sessionVersion: user.security?.sessionVersion || 1,
   };
 
@@ -135,22 +149,25 @@ async function refreshSession(refreshToken, fingerprint, userAgent, ip) {
     expiresIn: ACCESS_TOKEN_TTL,
   });
 
-  return { accessToken, refreshToken: newRefreshToken, session, user };
+  return { accessToken, refreshToken: newRefreshToken, session: updatedSession, user };
 }
 
 async function revokeSessionsForUser(userId, reason = 'security_reset') {
-  await UserSession.updateMany(
-    { user: userId, revoked: { $ne: true } },
-    { revoked: true, revokedAt: new Date(), reason }
-  );
+  await prisma.userSession.updateMany({
+    where: { userId: oid(userId), revoked: false },
+    data: { revoked: true, revokedAt: new Date(), reason },
+  });
 }
 
 async function getSessionById(sessionId) {
-  return UserSession.findOne({ accessTokenId: sessionId });
+  return prisma.userSession.findFirst({ where: { accessTokenId: sessionId } });
 }
 
 async function getUserSessions(userId) {
-  return UserSession.find({ user: userId }).sort({ createdAt: -1 });
+  return prisma.userSession.findMany({
+    where: { userId: oid(userId) },
+    orderBy: { createdAt: 'desc' },
+  });
 }
 
 async function deactivateSession(sessionId, reason = 'user_logout') {
@@ -158,19 +175,21 @@ async function deactivateSession(sessionId, reason = 'user_logout') {
 }
 
 async function validateActiveSession(sessionId) {
-  return UserSession.findOne({ accessTokenId: sessionId, revoked: { $ne: true } });
+  return prisma.userSession.findFirst({ where: { accessTokenId: sessionId, revoked: false } });
 }
 
 async function cleanupExpiredSessions() {
-  const result = await UserSession.deleteMany({ expiresAt: { $lt: new Date() } });
-  return result.deletedCount || 0;
+  const result = await prisma.userSession.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  return result.count || 0;
 }
 
 async function getSessionStats() {
-  const totalActiveSessions = await UserSession.countDocuments({ revoked: { $ne: true }, expiresAt: { $gt: new Date() } });
-  const totalRevoked = await UserSession.countDocuments({ revoked: true });
-      return {
-        totalActiveSessions,
+  const totalActiveSessions = await prisma.userSession.count({
+    where: { revoked: false, expiresAt: { gt: new Date() } },
+  });
+  const totalRevoked = await prisma.userSession.count({ where: { revoked: true } });
+  return {
+    totalActiveSessions,
     totalRevoked,
   };
 }
@@ -190,4 +209,3 @@ module.exports = {
   cleanupExpiredSessions,
   getSessionStats,
 };
-

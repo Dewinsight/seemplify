@@ -1,5 +1,4 @@
-const Job = require('../models/Job');
-const Candidate = require('../models/Candidate');
+const prisma = require('../db/client');
 const AzureOpenAIService = require('../services/azureOpenAIService');
 const gptAnalysisService = require('../services/gptAnalysisService');
 const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
@@ -616,8 +615,8 @@ async function handleCandidateQuery(message, intentAnalysis, userContext = {}) {
   }
   
   console.log(`🔒 Querying candidates for organization: ${organizationId}`);
-  const candidates = await Candidate.find({ organizationId }).limit(100);
-  const totalCount = await Candidate.countDocuments({ organizationId });
+  const candidates = await prisma.candidate.findMany({ where: { organizationId }, take: 100 });
+  const totalCount = await prisma.candidate.count({ where: { organizationId } });
   
   let dataContext = `REAL DATA FROM SYSTEM:\n\nTotal Candidates: ${totalCount}\n`;
   let actions = [];
@@ -693,7 +692,7 @@ async function handleJobQuery(message, intentAnalysis, userContext = {}) {
   }
   
   console.log(`🔒 Querying jobs for organization: ${organizationId}`);
-  const jobs = await Job.find({ organizationId });
+  const jobs = await prisma.job.findMany({ where: { organizationId } });
   const openJobs = jobs.filter(j => j.status === 'active');
   
   let dataContext = `REAL DATA FROM SYSTEM:\n\nTotal Jobs: ${jobs.length}\nActive/Open Positions: ${openJobs.length}\n`;
@@ -802,7 +801,7 @@ async function handleComparisonQuery(message, intentAnalysis) {
   let actions = [];
   
   // Find candidates matching the role
-  const candidates = await Candidate.find();
+  const candidates = await prisma.candidate.findMany();
   let matchingCandidates = [];
   
   if (roles.length > 0) {
@@ -830,7 +829,7 @@ async function handleComparisonQuery(message, intentAnalysis) {
           score += candidate.aiAnalysis.strengths.length * 5;
         }
         
-        return { ...candidate.toObject(), score };
+        return { ...candidate, score };
       }).sort((a, b) => b.score - a.score);
       
       const topCandidate = rankedCandidates[0];
@@ -894,7 +893,7 @@ async function handleComparisonQuery(message, intentAnalysis) {
 
 // Handle matching requests
 async function handleMatchingRequest(message, intentAnalysis) {
-  const jobs = await Job.find({ status: 'active' });
+  const jobs = await prisma.job.findMany({ where: { status: 'active' } });
   let dataContext = '';
   let actions = [];
   
@@ -956,10 +955,10 @@ async function handleAnalyticsRequest(message, intentAnalysis) {
 
 // Get system overview
 async function getSystemOverview() {
-  const candidateCount = await Candidate.countDocuments();
-  const jobCount = await Job.countDocuments();
-  const activeJobs = await Job.countDocuments({ status: 'active' });
-  
+  const candidateCount = await prisma.candidate.count();
+  const jobCount = await prisma.job.count();
+  const activeJobs = await prisma.job.count({ where: { status: 'active' } });
+
   return `SYSTEM OVERVIEW:\n- Total Candidates: ${candidateCount}\n- Total Jobs: ${jobCount}\n- Active Openings: ${activeJobs}`;
 }
 
@@ -989,10 +988,10 @@ function getDefaultActions() {
 
 // Build system context with semantic understanding and conversation history
 async function buildSystemContextWithHistory(dataContext, intentAnalysis, conversationHistory, userContext, userPersonality = null) {
-  const candidateCount = await Candidate.countDocuments();
-  const jobCount = await Job.countDocuments();
-  const activeJobs = await Job.countDocuments({ status: 'active' });
-  
+  const candidateCount = await prisma.candidate.count();
+  const jobCount = await prisma.job.count();
+  const activeJobs = await prisma.job.count({ where: { status: 'active' } });
+
   let contextString = 'You are SMART HR Assistant, an AI-powered HR management system assistant.\n\nCurrent System Status:\n- Total Candidates: ' + candidateCount + '\n- Total Jobs: ' + jobCount + '\n- Active Job Openings: ' + activeJobs + '\n\nCurrent Query Analysis:\n- Intent: ' + intentAnalysis.category + '\n- Confidence: ' + intentAnalysis.confidence + '\n- Extracted Entities: ' + JSON.stringify(intentAnalysis.extractedEntities || {});
 
   // Add enhanced user context with semantic understanding
@@ -1093,19 +1092,23 @@ async function buildSystemContextWithHistory(dataContext, intentAnalysis, conver
 // Analyze all candidates and provide insights
 exports.analyzeCandidates = async (req, res) => {
   try {
-    const candidates = await Candidate.find().limit(50); // Analyze top 50 candidates
-    const totalCandidates = await Candidate.countDocuments();
-    
+    const candidates = await prisma.candidate.findMany({ take: 50 }); // Analyze top 50 candidates
+    const totalCandidates = await prisma.candidate.count();
+
     // Group candidates by various criteria
-    const byStatus = await Candidate.aggregate([
-      { $group: { _id: "$status", count: { $sum: 1 } } }
-    ]);
-    
-    const byPosition = await Candidate.aggregate([
-      { $group: { _id: "$position", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 }
-    ]);
+    const byStatusGroups = await prisma.candidate.groupBy({
+      by: ['status'],
+      _count: { _all: true }
+    });
+    const byStatus = byStatusGroups.map(g => ({ _id: g.status, count: g._count._all }));
+
+    const byPositionGroups = await prisma.candidate.groupBy({
+      by: ['position'],
+      _count: { _all: true },
+      orderBy: { _count: { position: 'desc' } },
+      take: 10
+    });
+    const byPosition = byPositionGroups.map(g => ({ _id: g.position, count: g._count._all }));
 
     // Extract top skills
     const skillsArray = candidates.flatMap(c => 
@@ -1160,7 +1163,7 @@ exports.analyzeCandidates = async (req, res) => {
 // Analyze all jobs and provide insights
 exports.analyzeJobs = async (req, res) => {
   try {
-    const jobs = await Job.find();
+    const jobs = await prisma.job.findMany();
     const totalJobs = jobs.length;
     const activeJobs = jobs.filter(j => j.status === 'active').length;
     
@@ -1236,7 +1239,7 @@ exports.getMatchingReport = async (req, res) => {
     const requestedTopK = Math.min(Math.max(parseInt(topK, 10) || 10, 1), 5000);
     const shouldForceRefresh = forceRefresh === 'true' || forceRefresh === true;
     
-    const job = await Job.findById(jobId);
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
       return res.status(404).json({
         msg: 'Job not found',
@@ -1278,7 +1281,7 @@ exports.getMatchingReport = async (req, res) => {
       await embeddingService.createJobEmbedding(job);
       job.isEmbedded = true;
       job.embeddingCreatedAt = new Date();
-      await job.save();
+      await prisma.job.update({ where: { id: job.id }, data: { isEmbedded: true, embeddingCreatedAt: job.embeddingCreatedAt } });
     }
 
     // Use the existing job matching endpoint with embeddings
@@ -1390,9 +1393,9 @@ Based on these AI-powered matches, provide:
 // Get comprehensive hiring analytics
 exports.getHiringAnalytics = async (req, res) => {
   try {
-    const candidates = await Candidate.find();
-    const jobs = await Job.find();
-    
+    const candidates = await prisma.candidate.findMany();
+    const jobs = await prisma.job.findMany();
+
     // Calculate key metrics
     const totalCandidates = candidates.length;
     const totalJobs = jobs.length;
@@ -2150,12 +2153,9 @@ async function handleAnalyzeCandidateAction(data, organizationId) {
     throw new Error('candidateId is required for analyze-candidate action');
   }
 
-  const Candidate = require('../models/Candidate');
-  
   // Find candidate and verify organization access
-  const candidate = await Candidate.findOne({ 
-    _id: candidateId, 
-    organization: organizationId 
+  const candidate = await prisma.candidate.findFirst({
+    where: { id: candidateId, organizationId }
   });
 
   if (!candidate) {
@@ -2186,12 +2186,9 @@ async function handleAnalyzeJobAction(data, organizationId) {
     throw new Error('jobId is required for analyze-job action');
   }
 
-  const Job = require('../models/Job');
-  
   // Find job and verify organization access
-  const job = await Job.findOne({ 
-    _id: jobId, 
-    organization: organizationId 
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, organizationId }
   });
 
   if (!job) {
@@ -2233,12 +2230,9 @@ async function handleDiscussCandidateAction(data, organizationId) {
     throw new Error('candidateId is required for discuss-candidate action');
   }
 
-  const Candidate = require('../models/Candidate');
-  
   // Find candidate and verify organization access
-  const candidate = await Candidate.findOne({ 
-    _id: candidateId, 
-    organization: organizationId 
+  const candidate = await prisma.candidate.findFirst({
+    where: { id: candidateId, organizationId }
   });
 
   if (!candidate) {
@@ -2272,12 +2266,9 @@ async function handleScheduleInterviewAction(data, organizationId) {
     throw new Error('candidateId is required for schedule-interview action');
   }
 
-  const Candidate = require('../models/Candidate');
-  
   // Find candidate and verify organization access
-  const candidate = await Candidate.findOne({ 
-    _id: candidateId, 
-    organization: organizationId 
+  const candidate = await prisma.candidate.findFirst({
+    where: { id: candidateId, organizationId }
   });
 
   if (!candidate) {
@@ -2338,12 +2329,9 @@ async function handleFindCandidatesForJobAction(data, organizationId) {
     throw new Error('jobId is required for find-candidates-for-job action');
   }
 
-  const Job = require('../models/Job');
-  
   // Find job and verify organization access
-  const job = await Job.findOne({ 
-    _id: jobId, 
-    organization: organizationId 
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, organizationId }
   });
 
   if (!job) {

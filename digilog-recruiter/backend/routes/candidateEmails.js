@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
-const Job = require('../models/Job');
-const Candidate = require('../models/Candidate');
+const prisma = require('../db/client');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -42,24 +41,28 @@ router.post('/send-rejection',
       });
 
       // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
+      const query = { id: jobId };
       if (organizationId) {
-        query.organization = organizationId;
+        query.organizationId = organizationId;
       }
 
-      const job = await Job.findOne(query).populate('organization');
+      const job = await prisma.job.findFirst({ where: query });
       if (!job) {
         return res.status(404).json({ msg: 'Job not found' });
       }
+      // Populate `organization` soft ref (replaces Mongoose .populate('organization'))
+      job.organization = job.organizationId
+        ? await prisma.organization.findUnique({ where: { id: job.organizationId } })
+        : null;
 
-      const candidate = await Candidate.findById(candidateId);
+      const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
       if (!candidate) {
         return res.status(404).json({ msg: 'Candidate not found' });
       }
 
       // If trying to reject from shortlist, check if candidate is already in pipeline
       if (isShortlistRejection) {
-        const isInPipeline = job.applicants.some(app => 
+        const isInPipeline = (job.applicants || []).some(app =>
           app.candidate.toString() === candidateId
         );
         if (isInPipeline) {
@@ -84,16 +87,17 @@ router.post('/send-rejection',
       // Update candidate status after sending rejection email
       try {
         if (isShortlistRejection) {
-          // Update shortlist status to rejected
-          const shortlistItem = job.shortlist.find(item => item.candidate.toString() === candidateId);
+          // Update shortlist status to rejected (read-modify-write the Json shortlist)
+          const shortlist = Array.isArray(job.shortlist) ? job.shortlist : [];
+          const shortlistItem = shortlist.find(item => item.candidate.toString() === candidateId);
           if (shortlistItem && shortlistItem.status !== 'rejected') {
             shortlistItem.status = 'rejected';
-            await job.save();
+            await prisma.job.update({ where: { id: job.id }, data: { shortlist } });
             console.log(`✅ Updated shortlist candidate ${candidateId} status to rejected`);
           }
         } else {
           // Update pipeline status to rejected
-          const applicant = job.applicants.find(app => app.candidate._id.toString() === candidateId);
+          const applicant = (job.applicants || []).find(app => app.candidate._id.toString() === candidateId);
           if (applicant && applicant.status !== 'rejected') {
             await pipelineProgressionService.rejectCandidate(jobId, candidateId, reason || 'Rejected via email', req.user.id);
             console.log(`✅ Updated pipeline candidate ${candidateId} status to rejected`);
@@ -163,18 +167,24 @@ router.post('/send-bulk-rejection',
         const { candidateId, jobId, stage } = candidateData;
 
         // Build query to ensure job belongs to organization
-        const query = { _id: jobId };
+        const query = { id: jobId };
         if (organizationId) {
-          query.organization = organizationId;
+          query.organizationId = organizationId;
         }
 
-        const job = await Job.findOne(query).populate('organization');
-        const candidate = await Candidate.findById(candidateId);
+        const job = await prisma.job.findFirst({ where: query });
+        if (job) {
+          // Populate `organization` soft ref (replaces Mongoose .populate('organization'))
+          job.organization = job.organizationId
+            ? await prisma.organization.findUnique({ where: { id: job.organizationId } })
+            : null;
+        }
+        const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
 
         if (job && candidate) {
           // If trying to reject from shortlist, check if candidate is already in pipeline
           if (isShortlistRejection) {
-            const isInPipeline = job.applicants.some(app => 
+            const isInPipeline = (job.applicants || []).some(app =>
               app.candidate.toString() === candidateId
             );
             if (isInPipeline) {
@@ -218,19 +228,35 @@ router.post('/send-bulk-rejection',
           const jobId = candidateJobMap.get(candidateId);
           
           if (isShortlistRejection) {
-            // Update shortlist status to rejected
-            const shortlistItem = candidateData.job.shortlist.find(item => item.candidate.toString() === candidateId);
+            // Update shortlist status to rejected (read-modify-write the Json shortlist)
+            const shortlist = Array.isArray(candidateData.job.shortlist) ? candidateData.job.shortlist : [];
+            const shortlistItem = shortlist.find(item => item.candidate.toString() === candidateId);
             if (shortlistItem && shortlistItem.status !== 'rejected') {
               shortlistItem.status = 'rejected';
-              await candidateData.job.save();
+              await prisma.job.update({ where: { id: candidateData.job.id }, data: { shortlist } });
               statusUpdatedCount++;
               console.log(`✅ Updated shortlist status for candidate ${candidateId}`);
             }
           } else {
             // Update pipeline status to rejected - need to reload job to get applicants with full candidate data
-            const jobForUpdate = await Job.findById(jobId).populate('applicants.candidate');
+            const jobForUpdate = await prisma.job.findUnique({ where: { id: jobId } });
             if (jobForUpdate) {
-              const applicant = jobForUpdate.applicants.find(app => 
+              // Populate applicants[].candidate (soft ref id) -> candidate object
+              const applicants = Array.isArray(jobForUpdate.applicants) ? jobForUpdate.applicants : [];
+              const applicantCandidateIds = [...new Set(
+                applicants.map(app => app && (app.candidate?._id || app.candidate)).filter(Boolean).map(String)
+              )];
+              const applicantCandidates = applicantCandidateIds.length
+                ? await prisma.candidate.findMany({ where: { id: { in: applicantCandidateIds } } })
+                : [];
+              const applicantCandidateMap = new Map(applicantCandidates.map(c => [c.id, c]));
+              jobForUpdate.applicants = applicants.map(app => {
+                const cid = app && (app.candidate?._id || app.candidate);
+                return cid && applicantCandidateMap.has(String(cid))
+                  ? { ...app, candidate: applicantCandidateMap.get(String(cid)) }
+                  : app;
+              });
+              const applicant = jobForUpdate.applicants.find(app =>
                 app.candidate && app.candidate._id.toString() === candidateId
               );
               if (applicant && applicant.status !== 'rejected') {
@@ -280,12 +306,12 @@ router.get('/job/:jobId/email-settings', authMiddleware, async (req, res) => {
     const organizationId = req.user?.currentOrganization;
 
     // Build query to ensure job belongs to organization
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    const job = await Job.findOne(query).select('emailSettings title');
+    const job = await prisma.job.findFirst({ where: query, select: { emailSettings: true, title: true } });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
@@ -338,17 +364,17 @@ router.put('/job/:jobId/email-settings',
       const emailSettings = decodeObjectHtmlEntities(req.body || {});
 
       // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
+      const query = { id: jobId };
       if (organizationId) {
-        query.organization = organizationId;
+        query.organizationId = organizationId;
       }
 
-      const job = await Job.findOne(query);
+      const job = await prisma.job.findFirst({ where: query });
       if (!job) {
         return res.status(404).json({ msg: 'Job not found' });
       }
 
-      // Update email settings
+      // Update email settings (read-modify-write the Json column)
       job.emailSettings = {
         ...job.emailSettings,
         ...emailSettings,
@@ -356,7 +382,7 @@ router.put('/job/:jobId/email-settings',
         updatedBy: req.user._id
       };
 
-      await job.save();
+      await prisma.job.update({ where: { id: job.id }, data: { emailSettings: job.emailSettings } });
 
       console.log(`📧 Email settings updated for job ${job.title} by ${req.user.email}`);
 
@@ -399,15 +425,19 @@ router.post('/test-email',
       const organizationId = req.user?.currentOrganization;
 
       // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
+      const query = { id: jobId };
       if (organizationId) {
-        query.organization = organizationId;
+        query.organizationId = organizationId;
       }
 
-      const job = await Job.findOne(query).populate('organization');
+      const job = await prisma.job.findFirst({ where: query });
       if (!job) {
         return res.status(404).json({ msg: 'Job not found' });
       }
+      // Populate `organization` soft ref (replaces Mongoose .populate('organization'))
+      job.organization = job.organizationId
+        ? await prisma.organization.findUnique({ where: { id: job.organizationId } })
+        : null;
 
       // Create test candidate data
       const testCandidate = {

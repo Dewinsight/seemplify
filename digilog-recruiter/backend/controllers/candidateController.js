@@ -1,5 +1,6 @@
-const Candidate = require('../models/Candidate');
-const Notification = require('../models/Notification');
+const Notification = require('../db/notify');
+const prisma = require('../db/client');
+const { newId } = require('../db/objectId');
 const fs = require('fs');
 const util = require('util');
 // Import the new services
@@ -19,14 +20,37 @@ const unlinkAsync = util.promisify(fs.unlink);
 const cvParsingService = new CVParsingService();
 const cloudinaryUploadService = new CloudinaryUploadService();
 
+// Helper: stitch user details onto each note's `user` field (replaces the old
+// Mongoose `candidate.populate('notes.user', 'profile.firstName profile.lastName email')`).
+const populateNotesUser = async (candidate) => {
+  const notes = Array.isArray(candidate.notes) ? candidate.notes : [];
+  const userIds = [...new Set(notes.map(n => n && n.user).filter(Boolean).map(String))];
+  if (userIds.length === 0) return candidate;
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, email: true, profile: true }
+  });
+  const userMap = new Map(users.map(u => [u.id, u]));
+  candidate.notes = notes.map(n => {
+    if (n && n.user && userMap.has(String(n.user))) {
+      return { ...n, user: userMap.get(String(n.user)) };
+    }
+    return n;
+  });
+  return candidate;
+};
+
 // Helper function to create embedding for candidate with retry
 const createCandidateEmbedding = async (candidate, waitForCompletion = false) => {
   const embeddingOperation = async () => {
     await embeddingService.createCandidateEmbedding(candidate);
     // Update candidate to mark as embedded
-    await Candidate.findByIdAndUpdate(candidate._id, {
-      isEmbedded: true,
-      embeddingCreatedAt: new Date()
+    await prisma.candidate.update({
+      where: { id: candidate._id },
+      data: {
+        isEmbedded: true,
+        embeddingCreatedAt: new Date()
+      }
     });
     console.log(`✅ Embedding created for candidate: ${candidate._id}`);
     return true;
@@ -175,10 +199,9 @@ exports.uploadAndCreateCandidate = async (req, res) => {
 
     if (!organizationId && req.body.jobId) {
       // For public applications, get organization from the job being applied to
-      const Job = require('../models/Job');
-      const job = await Job.findById(req.body.jobId).select('organization');
+      const job = await prisma.job.findUnique({ where: { id: req.body.jobId }, select: { organizationId: true } });
       if (job) {
-        organizationId = job.organization;
+        organizationId = job.organizationId;
       }
     }
 
@@ -229,9 +252,9 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       coverLetter: req.body.coverLetter || '',
       status: 'New',
       source: 'Uploaded CV',
-      organization: organizationId,
+      organizationId: organizationId,
       createdBy: req.user?.id || null,
-      jobAppliedFor: req.body.jobId || null, // Link to the job if provided
+      jobAppliedForId: req.body.jobId || null, // Link to the job if provided
       // Store Cloudinary metadata
       cloudinaryPublicId: cloudinaryResult.publicId,
       cloudinaryResourceType: cloudinaryResult.resourceType,
@@ -276,7 +299,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       firstName: candidateData.firstName,
       lastName: candidateData.lastName,
       email: candidateData.email,
-      organization: candidateData.organization
+      organization: candidateData.organizationId
     });
 
     // Save candidate to database with retry
@@ -285,9 +308,8 @@ exports.uploadAndCreateCandidate = async (req, res) => {
       console.log('💾 Attempting to save candidate to database...');
 
       const saveOperation = async () => {
-        const candidate = new Candidate(candidateData);
         console.log('📝 Candidate model created, calling save()...');
-        await candidate.save();
+        const candidate = await prisma.candidate.create({ data: candidateData });
         console.log('✅ Candidate.save() completed');
         return candidate;
       };
@@ -308,11 +330,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
     // Handle public job application credit deduction
     if (req.body.jobId) {
       try {
-        const Job = require('../models/Job');
-        const Organization = require('../models/Organization');
-        const Plan = require('../models/Plan');
-
-        const job = await Job.findById(req.body.jobId);
+        const job = await prisma.job.findUnique({ where: { id: req.body.jobId } });
 
         if (job && job.isPublic) {
           console.log(`🌐 Candidate applied to public job: ${job.title}`);
@@ -323,8 +341,8 @@ exports.uploadAndCreateCandidate = async (req, res) => {
             // Don't add to job, but candidate is already created, so continue
           } else {
             // Get upload candidate cost
-            const organization = await Organization.findById(organizationId);
-            const plan = await Plan.findOne({ code: organization.subscription?.plan });
+            const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+            const plan = await prisma.plan.findFirst({ where: { code: organization.subscription?.plan } });
             const uploadCost = plan?.credits?.creditCosts?.uploadCandidate || 3;
 
             // Check if job has enough reserved credits
@@ -343,7 +361,10 @@ exports.uploadAndCreateCandidate = async (req, res) => {
               // They will be added to job.shortlist when the application form is submitted
               // This prevents the "Candidate already in pipeline" error when applying
 
-              await job.save();
+              await prisma.job.update({
+                where: { id: job.id },
+                data: { publicApplicationCount: newCount }
+              });
 
               const creditsUsed = job.publicApplicationCount * uploadCost;
               const creditsRemaining = job.reservedCredits - creditsUsed;
@@ -355,7 +376,12 @@ exports.uploadAndCreateCandidate = async (req, res) => {
               // Send notification if job just reached limit
               if (isNowFull) {
                 try {
-                  await job.populate(['organization', 'hiringManager']);
+                  job.organization = job.organizationId
+                    ? await prisma.organization.findUnique({ where: { id: job.organizationId } })
+                    : null;
+                  job.hiringManager = job.hiringManagerId
+                    ? await prisma.user.findUnique({ where: { id: job.hiringManagerId } })
+                    : null;
                   const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
                   await candidateEmailNotificationService.sendJobApplicationLimitReachedEmail({ job });
                   console.log(`📧 Sent application limit reached notification for job: ${job.title}`);
@@ -485,24 +511,24 @@ exports.createCandidateManually = async (req, res) => {
   } = decodedBody;
 
   try {
-    const candidate = new Candidate({
-      firstName,
-      lastName,
-      email,
-      phone,
-      location,
-      position,
-      experience,
-      education,
-      skills,
-      coverLetter,
-      status,
-      source,
-      organization: req.user.currentOrganization,
-      createdBy: req.user.id,
+    const candidate = await prisma.candidate.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        phone,
+        location,
+        position,
+        experience,
+        education,
+        skills,
+        coverLetter,
+        status,
+        source,
+        organizationId: req.user.currentOrganization,
+        createdBy: req.user.id,
+      }
     });
-
-    await candidate.save();
 
     // 🔔 Notify GPT cache system of new candidate
     gptAnalysisService.cache.onCandidateAdded(candidate._id);
@@ -540,9 +566,8 @@ exports.checkEmbeddingStatus = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     console.log(`Checking embedding status for candidate: ${id}`);
 
-    const candidate = await Candidate.findOne({
-      _id: id,
-      organization: organizationId
+    const candidate = await prisma.candidate.findFirst({
+      where: { id: id, organizationId: organizationId }
     });
     if (!candidate) {
       console.log(`Candidate not found: ${id}`);
@@ -575,9 +600,8 @@ exports.createEmbedding = async (req, res) => {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
 
-    const candidate = await Candidate.findOne({
-      _id: id,
-      organization: organizationId
+    const candidate = await prisma.candidate.findFirst({
+      where: { id: id, organizationId: organizationId }
     });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
@@ -587,9 +611,12 @@ exports.createEmbedding = async (req, res) => {
     await embeddingService.createCandidateEmbedding(candidate);
 
     // Update candidate status
-    await Candidate.findByIdAndUpdate(id, {
-      isEmbedded: true,
-      embeddingCreatedAt: new Date()
+    await prisma.candidate.update({
+      where: { id },
+      data: {
+        isEmbedded: true,
+        embeddingCreatedAt: new Date()
+      }
     });
 
     res.json({
@@ -612,33 +639,45 @@ exports.exportCandidates = async (req, res) => {
     const { status, search } = req.query;
 
     // reuse the same query logic as getAllCandidates but without pagination
-    const query = { organization: organizationId };
+    const query = { organizationId: organizationId };
 
     if (status) query.status = status;
     if (search) {
       const searchTerms = search.trim().split(/\s+/).filter(term => term.length > 0);
-      const searchRegex = new RegExp(searchTerms.join('|'), 'i');
-      query.$or = [
-        { firstName: searchRegex },
-        { lastName: searchRegex },
-        { email: searchRegex },
-        { phone: searchRegex },
-        { position: searchRegex },
-        { skills: searchRegex },
-        { experience: searchRegex },
-        { education: searchRegex },
-        { location: searchRegex },
-        { resumeText: searchRegex },
-        { coverLetter: searchRegex },
-        { source: searchRegex },
-        { status: searchRegex }
+      const pattern = searchTerms.join('|');
+      query.OR = [
+        { firstName: { contains: pattern, mode: 'insensitive' } },
+        { lastName: { contains: pattern, mode: 'insensitive' } },
+        { email: { contains: pattern, mode: 'insensitive' } },
+        { phone: { contains: pattern, mode: 'insensitive' } },
+        { position: { contains: pattern, mode: 'insensitive' } },
+        { skills: { contains: pattern, mode: 'insensitive' } },
+        { experience: { contains: pattern, mode: 'insensitive' } },
+        { education: { contains: pattern, mode: 'insensitive' } },
+        { location: { contains: pattern, mode: 'insensitive' } },
+        { resumeText: { contains: pattern, mode: 'insensitive' } },
+        { coverLetter: { contains: pattern, mode: 'insensitive' } },
+        { source: { contains: pattern, mode: 'insensitive' } },
+        { status: { contains: pattern, mode: 'insensitive' } }
       ];
     }
 
     // Fetch all matching candidates
-    const candidates = await Candidate.find(query)
-      .populate('createdBy', 'profile.firstName profile.lastName')
-      .sort({ createdAt: -1 });
+    const candidates = await prisma.candidate.findMany({
+      where: query,
+      orderBy: { createdAt: 'desc' }
+    });
+    // Stitch createdBy (soft ref id column) -> creator user with profile fields
+    {
+      const creatorIds = [...new Set(candidates.map(c => c.createdBy).filter(Boolean))];
+      const creators = creatorIds.length
+        ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, profile: true } })
+        : [];
+      const creatorMap = new Map(creators.map(u => [u.id, u]));
+      candidates.forEach(c => {
+        c.createdBy = c.createdBy ? (creatorMap.get(c.createdBy) || null) : null;
+      });
+    }
 
     // Prepare data for Excel
     const XLSX = require('xlsx');
@@ -726,52 +765,64 @@ exports.getAllCandidates = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const { page = 1, limit = 10, status, search } = req.query;
 
-    const query = { organization: organizationId };
+    const query = { organizationId: organizationId };
 
     if (status) query.status = status;
     if (search) {
       // Create flexible search pattern - split search terms for better matching
       const searchTerms = search.trim().split(/\s+/).filter(term => term.length > 0);
 
-      // Create a single regex that matches any of the search terms
-      const searchRegex = new RegExp(searchTerms.join('|'), 'i');
+      // Create a single pattern that matches any of the search terms
+      const pattern = searchTerms.join('|');
 
       // Log for debugging
       console.log('Search query:', search);
       console.log('Search terms:', searchTerms);
-      console.log('Search regex:', searchRegex);
+      console.log('Search pattern:', pattern);
 
-      query.$or = [
+      query.OR = [
         // Basic info
-        { firstName: searchRegex },
-        { lastName: searchRegex },
-        { email: searchRegex },
-        { phone: searchRegex },
+        { firstName: { contains: pattern, mode: 'insensitive' } },
+        { lastName: { contains: pattern, mode: 'insensitive' } },
+        { email: { contains: pattern, mode: 'insensitive' } },
+        { phone: { contains: pattern, mode: 'insensitive' } },
 
         // Professional info - NOW POSITION SEARCH WILL WORK!
-        { position: searchRegex },
-        { skills: searchRegex },
-        { experience: searchRegex },
-        { education: searchRegex },
-        { location: searchRegex },
+        { position: { contains: pattern, mode: 'insensitive' } },
+        { skills: { contains: pattern, mode: 'insensitive' } },
+        { experience: { contains: pattern, mode: 'insensitive' } },
+        { education: { contains: pattern, mode: 'insensitive' } },
+        { location: { contains: pattern, mode: 'insensitive' } },
 
         // Resume content
-        { resumeText: searchRegex },
-        { coverLetter: searchRegex },
+        { resumeText: { contains: pattern, mode: 'insensitive' } },
+        { coverLetter: { contains: pattern, mode: 'insensitive' } },
 
         // Source and status
-        { source: searchRegex },
-        { status: searchRegex }
+        { source: { contains: pattern, mode: 'insensitive' } },
+        { status: { contains: pattern, mode: 'insensitive' } }
       ];
     }
 
-    const candidates = await Candidate.find(query)
-      .populate('createdBy', 'profile.firstName profile.lastName')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    const candidates = await prisma.candidate.findMany({
+      where: query,
+      orderBy: { createdAt: 'desc' },
+      take: limit * 1,
+      skip: (page - 1) * limit
+    });
+    // Stitch createdBy (soft ref id column) -> creator user with profile fields
+    {
+      const creatorIds = [...new Set(candidates.map(c => c.createdBy).filter(Boolean))];
+      const creators = creatorIds.length
+        ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, profile: true } })
+        : [];
+      const creatorMap = new Map(creators.map(u => [u.id, u]));
+      candidates.forEach(c => {
+        c.createdBy = c.createdBy ? (creatorMap.get(c.createdBy) || null) : null;
+      });
+    }
 
-    const total = await Candidate.countDocuments(query);
+    const total = await prisma.candidate.count({ where: query });
 
     res.json({
       candidates,
@@ -788,9 +839,8 @@ exports.getAllCandidates = async (req, res) => {
 exports.getCandidateById = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const candidate = await Candidate.findOne({
-      _id: req.params.id,
-      organization: organizationId
+    const candidate = await prisma.candidate.findFirst({
+      where: { id: req.params.id, organizationId: organizationId }
     });
 
     if (!candidate) {
@@ -850,19 +900,19 @@ exports.updateCandidate = async (req, res) => {
   }
   if (employeeId !== undefined) candidateFields.employeeId = employeeId;
   // if (req.user) candidateFields.updatedBy = req.user.id; // If using authentication
-  candidateFields.updatedAt = Date.now();
+  candidateFields.updatedAt = new Date();
 
   try {
     // Handle both authenticated and public route updates
     const organizationId = req.user?.currentOrganization;
 
     // Build query based on whether we have organization context
-    const query = { _id: req.params.id };
+    const query = { id: req.params.id };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    let candidate = await Candidate.findOne(query);
+    let candidate = await prisma.candidate.findFirst({ where: query });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
@@ -873,23 +923,17 @@ exports.updateCandidate = async (req, res) => {
         candidateFields.notes = notes;
       } else {
         if (typeof notes === 'object' && notes.note) { // If a single note object is sent to be added
-          candidate.notes.push(notes); // Mongoose handles pushing to the array
-          // No need to assign to candidateFields.notes here if just pushing
+          // Read-modify-write the Json notes array
+          candidateFields.notes = [...(candidate.notes || []), notes];
         }
       }
     }
 
 
-    candidate = await Candidate.findByIdAndUpdate(
-      req.params.id,
-      { $set: candidateFields },
-      { new: true, runValidators: true }
-    );
-
-    // If notes were pushed directly, save the candidate document
-    if (typeof notes === 'object' && notes.note) {
-      await candidate.save();
-    }
+    candidate = await prisma.candidate.update({
+      where: { id: req.params.id },
+      data: candidateFields
+    });
 
     // Invalidate AI match cache if candidate profile changed
     const cacheInvalidatingFields = ['experience', 'skills', 'position', 'education', 'coverLetter'];
@@ -915,9 +959,8 @@ exports.updateCandidate = async (req, res) => {
 exports.deleteCandidate = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const candidate = await Candidate.findOne({
-      _id: req.params.id,
-      organization: organizationId
+    const candidate = await prisma.candidate.findFirst({
+      where: { id: req.params.id, organizationId: organizationId }
     });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
@@ -941,7 +984,7 @@ exports.deleteCandidate = async (req, res) => {
     // }
 
     // Delete candidate from database
-    await Candidate.findByIdAndDelete(req.params.id);
+    await prisma.candidate.delete({ where: { id: req.params.id } });
 
     console.log(`✅ Candidate and embedding successfully deleted: ${candidate.firstName} ${candidate.lastName}`);
 
@@ -978,7 +1021,7 @@ exports.bulkDeleteCandidates = async (req, res) => {
     // Process deletions sequentially or in limited parallel to avoid DB pressure
     for (const id of candidateIds) {
       try {
-        const candidate = await Candidate.findOne({ _id: id, organization: organizationId });
+        const candidate = await prisma.candidate.findFirst({ where: { id: id, organizationId: organizationId } });
         if (!candidate) {
           failures.push({ id, error: 'Candidate not found or access denied' });
           continue;
@@ -991,7 +1034,7 @@ exports.bulkDeleteCandidates = async (req, res) => {
           console.warn(`⚠️ Failed to delete embedding for candidate ${id}:`, embeddingError.message);
         }
 
-        await Candidate.findByIdAndDelete(id);
+        await prisma.candidate.delete({ where: { id } });
         results.push({ id, success: true });
       } catch (err) {
         failures.push({ id, error: err.message });
@@ -1018,12 +1061,12 @@ exports.getAccessibleResumeUrl = async (req, res) => {
     const organizationId = req.user?.currentOrganization;
 
     // Build query based on whether we have organization context
-    const query = { _id: req.params.id };
+    const query = { id: req.params.id };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    const candidate = await Candidate.findOne(query);
+    const candidate = await prisma.candidate.findFirst({ where: query });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
@@ -1077,9 +1120,8 @@ exports.refreshEmbedding = async (req, res) => {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
 
-    const candidate = await Candidate.findOne({
-      _id: id,
-      organization: organizationId
+    const candidate = await prisma.candidate.findFirst({
+      where: { id: id, organizationId: organizationId }
     });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
@@ -1099,9 +1141,12 @@ exports.refreshEmbedding = async (req, res) => {
     await embeddingService.createCandidateEmbedding(candidate);
 
     // Update candidate status
-    await Candidate.findByIdAndUpdate(id, {
-      isEmbedded: true,
-      embeddingCreatedAt: new Date()
+    await prisma.candidate.update({
+      where: { id },
+      data: {
+        isEmbedded: true,
+        embeddingCreatedAt: new Date()
+      }
     });
 
     res.json({
@@ -1204,12 +1249,12 @@ exports.addComment = async (req, res) => {
     const organizationId = req.user?.currentOrganization;
 
     // Build query based on whether we have organization context
-    const query = { _id: req.params.id };
+    const query = { id: req.params.id };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    let candidate = await Candidate.findOne(query);
+    let candidate = await prisma.candidate.findFirst({ where: query });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
@@ -1218,8 +1263,7 @@ exports.addComment = async (req, res) => {
     let userName = 'Anonymous';
     if (req.user?.id) {
       try {
-        const User = require('../models/User');
-        const user = await User.findById(req.user.id);
+        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
         if (user && user.profile) {
           const firstName = user.profile.firstName || '';
           const lastName = user.profile.lastName || '';
@@ -1231,23 +1275,26 @@ exports.addComment = async (req, res) => {
       }
     }
 
-    // Create new comment object
+    // Create new comment object (assign an _id like Mongoose subdocs so it can be deleted later)
     const newComment = {
+      _id: newId(),
       note: note.trim(),
       date: new Date(),
       user: req.user?.id || null,
       userName: userName
     };
 
-    // Add comment to the notes array
-    candidate.notes.push(newComment);
-    candidate.updatedAt = new Date();
+    // Add comment to the notes (Json) array
+    const updatedNotes = [...(candidate.notes || []), newComment];
 
     // Save the updated candidate
-    await candidate.save();
+    candidate = await prisma.candidate.update({
+      where: { id: candidate.id },
+      data: { notes: updatedNotes, updatedAt: new Date() }
+    });
 
-    // Populate user details in the response
-    await candidate.populate('notes.user', 'profile.firstName profile.lastName email');
+    // Populate user details in the response (stitch user objects into notes.user)
+    candidate = await populateNotesUser(candidate);
 
     res.json(candidate);
   } catch (error) {
@@ -1268,38 +1315,42 @@ exports.deleteComment = async (req, res) => {
     const organizationId = req.user?.currentOrganization;
 
     // Build query based on whether we have organization context
-    const query = { _id: req.params.id };
+    const query = { id: req.params.id };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    let candidate = await Candidate.findOne(query);
+    let candidate = await prisma.candidate.findFirst({ where: query });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
+    const notesArray = Array.isArray(candidate.notes) ? candidate.notes : [];
+
     // Find the comment index
-    const commentIndex = candidate.notes.findIndex(note => note._id.toString() === commentId);
+    const commentIndex = notesArray.findIndex(note => note._id && note._id.toString() === commentId);
     if (commentIndex === -1) {
       return res.status(404).json({ msg: 'Comment not found' });
     }
 
     // Check if user has permission to delete (comment owner or admin)
-    const comment = candidate.notes[commentIndex];
+    const comment = notesArray[commentIndex];
     if (req.user && comment.user && comment.user.toString() !== req.user.id) {
       // For now, allow any authenticated user to delete any comment
       // You can add role-based permissions here later
     }
 
-    // Remove the comment
-    candidate.notes.splice(commentIndex, 1);
-    candidate.updatedAt = new Date();
+    // Remove the comment (read-modify-write the Json notes array)
+    const updatedNotes = notesArray.filter((_, idx) => idx !== commentIndex);
 
     // Save the updated candidate
-    await candidate.save();
+    candidate = await prisma.candidate.update({
+      where: { id: candidate.id },
+      data: { notes: updatedNotes, updatedAt: new Date() }
+    });
 
-    // Populate user details in the response
-    await candidate.populate('notes.user', 'profile.firstName profile.lastName email');
+    // Populate user details in the response (stitch user objects into notes.user)
+    candidate = await populateNotesUser(candidate);
 
     res.json(candidate);
   } catch (error) {

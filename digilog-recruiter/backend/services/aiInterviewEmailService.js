@@ -1,8 +1,6 @@
 const crypto = require('crypto');
 const cron = require('node-cron');
-const AIInterview = require('../models/AIInterview');
-const AIInterviewSession = require('../models/AIInterviewSession');
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
 const emailService = require('./emailService');
 const creditsService = require('./creditsService');
 
@@ -114,24 +112,55 @@ class AIInterviewEmailService {
 
   async checkAndSendInvites() {
     const now = new Date();
-    const sessions = await AIInterviewSession.find({
-      status: 'pending_send'
-    })
-      .populate({
-        path: 'aiInterview',
-        match: {
-          status: { $in: ['scheduled', 'sending', 'active'] },
-          'schedule.sendAt': { $lte: now },
-          'schedule.expiresAt': { $gt: now }
-        },
-        populate: [
-          { path: 'job', select: 'title organization' },
-          { path: 'organization', select: 'name' }
-        ]
-      })
-      .limit(50);
+    const sessions = await prisma.aIInterviewSession.findMany({
+      where: { status: 'pending_send' },
+      take: 50
+    });
 
-    const dueSessions = sessions.filter((session) => session.aiInterview);
+    // Resolve parent AIInterviews (status filter in DB; schedule is a Json column
+    // so the sendAt/expiresAt window is applied in JS).
+    const interviewIds = Array.from(new Set(sessions.map((s) => s.aiInterviewId).filter(Boolean)));
+    const interviews = interviewIds.length
+      ? await prisma.aIInterview.findMany({
+          where: {
+            id: { in: interviewIds },
+            status: { in: ['scheduled', 'sending', 'active'] }
+          }
+        })
+      : [];
+
+    const dueInterviews = interviews.filter((interview) => {
+      const sendAt = interview.schedule?.sendAt ? new Date(interview.schedule.sendAt) : null;
+      const expiresAt = interview.schedule?.expiresAt ? new Date(interview.schedule.expiresAt) : null;
+      return sendAt && expiresAt && sendAt <= now && expiresAt > now;
+    });
+
+    // Stitch job (title) + organization (name) onto each due interview.
+    const jobIds = Array.from(new Set(dueInterviews.map((i) => i.jobId).filter(Boolean)));
+    const orgIds = Array.from(new Set(dueInterviews.map((i) => i.organizationId).filter(Boolean)));
+    const jobs = jobIds.length
+      ? await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, title: true, organizationId: true } })
+      : [];
+    const orgs = orgIds.length
+      ? await prisma.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })
+      : [];
+    const jobById = new Map(jobs.map((j) => [String(j.id), j]));
+    const orgById = new Map(orgs.map((o) => [String(o.id), o]));
+    for (const interview of dueInterviews) {
+      interview.job = interview.jobId ? (jobById.get(String(interview.jobId)) || null) : null;
+      interview.organization = interview.organizationId ? (orgById.get(String(interview.organizationId)) || null) : null;
+    }
+    const interviewById = new Map(dueInterviews.map((i) => [String(i.id), i]));
+
+    const dueSessions = sessions
+      .map((session) => {
+        const interview = session.aiInterviewId ? interviewById.get(String(session.aiInterviewId)) : null;
+        if (!interview) return null;
+        session.aiInterview = interview;
+        return session;
+      })
+      .filter(Boolean);
+
     for (const session of dueSessions) {
       await this.sendInvite(session);
     }
@@ -139,20 +168,24 @@ class AIInterviewEmailService {
 
   async sendInvite(session) {
     const interview = session.aiInterview;
-    const organizationId = session.organization;
+    const organizationId = session.organizationId;
     const candidateEmail = session.candidateSnapshot?.email;
 
     if (!candidateEmail) {
-      await AIInterviewSession.findOneAndUpdate(
-        { _id: session._id, status: 'pending_send' },
-        {
-          $set: {
-            status: 'email_failed',
-            'email.lastError': 'Candidate email is missing'
-          },
-          $inc: { 'email.attempts': 1 }
-        }
-      );
+      // email is a Json column -> read-modify-write the nested fields.
+      const fresh = await prisma.aIInterviewSession.findFirst({
+        where: { id: session._id, status: 'pending_send' },
+        select: { id: true, email: true }
+      });
+      if (fresh) {
+        const email = { ...(fresh.email || {}) };
+        email.lastError = 'Candidate email is missing';
+        email.attempts = Number(email.attempts || 0) + 1;
+        await prisma.aIInterviewSession.update({
+          where: { id: fresh.id },
+          data: { status: 'email_failed', email }
+        });
+      }
       return false;
     }
 
@@ -163,35 +196,46 @@ class AIInterviewEmailService {
       });
       cost = Number(creditCheck.cost || cost || interview.creditCostPerCandidate || 0);
       if (!creditCheck.allowed || (Number.isFinite(creditCheck.remaining) && creditCheck.remaining < cost)) {
-        await AIInterviewSession.findOneAndUpdate(
-          { _id: session._id, status: 'pending_send' },
-          {
-            $set: {
-              status: 'credit_blocked',
-              'credits.cost': cost,
-              'credits.error': creditCheck.message || 'Insufficient credits'
-            }
-          }
-        );
+        // credits is a Json column -> read-modify-write the nested fields.
+        const fresh = await prisma.aIInterviewSession.findFirst({
+          where: { id: session._id, status: 'pending_send' },
+          select: { id: true, credits: true }
+        });
+        if (fresh) {
+          const credits = { ...(fresh.credits || {}) };
+          credits.cost = cost;
+          credits.error = creditCheck.message || 'Insufficient credits';
+          await prisma.aIInterviewSession.update({
+            where: { id: fresh.id },
+            data: { status: 'credit_blocked', credits }
+          });
+        }
         return false;
       }
     }
 
     const { token, tokenHash } = createPublicToken();
     const interviewUrl = `${getFrontendUrl().replace(/\/$/, '')}/public/ai-interview/${token}`;
-    const claimedSession = await AIInterviewSession.findOneAndUpdate(
-      { _id: session._id, status: 'pending_send' },
-      {
-        $set: {
+    // Conditional claim (only while still pending_send); email is a Json column.
+    const claimable = await prisma.aIInterviewSession.findFirst({
+      where: { id: session._id, status: 'pending_send' },
+      select: { id: true, email: true }
+    });
+    let claimedSession = null;
+    if (claimable) {
+      const email = { ...(claimable.email || {}) };
+      email.lastError = undefined;
+      email.attempts = Number(email.attempts || 0) + 1;
+      claimedSession = await prisma.aIInterviewSession.update({
+        where: { id: claimable.id },
+        data: {
           status: 'sending',
           tokenHash,
           tokenGeneratedAt: new Date(),
-          'email.lastError': undefined
-        },
-        $inc: { 'email.attempts': 1 }
-      },
-      { new: true }
-    );
+          email
+        }
+      });
+    }
 
     if (!claimedSession) {
       return false;
@@ -200,7 +244,7 @@ class AIInterviewEmailService {
 
     const organizationName =
       interview.organization?.name ||
-      (await Organization.findById(organizationId).select('name'))?.name ||
+      (await prisma.organization.findUnique({ where: { id: String(organizationId) }, select: { name: true } }))?.name ||
       'Organization';
     const jobTitle = interview.job?.title || 'the role';
     const candidateName = session.candidateSnapshot?.name || candidateEmail;
@@ -222,6 +266,10 @@ class AIInterviewEmailService {
         text: `Hello ${candidateName}, ${organizationName} has invited you to complete an AI interview for ${jobTitle}. Start here: ${interviewUrl}`
       });
 
+      // email/credits are Json columns -> mutate local copies then persist.
+      if (!session.email || typeof session.email !== 'object') session.email = {};
+      if (!session.credits || typeof session.credits !== 'object') session.credits = {};
+
       session.status = 'sent';
       session.email.sentAt = new Date();
       session.email.messageId = result?.messageId || result?.messageIds?.[0] || undefined;
@@ -234,11 +282,11 @@ class AIInterviewEmailService {
           AI_INTERVIEW_ACTION,
           session._id,
           'aiInterview',
-          session.createdBy,
+          session.createdById,
           {
             creditCostOverride: cost,
             aiInterviewId: interview._id,
-            candidateId: session.candidate,
+            candidateId: session.candidateId,
             candidateEmail,
             voice: interview.voice,
             costEstimate: interview.costEstimate
@@ -254,9 +302,12 @@ class AIInterviewEmailService {
         }
       }
 
-      await session.save();
+      await prisma.aIInterviewSession.update({
+        where: { id: session.id },
+        data: { status: session.status, email: session.email, credits: session.credits }
+      });
       if (interview.status === 'scheduled') {
-        await AIInterview.findByIdAndUpdate(interview._id, { status: 'active' });
+        await prisma.aIInterview.update({ where: { id: interview._id }, data: { status: 'active' } });
       }
       return {
         sent: session.status === 'sent',
@@ -264,9 +315,13 @@ class AIInterviewEmailService {
         messageId: session.email.messageId
       };
     } catch (error) {
+      if (!session.email || typeof session.email !== 'object') session.email = {};
       session.status = 'email_failed';
       session.email.lastError = error.message;
-      await session.save();
+      await prisma.aIInterviewSession.update({
+        where: { id: session.id },
+        data: { status: session.status, email: session.email }
+      });
       return false;
     }
   }

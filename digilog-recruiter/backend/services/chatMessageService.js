@@ -1,4 +1,4 @@
-const ChatMessage = require('../models/ChatMessage');
+const prisma = require('../db/client');
 
 class ChatMessageService {
   /**
@@ -14,18 +14,19 @@ class ChatMessageService {
       
       const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      const chatMessage = new ChatMessage({
-        messageId,
-        sessionId: messageData.sessionId,
-        chatSessionId: messageData.chatSessionId,
-        userId: messageData.userId,
-        role: messageData.role,
-        content: messageData.content.trim(), // Ensure no leading/trailing whitespace
-        metadata: messageData.metadata || {},
-        timestamp: messageData.timestamp || new Date()
+      const chatMessage = await prisma.chatMessage.create({
+        data: {
+          messageId,
+          sessionId: messageData.sessionId,
+          chatSessionId: messageData.chatSessionId,
+          userId: messageData.userId,
+          role: messageData.role,
+          content: messageData.content.trim(), // Ensure no leading/trailing whitespace
+          metadata: messageData.metadata || {},
+          timestamp: messageData.timestamp || new Date()
+        }
       });
 
-      await chatMessage.save();
       console.log(`💾 Saved ${messageData.role} message: ${messageId}`);
       
       return chatMessage;
@@ -42,13 +43,14 @@ class ChatMessageService {
    */
   async getChatSessionHistory(chatSessionId, limit = 50) {
     try {
-      const messages = await ChatMessage.find({ 
-        chatSessionId,
-        isLoading: { $ne: true } // Exclude loading messages
-      })
-      .sort({ timestamp: 1 }) // Oldest first for conversation flow
-      .limit(limit)
-      .lean();
+      const messages = await prisma.chatMessage.findMany({
+        where: {
+          chatSessionId,
+          isLoading: { not: true } // Exclude loading messages
+        },
+        orderBy: { timestamp: 'asc' }, // Oldest first for conversation flow
+        take: limit
+      });
 
       console.log(`📚 Retrieved ${messages.length} messages for chat session: ${chatSessionId}`);
       return messages;
@@ -65,13 +67,14 @@ class ChatMessageService {
    */
   async getUserChatHistory(userId, limit = 20) {
     try {
-      const messages = await ChatMessage.find({ 
-        userId,
-        isLoading: { $ne: true }
-      })
-      .sort({ timestamp: -1 }) // Most recent first
-      .limit(limit)
-      .lean();
+      const messages = await prisma.chatMessage.findMany({
+        where: {
+          userId,
+          isLoading: { not: true }
+        },
+        orderBy: { timestamp: 'desc' }, // Most recent first
+        take: limit
+      });
 
       console.log(`📚 Retrieved ${messages.length} messages for user: ${userId}`);
       return messages.reverse(); // Return in chronological order
@@ -143,9 +146,9 @@ class ChatMessageService {
    */
   async deleteChatSessionMessages(chatSessionId) {
     try {
-      const result = await ChatMessage.deleteMany({ chatSessionId });
-      console.log(`🗑️ Deleted ${result.deletedCount} messages for chat session: ${chatSessionId}`);
-      return result.deletedCount;
+      const result = await prisma.chatMessage.deleteMany({ where: { chatSessionId } });
+      console.log(`🗑️ Deleted ${result.count} messages for chat session: ${chatSessionId}`);
+      return result.count;
     } catch (error) {
       console.error('❌ Error deleting chat session messages:', error);
       throw error;
@@ -160,13 +163,17 @@ class ChatMessageService {
    */
   async searchMessages(userId, query, limit = 10) {
     try {
-      const messages = await ChatMessage.find({
-        userId,
-        $text: { $search: query }
-      })
-      .sort({ score: { $meta: 'textScore' }, timestamp: -1 })
-      .limit(limit)
-      .lean();
+      // TODO[pg]: Mongo $text full-text search + textScore ranking has no direct
+      // Prisma equivalent. Approximated with a case-insensitive substring match on
+      // content, ordered by recency. Revisit if true full-text ranking is needed.
+      const messages = await prisma.chatMessage.findMany({
+        where: {
+          userId,
+          content: { contains: query, mode: 'insensitive' }
+        },
+        orderBy: { timestamp: 'desc' },
+        take: limit
+      });
 
       console.log(`🔍 Found ${messages.length} messages matching query for user: ${userId}`);
       return messages;
@@ -183,13 +190,14 @@ class ChatMessageService {
    */
   async getConversationContext(chatSessionId, limit = 10) {
     try {
-      const messages = await ChatMessage.find({ 
-        chatSessionId,
-        isLoading: { $ne: true }
-      })
-      .sort({ timestamp: -1 }) // Most recent first
-      .limit(limit)
-      .lean();
+      const messages = await prisma.chatMessage.findMany({
+        where: {
+          chatSessionId,
+          isLoading: { not: true }
+        },
+        orderBy: { timestamp: 'desc' }, // Most recent first
+        take: limit
+      });
 
       // Format for AI context (reverse to chronological order)
       const context = messages.reverse().map(msg => ({
@@ -212,20 +220,31 @@ class ChatMessageService {
    */
   async getChatSessionStats(chatSessionId) {
     try {
-      const stats = await ChatMessage.aggregate([
-        { $match: { chatSessionId } },
-        {
-          $group: {
-            _id: '$role',
-            count: { $sum: 1 },
-            avgLength: { $avg: { $strLenCP: '$content' } }
-          }
-        }
-      ]);
+      const rows = await prisma.chatMessage.findMany({
+        where: { chatSessionId },
+        select: { role: true, content: true }
+      });
 
-      const totalMessages = await ChatMessage.countDocuments({ chatSessionId });
-      const firstMessage = await ChatMessage.findOne({ chatSessionId }).sort({ timestamp: 1 });
-      const lastMessage = await ChatMessage.findOne({ chatSessionId }).sort({ timestamp: -1 });
+      // Group by role, computing count + average content length (mirrors $group)
+      const grouped = new Map();
+      for (const row of rows) {
+        const key = row.role;
+        if (!grouped.has(key)) {
+          grouped.set(key, { _id: key, count: 0, totalLength: 0 });
+        }
+        const g = grouped.get(key);
+        g.count += 1;
+        g.totalLength += (row.content || '').length;
+      }
+      const stats = Array.from(grouped.values()).map(g => ({
+        _id: g._id,
+        count: g.count,
+        avgLength: g.count > 0 ? g.totalLength / g.count : 0
+      }));
+
+      const totalMessages = await prisma.chatMessage.count({ where: { chatSessionId } });
+      const firstMessage = await prisma.chatMessage.findFirst({ where: { chatSessionId }, orderBy: { timestamp: 'asc' } });
+      const lastMessage = await prisma.chatMessage.findFirst({ where: { chatSessionId }, orderBy: { timestamp: 'desc' } });
 
       return {
         totalMessages,

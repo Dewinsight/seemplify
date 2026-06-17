@@ -1,11 +1,53 @@
-const Job = require('../models/Job');
-const Interview = require('../models/Interview');
-const InterviewStage = require('../models/InterviewStage');
-const Candidate = require('../models/Candidate');
+const prisma = require('../db/client');
 const interviewStageService = require('./interviewStageService');
 const candidateEmailNotificationService = require('./candidateEmailNotificationService');
 
 class PipelineProgressionService {
+  /**
+   * Resolve the next interview stage for the same job, ordered by `order`.
+   * Replaces the Mongoose InterviewStage.getNextStage() instance method.
+   */
+  async _getNextStage(stage) {
+    if (!stage || stage.jobId == null || stage.order == null) return null;
+    return prisma.interviewStage.findFirst({
+      where: { jobId: stage.jobId, order: { gt: stage.order } },
+      orderBy: { order: 'asc' }
+    });
+  }
+
+  /**
+   * Stitch the organization soft-ref onto a job object to mirror
+   * .populate('organization') for the email-notification services.
+   */
+  async _attachOrganization(job) {
+    if (job && job.organizationId && !job.organization) {
+      job.organization = await prisma.organization.findUnique({ where: { id: job.organizationId } });
+    }
+    return job;
+  }
+
+  /**
+   * Replace each applicant's `candidate` id with the candidate row (or null if the
+   * candidate was deleted), mutating the applicants array in place. Mirrors
+   * .populate('applicants.candidate').
+   */
+  async _populateApplicantCandidates(applicants) {
+    if (!Array.isArray(applicants) || applicants.length === 0) return applicants;
+    const ids = [...new Set(
+      applicants
+        .map(a => (a.candidate && (a.candidate._id || a.candidate.id || a.candidate)))
+        .filter(Boolean)
+        .map(String)
+    )];
+    if (ids.length === 0) return applicants;
+    const candidates = await prisma.candidate.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(candidates.map(c => [c.id, c]));
+    for (const applicant of applicants) {
+      const cid = applicant.candidate && (applicant.candidate._id || applicant.candidate.id || applicant.candidate);
+      applicant.candidate = cid ? (byId.get(String(cid)) || null) : null;
+    }
+    return applicants;
+  }
   /**
    * Add candidate to pipeline
    */
@@ -15,16 +57,16 @@ class PipelineProgressionService {
       console.log('🔍 Debug - candidateData received:', candidateData);
       console.log('🔍 Debug - candidateData.addedBy:', candidateData.addedBy);
       
-      const job = await Job.findById(jobId);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+
       // Get first stage
-      const firstStage = await InterviewStage.findOne({ 
-        jobId, 
-        isActive: true 
-      }).sort('order');
+      const firstStage = await prisma.interviewStage.findFirst({
+        where: { jobId, isActive: true },
+        orderBy: { order: 'asc' }
+      });
       
       // Validate that at least one pipeline stage exists
       if (!firstStage) {
@@ -70,9 +112,12 @@ class PipelineProgressionService {
         enteredAt: new Date()
       }];
       
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
       job.applicants.push(applicantData);
-      await job.save();
-      
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
+
       console.log(`✅ Candidate added to pipeline for job ${jobId}`);
       return job.applicants[job.applicants.length - 1];
     } catch (error) {
@@ -87,21 +132,24 @@ class PipelineProgressionService {
   async advanceCandidateToStage(jobId, candidateId, targetStageId, notes, userId) {
     try {
       console.log(`🚀 Advancing candidate ${candidateId} to stage ${targetStageId}`);
-      
-      const job = await Job.findById(jobId);
+
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === candidateId.toString()
       );
-      
+
       if (applicantIndex === -1) {
         throw new Error('Candidate not found in job applicants');
       }
-      
-      const targetStage = await InterviewStage.findById(targetStageId);
+
+      const targetStage = await prisma.interviewStage.findUnique({ where: { id: targetStageId } });
       if (!targetStage) {
         throw new Error('Target stage not found');
       }
@@ -145,16 +193,16 @@ class PipelineProgressionService {
         notes: notes || `Advanced to ${targetStage.name}`,
         previousStatus
       });
-      
-      await job.save();
-      
+
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
+
       // Send advancement congratulations email
       try {
         // Get full candidate data for email
-        const candidate = await Candidate.findById(candidateId);
+        const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
         if (candidate) {
           // Populate job organization for email service
-          await job.populate('organization');
+          await this._attachOrganization(job);
           
           // Get previous stage name for email context
           const previousStageHistory = applicant.stageHistory.find(
@@ -189,12 +237,15 @@ class PipelineProgressionService {
   async updateStageResult(jobId, candidateId, stageId, result, feedback, userId) {
     try {
       console.log(`📝 Updating stage result for candidate ${candidateId} in stage ${stageId}: ${result}`);
-      
-      const job = await Job.findById(jobId);
+
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === candidateId.toString()
       );
@@ -230,9 +281,9 @@ class PipelineProgressionService {
           previousStatus
         });
       }
-      
-      await job.save();
-      
+
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
+
       console.log(`✅ Stage result updated for candidate ${candidateId}`);
       return applicant;
     } catch (error) {
@@ -247,46 +298,49 @@ class PipelineProgressionService {
   async scheduleInterview(jobId, candidateId, stageId, interviewData, userId) {
     try {
       console.log(`📅 Scheduling interview for candidate ${candidateId} in stage ${stageId}`);
-      
-      const job = await Job.findById(jobId);
+
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === candidateId.toString()
       );
-      
+
       if (applicantIndex === -1) {
         throw new Error('Candidate not found in job applicants');
       }
-      
-      const stage = await InterviewStage.findById(stageId);
+
+      const stage = await prisma.interviewStage.findUnique({ where: { id: stageId } });
       if (!stage) {
         throw new Error('Stage not found');
       }
-      
+
       // Create the interview using the Interview model
-      const Interview = require('../models/Interview');
-      const interview = new Interview({
-        jobId,
-        candidateId,
-        interviewerId: userId, // Add the missing interviewerId field
-        stageId,
-        stageName: stage.name,
-        scheduledAt: interviewData.scheduledAt,
-        duration: interviewData.duration || stage.defaultDuration || 60,
-        interviewers: interviewData.interviewers || [],
-        type: interviewData.type || stage.type,
-        location: interviewData.location || 'Virtual',
-        meetingLink: interviewData.meetingLink,
-        notes: interviewData.notes,
-        status: 'scheduled',
-        createdBy: userId
+      const interview = await prisma.interview.create({
+        data: {
+          jobId,
+          candidateId,
+          interviewerId: userId, // Add the missing interviewerId field
+          stageId,
+          stageName: stage.name,
+          scheduledAt: interviewData.scheduledAt,
+          duration: interviewData.duration || stage.defaultDuration || 60,
+          // NOTE[pg]: `interviewers` is not a column on Interview (Mongoose dropped it
+          // under strict mode too), so it is omitted to keep create behavior identical.
+          type: interviewData.type || stage.type,
+          location: interviewData.location || 'Virtual',
+          meetingLink: interviewData.meetingLink,
+          notes: interviewData.notes,
+          status: 'scheduled',
+          createdBy: userId
+        }
       });
-      
-      await interview.save();
-      
+
       // Add interview reference to applicant
       const applicant = job.applicants[applicantIndex];
       if (!applicant.interviews) {
@@ -299,9 +353,9 @@ class PipelineProgressionService {
         scheduledAt: interview.scheduledAt,
         status: 'scheduled'
       });
-      
-      await job.save();
-      
+
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
+
       console.log(`✅ Interview scheduled for candidate ${candidateId}`);
       return interview;
     } catch (error) {
@@ -316,32 +370,36 @@ class PipelineProgressionService {
   async removeCandidateFromPipeline(jobId, candidateId, reason, userId) {
     try {
       console.log(`🗑️ Removing candidate ${candidateId} from pipeline for job ${jobId}`);
-      
-      const job = await Job.findById(jobId);
+
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === candidateId.toString()
       );
-      
+
       if (applicantIndex === -1) {
         throw new Error('Candidate not found in job applicants');
       }
-      
+
       // Remove the candidate from applicants array
       const removedApplicant = job.applicants.splice(applicantIndex, 1)[0];
-      
+
       // Also remove any scheduled interviews for this candidate
-      const Interview = require('../models/Interview');
-      await Interview.updateMany(
-        { jobId, candidateId, status: 'scheduled' },
-        { status: 'cancelled', cancelReason: reason || 'Candidate removed from pipeline' }
-      );
-      
-      await job.save();
-      
+      // NOTE[pg]: original passed `cancelReason` (not a column; Mongoose dropped it);
+      // mapped to the real `cancellationReason` column.
+      await prisma.interview.updateMany({
+        where: { jobId, candidateId, status: 'scheduled' },
+        data: { status: 'cancelled', cancellationReason: reason || 'Candidate removed from pipeline' }
+      });
+
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
+
       console.log(`✅ Candidate ${candidateId} removed from pipeline`);
       return { success: true, removedApplicant };
     } catch (error) {
@@ -356,12 +414,15 @@ class PipelineProgressionService {
   async rejectCandidate(jobId, candidateId, reason, userId) {
     try {
       console.log(`❌ Rejecting candidate ${candidateId}`);
-      
-      const job = await Job.findById(jobId);
+
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === candidateId.toString()
       );
@@ -394,17 +455,17 @@ class PipelineProgressionService {
         notes: reason || 'Candidate rejected',
         previousStatus
       });
-      
-      await job.save();
-      
+
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
+
       // Send rejection email
       try {
         // Get full candidate data for email
-        const candidate = await Candidate.findById(candidateId);
+        const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
         if (candidate) {
           // Populate job organization for email service
-          await job.populate('organization');
-          
+          await this._attachOrganization(job);
+
           await candidateEmailNotificationService.sendRejectionEmail({
             candidate,
             job,
@@ -433,9 +494,12 @@ class PipelineProgressionService {
     try {
       console.log(`👁️ Marking candidate ${candidateId} as keep_in_view`);
 
-      const job = await Job.findById(jobId);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
+      }
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
       }
 
       const applicantIndex = job.applicants.findIndex(
@@ -466,7 +530,7 @@ class PipelineProgressionService {
         previousStatus
       });
 
-      await job.save();
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
 
       console.log(`✅ Candidate ${candidateId} moved to keep_in_view`);
       return applicant;
@@ -482,12 +546,15 @@ class PipelineProgressionService {
   async makeOffer(jobId, candidateId, offerDetails, userId) {
     try {
       console.log(`💰 Making offer to candidate ${candidateId}`);
-      
-      const job = await Job.findById(jobId);
+
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === candidateId.toString()
       );
@@ -523,9 +590,9 @@ class PipelineProgressionService {
       
       // Clear current stage since they've completed the pipeline
       applicant.currentStage = null;
-      
-      await job.save();
-      
+
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
+
       console.log(`✅ Offer made to candidate ${candidateId}`);
       return applicant;
     } catch (error) {
@@ -538,31 +605,31 @@ class PipelineProgressionService {
    * Bulk move multiple candidates to a target stage
    */
   async bulkMoveCandidates(jobId, candidateIds, targetStageId, userId) {
-    const mongoose = require('mongoose');
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    
+    // TODO[pg]: the Mongoose multi-document transaction is replaced by a single
+    // read-modify-write on the job.applicants Json column (atomic per row). The
+    // cross-document atomicity is not preserved, but on success the result is identical.
     try {
       console.log(`📦 Bulk moving ${candidateIds.length} candidates to stage ${targetStageId}`);
-      
+
       // 1. Validate inputs
       if (!candidateIds || candidateIds.length === 0) {
         throw new Error('No candidates provided');
       }
-      
+
       // 2. Fetch job and validate
-      const job = await Job.findById(jobId).session(session);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
       // 3. Fetch and validate target stage
-      const targetStage = await InterviewStage.findOne({
-        _id: targetStageId,
-        jobId: jobId,
-        isActive: true
-      }).session(session);
-      
+      const targetStage = await prisma.interviewStage.findFirst({
+        where: { id: targetStageId, jobId: jobId, isActive: true }
+      });
+
       if (!targetStage) {
         throw new Error('Target stage not found or inactive');
       }
@@ -658,27 +725,21 @@ class PipelineProgressionService {
       
       // 5. Save job with all updates
       if (results.successful.length > 0) {
-        await job.save({ session });
+        await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
       }
-      
-      // 6. Commit transaction
-      await session.commitTransaction();
-      
+
       console.log(`✅ Bulk move complete: ${results.successful.length} succeeded, ${results.failed.length} failed`);
-      
+
       // 7. Return results
       return {
         success: results.failed.length === 0,
         partialSuccess: results.successful.length > 0 && results.failed.length > 0,
         results
       };
-      
+
     } catch (error) {
-      await session.abortTransaction();
       console.error('❌ Error in bulk move candidates:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
@@ -686,10 +747,8 @@ class PipelineProgressionService {
    * Bulk keep candidates in view
    */
   async bulkKeepCandidatesInView(jobId, candidateIds, reason, userId) {
-    const mongoose = require('mongoose');
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // TODO[pg]: Mongoose transaction replaced by a single read-modify-write on the
+    // job.applicants Json column; cross-document atomicity is not preserved.
     try {
       console.log(`👁️ Bulk keep in view for ${candidateIds.length} candidates`);
 
@@ -697,9 +756,12 @@ class PipelineProgressionService {
         throw new Error('No candidates provided');
       }
 
-      const job = await Job.findById(jobId).session(session);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
+      }
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
       }
 
       const results = {
@@ -763,10 +825,8 @@ class PipelineProgressionService {
       }
 
       if (results.successful.length > 0) {
-        await job.save({ session });
+        await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
       }
-
-      await session.commitTransaction();
 
       console.log(`✅ Bulk keep in view complete: ${results.successful.length} succeeded, ${results.failed.length} failed`);
 
@@ -776,11 +836,8 @@ class PipelineProgressionService {
         results
       };
     } catch (error) {
-      await session.abortTransaction();
       console.error('❌ Error in bulk keep in view:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
@@ -789,28 +846,37 @@ class PipelineProgressionService {
    */
   async getDetailedPipeline(jobId) {
     try {
-      const job = await Job.findById(jobId)
-        .populate('applicants.candidate')
-        .populate('interviewStages');
-      
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
+
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
+      // Stitch applicants.candidate (soft ref) to mirror .populate('applicants.candidate').
+      await this._populateApplicantCandidates(job.applicants);
+
       // Clean up any null candidate references in applicants
       const originalApplicantsLength = job.applicants.length;
       job.applicants = job.applicants.filter(applicant => applicant.candidate !== null);
-      
+
       // If we found deleted candidates, clean up the database
       if (job.applicants.length !== originalApplicantsLength) {
         console.log(`🧹 Cleaning up ${originalApplicantsLength - job.applicants.length} deleted candidate(s) from job ${jobId} applicants in pipeline service`);
-        await job.save();
+        // Persist with raw candidate ids (not the stitched objects).
+        const cleaned = job.applicants.map(a => ({ ...a, candidate: a.candidate?._id || a.candidate?.id || a.candidate }));
+        await prisma.job.update({ where: { id: job.id }, data: { applicants: cleaned } });
       }
-      
-      const stages = await InterviewStage.find({ jobId, isActive: true }).sort('order');
-      
+
+      const stages = await prisma.interviewStage.findMany({
+        where: { jobId, isActive: true },
+        orderBy: { order: 'asc' }
+      });
+
       // Get all interviews for this job
-      const allInterviews = await Interview.find({ jobId });
+      const allInterviews = await prisma.interview.findMany({ where: { jobId } });
       
       // Get stage analytics
       const stageAnalytics = await Promise.all(
@@ -845,7 +911,7 @@ class PipelineProgressionService {
             
             // Update the interviews array in the applicant object
             const updatedApplicant = {
-              ...applicant.toObject(),
+              ...applicant,
               candidate: candidateData, // Use the transformed candidate data
               interviews: candidateInterviews.map(interview => ({
                 interviewId: interview._id,
@@ -859,18 +925,17 @@ class PipelineProgressionService {
             return updatedApplicant;
           });
           
-          const interviews = await Interview.find({ 
-            jobId, 
-            stageId: stage._id 
+          const interviews = await prisma.interview.findMany({
+            where: { jobId, stageId: stage._id }
           });
-          
+
           const completedInterviews = interviews.filter(i => i.status === 'completed');
           const avgScore = completedInterviews.length > 0
             ? completedInterviews.reduce((sum, i) => sum + (i.structuredFeedback?.overallScore || 0), 0) / completedInterviews.length
             : 0;
           
           return {
-            stage: stage.toObject(),
+            stage: stage,
             candidateCount: candidatesWithInterviews.length,
             candidates: candidatesWithInterviews,
             interviewCount: interviews.length,
@@ -893,7 +958,7 @@ class PipelineProgressionService {
         job: {
           id: job._id,
           title: job.title,
-          department: job.department,
+          department: job.departmentId,
           status: job.status
         },
         stages: stageAnalytics,
@@ -916,23 +981,33 @@ class PipelineProgressionService {
    */
   async getStageAnalytics(jobId) {
     try {
-      const job = await Job.findById(jobId).populate('applicants.candidate');
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
+      // Stitch applicants.candidate (soft ref) to mirror .populate('applicants.candidate').
+      await this._populateApplicantCandidates(job.applicants);
+
       // Clean up any null candidate references in applicants
       const originalApplicantsLength = job.applicants.length;
       job.applicants = job.applicants.filter(applicant => applicant.candidate !== null);
-      
+
       // If we found deleted candidates, clean up the database
       if (job.applicants.length !== originalApplicantsLength) {
         console.log(`🧹 Cleaning up ${originalApplicantsLength - job.applicants.length} deleted candidate(s) from job ${jobId} applicants in stage analytics`);
-        await job.save();
+        const cleaned = job.applicants.map(a => ({ ...a, candidate: a.candidate?._id || a.candidate?.id || a.candidate }));
+        await prisma.job.update({ where: { id: job.id }, data: { applicants: cleaned } });
       }
-      
-      const stages = await InterviewStage.find({ jobId, isActive: true }).sort('order');
-      const interviews = await Interview.find({ jobId });
+
+      const stages = await prisma.interviewStage.findMany({
+        where: { jobId, isActive: true },
+        orderBy: { order: 'asc' }
+      });
+      const interviews = await prisma.interview.findMany({ where: { jobId } });
       
       const analytics = {
         totalStages: stages.length,
@@ -998,13 +1073,19 @@ class PipelineProgressionService {
   async checkProgressionRules(jobId) {
     try {
       console.log(`🔄 Checking progression rules for job ${jobId}`);
-      
-      const job = await Job.findById(jobId);
+
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
-      const stages = await InterviewStage.find({ jobId, isActive: true }).sort('order');
+      if (!Array.isArray(job.applicants)) {
+        job.applicants = [];
+      }
+
+      const stages = await prisma.interviewStage.findMany({
+        where: { jobId, isActive: true },
+        orderBy: { order: 'asc' }
+      });
       const results = [];
       
       for (const stage of stages) {
@@ -1021,7 +1102,7 @@ class PipelineProgressionService {
             );
             
             if (shouldAdvance.advance) {
-              const nextStage = await stage.getNextStage();
+              const nextStage = await this._getNextStage(stage);
               if (nextStage) {
                 await this.advanceCandidateToStage(
                   jobId,
@@ -1260,11 +1341,14 @@ class PipelineProgressionService {
 
   async _evaluateProgressionRules(applicant, stage, jobId) {
     // Get latest interview for this candidate in this stage
-    const latestInterview = await Interview.findOne({
-      jobId,
-      candidateId: applicant.candidate,
-      stageId: stage._id
-    }).sort({ scheduledAt: -1 });
+    const latestInterview = await prisma.interview.findFirst({
+      where: {
+        jobId,
+        candidateId: applicant.candidate,
+        stageId: stage._id
+      },
+      orderBy: { scheduledAt: 'desc' }
+    });
     
     if (!latestInterview || latestInterview.status !== 'completed') {
       return { advance: false, reason: 'No completed interview' };

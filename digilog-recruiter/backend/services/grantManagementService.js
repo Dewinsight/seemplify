@@ -1,7 +1,6 @@
-const User = require('../models/User');
+const prisma = require('../db/client');
 const nylasV3Service = require('./nylasV3Service');
 const multiNylasService = require('./multiNylasService');
-const NylasAccount = require('../models/NylasAccount');
 
 /**
  * Grant Management Service
@@ -22,13 +21,18 @@ class GrantManagementService {
    */
   async getOrganizationGrants(organizationId) {
     try {
-      const users = await User.find({
-        currentOrganization: organizationId,
-        nylasGrantId: { $exists: true, $ne: null },
-        calendarConnected: true
-      })
-      .select('email profile.firstName profile.lastName profile.displayName nylasGrantId nylasGrantStatus calendarProvider grantConnectedAt lastGrantRefresh')
-      .sort({ grantConnectedAt: 1 }); // Oldest first
+      const users = await prisma.user.findMany({
+        where: {
+          currentOrganizationId: organizationId,
+          nylasGrantId: { not: null },
+          calendarConnected: true
+        },
+        select: {
+          id: true, email: true, profile: true, nylasGrantId: true,
+          nylasGrantStatus: true, calendarProvider: true, grantConnectedAt: true, lastGrantRefresh: true
+        },
+        orderBy: { grantConnectedAt: 'asc' } // Oldest first
+      });
 
       console.log(`📊 Found ${users.length} grants in organization ${organizationId}`);
 
@@ -56,10 +60,12 @@ class GrantManagementService {
    */
   async countOrganizationGrants(organizationId) {
     try {
-      const count = await User.countDocuments({
-        currentOrganization: organizationId,
-        nylasGrantId: { $exists: true, $ne: null },
-        calendarConnected: true
+      const count = await prisma.user.count({
+        where: {
+          currentOrganizationId: organizationId,
+          nylasGrantId: { not: null },
+          calendarConnected: true
+        }
       });
 
       console.log(`🔢 Organization ${organizationId} has ${count}/${this.MAX_GRANTS_PER_ORG} grants`);
@@ -85,40 +91,51 @@ class GrantManagementService {
    */
   async findOldestGrantAcrossAllAccounts() {
     try {
-      const Interview = require('../models/Interview');
       const now = new Date();
-      
+
       console.log('Searching for least recently used grant across all Nylas accounts...');
-      
-      const usersWithGrants = await User.find({
-        nylasGrantId: { $exists: true, $ne: null },
-        calendarConnected: true,
-        nylasAccountId: { $exists: true } // Must have an account assigned
-      })
-      .populate({
-        path: 'nylasAccountId',
-        select: '+apiKey +clientSecret name clientId region apiUri redirectUri'
-      })
-      .select('email profile.displayName profile.firstName profile.lastName nylasGrantId nylasAccountId grantConnectedAt lastGrantRefresh updatedAt createdAt');
+
+      const usersWithGrants = await prisma.user.findMany({
+        where: {
+          nylasGrantId: { not: null },
+          calendarConnected: true,
+          nylasAccountId: { not: null } // Must have an account assigned
+        },
+        select: {
+          id: true, email: true, profile: true, nylasGrantId: true, nylasAccountId: true,
+          grantConnectedAt: true, lastGrantRefresh: true, updatedAt: true, createdAt: true
+        }
+      });
 
       if (usersWithGrants.length === 0) {
         console.log('No grants found to rotate');
         return null;
       }
 
+      // Explicit stitch for the former .populate('nylasAccountId') (soft-ref id column).
+      const accountIds = [...new Set(usersWithGrants.map((u) => u.nylasAccountId).filter(Boolean))];
+      const accountsById = {};
+      if (accountIds.length > 0) {
+        const accountDocs = await prisma.nylasAccount.findMany({ where: { id: { in: accountIds } } });
+        for (const acc of accountDocs) accountsById[acc.id] = acc;
+      }
+
       const candidates = [];
 
       for (const user of usersWithGrants) {
-        const upcomingInterviews = await Interview.countDocuments({
-          interviewerId: user._id,
-          status: { $in: ['scheduled', 'confirmed'] },
-          scheduledAt: { $gte: now }
+        const upcomingInterviews = await prisma.interview.count({
+          where: {
+            interviewerId: user.id,
+            status: { in: ['scheduled', 'confirmed'] },
+            scheduledAt: { gte: now }
+          }
         });
 
+        const resolvedAccount = user.nylasAccountId ? accountsById[user.nylasAccountId] : null;
         const userName = user.profile?.displayName ||
           `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() ||
           'Unknown';
-        const accountName = user.nylasAccountId?.name || 'Unknown Account';
+        const accountName = resolvedAccount?.name || 'Unknown Account';
         const connectedAt = user.grantConnectedAt || user.updatedAt || user.createdAt || now;
         const lastUsedAt = user.lastGrantRefresh || connectedAt;
         const ageInDays = connectedAt
@@ -126,11 +143,11 @@ class GrantManagementService {
           : null;
 
         candidates.push({
-          userId: user._id,
+          userId: user.id,
           userName,
           email: user.email,
           grantId: user.nylasGrantId,
-          nylasAccount: user.nylasAccountId,
+          nylasAccount: resolvedAccount,
           accountName,
           connectedAt,
           lastUsedAt,
@@ -201,8 +218,8 @@ class GrantManagementService {
     try {
       console.log(`🔓 Revoking grant for user ${userId}. Reason: ${reason}`);
       
-      const user = await User.findById(userId);
-      
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+
       if (!user) {
         throw new Error(`User ${userId} not found`);
       }
@@ -227,8 +244,7 @@ class GrantManagementService {
           // Get account credentials if user has a linked Nylas account
           let accountCredentials = null;
           if (user.nylasAccountId) {
-            const NylasAccount = require('../models/NylasAccount');
-            const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+            const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
             if (nylasAccount) {
               accountCredentials = {
                 apiKey: nylasAccount.apiKey,
@@ -238,7 +254,7 @@ class GrantManagementService {
               console.log(`   Using Nylas account: ${nylasAccount.name}`);
             }
           }
-          
+
           await nylasV3Service.deleteGrant(grantId, accountCredentials);
           nylasRevoked = true;
           console.log(`✅ Grant ${grantId} deleted from Nylas`);
@@ -263,8 +279,14 @@ class GrantManagementService {
       user.calendarProvider = null;
       user.lastGrantRevocation = new Date();
       // Note: We keep grantConnectedAt and nylasAccountId for historical reference
-      
-      await user.save();
+
+      await prisma.user.update({ where: { id: user.id }, data: {
+        nylasGrantId: null,
+        nylasGrantStatus: 'revoked',
+        calendarConnected: false,
+        calendarProvider: null,
+        lastGrantRevocation: user.lastGrantRevocation
+      } });
 
       // Update the Nylas account's grant count
       if (nylasAccountId) {
@@ -323,7 +345,10 @@ class GrantManagementService {
       // accounts are genuinely full AND when there are no active/verified accounts
       // (or maxGrants is misconfigured to 0). Distinguish those so we don't throw a
       // misleading "grant count inconsistency" error for what is really a setup issue.
-      const activeAccounts = await NylasAccount.find({ active: true, verified: true }).select('maxGrants name');
+      const activeAccounts = await prisma.nylasAccount.findMany({
+        where: { active: true, verified: true },
+        select: { maxGrants: true, name: true }
+      });
       const activeAccountCount = activeAccounts.length;
       const totalCapacity = activeAccounts.reduce((sum, acc) => sum + (acc.maxGrants || 0), 0);
 
@@ -451,10 +476,12 @@ class GrantManagementService {
     try {
       console.log(`🔍 Verifying all grants for organization ${organizationId}...`);
       
-      const users = await User.find({
-        currentOrganization: organizationId,
-        nylasGrantId: { $exists: true, $ne: null },
-        calendarConnected: true
+      const users = await prisma.user.findMany({
+        where: {
+          currentOrganizationId: organizationId,
+          nylasGrantId: { not: null },
+          calendarConnected: true
+        }
       });
 
       const results = {
@@ -470,8 +497,7 @@ class GrantManagementService {
           // Get account credentials if user has a linked Nylas account
           let accountCredentials = null;
           if (user.nylasAccountId) {
-            const NylasAccount = require('../models/NylasAccount');
-            const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+            const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
             if (nylasAccount) {
               accountCredentials = {
                 apiKey: nylasAccount.apiKey,
@@ -480,24 +506,24 @@ class GrantManagementService {
               };
             }
           }
-          
+
           const verification = await nylasV3Service.verifyGrantStatus(user.nylasGrantId, accountCredentials);
-          
+
           if (verification.valid) {
             results.valid++;
-            
+
             // Update status if needed
             if (user.nylasGrantStatus !== 'active') {
               user.nylasGrantStatus = 'active';
-              await user.save();
+              await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: 'active' } });
             }
           } else {
             results.invalid++;
-            
+
             // Update status
             user.nylasGrantStatus = 'invalid';
             user.calendarConnected = false;
-            await user.save();
+            await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: 'invalid', calendarConnected: false } });
           }
 
           results.details.push({

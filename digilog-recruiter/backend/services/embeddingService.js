@@ -2171,8 +2171,8 @@ class EmbeddingService {
    */
   async reEmbedAllJobs() {
     try {
-      const Job = require('../models/Job');
-      const jobs = await Job.find();
+      const prisma = require('../db/client');
+      const jobs = await prisma.job.findMany();
       
       console.log(`🔄 Starting re-embedding for ${jobs.length} jobs...`);
       
@@ -2245,8 +2245,8 @@ class EmbeddingService {
    */
   async reEmbedAllCandidates() {
     try {
-      const Candidate = require('../models/Candidate');
-      const candidates = await Candidate.find();
+      const prisma = require('../db/client');
+      const candidates = await prisma.candidate.findMany();
       
       console.log(`🔄 Starting re-embedding for ${candidates.length} candidates...`);
       

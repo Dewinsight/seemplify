@@ -1,10 +1,58 @@
-const Organization = require('../models/Organization');
-const OrganizationInvite = require('../models/OrganizationInvite');
-const User = require('../models/User');
-const Notification = require('../models/Notification');
+const prisma = require('../db/client');
+const orgAccess = require('../db/orgAccess');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const planService = require('../services/planService');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
+
+// Inline replacement for the Mongoose Notification.createOrganizationInviteNotification
+// static (preserves the same fields/shape; `user`->`userId`, `metadata`->`data`).
+function createOrganizationInviteNotification(userId, inviteData) {
+  return prisma.notification.create({
+    data: {
+      userId,
+      type: 'organization_invite',
+      title: decodeHtmlEntities(`Invitation to join ${inviteData.organizationName}`),
+      message: decodeHtmlEntities(`${inviteData.inviterName} has invited you to join ${inviteData.organizationName} as a ${inviteData.role}.`),
+      data: {
+        inviteToken: inviteData.token,
+        organizationId: inviteData.organizationId,
+        organizationName: inviteData.organizationName,
+        role: inviteData.role,
+        inviterName: inviteData.inviterName,
+        inviterId: inviteData.inviterId
+      },
+      actionUrl: `/settings/invitations`,
+      actionText: 'View Invitations',
+      priority: 'high',
+      expiresAt: inviteData.expiresAt
+    }
+  });
+}
+
+// Attach `organization` and `invitedBy` objects onto OrganizationInvite rows
+// (replaces Mongoose .populate('organization') / .populate('invitedBy')).
+async function stitchInvites(invites, { organizationSelect, invitedBySelect } = {}) {
+  if (!invites || invites.length === 0) return [];
+  const orgIds = [...new Set(invites.map((i) => i.organizationId).filter(Boolean))];
+  const inviterIds = [...new Set(invites.map((i) => i.invitedById).filter(Boolean))];
+
+  const orgs = organizationSelect && orgIds.length
+    ? await prisma.organization.findMany({ where: { id: { in: orgIds } }, select: organizationSelect })
+    : [];
+  const inviters = invitedBySelect && inviterIds.length
+    ? await prisma.user.findMany({ where: { id: { in: inviterIds } }, select: invitedBySelect })
+    : [];
+
+  const orgById = Object.fromEntries(orgs.map((o) => [o.id, o]));
+  const inviterById = Object.fromEntries(inviters.map((u) => [u.id, u]));
+
+  return invites.map((inv) => ({
+    ...inv,
+    organization: organizationSelect ? (orgById[inv.organizationId] || null) : inv.organization,
+    invitedBy: invitedBySelect ? (inviterById[inv.invitedById] || null) : inv.invitedBy
+  }));
+}
 
 // Create organization - REQUIRES IdP as the source of truth
 exports.createOrganization = async (req, res) => {
@@ -27,7 +75,7 @@ exports.createOrganization = async (req, res) => {
     console.log('🧹 Cleaned organization data:', cleanData);
 
     // Get user (local-only — no Identity Provider)
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
@@ -36,36 +84,42 @@ exports.createOrganization = async (req, res) => {
       return res.status(400).json({ msg: 'Organization name is required' });
     }
 
-    // Create the organization locally in this app's own database
-    const organization = new Organization({
-      name: cleanData.name,
-      description: cleanData.description,
-      industry: cleanData.industry,
-      size: cleanData.size,
-      website: cleanData.website,
-      owner: userId,
-      members: [{
-        user: userId,
-        role: 'owner',
-        status: 'active'
-      }],
-      subscription: {
-        plan: 'free'  // Assign Free plan by default
+    // Create the organization locally in this app's own database.
+    // Members are normalized into the OrganizationMember table; the creator is the owner.
+    const subscription = {
+      plan: 'free'  // Assign Free plan by default
+    };
+
+    console.log('💾 Saving local organization shell...');
+    let organization = await prisma.organization.create({
+      data: {
+        name: cleanData.name,
+        description: cleanData.description,
+        industry: cleanData.industry,
+        size: cleanData.size,
+        website: cleanData.website,
+        ownerId: userId,
+        subscription
       }
     });
 
-    console.log('💾 Saving local organization shell...');
-    await organization.save();
+    await prisma.organizationMember.create({
+      data: {
+        organizationId: organization.id,
+        userId,
+        role: 'owner',
+        status: 'active'
+      }
+    });
 
     // Initialize credits from the free plan
     console.log('💳 Initializing credits from free plan...');
-    const Plan = require('../models/Plan');
-    const freePlan = await Plan.findOne({ code: 'free' });
+    const freePlan = await prisma.plan.findFirst({ where: { code: 'free' } });
 
     if (freePlan && freePlan.credits && freePlan.credits.totalCredits > 0) {
       const creditsToGrant = freePlan.credits.totalCredits;
 
-      organization.subscription.creditUsage = {
+      subscription.creditUsage = {
         totalCredits: creditsToGrant,
         usedCredits: 0,
         remainingCredits: creditsToGrant,
@@ -92,23 +146,29 @@ exports.createOrganization = async (req, res) => {
         }
       };
 
-      await organization.save();
+      organization = await prisma.organization.update({
+        where: { id: organization.id },
+        data: { subscription }
+      });
       console.log(`✅ Granted ${creditsToGrant} initial credits from free plan to organization "${organization.name}"`);
     } else {
       console.warn(`⚠️ Free plan not found or has no credits configured. Organization created without initial credits.`);
     }
 
-    // Update user's organization membership and set it as their current org
-    user.addOrganizationMembership(organization._id, 'owner');
-    user.currentOrganization = organization._id;
-    user.hasCompletedOrganizationSetup = true;
-    await user.save();
+    // Update user's organization membership (already created above) and set it as their current org
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        currentOrganizationId: organization.id,
+        hasCompletedOrganizationSetup: true
+      }
+    });
 
     console.log('✅ Organization created successfully (local):', organization.name);
 
     // Return organization with user's role for consistent frontend handling
     const organizationWithRole = {
-      ...organization.toObject(),
+      ...organization,
       userRole: 'owner', // The creator is always the owner
       joinedAt: new Date(),
       memberCount: 1
@@ -128,15 +188,21 @@ exports.getUserOrganizations = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
 
-    // Local organizations where the user is an active member (no Identity Provider)
-    const orgs = await Organization.find({
-      members: { $elemMatch: { user: userId, status: 'active' } }
+    // Local organizations where the user is an active member (no Identity Provider).
+    // Memberships live in the OrganizationMember table.
+    const myMemberships = await prisma.organizationMember.findMany({
+      where: { userId, status: 'active' }
     });
+
+    const orgIds = myMemberships.map((m) => m.organizationId);
+    const orgs = orgIds.length
+      ? await prisma.organization.findMany({ where: { id: { in: orgIds } } })
+      : [];
 
     if (!orgs || orgs.length === 0) {
       return res.status(400).json({
@@ -146,15 +212,22 @@ exports.getUserOrganizations = async (req, res) => {
       });
     }
 
-    const currentOrgId = user.currentOrganization ? user.currentOrganization.toString() : null;
+    // Active member counts per org for memberCount
+    const activeCounts = await prisma.organizationMember.groupBy({
+      by: ['organizationId'],
+      where: { organizationId: { in: orgIds }, status: 'active' },
+      _count: { _all: true }
+    });
+    const activeCountByOrg = Object.fromEntries(activeCounts.map((c) => [c.organizationId, c._count._all]));
+    const membershipByOrg = Object.fromEntries(myMemberships.map((m) => [m.organizationId, m]));
+
+    const currentOrgId = user.currentOrganizationId ? user.currentOrganizationId.toString() : null;
 
     const organizations = orgs.map((org) => {
-      const member = (org.members || []).find(
-        (m) => m.user && m.user.toString() === userId.toString()
-      );
-      const activeMembers = (org.members || []).filter((m) => m.status === 'active').length;
+      const member = membershipByOrg[org.id];
+      const activeMembers = activeCountByOrg[org.id] || 0;
       return {
-        _id: org._id,
+        _id: org.id,
         name: org.name,
         description: org.description,
         industry: org.industry,
@@ -163,7 +236,7 @@ exports.getUserOrganizations = async (req, res) => {
         userRole: member ? member.role : 'member',
         joinedAt: member ? member.joinedAt : org.createdAt,
         memberCount: activeMembers,
-        isCurrentOrganization: currentOrgId ? org._id.toString() === currentOrgId : false,
+        isCurrentOrganization: currentOrgId ? org.id.toString() === currentOrgId : false,
         subscription: org.subscription || { plan: 'free' },
         settings: org.settings || {}
       };
@@ -181,20 +254,22 @@ exports.getOrganizationLimits = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
 
     // Get current organization count for display purposes only
-    const activeOwnerMemberships = user.organizationMemberships.filter(
-      m => m.role === 'owner' && m.isActive
-    );
-
-    const activeOrganizations = await Organization.find({
-      _id: { $in: activeOwnerMemberships.map(m => m.organization) },
-      isActive: true
+    const activeOwnerMemberships = await prisma.organizationMember.findMany({
+      where: { userId, role: 'owner', status: 'active' }
     });
+
+    const ownerOrgIds = activeOwnerMemberships.map(m => m.organizationId);
+    const activeOrganizations = ownerOrgIds.length
+      ? await prisma.organization.findMany({
+          where: { id: { in: ownerOrgIds }, isActive: true }
+        })
+      : [];
 
     const currentCount = activeOrganizations.length;
 
@@ -218,26 +293,23 @@ exports.switchOrganization = async (req, res) => {
     const { organizationId } = req.body;
     const userId = req.user.id;
 
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
 
-    const localOrg = await Organization.findById(organizationId);
+    const localOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!localOrg) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
     // Verify membership locally (no Identity Provider)
-    const isMember = (localOrg.members || []).some(
-      (m) => m.user && m.user.toString() === userId.toString() && m.status === 'active'
-    );
+    const isMember = await orgAccess.isMember(userId, organizationId);
     if (!isMember) {
       return res.status(403).json({ msg: 'Access denied to this organization' });
     }
 
-    user.currentOrganization = organizationId;
-    await user.save();
+    await prisma.user.update({ where: { id: user.id }, data: { currentOrganizationId: organizationId } });
 
     res.json({ msg: 'Organization switched successfully' });
   } catch (error) {
@@ -258,17 +330,19 @@ exports.inviteUser = async (req, res) => {
     }
 
     // Get organization
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
     // Check if user has permission to invite
-    const user = await User.findById(userId);
-    if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!(await orgAccess.hasOrgPermission(userId, organizationId, 'manage_users'))) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
-    const activeMembers = organization.members.filter(m => m.status === 'active').length;
+    const activeMembers = await prisma.organizationMember.count({
+      where: { organizationId, status: 'active' }
+    });
     const memberLimit = organization.subscription?.memberLimit || 5;
 
     // Check if organization has reached member limit
@@ -281,11 +355,9 @@ exports.inviteUser = async (req, res) => {
     }
 
     // Check if user with this email is already a member
-    const targetUser = await User.findOne({ email });
+    const targetUser = await prisma.user.findFirst({ where: { email } });
     if (targetUser) {
-      const existingMember = organization.members.find(m =>
-        m.user && m.user.toString() === targetUser._id.toString()
-      );
+      const existingMember = await orgAccess.getMembership(targetUser.id, organizationId);
 
       if (existingMember) {
         return res.status(400).json({ msg: 'User is already a member' });
@@ -293,11 +365,13 @@ exports.inviteUser = async (req, res) => {
     }
 
     // Check for existing pending invite
-    const existingInvite = await OrganizationInvite.findOne({
-      organization: organizationId,
-      email,
-      status: 'pending',
-      expiresAt: { $gt: new Date() } // Only check non-expired invites
+    const existingInvite = await prisma.organizationInvite.findFirst({
+      where: {
+        organizationId,
+        email,
+        status: 'pending',
+        expiresAt: { gt: new Date() } // Only check non-expired invites
+      }
     });
 
     if (existingInvite) {
@@ -306,22 +380,23 @@ exports.inviteUser = async (req, res) => {
 
     // Create invite
     const token = crypto.randomBytes(32).toString('hex');
-    const invite = new OrganizationInvite({
-      organization: organizationId,
-      email,
-      role,
-      token,
-      invitedBy: userId,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    const invite = await prisma.organizationInvite.create({
+      data: {
+        organizationId,
+        email,
+        role,
+        token,
+        status: 'pending',
+        invitedById: userId,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+      }
     });
-
-    await invite.save();
 
     // Use app URL from frontend request (window.location.origin) or fallback
     const finalAppUrl = appUrl || process.env.FRONTEND_URL || 'https://smarthr.app';
     console.log('🌐 Using app URL for invitation:', finalAppUrl);
-    // organization already fetched above on line 284
-    const inviter = await User.findById(userId);
+    // organization already fetched above
+    const inviter = await prisma.user.findUnique({ where: { id: userId } });
 
     // Check email service configuration before sending
     const emailConfig = emailService.checkConfiguration();
@@ -359,16 +434,16 @@ exports.inviteUser = async (req, res) => {
     }
 
     // Create notification for the invited user (if they exist)
-    const invitedUser = await User.findOne({ email });
+    const invitedUser = await prisma.user.findFirst({ where: { email } });
     if (invitedUser) {
       try {
-        await Notification.createOrganizationInviteNotification(invitedUser._id, {
+        await createOrganizationInviteNotification(invitedUser.id, {
           token: invite.token,
-          organizationId: organization._id,
+          organizationId: organization.id,
           organizationName: organization.name,
           role: invite.role,
           inviterName: inviter.profile.displayName || inviter.profile.firstName || 'Someone',
-          inviterId: inviter._id,
+          inviterId: inviter.id,
           expiresAt: invite.expiresAt
         });
         console.log(`📧 Notification created for invited user: ${email}`);
@@ -402,32 +477,38 @@ exports.acceptInvite = async (req, res) => {
     const { token } = req.params;
     const userId = req.user.id;
 
-    const invite = await OrganizationInvite.findOne({
-      token,
-      status: 'pending',
-      expiresAt: { $gt: new Date() }
-    }).populate('organization');
+    const invite = await prisma.organizationInvite.findFirst({
+      where: {
+        token,
+        status: 'pending',
+        expiresAt: { gt: new Date() }
+      }
+    });
 
     if (!invite) {
       return res.status(404).json({ msg: 'Invalid or expired invite' });
     }
 
+    // Stitch the referenced organization (replaces .populate('organization'))
+    invite.organization = await prisma.organization.findUnique({ where: { id: invite.organizationId } });
+
     // Check if user email matches invite
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (user.email !== invite.email) {
       return res.status(403).json({ msg: 'This invite is not for your email address' });
     }
 
     // Get organization and check member limit before accepting
-    const organization = await Organization.findById(invite.organization._id);
-    const activeMembers = organization.members.filter(m => m.status === 'active').length;
+    const organization = await prisma.organization.findUnique({ where: { id: invite.organization.id } });
+    const activeMembers = await prisma.organizationMember.count({
+      where: { organizationId: organization.id, status: 'active' }
+    });
     const memberLimit = organization.subscription?.memberLimit || 5;
 
     // Check if organization has reached member limit (in case limit changed after invite was sent)
     if (memberLimit !== 'unlimited' && activeMembers >= memberLimit) {
       // Mark invite as expired since org is at capacity
-      invite.status = 'expired';
-      await invite.save();
+      await prisma.organizationInvite.update({ where: { id: invite.id }, data: { status: 'expired' } });
 
       return res.status(400).json({
         msg: `Cannot accept invite. The organization has reached its member limit of ${memberLimit} members.`,
@@ -436,32 +517,44 @@ exports.acceptInvite = async (req, res) => {
       });
     }
 
-    // Add user to organization
-    organization.addMember(userId, invite.role, invite.invitedBy);
-    await organization.save();
-
-    // Update user's organization membership
-    user.addOrganizationMembership(invite.organization._id, invite.role);
+    // Add user to organization (upsert membership — single source of truth in OrganizationMember)
+    await prisma.organizationMember.upsert({
+      where: { organizationId_userId: { organizationId: organization.id, userId } },
+      create: {
+        organizationId: organization.id,
+        userId,
+        role: invite.role,
+        status: 'active',
+        invitedById: invite.invitedById,
+        joinedAt: new Date()
+      },
+      update: { role: invite.role, status: 'active', joinedAt: new Date() }
+    });
 
     // Set as current organization if user has no current organization
     // or if this is their first organization
-    if (!user.currentOrganization || user.organizationMemberships.filter(m => m.isActive).length <= 1) {
+    const activeMembershipCount = await prisma.organizationMember.count({
+      where: { userId, status: 'active' }
+    });
+    let nextCurrentOrgId = user.currentOrganizationId;
+    if (!user.currentOrganizationId || activeMembershipCount <= 1) {
       console.log(`🏢 Setting ${invite.organization.name} as current organization for user ${user.email}`);
-      user.currentOrganization = invite.organization._id;
+      nextCurrentOrgId = invite.organization.id;
+      await prisma.user.update({ where: { id: user.id }, data: { currentOrganizationId: nextCurrentOrgId } });
     }
 
-    await user.save();
-
-    // Mark invite as accepted
-    invite.accept(userId);
-    await invite.save();
+    // Mark invite as accepted (replaces invite.accept(userId))
+    await prisma.organizationInvite.update({
+      where: { id: invite.id },
+      data: { status: 'accepted', acceptedAt: new Date(), acceptedById: userId }
+    });
 
     console.log('✅ Invitation accepted successfully:', {
       userId,
-      organizationId: invite.organization._id,
+      organizationId: invite.organization.id,
       organizationName: invite.organization.name,
       role: invite.role,
-      isNowCurrentOrg: user.currentOrganization?.toString() === invite.organization._id.toString()
+      isNowCurrentOrg: nextCurrentOrgId?.toString() === invite.organization.id.toString()
     });
 
     res.json({
@@ -486,26 +579,27 @@ exports.getOrganization = async (req, res) => {
     }
 
     // Fetch the current organization from this app's own database (no Identity Provider)
-    const localOrg = await Organization.findById(organizationId);
+    const localOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!localOrg) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    const member = (localOrg.members || []).find(
-      (m) => m.user && m.user.toString() === userId.toString()
-    );
-    const activeMembers = (localOrg.members || []).filter((m) => m.status === 'active').length;
+    const member = await orgAccess.getMembership(userId, organizationId);
+    const userRole = member ? member.role : (await orgAccess.getOrgRole(userId, organizationId)) || 'member';
+    const activeMembers = await prisma.organizationMember.count({
+      where: { organizationId, status: 'active' }
+    });
 
     const organization = {
-      _id: localOrg._id,
+      _id: localOrg.id,
       name: localOrg.name,
       description: localOrg.description,
       industry: localOrg.industry,
       size: localOrg.size,
       website: localOrg.website,
-      owner: localOrg.owner,
+      owner: localOrg.ownerId,
       memberCount: activeMembers,
-      userRole: member ? member.role : 'member',
+      userRole,
       subscription: localOrg.subscription,
       settings: localOrg.settings || {},
       createdAt: localOrg.createdAt
@@ -528,16 +622,15 @@ exports.updateOrganization = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
 
-    const user = await User.findById(userId);
-    if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
+    if (!(await orgAccess.hasOrgPermission(userId, organizationId, 'manage_users'))) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
 
     const { name, description, industry, size, website, settings } = req.body;
 
-    const organization = await Organization.findByIdAndUpdate(
-      organizationId,
-      {
+    const organization = await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
         name,
         description,
         industry,
@@ -545,9 +638,8 @@ exports.updateOrganization = async (req, res) => {
         website,
         settings,
         updatedAt: new Date()
-      },
-      { new: true }
-    );
+      }
+    });
 
     res.json({
       msg: 'Organization updated successfully',
@@ -565,28 +657,25 @@ exports.deleteOrganization = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
 
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
     // Only owner can delete
-    if (organization.owner.toString() !== userId) {
+    if ((organization.ownerId || '').toString() !== userId) {
       return res.status(403).json({ msg: 'Only organization owner can delete' });
     }
 
     // TODO: Handle data migration/cleanup for jobs, candidates, etc.
 
-    await Organization.findByIdAndDelete(organizationId);
-
-    // Remove organization from all users
-    await User.updateMany(
-      { 'organizationMemberships.organization': organizationId },
-      {
-        $pull: { organizationMemberships: { organization: organizationId } },
-        $unset: { currentOrganization: 1 }
-      }
-    );
+    // Clear currentOrganization for any user pointing at this org, then remove memberships
+    await prisma.user.updateMany({
+      where: { currentOrganizationId: organizationId },
+      data: { currentOrganizationId: null }
+    });
+    await prisma.organizationMember.deleteMany({ where: { organizationId } });
+    await prisma.organization.delete({ where: { id: organizationId } });
 
     res.json({ msg: 'Organization deleted successfully' });
   } catch (error) {
@@ -603,18 +692,18 @@ exports.deleteOrganizationById = async (req, res) => {
 
     console.log('🗑️ Deleting organization by ID:', organizationId, 'for user:', userId);
 
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       console.log('❌ Organization not found:', organizationId);
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
     console.log('🏢 Organization found:', organization.name);
-    console.log('👤 Organization owner:', organization.owner);
+    console.log('👤 Organization owner:', organization.ownerId);
     console.log('🔍 Requesting user:', userId);
 
     // Only owner can delete
-    if (organization.owner.toString() !== userId) {
+    if ((organization.ownerId || '').toString() !== userId) {
       console.log('❌ User is not the owner, access denied');
       return res.status(403).json({ msg: 'Only organization owner can delete' });
     }
@@ -624,19 +713,13 @@ exports.deleteOrganizationById = async (req, res) => {
     // Clean up all related data
     console.log('🧹 Starting cleanup of related data...');
 
-    // Get all models that reference the organization
-    const Job = require('../models/Job');
-    const Candidate = require('../models/Candidate');
-    const Interview = require('../models/Interview');
-    const ChatSession = require('../models/ChatSession');
-    const Session = require('../models/Session');
-
-    // Count related data for logging
-    const jobCount = await Job.countDocuments({ organization: organizationId });
-    const candidateCount = await Candidate.countDocuments({ organization: organizationId });
-    const interviewCount = await Interview.countDocuments({ organization: organizationId });
-    const chatSessionCount = await ChatSession.countDocuments({ organization: organizationId });
-    const sessionCount = await Session.countDocuments({ organization: organizationId });
+    // Count related data for logging.
+    // NOTE: the Session model has no organization field — that count/delete was always a no-op.
+    const jobCount = await prisma.job.count({ where: { organizationId } });
+    const candidateCount = await prisma.candidate.count({ where: { organizationId } });
+    const interviewCount = await prisma.interview.count({ where: { organizationId } });
+    const chatSessionCount = await prisma.chatSession.count({ where: { organizationId } });
+    const sessionCount = 0;
 
     console.log('📊 Related data to delete:', {
       jobs: jobCount,
@@ -648,30 +731,26 @@ exports.deleteOrganizationById = async (req, res) => {
 
     // Delete all related data
     await Promise.all([
-      Job.deleteMany({ organization: organizationId }),
-      Candidate.deleteMany({ organization: organizationId }),
-      Interview.deleteMany({ organization: organizationId }),
-      ChatSession.deleteMany({ organization: organizationId }),
-      Session.deleteMany({ organization: organizationId }),
-      OrganizationInvite.deleteMany({ organization: organizationId })
+      prisma.job.deleteMany({ where: { organizationId } }),
+      prisma.candidate.deleteMany({ where: { organizationId } }),
+      prisma.interview.deleteMany({ where: { organizationId } }),
+      prisma.chatSession.deleteMany({ where: { organizationId } }),
+      prisma.organizationInvite.deleteMany({ where: { organizationId } })
     ]);
 
     console.log('✅ All related data cleaned up');
 
-    // Finally delete the organization
-    await Organization.findByIdAndDelete(organizationId);
+    // Remove organization from all users, then delete the organization
+    await prisma.user.updateMany({
+      where: { currentOrganizationId: organizationId },
+      data: { currentOrganizationId: null }
+    });
+    const removedMemberships = await prisma.organizationMember.deleteMany({ where: { organizationId } });
+
+    await prisma.organization.delete({ where: { id: organizationId } });
     console.log('🗑️ Organization deleted from database');
 
-    // Remove organization from all users
-    const updateResult = await User.updateMany(
-      { 'organizationMemberships.organization': organizationId },
-      {
-        $pull: { organizationMemberships: { organization: organizationId } },
-        $unset: { currentOrganization: 1 }
-      }
-    );
-
-    console.log('👥 Updated users:', updateResult.modifiedCount);
+    console.log('👥 Updated users:', removedMemberships.count);
 
     res.json({ msg: 'Organization deleted successfully' });
   } catch (error) {
@@ -686,22 +765,37 @@ exports.getInviteDetails = async (req, res) => {
   try {
     const { token } = req.params;
 
-    const invite = await OrganizationInvite.findOne({
-      token,
-      status: 'pending',
-      expiresAt: { $gt: new Date() }
-    }).populate('organization', 'name description')
-      .populate('invitedBy', 'profile.firstName profile.lastName');
+    const invite = await prisma.organizationInvite.findFirst({
+      where: {
+        token,
+        status: 'pending',
+        expiresAt: { gt: new Date() }
+      }
+    });
 
     if (!invite) {
       return res.status(404).json({ msg: 'Invalid or expired invite' });
     }
 
+    // Stitch referenced records (replaces .populate)
+    const organization = invite.organizationId
+      ? await prisma.organization.findUnique({
+          where: { id: invite.organizationId },
+          select: { id: true, name: true, description: true }
+        })
+      : null;
+    const invitedBy = invite.invitedById
+      ? await prisma.user.findUnique({
+          where: { id: invite.invitedById },
+          select: { id: true, profile: true }
+        })
+      : null;
+
     res.json({
       email: invite.email,
       role: invite.role,
-      organization: invite.organization,
-      invitedBy: invite.invitedBy,
+      organization,
+      invitedBy,
       expiresAt: invite.expiresAt
     });
   } catch (error) {
@@ -721,34 +815,49 @@ exports.getOrganizationMembers = async (req, res) => {
       return res.status(400).json({ msg: 'No current organization set' });
     }
 
-    const organization = await Organization.findById(organizationId)
-      .populate('members.user', 'email profile')
-      .populate('members.invitedBy', 'profile');
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    const yourMember = (organization.members || []).find(
-      (m) => m.user && m.user._id && m.user._id.toString() === userId.toString()
-    );
+    // Memberships live in the OrganizationMember table (replaces embedded members[])
+    const memberRows = await prisma.organizationMember.findMany({ where: { organizationId } });
+
+    // Stitch member users and inviters (replaces .populate('members.user') / ('members.invitedBy'))
+    const memberUserIds = [...new Set(memberRows.map((m) => m.userId).filter(Boolean))];
+    const inviterIds = [...new Set(memberRows.map((m) => m.invitedById).filter(Boolean))];
+    const lookupIds = [...new Set([...memberUserIds, ...inviterIds])];
+    const lookupUsers = lookupIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: lookupIds } },
+          select: { id: true, email: true, profile: true }
+        })
+      : [];
+    const userById = Object.fromEntries(lookupUsers.map((u) => [u.id, u]));
+
+    const yourMember = memberRows.find((m) => m.userId && m.userId.toString() === userId.toString());
 
     // Build member list from this app's own database (no Identity Provider)
-    const members = (organization.members || [])
-      .filter((m) => m.user)
-      .map((m) => ({
-        _id: m.user._id,
-        user: {
-          _id: m.user._id,
-          email: m.user.email,
-          profile: m.user.profile || {}
-        },
-        role: m.role,
-        status: m.status,
-        joinedAt: m.joinedAt,
-        invitedBy: m.invitedBy ? { profile: m.invitedBy.profile || {} } : null,
-        isOwner: organization.owner && organization.owner.toString() === m.user._id.toString()
-      }));
+    const members = memberRows
+      .filter((m) => userById[m.userId])
+      .map((m) => {
+        const mu = userById[m.userId];
+        const inviter = m.invitedById ? userById[m.invitedById] : null;
+        return {
+          _id: mu.id,
+          user: {
+            _id: mu.id,
+            email: mu.email,
+            profile: mu.profile || {}
+          },
+          role: m.role,
+          status: m.status,
+          joinedAt: m.joinedAt,
+          invitedBy: inviter ? { profile: inviter.profile || {} } : null,
+          isOwner: organization.ownerId && organization.ownerId.toString() === mu.id.toString()
+        };
+      });
 
     return res.json({
       members,
@@ -769,30 +878,35 @@ exports.removeMember = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
 
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    const user = await User.findById(userId);
-    if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
+    if (!(await orgAccess.hasOrgPermission(userId, organizationId, 'manage_users'))) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
 
     // Cannot remove owner
-    if (organization.owner.toString() === memberId) {
+    if ((organization.ownerId || '').toString() === memberId) {
       return res.status(400).json({ msg: 'Cannot remove organization owner' });
     }
 
-    // Remove member from organization
-    organization.removeMember(memberId);
-    await organization.save();
+    // Remove member from organization (OrganizationMember table)
+    await prisma.organizationMember.deleteMany({ where: { organizationId, userId: memberId } });
 
-    // Remove organization membership from user
-    const memberUser = await User.findById(memberId);
-    if (memberUser) {
-      memberUser.removeOrganizationMembership(organizationId);
-      await memberUser.save();
+    // Clear the removed member's current organization if it pointed here
+    // (mirrors User.removeOrganizationMembership which reassigns/clears currentOrganization)
+    const memberUser = await prisma.user.findUnique({ where: { id: memberId } });
+    if (memberUser && memberUser.currentOrganizationId &&
+        memberUser.currentOrganizationId.toString() === organizationId.toString()) {
+      const remaining = await prisma.organizationMember.findFirst({
+        where: { userId: memberId, status: 'active' }
+      });
+      await prisma.user.update({
+        where: { id: memberId },
+        data: { currentOrganizationId: remaining ? remaining.organizationId : null }
+      });
     }
 
     res.json({ msg: 'Member removed successfully' });
@@ -812,13 +926,13 @@ exports.leaveOrganization = async (req, res) => {
       return res.status(400).json({ msg: 'No current organization set' });
     }
 
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
     // Check if user is the owner
-    if (organization.owner.toString() === userId) {
+    if ((organization.ownerId || '').toString() === userId) {
       return res.status(400).json({
         msg: 'Organization owners cannot leave. Please transfer ownership or delete the organization first.',
         code: 'OWNER_CANNOT_LEAVE'
@@ -826,28 +940,23 @@ exports.leaveOrganization = async (req, res) => {
     }
 
     // Check if user is a member
-    const memberIndex = organization.members.findIndex(m => m.user.toString() === userId);
-    if (memberIndex === -1) {
+    const membership = await prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId, userId } }
+    });
+    if (!membership) {
       return res.status(400).json({ msg: 'You are not a member of this organization' });
     }
 
     // Remove user from organization members
-    organization.members.splice(memberIndex, 1);
-    organization.memberCount = organization.members.length;
-    await organization.save();
-
-    // Remove organization from user's memberships
-    const user = await User.findById(userId);
-    user.organizationMemberships = user.organizationMemberships.filter(
-      m => m.organization.toString() !== organizationId.toString()
-    );
+    await prisma.organizationMember.delete({
+      where: { organizationId_userId: { organizationId, userId } }
+    });
 
     // If this was their current organization, clear it
-    if (user.currentOrganization && user.currentOrganization.toString() === organizationId.toString()) {
-      user.currentOrganization = null;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (user.currentOrganizationId && user.currentOrganizationId.toString() === organizationId.toString()) {
+      await prisma.user.update({ where: { id: user.id }, data: { currentOrganizationId: null } });
     }
-
-    await user.save();
 
     console.log(`👋 User ${user.email} left organization ${organization.name}`);
 
@@ -869,36 +978,25 @@ exports.updateMemberRole = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
 
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    const user = await User.findById(userId);
-    if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
+    if (!(await orgAccess.hasOrgPermission(userId, organizationId, 'manage_users'))) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
 
     // Cannot change owner role
-    if (organization.owner.toString() === memberId) {
+    if ((organization.ownerId || '').toString() === memberId) {
       return res.status(400).json({ msg: 'Cannot change owner role' });
     }
 
-    // Update role in organization
-    organization.updateMemberRole(memberId, role);
-    await organization.save();
-
-    // Update role in user's membership
-    const memberUser = await User.findById(memberId);
-    if (memberUser) {
-      const membership = memberUser.organizationMemberships.find(
-        m => m.organization.toString() === organizationId.toString()
-      );
-      if (membership) {
-        membership.role = role;
-        await memberUser.save();
-      }
-    }
+    // Update role in the OrganizationMember table (only active members, mirroring updateMemberRole)
+    await prisma.organizationMember.updateMany({
+      where: { organizationId, userId: memberId, status: 'active' },
+      data: { role }
+    });
 
     res.json({ msg: 'Member role updated successfully' });
   } catch (error) {
@@ -918,18 +1016,24 @@ exports.getPendingInvitations = async (req, res) => {
     }
 
     // Check if user has permission to view invitations
-    const user = await User.findById(userId);
-    if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
+    if (!(await orgAccess.hasOrgPermission(userId, organizationId, 'manage_users'))) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
 
-    const pendingInvites = await OrganizationInvite.find({
-      organization: organizationId,
-      status: 'pending',
-      expiresAt: { $gt: new Date() }
-    }).populate('invitedBy', 'profile.firstName profile.lastName email')
-      .populate('organization', 'name')
-      .sort({ createdAt: -1 });
+    const pendingInvitesRaw = await prisma.organizationInvite.findMany({
+      where: {
+        organizationId,
+        status: 'pending',
+        expiresAt: { gt: new Date() }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Stitch invitedBy + organization (replaces .populate)
+    const pendingInvites = await stitchInvites(pendingInvitesRaw, {
+      organizationSelect: { id: true, name: true },
+      invitedBySelect: { id: true, profile: true, email: true }
+    });
 
     res.json({
       pendingInvites,
@@ -952,21 +1056,22 @@ exports.cancelInvitation = async (req, res) => {
       return res.status(400).json({ msg: 'No current organization set' });
     }
 
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
     // Check if user has permission to manage invitations
-    const user = await User.findById(userId);
-    if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
+    if (!(await orgAccess.hasOrgPermission(userId, organizationId, 'manage_users'))) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
 
-    const invite = await OrganizationInvite.findOne({
-      _id: inviteId,
-      organization: organizationId,
-      status: 'pending'
+    const invite = await prisma.organizationInvite.findFirst({
+      where: {
+        id: inviteId,
+        organizationId,
+        status: 'pending'
+      }
     });
 
     if (!invite) {
@@ -975,7 +1080,7 @@ exports.cancelInvitation = async (req, res) => {
 
     // Actually delete the invitation instead of just marking as rejected
     // This allows the same email to be re-invited immediately
-    await OrganizationInvite.deleteOne({ _id: inviteId });
+    await prisma.organizationInvite.delete({ where: { id: inviteId } });
 
     console.log(`🗑️ Invitation deleted for email: ${invite.email} by user: ${userId}`);
     res.json({ msg: 'Invitation cancelled successfully' });
@@ -991,18 +1096,25 @@ exports.getUserPendingInvitations = async (req, res) => {
     const userId = req.user.id;
 
     // Get user's email to find invitations
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
 
-    const pendingInvites = await OrganizationInvite.find({
-      email: user.email,
-      status: 'pending',
-      expiresAt: { $gt: new Date() }
-    }).populate('organization', 'name description industry')
-      .populate('invitedBy', 'profile.firstName profile.lastName email')
-      .sort({ createdAt: -1 });
+    const pendingInvitesRaw = await prisma.organizationInvite.findMany({
+      where: {
+        email: user.email,
+        status: 'pending',
+        expiresAt: { gt: new Date() }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Stitch organization + invitedBy (replaces .populate)
+    const pendingInvites = await stitchInvites(pendingInvitesRaw, {
+      organizationSelect: { id: true, name: true, description: true, industry: true },
+      invitedBySelect: { id: true, profile: true, email: true }
+    });
 
     res.json({
       pendingInvites,
@@ -1025,26 +1137,27 @@ exports.cleanupInvitations = async (req, res) => {
     }
 
     // Check if user has permission to manage invitations
-    const user = await User.findById(userId);
-    if (!user.hasOrganizationPermission(organizationId, 'manage_users')) {
+    if (!(await orgAccess.hasOrgPermission(userId, organizationId, 'manage_users'))) {
       return res.status(403).json({ msg: 'Insufficient permissions' });
     }
 
     // Delete all rejected and expired invitations
-    const cleanupResult = await OrganizationInvite.deleteMany({
-      organization: organizationId,
-      $or: [
-        { status: 'rejected' },
-        { status: 'expired' },
-        { expiresAt: { $lt: new Date() } }
-      ]
+    const cleanupResult = await prisma.organizationInvite.deleteMany({
+      where: {
+        organizationId,
+        OR: [
+          { status: 'rejected' },
+          { status: 'expired' },
+          { expiresAt: { lt: new Date() } }
+        ]
+      }
     });
 
-    console.log(`🧹 Cleaned up ${cleanupResult.deletedCount} old invitations for organization: ${organizationId}`);
+    console.log(`🧹 Cleaned up ${cleanupResult.count} old invitations for organization: ${organizationId}`);
 
     res.json({
       msg: 'Invitations cleaned up successfully',
-      deletedCount: cleanupResult.deletedCount
+      deletedCount: cleanupResult.count
     });
   } catch (error) {
     console.error('Error cleaning up invitations:', error);
@@ -1071,8 +1184,7 @@ exports.transferOwnership = async (req, res) => {
     }
 
     // Get organization first to check for IdP link
-    const organization = await Organization.findById(organizationId)
-      .populate('members.user', 'profile.firstName profile.lastName email');
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
@@ -1088,22 +1200,22 @@ exports.transferOwnership = async (req, res) => {
     }
 
     // Verify current user is the owner
-    if (organization.owner.toString() !== currentOwnerId) {
+    if ((organization.ownerId || '').toString() !== currentOwnerId) {
       return res.status(403).json({ msg: 'Only the organization owner can transfer ownership' });
     }
 
-    // Verify new owner is a member of the organization
-    const newOwnerMember = organization.members.find(
-      m => m.user._id.toString() === newOwnerId && m.status === 'active'
-    );
+    // Verify new owner is a member of the organization (OrganizationMember table)
+    const newOwnerMember = await prisma.organizationMember.findFirst({
+      where: { organizationId, userId: newOwnerId, status: 'active' }
+    });
 
     if (!newOwnerMember) {
       return res.status(400).json({ msg: 'New owner must be an active member of the organization' });
     }
 
     // Get both users
-    const currentOwner = await User.findById(currentOwnerId);
-    const newOwner = await User.findById(newOwnerId);
+    const currentOwner = await prisma.user.findUnique({ where: { id: currentOwnerId } });
+    const newOwner = await prisma.user.findUnique({ where: { id: newOwnerId } });
 
     if (!currentOwner || !newOwner) {
       return res.status(404).json({ msg: 'User not found' });
@@ -1114,69 +1226,54 @@ exports.transferOwnership = async (req, res) => {
     console.log(`  To: ${newOwner.email} (${newOwnerId})`);
 
     // Update organization owner
-    organization.owner = newOwnerId;
+    await prisma.organization.update({ where: { id: organizationId }, data: { ownerId: newOwnerId } });
+    organization.ownerId = newOwnerId;
 
-    // Update old owner's role to admin
-    const oldOwnerMember = organization.members.find(
-      m => m.user._id.toString() === currentOwnerId
-    );
-    if (oldOwnerMember) {
-      oldOwnerMember.role = 'admin';
-    }
+    // Update old owner's membership role to admin (if a membership row exists)
+    await prisma.organizationMember.updateMany({
+      where: { organizationId, userId: currentOwnerId },
+      data: { role: 'admin' }
+    });
 
-    // Update new owner's role to owner
-    newOwnerMember.role = 'owner';
-
-    // Save organization
-    await organization.save();
-
-    // Update current owner's membership to admin
-    const currentOwnerMembership = currentOwner.organizationMemberships.find(
-      m => m.organization.toString() === organizationId.toString()
-    );
-    if (currentOwnerMembership) {
-      currentOwnerMembership.role = 'admin';
-      await currentOwner.save();
-    }
-
-    // Update new owner's membership to owner
-    const newOwnerMembership = newOwner.organizationMemberships.find(
-      m => m.organization.toString() === organizationId.toString()
-    );
-    if (newOwnerMembership) {
-      newOwnerMembership.role = 'owner';
-      await newOwner.save();
-    }
+    // Update new owner's membership role to owner
+    await prisma.organizationMember.updateMany({
+      where: { organizationId, userId: newOwnerId },
+      data: { role: 'owner' }
+    });
 
     console.log('✅ Ownership transfer completed successfully');
 
     // Create notifications for both users
     try {
       // Notification for old owner
-      await Notification.create({
-        user: currentOwnerId,
-        type: 'ownership_transferred',
-        title: 'Ownership Transferred',
-        message: `You have transferred ownership of "${organization.name}" to ${newOwner.profile.firstName || newOwner.email}. You are now an Admin.`,
-        metadata: {
-          organizationId: organization._id,
-          organizationName: organization.name,
-          newOwnerId: newOwnerId,
-          newOwnerName: newOwner.profile.firstName || newOwner.email
+      await prisma.notification.create({
+        data: {
+          userId: currentOwnerId,
+          type: 'ownership_transferred',
+          title: 'Ownership Transferred',
+          message: `You have transferred ownership of "${organization.name}" to ${newOwner.profile.firstName || newOwner.email}. You are now an Admin.`,
+          data: {
+            organizationId: organization.id,
+            organizationName: organization.name,
+            newOwnerId: newOwnerId,
+            newOwnerName: newOwner.profile.firstName || newOwner.email
+          }
         }
       });
 
       // Notification for new owner
-      await Notification.create({
-        user: newOwnerId,
-        type: 'ownership_received',
-        title: 'You Are Now Owner',
-        message: `${currentOwner.profile.firstName || currentOwner.email} has transferred ownership of "${organization.name}" to you. You now have full control.`,
-        metadata: {
-          organizationId: organization._id,
-          organizationName: organization.name,
-          previousOwnerId: currentOwnerId,
-          previousOwnerName: currentOwner.profile.firstName || currentOwner.email
+      await prisma.notification.create({
+        data: {
+          userId: newOwnerId,
+          type: 'ownership_received',
+          title: 'You Are Now Owner',
+          message: `${currentOwner.profile.firstName || currentOwner.email} has transferred ownership of "${organization.name}" to you. You now have full control.`,
+          data: {
+            organizationId: organization.id,
+            organizationName: organization.name,
+            previousOwnerId: currentOwnerId,
+            previousOwnerName: currentOwner.profile.firstName || currentOwner.email
+          }
         }
       });
 
@@ -1189,7 +1286,7 @@ exports.transferOwnership = async (req, res) => {
     res.json({
       msg: 'Ownership transferred successfully',
       organization: {
-        _id: organization._id,
+        _id: organization.id,
         name: organization.name,
         owner: newOwnerId
       },
@@ -1249,7 +1346,7 @@ exports.adjustOrganizationCredits = async (req, res) => {
     }
 
     // Get organization
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) {
       return res.status(404).json({
         success: false,
@@ -1338,7 +1435,10 @@ exports.adjustOrganizationCredits = async (req, res) => {
       console.log(`✅ Removed ${actualCredits} credits from ${organization.name}. Balance: ${creditsBefore} → ${creditsAfter}`);
     }
 
-    await organization.save();
+    await prisma.organization.update({
+      where: { id: organization.id },
+      data: { subscription: organization.subscription }
+    });
 
     res.json({
       success: true,
@@ -1351,7 +1451,7 @@ exports.adjustOrganizationCredits = async (req, res) => {
         reason
       },
       organization: {
-        _id: organization._id,
+        _id: organization.id,
         name: organization.name,
         creditBalance: creditsAfter
       }

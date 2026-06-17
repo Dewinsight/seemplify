@@ -1,4 +1,4 @@
-const Plan = require('../models/Plan');
+const prisma = require('../db/client');
 
 /**
  * Get plan details by plan code
@@ -18,9 +18,11 @@ const getPlanByCode = async (planCode) => {
   }
 
   try {
-    const plan = await Plan.findOne({ 
-      code: planCode.toLowerCase(),
-      isPublished: true
+    const plan = await prisma.plan.findFirst({
+      where: {
+        code: planCode.toLowerCase(),
+        isPublished: true
+      }
     });
 
     if (!plan) {

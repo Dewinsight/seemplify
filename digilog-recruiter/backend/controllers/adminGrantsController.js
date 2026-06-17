@@ -1,5 +1,5 @@
 const grantManagementService = require('../services/grantManagementService');
-const User = require('../models/User');
+const prisma = require('../db/client');
 
 /**
  * GET /api/admin/grants
@@ -20,16 +20,40 @@ const listOrganizationGrants = async (req, res) => {
       stats = await grantManagementService.getGrantUsageStats(organizationId);
     } else {
       // Get all grants across all organizations
-      const User = require('../models/User');
-      const users = await User.find({
-        nylasGrantId: { $exists: true, $ne: null },
-        calendarConnected: true
-      })
-      .select('email profile.firstName profile.lastName profile.displayName nylasGrantId nylasAccountId nylasGrantStatus calendarProvider grantConnectedAt lastGrantRefresh currentOrganization')
-      .sort({ grantConnectedAt: 1 })
-      .populate('currentOrganization', 'name')
-      .populate('nylasAccountId', 'name clientId');
-      
+      const users = await prisma.user.findMany({
+        where: {
+          nylasGrantId: { not: null },
+          calendarConnected: true
+        },
+        select: {
+          id: true,
+          email: true,
+          profile: true,
+          nylasGrantId: true,
+          nylasAccountId: true,
+          nylasGrantStatus: true,
+          calendarProvider: true,
+          grantConnectedAt: true,
+          lastGrantRefresh: true,
+          currentOrganizationId: true,
+          currentOrganization: { select: { name: true } }
+        },
+        orderBy: { grantConnectedAt: 'asc' }
+      });
+
+      // Stitch the soft-ref nylasAccountId column to its NylasAccount record.
+      const nylasAccountIds = [...new Set(users.map(u => u.nylasAccountId).filter(Boolean))];
+      const nylasAccounts = nylasAccountIds.length
+        ? await prisma.nylasAccount.findMany({
+            where: { id: { in: nylasAccountIds } },
+            select: { id: true, name: true, clientId: true }
+          })
+        : [];
+      const nylasAccountById = new Map(nylasAccounts.map(a => [a.id, a]));
+      for (const u of users) {
+        u.nylasAccountId = u.nylasAccountId ? (nylasAccountById.get(u.nylasAccountId) || null) : null;
+      }
+
       grants = users.map(user => ({
         userId: user._id,
         userName: user.profile?.displayName || `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() || 'Unknown User',
@@ -96,8 +120,8 @@ const revokeUserGrant = async (req, res) => {
     console.log(`🔓 Admin ${admin.email} revoking grant for user ${userId}`);
 
     // Verify the target user exists
-    const targetUser = await User.findById(userId);
-    
+    const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+
     if (!targetUser) {
       return res.status(404).json({
         success: false,

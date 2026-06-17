@@ -1,4 +1,4 @@
-const Interview = require('../models/Interview');
+const prisma = require('../db/client');
 
 class TranscriptSegmentationService {
   // Debug log helper with context info
@@ -21,11 +21,22 @@ class TranscriptSegmentationService {
       this._log('SEGMENT-SESSION', `Processing session: ${sessionId}`);
       
       // Get all interviews in this session
-      const interviews = await Interview.find({ 
-        multiCandidateSessionId: sessionId 
-      })
-      .sort({ multiCandidateOrder: 1 })
-      .populate('candidateId', 'firstName lastName email');
+      const interviews = await prisma.interview.findMany({
+        where: { multiCandidateSessionId: sessionId },
+        orderBy: { multiCandidateOrder: 'asc' }
+      });
+      // Stitch candidate (soft ref candidateId -> Candidate)
+      const candidateIds = Array.from(new Set(interviews.map((i) => i.candidateId).filter(Boolean)));
+      const candidates = candidateIds.length
+        ? await prisma.candidate.findMany({
+            where: { id: { in: candidateIds } },
+            select: { id: true, firstName: true, lastName: true, email: true }
+          })
+        : [];
+      const candidateById = new Map(candidates.map((c) => [String(c.id), c]));
+      for (const interview of interviews) {
+        interview.candidateId = interview.candidateId ? (candidateById.get(String(interview.candidateId)) || null) : null;
+      }
 
       if (!interviews || interviews.length === 0) {
         this._log('ERROR', 'No interviews found for this session');
@@ -411,9 +422,15 @@ class TranscriptSegmentationService {
     try {
       this._log('GET-TRANSCRIPT', `Retrieving transcript for interview: ${interviewId}`);
       
-      const interview = await Interview.findById(interviewId)
-        .populate('candidateId', 'firstName lastName email');
-      
+      const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+      if (interview && interview.candidateId) {
+        const cand = await prisma.candidate.findUnique({
+          where: { id: interview.candidateId },
+          select: { id: true, firstName: true, lastName: true, email: true }
+        });
+        interview.candidateId = cand || null;
+      }
+
       if (!interview) {
         this._log('ERROR', `Interview not found: ${interviewId}`);
         throw new Error('Interview not found');
@@ -432,9 +449,10 @@ class TranscriptSegmentationService {
       this._log('GET-TRANSCRIPT', `Multi-candidate interview in session: ${interview.multiCandidateSessionId}`);
       
       // Get the full session transcript
-      const sessionInterviews = await Interview.find({
-        multiCandidateSessionId: interview.multiCandidateSessionId
-      }).sort({ multiCandidateOrder: 1 });
+      const sessionInterviews = await prisma.interview.findMany({
+        where: { multiCandidateSessionId: interview.multiCandidateSessionId },
+        orderBy: { multiCandidateOrder: 'asc' }
+      });
       
       this._log('GET-TRANSCRIPT', `Found ${sessionInterviews.length} interviews in session`);
       

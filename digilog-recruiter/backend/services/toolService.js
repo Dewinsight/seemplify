@@ -1,5 +1,6 @@
 const axios = require('axios');
 const FormData = require('form-data');
+const prisma = require('../db/client');
 
 /**
  * Tool Service - Provides AI with access to all backend APIs as tools
@@ -242,9 +243,6 @@ class ToolService {
    * Make internal requests directly to database (for testing without auth)
    */
   async makeInternalRequest(method, endpoint, data = null) {
-    const Candidate = require('../models/Candidate');
-    const Job = require('../models/Job');
-
     try {
       if (endpoint.includes('/api/candidates')) {
         if (method === 'GET' && endpoint.startsWith('/api/candidates')) {
@@ -254,21 +252,20 @@ class ToolService {
           const limit = parseInt(params.get('limit')) || 100;
           
           if (path === '/api/candidates') {
-            const candidates = await Candidate.find().limit(limit);
+            const candidates = await prisma.candidate.findMany({ take: limit });
             return candidates;
           }
-          
+
           // Handle specific candidate by ID
           const candidateId = path.split('/').pop();
           if (candidateId && candidateId !== 'candidates') {
-            const candidate = await Candidate.findById(candidateId);
+            const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
             return candidate;
           }
         }
-        
+
         if (method === 'POST' && endpoint === '/api/candidates') {
-          const candidate = new Candidate(data);
-          await candidate.save();
+          const candidate = await prisma.candidate.create({ data });
           return candidate;
         }
       }
@@ -287,10 +284,10 @@ class ToolService {
             if (params.get('type')) query.type = params.get('type');
             if (params.get('location')) query.location = params.get('location');
             
-            const jobs = await Job.find(query);
+            const jobs = await prisma.job.findMany({ where: query });
             // Remove applicants field to avoid confusion - we use AI matching, not applications
             const jobsWithoutApplicants = jobs.map(job => {
-              const jobObj = job.toObject();
+              const jobObj = { ...job };
               delete jobObj.applicants; // Remove applicants array
               jobObj._matchingNote = 'Use get_matching_candidates_for_job tool to find best candidates';
               return jobObj;
@@ -301,8 +298,7 @@ class ToolService {
         
         if (method === 'POST' && endpoint === '/api/jobs') {
           console.log('📝 Creating job with data:', data);
-          const job = new Job(data);
-          await job.save();
+          const job = await prisma.job.create({ data });
           console.log('✅ Job created successfully:', job.title);
           return job;
         }
@@ -316,8 +312,8 @@ class ToolService {
           console.log(`🔍 Looking for job matching with ID: ${jobId}`);
           
           // For testing: return mock matching data based on real candidates
-          const candidates = await Candidate.find().limit(5);
-          const job = await Job.findById(jobId);
+          const candidates = await prisma.candidate.findMany({ take: 5 });
+          const job = await prisma.job.findUnique({ where: { id: jobId } });
           
           if (!job) {
             throw new Error(`Job not found with ID: ${jobId}`);
@@ -355,14 +351,14 @@ class ToolService {
         
         if (method === 'GET' && endpoint.match(/\/api\/jobs\/[^\/]+$/)) {
           const jobId = endpoint.split('/').pop();
-          const job = await Job.findById(jobId);
+          const job = await prisma.job.findUnique({ where: { id: jobId } });
           return job;
         }
       }
 
       // Handle analytics endpoints
       if (endpoint === '/api/ai/analyze-candidates' && method === 'GET') {
-        const candidates = await Candidate.find();
+        const candidates = await prisma.candidate.findMany();
         const totalCandidates = candidates.length;
         
         // Calculate status distribution
@@ -398,7 +394,7 @@ class ToolService {
       }
 
       if (endpoint === '/api/ai/analyze-jobs' && method === 'GET') {
-        const jobs = await Job.find();
+        const jobs = await prisma.job.findMany();
         const totalJobs = jobs.length;
         
         // Calculate status distribution
@@ -454,28 +450,26 @@ class ToolService {
   // Tool Implementation Methods
 
   async getAllCandidates(params, authToken) {
-    const Candidate = require('../models/Candidate');
     const organizationId = this.extractOrganizationFromToken(authToken);
-    
+
     // Build query based on parameters with organization filtering
-    let query = { organization: organizationId };
+    let query = { organizationId };
     if (params.status) query.status = params.status;
-    if (params.position) query.position = new RegExp(params.position, 'i'); // Case-insensitive search
-    if (params.skills) query.skills = new RegExp(params.skills, 'i'); // Case-insensitive search
-    
+    if (params.position) query.position = { contains: params.position, mode: 'insensitive' }; // Case-insensitive search
+    if (params.skills) query.skills = { contains: params.skills, mode: 'insensitive' }; // Case-insensitive search
+
     const limit = parseInt(params.limit) || 100;
-    
+
     console.log(`🔒 Getting candidates for organization: ${organizationId}`);
-    const candidates = await Candidate.find(query).limit(limit);
+    const candidates = await prisma.candidate.findMany({ where: query, take: limit });
     return candidates;
   }
 
   async getCandidateById(params, authToken) {
-    const Candidate = require('../models/Candidate');
     const organizationId = this.extractOrganizationFromToken(authToken);
-    
+
     console.log(`🔒 Getting candidate ${params.candidateId} for organization: ${organizationId}`);
-    const candidate = await Candidate.findOne({ _id: params.candidateId, organization: organizationId });
+    const candidate = await prisma.candidate.findFirst({ where: { id: params.candidateId, organizationId } });
     return candidate;
   }
 
@@ -517,9 +511,7 @@ class ToolService {
   */
 
   async getCandidateAnalytics(params, authToken) {
-    const Candidate = require('../models/Candidate');
-    
-    const candidates = await Candidate.find();
+    const candidates = await prisma.candidate.findMany();
     const totalCandidates = candidates.length;
     
     // Calculate status distribution
@@ -555,9 +547,7 @@ class ToolService {
   }
 
   async getJobAnalytics(params, authToken) {
-    const Job = require('../models/Job');
-    
-    const jobs = await Job.find();
+    const jobs = await prisma.job.findMany();
     const totalJobs = jobs.length;
     
     // Calculate status distribution

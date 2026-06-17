@@ -1,9 +1,23 @@
-const Plan = require('../models/Plan');
-const User = require('../models/User');
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
+const { isObjectIdLike } = require('../db/objectId');
 const { RECOMMENDED_CREDIT_COSTS } = require('../config/creditEconomics');
 
 const DEFAULT_CUSTOM_PLAN_TOTAL_CREDITS = 2000;
+
+// Inlined replacement for Plan#toPublicJSON: convert 'unlimited' limits to Infinity.
+const planToPublicJSON = (plan) => {
+  if (!plan) return plan;
+  const planObject = { ...plan };
+  if (planObject.limits && typeof planObject.limits === 'object') {
+    planObject.limits = { ...planObject.limits };
+    Object.keys(planObject.limits).forEach((key) => {
+      if (planObject.limits[key] === 'unlimited') {
+        planObject.limits[key] = Infinity;
+      }
+    });
+  }
+  return planObject;
+};
 
 // Get all plans (with filter options)
 exports.getPlans = async (req, res) => {
@@ -25,12 +39,12 @@ exports.getPlans = async (req, res) => {
     }
 
     // Get plans sorted by display order
-    const plans = await Plan.find(query).sort({ displayOrder: 1 });
+    const plans = await prisma.plan.findMany({ where: query, orderBy: { displayOrder: 'asc' } });
 
     // Format response for frontend
     const formattedPlans = plans.map(plan => {
       // Convert to regular object and handle 'unlimited' values
-      const planData = plan.toPublicJSON();
+      const planData = planToPublicJSON(plan);
       return planData;
     });
 
@@ -52,7 +66,9 @@ exports.getPlans = async (req, res) => {
 // Get a single plan by ID
 exports.getPlanById = async (req, res) => {
   try {
-    const plan = await Plan.findById(req.params.planId);
+    const plan = isObjectIdLike(req.params.planId)
+      ? await prisma.plan.findUnique({ where: { id: req.params.planId } })
+      : null;
 
     if (!plan) {
       return res.status(404).json({
@@ -63,7 +79,7 @@ exports.getPlanById = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      plan: plan.toPublicJSON()
+      plan: planToPublicJSON(plan)
     });
   } catch (error) {
     console.error('Error getting plan by ID:', error);
@@ -78,7 +94,7 @@ exports.getPlanById = async (req, res) => {
 // Get a single plan by code
 exports.getPlanByCode = async (req, res) => {
   try {
-    const plan = await Plan.findOne({ code: req.params.planCode.toLowerCase() });
+    const plan = await prisma.plan.findFirst({ where: { code: req.params.planCode.toLowerCase() } });
 
     if (!plan) {
       return res.status(404).json({
@@ -89,7 +105,7 @@ exports.getPlanByCode = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      plan: plan.toPublicJSON()
+      plan: planToPublicJSON(plan)
     });
   } catch (error) {
     console.error('Error getting plan by code:', error);
@@ -120,7 +136,7 @@ exports.createPlan = async (req, res) => {
     } = req.body;
 
     // Check if a plan with this code already exists
-    const existingPlan = await Plan.findOne({ code: code.toLowerCase() });
+    const existingPlan = await prisma.plan.findFirst({ where: { code: code.toLowerCase() } });
     if (existingPlan) {
       return res.status(400).json({
         success: false,
@@ -129,34 +145,34 @@ exports.createPlan = async (req, res) => {
     }
 
     // Create new plan
-    const newPlan = new Plan({
-      name,
-      code: code.toLowerCase(),
-      price,
-      currency: currency || 'USD',
-      billingCycle: billingCycle || 'monthly',
-      features: features || [],
-      limits: limits || {},
-      credits: credits || {
-        totalCredits: DEFAULT_CUSTOM_PLAN_TOTAL_CREDITS,
-        creditCosts: { ...RECOMMENDED_CREDIT_COSTS },
-        rolloverEnabled: false,
-        rolloverPercentage: 0
-      },
-      trialDays: trialDays || 0,
-      isPublished: isPublished !== undefined ? isPublished : true,
-      displayOrder: displayOrder || 0,
-      planType: 'organization', // Only organization plans supported now
-      isDefault: false, // New plans are never default
-      isCustom: true    // New plans are considered custom
+    const newPlan = await prisma.plan.create({
+      data: {
+        name,
+        code: code.toLowerCase(),
+        price,
+        currency: currency || 'USD',
+        billingCycle: billingCycle || 'monthly',
+        features: features || [],
+        limits: limits || {},
+        credits: credits || {
+          totalCredits: DEFAULT_CUSTOM_PLAN_TOTAL_CREDITS,
+          creditCosts: { ...RECOMMENDED_CREDIT_COSTS },
+          rolloverEnabled: false,
+          rolloverPercentage: 0
+        },
+        trialDays: trialDays || 0,
+        isPublished: isPublished !== undefined ? isPublished : true,
+        displayOrder: displayOrder || 0,
+        planType: 'organization', // Only organization plans supported now
+        isDefault: false, // New plans are never default
+        isCustom: true    // New plans are considered custom
+      }
     });
-
-    await newPlan.save();
 
     res.status(201).json({
       success: true,
       message: 'Plan created successfully',
-      plan: newPlan.toPublicJSON()
+      plan: planToPublicJSON(newPlan)
     });
   } catch (error) {
     console.error('Error creating plan:', error);
@@ -171,7 +187,9 @@ exports.createPlan = async (req, res) => {
 // Update a plan (admin only)
 exports.updatePlan = async (req, res) => {
   try {
-    const plan = await Plan.findById(req.params.planId);
+    const plan = isObjectIdLike(req.params.planId)
+      ? await prisma.plan.findUnique({ where: { id: req.params.planId } })
+      : null;
 
     if (!plan) {
       return res.status(404).json({
@@ -196,27 +214,28 @@ exports.updatePlan = async (req, res) => {
     } = req.body;
 
     // Update plan fields if provided
-    if (name !== undefined) plan.name = name;
-    if (price !== undefined) plan.price = price;
-    if (currency !== undefined) plan.currency = currency;
-    if (billingCycle !== undefined) plan.billingCycle = billingCycle;
-    if (features !== undefined) plan.features = features;
-    if (limits !== undefined) plan.limits = limits;
-    if (credits !== undefined) plan.credits = credits;
-    if (trialDays !== undefined) plan.trialDays = trialDays;
-    if (isPublished !== undefined) plan.isPublished = isPublished;
-    if (displayOrder !== undefined) plan.displayOrder = displayOrder;
-    if (planType !== undefined && planType === 'organization') plan.planType = planType;
-    
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (price !== undefined) data.price = price;
+    if (currency !== undefined) data.currency = currency;
+    if (billingCycle !== undefined) data.billingCycle = billingCycle;
+    if (features !== undefined) data.features = features;
+    if (limits !== undefined) data.limits = limits;
+    if (credits !== undefined) data.credits = credits;
+    if (trialDays !== undefined) data.trialDays = trialDays;
+    if (isPublished !== undefined) data.isPublished = isPublished;
+    if (displayOrder !== undefined) data.displayOrder = displayOrder;
+    if (planType !== undefined && planType === 'organization') data.planType = planType;
+
     // Note: We do not allow changing the code of a plan
     // Note: We do not allow changing isDefault status via this API
 
-    await plan.save();
+    const updatedPlan = await prisma.plan.update({ where: { id: plan.id }, data });
 
     res.status(200).json({
       success: true,
       message: 'Plan updated successfully',
-      plan: plan.toPublicJSON()
+      plan: planToPublicJSON(updatedPlan)
     });
   } catch (error) {
     console.error('Error updating plan:', error);
@@ -231,7 +250,9 @@ exports.updatePlan = async (req, res) => {
 // Delete a plan (admin only)
 exports.deletePlan = async (req, res) => {
   try {
-    const plan = await Plan.findById(req.params.planId);
+    const plan = isObjectIdLike(req.params.planId)
+      ? await prisma.plan.findUnique({ where: { id: req.params.planId } })
+      : null;
 
     if (!plan) {
       return res.status(404).json({
@@ -249,8 +270,8 @@ exports.deletePlan = async (req, res) => {
     }
 
     // Check if any users or organizations are using this plan
-    const usersWithPlan = await User.countDocuments({ 'subscription.plan': plan.code });
-    const orgsWithPlan = await Organization.countDocuments({ 'subscription.plan': plan.code });
+    const usersWithPlan = await prisma.user.count({ where: { subscription: { path: ['plan'], equals: plan.code } } });
+    const orgsWithPlan = await prisma.organization.count({ where: { subscription: { path: ['plan'], equals: plan.code } } });
 
     if (usersWithPlan > 0 || orgsWithPlan > 0) {
       return res.status(400).json({
@@ -262,7 +283,7 @@ exports.deletePlan = async (req, res) => {
     }
 
     // Delete the plan
-    await Plan.findByIdAndDelete(req.params.planId);
+    await prisma.plan.delete({ where: { id: plan.id } });
 
     res.status(200).json({
       success: true,
@@ -281,7 +302,9 @@ exports.deletePlan = async (req, res) => {
 // Get usage statistics for a plan (admin only)
 exports.getPlanUsageStats = async (req, res) => {
   try {
-    const plan = await Plan.findById(req.params.planId);
+    const plan = isObjectIdLike(req.params.planId)
+      ? await prisma.plan.findUnique({ where: { id: req.params.planId } })
+      : null;
 
     if (!plan) {
       return res.status(404).json({
@@ -291,13 +314,13 @@ exports.getPlanUsageStats = async (req, res) => {
     }
 
     // Get counts of users and organizations on this plan
-    const usersCount = await User.countDocuments({ 'subscription.plan': plan.code });
-    const orgsCount = await Organization.countDocuments({ 'subscription.plan': plan.code });
+    const usersCount = await prisma.user.count({ where: { subscription: { path: ['plan'], equals: plan.code } } });
+    const orgsCount = await prisma.organization.count({ where: { subscription: { path: ['plan'], equals: plan.code } } });
 
     res.status(200).json({
       success: true,
       plan: {
-        id: plan._id,
+        id: plan.id,
         code: plan.code,
         name: plan.name
       },
@@ -329,11 +352,11 @@ exports.getPublishedPlans = async (req, res) => {
     }
     
     // Get only published plans, sorted by display order
-    const plans = await Plan.find(query).sort({ displayOrder: 1 });
+    const plans = await prisma.plan.findMany({ where: query, orderBy: { displayOrder: 'asc' } });
 
     // Format response for frontend
     const formattedPlans = plans.map(plan => {
-      return plan.toPublicJSON();
+      return planToPublicJSON(plan);
     });
 
     res.status(200).json({

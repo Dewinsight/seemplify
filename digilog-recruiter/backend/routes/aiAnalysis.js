@@ -4,6 +4,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const { requireCredits, deductCredits } = require('../middleware/creditsMiddleware');
 const aiInterviewAnalysisService = require('../services/aiInterviewAnalysisService');
+const prisma = require('../db/client');
 
 // Analyze interview transcript - with credits
 router.post('/interviews/:interviewId/analyze', authMiddleware, requireOrganization, requireCredits('aiAnalysis', 'analysis'), deductCredits, async (req, res) => {
@@ -103,21 +104,20 @@ router.get('/interviews/:interviewId/recommendations', authMiddleware, async (re
 router.post('/jobs/:jobId/analyze-all', authMiddleware, requireOrganization, async (req, res) => {
   try {
     const { stageId } = req.body;
-    const Interview = require('../models/Interview');
     const creditsService = require('../services/creditsService');
-    
-    // First check how many interviews need analysis
-    const query = {
-      jobId: req.params.jobId,
-      'transcript.content': { $exists: true, $ne: null },
-      'aiAnalysis.analyzed': { $ne: true }
-    };
-    
-    if (stageId) {
-      query.stageId = stageId;
-    }
-    
-    const interviewsToAnalyze = await Interview.countDocuments(query);
+
+    // First check how many interviews need analysis.
+    // transcript/aiAnalysis are Json columns -> fetch then filter in JS.
+    const where = { jobId: req.params.jobId };
+    if (stageId) where.stageId = stageId;
+    const candidateInterviews = await prisma.interview.findMany({
+      where,
+      select: { id: true, transcript: true, aiAnalysis: true }
+    });
+    const needsAnalysis = candidateInterviews.filter(
+      (i) => i.transcript?.content != null && i.aiAnalysis?.analyzed !== true
+    );
+    const interviewsToAnalyze = needsAnalysis.length;
     
     if (interviewsToAnalyze === 0) {
       return res.json({ 
@@ -198,18 +198,24 @@ router.post('/jobs/:jobId/analyze-all', authMiddleware, requireOrganization, asy
 // Get analysis status for an interview
 router.get('/interviews/:interviewId/analysis-status', authMiddleware, async (req, res) => {
   try {
-    const Interview = require('../models/Interview');
-    const interview = await Interview.findById(req.params.interviewId)
-      .select('aiAnalysis transcript')
-      .populate('stageId', 'name type');
-    
-    if (!interview) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Interview not found' 
+    const interview = await prisma.interview.findUnique({
+      where: { id: req.params.interviewId },
+      select: { id: true, aiAnalysis: true, transcript: true, stageId: true }
+    });
+    if (interview && interview.stageId) {
+      interview.stageId = await prisma.interviewStage.findUnique({
+        where: { id: interview.stageId },
+        select: { id: true, name: true, type: true }
       });
     }
-    
+
+    if (!interview) {
+      return res.status(404).json({
+        success: false,
+        error: 'Interview not found'
+      });
+    }
+
     const status = {
       hasTranscript: !!interview.transcript?.content,
       analyzed: interview.aiAnalysis?.analyzed || false,
@@ -237,16 +243,27 @@ router.get('/interviews/:interviewId/analysis-status', authMiddleware, async (re
 // Get analysis results for an interview
 router.get('/interviews/:interviewId/analysis', authMiddleware, async (req, res) => {
   try {
-    const Interview = require('../models/Interview');
-    const interview = await Interview.findById(req.params.interviewId)
-      .select('aiAnalysis')
-      .populate('stageId', 'name type')
-      .populate('candidateId', 'firstName lastName');
-    
+    const interview = await prisma.interview.findUnique({
+      where: { id: req.params.interviewId },
+      select: { id: true, aiAnalysis: true, stageId: true, candidateId: true }
+    });
+    if (interview && interview.stageId) {
+      interview.stageId = await prisma.interviewStage.findUnique({
+        where: { id: interview.stageId },
+        select: { id: true, name: true, type: true }
+      });
+    }
+    if (interview && interview.candidateId) {
+      interview.candidateId = await prisma.candidate.findUnique({
+        where: { id: interview.candidateId },
+        select: { id: true, firstName: true, lastName: true }
+      });
+    }
+
     if (!interview) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Interview not found' 
+      return res.status(404).json({
+        success: false,
+        error: 'Interview not found'
       });
     }
     
@@ -281,9 +298,9 @@ router.get('/interviews/:interviewId/analysis', authMiddleware, async (req, res)
 router.post('/interviews/:interviewId/re-analyze', authMiddleware, requireOrganization, requireCredits('aiAnalysis', 'analysis'), deductCredits, async (req, res) => {
   try {
     // Force re-analysis by clearing existing analysis
-    const Interview = require('../models/Interview');
-    await Interview.findByIdAndUpdate(req.params.interviewId, {
-      $unset: { aiAnalysis: 1 }
+    await prisma.interview.update({
+      where: { id: req.params.interviewId },
+      data: { aiAnalysis: null }
     });
     
     const analysis = await aiInterviewAnalysisService.analyzeInterviewTranscript(
@@ -308,14 +325,10 @@ router.post('/interviews/:interviewId/re-analyze', authMiddleware, requireOrgani
 // Get analysis summary for a job
 router.get('/jobs/:jobId/analysis-summary', authMiddleware, async (req, res) => {
   try {
-    const Interview = require('../models/Interview');
-    
     // Get all interviews for the job
-    const allInterviews = await Interview.find({ jobId: req.params.jobId });
-    const analyzedInterviews = await Interview.find({ 
-      jobId: req.params.jobId,
-      'aiAnalysis.analyzed': true 
-    });
+    const allInterviews = await prisma.interview.findMany({ where: { jobId: req.params.jobId } });
+    // aiAnalysis is a Json column -> filter analyzed in JS.
+    const analyzedInterviews = allInterviews.filter((i) => i.aiAnalysis?.analyzed === true);
     
     // Calculate summary statistics
     const summary = {
@@ -372,13 +385,13 @@ router.get('/jobs/:jobId/analysis-summary', authMiddleware, async (req, res) => 
 // Get top insights across all interviews for a job
 router.get('/jobs/:jobId/top-insights', authMiddleware, async (req, res) => {
   try {
-    const Interview = require('../models/Interview');
-    
-    const analyzedInterviews = await Interview.find({ 
-      jobId: req.params.jobId,
-      'aiAnalysis.analyzed': true 
-    }).select('aiAnalysis');
-    
+    // aiAnalysis is a Json column -> fetch by jobId then filter analyzed in JS.
+    const jobInterviews = await prisma.interview.findMany({
+      where: { jobId: req.params.jobId },
+      select: { id: true, aiAnalysis: true }
+    });
+    const analyzedInterviews = jobInterviews.filter((i) => i.aiAnalysis?.analyzed === true);
+
     if (analyzedInterviews.length === 0) {
       return res.json({
         success: true,

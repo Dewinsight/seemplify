@@ -1,4 +1,7 @@
-const AIMatchCache = require('../models/AIMatchCache');
+const prisma = require('../db/client');
+
+// Default cache TTL (24 hours in ms) — previously AIMatchCache.getDefaultTTL().
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * AI Match Cache Service
@@ -10,12 +13,14 @@ class AIMatchCacheService {
    */
   async getCachedMatch(jobId, candidateId) {
     try {
-      const cache = await AIMatchCache.findOne({
-        jobId,
-        candidateId,
-        cacheType: 'single',
-        expiresAt: { $gt: new Date() } // Only return non-expired caches
-      }).lean();
+      const cache = await prisma.aIMatchCache.findFirst({
+        where: {
+          jobId,
+          candidateId,
+          cacheType: 'single',
+          expiresAt: { gt: new Date() } // Only return non-expired caches
+        }
+      });
 
       if (cache) {
         console.log(`✅ Cache hit for job ${jobId}, candidate ${candidateId}`);
@@ -40,12 +45,14 @@ class AIMatchCacheService {
    */
   async getCachedBulkMatch(jobId) {
     try {
-      const cache = await AIMatchCache.findOne({
-        jobId,
-        candidateId: null,
-        cacheType: 'bulk',
-        expiresAt: { $gt: new Date() }
-      }).lean();
+      const cache = await prisma.aIMatchCache.findFirst({
+        where: {
+          jobId,
+          candidateId: null,
+          cacheType: 'bulk',
+          expiresAt: { gt: new Date() }
+        }
+      });
 
       if (cache) {
         console.log(`✅ Bulk cache hit for job ${jobId}`);
@@ -71,26 +78,31 @@ class AIMatchCacheService {
    */
   async setCachedMatch(jobId, candidateId, matchData, options = {}) {
     try {
-      const ttl = options.ttl || AIMatchCache.getDefaultTTL();
+      const ttl = options.ttl || DEFAULT_TTL_MS;
       const expiresAt = new Date(Date.now() + ttl);
 
-      await AIMatchCache.findOneAndUpdate(
-        { jobId, candidateId, cacheType: 'single' },
-        {
-          jobId,
-          candidateId,
-          matchData,
-          cacheType: 'single',
-          version: options.version || 1,
-          metadata: {
-            generationTime: options.generationTime,
-            modelUsed: options.modelUsed,
-            tokensUsed: options.tokensUsed
-          },
-          expiresAt
+      const data = {
+        jobId,
+        candidateId,
+        matchData,
+        cacheType: 'single',
+        version: options.version || 1,
+        metadata: {
+          generationTime: options.generationTime,
+          modelUsed: options.modelUsed,
+          tokensUsed: options.tokensUsed
         },
-        { upsert: true, new: true }
-      );
+        expiresAt
+      };
+      const existing = await prisma.aIMatchCache.findFirst({
+        where: { jobId, candidateId, cacheType: 'single' },
+        select: { id: true }
+      });
+      if (existing) {
+        await prisma.aIMatchCache.update({ where: { id: existing.id }, data });
+      } else {
+        await prisma.aIMatchCache.create({ data });
+      }
 
       console.log(`💾 Cached match for job ${jobId}, candidate ${candidateId} (expires: ${expiresAt})`);
       return true;
@@ -105,27 +117,32 @@ class AIMatchCacheService {
    */
   async setCachedBulkMatch(jobId, matchData, options = {}) {
     try {
-      const ttl = options.ttl || AIMatchCache.getDefaultTTL();
+      const ttl = options.ttl || DEFAULT_TTL_MS;
       const expiresAt = new Date(Date.now() + ttl);
 
-      await AIMatchCache.findOneAndUpdate(
-        { jobId, candidateId: null, cacheType: 'bulk' },
-        {
-          jobId,
-          candidateId: null,
-          matchData,
-          cacheType: 'bulk',
-          version: options.version || 1,
-          metadata: {
-            candidateCount: options.candidateCount,
-            generationTime: options.generationTime,
-            modelUsed: options.modelUsed,
-            tokensUsed: options.tokensUsed
-          },
-          expiresAt
+      const data = {
+        jobId,
+        candidateId: null,
+        matchData,
+        cacheType: 'bulk',
+        version: options.version || 1,
+        metadata: {
+          candidateCount: options.candidateCount,
+          generationTime: options.generationTime,
+          modelUsed: options.modelUsed,
+          tokensUsed: options.tokensUsed
         },
-        { upsert: true, new: true }
-      );
+        expiresAt
+      };
+      const existing = await prisma.aIMatchCache.findFirst({
+        where: { jobId, candidateId: null, cacheType: 'bulk' },
+        select: { id: true }
+      });
+      if (existing) {
+        await prisma.aIMatchCache.update({ where: { id: existing.id }, data });
+      } else {
+        await prisma.aIMatchCache.create({ data });
+      }
 
       console.log(`💾 Cached bulk matches for job ${jobId} (${options.candidateCount} candidates, expires: ${expiresAt})`);
       return true;
@@ -140,11 +157,11 @@ class AIMatchCacheService {
    */
   async invalidateJobCache(jobId) {
     try {
-      const result = await AIMatchCache.deleteMany({ jobId });
-      console.log(`🗑️ Invalidated ${result.deletedCount} cache entries for job ${jobId}`);
+      const result = await prisma.aIMatchCache.deleteMany({ where: { jobId } });
+      console.log(`🗑️ Invalidated ${result.count} cache entries for job ${jobId}`);
       return {
         success: true,
-        deletedCount: result.deletedCount
+        deletedCount: result.count
       };
     } catch (error) {
       console.error('Error invalidating job cache:', error);
@@ -157,11 +174,11 @@ class AIMatchCacheService {
    */
   async invalidateCandidateCache(candidateId) {
     try {
-      const result = await AIMatchCache.deleteMany({ candidateId });
-      console.log(`🗑️ Invalidated ${result.deletedCount} cache entries for candidate ${candidateId}`);
+      const result = await prisma.aIMatchCache.deleteMany({ where: { candidateId } });
+      console.log(`🗑️ Invalidated ${result.count} cache entries for candidate ${candidateId}`);
       return {
         success: true,
-        deletedCount: result.deletedCount
+        deletedCount: result.count
       };
     } catch (error) {
       console.error('Error invalidating candidate cache:', error);
@@ -174,11 +191,11 @@ class AIMatchCacheService {
    */
   async invalidateSpecificMatch(jobId, candidateId) {
     try {
-      const result = await AIMatchCache.deleteOne({ jobId, candidateId, cacheType: 'single' });
+      const result = await prisma.aIMatchCache.deleteMany({ where: { jobId, candidateId, cacheType: 'single' } });
       console.log(`🗑️ Invalidated cache for job ${jobId}, candidate ${candidateId}`);
       return {
         success: true,
-        deletedCount: result.deletedCount
+        deletedCount: result.count
       };
     } catch (error) {
       console.error('Error invalidating specific match:', error);
@@ -191,11 +208,11 @@ class AIMatchCacheService {
    */
   async clearAllCache() {
     try {
-      const result = await AIMatchCache.deleteMany({});
-      console.log(`🗑️ Cleared all AI match caches (${result.deletedCount} entries)`);
+      const result = await prisma.aIMatchCache.deleteMany({});
+      console.log(`🗑️ Cleared all AI match caches (${result.count} entries)`);
       return {
         success: true,
-        deletedCount: result.deletedCount
+        deletedCount: result.count
       };
     } catch (error) {
       console.error('Error clearing all caches:', error);
@@ -208,12 +225,14 @@ class AIMatchCacheService {
    */
   async getCachedReport(jobId) {
     try {
-      const cache = await AIMatchCache.findOne({
-        jobId,
-        candidateId: null,
-        cacheType: 'report',
-        expiresAt: { $gt: new Date() }
-      }).lean();
+      const cache = await prisma.aIMatchCache.findFirst({
+        where: {
+          jobId,
+          candidateId: null,
+          cacheType: 'report',
+          expiresAt: { gt: new Date() }
+        }
+      });
 
       if (cache) {
         console.log(`✅ Report cache hit for job ${jobId}`);
@@ -239,28 +258,33 @@ class AIMatchCacheService {
    */
   async setCachedReport(jobId, reportData, options = {}) {
     try {
-      const ttl = options.ttl || AIMatchCache.getDefaultTTL();
+      const ttl = options.ttl || DEFAULT_TTL_MS;
       const expiresAt = new Date(Date.now() + ttl);
 
-      await AIMatchCache.findOneAndUpdate(
-        { jobId, candidateId: null, cacheType: 'report' },
-        {
-          jobId,
-          candidateId: null,
-          matchData: reportData,
-          cacheType: 'report',
-          version: options.version || 1,
-          metadata: {
-            candidateCount: options.candidateCount || (reportData.matches?.length || reportData.topCandidates?.length || 0),
-            generationTime: options.generationTime,
-            modelUsed: options.modelUsed,
-            tokensUsed: options.tokensUsed,
-            hasInsights: true
-          },
-          expiresAt
+      const data = {
+        jobId,
+        candidateId: null,
+        matchData: reportData,
+        cacheType: 'report',
+        version: options.version || 1,
+        metadata: {
+          candidateCount: options.candidateCount || (reportData.matches?.length || reportData.topCandidates?.length || 0),
+          generationTime: options.generationTime,
+          modelUsed: options.modelUsed,
+          tokensUsed: options.tokensUsed,
+          hasInsights: true
         },
-        { upsert: true, new: true }
-      );
+        expiresAt
+      };
+      const existing = await prisma.aIMatchCache.findFirst({
+        where: { jobId, candidateId: null, cacheType: 'report' },
+        select: { id: true }
+      });
+      if (existing) {
+        await prisma.aIMatchCache.update({ where: { id: existing.id }, data });
+      } else {
+        await prisma.aIMatchCache.create({ data });
+      }
 
       console.log(`💾 Cached report for job ${jobId} (expires: ${expiresAt})`);
       return true;
@@ -275,10 +299,12 @@ class AIMatchCacheService {
    */
   async getCacheStats(jobId) {
     try {
-      const caches = await AIMatchCache.find({
-        jobId,
-        expiresAt: { $gt: new Date() }
-      }).lean();
+      const caches = await prisma.aIMatchCache.findMany({
+        where: {
+          jobId,
+          expiresAt: { gt: new Date() }
+        }
+      });
 
       if (caches.length === 0) {
         return {

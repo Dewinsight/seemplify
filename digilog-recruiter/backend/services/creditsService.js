@@ -1,6 +1,4 @@
-const Organization = require('../models/Organization');
-const Plan = require('../models/Plan');
-const mongoose = require('mongoose');
+const prisma = require('../db/client');
 
 const DEFAULT_ACTION_CREDIT_COSTS = {
   aiInterviewCandidate: 8
@@ -21,8 +19,8 @@ class CreditsService {
    */
   async getOrganizationCredits(organizationId) {
     try {
-      const organization = await Organization.findById(organizationId);
-      
+      const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -52,7 +50,7 @@ class CreditsService {
       const usageBreakdown = this._calculateUsageBreakdown(transactions);
 
       // Get credit costs from plan (use plan values, no hardcoded fallbacks)
-      const plan = await Plan.findOne({ code: organization.subscription.plan });
+      const plan = await prisma.plan.findFirst({ where: { code: organization.subscription.plan } });
       const creditCosts = plan?.credits?.creditCosts || {};
 
       // Calculate projected runout
@@ -121,15 +119,15 @@ class CreditsService {
         return { allowed: false, cost: 0, remaining: 0, message: 'Invalid action specified' };
       }
       
-      const organization = await Organization.findById(organizationId);
-      
+      const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         console.error(`❌ [${timestamp}] Organization not found: ${organizationId}`);
         return { allowed: false, cost: 0, remaining: 0, message: 'Organization not found' };
       }
 
       // Get credit cost for this action from plan
-      const plan = await Plan.findOne({ code: organization.subscription.plan });
+      const plan = await prisma.plan.findFirst({ where: { code: organization.subscription.plan } });
       
       if (!plan) {
         console.warn(`⚠️ No plan found for organization ${organizationId}, plan code: ${organization.subscription?.plan}`);
@@ -171,7 +169,10 @@ class CreditsService {
           lowCreditWarning: { enabled: true, threshold: 20 }
         };
         
-        await organization.save();
+        await prisma.organization.update({
+          where: { id: organization.id },
+          data: { subscription: organization.subscription }
+        });
         console.log(`✅ Credits initialized: ${plan.credits.totalCredits} credits`);
       }
 
@@ -247,29 +248,27 @@ class CreditsService {
       throw new Error(errorMsg);
     }
     
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
-      const organization = await Organization.findById(organizationId).session(session);
-      
+      return await prisma.$transaction(async (tx) => {
+      const organization = await tx.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         throw new Error('Organization not found');
       }
 
       // Get credit cost with validation
-      const plan = await Plan.findOne({ code: organization.subscription.plan }).session(session);
-      
+      const plan = await tx.plan.findFirst({ where: { code: organization.subscription.plan } });
+
       if (!plan) {
         console.error(`❌ [${timestamp}] No plan found for organization`);
         throw new Error('No plan configured for organization');
       }
-      
+
       const validActions = Object.keys(plan.credits?.creditCosts || {});
       if (!validActions.includes(action)) {
         console.warn(`⚠️ [${timestamp}] Unknown action '${action}'. Valid actions: ${validActions.join(', ')}`);
       }
-      
+
       const configuredCost = plan?.credits?.creditCosts?.[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
       const cost = normalizeCreditCostOverride(
         metadata.creditCostOverride ?? metadata.costOverride ?? metadata.overrideCost
@@ -277,7 +276,6 @@ class CreditsService {
 
       // Skip if no cost
       if (cost === 0) {
-        await session.commitTransaction();
         return { success: true, credits: 0, message: 'No credits required' };
       }
 
@@ -301,28 +299,25 @@ class CreditsService {
       // Validate credit values before deduction
       if (creditUsage.remainingCredits < 0) {
         console.error(`❌ [${timestamp}] Negative remaining credits: ${creditUsage.remainingCredits}`);
-        await session.abortTransaction();
         return {
           success: false,
           error: 'CREDIT_BALANCE_ERROR',
           message: 'Credit balance error: negative credits detected'
         };
       }
-      
+
       if (cost < 0) {
         console.error(`❌ [${timestamp}] Negative cost: ${cost} for action ${action}`);
-        await session.abortTransaction();
         return {
           success: false,
           error: 'INVALID_COST',
           message: 'Invalid cost configuration'
         };
       }
-      
+
       // Check if sufficient credits
       if (creditUsage.remainingCredits < cost) {
         console.log(`⚠️ [${timestamp}] Insufficient credits: Required ${cost}, Available ${creditUsage.remainingCredits}`);
-        await session.abortTransaction();
         return {
           success: false,
           error: 'INSUFFICIENT_CREDITS',
@@ -369,8 +364,10 @@ class CreditsService {
         }
       }
 
-      await organization.save({ session });
-      await session.commitTransaction();
+      await tx.organization.update({
+        where: { id: organization.id },
+        data: { subscription: organization.subscription }
+      });
 
       // Enhanced logging for credit consumption
       console.log(`💰 Credits Consumed:`, {
@@ -397,12 +394,10 @@ class CreditsService {
         transaction,
         message: `${cost} credits consumed successfully`
       };
+      });
     } catch (error) {
-      await session.abortTransaction();
       console.error('Error consuming credits:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
@@ -416,12 +411,10 @@ class CreditsService {
    * @returns {Object} Result
    */
   async addCredits(organizationId, credits, reason, userId, purchaseDetails = null) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
-      const organization = await Organization.findById(organizationId).session(session);
-      
+      return await prisma.$transaction(async (tx) => {
+      const organization = await tx.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -468,8 +461,10 @@ class CreditsService {
         });
       }
 
-      await organization.save({ session });
-      await session.commitTransaction();
+      await tx.organization.update({
+        where: { id: organization.id },
+        data: { subscription: organization.subscription }
+      });
 
       console.log(`✅ Credits added: ${credits}, New Balance: ${creditUsage.remainingCredits}`);
 
@@ -480,12 +475,10 @@ class CreditsService {
         transaction,
         message: `${credits} credits added successfully`
       };
+      });
     } catch (error) {
-      await session.abortTransaction();
       console.error('Error adding credits:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
@@ -496,13 +489,13 @@ class CreditsService {
    */
   async resetCycleCredits(organizationId) {
     try {
-      const organization = await Organization.findById(organizationId);
-      
+      const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         throw new Error('Organization not found');
       }
 
-      const plan = await Plan.findOne({ code: organization.subscription.plan });
+      const plan = await prisma.plan.findFirst({ where: { code: organization.subscription.plan } });
       const totalCredits = plan?.credits?.totalCredits || 100;
       const rolloverEnabled = plan?.credits?.rolloverEnabled || false;
       const rolloverPercentage = plan?.credits?.rolloverPercentage || 0;
@@ -541,7 +534,10 @@ class CreditsService {
         ]
       };
 
-      await organization.save();
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: { subscription: organization.subscription }
+      });
 
       console.log(`✅ Credits reset for org ${organizationId}: ${totalCredits + rolloverCredits} total`);
 
@@ -565,14 +561,31 @@ class CreditsService {
    */
   async getCreditTransactions(organizationId, filters = {}) {
     try {
-      const organization = await Organization.findById(organizationId)
-        .populate('subscription.creditUsage.transactions.performedBy', 'profile.firstName profile.lastName email');
-      
+      const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         throw new Error('Organization not found');
       }
 
       let transactions = organization.subscription.creditUsage?.transactions || [];
+
+      // Stitch the populate('...transactions.performedBy') — performedBy is a stored
+      // user id inside the Json transactions; replace it with the user object.
+      const performedByIds = [...new Set(
+        transactions.map(t => t.performedBy).filter(v => typeof v === 'string' && v)
+      )];
+      if (performedByIds.length) {
+        const users = await prisma.user.findMany({
+          where: { id: { in: performedByIds } },
+          select: { id: true, profile: true, email: true }
+        });
+        const userMap = new Map(users.map(u => [u.id, u]));
+        transactions = transactions.map(t => (
+          (typeof t.performedBy === 'string' && userMap.has(t.performedBy))
+            ? { ...t, performedBy: userMap.get(t.performedBy) }
+            : t
+        ));
+      }
 
       // Apply filters
       if (filters.action) {
@@ -611,8 +624,8 @@ class CreditsService {
    */
   async getCreditUsageAnalytics(organizationId) {
     try {
-      const organization = await Organization.findById(organizationId);
-      
+      const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -661,14 +674,14 @@ class CreditsService {
    */
   async syncCreditsFromPlan(organizationId) {
     try {
-      const organization = await Organization.findById(organizationId);
-      
+      const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+
       if (!organization) {
         throw new Error('Organization not found');
       }
 
-      const plan = await Plan.findOne({ code: organization.subscription.plan });
-      
+      const plan = await prisma.plan.findFirst({ where: { code: organization.subscription.plan } });
+
       if (!plan || !plan.credits) {
         console.log('Plan has no credits configuration, skipping sync');
         return { success: false, message: 'Plan has no credits configuration' };
@@ -688,8 +701,11 @@ class CreditsService {
           lowCreditWarning: { enabled: true, threshold: 20 }
         };
 
-        await organization.save();
-        
+        await prisma.organization.update({
+          where: { id: organization.id },
+          data: { subscription: organization.subscription }
+        });
+
         console.log(`✅ Credits initialized from plan for org ${organizationId}`);
         return { success: true, message: 'Credits initialized from plan' };
       }

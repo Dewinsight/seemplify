@@ -2,8 +2,8 @@
 // This service will be used by the JobAgent to interact with the database
 // and embedding services for job-related operations.
 
-const Job = require('../models/Job');
-const Notification = require('../models/Notification');
+const prisma = require('../db/client');
+const Notification = require('../db/notify');
 const embeddingService = require('./embeddingService');
 const AzureOpenAIService = require('./azureOpenAIService'); // For potential AI helper methods
 
@@ -23,15 +23,19 @@ class AiJobService {
     async createJobAndEmbed(jobData, userId) {
         console.log(`[AiJobService] Attempting to create job with title: ${jobData.title}`);
         try {
+            const { department: departmentRef, hiringManager: hiringManagerRef, createdBy: _cbIgnore, organization: organizationRef, ...restJobData } = jobData;
             const jobToCreate = {
-                ...jobData,
-                createdBy: userId || null, // Handled by JobAgent's userContext
+                ...restJobData,
+                createdById: userId || null, // Handled by JobAgent's userContext
                 uploadMetadata: jobData.uploadMetadata || { source: 'agent' }, // Default source if not provided
             };
+            if (departmentRef) jobToCreate.departmentId = departmentRef;
+            if (hiringManagerRef) jobToCreate.hiringManagerId = hiringManagerRef;
+            if (organizationRef) jobToCreate.organizationId = organizationRef;
 
-            // Remove createdBy if it's null and not explicitly required by schema
-            if (!jobToCreate.createdBy && Job.schema.paths.createdBy?.isRequired === false) {
-                delete jobToCreate.createdBy;
+            // Remove createdById if it's null (column is nullable)
+            if (!jobToCreate.createdById) {
+                delete jobToCreate.createdById;
             }
             
             // Handle salary data structure from enhanced AI extraction
@@ -69,15 +73,20 @@ class AiJobService {
                 }
             }
             
+            // NOTE[pg]: `companyDescription` is not a Job column (Mongoose strict mode
+            // silently dropped it). Computed but intentionally NOT persisted to avoid a
+            // Prisma unknown-field error, matching prior behavior.
+            let _companyDescription;
             if (jobData.companyDescription) {
                 if (typeof jobData.companyDescription === 'string' && jobData.companyDescription.trim()) {
-                    jobToCreate.companyDescription = jobData.companyDescription.trim();
+                    _companyDescription = jobData.companyDescription.trim();
                 } else if (Array.isArray(jobData.companyDescription) && jobData.companyDescription.length > 0) {
-                    jobToCreate.companyDescription = jobData.companyDescription.join(', ');
+                    _companyDescription = jobData.companyDescription.join(', ');
                 } else if (typeof jobData.companyDescription === 'object' && jobData.companyDescription !== null) {
-                    jobToCreate.companyDescription = JSON.stringify(jobData.companyDescription);
+                    _companyDescription = JSON.stringify(jobData.companyDescription);
                 }
             }
+            delete jobToCreate.companyDescription;
 
             // Handle date fields if they exist
             if (jobData.applicationDeadline) {
@@ -87,8 +96,7 @@ class AiJobService {
                 jobToCreate.startDate = new Date(jobData.startDate);
             }
 
-            const job = new Job(jobToCreate);
-            await job.save();
+            const job = await prisma.job.create({ data: jobToCreate });
             console.log(`[AiJobService] Job saved successfully: ${job.title} (ID: ${job._id})`);
 
             // Create activity notification for all organization members
@@ -105,14 +113,14 @@ class AiJobService {
                 await embeddingService.createJobEmbedding(job);
                     job.isEmbedded = true;
                     job.embeddingCreatedAt = new Date();
-                    await job.save();
+                    await prisma.job.update({ where: { id: job.id }, data: { isEmbedded: true, embeddingCreatedAt: job.embeddingCreatedAt } });
                 console.log(`[AiJobService] Job embedding created for: ${job.title}`);
             } catch (embeddingError) {
                 console.error(`[AiJobService] WARNING: Failed to create embedding for job ${job._id}:`, embeddingError.message);
                 // Don't fail the job creation if embedding fails
             }
 
-            return job.toObject({ virtuals: true }); // Return with virtuals
+            return job; // Plain object from prisma.create (includes computed _id)
         } catch (error) {
             console.error(`[AiJobService] Error creating job: ${jobData.title}`, error);
             throw new Error(`Failed to create job in AiJobService: ${error.message}`);
@@ -134,46 +142,53 @@ class AiJobService {
 
             // Status filter (exact match)
             if (status) query.status = status;
-            
-            // Department filter (case-insensitive regex)
-            if (department) query.department = new RegExp(department, 'i');
-            
+
+            // Department filter (case-insensitive) on the departmentId soft-ref column
+            if (department) query.departmentId = { contains: department, mode: 'insensitive' };
+
             // Type filter (exact match)
             if (type) query.type = type;
-            
-            // Title filter (case-insensitive regex) - NEW
+
+            // Title filter (case-insensitive) - NEW
             if (title) {
-                query.title = new RegExp(title, 'i');
+                query.title = { contains: title, mode: 'insensitive' };
                 console.log(`[AiJobService] 🎯 Filtering by job title: "${title}"`);
             }
-            
+
             // Search filter (searches across multiple fields)
             if (search) {
-                query.$or = [
-                    { title: new RegExp(search, 'i') },
-                    { description: new RegExp(search, 'i') },
-                    { department: new RegExp(search, 'i') },
-                    { location: new RegExp(search, 'i') },
+                query.OR = [
+                    { title: { contains: search, mode: 'insensitive' } },
+                    { description: { contains: search, mode: 'insensitive' } },
+                    { departmentId: { contains: search, mode: 'insensitive' } },
+                    { location: { contains: search, mode: 'insensitive' } },
                 ];
             }
-            
-            console.log(`[AiJobService] 🔍 MongoDB query:`, JSON.stringify(query, null, 2));
-            
+
+            console.log(`[AiJobService] 🔍 Postgres query:`, JSON.stringify(query, null, 2));
+
             // Basic pagination can be added here if needed, or handled by JobAgent
-            const jobs = await Job.find(query)
-                .populate('hiringManager', 'firstName lastName email') // Example population
-                .sort({ createdAt: -1 })
-                .limit(parseInt(limit))
-                .skip((parseInt(page) - 1) * parseInt(limit));
-            
+            const jobs = await prisma.job.findMany({
+                where: query,
+                orderBy: { createdAt: 'desc' },
+                take: parseInt(limit),
+                skip: (parseInt(page) - 1) * parseInt(limit)
+            });
+
+            // Stitch hiringManager soft-ref populate
+            const hmIds = [...new Set(jobs.map(j => j.hiringManagerId).filter(Boolean))];
+            const hms = hmIds.length ? await prisma.user.findMany({ where: { id: { in: hmIds } }, select: { id: true, profile: true, email: true } }) : [];
+            const hmMap = new Map(hms.map(u => [u.id, u]));
+            jobs.forEach(j => { j.hiringManager = j.hiringManagerId ? (hmMap.get(j.hiringManagerId) || null) : null; });
+
             console.log(`[AiJobService] Found ${jobs.length} jobs matching filters.`);
-            
+
             // Log job titles for debugging
             if (jobs.length > 0) {
                 console.log(`[AiJobService] 📋 Job titles found:`, jobs.map(job => job.title));
             }
-            
-            return jobs.map(job => job.toObject({ virtuals: true }));
+
+            return jobs;
         } catch (error) {
             console.error('[AiJobService] Error listing jobs:', error);
             throw new Error(`Failed to list jobs in AiJobService: ${error.message}`);
@@ -188,15 +203,16 @@ class AiJobService {
     async getJobById(jobId) {
         console.log(`[AiJobService] Getting job by ID: ${jobId}`);
         try {
-            const job = await Job.findById(jobId)
-                .populate('hiringManager', 'firstName lastName email'); // Example population
-            
+            const job = await prisma.job.findUnique({ where: { id: jobId } });
+
             if (!job) {
                 console.log(`[AiJobService] Job not found with ID: ${jobId}`);
                 return null;
             }
+            // Stitch hiringManager soft-ref populate
+            job.hiringManager = job.hiringManagerId ? await prisma.user.findUnique({ where: { id: job.hiringManagerId }, select: { id: true, profile: true, email: true } }) : null;
             console.log(`[AiJobService] Job found: ${job.title}`);
-            return job.toObject({ virtuals: true });
+            return job;
         } catch (error) {
             console.error(`[AiJobService] Error getting job by ID ${jobId}:`, error);
             throw new Error(`Failed to get job by ID in AiJobService: ${error.message}`);
@@ -213,11 +229,17 @@ class AiJobService {
     async updateJobAndEmbed(jobId, updateData, userId) {
         console.log(`[AiJobService] Updating job ID: ${jobId}`);
         try {
+            const { department: departmentRef, hiringManager: hiringManagerRef, createdBy: _cbIgnore, organization: organizationRef, ...restUpdateData } = updateData;
             const dataToUpdate = {
-                ...updateData,
-                updatedBy: userId || null,
-                // updatedAt is handled by Mongoose pre-save hook in JobSchema
+                ...restUpdateData,
+                updatedById: userId || null,
+                // updatedAt is handled by Prisma @updatedAt
             };
+            if (departmentRef !== undefined) dataToUpdate.departmentId = departmentRef;
+            if (hiringManagerRef !== undefined) dataToUpdate.hiringManagerId = hiringManagerRef;
+            if (organizationRef !== undefined) dataToUpdate.organizationId = organizationRef;
+            // NOTE[pg]: `companyDescription` is not a Job column; drop it (Mongoose strict-mode parity).
+            delete dataToUpdate.companyDescription;
 
             // Handle date fields if they exist in updateData
             if (dataToUpdate.applicationDeadline) {
@@ -226,7 +248,7 @@ class AiJobService {
             if (dataToUpdate.startDate) {
                 dataToUpdate.startDate = new Date(dataToUpdate.startDate);
             }
-            
+
             // Ensure salary is structured correctly or can be unset
             if (updateData.hasOwnProperty('salary')) { // Check if salary key is explicitly provided
                 if (updateData.salary && (updateData.salary.min || updateData.salary.max)) {
@@ -237,18 +259,20 @@ class AiJobService {
                         period: updateData.salary.period || 'annually',
                     };
                 } else {
-                    // If salary is provided as null or empty object, allow unsetting it
-                    dataToUpdate.salary = undefined; // Or handle as per schema requirements for unsetting
+                    // If salary is provided as null or empty object, unset it
+                    dataToUpdate.salary = null;
                 }
             }
 
-
-            const job = await Job.findByIdAndUpdate(jobId, dataToUpdate, { new: true, runValidators: true });
-
-            if (!job) {
+            // Preserve Mongoose findByIdAndUpdate behavior: return null when not found
+            const exists = await prisma.job.findUnique({ where: { id: jobId }, select: { id: true } });
+            if (!exists) {
                 console.log(`[AiJobService] Job not found with ID: ${jobId} for update.`);
                 return null;
             }
+
+            const job = await prisma.job.update({ where: { id: jobId }, data: dataToUpdate });
+
             console.log(`[AiJobService] Job updated successfully: ${job.title}`);
 
             // Update embedding in background (following jobController.js pattern)
@@ -257,14 +281,14 @@ class AiJobService {
                 await embeddingService.createJobEmbedding(job);
                 job.isEmbedded = true;
                 job.embeddingCreatedAt = new Date();
-                await job.save();
+                await prisma.job.update({ where: { id: job.id }, data: { isEmbedded: true, embeddingCreatedAt: job.embeddingCreatedAt } });
                     console.log(`[AiJobService] Job embedding updated for: ${job.title}`);
             } catch (embeddingError) {
                     console.error(`[AiJobService] WARNING: Failed to update embedding for job ${job._id}:`, embeddingError.message);
                 // Don't fail the update if embedding fails
             }
-            
-            return job.toObject({ virtuals: true });
+
+            return job;
         } catch (error) {
             console.error(`[AiJobService] Error updating job ID ${jobId}:`, error);
             throw new Error(`Failed to update job in AiJobService: ${error.message}`);
@@ -279,7 +303,7 @@ class AiJobService {
     async deleteJobAndEmbed(jobId) {
         console.log(`[AiJobService] Deleting job ID: ${jobId}`);
         try {
-            const job = await Job.findById(jobId);
+            const job = await prisma.job.findUnique({ where: { id: jobId } });
             if (!job) {
                 console.log(`[AiJobService] Job not found with ID: ${jobId} for deletion.`);
                 return false;
@@ -294,7 +318,7 @@ class AiJobService {
                 // Continue with DB deletion even if embedding deletion fails
             }
 
-            await Job.findByIdAndDelete(jobId);
+            await prisma.job.delete({ where: { id: jobId } });
             console.log(`[AiJobService] Job deleted successfully from DB: ${job.title}`);
             return true;
         } catch (error) {
@@ -311,7 +335,7 @@ class AiJobService {
     async getJobEmbeddingStatus(jobId) {
         console.log(`[AiJobService] Getting embedding status for job ID: ${jobId}`);
         try {
-            const job = await Job.findById(jobId).select('isEmbedded embeddingCreatedAt');
+            const job = await prisma.job.findUnique({ where: { id: jobId }, select: { id: true, isEmbedded: true, embeddingCreatedAt: true } });
             if (!job) {
                 throw new Error('Job not found');
             }
@@ -340,7 +364,7 @@ class AiJobService {
     async getMatchingCandidatesForJob(jobId, topK = 10) {
         console.log(`[AiJobService] Getting matching candidates for job ID: ${jobId}, topK: ${topK}`);
         try {
-            const job = await Job.findById(jobId);
+            const job = await prisma.job.findUnique({ where: { id: jobId } });
             if (!job) {
                 throw new Error('Job not found');
             }

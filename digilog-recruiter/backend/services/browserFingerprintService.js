@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const UAParser = require('ua-parser-js');
+const prisma = require('../db/client');
 
 class BrowserFingerprintService {
   /**
@@ -143,7 +144,7 @@ class BrowserFingerprintService {
         .slice(0, 5);
     }
     
-    return await user.save();
+    return await prisma.user.update({ where: { id: user.id }, data: { security: user.security } });
   }
   
   /**
@@ -163,7 +164,7 @@ class BrowserFingerprintService {
     
     if (browser) {
       browser.lastUsed = new Date();
-      return await user.save();
+      return await prisma.user.update({ where: { id: user.id }, data: { security: user.security } });
     }
     
     return user;
@@ -187,7 +188,7 @@ class BrowserFingerprintService {
       browser => browser.lastUsed > cutoffDate
     );
     
-    return await user.save();
+    return await prisma.user.update({ where: { id: user.id }, data: { security: user.security } });
   }
 
   async removeTrustedBrowser(user, fingerprint) {
@@ -203,7 +204,7 @@ class BrowserFingerprintService {
 
     if (user.security.trustedBrowsers.length !== originalLength) {
       user.security.lastDeviceRevokedAt = new Date();
-      return await user.save();
+      return await prisma.user.update({ where: { id: user.id }, data: { security: user.security } });
     }
 
     return user;

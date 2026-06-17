@@ -1,5 +1,26 @@
-const Currency = require('../models/Currency');
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
+
+// Inlined from Currency.getUsageCount: count jobs using a currency by status bucket.
+// `salary` is a Json column, so the currency is matched via a Json path filter.
+async function getCurrencyUsageCount(currencyCode, organizationId) {
+  const baseWhere = { salary: { path: ['currency'], equals: currencyCode } };
+  if (organizationId) {
+    baseWhere.organizationId = organizationId;
+  }
+
+  const activeCount = await prisma.job.count({
+    where: { ...baseWhere, status: { in: ['draft', 'active', 'paused'] } }
+  });
+  const archivedCount = await prisma.job.count({
+    where: { ...baseWhere, status: { in: ['closed', 'archived'] } }
+  });
+
+  return {
+    active: activeCount,
+    archived: archivedCount,
+    total: activeCount + archivedCount
+  };
+}
 
 // @desc    Get all currencies available for an organization
 // @route   GET /api/currencies
@@ -10,10 +31,18 @@ exports.getCurrencies = async (req, res) => {
     
     console.log(`📊 Fetching currencies for organization: ${organizationId}`);
     
-    const currencies = await Currency.getAvailableForOrganization(organizationId);
-    
+    const currencies = await prisma.currency.findMany({
+      where: {
+        OR: [
+          { isSystem: true, organizationId: null }, // System currencies
+          { organizationId } // Organization-specific currencies
+        ]
+      },
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }] // System currencies first, then alphabetical
+    });
+
     // Get organization's default currency
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     const defaultCurrency = organization?.settings?.defaultCurrency || 'USD';
     
     res.json({
@@ -38,18 +67,18 @@ exports.getCurrencies = async (req, res) => {
 // @access  Private
 exports.getCurrency = async (req, res) => {
   try {
-    const currency = await Currency.findById(req.params.id);
-    
+    const currency = await prisma.currency.findUnique({ where: { id: req.params.id } });
+
     if (!currency) {
       return res.status(404).json({
         success: false,
         msg: 'Currency not found'
       });
     }
-    
+
     // Check access: system currencies or own organization
     const organizationId = req.user.currentOrganization; // ✅ FIXED
-    if (currency.organization && currency.organization.toString() !== organizationId.toString()) {
+    if (currency.organizationId && currency.organizationId.toString() !== organizationId.toString()) {
       return res.status(403).json({
         success: false,
         msg: 'Access denied to this currency'
@@ -99,12 +128,14 @@ exports.createCurrency = async (req, res) => {
     }
     
     // Check if currency already exists for this organization
-    const existingCurrency = await Currency.findOne({
-      code: code.toUpperCase(),
-      $or: [
-        { organization: organizationId },
-        { organization: null, isSystem: true }
-      ]
+    const existingCurrency = await prisma.currency.findFirst({
+      where: {
+        code: code.toUpperCase(),
+        OR: [
+          { organizationId },
+          { organizationId: null, isSystem: true }
+        ]
+      }
     });
     
     if (existingCurrency) {
@@ -117,14 +148,16 @@ exports.createCurrency = async (req, res) => {
     // Only super admins can create system currencies
     const canCreateSystem = req.user.role === 'super_admin';
     
-    const currency = await Currency.create({
-      code: code.toUpperCase(),
-      symbol,
-      name,
-      locale: locale || 'en-US',
-      isSystem: canCreateSystem && isSystem === true,
-      organization: canCreateSystem && isSystem === true ? null : organizationId,
-      createdBy: userId
+    const currency = await prisma.currency.create({
+      data: {
+        code: code.toUpperCase(),
+        symbol,
+        name,
+        locale: locale || 'en-US',
+        isSystem: canCreateSystem && isSystem === true,
+        organizationId: canCreateSystem && isSystem === true ? null : organizationId,
+        createdById: userId
+      }
     });
     
     console.log(`✅ Currency created: ${currency.code} by user ${userId} for org ${organizationId}`);
@@ -162,15 +195,15 @@ exports.updateCurrency = async (req, res) => {
     const { symbol, name, locale } = req.body;
     const organizationId = req.user.currentOrganization; // ✅ FIXED
     
-    let currency = await Currency.findById(req.params.id);
-    
+    let currency = await prisma.currency.findUnique({ where: { id: req.params.id } });
+
     if (!currency) {
       return res.status(404).json({
         success: false,
         msg: 'Currency not found'
       });
     }
-    
+
     // Check access: cannot edit system currencies, can only edit own org currencies
     if (currency.isSystem) {
       return res.status(403).json({
@@ -178,20 +211,21 @@ exports.updateCurrency = async (req, res) => {
         msg: 'System currencies cannot be modified'
       });
     }
-    
-    if (currency.organization.toString() !== organizationId.toString()) {
+
+    if (currency.organizationId.toString() !== organizationId.toString()) {
       return res.status(403).json({
         success: false,
         msg: 'Access denied to this currency'
       });
     }
-    
+
     // Update fields (cannot change code)
-    if (symbol) currency.symbol = symbol;
-    if (name) currency.name = name;
-    if (locale) currency.locale = locale;
-    
-    await currency.save();
+    const updateData = {};
+    if (symbol) updateData.symbol = symbol;
+    if (name) updateData.name = name;
+    if (locale) updateData.locale = locale;
+
+    currency = await prisma.currency.update({ where: { id: currency.id }, data: updateData });
     
     console.log(`✅ Currency updated: ${currency.code}`);
     
@@ -218,15 +252,15 @@ exports.deleteCurrency = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization; // ✅ FIXED
     
-    const currency = await Currency.findById(req.params.id);
-    
+    const currency = await prisma.currency.findUnique({ where: { id: req.params.id } });
+
     if (!currency) {
       return res.status(404).json({
         success: false,
         msg: 'Currency not found'
       });
     }
-    
+
     // Check access
     if (currency.isSystem) {
       return res.status(403).json({
@@ -234,17 +268,30 @@ exports.deleteCurrency = async (req, res) => {
         msg: 'System currencies cannot be deleted'
       });
     }
-    
-    if (currency.organization.toString() !== organizationId.toString()) {
+
+    if (currency.organizationId.toString() !== organizationId.toString()) {
       return res.status(403).json({
         success: false,
         msg: 'Access denied to this currency'
       });
     }
-    
-    // Check if can be deleted (not in use)
-    const canDelete = await currency.canBeDeleted();
-    
+
+    // Check if can be deleted (not in use) — inlined from Currency.canBeDeleted/getUsageCount
+    const canDelete = await (async () => {
+      if (currency.isSystem) {
+        return { canDelete: false, reason: 'System currencies cannot be deleted' };
+      }
+      const usage = await getCurrencyUsageCount(currency.code, currency.organizationId);
+      if (usage.active > 0) {
+        return {
+          canDelete: false,
+          reason: `Currency is currently used in ${usage.active} active job(s)`,
+          usage
+        };
+      }
+      return { canDelete: true, usage };
+    })();
+
     if (!canDelete.canDelete) {
       return res.status(400).json({
         success: false,
@@ -252,8 +299,8 @@ exports.deleteCurrency = async (req, res) => {
         usage: canDelete.usage
       });
     }
-    
-    await currency.deleteOne();
+
+    await prisma.currency.delete({ where: { id: currency.id } });
     
     console.log(`✅ Currency deleted: ${currency.code}`);
     
@@ -281,7 +328,7 @@ exports.getCurrencyUsage = async (req, res) => {
     const { code } = req.params;
     const organizationId = req.user.currentOrganization; // ✅ FIXED
     
-    const usage = await Currency.getUsageCount(code, organizationId);
+    const usage = await getCurrencyUsageCount(code, organizationId);
     
     res.json({
       success: true,
@@ -315,37 +362,36 @@ exports.setDefaultCurrency = async (req, res) => {
     }
     
     // Verify currency exists and is available to organization
-    const currency = await Currency.findOne({
-      code: currencyCode.toUpperCase(),
-      $or: [
-        { organization: organizationId },
-        { isSystem: true, organization: null }
-      ]
+    const currency = await prisma.currency.findFirst({
+      where: {
+        code: currencyCode.toUpperCase(),
+        OR: [
+          { organizationId },
+          { isSystem: true, organizationId: null }
+        ]
+      }
     });
-    
+
     if (!currency) {
       return res.status(404).json({
         success: false,
         msg: 'Currency not found or not available for your organization'
       });
     }
-    
+
     // Update organization default currency
-    const organization = await Organization.findById(organizationId);
-    
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
+
     if (!organization) {
       return res.status(404).json({
         success: false,
         msg: 'Organization not found'
       });
     }
-    
-    if (!organization.settings) {
-      organization.settings = {};
-    }
-    
-    organization.settings.defaultCurrency = currencyCode.toUpperCase();
-    await organization.save();
+
+    const settings = organization.settings || {};
+    settings.defaultCurrency = currencyCode.toUpperCase();
+    await prisma.organization.update({ where: { id: organizationId }, data: { settings } });
     
     console.log(`✅ Default currency set to ${currencyCode} for organization ${organizationId}`);
     

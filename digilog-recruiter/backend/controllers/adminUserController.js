@@ -1,8 +1,4 @@
-const User = require('../models/User');
-const Organization = require('../models/Organization');
-const Interview = require('../models/Interview');
-const Candidate = require('../models/Candidate');
-const Job = require('../models/Job');
+const prisma = require('../db/client');
 
 /**
  * Hard delete a user by ID
@@ -13,14 +9,14 @@ exports.removeUserById = async (req, res) => {
     const { userId } = req.params;
 
     // Find user to verify they exist
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
 
     // Get count of user-owned organizations
-    const ownedOrganizations = await Organization.find({ owner: userId });
-    
+    const ownedOrganizations = await prisma.organization.findMany({ where: { ownerId: userId } });
+
     // If user owns organizations, prevent deletion unless force flag is true
     if (ownedOrganizations.length > 0 && req.query.force !== 'true') {
       return res.status(400).json({ 
@@ -32,9 +28,10 @@ exports.removeUserById = async (req, res) => {
     }
 
     // Get statistics of user activities for logging
-    const interviewCount = await Interview.countDocuments({ user: userId });
-    const candidateCount = await Candidate.countDocuments({ createdBy: userId });
-    const jobCount = await Job.countDocuments({ createdBy: userId });
+    // NOTE: the Interview model never had a `user` field, so this count was always 0 in Mongo.
+    const interviewCount = 0;
+    const candidateCount = await prisma.candidate.count({ where: { createdBy: userId } });
+    const jobCount = await prisma.job.count({ where: { createdById: userId } });
 
     console.log(`Admin removing user ${userId} (${user.email}) who has ${interviewCount} interviews, ${candidateCount} candidates, and ${jobCount} jobs.`);
     
@@ -45,29 +42,26 @@ exports.removeUserById = async (req, res) => {
       // Delete all owned organizations
       for (const org of ownedOrganizations) {
         console.log(`Deleting organization ${org._id} owned by user ${userId}`);
-        
-        // Remove organization from all users' memberships
-        await User.updateMany(
-          { 'organizationMemberships.organization': org._id },
-          { 
-            $pull: { organizationMemberships: { organization: org._id } },
-            $unset: { currentOrganization: 1 }
-          }
+
+        // Clear currentOrganization for any user pointing at this org
+        await prisma.user.updateMany(
+          { where: { currentOrganizationId: org.id }, data: { currentOrganizationId: null } }
         );
-        
+
+        // Remove all memberships for this org (OrganizationMember rows cascade on org delete,
+        // but remove explicitly to mirror the old $pull cleanup)
+        await prisma.organizationMember.deleteMany({ where: { organizationId: org.id } });
+
         // Delete the organization
-        await Organization.deleteOne({ _id: org._id });
+        await prisma.organization.delete({ where: { id: org.id } });
       }
     }
-    
+
     // Remove user from all organization memberships
-    await Organization.updateMany(
-      { 'members.user': userId },
-      { $pull: { members: { user: userId } } }
-    );
-    
+    await prisma.organizationMember.deleteMany({ where: { userId } });
+
     // Hard delete the user
-    await User.deleteOne({ _id: userId });
+    await prisma.user.delete({ where: { id: userId } });
     
     res.json({ 
       msg: 'User successfully removed from the system',

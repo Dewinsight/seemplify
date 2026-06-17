@@ -1,4 +1,4 @@
-const NylasAccount = require('../models/NylasAccount');
+const prisma = require('../db/client');
 const multiNylasService = require('../services/multiNylasService');
 
 /**
@@ -58,13 +58,13 @@ const createAccount = async (req, res) => {
     }
     
     // Check if client ID already exists
-    const existing = await NylasAccount.findOne({ clientId });
+    const existing = await prisma.nylasAccount.findFirst({ where: { clientId } });
     if (existing) {
       // If the existing record is inactive (stale soft-delete leftover), remove it
       // so the new account can be created cleanly
       if (!existing.active) {
         console.log(`🧹 Found inactive/stale account with same clientId. Removing stale record (ID: ${existing._id})...`);
-        await NylasAccount.deleteOne({ _id: existing._id });
+        await prisma.nylasAccount.delete({ where: { id: existing.id } });
         console.log(`✅ Stale record removed. Proceeding with new account creation.`);
       } else {
         return res.status(409).json({
@@ -75,7 +75,7 @@ const createAccount = async (req, res) => {
     }
     
     // Create new account
-    const account = await NylasAccount.create({
+    const account = await prisma.nylasAccount.create({ data: {
       name,
       clientId,
       apiKey,
@@ -85,9 +85,9 @@ const createAccount = async (req, res) => {
       accountType: accountType || 'sandbox',
       priority: priority || 0,
       notes,
-      createdBy: req.admin._id,
+      createdById: req.admin._id,
       verified: false // Will be set to true after successful test
-    });
+    } });
     
     console.log(`✅ Nylas account created: ${account.name} (ID: ${account._id})`);
     
@@ -145,18 +145,19 @@ const updateAccount = async (req, res) => {
       updateData.verified = false;
     }
     
-    const account = await NylasAccount.findByIdAndUpdate(
-      accountId,
-      updateData,
-      { new: true, runValidators: true }
-    );
-    
-    if (!account) {
+    const existingAccount = await prisma.nylasAccount.findUnique({ where: { id: accountId } });
+
+    if (!existingAccount) {
       return res.status(404).json({
         success: false,
         error: 'Nylas account not found'
       });
     }
+
+    const account = await prisma.nylasAccount.update({
+      where: { id: accountId },
+      data: updateData
+    });
     
     console.log(`✅ Nylas account updated: ${account.name}`);
     
@@ -188,13 +189,14 @@ const deleteAccount = async (req, res) => {
     console.log(`🗑️ Deleting Nylas account: ${accountId}`);
     
     // Check if any users are using this account (active grants)
-    const User = require('../models/User');
-    const activeUsersCount = await User.countDocuments({
-      nylasAccountId: accountId,
-      calendarConnected: true,
-      nylasGrantId: { $exists: true, $ne: null }
+    const activeUsersCount = await prisma.user.count({
+      where: {
+        nylasAccountId: accountId,
+        calendarConnected: true,
+        nylasGrantId: { not: null }
+      }
     });
-    
+
     if (activeUsersCount > 0) {
       return res.status(400).json({
         success: false,
@@ -205,21 +207,23 @@ const deleteAccount = async (req, res) => {
     }
     
     // Hard delete - removes the document entirely so the clientId can be reused
-    const account = await NylasAccount.findByIdAndDelete(accountId);
-    
+    const account = await prisma.nylasAccount.findUnique({ where: { id: accountId } });
+
     if (!account) {
       return res.status(404).json({
         success: false,
         error: 'Nylas account not found'
       });
     }
-    
+
+    await prisma.nylasAccount.delete({ where: { id: accountId } });
+
     // Clear nylasAccountId references on any users that were linked to this account
     // (users who previously had grants but are no longer connected)
-    await User.updateMany(
-      { nylasAccountId: accountId, calendarConnected: false },
-      { $unset: { nylasAccountId: 1 } }
-    );
+    await prisma.user.updateMany({
+      where: { nylasAccountId: accountId, calendarConnected: false },
+      data: { nylasAccountId: null }
+    });
     
     console.log(`✅ Nylas account hard-deleted: ${account.name} (clientId: ${account.clientId})`);
     
@@ -247,8 +251,8 @@ const testAccount = async (req, res) => {
     
     console.log(`🧪 Testing Nylas account: ${accountId}`);
     
-    const account = await NylasAccount.findById(accountId).select('+apiKey +clientSecret');
-    
+    const account = await prisma.nylasAccount.findUnique({ where: { id: accountId } });
+
     if (!account) {
       return res.status(404).json({
         success: false,
@@ -268,13 +272,13 @@ const testAccount = async (req, res) => {
       account.verified = true;
       account.lastVerified = new Date();
       account.lastError = null;
-      await account.save();
-      
+      await prisma.nylasAccount.update({ where: { id: account.id }, data: { verified: true, lastVerified: account.lastVerified, lastError: null } });
+
       console.log(`✅ Account verified: ${account.name}`);
     } else {
       account.lastError = testResult.error || testResult.message;
-      await account.save();
-      
+      await prisma.nylasAccount.update({ where: { id: account.id }, data: { lastError: account.lastError } });
+
       console.error(`❌ Account verification failed: ${account.name}`);
     }
     

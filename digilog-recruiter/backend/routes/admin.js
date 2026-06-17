@@ -2,13 +2,35 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const Admin = require('../models/Admin');
-const User = require('../models/User');
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
+
 const { adminAuth, requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const currencyConversionService = require('../services/currencyConversionService');
+
+// Prisma has no `.select('-password')` exclusion; enumerate all non-password User scalars.
+const USER_PUBLIC_SELECT = {
+  id: true, email: true, profile: true, company: true, preferences: true,
+  profileCompletion: true, features: true, security: true, subscription: true,
+  emailCapabilities: true, role: true, permissions: true, isActive: true,
+  lastLoginAt: true, loginCount: true, twoFactorEnabled: true, resetPasswordToken: true,
+  resetPasswordExpires: true, lastPasswordChange: true, hasCompletedOrganizationSetup: true,
+  defaultOrganizationId: true, legacyOrganizations: true, calendarConnected: true,
+  calendarConnectedEmail: true, calendarEmail: true, calendarProvider: true,
+  nylasAccountId: true, nylasGrantId: true, nylasGrantStatus: true, grantConnectedAt: true,
+  lastGrantRefresh: true, lastGrantRevocation: true, idpAccessToken: true, idpTokenExpiry: true,
+  idpTeams: true, idpTeamPermissions: true, currentOrganizationId: true,
+  createdAt: true, updatedAt: true
+};
+
+// Prisma has no `.select('-password')` exclusion; enumerate all non-password columns.
+const ADMIN_PUBLIC_SELECT = {
+  id: true, email: true, name: true, role: true, permissions: true, authSource: true,
+  idpAccountId: true, isActive: true, lastLogin: true, lastSsoLoginAt: true, lastIdpSyncAt: true,
+  loginAttempts: true, lockUntil: true, resetPasswordOTP: true, resetPasswordOTPExpires: true,
+  resetPasswordAttempts: true, createdAt: true, updatedAt: true
+};
 
 const buildAdminTokenPayload = (admin) => ({
   admin: {
@@ -49,29 +71,39 @@ router.post('/auth/login', async (req, res) => {
     }
 
     // Find admin
-    const admin = await Admin.findOne({ email: email.toLowerCase() });
+    const admin = await prisma.admin.findFirst({ where: { email: email.toLowerCase() } });
 
     if (!admin) {
       return res.status(401).json({ msg: 'Invalid credentials' });
     }
 
     // Check if account is locked
-    if (admin.isLocked) {
+    const isLocked = !!(admin.lockUntil && new Date(admin.lockUntil).getTime() > Date.now());
+    if (isLocked) {
       return res.status(423).json({
         msg: 'Account is locked due to too many failed login attempts. Please try again later.'
       });
     }
 
     // Check password
-    const isMatch = await admin.comparePassword(password);
+    const isMatch = !!password && !!admin.password && await bcrypt.compare(password, admin.password);
 
     if (!isMatch) {
-      await admin.incLoginAttempts();
+      // incLoginAttempts: expired lock -> restart at 1; otherwise increment and lock after 5.
+      if (admin.lockUntil && new Date(admin.lockUntil).getTime() < Date.now()) {
+        await prisma.admin.update({ where: { id: admin.id }, data: { loginAttempts: 1, lockUntil: null } });
+      } else {
+        const data = { loginAttempts: { increment: 1 } };
+        if ((admin.loginAttempts + 1) >= 5 && !isLocked) {
+          data.lockUntil = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        }
+        await prisma.admin.update({ where: { id: admin.id }, data });
+      }
       return res.status(401).json({ msg: 'Invalid credentials' });
     }
 
     // Reset login attempts on successful login
-    await admin.resetLoginAttempts();
+    await prisma.admin.update({ where: { id: admin.id }, data: { loginAttempts: 0, lastLogin: new Date(), lockUntil: null } });
 
     res.json(buildAdminAuthResponse(admin));
   } catch (err) {
@@ -85,7 +117,10 @@ router.post('/auth/login', async (req, res) => {
 // @access  Private (Admin)
 router.get('/auth/me', adminAuth, async (req, res) => {
   try {
-    const admin = await Admin.findById(req.admin.id).select('-password');
+    const admin = await prisma.admin.findUnique({
+      where: { id: req.admin.id },
+      select: ADMIN_PUBLIC_SELECT
+    });
     res.json(admin);
   } catch (err) {
     console.error(err);
@@ -105,7 +140,7 @@ router.post('/auth/forgot-password', async (req, res) => {
     }
 
     // Find admin by email
-    const admin = await Admin.findOne({ email: email.toLowerCase() });
+    const admin = await prisma.admin.findFirst({ where: { email: email.toLowerCase() } });
 
     if (!admin) {
       // Don't reveal if admin exists or not for security
@@ -116,9 +151,16 @@ router.post('/auth/forgot-password', async (req, res) => {
       return res.status(400).json({ msg: 'Admin account is deactivated' });
     }
 
-    // Generate OTP
-    const otp = admin.generateResetOTP();
-    await admin.save();
+    // Generate OTP (was Admin.generateResetOTP: 6-digit, 10 min expiry, reset attempts)
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await prisma.admin.update({
+      where: { id: admin.id },
+      data: {
+        resetPasswordOTP: otp,
+        resetPasswordOTPExpires: new Date(Date.now() + 10 * 60 * 1000),
+        resetPasswordAttempts: 0
+      }
+    });
 
     // Send OTP email
     try {
@@ -150,25 +192,43 @@ router.post('/auth/verify-otp', async (req, res) => {
       return res.status(400).json({ msg: 'Email and OTP are required' });
     }
 
-    const admin = await Admin.findOne({ email: email.toLowerCase() });
+    const admin = await prisma.admin.findFirst({ where: { email: email.toLowerCase() } });
 
     if (!admin) {
       return res.status(400).json({ msg: 'Invalid request' });
     }
 
-    // Verify OTP
-    const verification = admin.verifyResetOTP(otp);
+    // Verify OTP (was Admin.verifyResetOTP)
+    let verification;
+    if (!admin.resetPasswordOTPExpires || new Date(admin.resetPasswordOTPExpires).getTime() < Date.now()) {
+      verification = { valid: false, reason: 'OTP has expired' };
+    } else if (admin.resetPasswordAttempts >= 3) {
+      verification = { valid: false, reason: 'Too many invalid attempts' };
+    } else if (admin.resetPasswordOTP !== otp) {
+      admin.resetPasswordAttempts += 1;
+      verification = { valid: false, reason: 'Invalid OTP' };
+    } else {
+      verification = { valid: true };
+    }
 
     if (!verification.valid) {
-      await admin.save(); // Save updated attempt count
+      // Save updated attempt count
+      await prisma.admin.update({
+        where: { id: admin.id },
+        data: { resetPasswordAttempts: admin.resetPasswordAttempts }
+      });
       return res.status(400).json({ msg: verification.reason });
     }
 
     // Generate temporary token for password reset
     const resetToken = crypto.randomBytes(32).toString('hex');
-    admin.resetPasswordOTP = resetToken; // Reuse field for reset token
-    admin.resetPasswordOTPExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
-    await admin.save();
+    await prisma.admin.update({
+      where: { id: admin.id },
+      data: {
+        resetPasswordOTP: resetToken, // Reuse field for reset token
+        resetPasswordOTPExpires: new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+      }
+    });
 
     res.json({
       msg: 'OTP verified successfully',
@@ -195,23 +255,32 @@ router.post('/auth/reset-password', async (req, res) => {
       return res.status(400).json({ msg: 'Password must be at least 8 characters long' });
     }
 
-    const admin = await Admin.findOne({
-      email: email.toLowerCase(),
-      resetPasswordOTP: resetToken,
-      resetPasswordOTPExpires: { $gt: Date.now() }
+    const admin = await prisma.admin.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        resetPasswordOTP: resetToken,
+        resetPasswordOTPExpires: { gt: new Date() }
+      }
     });
 
     if (!admin) {
       return res.status(400).json({ msg: 'Invalid or expired reset token' });
     }
 
-    // Update password (will be hashed by pre-save middleware)
-    admin.password = newPassword;
-    admin.clearResetOTP();
-    admin.loginAttempts = 0;
-    admin.lockUntil = undefined;
-
-    await admin.save();
+    // Update password (hashing was done by pre-save middleware)
+    const hashedPassword = await bcrypt.hash(newPassword, await bcrypt.genSalt(10));
+    // clearResetOTP + reset login attempts/lock
+    await prisma.admin.update({
+      where: { id: admin.id },
+      data: {
+        password: hashedPassword,
+        resetPasswordOTP: null,
+        resetPasswordOTPExpires: null,
+        resetPasswordAttempts: 0,
+        loginAttempts: 0,
+        lockUntil: null
+      }
+    });
 
     console.log(`✅ Admin password reset successfully: ${admin.email}`);
 
@@ -230,35 +299,55 @@ router.get('/users', adminAuth, requirePermission('manageUsers'), async (req, re
     const { page = 1, limit = 20, search, organizationId } = req.query;
 
     // Build query
-    let query = {};
+    const where = {};
 
     if (search) {
-      query.$or = [
-        { email: { $regex: search, $options: 'i' } },
-        { 'profile.firstName': { $regex: search, $options: 'i' } },
-        { 'profile.lastName': { $regex: search, $options: 'i' } },
-        { 'company.name': { $regex: search, $options: 'i' } }
+      // NOTE: profile/company are Json columns; Prisma Json string_contains has no
+      // case-insensitive mode, so only the email term keeps mode:'insensitive'.
+      where.OR = [
+        { email: { contains: search, mode: 'insensitive' } },
+        { profile: { path: ['firstName'], string_contains: search } },
+        { profile: { path: ['lastName'], string_contains: search } },
+        { company: { path: ['name'], string_contains: search } }
       ];
     }
 
     if (organizationId) {
-      query['organizationMemberships.organization'] = organizationId;
+      where.memberships = { some: { organizationId } };
     }
 
     // Execute query with pagination
-    const users = await User.find(query)
-      .populate('currentOrganization', 'name')
-      .populate('organizationMemberships.organization', 'name subscription.plan')
-      .select('-password')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        ...USER_PUBLIC_SELECT,
+        currentOrganization: { select: { id: true, name: true } },
+        memberships: {
+          include: { organization: { select: { id: true, name: true, subscription: true } } }
+        }
+      },
+      take: parseInt(limit) * 1,
+      skip: (parseInt(page) - 1) * parseInt(limit),
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Preserve legacy response shape: organizationMemberships[].organization
+    const shapedUsers = users.map((u) => {
+      const { memberships, ...rest } = u;
+      return {
+        ...rest,
+        organizationMemberships: (memberships || []).map((m) => ({
+          ...m,
+          organization: m.organization
+        }))
+      };
+    });
 
     // Get total count
-    const count = await User.countDocuments(query);
+    const count = await prisma.user.count({ where });
 
     res.json({
-      users,
+      users: shapedUsers,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
       totalUsers: count
@@ -277,33 +366,41 @@ router.get('/organizations', adminAuth, requirePermission('manageOrganizations')
     const { page = 1, limit = 20, search, plan, status } = req.query;
 
     // List organizations from this app's own database (no Identity Provider)
-    const query = {};
+    const where = {};
 
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } }
       ];
     }
 
+    const subscriptionFilters = [];
     if (plan) {
-      query['subscription.plan'] = plan;
+      subscriptionFilters.push({ subscription: { path: ['plan'], equals: plan } });
     }
-
     if (status) {
-      query['subscription.licenseStatus'] = status;
+      subscriptionFilters.push({ subscription: { path: ['licenseStatus'], equals: status } });
+    }
+    if (subscriptionFilters.length) {
+      where.AND = subscriptionFilters;
     }
 
-    const organizations = await Organization.find(query)
-      .populate('owner', 'email profile.firstName profile.lastName')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const organizations = await prisma.organization.findMany({
+      where,
+      include: {
+        owner: { select: { id: true, email: true, profile: true } },
+        members: true
+      },
+      take: parseInt(limit) * 1,
+      skip: (parseInt(page) - 1) * parseInt(limit),
+      orderBy: { createdAt: 'desc' }
+    });
 
-    const count = await Organization.countDocuments(query);
+    const count = await prisma.organization.count({ where });
 
     const orgsWithStats = organizations.map(org => {
-      const orgObj = org.toObject();
+      const orgObj = { ...org };
       orgObj.memberCount = org.members?.filter(m => m.status === 'active').length || 0;
       orgObj.isIdpManaged = false;
       orgObj.memberSource = 'local';
@@ -332,16 +429,20 @@ router.get('/organizations', adminAuth, requirePermission('manageOrganizations')
 // @access  Private (Admin with manageOrganizations permission)
 router.get('/organizations/:id', adminAuth, requirePermission('manageOrganizations'), async (req, res) => {
   try {
-    const organization = await Organization.findById(req.params.id);
+    // Always use local member data (no Identity Provider); owner + members.user populated.
+    const organization = await prisma.organization.findUnique({
+      where: { id: req.params.id },
+      include: {
+        owner: { select: { id: true, email: true, profile: true } },
+        members: { include: { user: { select: { id: true, email: true, profile: true } } } }
+      }
+    });
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    // Always use local member data (no Identity Provider)
-    await organization.populate('owner', 'email profile.firstName profile.lastName');
-    await organization.populate('members.user', 'email profile.firstName profile.lastName');
-    const orgObj = organization.toObject();
+    const orgObj = { ...organization };
     orgObj.memberCount = organization.members?.filter(m => m.status === 'active').length || 0;
     orgObj.isIdpManaged = false;
     orgObj.memberSource = 'local';
@@ -373,16 +474,19 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
       generateNewKey
     } = req.body;
 
-    const organization = await Organization.findById(req.params.id);
+    const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
+    // subscription/settings are Json columns — mutate a local copy, then persist.
+    organization.subscription = organization.subscription || {};
+    if (!Array.isArray(organization.subscription.adminNotes)) organization.subscription.adminNotes = [];
+
     // Validate plan if provided - only use database plans
     if (plan) {
-      const Plan = require('../models/Plan');
-      const planExists = await Plan.findOne({ code: plan }); // Only organization plans exist now
+      const planExists = await prisma.plan.findFirst({ where: { code: plan } }); // Only organization plans exist now
 
       if (!planExists) {
         return res.status(400).json({
@@ -418,7 +522,10 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
       addedBy: req.admin.id
     });
 
-    await organization.save();
+    await prisma.organization.update({
+      where: { id: organization.id },
+      data: { subscription: organization.subscription, settings: organization.settings }
+    });
 
     res.json({
       msg: 'License updated successfully',
@@ -437,15 +544,18 @@ router.put('/organizations/:id/plan', adminAuth, requirePermission('manageLicens
   try {
     const { plan, customLimits } = req.body;
 
-    const organization = await Organization.findById(req.params.id);
+    const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
+    // subscription is a Json column — mutate a local copy, then persist.
+    organization.subscription = organization.subscription || {};
+    if (!Array.isArray(organization.subscription.adminNotes)) organization.subscription.adminNotes = [];
+
     // Validate plan - only use database plans
-    const Plan = require('../models/Plan');
-    const planExists = await Plan.findOne({ code: plan }); // Only organization plans exist now
+    const planExists = await prisma.plan.findFirst({ where: { code: plan } }); // Only organization plans exist now
 
     if (!planExists) {
       return res.status(400).json({
@@ -536,7 +646,10 @@ router.put('/organizations/:id/plan', adminAuth, requirePermission('manageLicens
       addedBy: req.admin.id
     });
 
-    await organization.save();
+    await prisma.organization.update({
+      where: { id: organization.id },
+      data: { subscription: organization.subscription }
+    });
 
     console.log('✅ Plan update completed:', {
       organizationId: organization._id,
@@ -560,25 +673,31 @@ router.put('/organizations/:id/plan', adminAuth, requirePermission('manageLicens
 // @access  Private (Admin)
 router.get('/dashboard/stats', adminAuth, async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const totalOrganizations = await Organization.countDocuments();
-    const activeOrganizations = await Organization.countDocuments({ 'subscription.licenseStatus': 'active' });
+    const totalUsers = await prisma.user.count();
+    const totalOrganizations = await prisma.organization.count();
+    const activeOrganizations = await prisma.organization.count({
+      where: { subscription: { path: ['licenseStatus'], equals: 'active' } }
+    });
 
-    // Count by plan
-    const planCounts = await Organization.aggregate([
-      { $group: { _id: '$subscription.plan', count: { $sum: 1 } } }
-    ]);
+    // Count by plan — group by Json subscription.plan in JS (Prisma can't groupBy a Json path).
+    const orgSubscriptions = await prisma.organization.findMany({ select: { subscription: true } });
+    const planCountMap = new Map();
+    for (const org of orgSubscriptions) {
+      const planKey = (org.subscription && org.subscription.plan) || null;
+      planCountMap.set(planKey, (planCountMap.get(planKey) || 0) + 1);
+    }
+    const planCounts = Array.from(planCountMap.entries()).map(([_id, count]) => ({ _id, count }));
 
     // Recent signups (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const recentUsers = await User.countDocuments({
-      createdAt: { $gte: thirtyDaysAgo }
+    const recentUsers = await prisma.user.count({
+      where: { createdAt: { gte: thirtyDaysAgo } }
     });
 
-    const recentOrganizations = await Organization.countDocuments({
-      createdAt: { $gte: thirtyDaysAgo }
+    const recentOrganizations = await prisma.organization.count({
+      where: { createdAt: { gte: thirtyDaysAgo } }
     });
 
     res.json({
@@ -604,11 +723,15 @@ router.post('/organizations/:id/suspend', adminAuth, requireSuperAdmin, async (r
   try {
     const { reason } = req.body;
 
-    const organization = await Organization.findById(req.params.id);
+    const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
+
+    // subscription is a Json column — mutate a local copy, then persist.
+    organization.subscription = organization.subscription || {};
+    if (!Array.isArray(organization.subscription.adminNotes)) organization.subscription.adminNotes = [];
 
     organization.subscription.licenseStatus = 'suspended';
     organization.isActive = false;
@@ -619,7 +742,10 @@ router.post('/organizations/:id/suspend', adminAuth, requireSuperAdmin, async (r
       addedBy: req.admin.id
     });
 
-    await organization.save();
+    await prisma.organization.update({
+      where: { id: organization.id },
+      data: { subscription: organization.subscription, isActive: false }
+    });
 
     res.json({
       msg: 'Organization suspended successfully',
@@ -636,11 +762,15 @@ router.post('/organizations/:id/suspend', adminAuth, requireSuperAdmin, async (r
 // @access  Private (Admin with manageLicenses permission)
 router.post('/organizations/:id/activate', adminAuth, requirePermission('manageLicenses'), async (req, res) => {
   try {
-    const organization = await Organization.findById(req.params.id);
+    const organization = await prisma.organization.findUnique({ where: { id: req.params.id } });
 
     if (!organization) {
       return res.status(404).json({ msg: 'Organization not found' });
     }
+
+    // subscription is a Json column — mutate a local copy, then persist.
+    organization.subscription = organization.subscription || {};
+    if (!Array.isArray(organization.subscription.adminNotes)) organization.subscription.adminNotes = [];
 
     organization.subscription.licenseStatus = 'active';
     organization.isActive = true;
@@ -651,7 +781,10 @@ router.post('/organizations/:id/activate', adminAuth, requirePermission('manageL
       addedBy: req.admin.id
     });
 
-    await organization.save();
+    await prisma.organization.update({
+      where: { id: organization.id },
+      data: { subscription: organization.subscription, isActive: true }
+    });
 
     res.json({
       msg: 'Organization activated successfully',
@@ -685,24 +818,26 @@ router.get('/admins', adminAuth, requireSuperAdmin, async (req, res) => {
     const { page = 1, limit = 20, search } = req.query;
 
     // Build query
-    let query = {};
+    const where = {};
 
     if (search) {
-      query.$or = [
-        { email: { $regex: search, $options: 'i' } },
-        { name: { $regex: search, $options: 'i' } }
+      where.OR = [
+        { email: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } }
       ];
     }
 
     // Execute query with pagination
-    const admins = await Admin.find(query)
-      .select('-password')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const admins = await prisma.admin.findMany({
+      where,
+      select: ADMIN_PUBLIC_SELECT,
+      take: parseInt(limit) * 1,
+      skip: (parseInt(page) - 1) * parseInt(limit),
+      orderBy: { createdAt: 'desc' }
+    });
 
     // Get total count
-    const count = await Admin.countDocuments(query);
+    const count = await prisma.admin.count({ where });
 
     res.json({
       admins,
@@ -735,7 +870,7 @@ router.post('/admins', adminAuth, requireSuperAdmin, async (req, res) => {
     }
 
     // Check if admin already exists
-    const existingAdmin = await Admin.findOne({ email: email.toLowerCase() });
+    const existingAdmin = await prisma.admin.findFirst({ where: { email: email.toLowerCase() } });
     if (existingAdmin) {
       return res.status(400).json({ msg: 'Admin with this email already exists' });
     }
@@ -744,7 +879,7 @@ router.post('/admins', adminAuth, requireSuperAdmin, async (req, res) => {
     let adminPermissions = permissions || {};
     if (role === 'super_admin') {
       // Super admin gets all permissions automatically
-      adminPermissions = Admin.getSuperAdminPermissions();
+      adminPermissions = { manageUsers: true, manageOrganizations: true, manageLicenses: true, manageBilling: true, viewAnalytics: true, systemSettings: true };
     } else if (role === 'admin') {
       adminPermissions = {
         manageUsers: adminPermissions.manageUsers !== undefined ? adminPermissions.manageUsers : true,
@@ -765,16 +900,17 @@ router.post('/admins', adminAuth, requireSuperAdmin, async (req, res) => {
       };
     }
 
-    // Create new admin
-    const newAdmin = new Admin({
-      email: email.toLowerCase(),
-      password, // Will be hashed by the pre-save middleware
-      name,
-      role,
-      permissions: adminPermissions
+    // Create new admin (hash password — was done by pre-save middleware)
+    const hashedPassword = await bcrypt.hash(password, await bcrypt.genSalt(10));
+    const newAdmin = await prisma.admin.create({
+      data: {
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        name,
+        role,
+        permissions: adminPermissions
+      }
     });
-
-    await newAdmin.save();
 
     // Send welcome/invite email with the password via Brevo
     try {
@@ -791,7 +927,10 @@ router.post('/admins', adminAuth, requireSuperAdmin, async (req, res) => {
     }
 
     // Return admin without password
-    const adminResponse = await Admin.findById(newAdmin._id).select('-password');
+    const adminResponse = await prisma.admin.findUnique({
+      where: { id: newAdmin.id },
+      select: ADMIN_PUBLIC_SELECT
+    });
 
     res.status(201).json({
       msg: 'Admin created successfully',
@@ -810,10 +949,12 @@ router.put('/admins/:id', adminAuth, requireSuperAdmin, async (req, res) => {
   try {
     const { name, role, permissions, isActive } = req.body;
 
-    const admin = await Admin.findById(req.params.id);
+    const admin = await prisma.admin.findUnique({ where: { id: req.params.id } });
     if (!admin) {
       return res.status(404).json({ msg: 'Admin not found' });
     }
+
+    const updateData = {};
 
     // Validate role if provided
     if (role) {
@@ -821,18 +962,21 @@ router.put('/admins/:id', adminAuth, requireSuperAdmin, async (req, res) => {
       if (!validRoles.includes(role)) {
         return res.status(400).json({ msg: 'Invalid role. Must be super_admin, admin, or support' });
       }
-      admin.role = role;
+      updateData.role = role;
     }
 
     // Update fields
-    if (name) admin.name = name;
-    if (permissions) admin.permissions = { ...admin.permissions, ...permissions };
-    if (typeof isActive === 'boolean') admin.isActive = isActive;
+    if (name) updateData.name = name;
+    if (permissions) updateData.permissions = { ...admin.permissions, ...permissions };
+    if (typeof isActive === 'boolean') updateData.isActive = isActive;
 
-    await admin.save();
+    await prisma.admin.update({ where: { id: admin.id }, data: updateData });
 
     // Return admin without password
-    const adminResponse = await Admin.findById(admin._id).select('-password');
+    const adminResponse = await prisma.admin.findUnique({
+      where: { id: admin.id },
+      select: ADMIN_PUBLIC_SELECT
+    });
 
     res.json({
       msg: 'Admin updated successfully',
@@ -849,18 +993,18 @@ router.put('/admins/:id', adminAuth, requireSuperAdmin, async (req, res) => {
 // @access  Private (Super Admin only)
 router.delete('/admins/:id', adminAuth, requireSuperAdmin, async (req, res) => {
   try {
-    const admin = await Admin.findById(req.params.id);
+    const admin = await prisma.admin.findUnique({ where: { id: req.params.id } });
     if (!admin) {
       return res.status(404).json({ msg: 'Admin not found' });
     }
 
     // Prevent self-deletion
-    if (admin._id.toString() === req.admin.id) {
+    if (admin.id.toString() === req.admin.id) {
       return res.status(400).json({ msg: 'Cannot delete your own admin account' });
     }
 
     // Hard delete
-    await Admin.deleteOne({ _id: admin._id });
+    await prisma.admin.delete({ where: { id: admin.id } });
 
     res.json({ msg: 'Admin deleted successfully' });
   } catch (err) {
@@ -880,19 +1024,19 @@ router.post('/admins/:id/reset-password', adminAuth, requireSuperAdmin, async (r
       return res.status(400).json({ msg: 'Password must be at least 8 characters long' });
     }
 
-    const admin = await Admin.findById(req.params.id);
+    const admin = await prisma.admin.findUnique({ where: { id: req.params.id } });
     if (!admin) {
       return res.status(404).json({ msg: 'Admin not found' });
     }
 
     // Allow password reset for all admins (super admin can reset any password)
 
-    // Update password (will be hashed by pre-save middleware)
-    admin.password = newPassword;
-    admin.loginAttempts = 0;
-    admin.lockUntil = undefined;
-
-    await admin.save();
+    // Update password (hashing was done by pre-save middleware)
+    const hashedPassword = await bcrypt.hash(newPassword, await bcrypt.genSalt(10));
+    await prisma.admin.update({
+      where: { id: admin.id },
+      data: { password: hashedPassword, loginAttempts: 0, lockUntil: null }
+    });
 
     res.json({ msg: 'Password reset successfully' });
   } catch (err) {
@@ -927,22 +1071,37 @@ router.delete('/users/:userId', adminAuth, requirePermission('manageUsers'), asy
 // @access  Private (Admin with manageUsers permission)
 router.get('/users/:id', adminAuth, requirePermission('manageUsers'), async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
-      .populate('currentOrganization', 'name subscription.plan')
-      .populate('organizationMemberships.organization', 'name subscription.plan')
-      .select('-password');
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: {
+        ...USER_PUBLIC_SELECT,
+        currentOrganization: { select: { id: true, name: true, subscription: true } },
+        memberships: {
+          include: { organization: { select: { id: true, name: true, subscription: true } } }
+        }
+      }
+    });
 
     if (!user) {
       return res.status(404).json({ msg: 'User not found' });
     }
 
+    // Preserve legacy shape: organizationMemberships[].organization; map status->isActive.
+    const { memberships, ...userRest } = user;
+    const organizationMemberships = (memberships || []).map((m) => ({
+      ...m,
+      isActive: m.status === 'active',
+      organization: m.organization
+    }));
+
     // Count owned organizations for display only (no limits)
-    const ownedOrgsCount = user.organizationMemberships.filter(
+    const ownedOrgsCount = organizationMemberships.filter(
       m => m.role === 'owner' && m.isActive
     ).length;
 
     res.json({
-      ...user.toObject(),
+      ...userRest,
+      organizationMemberships,
       organizationStats: {
         currentOwnedOrganizations: ownedOrgsCount,
         canCreateMore: true, // Always true now

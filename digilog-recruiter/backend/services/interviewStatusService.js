@@ -3,9 +3,7 @@
  * Handles automatic status updates for interviews based on time and conditions
  */
 
-const Interview = require('../models/Interview');
-const Job = require('../models/Job');
-const User = require('../models/User');
+const prisma = require('../db/client');
 
 class InterviewStatusService {
   constructor() {
@@ -38,14 +36,30 @@ class InterviewStatusService {
       console.log('🔍 [INTERVIEW-STATUS] Checking for missed interviews older than 5 days...');
       
       // Find scheduled interviews older than 5 days
-      const overdueInterviews = await Interview.find({
-        status: 'scheduled',
-        scheduledAt: { $lt: fiveDaysAgo }
-      }).populate([
-        { path: 'candidateId', select: 'firstName lastName email' },
-        { path: 'interviewerId', select: 'firstName lastName email' },
-        { path: 'jobId', select: 'title' }
+      const overdueInterviews = await prisma.interview.findMany({
+        where: {
+          status: 'scheduled',
+          scheduledAt: { lt: fiveDaysAgo }
+        }
+      });
+
+      // Stitch candidate/interviewer/job (replaces .populate)
+      const candidateIds = [...new Set(overdueInterviews.map(i => i.candidateId).filter(Boolean))];
+      const interviewerIds = [...new Set(overdueInterviews.map(i => i.interviewerId).filter(Boolean))];
+      const jobIds = [...new Set(overdueInterviews.map(i => i.jobId).filter(Boolean))];
+      const [candidateDocs, interviewerDocs, jobDocs] = await Promise.all([
+        candidateIds.length ? prisma.candidate.findMany({ where: { id: { in: candidateIds } }, select: { id: true, firstName: true, lastName: true, email: true } }) : [],
+        interviewerIds.length ? prisma.user.findMany({ where: { id: { in: interviewerIds } }, select: { id: true, email: true, profile: true } }) : [],
+        jobIds.length ? prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, title: true } }) : []
       ]);
+      const candidateMap = new Map(candidateDocs.map(c => [c.id, c]));
+      const interviewerMap = new Map(interviewerDocs.map(u => [u.id, u]));
+      const jobMap = new Map(jobDocs.map(j => [j.id, j]));
+      for (const interview of overdueInterviews) {
+        if (interview.candidateId) interview.candidateId = candidateMap.get(interview.candidateId) || interview.candidateId;
+        if (interview.interviewerId) interview.interviewerId = interviewerMap.get(interview.interviewerId) || interview.interviewerId;
+        if (interview.jobId) interview.jobId = jobMap.get(interview.jobId) || interview.jobId;
+      }
 
       if (overdueInterviews.length === 0) {
         console.log('✅ [INTERVIEW-STATUS] No missed interviews found');
@@ -68,19 +82,25 @@ class InterviewStatusService {
         // Update interview status
         interview.status = 'missed';
         interview.missedAt = new Date();
-        
+
         // Add system note explaining the automatic status change
         if (!interview.notes || !Array.isArray(interview.notes)) {
           interview.notes = [];
         }
-        
+
         interview.notes.push({
           note: `Interview automatically marked as missed after ${daysPast} days. Original schedule: ${interview.scheduledAt.toLocaleDateString()} at ${interview.scheduledAt.toLocaleTimeString()}`,
           addedBy: 'system',
           addedAt: new Date()
         });
 
-        await interview.save();
+        // TODO[pg]: Interview.notes is typed `String?` in schema.prisma but legacy code
+        // treats it as an array of note objects (read-modify-write above). Persisting the
+        // array here preserves prior behavior; revisit if the column type is finalized.
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { status: interview.status, missedAt: interview.missedAt, notes: interview.notes }
+        });
         updatedInterviews.push({
           interviewId: interview._id,
           candidateName: `${interview.candidateId?.firstName} ${interview.candidateId?.lastName}`,
@@ -119,25 +139,23 @@ class InterviewStatusService {
    */
   async getInterviewStatusStats() {
     try {
-      const stats = await Interview.aggregate([
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 }
-          }
-        }
-      ]);
+      const stats = await prisma.interview.groupBy({
+        by: ['status'],
+        _count: { _all: true }
+      });
 
       const statusCounts = {};
       stats.forEach(stat => {
-        statusCounts[stat._id] = stat.count;
+        statusCounts[stat.status] = stat._count._all;
       });
 
       // Get overdue scheduled interviews count
       const fiveDaysAgo = new Date(Date.now() - (5 * 24 * 60 * 60 * 1000));
-      const overdueCount = await Interview.countDocuments({
-        status: 'scheduled',
-        scheduledAt: { $lt: fiveDaysAgo }
+      const overdueCount = await prisma.interview.count({
+        where: {
+          status: 'scheduled',
+          scheduledAt: { lt: fiveDaysAgo }
+        }
       });
 
       return {

@@ -4,6 +4,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const { requireCredits, deductCredits } = require('../middleware/creditsMiddleware');
 const interviewController = require('../controllers/interviewController');
+const prisma = require('../db/client');
 
 // Additional CORS headers for interview routes (especially for multi-candidate scheduling)
 router.use((req, res, next) => {
@@ -91,7 +92,7 @@ router.post('/test-delete-event', authMiddleware, requireOrganization, async (re
     console.log('User ID:', userId);
     
     // Get user's grant ID
-    const user = await require('../models/User').findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.nylasGrantId) {
       return res.status(400).json({ error: 'User calendar not connected' });
     }

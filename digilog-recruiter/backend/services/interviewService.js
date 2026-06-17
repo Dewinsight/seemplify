@@ -1,5 +1,4 @@
-const InterviewQuestion = require('../models/InterviewQuestion');
-const Job = require('../models/Job');
+const prisma = require('../db/client');
 const AzureOpenAIService = require('./azureOpenAIService');
 const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
@@ -54,18 +53,18 @@ class InterviewService {
         lastAnalyzed: new Date()
       };
 
-      const question = new InterviewQuestion({
-        ...cleanedData,
-        createdBy: userId,
-        updatedBy: userId,
-        qualityMetrics: {
-          ...defaultQualityMetrics,
-          ...cleanedData.qualityMetrics // Allow override if provided
+      const question = await prisma.interviewQuestion.create({
+        data: {
+          ...cleanedData,
+          createdBy: userId,
+          updatedBy: userId,
+          qualityMetrics: {
+            ...defaultQualityMetrics,
+            ...cleanedData.qualityMetrics // Allow override if provided
+          }
         }
       });
 
-      await question.save();
-      
       console.log(`✅ Interview question created: ${question._id}`);
       console.log(`📊 Initialized with quality metrics:`, {
         difficultyCalibration: question.qualityMetrics.difficultyCalibration,
@@ -87,13 +86,25 @@ class InterviewService {
     try {
       console.log(`🔍 InterviewService: Getting questions for job ${jobId}`);
       
-      const questions = await InterviewQuestion.findByJob(jobId, options)
-        .populate('createdBy', 'profile.firstName profile.lastName email')
-        .populate('updatedBy', 'profile.firstName profile.lastName email');
+      const findByJobWhere = { jobId, isActive: true };
+      if (options.type) findByJobWhere.type = options.type;
+      if (options.stage) findByJobWhere.interviewStage = options.stage;
+      if (options.difficulty) findByJobWhere.difficulty = options.difficulty;
+      const questions = await prisma.interviewQuestion.findMany({
+        where: findByJobWhere,
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+      });
+
+      // Stitch creator/updater user docs (replaces .populate('createdBy'/'updatedBy'))
+      const userIds = [...new Set(questions.flatMap(q => [q.createdBy, q.updatedBy]).filter(Boolean))];
+      const users = userIds.length
+        ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, email: true, profile: true } })
+        : [];
+      const userMap = new Map(users.map(u => [u.id, u]));
 
       // Decode HTML entities in question text fields for display
       const decodedQuestions = questions.map(q => {
-        const questionObj = q.toObject ? q.toObject() : q;
+        const questionObj = { ...q, createdBy: userMap.get(q.createdBy) || q.createdBy, updatedBy: userMap.get(q.updatedBy) || q.updatedBy };
         return {
           ...questionObj,
           question: questionObj.question ? decodeHtmlEntities(questionObj.question) : questionObj.question,
@@ -125,16 +136,20 @@ class InterviewService {
    */
   async getQuestionById(questionId) {
     try {
-      const question = await InterviewQuestion.findById(questionId)
-        .populate('jobId', 'title department location')
-        .populate('createdBy', 'profile.firstName profile.lastName email');
+      const question = await prisma.interviewQuestion.findUnique({ where: { id: questionId } });
 
       if (!question) {
         throw new Error('Interview question not found');
       }
 
+      // Stitch job + creator (replaces .populate('jobId') / .populate('createdBy'))
+      const [jobDoc, creatorDoc] = await Promise.all([
+        question.jobId ? prisma.job.findUnique({ where: { id: question.jobId }, select: { id: true, title: true, departmentId: true, location: true } }) : null,
+        question.createdBy ? prisma.user.findUnique({ where: { id: question.createdBy }, select: { id: true, email: true, profile: true } }) : null
+      ]);
+
       // Decode HTML entities in question text fields for display
-      const questionObj = question.toObject ? question.toObject() : question;
+      const questionObj = { ...question, jobId: jobDoc || question.jobId, createdBy: creatorDoc || question.createdBy };
       return {
         ...questionObj,
         question: questionObj.question ? decodeHtmlEntities(questionObj.question) : questionObj.question,
@@ -182,18 +197,17 @@ class InterviewService {
         })) : updateData.followUpQuestions
       };
 
-      const question = await InterviewQuestion.findByIdAndUpdate(
-        questionId,
-        { ...cleanedData, updatedBy: userId, updatedAt: new Date() },
-        { new: true, runValidators: true }
-      );
-
-      if (!question) {
+      const existing = await prisma.interviewQuestion.findUnique({ where: { id: questionId }, select: { id: true } });
+      if (!existing) {
         throw new Error('Interview question not found');
       }
+      const question = await prisma.interviewQuestion.update({
+        where: { id: questionId },
+        data: { ...cleanedData, updatedBy: userId, updatedAt: new Date() }
+      });
 
       // Decode HTML entities in returned question for display
-      const questionObj = question.toObject ? question.toObject() : question;
+      const questionObj = question;
       return {
         ...questionObj,
         question: questionObj.question ? decodeHtmlEntities(questionObj.question) : questionObj.question,
@@ -221,10 +235,11 @@ class InterviewService {
    */
   async deleteQuestion(questionId) {
     try {
-      const question = await InterviewQuestion.findByIdAndDelete(questionId);
+      const question = await prisma.interviewQuestion.findUnique({ where: { id: questionId } });
       if (!question) {
         throw new Error('Interview question not found');
       }
+      await prisma.interviewQuestion.delete({ where: { id: questionId } });
       return { success: true, deletedQuestion: question };
     } catch (error) {
       console.error('❌ Error deleting interview question:', error);
@@ -240,7 +255,7 @@ class InterviewService {
       console.log(`🤖 InterviewService: Generating AI questions for job ${jobId}`);
       
       // Get job details
-      const job = await Job.findById(jobId);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
@@ -800,8 +815,13 @@ ADDITIONAL CONTEXT:
         updatedBy: userId
       }));
 
-      const questions = await InterviewQuestion.insertMany(questionsToCreate);
-      
+      // createMany does not return rows; create individually so callers still get
+      // the saved docs (needed for _id linking to stages, quality-metric logging).
+      const questions = [];
+      for (const data of questionsToCreate) {
+        questions.push(await prisma.interviewQuestion.create({ data }));
+      }
+
       // Log quality metrics summary
       const avgBias = questions.reduce((sum, q) => sum + (q.qualityMetrics?.biasScore || 0), 0) / questions.length;
       const avgDiversity = questions.reduce((sum, q) => sum + (q.qualityMetrics?.diversityIndex || 0), 0) / questions.length;
@@ -825,34 +845,46 @@ ADDITIONAL CONTEXT:
    */
   async getQuestionStatistics(jobId) {
     try {
-      const totalQuestions = await InterviewQuestion.countDocuments({ jobId, isActive: true });
-      
-      const typeDistribution = await InterviewQuestion.aggregate([
-        { $match: { jobId: jobId, isActive: true } },
-        { $group: { _id: '$type', count: { $sum: 1 } } }
-      ]);
+      const totalQuestions = await prisma.interviewQuestion.count({ where: { jobId, isActive: true } });
 
-      const stageDistribution = await InterviewQuestion.aggregate([
-        { $match: { jobId: jobId, isActive: true } },
-        { $group: { _id: '$interviewStage', count: { $sum: 1 } } }
-      ]);
+      // Type & stage distribution via groupBy (shape: [{ _id, count }])
+      const typeGroups = await prisma.interviewQuestion.groupBy({
+        by: ['type'],
+        where: { jobId, isActive: true },
+        _count: { _all: true }
+      });
+      const typeDistribution = typeGroups.map(g => ({ _id: g.type, count: g._count._all }));
 
-      const qualityMetrics = await InterviewQuestion.aggregate([
-        { $match: { jobId: jobId, isActive: true } },
-        {
-          $group: {
-            _id: null,
-            avgBiasScore: { $avg: '$qualityMetrics.biasScore' },
-            avgDiversityIndex: { $avg: '$qualityMetrics.diversityIndex' },
-            avgDifficultyCalibration: { $avg: '$qualityMetrics.difficultyCalibration' },
-            legalComplianceCount: { $sum: { $cond: ['$qualityMetrics.legalCompliance', 1, 0] } },
-            avgSuccessRate: { $avg: '$usage.successRate' },
-            totalUsage: { $sum: '$usage.timesUsed' }
-          }
-        }
-      ]);
+      const stageGroups = await prisma.interviewQuestion.groupBy({
+        by: ['interviewStage'],
+        where: { jobId, isActive: true },
+        _count: { _all: true }
+      });
+      const stageDistribution = stageGroups.map(g => ({ _id: g.interviewStage, count: g._count._all }));
 
-      const stats = qualityMetrics[0];
+      // Quality metrics live inside Json columns — fetch rows and aggregate in JS.
+      const qmRows = await prisma.interviewQuestion.findMany({
+        where: { jobId, isActive: true },
+        select: { qualityMetrics: true, usage: true }
+      });
+      const stats = qmRows.length ? qmRows.reduce((acc, r) => {
+        const qm = r.qualityMetrics || {};
+        const usage = r.usage || {};
+        acc.avgBiasScore += qm.biasScore || 0;
+        acc.avgDiversityIndex += qm.diversityIndex || 0;
+        acc.avgDifficultyCalibration += qm.difficultyCalibration || 0;
+        acc.legalComplianceCount += qm.legalCompliance ? 1 : 0;
+        acc.avgSuccessRate += usage.successRate || 0;
+        acc.totalUsage += usage.timesUsed || 0;
+        return acc;
+      }, { avgBiasScore: 0, avgDiversityIndex: 0, avgDifficultyCalibration: 0, legalComplianceCount: 0, avgSuccessRate: 0, totalUsage: 0 }) : null;
+      if (stats) {
+        const n = qmRows.length;
+        stats.avgBiasScore /= n;
+        stats.avgDiversityIndex /= n;
+        stats.avgDifficultyCalibration /= n;
+        stats.avgSuccessRate /= n;
+      }
       const complianceRate = stats ? (stats.legalComplianceCount / totalQuestions) : 0;
 
       return {
@@ -886,9 +918,13 @@ ADDITIONAL CONTEXT:
    */
   async analyzeQuestionQuality(questionId) {
     try {
-      const question = await InterviewQuestion.findById(questionId).populate('jobId');
+      const question = await prisma.interviewQuestion.findUnique({ where: { id: questionId } });
       if (!question) {
         throw new Error('Question not found');
+      }
+      // Stitch job (replaces .populate('jobId'))
+      if (question.jobId) {
+        question.jobId = (await prisma.job.findUnique({ where: { id: question.jobId } })) || question.jobId;
       }
 
       console.log(`🔍 Analyzing quality for question: ${question._id}`);
@@ -953,9 +989,17 @@ ADDITIONAL CONTEXT:
         qualityMetricsUpdate['qualityMetrics.isBiased'] = biasAnalysis.isBiased;
       }
 
-      // Update question with comprehensive quality metrics
-      await InterviewQuestion.findByIdAndUpdate(questionId, {
-        $set: qualityMetricsUpdate
+      // Update question with comprehensive quality metrics.
+      // The $set keys are all dotted paths under `qualityMetrics` (a Json column),
+      // so merge them into the existing Json and write the whole column.
+      const mergedQualityMetrics = { ...(question.qualityMetrics || {}) };
+      for (const [key, value] of Object.entries(qualityMetricsUpdate)) {
+        const subKey = key.replace(/^qualityMetrics\./, '');
+        mergedQualityMetrics[subKey] = value;
+      }
+      await prisma.interviewQuestion.update({
+        where: { id: questionId },
+        data: { qualityMetrics: mergedQualityMetrics }
       });
       
       console.log(`✅ Quality analysis completed for question ${questionId}:`, {
@@ -993,37 +1037,43 @@ ADDITIONAL CONTEXT:
    */
   async submitQuestionFeedback(questionId, feedback) {
     try {
-      const question = await InterviewQuestion.findById(questionId);
+      const question = await prisma.interviewQuestion.findUnique({ where: { id: questionId } });
       if (!question) {
         throw new Error('Question not found');
       }
 
-      const updateData = {};
+      // TODO[pg]: original used a $push into the dotted path `feedback.candidateFeedback`
+      // / `feedback.interviewerFeedback`, but InterviewQuestion has no `feedback` column
+      // (only top-level `candidateFeedback` / `interviewerFeedback` Json arrays). Pushing
+      // into those top-level Json columns via read-modify-write to keep data persisted.
+      const data = {};
 
       if (feedback.type === 'candidate') {
-        updateData.$push = {
-          'feedback.candidateFeedback': {
-            rating: feedback.rating,
-            comments: feedback.comments,
-            submittedAt: feedback.submittedAt || new Date(),
-            submittedBy: feedback.submittedBy
-          }
-        };
+        const arr = Array.isArray(question.candidateFeedback) ? [...question.candidateFeedback] : [];
+        arr.push({
+          rating: feedback.rating,
+          comments: feedback.comments,
+          submittedAt: feedback.submittedAt || new Date(),
+          submittedBy: feedback.submittedBy
+        });
+        data.candidateFeedback = arr;
       } else if (feedback.type === 'interviewer') {
-        updateData.$push = {
-          'feedback.interviewerFeedback': {
-            effectiveness: feedback.effectiveness,
-            clarity: feedback.clarity,
-            relevance: feedback.relevance,
-            comments: feedback.comments,
-            submittedAt: feedback.submittedAt || new Date(),
-            submittedBy: feedback.submittedBy
-          }
-        };
+        const arr = Array.isArray(question.interviewerFeedback) ? [...question.interviewerFeedback] : [];
+        arr.push({
+          effectiveness: feedback.effectiveness,
+          clarity: feedback.clarity,
+          relevance: feedback.relevance,
+          comments: feedback.comments,
+          submittedAt: feedback.submittedAt || new Date(),
+          submittedBy: feedback.submittedBy
+        });
+        data.interviewerFeedback = arr;
       }
 
-      await InterviewQuestion.findByIdAndUpdate(questionId, updateData);
-      
+      if (Object.keys(data).length > 0) {
+        await prisma.interviewQuestion.update({ where: { id: questionId }, data });
+      }
+
       console.log(`✅ Feedback submitted for question ${questionId}`);
       return { success: true };
     } catch (error) {
@@ -1037,8 +1087,8 @@ ADDITIONAL CONTEXT:
    */
   async getPerformanceInsights(jobId) {
     try {
-      const questions = await InterviewQuestion.find({ jobId, isActive: true });
-      
+      const questions = await prisma.interviewQuestion.findMany({ where: { jobId, isActive: true } });
+
       const insights = {
         totalQuestions: questions.length,
         averageQuality: 0,
@@ -1142,7 +1192,7 @@ ADDITIONAL CONTEXT:
 
       console.log('🎯 Generating optimized question set...');
 
-      const job = await Job.findById(jobId);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }

@@ -1,4 +1,4 @@
-const Job = require('../models/Job');
+const prisma = require('../db/client');
 
 /**
  * Clean up null candidate references from a job's shortlist and applicants
@@ -56,7 +56,7 @@ async function cleanupJobCandidateReferences(job, saveChanges = true) {
 async function cleanupAllJobCandidateReferences(dryRun = false) {
   console.log(`🧹 Starting ${dryRun ? 'dry run' : 'cleanup'} of all job candidate references...`);
   
-  const jobs = await Job.find({})
+  const jobs = await prisma.job.findMany({})
     .populate('shortlist.candidate')
     .populate('applicants.candidate');
   

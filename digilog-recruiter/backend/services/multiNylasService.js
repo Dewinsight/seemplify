@@ -1,5 +1,4 @@
-const NylasAccount = require('../models/NylasAccount');
-const User = require('../models/User');
+const prisma = require('../db/client');
 const nylasV3Service = require('./nylasV3Service');
 
 /**
@@ -19,13 +18,11 @@ class MultiNylasService {
       console.log('🔍 Searching for Nylas account with available slots...');
       
       // Get all active, verified accounts sorted by priority
-      const accounts = await NylasAccount.find({
-        active: true,
-        verified: true
-      })
-      .select('+apiKey +clientSecret') // Include encrypted fields
-      .sort({ priority: -1, createdAt: 1 }); // High priority first, then oldest
-      
+      const accounts = await prisma.nylasAccount.findMany({
+        where: { active: true, verified: true },
+        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }] // High priority first, then oldest
+      });
+
       if (accounts.length === 0) {
         console.warn('⚠️ No active Nylas accounts found!');
         return null;
@@ -36,24 +33,26 @@ class MultiNylasService {
       // Check each account for available slots
       for (const account of accounts) {
         // Get real-time grant count for this account
-        const grantCount = await User.countDocuments({
-          nylasAccountId: account._id,
-          calendarConnected: true,
-          nylasGrantId: { $exists: true, $ne: null }
+        const grantCount = await prisma.user.count({
+          where: {
+            nylasAccountId: account.id,
+            calendarConnected: true,
+            nylasGrantId: { not: null }
+          }
         });
-        
+
         const availableSlots = account.maxGrants - grantCount;
-        
+
         if (availableSlots > 0) {
           console.log(`✅ Found available account: ${account.name}`);
           console.log(`   Current: ${grantCount}/${account.maxGrants} grants`);
           console.log(`   Available: ${availableSlots} slot(s)`);
-          
+
           // Update the current count
           account.currentGrantCount = grantCount;
           account.lastUsed = new Date();
-          await account.save();
-          
+          await prisma.nylasAccount.update({ where: { id: account.id }, data: { currentGrantCount: grantCount, lastUsed: account.lastUsed } });
+
           return {
             account,
             currentGrants: grantCount,
@@ -86,10 +85,22 @@ class MultiNylasService {
    */
   async getSystemCapacity() {
     try {
-      const capacity = await NylasAccount.getSystemCapacity();
-      
+      // Inlined from the former NylasAccount.getSystemCapacity() static method.
+      const accounts = await prisma.nylasAccount.findMany({ where: { active: true } });
+
+      const totalMax = accounts.reduce((sum, acc) => sum + (acc.maxGrants || 0), 0);
+      const totalUsed = accounts.reduce((sum, acc) => sum + (acc.currentGrantCount || 0), 0);
+
+      const capacity = {
+        totalMax,
+        totalUsed,
+        availableSlots: totalMax - totalUsed,
+        accountCount: accounts.length,
+        utilizationPercentage: totalMax > 0 ? Math.round((totalUsed / totalMax) * 100) : 0
+      };
+
       console.log(`📊 System Capacity: ${capacity.totalUsed}/${capacity.totalMax} grants (${capacity.utilizationPercentage}%)`);
-      
+
       return capacity;
     } catch (error) {
       console.error('Error getting system capacity:', error);
@@ -103,20 +114,24 @@ class MultiNylasService {
    */
   async getAllAccountsWithUsage() {
     try {
-      const accounts = await NylasAccount.find({ active: true })
-        .sort({ priority: -1, createdAt: 1 });
-      
+      const accounts = await prisma.nylasAccount.findMany({
+        where: { active: true },
+        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }]
+      });
+
       // Track if we found a preferred account yet
       let preferredAccountFound = false;
       
       const accountsWithUsage = await Promise.all(
         accounts.map(async (account) => {
-          const grantCount = await User.countDocuments({
-            nylasAccountId: account._id,
-            calendarConnected: true,
-            nylasGrantId: { $exists: true, $ne: null }
+          const grantCount = await prisma.user.count({
+            where: {
+              nylasAccountId: account.id,
+              calendarConnected: true,
+              nylasGrantId: { not: null }
+            }
           });
-          
+
           const availableSlots = account.maxGrants - grantCount;
           
           // An account is preferred if:
@@ -239,15 +254,20 @@ class MultiNylasService {
    */
   async updateGrantCount(accountId) {
     try {
-      const count = await User.countDocuments({
-        nylasAccountId: accountId,
-        calendarConnected: true,
-        nylasGrantId: { $exists: true, $ne: null }
+      const count = await prisma.user.count({
+        where: {
+          nylasAccountId: accountId,
+          calendarConnected: true,
+          nylasGrantId: { not: null }
+        }
       });
-      
-      await NylasAccount.findByIdAndUpdate(accountId, {
-        currentGrantCount: count,
-        lastUsed: new Date()
+
+      await prisma.nylasAccount.update({
+        where: { id: accountId },
+        data: {
+          currentGrantCount: count,
+          lastUsed: new Date()
+        }
       });
       
       console.log(`📊 Updated grant count for account ${accountId}: ${count}`);

@@ -24,6 +24,18 @@ dotenv.config();
 // Connect to database
 connectDB();
 
+// PostgreSQL via Prisma — migration in progress; runs ALONGSIDE Mongoose.
+// Non-fatal connectivity check so the (still Mongoose-based) app keeps booting
+// even if Postgres isn't up yet. Migrated slices use this client; the rest still
+// use Mongoose until their slice lands.
+const prisma = require('./db/client');
+// Auto-bootstrap Postgres so deployments need ZERO manual steps: apply pending
+// migrations (migrate deploy) + run idempotent, tracked reference-data seeders.
+// Non-blocking and best-effort. See db/bootstrap.js (env: BOOTSTRAP_MIGRATE,
+// BOOTSTRAP_SEED). In local dev, migrate is skipped via BOOTSTRAP_MIGRATE=false.
+require('./db/bootstrap').runBootstrap()
+  .catch((err) => console.warn('⚠️  Postgres bootstrap issue (non-fatal):', err.message));
+
 const app = express();
 
 // Disable X-Powered-By header
@@ -226,6 +238,11 @@ app.use((req, res, next) => {
 
 app.use(cookieParser()); // Parse cookies
 app.set('trust proxy', 1); // Trust first proxy for IP addresses
+
+// `_id` compatibility: mirror Prisma `id` -> `_id` on every JSON response so the
+// frontend's `_id: string` contract is preserved as models migrate to Postgres.
+// Additive and safe for existing Mongoose responses (which already carry `_id`).
+app.use(require('./middleware/idCompat'));
 
 // Input Sanitization Middleware - clean all inputs to prevent XSS and injection attacks
 // app.use(sanitizeInputs); // Temporarily disabled to address encoding issues

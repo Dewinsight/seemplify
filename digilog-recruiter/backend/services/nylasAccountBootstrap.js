@@ -1,4 +1,4 @@
-const NylasAccount = require('../models/NylasAccount');
+const prisma = require('../db/client');
 
 /**
  * Ensure a default, active + verified Nylas account exists, derived from
@@ -36,7 +36,7 @@ async function ensureDefaultNylasAccountFromEnv() {
     const parsedMax = parseInt(process.env.NYLAS_MAX_GRANTS, 10);
     const maxGrants = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : 5;
 
-    const existing = await NylasAccount.findOne({ clientId });
+    const existing = await prisma.nylasAccount.findFirst({ where: { clientId } });
 
     if (existing) {
       // Make sure the env-provided account is actually usable. findAvailableAccount()
@@ -47,7 +47,7 @@ async function ensureDefaultNylasAccountFromEnv() {
       if (!existing.maxGrants || existing.maxGrants < 1) updates.maxGrants = maxGrants;
 
       if (Object.keys(updates).length > 0) {
-        await NylasAccount.updateOne({ _id: existing._id }, { $set: updates });
+        await prisma.nylasAccount.update({ where: { id: existing.id }, data: updates });
         console.log(
           `✅ Nylas bootstrap: reactivated existing account "${existing.name}" (${Object.keys(updates).join(', ')}).`
         );
@@ -57,7 +57,7 @@ async function ensureDefaultNylasAccountFromEnv() {
       return existing;
     }
 
-    const account = await NylasAccount.create({
+    const account = await prisma.nylasAccount.create({ data: {
       name: 'Default Account (from env)',
       clientId,
       apiKey,
@@ -71,7 +71,7 @@ async function ensureDefaultNylasAccountFromEnv() {
       verified: true, // trust the env creds (admin panel can re-verify)
       isDefault: true,
       notes: 'Auto-created from environment variables on startup'
-    });
+    } });
 
     console.log(
       `✅ Nylas bootstrap: created default account "${account.name}" (${account._id}) from env — region=${region}, maxGrants=${maxGrants}.`

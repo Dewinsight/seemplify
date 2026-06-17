@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const emailService = require('./emailService');
+const prisma = require('../db/client');
 
 class OTPService {
   constructor() {
@@ -222,9 +223,9 @@ This is an automated security email from SmartHR. Please do not reply to this em
       user.security.otpLockedUntil = null;
     }
     
-    return await user.save();
+    return await prisma.user.update({ where: { id: user.id }, data: { security: user.security } });
   }
-  
+
   /**
    * Clear OTP from storage
    * @param {String} userId - User ID

@@ -1,11 +1,7 @@
 const cron = require('node-cron');
-const Interview = require('../models/Interview');
-const InterviewQuestion = require('../models/InterviewQuestion');
-const User = require('../models/User');
-const Candidate = require('../models/Candidate');
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
+const { isObjectIdLike } = require('../db/objectId');
 const emailService = require('./emailService');
-const mongoose = require('mongoose');
 
 class InterviewFeedbackEmailService {
   constructor() {
@@ -64,16 +60,51 @@ class InterviewFeedbackEmailService {
       // 2. Questions haven't been sent yet (questionsSentAt is null)
       // 3. The interview is in the future
       // 4. The time to send is now (based on questionsSendTime minutes before interview)
-      const interviews = await Interview.find({
-        'notifications.sendQuestionsToInterviewers': true,
-        'notifications.questionsSentAt': null,
-        'status': { $in: ['scheduled', 'confirmed'] },
-        'scheduledAt': { $gt: now }
-      })
-      .populate('candidateId')
-      .populate('jobId')
-      .populate('notifications.selectedQuestions');
-      
+      const interviewRows = await prisma.interview.findMany({
+        where: {
+          status: { in: ['scheduled', 'confirmed'] },
+          scheduledAt: { gt: now }
+        }
+      });
+
+      // The notifications conditions live inside the `notifications` Json column,
+      // so filter them in JS (mirrors the Mongo dotted-path query).
+      const candidateInterviews = interviewRows.filter(iv =>
+        iv.notifications &&
+        iv.notifications.sendQuestionsToInterviewers === true &&
+        (iv.notifications.questionsSentAt === null || iv.notifications.questionsSentAt === undefined)
+      );
+
+      // Stitch soft refs that .populate() used to resolve:
+      //   candidateId -> Candidate, jobId -> Job, notifications.selectedQuestions -> InterviewQuestion[]
+      const candidateIds = [...new Set(candidateInterviews.map(iv => iv.candidateId).filter(Boolean).map(String))];
+      const jobIds = [...new Set(candidateInterviews.map(iv => iv.jobId).filter(Boolean).map(String))];
+      const questionIds = [...new Set(
+        candidateInterviews.flatMap(iv => (Array.isArray(iv.notifications?.selectedQuestions) ? iv.notifications.selectedQuestions : []))
+          .filter(Boolean).map(String)
+      )];
+
+      const [candidates, jobs, questions] = await Promise.all([
+        candidateIds.length ? prisma.candidate.findMany({ where: { id: { in: candidateIds } } }) : Promise.resolve([]),
+        jobIds.length ? prisma.job.findMany({ where: { id: { in: jobIds } } }) : Promise.resolve([]),
+        questionIds.length ? prisma.interviewQuestion.findMany({ where: { id: { in: questionIds } } }) : Promise.resolve([])
+      ]);
+      const candidateById = new Map(candidates.map(c => [c.id, c]));
+      const jobById = new Map(jobs.map(j => [j.id, j]));
+      const questionById = new Map(questions.map(q => [q.id, q]));
+
+      const interviews = candidateInterviews.map(iv => {
+        iv.candidateId = iv.candidateId ? (candidateById.get(String(iv.candidateId)) || null) : null;
+        iv.jobId = iv.jobId ? (jobById.get(String(iv.jobId)) || null) : null;
+        if (iv.notifications && Array.isArray(iv.notifications.selectedQuestions)) {
+          iv.notifications = {
+            ...iv.notifications,
+            selectedQuestions: iv.notifications.selectedQuestions.map(q => questionById.get(String(q)) || q)
+          };
+        }
+        return iv;
+      });
+
       console.log(`📊 Found ${interviews.length} interviews to check for sending questions`);
       
       // Log details about each interview found
@@ -96,10 +127,13 @@ class InterviewFeedbackEmailService {
           if (now >= sendTime) {
             const sent = await this.sendQuestionEmail(interview);
             if (sent) {
-              // Update only when send actually succeeded.
-              interview.notifications.questionsSentAt = now;
-              await interview.save();
-              
+              // Update only when send actually succeeded (read-modify-write Json column).
+              interview.notifications = { ...interview.notifications, questionsSentAt: now };
+              await prisma.interview.update({
+                where: { id: interview.id },
+                data: { notifications: interview.notifications }
+              });
+
               console.log(`✅ Sent question email for interview ${interview._id}`);
             } else {
               console.warn(`⚠️ Question email not sent for interview ${interview._id}; leaving questionsSentAt unset for retry`);
@@ -134,7 +168,9 @@ class InterviewFeedbackEmailService {
       const emailsSeen = new Set(); // Track emails to prevent duplicates
       
       // Add main interviewer
-      const mainInterviewer = await User.findById(interview.interviewerId);
+      const mainInterviewer = interview.interviewerId
+        ? await prisma.user.findUnique({ where: { id: String(interview.interviewerId) } })
+        : null;
       if (mainInterviewer && mainInterviewer.email) {
         participants.push(mainInterviewer);
         emailsSeen.add(mainInterviewer.email.toLowerCase()); // Track this email
@@ -184,13 +220,13 @@ class InterviewFeedbackEmailService {
         process.env.ORGANIZATION_NAME ||
         process.env.BREVO_SENDER_NAME ||
         'Organization';
-      if (interview.organizationId && mongoose.Types.ObjectId.isValid(String(interview.organizationId))) {
-        const org = await Organization.findById(interview.organizationId).select('name');
+      if (interview.organizationId && isObjectIdLike(String(interview.organizationId))) {
+        const org = await prisma.organization.findUnique({ where: { id: String(interview.organizationId) }, select: { name: true } });
         if (org?.name) {
           organizationName = decodeHtmlEntities(org.name);
         }
-      } else if (job?.organization && mongoose.Types.ObjectId.isValid(String(job.organization))) {
-        const org = await Organization.findById(job.organization).select('name');
+      } else if (job?.organizationId && isObjectIdLike(String(job.organizationId))) {
+        const org = await prisma.organization.findUnique({ where: { id: String(job.organizationId) }, select: { name: true } });
         if (org?.name) {
           organizationName = decodeHtmlEntities(org.name);
         }

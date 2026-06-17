@@ -1,4 +1,4 @@
-const Interview = require('../models/Interview');
+const prisma = require('../db/client');
 const nylasV3Service = require('../services/nylasV3Service');
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
 
@@ -12,28 +12,30 @@ async function updatePipelineStatusOnCompletion(interview) {
 
     console.log(`🔄 [MANUAL-SYNC] Updating pipeline status for candidate ${interview.candidateId} in job ${interview.jobId}`);
     
-    const Job = require('../models/Job');
-    const job = await Job.findById(interview.jobId);
-    
+    const job = await prisma.job.findUnique({ where: { id: String(interview.jobId) } });
+
     if (job) {
-      const applicantIndex = job.applicants.findIndex(
+      const applicants = Array.isArray(job.applicants) ? job.applicants : [];
+      const applicantIndex = applicants.findIndex(
         applicant => applicant.candidate.toString() === interview.candidateId.toString()
       );
-      
+
       if (applicantIndex !== -1) {
-        const applicant = job.applicants[applicantIndex];
+        const applicant = applicants[applicantIndex];
         const previousStatus = applicant.status;
-        
+
         // Only update if current status is interviewing
         if (previousStatus === 'interviewing') {
           // Check if there are other incomplete interviews for this candidate
-          const otherInterviews = await Interview.find({
-            candidateId: interview.candidateId,
-            jobId: interview.jobId,
-            _id: { $ne: interview._id },
-            status: { $in: ['scheduled', 'confirmed', 'in_progress'] }
+          const otherInterviews = await prisma.interview.findMany({
+            where: {
+              candidateId: interview.candidateId,
+              jobId: interview.jobId,
+              id: { not: interview.id },
+              status: { in: ['scheduled', 'confirmed', 'in_progress'] }
+            }
           });
-          
+
           if (otherInterviews.length === 0) {
             // No other pending interviews, move to next stage
             applicant.status = 'offered'; // Or could be 'reviewing' depending on business logic
@@ -50,8 +52,8 @@ async function updatePipelineStatusOnCompletion(interview) {
               notes: 'Status automatically updated when interview was manually completed',
               previousStatus
             });
-            
-            await job.save();
+
+            await prisma.job.update({ where: { id: job.id }, data: { applicants } });
             console.log(`✅ [MANUAL-SYNC] Pipeline status updated: ${previousStatus} → offered`);
           } else {
             console.log(`ℹ️ [MANUAL-SYNC] Candidate has ${otherInterviews.length} other pending interviews, keeping status as interviewing`);
@@ -79,13 +81,18 @@ const manualTranscriptSync = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview && interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({
+        where: { id: interview.interviewerId },
+        select: { id: true, nylasGrantId: true, nylasAccountId: true }
+      });
+    }
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+
     console.log(`🔄 [MANUAL-SYNC] Starting manual transcript sync for interview: ${interviewId}`);
     console.log(`Interview details:`, {
       isMultiCandidate: interview.isMultiCandidate,
@@ -100,11 +107,23 @@ const manualTranscriptSync = async (req, res) => {
       console.log(`👥 [MANUAL-SYNC] Processing multi-candidate interview`);
       
       // Find the session holder (interview with notetaker ID)
-      const sessionInterviews = await Interview.find({
-        multiCandidateSessionId: interview.multiCandidateSessionId
-      }).sort({ multiCandidateOrder: 1 })
-        .populate('interviewerId', 'nylasGrantId nylasAccountId');
-      
+      const sessionInterviews = await prisma.interview.findMany({
+        where: { multiCandidateSessionId: interview.multiCandidateSessionId },
+        orderBy: { multiCandidateOrder: 'asc' }
+      });
+      // Stitch interviewerId (soft ref -> User)
+      const interviewerIds = Array.from(new Set(sessionInterviews.map((si) => si.interviewerId).filter(Boolean)));
+      if (interviewerIds.length) {
+        const interviewers = await prisma.user.findMany({
+          where: { id: { in: interviewerIds } },
+          select: { id: true, nylasGrantId: true, nylasAccountId: true }
+        });
+        const interviewerById = new Map(interviewers.map((u) => [String(u.id), u]));
+        for (const si of sessionInterviews) {
+          if (si.interviewerId) si.interviewerId = interviewerById.get(String(si.interviewerId)) || null;
+        }
+      }
+
       const sessionHolder = sessionInterviews.find(si => si.notetakerId) || sessionInterviews[0];
       
       if (!sessionHolder) {
@@ -123,8 +142,7 @@ const manualTranscriptSync = async (req, res) => {
             // Get account credentials if interviewer has a linked Nylas account
             let accountCredentials = null;
             if (sessionHolder.interviewerId?.nylasAccountId) {
-              const NylasAccount = require('../models/NylasAccount');
-              const nylasAccount = await NylasAccount.findById(sessionHolder.interviewerId.nylasAccountId).select('+apiKey');
+              const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: String(sessionHolder.interviewerId.nylasAccountId) } });
               if (nylasAccount) {
                 accountCredentials = {
                   apiKey: nylasAccount.apiKey,
@@ -169,12 +187,20 @@ const manualTranscriptSync = async (req, res) => {
             };
             sessionHolder.transcriptAvailableAt = new Date();
             sessionHolder.notetakerType = 'standalone';
-            
+
             if (media.recording?.url) {
               sessionHolder.recordingUrl = media.recording.url;
             }
-            
-            await sessionHolder.save();
+
+            await prisma.interview.update({
+              where: { id: sessionHolder.id },
+              data: {
+                transcript: sessionHolder.transcript,
+                transcriptAvailableAt: sessionHolder.transcriptAvailableAt,
+                notetakerType: sessionHolder.notetakerType,
+                recordingUrl: sessionHolder.recordingUrl
+              }
+            });
             console.log(`✅ [MANUAL-SYNC] Transcript saved to session holder`);
           }
           
@@ -196,7 +222,7 @@ const manualTranscriptSync = async (req, res) => {
             // Update interview status if not already completed
             if (interview.status !== 'completed') {
               interview.status = 'completed';
-              await interview.save();
+              await prisma.interview.update({ where: { id: interview.id }, data: { status: 'completed' } });
               console.log(`✅ [MANUAL-SYNC] Interview marked as completed`);
             }
             
@@ -255,8 +281,7 @@ const manualTranscriptSync = async (req, res) => {
         // Get account credentials if interviewer has a linked Nylas account
         let accountCredentials = null;
         if (interview.interviewerId?.nylasAccountId) {
-          const NylasAccount = require('../models/NylasAccount');
-          const nylasAccount = await NylasAccount.findById(interview.interviewerId.nylasAccountId).select('+apiKey');
+          const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: String(interview.interviewerId.nylasAccountId) } });
           if (nylasAccount) {
             accountCredentials = {
               apiKey: nylasAccount.apiKey,
@@ -301,18 +326,27 @@ const manualTranscriptSync = async (req, res) => {
         };
         interview.transcriptAvailableAt = new Date();
         interview.notetakerType = 'standalone';
-        
+
         if (media.recording?.url) {
           interview.recordingUrl = media.recording.url;
         }
-        
+
         // Mark as completed if not already
         if (interview.status !== 'completed') {
           interview.status = 'completed';
           console.log(`✅ [MANUAL-SYNC] Interview marked as completed`);
         }
-        
-        await interview.save();
+
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: {
+            transcript: interview.transcript,
+            transcriptAvailableAt: interview.transcriptAvailableAt,
+            notetakerType: interview.notetakerType,
+            recordingUrl: interview.recordingUrl,
+            status: interview.status
+          }
+        });
         
         return res.json({
           success: true,
@@ -356,12 +390,12 @@ const forceInterviewCompletion = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId);
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+
     if (interview.status === 'completed') {
       return res.json({
         success: true,
@@ -374,13 +408,16 @@ const forceInterviewCompletion = async (req, res) => {
     
     // Mark interview as completed
     interview.status = 'completed';
-    
+
     // Add a note about manual completion
     if (!interview.transcript?.content) {
       interview.notetakerError = 'Interview manually completed - transcript may not be available';
     }
-    
-    await interview.save();
+
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: { status: interview.status, notetakerError: interview.notetakerError }
+    });
     
     // Update pipeline status
     try {

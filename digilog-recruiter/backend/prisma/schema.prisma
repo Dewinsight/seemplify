@@ -1,0 +1,905 @@
+// digilog-recruiter — PostgreSQL schema (migration from MongoDB/Mongoose).
+//
+// Conventions (see plan §2):
+//   - PKs are Mongo ObjectId 24-hex strings: `id String @id @db.Char(24)`.
+//     New ids are generated in JS (db/objectId.js) and injected by db/client.js.
+//   - Mongoose `ref` ObjectId -> scalar `xId @db.Char(24)` + relation.
+//   - "Dynamic enums" and other open sets stay `String`; flexible blobs stay `Json`.
+//
+// This file is built up slice-by-slice. Slice 1 covers the foundation models
+// (User, Organization, OrganizationMember, Department, Admin). Later slices
+// normalize subscription/credits, candidates, jobs, interviews, etc.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String  @id @db.Char(24)
+  email    String  @unique
+  password String?
+
+  // Nested Mongoose objects kept as JSONB for now (normalized later as needed).
+  profile           Json?
+  company           Json?
+  preferences       Json?
+  profileCompletion Json?
+  features          Json?
+  security          Json?
+  subscription      Json?
+  emailCapabilities Json?
+
+  role        String? // top-level role enum kept as String
+  permissions String[]
+  isActive    Boolean  @default(true)
+
+  lastLoginAt DateTime?
+  loginCount  Int       @default(0)
+
+  // Auth / security
+  twoFactorEnabled     Boolean?
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  lastPasswordChange   DateTime?
+
+  // Org context / onboarding
+  hasCompletedOrganizationSetup Boolean?
+  defaultOrganizationId         String? @db.Char(24)
+  legacyOrganizations           Json? // old embedded `organizations` array
+
+  // Calendar / Nylas
+  calendarConnected      Boolean?
+  calendarConnectedEmail String?
+  calendarEmail          String?
+  calendarProvider       String?
+  nylasAccountId         String?   @db.Char(24)
+  nylasGrantId           String?
+  nylasGrantStatus       String?
+  grantConnectedAt       DateTime?
+  lastGrantRefresh       DateTime?
+  lastGrantRevocation    DateTime?
+
+  // IdP / SSO
+  idpAccessToken     String?
+  idpTokenExpiry     DateTime?
+  idpTeams           Json?
+  idpTeamPermissions Json?
+
+  // Current organization (multi-tenant context)
+  currentOrganizationId String?       @db.Char(24)
+  currentOrganization   Organization? @relation("UserCurrentOrg", fields: [currentOrganizationId], references: [id])
+
+  // Reverse relations
+  ownedOrganizations Organization[]       @relation("OrgOwner")
+  memberships        OrganizationMember[]
+  createdDepartments Department[]         @relation("DeptCreatedBy")
+  userSessions       UserSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([currentOrganizationId])
+  @@index([role])
+  @@index([isActive])
+  @@index([resetPasswordToken])
+  @@index([nylasGrantId])
+}
+
+model Organization {
+  id          String  @id @db.Char(24)
+  name        String  @db.VarChar(100)
+  description String?
+  industry    String?
+  size        String?
+  website     String?
+  logo        String?
+
+  // Sparse-unique in Mongo -> nullable here; partial unique index added later (plan §5).
+  idpOrganizationId String?
+
+  // Kept whole for slice 1; normalized into columns + child tables in slice 3.
+  settings     Json?
+  subscription Json?
+  legacyUsers  Json? // old embedded `users` array (members are in OrganizationMember)
+
+  // Nullable for ETL robustness (owner may point at a since-deleted user).
+  ownerId String? @db.Char(24)
+  owner   User?   @relation("OrgOwner", fields: [ownerId], references: [id])
+
+  members        OrganizationMember[]
+  departments    Department[]
+  currentForUsers User[]              @relation("UserCurrentOrg")
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([isActive])
+}
+
+// Collapses Mongo's dual membership model (Organization.members[] AND
+// User.organizationMemberships[]) into a single source of truth.
+model OrganizationMember {
+  id String @id @db.Char(24)
+
+  organizationId String       @db.Char(24)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId String @db.Char(24)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role        String  @default("member")
+  status      String  @default("active")
+  invitedById String? @db.Char(24) // soft ref (no FK)
+
+  joinedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model Department {
+  id          String  @id @db.Char(24)
+  name        String  @db.VarChar(100)
+  description String? @db.VarChar(500)
+  isActive    Boolean @default(true)
+
+  organizationId String       @db.Char(24)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Nullable for ETL robustness (creator may point at a since-deleted user).
+  createdById String? @db.Char(24)
+  createdBy   User?   @relation("DeptCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+}
+
+model Admin {
+  id          String  @id @db.Char(24)
+  email       String  @unique
+  password    String?
+  name        String
+  role        String  @default("admin")
+  permissions Json?
+  authSource  String  @default("local")
+
+  // Sparse-unique in Mongo -> nullable; partial unique index added later.
+  idpAccountId String?
+
+  isActive      Boolean   @default(true)
+  lastLogin     DateTime?
+  lastSsoLoginAt DateTime?
+  lastIdpSyncAt DateTime?
+  loginAttempts Int       @default(0)
+  lockUntil     DateTime?
+
+  resetPasswordOTP        String?
+  resetPasswordOTPExpires DateTime?
+  resetPasswordAttempts   Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// JWT access/refresh session (the real auth session mechanism). The HTTP-tracking
+// `Session` model is effectively dead code (its middleware no-ops), so it is not
+// modeled until/if revived. `expiresAt` TTL becomes a scheduled cleanup (plan §5).
+model UserSession {
+  id String @id @db.Char(24)
+
+  userId String @db.Char(24)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fingerprint      String
+  userAgent        String?
+  ip               String?
+  refreshTokenHash String
+  accessTokenId    String
+  expiresAt        DateTime
+  revoked          Boolean   @default(false)
+  revokedAt        DateTime?
+  reason           String?
+  riskSignals      String[]  @default([])
+  createdAt        DateTime  @default(now())
+  lastActivityAt   DateTime?
+
+  @@index([userId, revoked])
+  @@index([accessTokenId])
+  @@index([fingerprint])
+  @@index([expiresAt])
+}
+
+// Tracks which idempotent startup seeders have run, so a fresh production deploy
+// self-bootstraps (migrations + seeds) with no manual steps and never re-seeds.
+model SeedHistory {
+  id        String   @id @db.Char(24)
+  name      String   @unique
+  appliedAt DateTime @default(now())
+}
+
+
+// === BULK LOSSLESS COPY MODELS (promoted to relations per code-slice) ===
+
+// ---- Plan (lossless structural copy) ----
+model Plan {
+  id String @id @db.Char(24)
+  name String?
+  code String?
+  price Float?
+  currency String?
+  billingCycle String?
+  features Json?
+  limits Json?
+  credits Json?
+  trialDays Int?
+  isPublished Boolean? @default(true)
+  displayOrder Int?
+  planType String?
+  isDefault Boolean? @default(false)
+  isCustom Boolean? @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- CreditPack (lossless structural copy) ----
+model CreditPack {
+  id String @id @db.Char(24)
+  name String?
+  code String?
+  credits Float?
+  price Float?
+  currency String?
+  description String?
+  isPopular Boolean? @default(false)
+  isActive Boolean? @default(true)
+  displayOrder Int?
+  features String[]
+  bonusCredits Float?
+  totalCredits Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- CreditPurchaseRequest (lossless structural copy) ----
+model CreditPurchaseRequest {
+  id String @id @db.Char(24)
+  organizationId String? @db.Char(24)
+  requestedById String? @db.Char(24)
+  creditPackId String? @db.Char(24)
+  packDetails Json?
+  status String?
+  notes String?
+  reviewedById String? @db.Char(24)
+  reviewedAt DateTime?
+  reviewNotes String?
+  creditsGranted Boolean? @default(false)
+  grantedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- SubscriptionRequest (lossless structural copy) ----
+model SubscriptionRequest {
+  id String @id @db.Char(24)
+  requestType String?
+  userId String? @db.Char(24)
+  organizationId String? @db.Char(24)
+  currentPlan String?
+  requestedPlan String?
+  status String?
+  notes String?
+  adminNotes String?
+  invoiceDetails Json?
+  approvedById String? @db.Char(24)
+  approvalDate DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- Currency (lossless structural copy) ----
+model Currency {
+  id String @id @db.Char(24)
+  code String?
+  symbol String?
+  name String?
+  locale String?
+  isSystem Boolean? @default(false)
+  organizationId String? @db.Char(24)
+  createdById String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- NylasAccount (lossless structural copy) ----
+model NylasAccount {
+  id String @id @db.Char(24)
+  name String?
+  clientId String?
+  apiKey String?
+  clientSecret String?
+  region String?
+  apiUri String?
+  redirectUri String?
+  maxGrants Int?
+  currentGrantCount Int?
+  active Boolean? @default(true)
+  verified Boolean? @default(false)
+  isDefault Boolean? @default(false)
+  priority Int?
+  accountType String?
+  notes String?
+  createdById String? @db.Char(24)
+  lastUsed DateTime?
+  lastVerified DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- OrganizationInvite (lossless structural copy) ----
+model OrganizationInvite {
+  id String @id @db.Char(24)
+  organizationId String? @db.Char(24)
+  email String?
+  role String?
+  token String?
+  invitedById String? @db.Char(24)
+  status String?
+  expiresAt DateTime?
+  acceptedAt DateTime?
+  acceptedById String? @db.Char(24)
+  rejectedAt DateTime?
+  rejectedById String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- Candidate (lossless structural copy) ----
+model Candidate {
+  id String @id @db.Char(24)
+  firstName String?
+  lastName String?
+  email String?
+  phone String?
+  position String?
+  experience String?
+  education String?
+  skills String?
+  location String?
+  resumeUrl String?
+  resumeText String?
+  coverLetter String?
+  status String?
+  source String?
+  notes Json?
+  createdBy String? @db.Char(24)
+  updatedBy String? @db.Char(24)
+  parsedData Json?
+  aiAnalysis Json?
+  isEmbedded Boolean? @default(false)
+  embeddingCreatedAt DateTime?
+  workExperience Json?
+  educationHistory Json?
+  certifications Json?
+  languages Json?
+  awards Json?
+  projects Json?
+  publications Json?
+  volunteerWork Json?
+  professionalMemberships Json?
+  portfolioLinks Json?
+  additionalSections Json?
+  fullCVData Json?
+  cloudinaryPublicId String?
+  cloudinaryResourceType String?
+  processingMetadata Json?
+  applicationDate DateTime?
+  interviews Json?
+  jobAppliedForId String? @db.Char(24)
+  organizationId String? @db.Char(24)
+  isInternalCandidate Boolean? @default(false)
+  employeeId String?
+  currentDepartmentId String? @db.Char(24)
+  hireDate DateTime?
+  currentPosition String?
+  managerId String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- CandidateList (lossless structural copy) ----
+model CandidateList {
+  id String @id @db.Char(24)
+  organizationId String? @db.Char(24)
+  name String?
+  description String?
+  source String?
+  sourceRef Json?
+  entries Json?
+  createdBy String? @db.Char(24)
+  updatedBy String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- ScreeningQuestion (lossless structural copy) ----
+model ScreeningQuestion {
+  id String @id @db.Char(24)
+  jobId String? @db.Char(24)
+  type String?
+  question String?
+  description String?
+  isRequired Boolean? @default(true)
+  order Int?
+  options Json?
+  condition Json?
+  action Json?
+  isActive Boolean? @default(true)
+  createdBy String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- Interview (lossless structural copy) ----
+model Interview {
+  id String @id @db.Char(24)
+  jobId String? @db.Char(24)
+  candidateId String? @db.Char(24)
+  interviewerId String? @db.Char(24)
+  stageId String? @db.Char(24)
+  stageName String?
+  stageOrder Int?
+  interviewRound Int?
+  nylasEventId String?
+  nylasGrantId String?
+  schedulingConfigurationId String?
+  bookingId String?
+  title String?
+  subject String?
+  description String?
+  scheduledAt DateTime?
+  duration Int?
+  location String?
+  meetingLink String?
+  timezone String?
+  conferencing Json?
+  participants Json?
+  status String?
+  missedAt DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  type String?
+  schedulingSource String?
+  rescheduleHistory Json?
+  notes String?
+  feedback Json?
+  structuredFeedback Json?
+  notifications Json?
+  cancellationReason String?
+  cancelledBy String? @db.Char(24)
+  webhookStatus Json?
+  notetakerEnabled Boolean? @default(false)
+  notetakerId String?
+  notetakerType String?
+  notetakerStatus String?
+  notetakerError String?
+  transcript Json?
+  transcriptAvailableAt DateTime?
+  recordingUrl String?
+  teamComments String[] @db.Char(24)
+  aiInterviewSummary Json?
+  teamFeedbackAnalysis Json?
+  aiAnalysis Json?
+  isMultiCandidate Boolean? @default(false)
+  multiCandidateSessionId String?
+  multiCandidateOrder Int?
+  organizationId String? @db.Char(24)
+  analytics Json?
+  comprehensiveAnalytics Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- InterviewComment (lossless structural copy) ----
+model InterviewComment {
+  id String @id @db.Char(24)
+  interviewId String? @db.Char(24)
+  questionId String? @db.Char(24)
+  stageId String? @db.Char(24)
+  stageName String?
+  stageOrder Int?
+  authorId String? @db.Char(24)
+  authorName String?
+  authorRole String?
+  publicFeedback Json?
+  content String?
+  commentType String?
+  rating Json?
+  categories String[]
+  visibility String?
+  organization String? @db.Char(24)
+  isEdited Boolean? @default(false)
+  editHistory Json?
+  reactions Json?
+  parentCommentId String? @db.Char(24)
+  replies String[] @db.Char(24)
+  status String?
+  aiFlags Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- InterviewQuestion (lossless structural copy) ----
+model InterviewQuestion {
+  id String @id @db.Char(24)
+  jobId String? @db.Char(24)
+  question String?
+  type String?
+  category String?
+  difficulty String?
+  interviewStage String?
+  expectedAnswer String?
+  scoringCriteria Json?
+  tags String[]
+  isActive Boolean? @default(true)
+  order Int? @default(0)
+  timeLimit Int?
+  followUpQuestions Json?
+  isAIGenerated Boolean? @default(false)
+  aiGenerationMetadata Json?
+  qualityMetrics Json?
+  usage Json?
+  candidateFeedback Json?
+  interviewerFeedback Json?
+  responsePatterns Json?
+  createdBy String? @db.Char(24)
+  updatedBy String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- InterviewStage (lossless structural copy) ----
+model InterviewStage {
+  id String @id @db.Char(24)
+  jobId String? @db.Char(24)
+  name String?
+  order Int?
+  type String?
+  description String?
+  isActive Boolean? @default(true)
+  defaultDuration Int? @default(60)
+  requiredInterviewers Int? @default(1)
+  interviewerRoles String[]
+  evaluationCriteria Json?
+  aiQuestionGeneration Json?
+  defaultQuestions String[]
+  feedbackFormConfig Json?
+  progressionRules Json?
+  interviewCount Int? @default(0)
+  createdBy String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- StageTemplate (lossless structural copy) ----
+model StageTemplate {
+  id String @id @db.Char(24)
+  name String?
+  description String?
+  organizationId String? @db.Char(24)
+  stages Json?
+  createdBy String? @db.Char(24)
+  usageCount Int? @default(0)
+  lastUsedAt DateTime?
+  isActive Boolean? @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- InterviewSlotRetryTask (lossless structural copy) ----
+model InterviewSlotRetryTask {
+  id String @id @db.Char(24)
+  sessionId String?
+  organizationId String? @db.Char(24)
+  interviewerId String? @db.Char(24)
+  reportEmail String?
+  provider String?
+  sharedMeetingLink String?
+  slot Json?
+  sessionContext Json?
+  attemptsMade Int? @default(0)
+  maxAttempts Int? @default(2)
+  nextAttemptAt DateTime?
+  lastAttemptAt DateTime?
+  completedAt DateTime?
+  lastError String?
+  status String?
+  createdInterviewId String? @db.Char(24)
+  createdEventId String?
+  finalStatusEmailSent Boolean? @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- AIInterview (lossless structural copy) ----
+model AIInterview {
+  id String @id @db.Char(24)
+  organizationId String? @db.Char(24)
+  jobId String? @db.Char(24)
+  createdById String? @db.Char(24)
+  title String?
+  publicLink String?
+  guidelines String?
+  questionSnapshots Json?
+  timers Json?
+  schedule Json?
+  status String?
+  candidateCount Int?
+  voice Json?
+  creditCostPerCandidate Float?
+  costEstimate Json?
+  stats Json?
+  cancelledAt DateTime?
+  cancelledById String? @db.Char(24)
+  cancellationReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- AIInterviewSession (lossless structural copy) ----
+model AIInterviewSession {
+  id String @id @db.Char(24)
+  aiInterviewId String? @db.Char(24)
+  organizationId String? @db.Char(24)
+  jobId String? @db.Char(24)
+  candidateId String? @db.Char(24)
+  recipientType String?
+  createdById String? @db.Char(24)
+  candidateSnapshot Json?
+  tokenHash String?
+  tokenGeneratedAt DateTime?
+  status String?
+  currentQuestionIndex Int?
+  startedAt DateTime?
+  completedAt DateTime?
+  lastActivityAt DateTime?
+  questionStartedAt DateTime?
+  questionDeadlineAt DateTime?
+  totalDeadlineAt DateTime?
+  messages Json?
+  answers Json?
+  scoring Json?
+  email Json?
+  credits Json?
+  proctoring Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- AIMatchCache (lossless structural copy) ----
+model AIMatchCache {
+  id String @id @db.Char(24)
+  jobId String? @db.Char(24)
+  candidateId String? @db.Char(24)
+  matchData Json?
+  version Int?
+  cacheType String?
+  metadata Json?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- FeedbackFormTemplate (lossless structural copy) ----
+model FeedbackFormTemplate {
+  id String @id @db.Char(24)
+  organizationId String? @db.Char(24)
+  name String?
+  description String?
+  isDefault Boolean? @default(false)
+  systemFields Json?
+  customFields Json?
+  usageCount Int?
+  jobsUsingIds String[] @db.Char(24)
+  createdById String? @db.Char(24)
+  updatedById String? @db.Char(24)
+  isDeleted Boolean? @default(false)
+  deletedAt DateTime?
+  deletedById String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- CustomField (lossless structural copy) ----
+model CustomField {
+  id String @id @db.Char(24)
+  organizationId String? @db.Char(24)
+  name String?
+  label String?
+  description String?
+  type String?
+  options Json?
+  validation Json?
+  ratingConfig Json?
+  calculationFormula String?
+  usageCount Int?
+  createdById String? @db.Char(24)
+  updatedById String? @db.Char(24)
+  isDeleted Boolean? @default(false)
+  deletedAt DateTime?
+  deletedById String? @db.Char(24)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- CustomFieldResponse (lossless structural copy) ----
+model CustomFieldResponse {
+  id String @id @db.Char(24)
+  organizationId String? @db.Char(24)
+  interviewId String? @db.Char(24)
+  interviewCommentId String? @db.Char(24)
+  customFieldId String? @db.Char(24)
+  fieldName String?
+  fieldLabel String?
+  fieldType String?
+  responseValue Json?
+  respondentType String?
+  respondentId String? @db.Char(24)
+  respondentName String?
+  respondentEmail String?
+  calculationFormula String?
+  sourceFieldValues Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- FeedbackOTP (lossless structural copy) ----
+model FeedbackOTP {
+  id String @id @db.Char(24)
+  email String?
+  otp String?
+  interviewId String? @db.Char(24)
+  name String?
+  attempts Int?
+  verified Boolean? @default(false)
+  verifiedAt DateTime?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- Job (lossless structural copy) ----
+model Job {
+  id String @id @db.Char(24)
+  title String?
+  departmentId String? @db.Char(24)
+  location String?
+  type String?
+  level String?
+  description String?
+  requirements String?
+  responsibilities String?
+  skills String?
+  experience String?
+  education String?
+  salary Json?
+  benefits String?
+  status String?
+  priority String?
+  remote Boolean? @default(false)
+  openings Int? @default(1)
+  shortlist Json?
+  applicants Json?
+  hiringManagerId String? @db.Char(24)
+  recruiterIds String[] @db.Char(24)
+  interviewerIds String[] @db.Char(24)
+  applicationDeadline DateTime?
+  startDate DateTime?
+  jobBoard Json?
+  isPublic Boolean? @default(false)
+  publicSlug String?
+  publicUrl String?
+  isInternalEnabled Boolean? @default(false)
+  internalSlug String?
+  internalUrl String?
+  internalApplicationCount Int? @default(0)
+  internalCandidateApplyLimit Int? @default(0)
+  reservedInternalCredits Int? @default(0)
+  internalSettings Json?
+  analytics Json?
+  interviewStageIds String[] @db.Char(24)
+  pipelineConfiguration Json?
+  createdById String? @db.Char(24)
+  updatedById String? @db.Char(24)
+  uploadMetadata Json?
+  isEmbedded Boolean? @default(false)
+  embeddingCreatedAt DateTime?
+  emailSettings Json?
+  organizationId String? @db.Char(24)
+  candidateApplyLimit Int? @default(0)
+  reservedCredits Int? @default(0)
+  publicApplicationCount Int? @default(0)
+  feedbackFormConfig Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- ChatSession (lossless structural copy) ----
+model ChatSession {
+  id String @id @db.Char(24)
+  sessionId String?
+  userId String?
+  organizationId String? @db.Char(24)
+  title String?
+  description String?
+  isActive Boolean? @default(true)
+  isPinned Boolean? @default(false)
+  messageCount Int? @default(0)
+  lastMessage Json?
+  metadata Json?
+  lastActivity DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- ChatMessage (lossless structural copy) ----
+model ChatMessage {
+  id String @id @db.Char(24)
+  messageId String?
+  sessionId String?
+  chatSessionId String?
+  userId String?
+  role String?
+  content String?
+  metadata Json?
+  isLoading Boolean? @default(false)
+  timestamp DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- Notification (lossless structural copy) ----
+model Notification {
+  id String @id @db.Char(24)
+  userId String? @db.Char(24)
+  type String?
+  title String?
+  message String?
+  data Json?
+  read Boolean? @default(false)
+  actionUrl String?
+  actionText String?
+  priority String?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- Session (lossless structural copy) ----
+model Session {
+  id String @id @db.Char(24)
+  sessionId String?
+  userId String? @db.Char(24)
+  ipAddress String?
+  userAgent String?
+  isActive Boolean? @default(true)
+  lastActivity DateTime?
+  expiresAt DateTime?
+  metadata Json?
+  totalInteractions Int? @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

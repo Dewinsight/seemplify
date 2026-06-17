@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const Admin = require('../models/Admin');
+const prisma = require('../db/client');
 
 const INVALID_TOKEN_VALUES = new Set(['null', 'undefined', '[object Object]']);
 
@@ -54,17 +54,20 @@ const adminAuth = async (req, res, next) => {
       }
       
       // Get admin from database
-      const admin = await Admin.findById(decoded.admin.id).select('-password');
-      
+      const admin = await prisma.admin.findUnique({ where: { id: decoded.admin.id } });
+
       if (!admin) {
         return res.status(401).json({ msg: 'Admin not found' });
       }
-      
+      if (admin.password !== undefined) delete admin.password;
+
       if (!admin.isActive) {
         return res.status(401).json({ msg: 'Admin account is deactivated' });
       }
-      
-      if (admin.isLocked) {
+
+      // `isLocked` was a Mongoose virtual: lockUntil set and in the future.
+      const isLocked = !!(admin.lockUntil && admin.lockUntil > Date.now());
+      if (isLocked) {
         return res.status(401).json({ msg: 'Admin account is locked' });
       }
       

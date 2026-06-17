@@ -2,8 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 
-const ScreeningQuestion = require('../models/ScreeningQuestion');
-const Job = require('../models/Job');
+const prisma = require('../db/client');
 
 /**
  * Screening Questions Routes
@@ -19,16 +18,19 @@ router.get('/jobs/:id/questions', async (req, res) => {
     const { id: jobId } = req.params;
 
     // Check if job exists
-    const job = await Job.findById(jobId);
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
     // Fetch all active questions
-    const questions = await ScreeningQuestion.find({
-      job: jobId,
-      isActive: true
-    }).sort({ order: 1 });
+    const questions = await prisma.screeningQuestion.findMany({
+      where: {
+        jobId,
+        isActive: true
+      },
+      orderBy: { order: 'asc' }
+    });
 
     res.json(questions);
   } catch (error) {
@@ -43,23 +45,29 @@ router.post('/jobs/:id/questions', async (req, res) => {
     const { id: jobId } = req.params;
 
     // Check if job exists
-    const job = await Job.findById(jobId);
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
-    const screeningQuestion = new ScreeningQuestion({
-      job: jobId,
-      ...req.body,
-      createdBy: req.user._id,
-      isActive: true
+    // Only persist known ScreeningQuestion columns from the request body
+    const writableFields = ['type', 'question', 'description', 'isRequired', 'order', 'options', 'condition', 'action'];
+    const bodyData = {};
+    writableFields.forEach(key => {
+      if (req.body[key] !== undefined) bodyData[key] = req.body[key];
     });
 
-    await screeningQuestion.save();
+    const screeningQuestion = await prisma.screeningQuestion.create({
+      data: {
+        jobId,
+        ...bodyData,
+        createdBy: req.user.id,
+        isActive: true
+      }
+    });
 
     // Update job's updatedAt timestamp
-    job.updatedAt = Date.now();
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { updatedAt: new Date() } });
 
     res.status(201).json(screeningQuestion);
   } catch (error) {
@@ -74,28 +82,30 @@ router.put('/jobs/:id/questions/:questionId', async (req, res) => {
     const { id: jobId, questionId } = req.params;
 
     // Check if question exists
-    const screeningQuestion = await ScreeningQuestion.findOne({
-      _id: questionId,
-      job: jobId
+    let screeningQuestion = await prisma.screeningQuestion.findFirst({
+      where: { id: questionId, jobId }
     });
     if (!screeningQuestion) {
       return res.status(404).json({ msg: 'Screening question not found' });
     }
 
-    // Update fields
+    // Update fields (only persist known ScreeningQuestion columns)
+    const updatableFields = ['type', 'question', 'description', 'isRequired', 'order', 'options', 'condition', 'action', 'isActive', 'createdBy'];
+    const updateData = {};
     Object.keys(req.body).forEach(key => {
-      if (req.body[key] !== undefined) {
-        screeningQuestion[key] = req.body[key];
+      if (req.body[key] !== undefined && updatableFields.includes(key)) {
+        updateData[key] = req.body[key];
       }
     });
+    updateData.updatedAt = new Date();
 
-    screeningQuestion.updatedAt = Date.now();
-    await screeningQuestion.save();
+    screeningQuestion = await prisma.screeningQuestion.update({
+      where: { id: screeningQuestion.id },
+      data: updateData
+    });
 
     // Update job's updatedAt timestamp
-    const job = await Job.findById(jobId);
-    job.updatedAt = Date.now();
-    await job.save();
+    await prisma.job.update({ where: { id: jobId }, data: { updatedAt: new Date() } });
 
     res.json(screeningQuestion);
   } catch (error) {
@@ -110,23 +120,21 @@ router.delete('/jobs/:id/questions/:questionId', async (req, res) => {
     const { id: jobId, questionId } = req.params;
 
     // Check if question exists
-    const screeningQuestion = await ScreeningQuestion.findOne({
-      _id: questionId,
-      job: jobId
+    const screeningQuestion = await prisma.screeningQuestion.findFirst({
+      where: { id: questionId, jobId }
     });
     if (!screeningQuestion) {
       return res.status(404).json({ msg: 'Screening question not found' });
     }
 
     // Soft delete by setting isActive to false
-    screeningQuestion.isActive = false;
-    screeningQuestion.updatedAt = Date.now();
-    await screeningQuestion.save();
+    await prisma.screeningQuestion.update({
+      where: { id: screeningQuestion.id },
+      data: { isActive: false, updatedAt: new Date() }
+    });
 
     // Update job's updatedAt timestamp
-    const job = await Job.findById(jobId);
-    job.updatedAt = Date.now();
-    await job.save();
+    await prisma.job.update({ where: { id: jobId }, data: { updatedAt: new Date() } });
 
     res.json({ msg: 'Screening question deleted successfully' });
   } catch (error) {
@@ -147,27 +155,26 @@ router.put('/jobs/:id/questions/reorder', async (req, res) => {
     }
 
     // Check if job exists
-    const job = await Job.findById(jobId);
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
     // Update orders
     for (const { questionId, order } of questionOrders) {
-      const screeningQuestion = await ScreeningQuestion.findOne({
-        _id: questionId,
-        job: jobId
+      const screeningQuestion = await prisma.screeningQuestion.findFirst({
+        where: { id: questionId, jobId }
       });
       if (screeningQuestion) {
-        screeningQuestion.order = order;
-        screeningQuestion.updatedAt = Date.now();
-        await screeningQuestion.save();
+        await prisma.screeningQuestion.update({
+          where: { id: screeningQuestion.id },
+          data: { order, updatedAt: new Date() }
+        });
       }
     }
 
     // Update job's updatedAt timestamp
-    job.updatedAt = Date.now();
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { updatedAt: new Date() } });
 
     res.json({ msg: 'Questions reordered successfully' });
   } catch (error) {

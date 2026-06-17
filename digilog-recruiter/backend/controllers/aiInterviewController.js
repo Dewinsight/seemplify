@@ -1,11 +1,6 @@
 const crypto = require('crypto');
-const mongoose = require('mongoose');
-const AIInterview = require('../models/AIInterview');
-const AIInterviewSession = require('../models/AIInterviewSession');
-const Candidate = require('../models/Candidate');
-const InterviewQuestion = require('../models/InterviewQuestion');
-const Job = require('../models/Job');
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
+const { isObjectIdLike, newId } = require('../db/objectId');
 const creditsService = require('../services/creditsService');
 const aiInterviewerService = require('../services/aiInterviewerService');
 const aiInterviewEmailService = require('../services/aiInterviewEmailService');
@@ -43,7 +38,7 @@ function getOrganizationId(req) {
 }
 
 function isValidObjectId(value) {
-  return mongoose.Types.ObjectId.isValid(String(value));
+  return isObjectIdLike(String(value));
 }
 
 function normalizeEmail(value) {
@@ -65,6 +60,39 @@ function splitFullName(value) {
 
 function hashPublicToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+// Persist the mutable Json columns of an AIInterviewSession after in-memory edits.
+// Replaces Mongoose's document.save() — messages/answers/scoring/proctoring/etc.
+// are all Json columns now.
+async function saveSession(session) {
+  return prisma.aIInterviewSession.update({
+    where: { id: session.id },
+    data: {
+      status: session.status,
+      currentQuestionIndex: session.currentQuestionIndex,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
+      lastActivityAt: session.lastActivityAt,
+      questionStartedAt: session.questionStartedAt,
+      questionDeadlineAt: session.questionDeadlineAt,
+      totalDeadlineAt: session.totalDeadlineAt,
+      messages: session.messages,
+      answers: session.answers,
+      scoring: session.scoring,
+      proctoring: session.proctoring
+    }
+  });
+}
+
+// Replaces Mongoose subdocument array `.create()` + `.push()` semantics — pushes a
+// plain object (with an ObjectId-format `_id`) onto a Json array, creating it if
+// missing, and returns the pushed object.
+function pushSubdoc(arrayHolder, key, data) {
+  if (!Array.isArray(arrayHolder[key])) arrayHolder[key] = [];
+  const doc = { _id: newId(), ...data };
+  arrayHolder[key].push(doc);
+  return doc;
 }
 
 function createLegacyPublicLinkValue() {
@@ -290,17 +318,18 @@ function buildPublicState(session, interview) {
 }
 
 async function syncInterviewStats(interviewId) {
-  const rows = await AIInterviewSession.aggregate([
-    { $match: { aiInterview: new mongoose.Types.ObjectId(String(interviewId)) } },
-    { $group: { _id: '$status', count: { $sum: 1 } } }
-  ]);
+  const rows = await prisma.aIInterviewSession.groupBy({
+    by: ['status'],
+    where: { aiInterviewId: String(interviewId) },
+    _count: { _all: true }
+  });
 
   const counts = rows.reduce((acc, row) => {
-    acc[row._id] = row.count;
+    acc[row.status] = row._count._all;
     return acc;
   }, {});
 
-  await AIInterview.findByIdAndUpdate(interviewId, {
+  await prisma.aIInterview.update({ where: { id: String(interviewId) }, data: {
     stats: {
       sent: counts.sent || 0,
       opened: counts.opened || 0,
@@ -310,7 +339,7 @@ async function syncInterviewStats(interviewId) {
       failed: (counts.email_failed || 0) + (counts.proctor_failed || 0),
       proctorFailed: counts.proctor_failed || 0
     }
-  });
+  } });
 }
 
 function upsertDraftAnswer(session, interview, answerText) {
@@ -318,9 +347,10 @@ function upsertDraftAnswer(session, interview, answerText) {
   const question = interview.questionSnapshots[index];
   if (!question) return null;
 
+  if (!Array.isArray(session.answers)) session.answers = [];
   let answer = session.answers.find((item) => item.questionIndex === index);
   if (!answer) {
-    answer = session.answers.create({
+    answer = pushSubdoc(session, 'answers', {
       questionIndex: index,
       questionId: question.questionId,
       question: question.question,
@@ -328,7 +358,6 @@ function upsertDraftAnswer(session, interview, answerText) {
       status: 'draft',
       startedAt: session.questionStartedAt || new Date()
     });
-    session.answers.push(answer);
   }
 
   const existing = answer.answer ? `${answer.answer}\n\n` : '';
@@ -343,9 +372,10 @@ function finalizeCurrentAnswer(session, interview, mode = 'answered') {
   const question = interview.questionSnapshots[index];
   if (!question) return null;
 
+  if (!Array.isArray(session.answers)) session.answers = [];
   let answer = session.answers.find((item) => item.questionIndex === index);
   if (!answer) {
-    answer = session.answers.create({
+    answer = pushSubdoc(session, 'answers', {
       questionIndex: index,
       questionId: question.questionId,
       question: question.question,
@@ -353,7 +383,6 @@ function finalizeCurrentAnswer(session, interview, mode = 'answered') {
       status: 'draft',
       startedAt: session.questionStartedAt || now
     });
-    session.answers.push(answer);
   }
 
   const hasAnswer = Boolean(String(answer.answer || '').trim());
@@ -372,14 +401,15 @@ async function completeSession(session, interview) {
   session.status = 'completed';
   session.completedAt = new Date();
   session.lastActivityAt = new Date();
-  session.messages.push({
+  pushSubdoc(session, 'messages', {
     role: 'ai',
     content: 'That completes the interview. Thank you for taking the time to answer these questions.',
     questionIndex: null,
     messageType: 'transition'
   });
+  if (!session.scoring || typeof session.scoring !== 'object') session.scoring = {};
   session.scoring.status = 'processing';
-  await session.save();
+  await saveSession(session);
 
   try {
     const score = await aiInterviewerService.scoreInterview({ interview, session });
@@ -400,7 +430,7 @@ async function completeSession(session, interview) {
     session.scoring.error = error.message;
   }
 
-  await session.save();
+  await saveSession(session);
   await syncInterviewStats(interview._id);
   return session;
 }
@@ -419,7 +449,7 @@ async function advanceQuestion(session, interview, mode = 'answered') {
   session.questionStartedAt = now;
   session.questionDeadlineAt = addMinutes(now, getQuestionLimitMinutes(interview, nextQuestion));
   session.lastActivityAt = now;
-  session.messages.push({
+  pushSubdoc(session, 'messages', {
     role: 'ai',
     content: `Confirmed. We are moving to question ${nextIndex + 1} of ${interview.questionSnapshots.length}.`,
     questionIndex: nextIndex,
@@ -433,14 +463,14 @@ async function advanceQuestion(session, interview, mode = 'answered') {
     questionNumber: nextIndex + 1
   });
 
-  session.messages.push({
+  pushSubdoc(session, 'messages', {
     role: 'ai',
     content: intro,
     questionIndex: nextIndex,
     messageType: 'question'
   });
 
-  await session.save();
+  await saveSession(session);
   await syncInterviewStats(interview._id);
   return session;
 }
@@ -455,7 +485,7 @@ async function enforceDeadlines(session, interview) {
   if (new Date(interview.schedule.expiresAt) <= now) {
     session.status = 'expired';
     session.lastActivityAt = now;
-    await session.save();
+    await saveSession(session);
     await syncInterviewStats(interview._id);
     return session;
   }
@@ -478,16 +508,43 @@ async function enforceDeadlines(session, interview) {
 
 async function findPublicSession(token) {
   const tokenHash = hashPublicToken(token);
-  return AIInterviewSession.findOne({ tokenHash })
-    .populate({
-      path: 'aiInterview',
-      populate: [
-        { path: 'job', select: 'title description organization' },
-        { path: 'organization', select: 'name' }
-      ]
-    })
-    .populate('job', 'title description')
-    .populate('candidate', 'firstName lastName email');
+  const session = await prisma.aIInterviewSession.findFirst({ where: { tokenHash } });
+  if (!session) return null;
+
+  // Stitch soft-refs to mirror the old .populate output shape.
+  if (session.aiInterviewId) {
+    const interview = await prisma.aIInterview.findUnique({ where: { id: session.aiInterviewId } });
+    if (interview) {
+      if (interview.jobId) {
+        interview.job = await prisma.job.findUnique({
+          where: { id: interview.jobId },
+          select: { id: true, title: true, description: true, organizationId: true }
+        });
+      } else {
+        interview.job = null;
+      }
+      if (interview.organizationId) {
+        interview.organization = await prisma.organization.findUnique({
+          where: { id: interview.organizationId },
+          select: { id: true, name: true }
+        });
+      } else {
+        interview.organization = null;
+      }
+    }
+    session.aiInterview = interview;
+  } else {
+    session.aiInterview = null;
+  }
+
+  session.job = session.jobId
+    ? await prisma.job.findUnique({ where: { id: session.jobId }, select: { id: true, title: true, description: true } })
+    : null;
+  session.candidate = session.candidateId
+    ? await prisma.candidate.findUnique({ where: { id: session.candidateId }, select: { id: true, firstName: true, lastName: true, email: true } })
+    : null;
+
+  return session;
 }
 
 exports.getAIInterviewOptions = async (req, res) => {
@@ -639,15 +696,18 @@ exports.createAIInterview = async (req, res) => {
       return res.status(400).json({ error: 'INVALID_SCHEDULE', message: 'Send time must be before expiry' });
     }
 
-    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: jobId, organizationId: organizationId } });
     if (!job) {
       return res.status(404).json({ error: 'JOB_NOT_FOUND', message: 'Job not found for this organization' });
     }
 
-    const candidates = await Candidate.find({
-      _id: { $in: uniqueCandidateIds },
-      organization: organizationId
-    }).select('firstName lastName email organization');
+    const candidates = await prisma.candidate.findMany({
+      where: {
+        id: { in: uniqueCandidateIds },
+        organizationId: organizationId
+      },
+      select: { id: true, firstName: true, lastName: true, email: true, organizationId: true }
+    });
 
     if (candidates.length !== uniqueCandidateIds.length) {
       return res.status(400).json({ error: 'INVALID_CANDIDATES', message: 'One or more candidates were not found in this organization' });
@@ -680,15 +740,17 @@ exports.createAIInterview = async (req, res) => {
       }),
       ...normalizedGuests.map((guest) => ({
         recipientType: 'guest',
-        candidateId: new mongoose.Types.ObjectId(),
+        candidateId: newId(),
         candidateSnapshot: guest
       }))
     ];
 
-    const questions = await InterviewQuestion.find({
-      _id: { $in: uniqueQuestionIds },
-      jobId,
-      isActive: true
+    const questions = await prisma.interviewQuestion.findMany({
+      where: {
+        id: { in: uniqueQuestionIds },
+        jobId,
+        isActive: true
+      }
     });
 
     if (questions.length !== uniqueQuestionIds.length) {
@@ -742,10 +804,10 @@ exports.createAIInterview = async (req, res) => {
       });
     }
 
-    const aiInterview = await AIInterview.create({
-      organization: organizationId,
-      job: job._id,
-      createdBy: userId,
+    const aiInterview = await prisma.aIInterview.create({ data: {
+      organizationId: organizationId,
+      jobId: job._id,
+      createdById: userId,
       title: title?.trim() || `${decodeHtmlEntities(job.title)} AI Interview`,
       publicLink: createLegacyPublicLinkValue(),
       guidelines: guidelines?.trim() || '',
@@ -788,22 +850,27 @@ exports.createAIInterview = async (req, res) => {
         rateSource: costEstimate.displayValue?.source,
         calculatedAt: new Date()
       }
-    });
+    } });
 
-    const sessions = await AIInterviewSession.insertMany(recipients.map((recipient) => {
-      return {
-        aiInterview: aiInterview._id,
-        organization: organizationId,
-        job: job._id,
-        candidate: recipient.candidateId,
-        recipientType: recipient.recipientType,
-        createdBy: userId,
-        candidateSnapshot: recipient.candidateSnapshot,
-        credits: {
-          cost: perCandidateCost
-        }
-      };
+    const sessionRows = recipients.map((recipient) => ({
+      id: newId(),
+      aiInterviewId: aiInterview._id,
+      organizationId: organizationId,
+      jobId: job._id,
+      candidateId: recipient.candidateId,
+      recipientType: recipient.recipientType,
+      createdById: userId,
+      candidateSnapshot: recipient.candidateSnapshot,
+      credits: {
+        cost: perCandidateCost
+      }
     }));
+    await prisma.aIInterviewSession.createMany({ data: sessionRows });
+    const createdSessions = await prisma.aIInterviewSession.findMany({
+      where: { id: { in: sessionRows.map((row) => row.id) } }
+    });
+    const createdById = new Map(createdSessions.map((s) => [String(s.id), s]));
+    const sessions = sessionRows.map((row) => createdById.get(String(row.id))).filter(Boolean);
 
     await syncInterviewStats(aiInterview._id);
 
@@ -828,25 +895,42 @@ exports.listAIInterviews = async (req, res) => {
   try {
     const organizationId = getOrganizationId(req);
     const { status, jobId } = req.query;
-    const query = { organization: organizationId };
-    if (status && status !== 'all') query.status = status;
-    if (jobId && isValidObjectId(jobId)) query.job = jobId;
+    const where = { organizationId: organizationId };
+    if (status && status !== 'all') where.status = status;
+    if (jobId && isValidObjectId(jobId)) where.jobId = jobId;
 
-    const aiInterviews = await AIInterview.find(query)
-      .populate('job', 'title status')
-      .populate('createdBy', 'email profile')
-      .sort({ createdAt: -1 })
-      .limit(100);
+    const aiInterviews = await prisma.aIInterview.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+
+    // Stitch job (title/status) + createdBy (email/profile) soft-refs.
+    const jobIds = Array.from(new Set(aiInterviews.map((i) => i.jobId).filter(Boolean)));
+    const creatorIds = Array.from(new Set(aiInterviews.map((i) => i.createdById).filter(Boolean)));
+    const jobs = jobIds.length
+      ? await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, title: true, status: true } })
+      : [];
+    const creators = creatorIds.length
+      ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, email: true, profile: true } })
+      : [];
+    const jobById = new Map(jobs.map((j) => [String(j.id), j]));
+    const creatorById = new Map(creators.map((u) => [String(u.id), u]));
+    for (const interview of aiInterviews) {
+      interview.job = interview.jobId ? (jobById.get(String(interview.jobId)) || null) : null;
+      interview.createdBy = interview.createdById ? (creatorById.get(String(interview.createdById)) || null) : null;
+    }
 
     const interviewIds = aiInterviews.map((interview) => interview._id);
-    const sessions = await AIInterviewSession.find({
-      aiInterview: { $in: interviewIds },
-      organization: organizationId
-    })
-      .select('aiInterview candidateSnapshot status completedAt answers scoring proctoring')
-      .lean();
+    const sessions = await prisma.aIInterviewSession.findMany({
+      where: {
+        aiInterviewId: { in: interviewIds },
+        organizationId: organizationId
+      },
+      select: { id: true, aiInterviewId: true, candidateSnapshot: true, status: true, completedAt: true, answers: true, scoring: true, proctoring: true }
+    });
     const sessionsByInterview = sessions.reduce((map, session) => {
-      const key = String(session.aiInterview);
+      const key = String(session.aiInterviewId);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(session);
       return map;
@@ -855,7 +939,7 @@ exports.listAIInterviews = async (req, res) => {
     res.json({
       success: true,
       aiInterviews: aiInterviews.map((interview) => {
-        const item = interview.toObject();
+        const item = interview;
         item.scoringSummary = buildScoringSummary(sessionsByInterview.get(String(interview._id)) || []);
         return item;
       })
@@ -870,19 +954,35 @@ exports.getAIInterview = async (req, res) => {
   try {
     const organizationId = getOrganizationId(req);
     const { id } = req.params;
-    const aiInterview = await AIInterview.findOne({ _id: id, organization: organizationId })
-      .populate('job', 'title status description')
-      .populate('createdBy', 'email profile');
+    const aiInterview = await prisma.aIInterview.findFirst({ where: { id, organizationId: organizationId } });
 
     if (!aiInterview) {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview not found' });
     }
 
-    const sessions = await AIInterviewSession.find({ aiInterview: aiInterview._id, organization: organizationId })
-      .populate('candidate', 'firstName lastName email status')
-      .sort({ createdAt: 1 });
+    // Stitch job + createdBy soft-refs.
+    aiInterview.job = aiInterview.jobId
+      ? await prisma.job.findUnique({ where: { id: aiInterview.jobId }, select: { id: true, title: true, status: true, description: true } })
+      : null;
+    aiInterview.createdBy = aiInterview.createdById
+      ? await prisma.user.findUnique({ where: { id: aiInterview.createdById }, select: { id: true, email: true, profile: true } })
+      : null;
 
-    const aiInterviewObject = aiInterview.toObject();
+    const sessions = await prisma.aIInterviewSession.findMany({
+      where: { aiInterviewId: aiInterview._id, organizationId: organizationId },
+      orderBy: { createdAt: 'asc' }
+    });
+    // Stitch candidate (firstName/lastName/email/status) onto each session.
+    const sessionCandidateIds = Array.from(new Set(sessions.map((s) => s.candidateId).filter(Boolean)));
+    const sessionCandidates = sessionCandidateIds.length
+      ? await prisma.candidate.findMany({ where: { id: { in: sessionCandidateIds } }, select: { id: true, firstName: true, lastName: true, email: true, status: true } })
+      : [];
+    const sessionCandidateById = new Map(sessionCandidates.map((c) => [String(c.id), c]));
+    for (const session of sessions) {
+      session.candidate = session.candidateId ? (sessionCandidateById.get(String(session.candidateId)) || null) : null;
+    }
+
+    const aiInterviewObject = aiInterview;
     aiInterviewObject.scoringSummary = buildScoringSummary(sessions);
 
     res.json({ success: true, aiInterview: aiInterviewObject, sessions });
@@ -896,18 +996,28 @@ exports.getAIInterviewSession = async (req, res) => {
   try {
     const organizationId = getOrganizationId(req);
     const { id, sessionId } = req.params;
-    const session = await AIInterviewSession.findOne({
-      _id: sessionId,
-      aiInterview: id,
-      organization: organizationId
-    })
-      .populate('aiInterview')
-      .populate('job', 'title status')
-      .populate('candidate', 'firstName lastName email status');
+    const session = await prisma.aIInterviewSession.findFirst({
+      where: {
+        id: sessionId,
+        aiInterviewId: id,
+        organizationId: organizationId
+      }
+    });
 
     if (!session) {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview session not found' });
     }
+
+    // Stitch aiInterview (full) + job + candidate soft-refs.
+    session.aiInterview = session.aiInterviewId
+      ? await prisma.aIInterview.findUnique({ where: { id: session.aiInterviewId } })
+      : null;
+    session.job = session.jobId
+      ? await prisma.job.findUnique({ where: { id: session.jobId }, select: { id: true, title: true, status: true } })
+      : null;
+    session.candidate = session.candidateId
+      ? await prisma.candidate.findUnique({ where: { id: session.candidateId }, select: { id: true, firstName: true, lastName: true, email: true, status: true } })
+      : null;
 
     res.json({ success: true, session });
   } catch (error) {
@@ -921,24 +1031,29 @@ exports.cancelAIInterview = async (req, res) => {
     const organizationId = getOrganizationId(req);
     const userId = getUserId(req);
     const { id } = req.params;
-    const aiInterview = await AIInterview.findOne({ _id: id, organization: organizationId });
+    const aiInterview = await prisma.aIInterview.findFirst({ where: { id, organizationId: organizationId } });
 
     if (!aiInterview) {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview not found' });
     }
 
-    aiInterview.status = 'cancelled';
-    aiInterview.cancelledAt = new Date();
-    aiInterview.cancelledBy = userId;
-    aiInterview.cancellationReason = req.body?.reason || '';
-    await aiInterview.save();
+    await prisma.aIInterview.update({
+      where: { id: aiInterview.id },
+      data: {
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancelledById: userId,
+        cancellationReason: req.body?.reason || ''
+      }
+    });
 
-    await AIInterviewSession.updateMany({
-      aiInterview: id,
-      organization: organizationId,
-      status: { $nin: Array.from(TERMINAL_SESSION_STATUSES) }
-    }, {
-      $set: { status: 'cancelled' }
+    await prisma.aIInterviewSession.updateMany({
+      where: {
+        aiInterviewId: id,
+        organizationId: organizationId,
+        status: { notIn: Array.from(TERMINAL_SESSION_STATUSES) }
+      },
+      data: { status: 'cancelled' }
     });
 
     await syncInterviewStats(id);
@@ -954,7 +1069,7 @@ exports.resendAIInterviewSessions = async (req, res) => {
     const organizationId = getOrganizationId(req);
     const { id } = req.params;
     const { sessionIds } = req.body;
-    const aiInterview = await AIInterview.findOne({ _id: id, organization: organizationId });
+    const aiInterview = await prisma.aIInterview.findFirst({ where: { id, organizationId: organizationId } });
 
     if (!aiInterview) {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'AI interview not found' });
@@ -964,23 +1079,26 @@ exports.resendAIInterviewSessions = async (req, res) => {
       return res.status(400).json({ error: 'EXPIRED', message: 'Cannot resend an expired AI interview' });
     }
 
-    const query = {
-      aiInterview: id,
-      organization: organizationId,
-      status: { $in: ['sent', 'opened', 'email_failed', 'credit_blocked', 'credit_error'] }
+    const where = {
+      aiInterviewId: id,
+      organizationId: organizationId,
+      status: { in: ['sent', 'opened', 'email_failed', 'credit_blocked', 'credit_error'] }
     };
     if (Array.isArray(sessionIds) && sessionIds.length) {
-      query._id = { $in: sessionIds };
+      where.id = { in: sessionIds };
     }
 
-    const result = await AIInterviewSession.updateMany(query, {
-      $set: {
-        status: 'pending_send',
-        tokenHash: null,
-        tokenGeneratedAt: null,
-        'email.lastError': null
-      }
-    });
+    // email is a Json column -> read-modify-write per row to clear email.lastError.
+    const toResend = await prisma.aIInterviewSession.findMany({ where, select: { id: true, email: true } });
+    for (const row of toResend) {
+      const email = { ...(row.email || {}) };
+      email.lastError = null;
+      await prisma.aIInterviewSession.update({
+        where: { id: row.id },
+        data: { status: 'pending_send', tokenHash: null, tokenGeneratedAt: null, email }
+      });
+    }
+    const result = { modifiedCount: toResend.length };
 
     await aiInterviewEmailService.checkAndSendInvites();
     await syncInterviewStats(id);
@@ -1004,7 +1122,7 @@ exports.bootstrapPublicInterview = async (req, res) => {
     if (session.status === 'sent') {
       session.status = 'opened';
       session.lastActivityAt = new Date();
-      await session.save();
+      await saveSession(session);
       await syncInterviewStats(interview._id);
     }
 
@@ -1121,7 +1239,7 @@ exports.startPublicInterview = async (req, res) => {
       session.questionStartedAt = now;
       session.questionDeadlineAt = addMinutes(now, getQuestionLimitMinutes(interview, firstQuestion));
       session.totalDeadlineAt = addMinutes(now, interview.timers?.totalMinutes || 60);
-      session.messages.push({
+      pushSubdoc(session, 'messages', {
         role: 'ai',
         content: `Hello ${session.candidateSnapshot?.firstName || ''}. Thanks for joining this AI interview. There are ${interview.questionSnapshots.length} questions, and I will guide you through them one at a time.`,
         questionIndex: null,
@@ -1135,13 +1253,13 @@ exports.startPublicInterview = async (req, res) => {
         questionNumber: 1
       });
 
-      session.messages.push({
+      pushSubdoc(session, 'messages', {
         role: 'ai',
         content: intro,
         questionIndex: 0,
         messageType: 'question'
       });
-      await session.save();
+      await saveSession(session);
       await syncInterviewStats(interview._id);
     }
 
@@ -1173,7 +1291,7 @@ exports.sendPublicMessage = async (req, res) => {
 
     const currentQuestion = interview.questionSnapshots[session.currentQuestionIndex];
     const candidateMessage = String(message).trim();
-    session.messages.push({
+    pushSubdoc(session, 'messages', {
       role: 'candidate',
       content: candidateMessage,
       questionIndex: session.currentQuestionIndex,
@@ -1189,7 +1307,7 @@ exports.sendPublicMessage = async (req, res) => {
         questionNumber: session.currentQuestionIndex + 1,
         candidateMessage
       });
-      session.messages.push({
+      pushSubdoc(session, 'messages', {
         role: 'ai',
         content: aiReply,
         questionIndex: session.currentQuestionIndex,
@@ -1203,7 +1321,7 @@ exports.sendPublicMessage = async (req, res) => {
         question: currentQuestion,
         candidateMessage
       });
-      session.messages.push({
+      pushSubdoc(session, 'messages', {
         role: 'ai',
         content: aiReply,
         questionIndex: session.currentQuestionIndex,
@@ -1212,7 +1330,7 @@ exports.sendPublicMessage = async (req, res) => {
     }
 
     session.lastActivityAt = new Date();
-    await session.save();
+    await saveSession(session);
 
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
@@ -1248,7 +1366,7 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
 
     if (role === 'candidate') {
       const isClarification = aiInterviewerService.isLikelyClarification(content);
-      session.messages.push({
+      pushSubdoc(session, 'messages', {
         role: 'candidate',
         content,
         questionIndex,
@@ -1261,7 +1379,7 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
     } else {
       const allowedTypes = new Set(['greeting', 'question', 'clarification', 'acknowledgement', 'transition', 'system']);
       const requestedType = String(req.body?.messageType || '').trim();
-      session.messages.push({
+      pushSubdoc(session, 'messages', {
         role: 'ai',
         content,
         questionIndex,
@@ -1270,7 +1388,7 @@ exports.recordPublicVoiceTranscript = async (req, res) => {
     }
 
     session.lastActivityAt = new Date();
-    await session.save();
+    await saveSession(session);
 
     res.json({ success: true, ...buildPublicState(session, interview) });
   } catch (error) {
@@ -1354,7 +1472,7 @@ exports.recordPublicProctoringEvent = async (req, res) => {
         session.completedAt = now;
         session.proctoring.terminatedAt = now;
         session.proctoring.terminationReason = message;
-        session.messages.push({
+        pushSubdoc(session, 'messages', {
           role: 'system',
           content: message,
           questionIndex: session.currentQuestionIndex,
@@ -1376,17 +1494,18 @@ exports.recordPublicProctoringEvent = async (req, res) => {
         : 'Pasting prepared answers is disabled for this interview. This attempt has been logged for the recruiter.';
     }
 
-    session.proctoring.violations.push({
+    pushSubdoc(session.proctoring, 'violations', {
       type,
       category,
       questionIndex: session.currentQuestionIndex,
       count,
       actionTaken: action,
       message,
-      metadata: safeProctoringMetadata(req.body?.metadata, req)
+      metadata: safeProctoringMetadata(req.body?.metadata, req),
+      createdAt: now
     });
     session.lastActivityAt = now;
-    await session.save();
+    await saveSession(session);
     await syncInterviewStats(interview._id);
 
     res.json({
@@ -1421,7 +1540,7 @@ exports.synthesizePublicSpeech = async (req, res) => {
     const rawMessageId = req.body?.messageId ? String(req.body.messageId).trim() : '';
     let content = '';
     if (rawMessageId) {
-      const message = session.messages.id(rawMessageId);
+      const message = (session.messages || []).find((m) => String(m._id || m.id) === rawMessageId);
       if (!message || message.role !== 'ai') {
         return res.status(404).json({ error: 'MESSAGE_NOT_FOUND', message: 'Interview message not found' });
       }
@@ -1529,12 +1648,12 @@ exports.resetPublicSession = async (req, res) => {
 
     session.status = 'sent';
     session.currentQuestionIndex = 0;
-    session.startedAt = undefined;
-    session.completedAt = undefined;
+    session.startedAt = null;
+    session.completedAt = null;
     session.lastActivityAt = new Date();
-    session.questionStartedAt = undefined;
-    session.questionDeadlineAt = undefined;
-    session.totalDeadlineAt = undefined;
+    session.questionStartedAt = null;
+    session.questionDeadlineAt = null;
+    session.totalDeadlineAt = null;
     session.messages = [];
     session.answers = [];
     session.scoring = {
@@ -1559,7 +1678,23 @@ exports.resetPublicSession = async (req, res) => {
       terminationReason: undefined
     };
 
-    await session.save();
+    await prisma.aIInterviewSession.update({
+      where: { id: session.id },
+      data: {
+        status: session.status,
+        currentQuestionIndex: session.currentQuestionIndex,
+        startedAt: null,
+        completedAt: null,
+        lastActivityAt: session.lastActivityAt,
+        questionStartedAt: null,
+        questionDeadlineAt: null,
+        totalDeadlineAt: null,
+        messages: session.messages,
+        answers: session.answers,
+        scoring: session.scoring,
+        proctoring: session.proctoring
+      }
+    });
     await syncInterviewStats(session.aiInterview._id);
 
     res.json({ success: true, ...buildPublicState(session, session.aiInterview) });

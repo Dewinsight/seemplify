@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
-const User = require('../models/User');
+const prisma = require('../db/client');
 const browserFingerprintService = require('../services/browserFingerprintService');
 const sessionService = require('../services/sessionService');
 const notificationService = require('../services/notificationService');
@@ -11,8 +11,8 @@ const notificationService = require('../services/notificationService');
 // @access  Private
 router.get('/', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('security.trustedBrowsers');
-        
+        const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, security: true } });
+
         if (!user || !user.security || !user.security.trustedBrowsers) {
             return res.json({ devices: [] });
         }
@@ -44,8 +44,8 @@ router.get('/', authMiddleware, async (req, res) => {
 // @access  Private
 router.delete('/:deviceId', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
-        
+        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
         if (!user || !user.security || !user.security.trustedBrowsers) {
             return res.status(404).json({ msg: 'No trusted devices found' });
         }
@@ -87,8 +87,8 @@ router.delete('/:deviceId', authMiddleware, async (req, res) => {
 // @access  Private
 router.delete('/', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
-        
+        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
         if (!user || !user.security || !user.security.trustedBrowsers) {
             return res.status(404).json({ msg: 'No trusted devices found' });
         }
@@ -104,7 +104,7 @@ router.delete('/', authMiddleware, async (req, res) => {
             browser => browser.fingerprint === currentFingerprint
         );
 
-        await user.save();
+        await prisma.user.update({ where: { id: user.id }, data: { security: user.security } });
 
         for (const browser of removedBrowsers) {
             await sessionService.revokeSessionsByFingerprint(user._id, browser.fingerprint, 'device_removed_all');

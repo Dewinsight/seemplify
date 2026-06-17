@@ -1,0 +1,29 @@
+# Isolated local PostgreSQL for the digilog-recruiter MongoDB -> Postgres migration.
+# Deliberately separate from the EnterpriseDB PostgreSQL 18 on :5432 and from the
+# lms Postgres, so this migration can't disturb anything else on the machine.
+#
+#   docker compose -f docker-compose.postgres.yml up -d      # start
+#   docker compose -f docker-compose.postgres.yml down       # stop (keeps data)
+#   docker compose -f docker-compose.postgres.yml down -v     # stop + wipe data
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: digilog-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: digilog
+      POSTGRES_PASSWORD: digilog_local
+      POSTGRES_DB: digilog
+    ports:
+      - "5544:5432"
+    volumes:
+      # postgres:18+ stores data in a versioned subdir; mount the parent dir.
+      - digilog_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digilog -d digilog"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  digilog_pgdata:

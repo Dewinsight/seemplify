@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const User = require('../models/User');
+const prisma = require('../db/client');
 const browserFingerprintService = require('../services/browserFingerprintService');
 const otpService = require('../services/otpService');
 const sessionService = require('../services/sessionService');
@@ -10,47 +10,38 @@ const jwt = require('jsonwebtoken');
 
 const router = express.Router();
 
+// Persist a mutated `security` blob for a Prisma user.
+async function saveSecurity(user) {
+  return prisma.user.update({ where: { id: user.id }, data: { security: user.security } });
+}
+
 // @route   POST /api/auth/signup
 // @desc    Register a new user
 // @access  Public
 router.post('/signup', async (req, res) => {
   const { email, password } = req.body;
 
-  // Validate input
   if (!email || !password) {
     return res.status(400).json({ msg: 'Please enter all fields' });
   }
 
   try {
-    // Check for existing user
-    let user = await User.findOne({ email });
-    if (user) {
+    const existing = await prisma.user.findFirst({ where: { email } });
+    if (existing) {
       return res.status(400).json({ msg: 'User already exists' });
     }
 
-    // Create new user
-    user = new User({
-      email,
-      password,
+    const salt = await bcrypt.genSalt(10);
+    const hashed = await bcrypt.hash(password, salt);
+
+    const user = await prisma.user.create({
+      data: { email, password: hashed, security: { lastOtpSent: new Date() } },
     });
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
-
-    // Save user to database
-    await user.save();
-
-    // Email confirmation: send a one-time code (via Brevo) before first sign-in.
-    // The frontend shows the OTP step, then calls POST /verify-otp which trusts
-    // this browser, issues the session, and proceeds to organization setup.
+    // Email confirmation: send a one-time code before first sign-in.
     const fingerprintData = browserFingerprintService.generateFingerprint(req);
     const otp = otpService.generateOTP();
     otpService.storeOTP(user.id, otp, 'login');
-
-    user.security = user.security || {};
-    user.security.lastOtpSent = new Date();
-    await user.save();
 
     try {
       await otpService.sendOTPEmail(user, otp, fingerprintData.browserInfo);
@@ -62,7 +53,7 @@ router.post('/signup', async (req, res) => {
     return res.status(200).json({
       requiresOTP: true,
       message: 'Verification code sent to your email',
-      browserInfo: fingerprintData.browserInfo
+      browserInfo: fingerprintData.browserInfo,
     });
   } catch (err) {
     console.error(err.message);
@@ -76,55 +67,41 @@ router.post('/signup', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
-  // Validate input
   if (!email || !password) {
     return res.status(400).json({ msg: 'Please enter all fields' });
   }
 
   try {
-    // Check for user
-    let user = await User.findOne({ email });
+    const user = await prisma.user.findFirst({ where: { email } });
     if (!user) {
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
-    // Validate password
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password || '');
     if (!isMatch) {
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
-    // Generate browser fingerprint
     const fingerprintData = browserFingerprintService.generateFingerprint(req);
-
-    // Check if browser is trusted
     const isTrusted = browserFingerprintService.isBrowserTrusted(user, fingerprintData.fingerprint);
 
-    // If browser is not trusted, require OTP
     if (!isTrusted) {
-      // Check if user can receive OTP (rate limiting)
       const canSend = otpService.canSendOTP(user);
-
-      // Even if rate limited, still show OTP modal so user can enter existing OTP
       if (!canSend.allowed) {
         return res.status(200).json({
           requiresOTP: true,
           message: canSend.reason,
           browserInfo: fingerprintData.browserInfo,
-          rateLimited: true  // Flag to indicate rate limiting
+          rateLimited: true,
         });
       }
 
-      // Generate and send OTP
       const otp = otpService.generateOTP();
       otpService.storeOTP(user.id, otp, 'login');
 
-      // Update user's last OTP sent time
-      user.security = user.security || {};
-      user.security.lastOtpSent = new Date();
-      await user.save();
+      user.security = { ...(user.security || {}), lastOtpSent: new Date() };
+      await saveSecurity(user);
 
-      // Send OTP email
       try {
         await otpService.sendOTPEmail(user, otp, fingerprintData.browserInfo);
       } catch (emailError) {
@@ -132,15 +109,13 @@ router.post('/login', async (req, res) => {
         return res.status(500).json({ msg: 'Failed to send verification email' });
       }
 
-      // Return response indicating OTP is required
       return res.status(200).json({
         requiresOTP: true,
         message: 'Verification code sent to your email',
-        browserInfo: fingerprintData.browserInfo
+        browserInfo: fingerprintData.browserInfo,
       });
     }
 
-    // Browser is trusted, update last used
     await browserFingerprintService.updateBrowserLastUsed(user, fingerprintData.fingerprint);
 
     const { accessToken, refreshToken, session } = await sessionService.createSession({
@@ -158,57 +133,49 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        mfaEnabled: user.security?.mfaEnabled || false
-      }
+        mfaEnabled: user.security?.mfaEnabled || false,
+      },
     });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');
   }
 });
+
 // @route   POST /api/auth/verify-otp
 // @desc    Verify OTP and complete login
 // @access  Public
 router.post('/verify-otp', async (req, res) => {
   const { email, otp } = req.body;
 
-  // Validate input
   if (!email || !otp) {
     return res.status(400).json({ msg: 'Please provide email and OTP' });
   }
 
   try {
-    // Find user
-    const user = await User.findOne({ email });
+    const user = await prisma.user.findFirst({ where: { email } });
     if (!user) {
       return res.status(400).json({ msg: 'Invalid request' });
     }
 
-    // Verify OTP
     const verificationResult = otpService.verifyOTP(user.id, otp, 'login');
 
     if (!verificationResult.valid) {
-      // Update failed attempts
       await otpService.updateOTPAttempts(user, true);
-
       return res.status(400).json({
         msg: verificationResult.reason,
-        remainingAttempts: verificationResult.remainingAttempts
+        remainingAttempts: verificationResult.remainingAttempts,
       });
     }
 
-    // OTP is valid, reset attempts
     await otpService.updateOTPAttempts(user, false);
 
-    // Get browser fingerprint and add to trusted browsers
     const fingerprintData = browserFingerprintService.generateFingerprint(req);
     await browserFingerprintService.addTrustedBrowser(user, fingerprintData);
 
-    // Enable MFA if not already enabled
     if (!user.security?.mfaEnabled) {
-      user.security = user.security || {};
-      user.security.mfaEnabled = true;
-      await user.save();
+      user.security = { ...(user.security || {}), mfaEnabled: true };
+      await saveSecurity(user);
     }
 
     const { accessToken, refreshToken, session } = await sessionService.createSession({
@@ -223,12 +190,8 @@ router.post('/verify-otp', async (req, res) => {
       refreshToken,
       expiresIn: process.env.JWT_ACCESS_TTL || '10m',
       sessionId: session.accessTokenId,
-      user: {
-        id: user.id,
-        email: user.email,
-        mfaEnabled: true
-      },
-      message: 'Device trusted successfully'
+      user: { id: user.id, email: user.email, mfaEnabled: true },
+      message: 'Device trusted successfully',
     });
   } catch (err) {
     console.error('OTP verification error:', err.message);
@@ -265,7 +228,6 @@ router.post('/refresh-token', async (req, res) => {
       refresh_expired: 'refresh_expired',
       user_not_found: 'user_not_found',
     };
-
     const code = codeMap[error.message] || 'refresh_failed';
     res.status(401).json({ msg: 'Refresh token invalid or expired', code });
   }
@@ -276,43 +238,33 @@ router.post('/refresh-token', async (req, res) => {
 // @access  Public
 router.post('/resend-otp', async (req, res) => {
   const { email } = req.body;
-
   if (!email) {
     return res.status(400).json({ msg: 'Email is required' });
   }
 
   try {
-    const user = await User.findOne({ email });
+    const user = await prisma.user.findFirst({ where: { email } });
     if (!user) {
       return res.status(400).json({ msg: 'Invalid request' });
     }
 
-    // Check if user can receive OTP (rate limiting)
     const canSend = otpService.canSendOTP(user);
     if (!canSend.allowed) {
       return res.status(429).json({ msg: canSend.reason });
     }
 
-    // Clear old OTP and generate new one
     otpService.clearOTP(user.id, 'login');
     const otp = otpService.generateOTP();
     otpService.storeOTP(user.id, otp, 'login');
 
-    // Update last OTP sent time
-    user.security = user.security || {};
-    user.security.lastOtpSent = new Date();
-    await user.save();
+    user.security = { ...(user.security || {}), lastOtpSent: new Date() };
+    await saveSecurity(user);
 
-    // Get browser info for email
     const fingerprintData = browserFingerprintService.generateFingerprint(req);
 
-    // Send OTP email
     try {
       await otpService.sendOTPEmail(user, otp, fingerprintData.browserInfo);
-      res.json({
-        message: 'New verification code sent to your email',
-        nextResendIn: 60 // seconds
-      });
+      res.json({ message: 'New verification code sent to your email', nextResendIn: 60 });
     } catch (emailError) {
       console.error('Failed to send OTP email:', emailError);
       return res.status(500).json({ msg: 'Failed to send verification email' });
@@ -330,22 +282,18 @@ router.post('/forgot-password', async (req, res) => {
   const { email, frontendUrl } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const user = await prisma.user.findFirst({ where: { email } });
     if (!user) {
-      // We don't want to reveal that the user doesn't exist
+      // Don't reveal whether the user exists
       return res.status(200).json({ msg: 'If a user with that email exists, a password reset link has been sent.' });
     }
 
-    // Generate token
     const token = crypto.randomBytes(20).toString('hex');
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { resetPasswordToken: token, resetPasswordExpires: new Date(Date.now() + 3600000) },
+    });
 
-    // Set token and expiration on user
-    user.resetPasswordToken = token;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
-
-    await user.save();
-
-    // Send email with dynamic frontend URL
     await emailService.sendPasswordResetEmail(user.email, token, frontendUrl);
 
     res.json({ msg: 'If a user with that email exists, a password reset link has been sent.' });
@@ -362,23 +310,26 @@ router.post('/reset-password', async (req, res) => {
   const { token, password } = req.body;
 
   try {
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() },
+    const user = await prisma.user.findFirst({
+      where: { resetPasswordToken: token, resetPasswordExpires: { gt: new Date() } },
     });
 
     if (!user) {
       return res.status(400).json({ msg: 'Password reset token is invalid or has expired.' });
     }
 
-    // Set new password
     const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    user.lastPasswordChange = new Date();
+    const hashed = await bcrypt.hash(password, salt);
 
-    await user.save();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashed,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+        lastPasswordChange: new Date(),
+      },
+    });
 
     res.json({ msg: 'Password has been reset successfully.' });
   } catch (error) {

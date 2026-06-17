@@ -1,11 +1,7 @@
-const Interview = require('../models/Interview');
-const InterviewComment = require('../models/InterviewComment');
-const Candidate = require('../models/Candidate');
-const Job = require('../models/Job');
-const User = require('../models/User');
-const Organization = require('../models/Organization');
-const InterviewStage = require('../models/InterviewStage');
-const Notification = require('../models/Notification');
+const prisma = require('../db/client');
+const { oid, isObjectIdLike, newId } = require('../db/objectId');
+const orgAccess = require('../db/orgAccess');
+const Notification = require('../db/notify');
 const nylasV3Service = require('../services/nylasV3Service');
 const nylasEmailService = require('../services/nylasEmailService');
 const grantManagementService = require('../services/grantManagementService'); // NEW: Grant management
@@ -17,13 +13,110 @@ const pdfService = require('../services/pdfService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { handleNylasError, handleInterviewError } = require('../utils/errorHandler');
 const timezoneUtils = require('../utils/timezoneUtils');
-const mongoose = require('mongoose');
 const { evaluateFormula } = require('../utils/formulaEvaluator');
-const FeedbackFormTemplate = require('../models/FeedbackFormTemplate');
-const CustomField = require('../models/CustomField');
-const CustomFieldResponse = require('../models/CustomFieldResponse');
 
 // ==================== HELPER FUNCTIONS ====================
+
+/**
+ * Stitch CustomField rows into a FeedbackFormTemplate's customFields[].customFieldRef.
+ * Postgres replacement for Mongoose `template.populate('customFields.customFieldRef')`.
+ * Mutates the template in place so each entry's `customFieldRef` (an id string) becomes
+ * the referenced CustomField document (or stays as-is if not found).
+ */
+async function populateTemplateCustomFieldRefs(template) {
+  if (!template || !Array.isArray(template.customFields)) return template;
+  const refIds = template.customFields
+    .map(f => (f && f.customFieldRef ? oid(f.customFieldRef) : null))
+    .filter(id => id && isObjectIdLike(id));
+  if (refIds.length === 0) return template;
+  const fields = await prisma.customField.findMany({ where: { id: { in: refIds } } });
+  const byId = new Map(fields.map(f => [String(f.id), f]));
+  template.customFields = template.customFields.map(f => {
+    if (f && f.customFieldRef) {
+      const ref = byId.get(oid(f.customFieldRef));
+      if (ref) return { ...f, customFieldRef: ref };
+    }
+    return f;
+  });
+  return template;
+}
+
+/**
+ * Postgres replacement for Mongoose `interview.populate('jobId candidateId interviewerId ...')`.
+ * Stitches the referenced documents onto the soft-ref id properties (jobId -> Job,
+ * candidateId -> Candidate, interviewerId -> User, stageId -> InterviewStage), mirroring
+ * how Mongoose replaces the id on the same property with the populated document.
+ * `rels` is an array of relation names to populate (defaults to all common ones).
+ */
+async function populateInterviewRefs(interview, rels = ['jobId', 'candidateId', 'interviewerId']) {
+  if (!interview) return interview;
+  const want = new Set(rels);
+  if (want.has('candidateId') && interview.candidateId && isObjectIdLike(oid(interview.candidateId))) {
+    interview.candidateId = await prisma.candidate.findUnique({ where: { id: oid(interview.candidateId) } }) || interview.candidateId;
+  }
+  if (want.has('interviewerId') && interview.interviewerId && isObjectIdLike(oid(interview.interviewerId))) {
+    interview.interviewerId = await prisma.user.findUnique({ where: { id: oid(interview.interviewerId) } }) || interview.interviewerId;
+  }
+  if (want.has('jobId') && interview.jobId && isObjectIdLike(oid(interview.jobId))) {
+    interview.jobId = await prisma.job.findUnique({ where: { id: oid(interview.jobId) } }) || interview.jobId;
+  }
+  if (want.has('stageId') && interview.stageId && isObjectIdLike(oid(interview.stageId))) {
+    interview.stageId = await prisma.interviewStage.findUnique({ where: { id: oid(interview.stageId) } }) || interview.stageId;
+  }
+  return interview;
+}
+
+/**
+ * Stitch authorId (User), questionId (InterviewQuestion) and replies (child
+ * InterviewComment docs) onto an array of InterviewComment rows in place.
+ * Postgres replacement for the populate chain in InterviewComment.getForInterview.
+ */
+async function stitchCommentRefs(comments) {
+  if (!Array.isArray(comments) || comments.length === 0) return comments;
+  const authorIds = [...new Set(comments.map(c => oid(c.authorId)).filter(id => id && isObjectIdLike(id)))];
+  const questionIds = [...new Set(comments.map(c => oid(c.questionId)).filter(id => id && isObjectIdLike(id)))];
+  const replyIds = [...new Set(comments.flatMap(c => Array.isArray(c.replies) ? c.replies.map(oid) : []).filter(id => id && isObjectIdLike(id)))];
+
+  const [authors, questions, replies] = await Promise.all([
+    authorIds.length ? prisma.user.findMany({ where: { id: { in: authorIds } } }) : [],
+    questionIds.length ? prisma.interviewQuestion.findMany({ where: { id: { in: questionIds } } }) : [],
+    replyIds.length ? prisma.interviewComment.findMany({ where: { id: { in: replyIds } } }) : []
+  ]);
+  const authorsById = new Map(authors.map(a => [String(a.id), a]));
+  const questionsById = new Map(questions.map(q => [String(q.id), q]));
+  const repliesById = new Map(replies.map(r => [String(r.id), r]));
+
+  for (const c of comments) {
+    if (c.authorId && authorsById.has(oid(c.authorId))) c.authorId = authorsById.get(oid(c.authorId));
+    if (c.questionId && questionsById.has(oid(c.questionId))) c.questionId = questionsById.get(oid(c.questionId));
+    if (Array.isArray(c.replies)) c.replies = c.replies.map(r => repliesById.get(oid(r)) || r);
+  }
+  return comments;
+}
+
+/**
+ * Compute comment analytics from a set of active InterviewComment rows.
+ * Postgres replacement for InterviewComment.getAnalytics; returns an array with a
+ * single result object (or empty array when there are no comments), matching the
+ * aggregate's `analytics[0]` consumption.
+ */
+function computeCommentAnalytics(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const totalComments = rows.length;
+  const ratings = rows.map(r => r.rating && typeof r.rating.overall === 'number' ? r.rating.overall : null).filter(v => v != null);
+  const avgRating = ratings.length ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 100) / 100 : null;
+  const commentTypeDistribution = {};
+  for (const r of rows) {
+    const t = r.commentType;
+    if (t != null) commentTypeDistribution[t] = (commentTypeDistribution[t] || 0) + 1;
+  }
+  const sentimentDistribution = {};
+  for (const r of rows) {
+    const s = r.aiFlags && r.aiFlags.sentiment;
+    if (s != null) sentimentDistribution[s] = (sentimentDistribution[s] || 0) + 1;
+  }
+  return [{ totalComments, avgRating, commentTypeDistribution, sentimentDistribution }];
+}
 
 /**
  * Get calculated fields from job's feedback template
@@ -39,12 +132,11 @@ async function getCalculatedFieldsFromTemplate(job) {
     // Get template from job's config or use default
     let template;
     if (job.feedbackFormConfig && job.feedbackFormConfig.templateId) {
-      template = await FeedbackFormTemplate.findById(job.feedbackFormConfig.templateId);
+      template = await prisma.feedbackFormTemplate.findUnique({ where: { id: job.feedbackFormConfig.templateId } });
     } else {
       // Get default template for organization
-      template = await FeedbackFormTemplate.findOne({
-        organization: job.organization,
-        isDefault: true
+      template = await prisma.feedbackFormTemplate.findFirst({
+        where: { organizationId: job.organizationId, isDefault: true }
       });
     }
 
@@ -52,8 +144,8 @@ async function getCalculatedFieldsFromTemplate(job) {
       return [];
     }
 
-    // Populate custom field references
-    await template.populate('customFields.customFieldRef');
+    // Populate custom field references (stitch CustomField rows into customFields[].customFieldRef)
+    await populateTemplateCustomFieldRefs(template);
 
     // Filter for calculated fields that are visible
     const calculatedFields = template.customFields
@@ -350,12 +442,13 @@ async function resolveOrganizationName({
 
     const resolvedOrganizationId =
       organizationId ||
+      interviewer?.currentOrganizationId ||
       interviewer?.currentOrganization ||
       interviewer?.organization?._id ||
       interviewer?.organization;
 
-    if (resolvedOrganizationId && mongoose.Types.ObjectId.isValid(String(resolvedOrganizationId))) {
-      const org = await Organization.findById(resolvedOrganizationId).select('name');
+    if (resolvedOrganizationId && isObjectIdLike(String(resolvedOrganizationId))) {
+      const org = await prisma.organization.findUnique({ where: { id: String(resolvedOrganizationId) }, select: { name: true } });
       if (org?.name) {
         return decodeHtmlEntities(org.name);
       }
@@ -470,9 +563,12 @@ const scheduleInterview = async (req, res) => {
     }
     
     // Get candidate, interviewer, and job details
-    const candidate = await Candidate.findById(candidateId).populate('jobAppliedFor');
-    const interviewer = await User.findById(interviewerId);
-    
+    const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
+    if (candidate && candidate.jobAppliedForId) {
+      candidate.jobAppliedFor = await prisma.job.findUnique({ where: { id: candidate.jobAppliedForId } });
+    }
+    const interviewer = await prisma.user.findUnique({ where: { id: interviewerId } });
+
     if (!candidate) {
       return res.status(404).json({ error: 'CANDIDATE_NOT_FOUND', message: 'Candidate not found' });
     }
@@ -495,8 +591,7 @@ const scheduleInterview = async (req, res) => {
     // Get account credentials if user has a linked Nylas account
     let accountCredentials = null;
     if (interviewer.nylasAccountId) {
-      const NylasAccount = require('../models/NylasAccount');
-      const nylasAccount = await NylasAccount.findById(interviewer.nylasAccountId).select('+apiKey');
+      const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interviewer.nylasAccountId } });
       if (nylasAccount) {
         accountCredentials = {
           apiKey: nylasAccount.apiKey,
@@ -507,7 +602,7 @@ const scheduleInterview = async (req, res) => {
         console.log(`   Using Nylas account: ${nylasAccount.name}`);
       }
     }
-    
+
     const grantVerification = await nylasV3Service.verifyGrantStatus(interviewer.nylasGrantId, accountCredentials);
     
     if (!grantVerification.valid) {
@@ -516,8 +611,8 @@ const scheduleInterview = async (req, res) => {
       // Update user's grant status in database
       interviewer.nylasGrantStatus = 'invalid';
       interviewer.calendarConnected = false;
-      await interviewer.save();
-      
+      await prisma.user.update({ where: { id: interviewer.id }, data: { nylasGrantStatus: 'invalid', calendarConnected: false } });
+
       return res.status(403).json({
         error: 'CALENDAR_CONNECTION_INVALID',
         message: grantVerification.message || 'Your calendar connection is no longer valid. Please reconnect your calendar.',
@@ -526,7 +621,7 @@ const scheduleInterview = async (req, res) => {
         requiresReconnection: grantVerification.requiresReconnection
       });
     }
-    
+
     console.log(`✅ Grant verified for ${interviewer.email} - ${grantVerification.grantInfo?.provider}`);
 
     if ((type || 'video') === 'video' && isMicrosoftProvider(provider)) {
@@ -535,14 +630,14 @@ const scheduleInterview = async (req, res) => {
         return res.status(400).json(teamsPreflightError);
       }
     }
-    
+
     // Track grant activity to support LRU rotation when capacity is full.
     interviewer.lastGrantRefresh = new Date();
     if (interviewer.nylasGrantStatus !== 'active') {
       interviewer.nylasGrantStatus = 'active';
     }
-    await interviewer.save();
-    
+    await prisma.user.update({ where: { id: interviewer.id }, data: { lastGrantRefresh: interviewer.lastGrantRefresh, nylasGrantStatus: interviewer.nylasGrantStatus } });
+
     // Get job information - prioritize jobId from request, then candidate's linked job
     let job = null;
     let jobTitle = 'Position';
@@ -550,7 +645,7 @@ const scheduleInterview = async (req, res) => {
     
     if (jobId) {
       // If jobId is provided in request, use it
-      job = await Job.findById(jobId);
+      job = await prisma.job.findUnique({ where: { id: jobId } });
       if (job) {
         jobTitle = decodeHtmlEntities(job.title) || 'Position';
         jobCompany = decodeHtmlEntities(job.company) || 'Company';
@@ -909,11 +1004,11 @@ const scheduleInterview = async (req, res) => {
         reminderTime: 24, // Default 24 hours before
         sendQuestionsToInterviewers: sendQuestionsToInterviewers,
         questionsSendTime: questionsSendTime || 60, // Default 60 minutes before
-        selectedQuestions: selectedQuestionIds && selectedQuestionIds.length > 0 
+        selectedQuestions: selectedQuestionIds && selectedQuestionIds.length > 0
           ? selectedQuestionIds.map(id => {
               console.log(`Converting question ID to ObjectId: ${id}`);
-              return new mongoose.Types.ObjectId(id);
-            }) 
+              return String(id);
+            })
           : []
       },
       participants: buildInterviewParticipants({
@@ -943,8 +1038,7 @@ const scheduleInterview = async (req, res) => {
       
       // Also try to get the stage name for better context
       try {
-        const InterviewStage = require('../models/InterviewStage');
-        const stage = await InterviewStage.findById(stageId);
+        const stage = await prisma.interviewStage.findUnique({ where: { id: stageId } });
         if (stage) {
           interviewData.stageName = stage.name;
         }
@@ -962,11 +1056,11 @@ const scheduleInterview = async (req, res) => {
       notetakerResultExists: !!notetakerResult
     });
     
-    const interview = new Interview(interviewData);
-    
+    let interview;
+
     try {
-    await interview.save();
-    
+    interview = await prisma.interview.create({ data: interviewData });
+
     console.log('💾 Interview saved to database:', {
       id: interview._id,
       notetakerEnabled: interview.notetakerEnabled,
@@ -1116,8 +1210,7 @@ const scheduleInterview = async (req, res) => {
           // Get account credentials if interviewer has a linked Nylas account
           let emailAccountCredentials = null;
           if (interviewer.nylasAccountId) {
-            const NylasAccount = require('../models/NylasAccount');
-            const nylasAccount = await NylasAccount.findById(interviewer.nylasAccountId).select('+apiKey');
+            const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interviewer.nylasAccountId } });
             if (nylasAccount) {
               emailAccountCredentials = {
                 apiKey: nylasAccount.apiKey,
@@ -1231,8 +1324,7 @@ const scheduleInterview = async (req, res) => {
       // Get account credentials if interviewer has a linked Nylas account (for both candidate and notification emails)
       let emailAccountCredentials = null;
       if (interviewer.nylasAccountId) {
-        const NylasAccount = require('../models/NylasAccount');
-        const nylasAccount = await NylasAccount.findById(interviewer.nylasAccountId).select('+apiKey');
+        const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interviewer.nylasAccountId } });
         if (nylasAccount) {
           emailAccountCredentials = {
             apiKey: nylasAccount.apiKey,
@@ -1375,7 +1467,7 @@ Best regards,
     const originalStatus = candidate.status;
     if (validPreInterviewStatuses.includes(originalStatus)) {
       candidate.status = 'interviewing';
-      await candidate.save();
+      await prisma.candidate.update({ where: { id: candidate.id }, data: { status: 'interviewing' } });
       console.log(`✅ Individual candidate status updated: ${originalStatus} → interviewing`);
     } else {
       console.log(`ℹ️ Individual candidate status not updated - already at ${originalStatus} stage`);
@@ -1388,9 +1480,11 @@ Best regards,
         console.log(`DEBUG: job._id before findById: ${job._id}`);
         
         // Find and update the job pipeline status
-        const Job = require('../models/Job');
-        const jobWithApplicants = await Job.findById(job._id);
-        
+        const jobWithApplicants = await prisma.job.findUnique({ where: { id: job._id } });
+        if (jobWithApplicants && !Array.isArray(jobWithApplicants.applicants)) {
+          jobWithApplicants.applicants = [];
+        }
+
         if (jobWithApplicants) {
           console.log(`DEBUG: jobWithApplicants found: ${jobWithApplicants._id}`);
           console.log(`📋 Found job with ${jobWithApplicants.applicants.length} applicants`);
@@ -1427,9 +1521,8 @@ Best regards,
               targetStageName = interviewStage ? interviewStage.name : jobWithApplicants.stages[0].name;
             } else if (targetStageId) {
               // If stageId is provided, try to get the stage name
-              const InterviewStage = require('../models/InterviewStage');
               try {
-                const stage = await InterviewStage.findById(targetStageId);
+                const stage = await prisma.interviewStage.findUnique({ where: { id: targetStageId } });
                 if (stage) {
                   targetStageName = stage.name;
                 }
@@ -1442,7 +1535,7 @@ Best regards,
             if (targetStageId) {
               // Set currentStage as an object with all required fields
               applicant.currentStage = {
-                stageId: new mongoose.Types.ObjectId(targetStageId),
+                stageId: String(targetStageId),
                 stageName: targetStageName,
                 enteredAt: new Date()
               };
@@ -1468,7 +1561,7 @@ Best regards,
               
               // Add the new stage to history
               applicant.stageHistory.push({
-                stageId: new mongoose.Types.ObjectId(targetStageId),
+                stageId: String(targetStageId),
                 stageName: targetStageName,
                 enteredAt: new Date()
               });
@@ -1507,8 +1600,8 @@ Best regards,
               status: 'scheduled'
             });
             
-            await jobWithApplicants.save();
-            
+            await prisma.job.update({ where: { id: jobWithApplicants.id }, data: { applicants: jobWithApplicants.applicants } });
+
             if (validPreInterviewStatuses.includes(previousStatus)) {
               console.log(`✅ Pipeline status updated: ${previousStatus} → interviewing`);
             } else {
@@ -1534,9 +1627,8 @@ Best regards,
                 targetStageName = interviewStage ? interviewStage.name : jobWithApplicants.stages[0].name;
               } else if (targetStageId) {
                 // If stageId is provided, try to get the stage name
-                const InterviewStage = require('../models/InterviewStage');
                 try {
-                  const stage = await InterviewStage.findById(targetStageId);
+                  const stage = await prisma.interviewStage.findUnique({ where: { id: targetStageId } });
                   if (stage) {
                     targetStageName = stage.name;
                   }
@@ -1581,7 +1673,7 @@ Best regards,
                 }]
               });
               
-              await jobWithApplicants.save();
+              await prisma.job.update({ where: { id: jobWithApplicants.id }, data: { applicants: jobWithApplicants.applicants } });
               console.log(`✅ Candidate added to pipeline with interview scheduled`);
               
             } catch (addError) {
@@ -1602,9 +1694,9 @@ Best regards,
       console.log(`ℹ️ No job provided for pipeline update (job: ${job ? job._id : 'null'})`);
     }
     
-    res.json({ 
-      success: true, 
-      interview: await interview.populate('jobId candidateId interviewerId'),
+    res.json({
+      success: true,
+      interview: await populateInterviewRefs(interview),
       event: {
         id: event.id,
         title: event.title,
@@ -1747,9 +1839,11 @@ const scheduleFromPipeline = async (req, res) => {
       try {
         console.log(`🔄 [PIPELINE] Updating status for candidate ${candidateId} in job ${jobId}`);
         
-        const Job = require('../models/Job');
-        const job = await Job.findById(jobId);
-        
+        const job = await prisma.job.findUnique({ where: { id: jobId } });
+        if (job && !Array.isArray(job.applicants)) {
+          job.applicants = [];
+        }
+
         if (job) {
           console.log(`📋 [PIPELINE] Found job: ${job.title} with ${job.applicants.length} applicants`);
           
@@ -1786,7 +1880,7 @@ const scheduleFromPipeline = async (req, res) => {
                 previousStatus
               });
               
-              await job.save();
+              await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
               console.log(`✅ [PIPELINE] Status updated: ${previousStatus} → interviewing`);
             } else {
               console.log(`ℹ️ [PIPELINE] Status not updated - candidate already at ${previousStatus} stage`);
@@ -1864,19 +1958,18 @@ const getAvailability = async (req, res) => {
     const { userId } = req.params;
     const { startDate, endDate, duration = 60 } = req.query;
     
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.nylasGrantId) {
       return res.status(404).json({
         error: 'USER_CALENDAR_NOT_FOUND',
         message: 'User not found or calendar not connected'
       });
     }
-    
+
     // Get account credentials if user has a linked Nylas account
     let availabilityAccountCredentials = null;
     if (user.nylasAccountId) {
-      const NylasAccount = require('../models/NylasAccount');
-      const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+      const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
       if (nylasAccount) {
         availabilityAccountCredentials = {
           apiKey: nylasAccount.apiKey,
@@ -2049,10 +2142,8 @@ const handleOAuthCallback = async (req, res) => {
         
         // MULTI-ACCOUNT: Get the selected Nylas account from state
         if (stateData.nylasAccountId) {
-          const NylasAccount = require('../models/NylasAccount');
-          selectedNylasAccount = await NylasAccount.findById(stateData.nylasAccountId)
-            .select('+apiKey +clientSecret');
-          
+          selectedNylasAccount = await prisma.nylasAccount.findUnique({ where: { id: stateData.nylasAccountId } });
+
           if (selectedNylasAccount) {
             console.log(`✅ Using Nylas account from state: ${selectedNylasAccount.name}`);
           } else {
@@ -2083,18 +2174,18 @@ const handleOAuthCallback = async (req, res) => {
         
         if (stateData.userId) {
           console.log('Looking up user by ID:', stateData.userId);
-          user = await User.findById(stateData.userId);
+          user = await prisma.user.findUnique({ where: { id: stateData.userId } });
           console.log('User found by ID:', user ? `${user.email} (${user._id})` : 'null');
         }
         if (!user && stateData.email) {
           console.log('Looking up user by email:', stateData.email);
-          user = await User.findOne({ email: stateData.email });
+          user = await prisma.user.findFirst({ where: { email: stateData.email } });
           console.log('User found by email:', user ? `${user.email} (${user._id})` : 'null');
         }
       } catch (parseError) {
         console.log('State parsing failed, treating as email:', parseError.message);
         // If parsing fails, treat state as email (old format)
-        user = await User.findOne({ email: state });
+        user = await prisma.user.findFirst({ where: { email: state } });
         console.log('User found by fallback email:', user ? `${user.email} (${user._id})` : 'null');
       }
     }
@@ -2102,7 +2193,7 @@ const handleOAuthCallback = async (req, res) => {
     // Fallback: try to find user by grant email if available
     if (!user && grant.email) {
       console.log('Final fallback - looking up user by grant email:', grant.email);
-      user = await User.findOne({ email: grant.email });
+      user = await prisma.user.findFirst({ where: { email: grant.email } });
       console.log('User found by grant email:', user ? `${user.email} (${user._id})` : 'null');
     }
     
@@ -2111,11 +2202,11 @@ const handleOAuthCallback = async (req, res) => {
     let rotationInfo = null;
     
     // Only check for grant rotation if we didn't get an account from state (backward compatibility)
-    if (!selectedNylasAccount && user && user.currentOrganization) {
+    if (!selectedNylasAccount && user && user.currentOrganizationId) {
       try {
         console.log('\n🎰 Checking grant slot availability (backward compatibility mode)...');
         const slotResult = await grantManagementService.ensureGrantSlotAvailable(
-          user.currentOrganization,
+          user.currentOrganizationId,
           user.email
         );
         
@@ -2319,9 +2410,8 @@ const handleOAuthCallback = async (req, res) => {
         let previousAccountCredentials = null;
         
         if (previousNylasAccountId) {
-          const NylasAccount = require('../models/NylasAccount');
-          const previousNylasAccount = await NylasAccount.findById(previousNylasAccountId).select('+apiKey');
-          
+          const previousNylasAccount = await prisma.nylasAccount.findUnique({ where: { id: previousNylasAccountId } });
+
           if (previousNylasAccount) {
             previousAccountCredentials = {
               apiKey: previousNylasAccount.apiKey,
@@ -2353,7 +2443,14 @@ const handleOAuthCallback = async (req, res) => {
     user.calendarProvider = provider;
     user.grantConnectedAt = new Date(); // Record timestamp when grant was connected
     user.nylasAccountId = selectedNylasAccount ? selectedNylasAccount._id : null; // Link to Nylas account
-    await user.save();
+    await prisma.user.update({ where: { id: user.id }, data: {
+      nylasGrantId: user.nylasGrantId,
+      nylasGrantStatus: user.nylasGrantStatus,
+      calendarConnected: user.calendarConnected,
+      calendarProvider: user.calendarProvider,
+      grantConnectedAt: user.grantConnectedAt,
+      nylasAccountId: user.nylasAccountId
+    } });
     
     // Update grant counts for both old and new accounts when switching.
     const accountsToUpdate = new Set();
@@ -2696,7 +2793,7 @@ const getCalendarStatus = async (req, res) => {
     console.log('=== GET CALENDAR STATUS ===');
     console.log('Requested userId:', userId);
     
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       console.log('❌ User not found for ID:', userId);
       return res.status(404).json({
@@ -2727,8 +2824,7 @@ const getCalendarStatus = async (req, res) => {
       // Get account credentials if user has a linked Nylas account
       let accountCredentials = null;
       if (user.nylasAccountId) {
-        const NylasAccount = require('../models/NylasAccount');
-        const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+        const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
         if (nylasAccount) {
           accountCredentials = {
             apiKey: nylasAccount.apiKey,
@@ -2769,24 +2865,25 @@ const getJobInterviews = async (req, res) => {
     const { jobId } = req.params;
     
     // First verify the job belongs to the user's organization
-    const Job = require('../models/Job');
-    const job = await Job.findOne({ 
-      _id: jobId, 
-      organization: req.user.currentOrganization 
+    const job = await prisma.job.findFirst({
+      where: { id: jobId, organizationId: req.user.currentOrganization }
     });
-    
+
     if (!job) {
       return res.status(404).json({
         error: 'JOB_NOT_FOUND',
         message: 'Job not found in your organization'
       });
     }
-    
-    const interviews = await Interview.find({ jobId })
-      .populate('candidateId', 'firstName lastName email')
-      .populate('interviewerId', 'name email')
-      .sort({ scheduledAt: 1 });
-    
+
+    const interviews = await prisma.interview.findMany({
+      where: { jobId },
+      orderBy: { scheduledAt: 'asc' }
+    });
+    for (const iv of interviews) {
+      await populateInterviewRefs(iv, ['candidateId', 'interviewerId']);
+    }
+
     res.json({ interviews });
     
   } catch (error) {
@@ -2802,24 +2899,25 @@ const getCandidateInterviews = async (req, res) => {
     const { candidateId } = req.params;
     
     // First verify the candidate belongs to the user's organization
-    const Candidate = require('../models/Candidate');
-    const candidate = await Candidate.findOne({ 
-      _id: candidateId, 
-      organization: req.user.currentOrganization 
+    const candidate = await prisma.candidate.findFirst({
+      where: { id: candidateId, organizationId: req.user.currentOrganization }
     });
-    
+
     if (!candidate) {
       return res.status(404).json({
         error: 'CANDIDATE_NOT_FOUND',
         message: 'Candidate not found in your organization'
       });
     }
-    
-    const interviews = await Interview.find({ candidateId })
-      .populate('jobId', 'title company')
-      .populate('interviewerId', 'name email')
-      .sort({ scheduledAt: -1 });
-    
+
+    const interviews = await prisma.interview.findMany({
+      where: { candidateId },
+      orderBy: { scheduledAt: 'desc' }
+    });
+    for (const iv of interviews) {
+      await populateInterviewRefs(iv, ['jobId', 'interviewerId']);
+    }
+
     res.json({ interviews });
     
   } catch (error) {
@@ -2836,79 +2934,65 @@ const getInterviews = async (req, res) => {
     
     // Build filter object
     const filter = {};
-    
+
     if (status) filter.status = status;
     if (type) filter.type = type;
     if (interviewerId) filter.interviewerId = interviewerId;
     if (candidateId) filter.candidateId = candidateId;
-    
+
     // Handle date range filtering
     if (startDate || endDate) {
       filter.scheduledAt = {};
-      if (startDate) filter.scheduledAt.$gte = new Date(startDate);
-      if (endDate) filter.scheduledAt.$lte = new Date(endDate);
+      if (startDate) filter.scheduledAt.gte = new Date(startDate);
+      if (endDate) filter.scheduledAt.lte = new Date(endDate);
     }
-    
+
     console.log('Getting interviews with filter:', filter);
     console.log('User organization:', req.user.currentOrganization);
-    
+
     // Debug: Count total interviews before filtering
-    const totalInterviewsCount = await Interview.countDocuments(filter);
+    const totalInterviewsCount = await prisma.interview.count({ where: filter });
     console.log(`📊 Total interviews matching filter before org filtering: ${totalInterviewsCount}`);
-    
-    // Use aggregation pipeline to filter by organization through jobs OR organizationId
-    const interviews = await Interview.aggregate([
-      { $match: filter },
-      {
-        $lookup: {
-          from: 'jobs',
-          localField: 'jobId',
-          foreignField: '_id',
-          as: 'job'
-        }
-      },
-      {
-        // Filter by organization - either through job relationship or direct organizationId
-        $match: {
-          $or: [
-            { 'job.organization': new mongoose.Types.ObjectId(req.user.currentOrganization) },
-            { organizationId: new mongoose.Types.ObjectId(req.user.currentOrganization) }
-          ]
-        }
-      },
-      {
-        $lookup: {
-          from: 'candidates',
-          localField: 'candidateId',
-          foreignField: '_id',
-          as: 'candidate'
-        }
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'interviewerId',
-          foreignField: '_id',
-          as: 'interviewer'
-        }
-      },
-      {
-        $addFields: {
-          jobId: { $arrayElemAt: ['$job', 0] },
-          candidateId: { $arrayElemAt: ['$candidate', 0] },
-          interviewerId: { $arrayElemAt: ['$interviewer', 0] }
-        }
-      },
-      {
-        $project: {
-          job: 0,
-          candidate: 0,
-          interviewer: 0
-        }
-      },
-      { $sort: { scheduledAt: -1 } }
-    ]);
-    
+
+    // Filter by organization through jobs OR direct organizationId, then stitch refs.
+    const orgId = req.user.currentOrganization;
+    const candidateInterviews = await prisma.interview.findMany({
+      where: filter,
+      orderBy: { scheduledAt: 'desc' }
+    });
+
+    // Load related jobs to support org-via-job filtering.
+    const jobIds = [...new Set(candidateInterviews.map(i => i.jobId).filter(Boolean).map(String))];
+    const jobs = jobIds.length
+      ? await prisma.job.findMany({ where: { id: { in: jobIds } } })
+      : [];
+    const jobsById = new Map(jobs.map(j => [String(j.id), j]));
+
+    const filtered = candidateInterviews.filter(iv => {
+      const job = iv.jobId ? jobsById.get(String(iv.jobId)) : null;
+      return (job && String(job.organizationId) === String(orgId)) ||
+             String(iv.organizationId) === String(orgId);
+    });
+
+    // Stitch job/candidate/interviewer documents onto the same property names.
+    const candidateIds = [...new Set(filtered.map(i => i.candidateId).filter(Boolean).map(String))];
+    const interviewerIds = [...new Set(filtered.map(i => i.interviewerId).filter(Boolean).map(String))];
+    const candidates = candidateIds.length
+      ? await prisma.candidate.findMany({ where: { id: { in: candidateIds } } })
+      : [];
+    const interviewers = interviewerIds.length
+      ? await prisma.user.findMany({ where: { id: { in: interviewerIds } } })
+      : [];
+    const candidatesById = new Map(candidates.map(c => [String(c.id), c]));
+    const interviewersById = new Map(interviewers.map(u => [String(u.id), u]));
+
+    const interviews = filtered.map(iv => ({
+      ...iv,
+      jobId: iv.jobId ? (jobsById.get(String(iv.jobId)) || iv.jobId) : iv.jobId,
+      candidateId: iv.candidateId ? (candidatesById.get(String(iv.candidateId)) || iv.candidateId) : iv.candidateId,
+      interviewerId: iv.interviewerId ? (interviewersById.get(String(iv.interviewerId)) || iv.interviewerId) : iv.interviewerId
+    }));
+
     console.log(`📊 Total interviews returned after org filtering: ${interviews.length}`);
     console.log(`📊 Multi-candidate interviews found: ${interviews.filter(i => i.isMultiCandidate).length}`);
     
@@ -2927,16 +3011,24 @@ const updateInterviewStatus = async (req, res) => {
     const { interviewId } = req.params;
     const { status, notes, feedback } = req.body;
     
-    const interview = await Interview.findById(interviewId);
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({
         error: 'INTERVIEW_NOT_FOUND',
         message: 'Interview not found'
       });
     }
-    
+
     // Validate status transition
-    const availableTransitions = interview.getAvailableStatusTransitions();
+    const statusTransitions = {
+      'scheduled': ['confirmed', 'cancelled', 'rescheduled'],
+      'confirmed': ['in_progress', 'cancelled', 'rescheduled'],
+      'in_progress': ['completed', 'cancelled'],
+      'completed': [],
+      'cancelled': ['scheduled'],
+      'rescheduled': ['scheduled', 'cancelled']
+    };
+    const availableTransitions = statusTransitions[interview.status] || [];
     if (!availableTransitions.includes(status)) {
       return res.status(400).json({
         error: 'INVALID_STATUS_TRANSITION',
@@ -2944,16 +3036,20 @@ const updateInterviewStatus = async (req, res) => {
         availableTransitions
       });
     }
-    
+
     interview.status = status;
     if (notes) interview.notes = notes;
     if (feedback) interview.feedback = { ...interview.feedback, ...feedback };
-    
-    await interview.save();
-    
-    res.json({ 
-      success: true, 
-      interview: await interview.populate('jobId candidateId interviewerId')
+
+    await prisma.interview.update({ where: { id: interview.id }, data: {
+      status: interview.status,
+      notes: interview.notes,
+      feedback: interview.feedback
+    } });
+
+    res.json({
+      success: true,
+      interview: await populateInterviewRefs(interview)
     });
     
   } catch (error) {
@@ -2975,10 +3071,8 @@ const cancelInterview = async (req, res) => {
     console.log('Reason:', reason);
     console.log('Cancelled by:', cancelledBy);
     
-    const interview = await Interview.findById(interviewId)
-      .populate('candidateId', 'firstName lastName email')
-      .populate('interviewerId', 'name email');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({
         error: 'INTERVIEW_NOT_FOUND',
@@ -3012,7 +3106,7 @@ const cancelInterview = async (req, res) => {
     if (interview.nylasEventId) {
       try {
         // Get the interviewer's grant ID - need to fetch full user since populate only got name/email
-        const interviewerUser = await User.findById(interview.interviewerId._id || interview.interviewerId);
+        const interviewerUser = await prisma.user.findUnique({ where: { id: oid(interview.interviewerId._id || interview.interviewerId) } });
         console.log('Cancelling calendar event - Interviewer lookup:', {
           interviewerId: interview.interviewerId._id || interview.interviewerId,
           interviewerFound: !!interviewerUser,
@@ -3023,8 +3117,7 @@ const cancelInterview = async (req, res) => {
           // Get account credentials if interviewer has a linked Nylas account
           let cancelAccountCredentials = null;
           if (interviewerUser.nylasAccountId) {
-            const NylasAccount = require('../models/NylasAccount');
-            const nylasAccount = await NylasAccount.findById(interviewerUser.nylasAccountId).select('+apiKey');
+            const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interviewerUser.nylasAccountId } });
             if (nylasAccount) {
               cancelAccountCredentials = {
                 apiKey: nylasAccount.apiKey,
@@ -3059,15 +3152,20 @@ const cancelInterview = async (req, res) => {
     interview.cancellationReason = reason;
     interview.cancelledBy = cancelledBy;
     interview.cancelledAt = new Date();
-    
-    await interview.save();
-    
+
+    await prisma.interview.update({ where: { id: interview.id }, data: {
+      status: interview.status,
+      cancellationReason: interview.cancellationReason,
+      cancelledBy: interview.cancelledBy,
+      cancelledAt: interview.cancelledAt
+    } });
+
     // Update candidate status back to previous stage if they were in interviewing
     if (interview.candidateId) {
-      const candidate = await require('../models/Candidate').findById(interview.candidateId);
+      const candidate = await prisma.candidate.findUnique({ where: { id: oid(interview.candidateId) } });
       if (candidate && candidate.status === 'interviewing') {
         candidate.status = 'shortlisted'; // Move back to shortlisted
-        await candidate.save();
+        await prisma.candidate.update({ where: { id: candidate.id }, data: { status: 'shortlisted' } });
       }
 
       // ALSO update pipeline status if candidate is in a job pipeline
@@ -3076,9 +3174,11 @@ const cancelInterview = async (req, res) => {
           console.log(`🔄 Reverting pipeline status for candidate ${interview.candidateId} in job ${interview.jobId}`);
           
           // Find and update the job pipeline status
-          const Job = require('../models/Job');
-          const jobWithApplicants = await Job.findById(interview.jobId);
-          
+          const jobWithApplicants = await prisma.job.findUnique({ where: { id: oid(interview.jobId) } });
+          if (jobWithApplicants && !Array.isArray(jobWithApplicants.applicants)) {
+            jobWithApplicants.applicants = [];
+          }
+
           if (jobWithApplicants) {
             const applicantIndex = jobWithApplicants.applicants.findIndex(
               app => app.candidate.toString() === interview.candidateId.toString()
@@ -3108,7 +3208,7 @@ const cancelInterview = async (req, res) => {
                    previousStatus
                  });
                  
-                 await jobWithApplicants.save();
+                 await prisma.job.update({ where: { id: jobWithApplicants.id }, data: { applicants: jobWithApplicants.applicants } });
                  console.log(`✅ Pipeline status reverted: ${previousStatus} → ${revertToStatus}`);
                } else {
                  console.log(`ℹ️ Pipeline status not reverted - candidate is at ${previousStatus} stage`);
@@ -3125,7 +3225,7 @@ const cancelInterview = async (req, res) => {
     // Send cancellation email to candidate if requested
     try {
       // First, make sure we have fully populated data
-      const populatedInterview = await interview.populate(['candidateId', 'interviewerId', 'jobId']);
+      const populatedInterview = await populateInterviewRefs({ ...interview }, ['candidateId', 'interviewerId', 'jobId']);
       
       // Now check if we can send the email
       if (notifyParticipants && 
@@ -3219,10 +3319,11 @@ const cancelInterview = async (req, res) => {
       
       // Get the fully populated interview data for notifications
       // Note: We may already have it from the email step, but let's make sure
-      const populatedInterview = await Interview.findById(interview._id)
-        .populate(['candidateId', 'interviewerId', 'jobId'])
-        .exec();
-      
+      const populatedInterview = await prisma.interview.findUnique({ where: { id: interview._id } });
+      if (populatedInterview) {
+        await populateInterviewRefs(populatedInterview, ['candidateId', 'interviewerId', 'jobId']);
+      }
+
       if (!populatedInterview) {
         throw new Error(`Interview ${interview._id} not found for notifications`);
       }
@@ -3256,7 +3357,7 @@ const cancelInterview = async (req, res) => {
       };
       
       // Create notifications using the Notification model static method
-      const Notification = require('../models/Notification');
+      const Notification = require('../db/notify');
       const result = await Notification.createInterviewCancelledNotification(
         cancelledBy,
         notificationData,
@@ -3273,10 +3374,10 @@ const cancelInterview = async (req, res) => {
       // Don't fail the interview cancellation if notifications fail
     }
     
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Interview cancelled successfully',
-      interview: await interview.populate('jobId candidateId interviewerId')
+      interview: await populateInterviewRefs(interview)
     });
     
   } catch (error) {
@@ -3291,91 +3392,38 @@ const getInterviewDetails = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    // Use aggregation to filter by organization
-    const interviews = await Interview.aggregate([
-      { $match: { _id: new mongoose.Types.ObjectId(interviewId) } },
-      {
-        $lookup: {
-          from: 'jobs',
-          localField: 'jobId',
-          foreignField: '_id',
-          as: 'job'
-        }
-      },
-      {
-        $match: {
-          'job.organization': new mongoose.Types.ObjectId(req.user.currentOrganization)
-        }
-      },
-      {
-        $lookup: {
-          from: 'candidates',
-          localField: 'candidateId',
-          foreignField: '_id',
-          as: 'candidate'
-        }
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'interviewerId',
-          foreignField: '_id',
-          as: 'interviewer'
-        }
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'cancelledBy',
-          foreignField: '_id',
-          as: 'cancelledByUser'
-        }
-      },
-      {
-        $addFields: {
-          jobId: { 
-            $mergeObjects: [
-              { $arrayElemAt: ['$job', 0] },
-              { $arrayElemAt: [{ $map: { input: '$job', as: 'j', in: { title: '$$j.title', company: '$$j.company', description: '$$j.description' } } }, 0] }
-            ]
-          },
-          candidateId: { 
-            $mergeObjects: [
-              { $arrayElemAt: ['$candidate', 0] },
-              { $arrayElemAt: [{ $map: { input: '$candidate', as: 'c', in: { firstName: '$$c.firstName', lastName: '$$c.lastName', email: '$$c.email', phone: '$$c.phone', position: '$$c.position', location: '$$c.location', skills: '$$c.skills' } } }, 0] }
-            ]
-          },
-          interviewerId: { 
-            $mergeObjects: [
-              { $arrayElemAt: ['$interviewer', 0] },
-              { $arrayElemAt: [{ $map: { input: '$interviewer', as: 'i', in: { name: '$$i.name', email: '$$i.email' } } }, 0] }
-            ]
-          },
-          cancelledBy: { 
-            $mergeObjects: [
-              { $arrayElemAt: ['$cancelledByUser', 0] },
-              { $arrayElemAt: [{ $map: { input: '$cancelledByUser', as: 'cb', in: { name: '$$cb.name', email: '$$cb.email' } } }, 0] }
-            ]
-          }
-        }
-      },
-      {
-        $project: {
-          job: 0,
-          candidate: 0,
-          interviewer: 0,
-          cancelledByUser: 0
-        }
+    // Fetch the interview, then verify it belongs to the user's org (via its job)
+    // and stitch job/candidate/interviewer/cancelledBy docs onto the response.
+    const baseInterview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    const interviews = [];
+    if (baseInterview) {
+      const job = baseInterview.jobId
+        ? await prisma.job.findUnique({ where: { id: oid(baseInterview.jobId) } })
+        : null;
+      const orgMatches = job && String(job.organizationId) === String(req.user.currentOrganization);
+      if (orgMatches) {
+        const [candidate, interviewer, cancelledByUser] = await Promise.all([
+          baseInterview.candidateId ? prisma.candidate.findUnique({ where: { id: oid(baseInterview.candidateId) } }) : null,
+          baseInterview.interviewerId ? prisma.user.findUnique({ where: { id: oid(baseInterview.interviewerId) } }) : null,
+          baseInterview.cancelledBy ? prisma.user.findUnique({ where: { id: oid(baseInterview.cancelledBy) } }) : null
+        ]);
+        interviews.push({
+          ...baseInterview,
+          jobId: job || baseInterview.jobId,
+          candidateId: candidate || baseInterview.candidateId,
+          interviewerId: interviewer || baseInterview.interviewerId,
+          cancelledBy: cancelledByUser || baseInterview.cancelledBy
+        });
       }
-    ]);
-    
+    }
+
     if (!interviews || interviews.length === 0) {
       return res.status(404).json({
         error: 'INTERVIEW_NOT_FOUND',
         message: 'Interview not found in your organization'
       });
     }
-    
+
     res.json({ interview: interviews[0] });
     
   } catch (error) {
@@ -3389,15 +3437,15 @@ const getInterviewDetails = async (req, res) => {
 const debugInterviewNotetaker = async (req, res) => {
   try {
     const { interviewId } = req.params;
-    
-    const interview = await Interview.findById(interviewId);
-    
+
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
     if (!interview) {
       return res.status(404).json({
         error: 'Interview not found'
       });
     }
-    
+
     console.log('🔍 Debug - Interview notetaker data:', {
       id: interview._id,
       notetakerEnabled: interview.notetakerEnabled,
@@ -3429,21 +3477,21 @@ const generateAISummary = async (req, res) => {
     const { interviewId } = req.params;
     const organizationId = req.user.currentOrganization;
     
-    const interview = await Interview.findOne({ 
-      _id: interviewId,
+    const interview = await prisma.interview.findFirst({ where: {
+      id: interviewId,
       // Note: Interview doesn't have organization field in current schema
-    })
-    .populate('candidateId', 'firstName lastName position experience email')
-    .populate('jobId', 'title department level skills')
-    .populate('interviewerId', 'profile.firstName profile.lastName email');
-    
+    } });
+    if (interview) {
+      await populateInterviewRefs(interview, ['candidateId', 'jobId', 'interviewerId']);
+    }
+
     if (!interview) {
       return res.status(404).json({
         success: false,
         error: 'Interview not found'
       });
     }
-    
+
     // Check if transcript exists
     if (!interview.transcript?.content) {
       return res.status(400).json({
@@ -3498,9 +3546,9 @@ const generateAISummary = async (req, res) => {
       confidence: summaryResult.summary.confidence,
       methodology: summaryResult.summary.methodology
     };
-    
-    await interview.save();
-    
+
+    await prisma.interview.update({ where: { id: interview.id }, data: { aiInterviewSummary: interview.aiInterviewSummary } });
+
     console.log('✅ AI summary generated successfully for interview:', interviewId);
     
     res.json({
@@ -3527,24 +3575,38 @@ const getInterviewComments = async (req, res) => {
     const { includeReplies = true, visibility = 'team' } = req.query;
     
     // Verify interview exists
-    const interview = await Interview.findById(interviewId);
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({
         success: false,
         error: 'Interview not found'
       });
     }
-    
-    // Get comments for the interview
-    const comments = await InterviewComment.getForInterview(interviewId, {
-      includeReplies: includeReplies === 'true',
-      visibility: Array.isArray(visibility) ? visibility : visibility.split(','),
-      limit: 100
+
+    // Get comments for the interview (inlined InterviewComment.getForInterview)
+    const visibilityList = Array.isArray(visibility) ? visibility : visibility.split(',');
+    const commentsWhere = {
+      interviewId,
+      status: 'active',
+      visibility: { in: visibilityList }
+    };
+    if (includeReplies !== 'true') {
+      commentsWhere.parentCommentId = null;
+    }
+    const comments = await prisma.interviewComment.findMany({
+      where: commentsWhere,
+      orderBy: { createdAt: 'asc' },
+      take: 100
     });
-    
-    // Get comment analytics
-    const analytics = await InterviewComment.getAnalytics(interviewId);
-    
+    // Stitch authorId, questionId, and replies (mirrors the model populate)
+    await stitchCommentRefs(comments);
+
+    // Get comment analytics (inlined InterviewComment.getAnalytics)
+    const analyticsRows = await prisma.interviewComment.findMany({
+      where: { interviewId, status: 'active' }
+    });
+    const analytics = computeCommentAnalytics(analyticsRows);
+
     res.json({
       success: true,
       comments,
@@ -3591,29 +3653,29 @@ const addInterviewComment = async (req, res) => {
     }
     
     // Verify interview exists
-    const interview = await Interview.findById(interviewId);
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({
         success: false,
         error: 'Interview not found'
       });
     }
-    
+
     // Get user details
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
-    
-    const authorName = user.profile ? 
+
+    const authorName = user.profile ?
       `${user.profile.firstName || ''} ${user.profile.lastName || ''}`.trim() || user.email :
       user.email;
-    
+
     // Create new comment
-    const comment = new InterviewComment({
+    const comment = await prisma.interviewComment.create({ data: {
       interviewId,
       authorId: userId,
       authorName,
@@ -3625,20 +3687,20 @@ const addInterviewComment = async (req, res) => {
       visibility,
       parentCommentId,
       organization: organizationId
-    });
-    
-    await comment.save();
-    
+    } });
+
     // Update interview's team comments array
-    if (!interview.teamComments) {
+    if (!Array.isArray(interview.teamComments)) {
       interview.teamComments = [];
     }
     interview.teamComments.push(comment._id);
-    await interview.save();
-    
+    await prisma.interview.update({ where: { id: interview.id }, data: { teamComments: interview.teamComments } });
+
     // Populate comment data for response
-    await comment.populate('authorId', 'profile.firstName profile.lastName email');
-    
+    if (comment.authorId && isObjectIdLike(oid(comment.authorId))) {
+      comment.authorId = await prisma.user.findUnique({ where: { id: oid(comment.authorId) } }) || comment.authorId;
+    }
+
     console.log('✅ Comment added to interview:', interviewId, 'by user:', userId);
     
     res.status(201).json({
@@ -3665,49 +3727,60 @@ const updateInterviewComment = async (req, res) => {
     const { content, commentType, rating, categories, visibility } = req.body;
     
     // Find the comment
-    const comment = await InterviewComment.findOne({
-      _id: commentId,
+    const comment = await prisma.interviewComment.findFirst({ where: {
+      id: commentId,
       interviewId: interviewId
-    });
-    
+    } });
+
     if (!comment) {
       return res.status(404).json({
         success: false,
         error: 'Comment not found'
       });
     }
-    
+
     // Check if user can edit this comment
-    if (!comment.canEdit(userId)) {
+    if (!(comment.authorId && comment.authorId.toString() === userId.toString())) {
       return res.status(403).json({
         success: false,
         error: 'You can only edit your own comments'
       });
     }
-    
+
     // Store previous content for edit history
     const previousContent = comment.content;
-    
+
     // Update comment fields
     if (content !== undefined) comment.content = content.trim();
     if (commentType !== undefined) comment.commentType = commentType;
     if (rating !== undefined) comment.rating = rating;
     if (categories !== undefined) comment.categories = categories;
     if (visibility !== undefined) comment.visibility = visibility;
-    
+
     // Add to edit history
     comment.isEdited = true;
+    if (!Array.isArray(comment.editHistory)) comment.editHistory = [];
     comment.editHistory.push({
       editedAt: new Date(),
       previousContent,
       editReason: 'Updated by user'
     });
-    
-    await comment.save();
-    
+
+    await prisma.interviewComment.update({ where: { id: comment.id }, data: {
+      content: comment.content,
+      commentType: comment.commentType,
+      rating: comment.rating,
+      categories: comment.categories,
+      visibility: comment.visibility,
+      isEdited: comment.isEdited,
+      editHistory: comment.editHistory
+    } });
+
     // Populate comment data for response
-    await comment.populate('authorId', 'profile.firstName profile.lastName email');
-    
+    if (comment.authorId && isObjectIdLike(oid(comment.authorId))) {
+      comment.authorId = await prisma.user.findUnique({ where: { id: oid(comment.authorId) } }) || comment.authorId;
+    }
+
     console.log('✅ Comment updated:', commentId, 'by user:', userId);
     
     res.json({
@@ -3734,37 +3807,39 @@ const deleteInterviewComment = async (req, res) => {
     const userRole = req.user.role;
     
     // Find the comment
-    const comment = await InterviewComment.findOne({
-      _id: commentId,
+    const comment = await prisma.interviewComment.findFirst({ where: {
+      id: commentId,
       interviewId: interviewId
-    });
-    
+    } });
+
     if (!comment) {
       return res.status(404).json({
         success: false,
         error: 'Comment not found'
       });
     }
-    
+
     // Check if user can delete this comment
-    if (!comment.canDelete(userId, userRole)) {
+    const canDelete = (comment.authorId && comment.authorId.toString() === userId.toString()) ||
+      ['admin', 'hr_manager'].includes(userRole);
+    if (!canDelete) {
       return res.status(403).json({
         success: false,
         error: 'You can only delete your own comments or you must be an admin'
       });
     }
-    
+
     // Soft delete - mark as deleted instead of removing
     comment.status = 'deleted';
-    await comment.save();
-    
+    await prisma.interviewComment.update({ where: { id: comment.id }, data: { status: 'deleted' } });
+
     // Remove from interview's team comments array
-    const interview = await Interview.findById(interviewId);
-    if (interview && interview.teamComments) {
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview && Array.isArray(interview.teamComments)) {
       interview.teamComments = interview.teamComments.filter(
         id => id.toString() !== commentId
       );
-      await interview.save();
+      await prisma.interview.update({ where: { id: interview.id }, data: { teamComments: interview.teamComments } });
     }
     
     console.log('✅ Comment deleted:', commentId, 'by user:', userId);
@@ -3791,12 +3866,11 @@ const getInterviewQuestions = async (req, res) => {
     console.log('🔍 [FEEDBACK-QUESTIONS] Fetching questions for interview:', interviewId);
     
     // Get interview with candidate, job, and stage information
-    const interview = await Interview.findById(interviewId)
-      .populate('candidateId', 'firstName lastName email resumeUrl')
-      .populate('jobId', 'title description organization')
-      .populate('stageId', 'name description')
-      .populate('notifications.selectedQuestions');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview) {
+      await populateInterviewRefs(interview, ['candidateId', 'jobId', 'stageId']);
+    }
+
     console.log('📋 [FEEDBACK-QUESTIONS] Interview found:', !!interview);
 
     if (!interview) {
@@ -3816,7 +3890,6 @@ const getInterviewQuestions = async (req, res) => {
     });
 
     // Get questions for the job - only show if explicitly selected by interviewer
-    const InterviewQuestion = require('../models/InterviewQuestion');
     let questions = [];
     
     // Check if interview has selected questions AND feature is enabled
@@ -3828,10 +3901,10 @@ const getInterviewQuestions = async (req, res) => {
     if (shouldShowQuestions) {
       // Get only the selected questions
       console.log('📋 [FEEDBACK-QUESTIONS] Using selected questions:', selectedQuestions.length);
-      questions = await InterviewQuestion.find({
-        _id: { $in: selectedQuestions },
-        isActive: true
-      }).sort({ order: 1, createdAt: 1 });
+      questions = await prisma.interviewQuestion.findMany({
+        where: { id: { in: selectedQuestions.map(oid) }, isActive: true },
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+      });
     } else {
       // Return empty array - questions only show if explicitly selected
       console.log('📋 [FEEDBACK-QUESTIONS] No questions selected or feature not enabled, returning empty array');
@@ -3883,11 +3956,6 @@ const getInterviewQuestions = async (req, res) => {
     // Get feedback form configuration (stage → job → org hierarchy)
     let feedbackFormConfig = null;
     try {
-      const Job = require('../models/Job');
-      const InterviewStage = require('../models/InterviewStage');
-      const FeedbackFormTemplate = require('../models/FeedbackFormTemplate');
-      const CustomField = require('../models/CustomField');
-      
       console.log('🔍 [FEEDBACK-CONFIG] Loading config for interview:', interviewId);
       console.log('🔍 [FEEDBACK-CONFIG] Stage ID:', interview.stageId);
       console.log('🔍 [FEEDBACK-CONFIG] Job ID:', interview.jobId?._id);
@@ -3898,13 +3966,13 @@ const getInterviewQuestions = async (req, res) => {
       
       // PRIORITY 1: Check if interview has a stage with its own template
       if (interview.stageId) {
-        const stage = await InterviewStage.findById(interview.stageId);
-        
+        const stage = await prisma.interviewStage.findUnique({ where: { id: oid(interview.stageId?._id || interview.stageId) } });
+
         if (stage?.feedbackFormConfig?.templateId) {
           console.log('✅ [FEEDBACK-CONFIG] Using STAGE template for stage:', stage.name);
-          template = await FeedbackFormTemplate.findById(stage.feedbackFormConfig.templateId)
-            .populate('customFields.customFieldRef');
-          
+          template = await prisma.feedbackFormTemplate.findUnique({ where: { id: stage.feedbackFormConfig.templateId } });
+          if (template) await populateTemplateCustomFieldRefs(template);
+
           if (template) {
             configSource = 'stage';
             finalConfig = {
@@ -3929,7 +3997,7 @@ const getInterviewQuestions = async (req, res) => {
       // PRIORITY 2: Fallback to job-level template if no stage template
       if (!finalConfig) {
         console.log('⚠️ [FEEDBACK-CONFIG] No stage template, checking JOB template');
-        const job = await Job.findById(interview.jobId?._id);
+        const job = await prisma.job.findUnique({ where: { id: oid(interview.jobId?._id || interview.jobId) } });
         
         console.log('🔍 [FEEDBACK-CONFIG] Job found:', !!job);
         console.log('🔍 [FEEDBACK-CONFIG] Job has feedbackFormConfig:', !!job?.feedbackFormConfig);
@@ -3953,8 +4021,8 @@ const getInterviewQuestions = async (req, res) => {
           } else if (job.feedbackFormConfig?.templateId) {
             // Job uses a specific template (possibly with overrides)
             configSource = 'job';
-            const template = await FeedbackFormTemplate.findById(job.feedbackFormConfig.templateId)
-              .populate('customFields.customFieldRef');
+            const template = await prisma.feedbackFormTemplate.findUnique({ where: { id: job.feedbackFormConfig.templateId } });
+            if (template) await populateTemplateCustomFieldRefs(template);
             if (template) {
               finalConfig = {
                 systemFields: template.systemFields || [],
@@ -3984,13 +4052,12 @@ const getInterviewQuestions = async (req, res) => {
           } else {
             // Use organization default template
             configSource = 'organization';
-            const Organization = require('../models/Organization');
-            const org = await Organization.findById(job.organization);
-            
+            const org = await prisma.organization.findUnique({ where: { id: oid(job.organizationId) } });
+
             let defaultTemplate = null;
             if (org?.settings?.defaultFeedbackTemplate) {
-              defaultTemplate = await FeedbackFormTemplate.findById(org.settings.defaultFeedbackTemplate)
-                .populate('customFields.customFieldRef');
+              defaultTemplate = await prisma.feedbackFormTemplate.findUnique({ where: { id: org.settings.defaultFeedbackTemplate } });
+              if (defaultTemplate) await populateTemplateCustomFieldRefs(defaultTemplate);
             }
             
             // If no default template exists, create one automatically
@@ -4006,23 +4073,21 @@ const getInterviewQuestions = async (req, res) => {
                 { fieldId: 'generalFeedback', fieldType: 'system', isVisible: true, isRequired: false, order: 7, label: 'General Comments' },
               ];
               
-              defaultTemplate = new FeedbackFormTemplate({
-                organization: org._id,
+              defaultTemplate = await prisma.feedbackFormTemplate.create({ data: {
+                organizationId: org._id,
                 name: 'Default Interview Feedback',
                 description: 'Standard feedback form for all interviews.',
                 isDefault: true,
                 systemFields: SYSTEM_FIELDS,
                 customFields: [],
-                createdBy: org.owner // Use org owner as creator
-              });
-              
-              await defaultTemplate.save();
-              
+                createdById: org.ownerId // Use org owner as creator
+              } });
+
               // Set as organization default
               org.settings = org.settings || {};
               org.settings.defaultFeedbackTemplate = defaultTemplate._id;
-              await org.save();
-              
+              await prisma.organization.update({ where: { id: org.id }, data: { settings: org.settings } });
+
               console.log(`✅ Created default template ${defaultTemplate._id} for org ${org._id}`);
             }
             
@@ -4056,7 +4121,7 @@ const getInterviewQuestions = async (req, res) => {
               customField = fieldId;
             } else {
               // It's an ID (string or ObjectId), fetch from database
-              customField = await CustomField.findById(fieldId);
+              customField = await prisma.customField.findUnique({ where: { id: oid(fieldId) } });
             }
           }
           
@@ -4161,24 +4226,23 @@ const getFeedbackSummary = async (req, res) => {
   try {
     const { interviewId } = req.params;
 
-    const interview = await Interview.findById(interviewId);
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({ success: false, error: 'Interview not found' });
     }
 
     // Fetch all feedback comments for this interview
-    const comments = await InterviewComment.find({
+    const comments = await prisma.interviewComment.findMany({ where: {
       interviewId,
       commentType: 'feedback'
-    }).lean();
+    } });
 
 
     // Build question map for labels
     const questionIds = [...new Set(comments.filter(c => c.questionId).map(c => c.questionId.toString()))];
     let questionMap = {};
     if (questionIds.length > 0) {
-      const InterviewQuestion = require('../models/InterviewQuestion');
-      const qs = await InterviewQuestion.find({ _id: { $in: questionIds } }).select('_id question').lean();
+      const qs = await prisma.interviewQuestion.findMany({ where: { id: { in: questionIds.map(oid) } }, select: { id: true, question: true } });
       questionMap = Object.fromEntries(qs.map(q => [q._id.toString(), q.question]));
     }
 
@@ -4298,29 +4362,29 @@ const addQuestionFeedback = async (req, res) => {
     }
     
     // Verify interview exists
-    const interview = await Interview.findById(interviewId);
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({
         success: false,
         error: 'Interview not found'
       });
     }
-    
+
     // Get user details
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
-    
-    const authorName = user.profile ? 
+
+    const authorName = user.profile ?
       `${user.profile.firstName || ''} ${user.profile.lastName || ''}`.trim() || user.email :
       user.email;
-    
+
     // Create new question-based comment with stage information
-    const comment = new InterviewComment({
+    const comment = await prisma.interviewComment.create({ data: {
       interviewId,
       questionId: isGeneral ? null : questionId,
       authorId: userId,
@@ -4341,21 +4405,19 @@ const addQuestionFeedback = async (req, res) => {
       stageId: interview.stageId || undefined,
       stageName: interview.stageName || undefined,
       stageOrder: interview.stageOrder || undefined
-    });
-    
-    await comment.save();
-    
+    } });
+
     // Update interview's team comments array
-    if (!interview.teamComments) {
+    if (!Array.isArray(interview.teamComments)) {
       interview.teamComments = [];
     }
     interview.teamComments.push(comment._id);
-    await interview.save();
-    
+    await prisma.interview.update({ where: { id: interview.id }, data: { teamComments: interview.teamComments } });
+
     // NEW: Evaluate and save calculated fields for internal feedback
     let calculatedFieldsCreated = 0;
     try {
-      const job = await Job.findById(interview.jobId);
+      const job = await prisma.job.findUnique({ where: { id: oid(interview.jobId) } });
       if (job) {
         const calculatedFields = await getCalculatedFieldsFromTemplate(job);
         
@@ -4371,10 +4433,10 @@ const addQuestionFeedback = async (req, res) => {
           };
           
           // Get any existing custom field responses from this user for this interview
-          const existingCustomResponses = await CustomFieldResponse.find({
+          const existingCustomResponses = await prisma.customFieldResponse.findMany({ where: {
             interviewId: interviewId,
             respondentId: userId
-          });
+          } });
           
           // Build custom field values object
           const customFieldValues = {};
@@ -4391,8 +4453,8 @@ const addQuestionFeedback = async (req, res) => {
               const result = evaluateFormula(calcField.calculationFormula, fieldValues);
               
               if (result !== null) {
-                await CustomFieldResponse.create({
-                  organization: organizationId,
+                await prisma.customFieldResponse.create({ data: {
+                  organizationId: organizationId,
                   interviewId: interviewId,
                   interviewCommentId: comment._id,
                   customFieldId: calcField._id,
@@ -4406,7 +4468,7 @@ const addQuestionFeedback = async (req, res) => {
                   respondentId: userId,
                   respondentName: authorName,
                   respondentEmail: user.email
-                });
+                } });
                 calculatedFieldsCreated++;
                 console.log(`  ✅ Calculated field "${calcField.label}": ${result}`);
               }
@@ -4422,11 +4484,8 @@ const addQuestionFeedback = async (req, res) => {
     }
     
     // Populate comment data for response
-    await comment.populate([
-      { path: 'authorId', select: 'profile.firstName profile.lastName email' },
-      { path: 'questionId', select: 'question type category' }
-    ]);
-    
+    await stitchCommentRefs([comment]);
+
     console.log('✅ Question feedback added to interview:', interviewId, 'by user:', userId, 'calculated fields:', calculatedFieldsCreated);
     
     res.status(201).json({
@@ -4487,7 +4546,10 @@ const addBulkPublicFeedback = async (req, res) => {
     }
     
     // Verify interview exists and get organization info
-    const interview = await Interview.findById(interviewId).populate('jobId');
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview) {
+      await populateInterviewRefs(interview, ['jobId']);
+    }
     if (!interview) {
       return res.status(404).json({
         success: false,
@@ -4496,19 +4558,19 @@ const addBulkPublicFeedback = async (req, res) => {
     }
 
     // Get organization from the job
-    const organizationId = interview.jobId?.organization;
+    const organizationId = interview.jobId?.organizationId;
     if (!organizationId) {
       return res.status(400).json({
         success: false,
         error: 'Unable to determine organization for this interview'
       });
     }
-    
+
     const savedComments = [];
     
     // Submit general feedback if provided
     if (hasGeneralFeedback) {
-      const generalComment = new InterviewComment({
+      const generalComment = await prisma.interviewComment.create({ data: {
         interviewId,
         questionId: null,
         authorId: null,
@@ -4530,9 +4592,8 @@ const addBulkPublicFeedback = async (req, res) => {
           isVerified: false
         },
         organization: organizationId
-      });
-      
-      await generalComment.save();
+      } });
+
       savedComments.push(generalComment._id);
     }
     
@@ -4540,7 +4601,7 @@ const addBulkPublicFeedback = async (req, res) => {
     if (hasQuestionFeedback) {
       for (const [questionId, feedback] of Object.entries(questionFeedback)) {
         if (feedback.content?.trim().length > 0) {
-          const questionComment = new InterviewComment({
+          const questionComment = await prisma.interviewComment.create({ data: {
             interviewId,
             questionId: questionId,
             authorId: null,
@@ -4559,27 +4620,23 @@ const addBulkPublicFeedback = async (req, res) => {
               isVerified: false
             },
             organization: organizationId
-          });
-          
-          await questionComment.save();
+          } });
+
           savedComments.push(questionComment._id);
         }
       }
     }
     
     // Update interview's team comments array
-    if (!interview.teamComments) {
+    if (!Array.isArray(interview.teamComments)) {
       interview.teamComments = [];
     }
     interview.teamComments.push(...savedComments);
-    await interview.save();
-    
+    await prisma.interview.update({ where: { id: interview.id }, data: { teamComments: interview.teamComments } });
+
     // NEW: Save custom field responses if provided
     let customFieldResponsesCreated = 0;
     if (customFieldResponses && typeof customFieldResponses === 'object') {
-      const CustomFieldResponse = require('../models/CustomFieldResponse');
-      const CustomField = require('../models/CustomField');
-      
       const responsesToSave = [];
       
       for (const [customFieldId, responseValue] of Object.entries(customFieldResponses)) {
@@ -4589,17 +4646,17 @@ const addBulkPublicFeedback = async (req, res) => {
         }
         
         // Get custom field details
-        const customField = await CustomField.findById(customFieldId);
+        const customField = await prisma.customField.findUnique({ where: { id: oid(customFieldId) } });
         if (!customField) {
           console.warn(`Custom field ${customFieldId} not found, skipping response`);
           continue;
         }
-        
+
         // Use the general feedback comment ID as the reference
         const commentId = savedComments[0]; // Link to general feedback comment
-        
+
         responsesToSave.push({
-          organization: organizationId,
+          organizationId: organizationId,
           interviewId: interviewId,
           interviewCommentId: commentId,
           customFieldId: customFieldId,
@@ -4616,7 +4673,7 @@ const addBulkPublicFeedback = async (req, res) => {
       
       // Bulk create custom field responses
       if (responsesToSave.length > 0) {
-        await CustomFieldResponse.bulkCreateResponses(responsesToSave);
+        await prisma.customFieldResponse.createMany({ data: responsesToSave });
         customFieldResponsesCreated = responsesToSave.length;
         console.log(`✅ Created ${customFieldResponsesCreated} custom field responses`);
       }
@@ -4636,8 +4693,8 @@ const addBulkPublicFeedback = async (req, res) => {
             const result = evaluateFormula(calcField.calculationFormula, fieldValues);
             
             if (result !== null) {
-              await CustomFieldResponse.create({
-                organization: organizationId,
+              await prisma.customFieldResponse.create({ data: {
+                organizationId: organizationId,
                 interviewId: interviewId,
                 interviewCommentId: savedComments[0], // Link to general feedback comment
                 customFieldId: calcField._id,
@@ -4651,7 +4708,7 @@ const addBulkPublicFeedback = async (req, res) => {
                 respondentId: null,
                 respondentName: name.trim(),
                 respondentEmail: email.toLowerCase().trim()
-              });
+              } });
               calculatedFieldsCreated++;
               console.log(`  ✅ Calculated field "${calcField.label}": ${result}`);
             } else {
@@ -4721,7 +4778,10 @@ const addPublicFeedback = async (req, res) => {
     }
     
     // Verify interview exists and get organization info
-    const interview = await Interview.findById(interviewId).populate('jobId');
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview) {
+      await populateInterviewRefs(interview, ['jobId']);
+    }
     if (!interview) {
       return res.status(404).json({
         success: false,
@@ -4730,16 +4790,16 @@ const addPublicFeedback = async (req, res) => {
     }
 
     // Get organization from the job
-    const organizationId = interview.jobId?.organization;
+    const organizationId = interview.jobId?.organizationId;
     if (!organizationId) {
       return res.status(400).json({
         success: false,
         error: 'Unable to determine organization for this interview'
       });
     }
-    
+
     // Create new public feedback comment with stage information
-    const comment = new InterviewComment({
+    const comment = await prisma.interviewComment.create({ data: {
       interviewId,
       questionId: isGeneral ? null : questionId,
       authorId: null, // No user ID for public feedback
@@ -4765,22 +4825,20 @@ const addPublicFeedback = async (req, res) => {
       stageId: interview.stageId || undefined,
       stageName: interview.stageName || undefined,
       stageOrder: interview.stageOrder || undefined
-    });
-    
-    await comment.save();
-    
+    } });
+
     // Update interview's team comments array
-    if (!interview.teamComments) {
+    if (!Array.isArray(interview.teamComments)) {
       interview.teamComments = [];
     }
     interview.teamComments.push(comment._id);
-    await interview.save();
-    
-    // Populate comment data for response
-    await comment.populate([
-      { path: 'questionId', select: 'question type category' }
-    ]);
-    
+    await prisma.interview.update({ where: { id: interview.id }, data: { teamComments: interview.teamComments } });
+
+    // Populate comment data for response (questionId)
+    if (comment.questionId && isObjectIdLike(oid(comment.questionId))) {
+      comment.questionId = await prisma.interviewQuestion.findUnique({ where: { id: oid(comment.questionId) } }) || comment.questionId;
+    }
+
     console.log('✅ Public feedback added to interview:', interviewId, 'by:', email);
     
     res.status(201).json({
@@ -4806,24 +4864,25 @@ const analyzeTeamComments = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     
     // Get interview with populated data
-    const interview = await Interview.findById(interviewId)
-      .populate('candidateId', 'firstName lastName position experience email')
-      .populate('jobId', 'title department level')
-      .populate('teamComments');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview) {
+      await populateInterviewRefs(interview, ['candidateId', 'jobId']);
+    }
+
     if (!interview) {
       return res.status(404).json({
         success: false,
         error: 'Interview not found'
       });
     }
-    
+
     // Get all active comments for this interview
-    const comments = await InterviewComment.find({
+    const comments = await prisma.interviewComment.findMany({ where: {
       interviewId: interviewId,
       status: 'active'
-    }).populate('authorId', 'profile.firstName profile.lastName email role');
-    
+    } });
+    await stitchCommentRefs(comments);
+
     if (!comments || comments.length === 0) {
       return res.status(400).json({
         success: false,
@@ -4886,9 +4945,9 @@ const analyzeTeamComments = async (req, res) => {
       identifiedConcerns: analysisResult.analysis.identifiedConcerns,
       finalRecommendation: analysisResult.analysis.finalRecommendation
     };
-    
-    await interview.save();
-    
+
+    await prisma.interview.update({ where: { id: interview.id }, data: { teamFeedbackAnalysis: interview.teamFeedbackAnalysis } });
+
     console.log('✅ Team comments analyzed successfully for interview:', interviewId);
     
     res.json({
@@ -4959,11 +5018,11 @@ const scheduleMultiCandidateInterview = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     
     // Get interviewer details
-    const interviewer = await User.findById(userId);
+    const interviewer = await prisma.user.findUnique({ where: { id: userId } });
     if (!interviewer) {
-      return res.status(404).json({ 
-        error: 'INTERVIEWER_NOT_FOUND', 
-        message: 'Interviewer not found' 
+      return res.status(404).json({
+        error: 'INTERVIEWER_NOT_FOUND',
+        message: 'Interviewer not found'
       });
     }
 
@@ -4996,8 +5055,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
     // Get account credentials if user has a linked Nylas account
     let bulkVerifyAccountCredentials = null;
     if (interviewer.nylasAccountId) {
-      const NylasAccount = require('../models/NylasAccount');
-      const nylasAccount = await NylasAccount.findById(interviewer.nylasAccountId).select('+apiKey');
+      const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interviewer.nylasAccountId } });
       if (nylasAccount) {
         bulkVerifyAccountCredentials = {
           apiKey: nylasAccount.apiKey,
@@ -5020,8 +5078,8 @@ const scheduleMultiCandidateInterview = async (req, res) => {
       // Update user's grant status in database
       interviewer.nylasGrantStatus = 'invalid';
       interviewer.calendarConnected = false;
-      await interviewer.save();
-      
+      await prisma.user.update({ where: { id: interviewer.id }, data: { nylasGrantStatus: 'invalid', calendarConnected: false } });
+
       return res.status(403).json({
         error: 'CALENDAR_CONNECTION_INVALID',
         message: grantVerification.message || 'Your calendar connection is no longer valid. Please reconnect your calendar.',
@@ -5045,7 +5103,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
     if (interviewer.nylasGrantStatus !== 'active') {
       interviewer.nylasGrantStatus = 'active';
     }
-    await interviewer.save();
+    await prisma.user.update({ where: { id: interviewer.id }, data: { lastGrantRefresh: interviewer.lastGrantRefresh, nylasGrantStatus: interviewer.nylasGrantStatus } });
 
     // Create a single meeting for the entire session
     let meetingLink = '';
@@ -5140,9 +5198,14 @@ const scheduleMultiCandidateInterview = async (req, res) => {
       }
 
       try {
-        const attachmentJob = await Job.findById(resolvedJobId).select(
-          'title description requirements responsibilities skills location type level experience education benefits publicUrl internalUrl'
-        );
+        const attachmentJob = await prisma.job.findUnique({
+          where: { id: resolvedJobId },
+          select: {
+            id: true, title: true, description: true, requirements: true, responsibilities: true,
+            skills: true, location: true, type: true, level: true, experience: true,
+            education: true, benefits: true, publicUrl: true, internalUrl: true
+          }
+        });
         const context = {
           attachment: await buildJobDescriptionAttachment(attachmentJob, sessionOrganizationName),
           jobLink: resolveJobDetailsLink(attachmentJob)
@@ -5168,7 +5231,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
           throw new Error(`Candidate ID is required for multi-candidate interviews`);
         }
         
-        const candidate = await Candidate.findById(slot.candidateId);
+        const candidate = await prisma.candidate.findUnique({ where: { id: slot.candidateId } });
         if (!candidate) {
           console.error(`Candidate not found with ID: ${slot.candidateId}`);
           throw new Error(`Candidate not found with ID: ${slot.candidateId}`);
@@ -5195,14 +5258,14 @@ const scheduleMultiCandidateInterview = async (req, res) => {
         });
         
         // Update candidate's job application if needed
-        if (slot.jobId && (!candidate.jobAppliedFor || candidate.jobAppliedFor.toString() !== slot.jobId)) {
-          candidate.jobAppliedFor = slot.jobId;
+        if (slot.jobId && (!candidate.jobAppliedForId || candidate.jobAppliedForId.toString() !== slot.jobId)) {
+          candidate.jobAppliedForId = slot.jobId;
           candidate.status = 'Interviewing';
-          await candidate.save();
+          await prisma.candidate.update({ where: { id: candidate.id }, data: { jobAppliedForId: slot.jobId, status: 'Interviewing' } });
         }
 
         // Create interview record (initially without nylasEventId - will be set after calendar event creation)
-        const interview = new Interview({
+        const interview = await prisma.interview.create({ data: {
           candidateId: candidate._id,
           interviewerId: userId,
           jobId: slot.jobId,
@@ -5239,8 +5302,8 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             reminderTime: 24, // Default 24 hours before
             sendQuestionsToInterviewers: sendQuestionsToInterviewers,
             questionsSendTime: questionsSendTime || 60, // Default 60 minutes before
-            selectedQuestions: selectedQuestionIds && selectedQuestionIds.length > 0 
-              ? selectedQuestionIds.map(id => new mongoose.Types.ObjectId(id)) 
+            selectedQuestions: selectedQuestionIds && selectedQuestionIds.length > 0
+              ? selectedQuestionIds.map(id => String(id))
               : []
           },
           participants: buildInterviewParticipants({
@@ -5250,9 +5313,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             bccParticipants,
             ccParticipants
           })
-        });
-
-        await interview.save();
+        } });
 
         console.log(`✅ Interview created for ${candidateName} with organizationId: ${organizationId}, jobId: ${slot.jobId}, interviewId: ${interview._id}`);
 
@@ -5303,7 +5364,10 @@ const scheduleMultiCandidateInterview = async (req, res) => {
           try {
             console.log(`📊 Updating pipeline status for candidate ${candidate._id} in job ${targetJobId}`);
             
-            const job = await Job.findById(targetJobId);
+            const job = await prisma.job.findUnique({ where: { id: targetJobId } });
+            if (job && !Array.isArray(job.applicants)) {
+              job.applicants = [];
+            }
             if (job) {
               let applicantIndex = job.applicants.findIndex(
                 app => app.candidate.toString() === candidate._id.toString()
@@ -5326,9 +5390,8 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                   targetStageName = interviewStage ? interviewStage.name : job.stages[0].name;
                 } else if (targetStageId) {
                   // If stageId is provided, try to get the stage name
-                  const InterviewStage = require('../models/InterviewStage');
                   try {
-                    const stage = await InterviewStage.findById(targetStageId);
+                    const stage = await prisma.interviewStage.findUnique({ where: { id: targetStageId } });
                     if (stage) {
                       targetStageName = stage.name;
                     }
@@ -5371,7 +5434,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                   }]
                 });
                 
-                await job.save();
+                await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
                 console.log(`✅ Candidate ${candidateName} added to job pipeline with interview scheduled`);
               } else {
                 // Candidate exists in pipeline, update their status and stage
@@ -5393,9 +5456,8 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                   targetStageName = interviewStage ? interviewStage.name : job.stages[0].name;
                 } else if (targetStageId) {
                   // If stageId is provided, try to get the stage name
-                  const InterviewStage = require('../models/InterviewStage');
                   try {
-                    const stage = await InterviewStage.findById(targetStageId);
+                    const stage = await prisma.interviewStage.findUnique({ where: { id: targetStageId } });
                     if (stage) {
                       targetStageName = stage.name;
                     }
@@ -5408,7 +5470,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                 if (targetStageId) {
                   // Set currentStage as an object with all required fields
                   applicant.currentStage = {
-                    stageId: new mongoose.Types.ObjectId(targetStageId),
+                    stageId: String(targetStageId),
                     stageName: targetStageName,
                     enteredAt: new Date()
                   };
@@ -5434,7 +5496,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                   
                   // Add the new stage to history
                   applicant.stageHistory.push({
-                    stageId: new mongoose.Types.ObjectId(targetStageId),
+                    stageId: String(targetStageId),
                     stageName: targetStageName,
                     enteredAt: new Date()
                   });
@@ -5477,7 +5539,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                   status: 'scheduled'
                 });
                 
-                await job.save();
+                await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
                 const stageChange = previousStage && previousStage.stageName
                   ? `${previousStage.stageName} → ${applicant.currentStage.stageName}` 
                   : `none → ${applicant.currentStage.stageName}`;
@@ -5606,7 +5668,11 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                 console.log(`✅ Backfilled shared meeting link into interview record`);
               }
               
-              await interview.save();
+              await prisma.interview.update({ where: { id: interview.id }, data: {
+                nylasEventId: interview.nylasEventId,
+                conferencing: interview.conferencing,
+                location: interview.location
+              } });
               console.log(`✅ Updated interview ${interview._id} with calendar event ID: ${calendarEvent.id}`);
             }
 
@@ -5637,9 +5703,12 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             }
 
             // Update interview with calendar event ID
+            // NOTE[pg]: calendarEventId/calendarProvider are not columns on the Interview
+            // model (they were dropped by Mongoose's schema too); kept as in-memory props
+            // for any downstream reads, and we persist the real nylasEventId instead.
             interview.calendarEventId = calendarEvent.id;
             interview.calendarProvider = calendarEvent.grant_id;
-            await interview.save();
+            await prisma.interview.update({ where: { id: interview.id }, data: { nylasEventId: interview.nylasEventId } });
             slotCalendarEventCreated = true;
 
             // Send custom email invitation to candidate if requested
@@ -5752,16 +5821,27 @@ const scheduleMultiCandidateInterview = async (req, res) => {
             const retryReason = calendarError?.message || 'Failed to create calendar event';
 
             // Cleanup unsynchronized interview record so failed slots do not appear as scheduled.
-            await Interview.findByIdAndDelete(interview._id);
+            await prisma.interview.delete({ where: { id: oid(interview._id) } });
 
             // Cleanup pipeline interview references for this slot if they were added earlier.
             if (slot.jobId) {
               try {
-                await Job.updateOne(
-                  { _id: slot.jobId },
-                  { $pull: { 'applicants.$[candidate].interviews': { interviewId: interview._id } } },
-                  { arrayFilters: [{ 'candidate.candidate': candidate._id }] }
-                );
+                // Read-modify-write the Json applicants array: pull this interview ref from
+                // the matching candidate's interviews (replacement for $pull + arrayFilters).
+                const cleanupJob = await prisma.job.findUnique({ where: { id: slot.jobId } });
+                if (cleanupJob && Array.isArray(cleanupJob.applicants)) {
+                  let changed = false;
+                  for (const app of cleanupJob.applicants) {
+                    if (app && app.candidate && app.candidate.toString() === candidate._id.toString() && Array.isArray(app.interviews)) {
+                      const before = app.interviews.length;
+                      app.interviews = app.interviews.filter(iv => !(iv && iv.interviewId && iv.interviewId.toString() === interview._id.toString()));
+                      if (app.interviews.length !== before) changed = true;
+                    }
+                  }
+                  if (changed) {
+                    await prisma.job.update({ where: { id: cleanupJob.id }, data: { applicants: cleanupJob.applicants } });
+                  }
+                }
               } catch (pipelineCleanupError) {
                 console.error(`Failed to cleanup pipeline interview reference for ${candidateName}:`, pipelineCleanupError.message);
               }
@@ -6124,12 +6204,12 @@ Best regards,
 
         // Update all interviews with notetaker info
         for (const interview of createdInterviews) {
-          await Interview.findByIdAndUpdate(interview.interviewId, {
+          await prisma.interview.update({ where: { id: oid(interview.interviewId) }, data: {
             notetakerId: actualNotetakerId,
             notetakerType: 'standalone',
             notetakerStatus: 'enabled',
             notetakerEnabled: true
-          });
+          } });
           console.log(`✅ Updated interview ${interview.interviewId} with notetaker ID: ${actualNotetakerId}`);
         }
         
@@ -6143,10 +6223,10 @@ Best regards,
         
         // Update interviews to reflect notetaker failure
         for (const interview of createdInterviews) {
-          await Interview.findByIdAndUpdate(interview.interviewId, {
+          await prisma.interview.update({ where: { id: oid(interview.interviewId) }, data: {
             notetakerStatus: 'failed',
             notetakerEnabled: false
-          });
+          } });
         }
         // Continue even if notetaker fails - don't fail the entire interview creation
       }
@@ -6197,23 +6277,39 @@ const generateFeedbackOTP = async (req, res) => {
     }
     
     // Get interview with populated fields
-    const interview = await Interview.findById(interviewId)
-      .populate('candidateId', 'profile.firstName profile.lastName email')
-      .populate('jobId', 'title');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview) {
+      await populateInterviewRefs(interview, ['candidateId', 'jobId']);
+    }
+
     if (!interview) {
       return res.status(404).json({
         success: false,
         error: 'Interview not found'
       });
     }
-    
-    // Import FeedbackOTP model and email service
-    const FeedbackOTP = require('../models/FeedbackOTP');
+
+    // Import email service
     const emailService = require('../services/emailService');
-    
-    // Generate OTP
-    const otp = await FeedbackOTP.createOTP(email.toLowerCase().trim(), name.trim(), interviewId);
+
+    // Generate OTP (inlined FeedbackOTP.createOTP)
+    const otpEmail = email.toLowerCase().trim();
+    await prisma.feedbackOTP.deleteMany({ where: { email: otpEmail, interviewId, verified: false } });
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    console.log('🔐 [OTP-GENERATE] New OTP Created:', {
+      otp,
+      otpType: typeof otp,
+      otpLength: otp.length,
+      email: otpEmail,
+      interviewId: interviewId
+    });
+    await prisma.feedbackOTP.create({ data: {
+      email: otpEmail,
+      name: name.trim(),
+      interviewId,
+      otp,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000)
+    } });
     
     // Send OTP email
     const candidateName = interview.candidateId ? 
@@ -6252,22 +6348,20 @@ const verifyFeedbackOTP = async (req, res) => {
       });
     }
     
-    const FeedbackOTP = require('../models/FeedbackOTP');
-    
     // Find the OTP entry
-    const otpEntry = await FeedbackOTP.findOne({
+    const otpEntry = await prisma.feedbackOTP.findFirst({ where: {
       email: email.toLowerCase().trim(),
       interviewId,
       verified: false
-    });
-    
+    } });
+
     if (!otpEntry) {
       return res.status(400).json({
         success: false,
         error: 'Invalid or expired OTP'
       });
     }
-    
+
     // Verify OTP - ensure both are strings for comparison
     console.log('🔐 [OTP-VERIFY] OTP Verification Debug:', {
       storedOTP: otpEntry.otp,
@@ -6278,10 +6372,35 @@ const verifyFeedbackOTP = async (req, res) => {
       expired: otpEntry.expiresAt < new Date(),
       verified: otpEntry.verified
     });
-    
-    const verification = otpEntry.verifyOTP(otp.toString());
-    await otpEntry.save();
-    
+
+    // Inlined FeedbackOTP.verifyOTP — mutates otpEntry then persists below.
+    const verification = (() => {
+      if (otpEntry.verified) return { valid: false, reason: 'OTP already used' };
+      if (otpEntry.expiresAt < new Date()) return { valid: false, reason: 'OTP has expired' };
+      if ((otpEntry.attempts || 0) >= 3) return { valid: false, reason: 'Too many invalid attempts' };
+      const storedOTP = String(otpEntry.otp);
+      const providedOTP = String(otp.toString());
+      console.log('🔐 [OTP-MODEL] OTP Comparison Debug:', {
+        storedOTP,
+        providedOTP,
+        match: storedOTP === providedOTP,
+        storedLength: storedOTP.length,
+        providedLength: providedOTP.length
+      });
+      if (storedOTP !== providedOTP) {
+        otpEntry.attempts = (otpEntry.attempts || 0) + 1;
+        return { valid: false, reason: 'Invalid OTP' };
+      }
+      otpEntry.verified = true;
+      otpEntry.verifiedAt = new Date();
+      return { valid: true };
+    })();
+    await prisma.feedbackOTP.update({ where: { id: otpEntry.id }, data: {
+      attempts: otpEntry.attempts,
+      verified: otpEntry.verified,
+      verifiedAt: otpEntry.verifiedAt
+    } });
+
     if (!verification.valid) {
       return res.status(400).json({
         success: false,
@@ -6314,12 +6433,12 @@ const deleteFeedback = async (req, res) => {
     console.log('🗑️ Delete feedback request:', { interviewId, commentId, userId });
     
     // Find the feedback comment
-    const comment = await InterviewComment.findOne({
-      _id: commentId,
+    const comment = await prisma.interviewComment.findFirst({ where: {
+      id: commentId,
       interviewId: interviewId,
       commentType: 'feedback'
-    });
-    
+    } });
+
     if (!comment) {
       return res.status(404).json({
         success: false,
@@ -6340,17 +6459,17 @@ const deleteFeedback = async (req, res) => {
     }
     
     // Delete the comment
-    await InterviewComment.findByIdAndDelete(commentId);
-    
+    await prisma.interviewComment.delete({ where: { id: commentId } });
+
     // Remove from interview's team comments array
-    const interview = await Interview.findById(interviewId);
-    if (interview && interview.teamComments) {
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview && Array.isArray(interview.teamComments)) {
       interview.teamComments = interview.teamComments.filter(
         id => id.toString() !== commentId
       );
-      await interview.save();
+      await prisma.interview.update({ where: { id: interview.id }, data: { teamComments: interview.teamComments } });
     }
-    
+
     console.log('✅ Feedback deleted successfully:', commentId);
     
     res.json({
@@ -6384,14 +6503,14 @@ const saveAnalyticsScore = async (req, res) => {
     } = req.body;
     
     // Verify interview exists
-    const interview = await Interview.findById(interviewId);
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({
         success: false,
         error: 'Interview not found'
       });
     }
-    
+
     // Update interview with analytics score
     const analyticsData = {
       calculatedScore: {
@@ -6406,10 +6525,8 @@ const saveAnalyticsScore = async (req, res) => {
         }
       }
     };
-    
-    await Interview.findByIdAndUpdate(interviewId, {
-      $set: { 'analytics': analyticsData }
-    });
+
+    await prisma.interview.update({ where: { id: interviewId }, data: { analytics: analyticsData } });
     
     console.log('✅ Analytics score saved for interview:', interviewId, 'Score:', averageScore);
     
@@ -6437,7 +6554,7 @@ const getAnalyticsScore = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     
     // Get interview with analytics
-    const interview = await Interview.findById(interviewId).select('analytics');
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, select: { id: true, analytics: true } });
     if (!interview) {
       return res.status(404).json({
         success: false,
@@ -6491,36 +6608,38 @@ const getComprehensiveAnalytics = async (req, res) => {
 async function getComprehensiveAnalyticsForInterview(interviewId, organizationId = null) {
   try {
     // Fetch interview with job populated
-    const interview = await Interview.findById(interviewId).populate('jobId');
-    
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    if (interview) {
+      await populateInterviewRefs(interview, ['jobId']);
+    }
+
     if (!interview) {
       return null;
     }
-    
+
     const job = interview.jobId;
     if (!job) {
       console.warn('Interview has no associated job');
       return null;
     }
-    
+
     // Step 1: Discover Rating Sources from template
     let template;
     if (job.feedbackFormConfig && job.feedbackFormConfig.templateId) {
-      template = await FeedbackFormTemplate.findById(job.feedbackFormConfig.templateId);
+      template = await prisma.feedbackFormTemplate.findUnique({ where: { id: job.feedbackFormConfig.templateId } });
     } else {
-      template = await FeedbackFormTemplate.findOne({
-        organization: job.organization,
-        isDefault: true
+      template = await prisma.feedbackFormTemplate.findFirst({
+        where: { organizationId: job.organizationId, isDefault: true }
       });
     }
-    
+
     if (!template) {
       console.warn('No feedback template found for job');
       return null;
     }
-    
+
     // Populate custom field references
-    await template.populate('customFields.customFieldRef');
+    await populateTemplateCustomFieldRefs(template);
     
     // Extract visible system rating fields
     const systemRatingFields = (template.systemFields || []).filter(f =>
@@ -6546,8 +6665,8 @@ async function getComprehensiveAnalyticsForInterview(interviewId, organizationId
     const questionIds = interview.notifications?.selectedQuestions || [];
     
     // Step 2: Aggregate All Feedback
-    const comments = await InterviewComment.find({ interviewId });
-    const customResponses = await CustomFieldResponse.find({ interviewId });
+    const comments = await prisma.interviewComment.findMany({ where: { interviewId } });
+    const customResponses = await prisma.customFieldResponse.findMany({ where: { interviewId } });
     
     // Count unique respondents
     const respondents = new Set();

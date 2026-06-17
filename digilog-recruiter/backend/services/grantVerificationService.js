@@ -1,5 +1,4 @@
-const User = require('../models/User');
-const Interview = require('../models/Interview');
+const prisma = require('../db/client');
 const nylasV3Service = require('./nylasV3Service');
 
 function normalizeCalendarProvider(provider = '') {
@@ -30,7 +29,7 @@ class GrantVerificationService {
    */
   async verifyUserGrant(userId) {
     try {
-      const user = await User.findById(userId);
+      const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) {
         return {
           valid: false,
@@ -67,9 +66,9 @@ class GrantVerificationService {
           if (user.nylasGrantStatus !== 'valid') {
             user.nylasGrantStatus = 'valid';
             user.calendarConnected = true;
-            await user.save();
+            await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: 'valid', calendarConnected: true } });
           }
-          
+
           return {
             valid: true,
             grantInfo: grantInfo,
@@ -79,8 +78,8 @@ class GrantVerificationService {
           // Grant exists but is not valid
           user.nylasGrantStatus = grantInfo?.status || 'invalid';
           user.calendarConnected = false;
-          await user.save();
-          
+          await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: user.nylasGrantStatus, calendarConnected: false } });
+
           return {
             valid: false,
             error: `Grant status: ${grantInfo?.status || 'invalid'}`,
@@ -95,8 +94,8 @@ class GrantVerificationService {
         if (apiError.status === 404 || apiError.status === 401) {
           user.nylasGrantStatus = 'invalid';
           user.calendarConnected = false;
-          await user.save();
-          
+          await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: 'invalid', calendarConnected: false } });
+
           return {
             valid: false,
             error: 'Grant not found or invalid in Nylas',
@@ -133,7 +132,7 @@ class GrantVerificationService {
    */
   async generateReauthUrl(userId, provider = null, forceAccountSelection = false) {
     try {
-      const user = await User.findById(userId);
+      const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) {
         throw new Error('User not found');
       }
@@ -158,7 +157,7 @@ class GrantVerificationService {
       
       // Update user status to indicate reauth in progress
       user.nylasGrantStatus = 'reauth_pending';
-      await user.save();
+      await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: 'reauth_pending' } });
 
       return {
         authUrl: authUrl,
@@ -182,8 +181,8 @@ class GrantVerificationService {
     try {
       // Parse state data
       const stateData = JSON.parse(state);
-      const user = await User.findById(stateData.userId);
-      
+      const user = await prisma.user.findUnique({ where: { id: stateData.userId } });
+
       if (!user) {
         throw new Error('User not found for reauth callback');
       }
@@ -200,7 +199,7 @@ class GrantVerificationService {
       user.nylasGrantStatus = 'valid';
       user.calendarConnected = true;
       user.lastGrantRefresh = new Date();
-      await user.save();
+      await prisma.user.update({ where: { id: user.id }, data: { nylasGrantId: grant.grant_id, nylasGrantStatus: 'valid', calendarConnected: true, lastGrantRefresh: user.lastGrantRefresh } });
 
       console.log(`✅ Successfully re-authenticated user ${user.email} with new grant ${grant.grant_id}`);
 
@@ -221,10 +220,10 @@ class GrantVerificationService {
    */
   async verifyAllUserGrants() {
     try {
-      const users = await User.find({ 
-        nylasGrantId: { $exists: true, $ne: null },
+      const users = await prisma.user.findMany({ where: {
+        nylasGrantId: { not: null },
         calendarConnected: true
-      });
+      } });
 
       const results = {
         total: users.length,
@@ -272,24 +271,24 @@ class GrantVerificationService {
    */
   async cancelInterviewsForInvalidGrant(userId, reason = 'Calendar access expired - please reconnect') {
     try {
-      const cancelledInterviews = await Interview.updateMany(
-        { 
+      const cancelledInterviews = await prisma.interview.updateMany({
+        where: {
           interviewerId: userId,
           status: 'scheduled',
-          scheduledAt: { $gte: new Date() }
+          scheduledAt: { gte: new Date() }
         },
-        { 
+        data: {
           status: 'cancelled',
           cancellationReason: reason,
           cancelledAt: new Date(),
           cancelledBy: userId
         }
-      );
+      });
 
-      console.log(`Cancelled ${cancelledInterviews.modifiedCount} interviews for user ${userId}`);
-      
+      console.log(`Cancelled ${cancelledInterviews.count} interviews for user ${userId}`);
+
       return {
-        cancelledCount: cancelledInterviews.modifiedCount,
+        cancelledCount: cancelledInterviews.count,
         reason: reason
       };
     } catch (error) {
@@ -305,7 +304,7 @@ class GrantVerificationService {
    */
   async getGrantStatus(userId) {
     try {
-      const user = await User.findById(userId);
+      const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) {
         return { status: 'user_not_found' };
       }

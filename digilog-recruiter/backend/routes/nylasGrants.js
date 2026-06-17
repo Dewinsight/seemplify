@@ -3,7 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const nylasEmailService = require('../services/nylasEmailService');
-const User = require('../models/User');
+const prisma = require('../db/client');
 
 /**
  * GET /api/nylas-grants/email-permissions
@@ -11,8 +11,8 @@ const User = require('../models/User');
  */
 router.get('/email-permissions', authMiddleware, requireOrganization, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
     if (!user.nylasGrantId) {
       return res.json({
         hasEmailPermissions: false,
@@ -54,8 +54,8 @@ router.get('/email-permissions', authMiddleware, requireOrganization, async (req
 router.get('/verify-status', authMiddleware, requireOrganization, async (req, res) => {
   try {
     const nylasV3Service = require('../services/nylasV3Service');
-    const user = await User.findById(req.user.id);
-    
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
     if (!user.nylasGrantId) {
       return res.json({
         valid: false,
@@ -72,8 +72,7 @@ router.get('/verify-status', authMiddleware, requireOrganization, async (req, re
     // Get account credentials if user has a linked Nylas account
     let accountCredentials = null;
     if (user.nylasAccountId) {
-      const NylasAccount = require('../models/NylasAccount');
-      const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+      const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
       if (nylasAccount) {
         accountCredentials = {
           apiKey: nylasAccount.apiKey,
@@ -83,27 +82,23 @@ router.get('/verify-status', authMiddleware, requireOrganization, async (req, re
         console.log(`   Using Nylas account: ${nylasAccount.name}`);
       }
     }
-    
+
     const verification = await nylasV3Service.verifyGrantStatus(user.nylasGrantId, accountCredentials);
-    
+
     if (!verification.valid) {
       console.log(`❌ [API] Grant invalid for ${user.email}:`, verification.status);
-      
+
       // Update database if grant is invalid
       if (user.nylasGrantStatus !== 'invalid') {
-        user.nylasGrantStatus = 'invalid';
-        user.calendarConnected = false;
-        await user.save();
+        await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: 'invalid', calendarConnected: false } });
         console.log(`📝 [API] Updated database for ${user.email}: calendarConnected = false`);
       }
     } else {
       console.log(`✅ [API] Grant valid for ${user.email}`);
-      
+
       // Update database if it was previously invalid
       if (user.nylasGrantStatus !== 'active' || !user.calendarConnected) {
-        user.nylasGrantStatus = 'active';
-        user.calendarConnected = true;
-        await user.save();
+        await prisma.user.update({ where: { id: user.id }, data: { nylasGrantStatus: 'active', calendarConnected: true } });
         console.log(`📝 [API] Updated database for ${user.email}: calendarConnected = true`);
       }
     }
@@ -133,8 +128,8 @@ router.get('/verify-status', authMiddleware, requireOrganization, async (req, re
 router.post('/test-email', authMiddleware, requireOrganization, async (req, res) => {
   try {
     const { testEmail } = req.body;
-    const user = await User.findById(req.user.id);
-    
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
     if (!user.nylasGrantId) {
       return res.status(400).json({
         error: 'No Nylas calendar connected'
@@ -164,8 +159,7 @@ router.post('/test-email', authMiddleware, requireOrganization, async (req, res)
     // Get account credentials if user has a linked Nylas account
     let testEmailAccountCredentials = null;
     if (user.nylasAccountId) {
-      const NylasAccount = require('../models/NylasAccount');
-      const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+      const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
       if (nylasAccount) {
         testEmailAccountCredentials = {
           apiKey: nylasAccount.apiKey,

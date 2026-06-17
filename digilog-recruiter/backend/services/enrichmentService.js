@@ -1,5 +1,6 @@
 const { Queue, Worker, QueueEvents } = require('bullmq');
 const IORedis = require('ioredis');
+const prisma = require('../db/client');
 const aiMatchCacheService = require('./aiMatchCacheService');
 const creditsService = require('./creditsService');
 const embeddingService = require('./embeddingService');
@@ -310,8 +311,7 @@ async function processEnrichmentBatch(job) {
     throw new Error(`Enrichment ${enrichmentId} is already marked failed`);
   }
 
-  const Job = require('../models/Job');
-  const dbJob = await Job.findOne({ _id: jobId, organization: organizationId }).lean();
+  const dbJob = await prisma.job.findFirst({ where: { id: jobId, organizationId: organizationId } });
   if (!dbJob) {
     throw new Error(`Job ${jobId} not found for enrichment`);
   }

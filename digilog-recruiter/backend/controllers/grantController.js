@@ -1,5 +1,5 @@
 const grantVerificationService = require('../services/grantVerificationService');
-const User = require('../models/User');
+const prisma = require('../db/client');
 const grantManagementService = require('../services/grantManagementService');
 
 /**
@@ -324,15 +324,15 @@ const forceGrantRefresh = async (req, res) => {
 const revokeGrant = async (req, res) => {
   try {
     const userId = req.user.id;
-    const user = await User.findById(userId);
-    
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
     if (!user) {
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
-    
+
     // Revoke in Nylas and clear local grant metadata
     const revocationResult = await grantManagementService.revokeGrant(
       userId,
@@ -368,10 +368,13 @@ const revokeGrant = async (req, res) => {
 const getGrantHistory = async (req, res) => {
   try {
     const userId = req.user.id;
-    const user = await User.findById(userId).select(
-      'nylasGrantStatus calendarConnected lastGrantRefresh lastGrantExpiry lastGrantRevocation'
-    );
-    
+    // Note: lastGrantExpiry is not a schema column (was never persisted in Mongoose either),
+    // so it resolves to undefined below — matching prior behavior.
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { nylasGrantStatus: true, calendarConnected: true, lastGrantRefresh: true, lastGrantRevocation: true }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,

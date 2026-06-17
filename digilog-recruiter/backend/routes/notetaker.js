@@ -3,7 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const notetakerController = require('../controllers/notetakerController');
 const transcriptSyncController = require('../controllers/transcriptSyncController');
-const Interview = require('../models/Interview'); // Added missing import
+const prisma = require('../db/client');
 const nylasV3Service = require('../services/nylasV3Service'); // Added missing import
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
 const aiInterviewAnalysisService = require('../services/aiInterviewAnalysisService');
@@ -44,15 +44,18 @@ router.post('/force-join/:interviewId', async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId).populate('interviewerId');
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({ where: { id: interview.interviewerId } });
+    }
+
     if (!interview.notetakerId) {
       return res.status(400).json({ error: 'No notetaker configured for this interview' });
     }
-    
+
     console.log(`🚀 Force joining notetaker ${interview.notetakerId} for interview ${interviewId}`);
     
     // Get current notetaker status
@@ -79,15 +82,18 @@ router.post('/refresh-status/:interviewId', async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId).populate('interviewerId');
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({ where: { id: interview.interviewerId } });
+    }
+
     if (!interview.notetakerId) {
       return res.status(400).json({ error: 'No notetaker configured for this interview' });
     }
-    
+
     console.log(`🔄 Refreshing notetaker status for ${interview.notetakerId}`);
     
     // Get current notetaker status from Nylas
@@ -101,8 +107,8 @@ router.post('/refresh-status/:interviewId', async (req, res) => {
     // Update interview with latest status
     const oldStatus = interview.notetakerStatus;
     interview.notetakerStatus = currentStatus;
-    await interview.save();
-    
+    await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: currentStatus } });
+
     res.json({
       success: true,
       message: 'Notetaker status refreshed',
@@ -152,15 +158,18 @@ router.get('/debug/:interviewId', authMiddleware, async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId).populate('interviewerId');
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+    if (interview.interviewerId) {
+      interview.interviewerId = await prisma.user.findUnique({ where: { id: interview.interviewerId } });
+    }
+
     if (!interview.notetakerId) {
       return res.status(400).json({ error: 'No notetaker configured for this interview' });
     }
-    
+
     console.log(`🐛 Getting raw Nylas data for notetaker ${interview.notetakerId}`);
     
     // Get current notetaker status from Nylas
@@ -212,20 +221,20 @@ router.post('/force-recording/:interviewId', authMiddleware, async (req, res) =>
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId);
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
-    
+
     if (!interview.notetakerId) {
       return res.status(400).json({ error: 'No notetaker configured for this interview' });
     }
-    
+
     console.log(`⚠️ MANUAL OVERRIDE: Forcing notetaker status to 'recording' for interview ${interviewId}`);
-    
+
     const oldStatus = interview.notetakerStatus;
     interview.notetakerStatus = 'recording';
-    await interview.save();
+    await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: 'recording' } });
     
     res.json({
       success: true,
@@ -277,17 +286,28 @@ router.get('/transcript/session/:sessionId', authMiddleware, async (req, res) =>
     console.log(`🔍 Getting full session transcript for: ${sessionId}`);
     
     // Find the interview with transcript content
-    const interviews = await Interview.find({ 
-      multiCandidateSessionId: sessionId 
-    }).populate('candidateId', 'firstName lastName email');
-    
+    const interviews = await prisma.interview.findMany({
+      where: { multiCandidateSessionId: sessionId }
+    });
+    const candidateIds = [...new Set(interviews.map(i => i.candidateId).filter(Boolean))];
+    const candidates = candidateIds.length
+      ? await prisma.candidate.findMany({
+          where: { id: { in: candidateIds } },
+          select: { id: true, firstName: true, lastName: true, email: true }
+        })
+      : [];
+    const candidateById = new Map(candidates.map(c => [c.id, c]));
+    for (const i of interviews) {
+      if (i.candidateId) i.candidateId = candidateById.get(i.candidateId) || null;
+    }
+
     if (!interviews || interviews.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'No interviews found for this session' 
+      return res.status(404).json({
+        success: false,
+        error: 'No interviews found for this session'
       });
     }
-    
+
     // Get the transcript from the first interview that has one
     const transcriptHolder = interviews.find(i => i.transcript?.content);
     if (!transcriptHolder || !transcriptHolder.transcript?.content) {
@@ -357,17 +377,28 @@ router.get('/analysis/multi-candidate/:sessionId', authMiddleware, async (req, r
     const { sessionId } = req.params;
     
     // Find interviews in this session
-    const interviews = await Interview.find({ 
-      multiCandidateSessionId: sessionId 
-    }).populate('candidateId', 'firstName lastName email');
-    
+    const interviews = await prisma.interview.findMany({
+      where: { multiCandidateSessionId: sessionId }
+    });
+    const candidateIds = [...new Set(interviews.map(i => i.candidateId).filter(Boolean))];
+    const candidates = candidateIds.length
+      ? await prisma.candidate.findMany({
+          where: { id: { in: candidateIds } },
+          select: { id: true, firstName: true, lastName: true, email: true }
+        })
+      : [];
+    const candidateById = new Map(candidates.map(c => [c.id, c]));
+    for (const i of interviews) {
+      if (i.candidateId) i.candidateId = candidateById.get(i.candidateId) || null;
+    }
+
     if (!interviews || interviews.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'No interviews found for this session' 
+      return res.status(404).json({
+        success: false,
+        error: 'No interviews found for this session'
       });
     }
-    
+
     // Check if any interview has analysis data
     const analysisData = interviews.map(interview => ({
       interviewId: interview._id,

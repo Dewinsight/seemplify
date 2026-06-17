@@ -1,4 +1,16 @@
-const StageTemplate = require('../models/StageTemplate');
+const prisma = require('../db/client');
+
+// Stitch the creator user (replaces .populate('createdBy', 'name email')).
+// User has no top-level `name` column (it lives in the `profile` Json), so the full
+// user doc is attached to keep the populated shape intact for callers.
+async function attachCreator(template) {
+  if (!template || !template.createdBy) return template;
+  const creator = await prisma.user.findUnique({
+    where: { id: template.createdBy },
+    select: { id: true, email: true, profile: true }
+  });
+  return { ...template, createdBy: creator || template.createdBy };
+}
 
 class StageTemplateService {
   /**
@@ -7,10 +19,12 @@ class StageTemplateService {
   async createTemplate(organizationId, userId, { name, description, stages }) {
     try {
       // Check for duplicate name within organization
-      const existingTemplate = await StageTemplate.findOne({
-        organizationId,
-        name,
-        isActive: true
+      const existingTemplate = await prisma.stageTemplate.findFirst({
+        where: {
+          organizationId,
+          name,
+          isActive: true
+        }
       });
 
       if (existingTemplate) {
@@ -36,12 +50,14 @@ class StageTemplateService {
         stageCount: stages.length
       });
       
-      const template = await StageTemplate.create({
-        name,
-        description,
-        organizationId,
-        stages,
-        createdBy: userId
+      const template = await prisma.stageTemplate.create({
+        data: {
+          name,
+          description,
+          organizationId,
+          stages,
+          createdBy: userId
+        }
       });
 
       console.log('Template created successfully:', {
@@ -51,9 +67,7 @@ class StageTemplateService {
       });
 
       // Populate creator info
-      await template.populate('createdBy', 'name email');
-
-      return template;
+      return await attachCreator(template);
     } catch (error) {
       throw error;
     }
@@ -72,13 +86,21 @@ class StageTemplateService {
 
       console.log('Fetching templates with query:', query);
       
-      const templates = await StageTemplate.find(query)
-        .populate('createdBy', 'name email')
-        .sort({ name: 1 })
-        .lean();
+      const rawTemplates = await prisma.stageTemplate.findMany({
+        where: query,
+        orderBy: { name: 'asc' }
+      });
+
+      // Stitch creators (replaces .populate('createdBy', 'name email'))
+      const creatorIds = [...new Set(rawTemplates.map(t => t.createdBy).filter(Boolean))];
+      const creators = creatorIds.length
+        ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, email: true, profile: true } })
+        : [];
+      const creatorMap = new Map(creators.map(u => [u.id, u]));
+      const templates = rawTemplates.map(t => ({ ...t, createdBy: creatorMap.get(t.createdBy) || t.createdBy }));
 
       console.log(`Found ${templates.length} templates for org ${organizationId}`);
-      
+
       return templates;
     } catch (error) {
       console.error('Error in getTemplatesForOrganization:', error);
@@ -91,11 +113,13 @@ class StageTemplateService {
    */
   async getTemplateById(templateId, organizationId) {
     try {
-      const template = await StageTemplate.findOne({
-        _id: templateId,
-        organizationId,
-        isActive: true
-      }).populate('createdBy', 'name email');
+      const template = await prisma.stageTemplate.findFirst({
+        where: {
+          id: templateId,
+          organizationId,
+          isActive: true
+        }
+      });
 
       if (!template) {
         const error = new Error('Template not found or no longer available');
@@ -104,7 +128,7 @@ class StageTemplateService {
         throw error;
       }
 
-      return template;
+      return await attachCreator(template);
     } catch (error) {
       throw error;
     }
@@ -119,11 +143,13 @@ class StageTemplateService {
 
       // Check for duplicate name if name is being changed
       if (updates.name && updates.name !== template.name) {
-        const existingTemplate = await StageTemplate.findOne({
-          organizationId,
-          name: updates.name,
-          isActive: true,
-          _id: { $ne: templateId }
+        const existingTemplate = await prisma.stageTemplate.findFirst({
+          where: {
+            organizationId,
+            name: updates.name,
+            isActive: true,
+            id: { not: templateId }
+          }
         });
 
         if (existingTemplate) {
@@ -145,12 +171,12 @@ class StageTemplateService {
       }
 
       // Update template
-      Object.assign(template, updates);
-      await template.save();
+      const updated = await prisma.stageTemplate.update({
+        where: { id: templateId },
+        data: { ...updates }
+      });
 
-      await template.populate('createdBy', 'name email');
-
-      return template;
+      return await attachCreator(updated);
     } catch (error) {
       throw error;
     }
@@ -166,7 +192,7 @@ class StageTemplateService {
       const usageCount = template.usageCount;
 
       // Permanently delete the template
-      await StageTemplate.findByIdAndDelete(templateId);
+      await prisma.stageTemplate.delete({ where: { id: templateId } });
 
       return {
         message: 'Template deleted successfully',
@@ -188,24 +214,24 @@ class StageTemplateService {
       let newName = `${sourceTemplate.name} (Copy)`;
       let counter = 2;
       
-      while (await StageTemplate.findOne({ organizationId, name: newName, isActive: true })) {
+      while (await prisma.stageTemplate.findFirst({ where: { organizationId, name: newName, isActive: true } })) {
         newName = `${sourceTemplate.name} (Copy ${counter})`;
         counter++;
       }
 
       // Create new template
-      const newTemplate = await StageTemplate.create({
-        name: newName,
-        description: sourceTemplate.description,
-        organizationId,
-        stages: sourceTemplate.stages,
-        createdBy: userId,
-        usageCount: 0
+      const newTemplate = await prisma.stageTemplate.create({
+        data: {
+          name: newName,
+          description: sourceTemplate.description,
+          organizationId,
+          stages: sourceTemplate.stages,
+          createdBy: userId,
+          usageCount: 0
+        }
       });
 
-      await newTemplate.populate('createdBy', 'name email');
-
-      return newTemplate;
+      return await attachCreator(newTemplate);
     } catch (error) {
       throw error;
     }

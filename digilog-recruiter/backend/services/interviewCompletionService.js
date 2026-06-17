@@ -1,11 +1,10 @@
-const Interview = require('../models/Interview');
+const prisma = require('../db/client');
 const nylasV3Service = require('./nylasV3Service');
-const NylasAccount = require('../models/NylasAccount');
 
 async function getAccountCredentials(user) {
   if (!user?.nylasAccountId) return null;
 
-  const nylasAccount = await NylasAccount.findById(user.nylasAccountId).select('+apiKey');
+  const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: user.nylasAccountId } });
   if (!nylasAccount) return null;
 
   return {
@@ -26,10 +25,10 @@ async function updatePipelineStatusOnCompletion(interview) {
 
     console.log(`🔄 [AUTO-COMPLETE] Updating pipeline status for candidate ${interview.candidateId} in job ${interview.jobId}`);
     
-    const Job = require('../models/Job');
-    const job = await Job.findById(interview.jobId);
-    
+    const job = await prisma.job.findUnique({ where: { id: interview.jobId } });
+
     if (job) {
+      if (!Array.isArray(job.applicants)) job.applicants = [];
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === interview.candidateId.toString()
       );
@@ -41,11 +40,13 @@ async function updatePipelineStatusOnCompletion(interview) {
         // Only update if current status is interviewing
         if (previousStatus === 'interviewing') {
           // Check if there are other incomplete interviews for this candidate
-          const otherInterviews = await Interview.find({
-            candidateId: interview.candidateId,
-            jobId: interview.jobId,
-            _id: { $ne: interview._id },
-            status: { $in: ['scheduled', 'confirmed', 'in_progress'] }
+          const otherInterviews = await prisma.interview.findMany({
+            where: {
+              candidateId: interview.candidateId,
+              jobId: interview.jobId,
+              id: { not: interview.id },
+              status: { in: ['scheduled', 'confirmed', 'in_progress'] }
+            }
           });
           
           if (otherInterviews.length === 0) {
@@ -65,7 +66,7 @@ async function updatePipelineStatusOnCompletion(interview) {
               previousStatus
             });
             
-            await job.save();
+            await prisma.job.update({ where: { id: job.id }, data: { applicants: job.applicants } });
             console.log(`✅ [AUTO-COMPLETE] Pipeline status updated: ${previousStatus} → offered`);
           } else {
             console.log(`ℹ️ [AUTO-COMPLETE] Candidate has ${otherInterviews.length} other pending interviews, keeping status as interviewing`);
@@ -94,21 +95,33 @@ async function checkAndCompleteInterviews() {
     // Only check interviews from the last 3 days to avoid endless checking of old meetings
     const threeDaysAgo = new Date(Date.now() - (3 * 24 * 60 * 60 * 1000));
     
-    const candidateInterviews = await Interview.find({
-      status: { $in: ['in_progress', 'scheduled', 'confirmed'] },
-      notetakerEnabled: true,
-      $or: [
-        // Regular interviews with their own notetaker ID
-        { notetakerId: { $exists: true, $ne: null } },
-        // Multi-candidate interviews (may not have individual notetaker IDs)
-        { isMultiCandidate: true, multiCandidateSessionId: { $exists: true, $ne: null } }
-      ],
-      scheduledAt: { 
-        $lt: new Date(), // Past interviews only
-        $gte: threeDaysAgo // But not older than 3 days
+    const candidateInterviews = await prisma.interview.findMany({
+      where: {
+        status: { in: ['in_progress', 'scheduled', 'confirmed'] },
+        notetakerEnabled: true,
+        OR: [
+          // Regular interviews with their own notetaker ID
+          { notetakerId: { not: null } },
+          // Multi-candidate interviews (may not have individual notetaker IDs)
+          { isMultiCandidate: true, multiCandidateSessionId: { not: null } }
+        ],
+        scheduledAt: {
+          lt: new Date(), // Past interviews only
+          gte: threeDaysAgo // But not older than 3 days
+        }
       }
-    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    });
+
+    // Stitch interviewer (replaces .populate('interviewerId', 'nylasGrantId nylasAccountId'))
+    const ciInterviewerIds = [...new Set(candidateInterviews.map(i => i.interviewerId).filter(Boolean))];
+    const ciInterviewers = ciInterviewerIds.length
+      ? await prisma.user.findMany({ where: { id: { in: ciInterviewerIds } }, select: { id: true, nylasGrantId: true, nylasAccountId: true } })
+      : [];
+    const ciInterviewerMap = new Map(ciInterviewers.map(u => [u.id, u]));
+    for (const interview of candidateInterviews) {
+      if (interview.interviewerId) interview.interviewerId = ciInterviewerMap.get(interview.interviewerId) || interview.interviewerId;
+    }
+
     console.log(`📋 [COMPLETION-CHECK] Found ${candidateInterviews.length} interviews to check`);
     
     let completedCount = 0;
@@ -132,12 +145,12 @@ async function checkAndCompleteInterviews() {
           console.log(`🚫 [AUTO-COMPLETE] Interview ${interview._id} has persistent failed notetaker (${interview.notetakerStatus}) - completing without transcript`);
           interview.status = 'completed';
           interview.notetakerError = `Notetaker failed: ${interview.notetakerStatus} - Interview completed without recording`;
-          await interview.save();
+          await prisma.interview.update({ where: { id: interview.id }, data: { status: interview.status, notetakerError: interview.notetakerError } });
           await updatePipelineStatusOnCompletion(interview);
           completedCount++;
           continue;
         }
-        
+
         // Check if we already have transcript content
         // For multi-candidate interviews, check the session holder's transcript
         let hasTranscriptContent = false;
@@ -168,12 +181,12 @@ async function checkAndCompleteInterviews() {
         if (hasTranscriptContent) {
           console.log(`✅ [COMPLETION-CHECK] Interview ${interview._id} has transcript content, completing...`);
           interview.status = 'completed';
-          await interview.save();
+          await prisma.interview.update({ where: { id: interview.id }, data: { status: interview.status } });
           await updatePipelineStatusOnCompletion(interview);
           completedCount++;
           continue;
         }
-        
+
         // Check notetaker status via API
         // For multi-candidate interviews, get the notetaker ID from session holder if needed
         let notetakerIdToCheck = interview.notetakerId;
@@ -181,9 +194,10 @@ async function checkAndCompleteInterviews() {
         if (interview.isMultiCandidate && interview.multiCandidateSessionId && !notetakerIdToCheck) {
           console.log(`🔍 [COMPLETION-CHECK] Looking for session holder's notetaker ID for interview ${interview._id}`);
           try {
-            const sessionInterviews = await Interview.find({
-              multiCandidateSessionId: interview.multiCandidateSessionId
-            }).setOptions({ sanitizeFilter: false }).sort({ multiCandidateOrder: 1 });
+            const sessionInterviews = await prisma.interview.findMany({
+              where: { multiCandidateSessionId: interview.multiCandidateSessionId },
+              orderBy: { multiCandidateOrder: 'asc' }
+            });
             
             const sessionHolder = sessionInterviews.find(si => si.notetakerId);
             if (sessionHolder) {
@@ -212,13 +226,13 @@ async function checkAndCompleteInterviews() {
             if (interview.notetakerStatus !== mappedStatus) {
               interview.notetakerStatus = mappedStatus;
               interview.notetakerType = 'standalone';
-              await interview.save();
+              await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: interview.notetakerStatus, notetakerType: interview.notetakerType } });
               console.log(`📊 [STATUS-UPDATE] Interview ${interview._id} notetaker status: ${interview.notetakerStatus} → ${mappedStatus}`);
             }
-            
+
             if (interview.notetakerType !== 'standalone') {
               interview.notetakerType = 'standalone';
-              await interview.save();
+              await prisma.interview.update({ where: { id: interview.id }, data: { notetakerType: interview.notetakerType } });
             }
 
             // If notetaker is completed, check if interview should be completed
@@ -252,7 +266,7 @@ async function checkAndCompleteInterviews() {
               if (shouldComplete) {
                 console.log(`✅ [AUTO-COMPLETE] Completing interview ${interview._id} - transcript: ${transcriptAvailable}, time: ${timeBasedCompletion}`);
                 interview.status = 'completed';
-                await interview.save();
+                await prisma.interview.update({ where: { id: interview.id }, data: { status: interview.status } });
                 await updatePipelineStatusOnCompletion(interview);
                 completedCount++;
               } else {
@@ -267,7 +281,7 @@ async function checkAndCompleteInterviews() {
               
               // Update the interview to reflect that the notetaker is no longer available
               interview.notetakerStatus = 'deleted';
-              await interview.save();
+              await prisma.interview.update({ where: { id: interview.id }, data: { notetakerStatus: interview.notetakerStatus } });
               
               // Continue with the completion check as usual
             } else {
@@ -283,7 +297,7 @@ async function checkAndCompleteInterviews() {
                   console.log(`⚠️ [AUTO-COMPLETE] Interview ${interview._id} has failed notetaker but enough time passed - completing without transcript`);
                   interview.status = 'completed';
                   interview.notetakerError = 'Notetaker failed to join meeting - completed without transcript';
-                  await interview.save();
+                  await prisma.interview.update({ where: { id: interview.id }, data: { status: interview.status, notetakerError: interview.notetakerError } });
                   await updatePipelineStatusOnCompletion(interview);
                   completedCount++;
                 }
@@ -300,12 +314,12 @@ async function checkAndCompleteInterviews() {
             console.log(`⏰ [AUTO-COMPLETE] Multi-candidate interview ${interview._id} - completing after ${Math.round(hoursSinceScheduled * 100) / 100} hours without transcript`);
             interview.status = 'completed';
             interview.notetakerError = 'Multi-candidate interview completed - transcript may be available in session holder';
-            await interview.save();
+            await prisma.interview.update({ where: { id: interview.id }, data: { status: interview.status, notetakerError: interview.notetakerError } });
             await updatePipelineStatusOnCompletion(interview);
             completedCount++;
           }
         }
-        
+
       } catch (error) {
         console.error(`❌ [COMPLETION-CHECK] Error processing interview ${interview._id}:`, error.message);
       }
@@ -332,11 +346,23 @@ async function cleanupOldInterviews() {
     console.log('🧹 [CLEANUP] Starting cleanup of old INCOMPLETE interviews with calendar verification...');
     
     // Find very old interviews that are still in incomplete states (NOT completed)
-    const oldInterviews = await Interview.find({
-      status: { $in: ['scheduled', 'confirmed', 'in_progress'] }, // Only incomplete interviews
-      scheduledAt: { $lt: sevenDaysAgo }
-    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+    const oldInterviews = await prisma.interview.findMany({
+      where: {
+        status: { in: ['scheduled', 'confirmed', 'in_progress'] }, // Only incomplete interviews
+        scheduledAt: { lt: sevenDaysAgo }
+      }
+    });
+
+    // Stitch interviewer (replaces .populate('interviewerId', 'nylasGrantId nylasAccountId'))
+    const oiInterviewerIds = [...new Set(oldInterviews.map(i => i.interviewerId).filter(Boolean))];
+    const oiInterviewers = oiInterviewerIds.length
+      ? await prisma.user.findMany({ where: { id: { in: oiInterviewerIds } }, select: { id: true, nylasGrantId: true, nylasAccountId: true } })
+      : [];
+    const oiInterviewerMap = new Map(oiInterviewers.map(u => [u.id, u]));
+    for (const interview of oldInterviews) {
+      if (interview.interviewerId) interview.interviewerId = oiInterviewerMap.get(interview.interviewerId) || interview.interviewerId;
+    }
+
     if (oldInterviews.length > 0) {
       console.log(`🧹 [CLEANUP] Found ${oldInterviews.length} old incomplete interviews to verify`);
       
@@ -354,8 +380,7 @@ async function cleanupOldInterviews() {
             // Get account credentials if interviewer has a linked Nylas account
             let accountCredentials = null;
             if (interview.interviewerId.nylasAccountId) {
-              const NylasAccount = require('../models/NylasAccount');
-              const nylasAccount = await NylasAccount.findById(interview.interviewerId.nylasAccountId).select('+apiKey');
+              const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interview.interviewerId.nylasAccountId } });
               if (nylasAccount) {
                 accountCredentials = {
                   apiKey: nylasAccount.apiKey,
@@ -412,8 +437,19 @@ async function cleanupOldInterviews() {
             addedBy: 'system',
             addedAt: new Date()
           });
-          
-          await interview.save();
+
+          // TODO[pg]: Interview.notes is typed `String?` in schema.prisma but legacy code
+          // treats it as an array of note objects (read-modify-write above). Persisting the
+          // array preserves prior behavior; revisit if the column type is finalized.
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: {
+              status: interview.status,
+              notetakerStatus: interview.notetakerStatus,
+              completedAt: interview.completedAt,
+              notes: interview.notes
+            }
+          });
         
           // Update pipeline status
           try {

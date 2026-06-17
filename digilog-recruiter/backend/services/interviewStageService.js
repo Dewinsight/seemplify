@@ -1,6 +1,4 @@
-const InterviewStage = require('../models/InterviewStage');
-const Job = require('../models/Job');
-const InterviewQuestion = require('../models/InterviewQuestion');
+const prisma = require('../db/client');
 const interviewService = require('./interviewService');
 
 class InterviewStageService {
@@ -187,42 +185,47 @@ class InterviewStageService {
     try {
       console.log(`🎯 Creating default stages for job ${jobId} with template: ${template}`);
       
-      const job = await Job.findById(jobId);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+
       const stageTemplates = this.constructor.STAGE_TEMPLATES[template] || this.constructor.STAGE_TEMPLATES.standard;
       const createdStages = [];
-      
+
       for (const stageTemplate of stageTemplates) {
-        const stage = new InterviewStage({
-          jobId,
-          ...stageTemplate,
-          createdBy: userId,
-          updatedBy: userId,
-          progressionRules: this._getDefaultProgressionRules(stageTemplate.type)
+        // `updatedBy` is not a column on InterviewStage; drop it (createdBy is the only audit column).
+        const { updatedBy, ...stageTemplateData } = { ...stageTemplate };
+        const stage = await prisma.interviewStage.create({
+          data: {
+            jobId,
+            ...stageTemplateData,
+            createdBy: userId,
+            progressionRules: this._getDefaultProgressionRules(stageTemplate.type)
+          }
         });
-        
-        await stage.save();
         createdStages.push(stage);
-        
+
         // Generate AI questions for the stage if enabled
         if (stage.aiQuestionGeneration?.enabled) {
           await this._generateStageQuestions(stage, job);
         }
       }
-      
+
       // Update job with stages
-      job.interviewStages = createdStages.map(s => s._id);
-      job.pipelineConfiguration = {
-        useCustomStages: false,
-        template,
-        totalStages: createdStages.length,
-        estimatedTimeToHire: this._calculateEstimatedTimeToHire(createdStages)
-      };
-      await job.save();
-      
+      await prisma.job.update({
+        where: { id: jobId },
+        data: {
+          interviewStageIds: createdStages.map(s => s.id),
+          pipelineConfiguration: {
+            useCustomStages: false,
+            template,
+            totalStages: createdStages.length,
+            estimatedTimeToHire: this._calculateEstimatedTimeToHire(createdStages)
+          }
+        }
+      });
+
       console.log(`✅ Created ${createdStages.length} stages for job ${jobId}`);
       return createdStages;
     } catch (error) {
@@ -236,33 +239,39 @@ class InterviewStageService {
    */
   async createCustomStage(jobId, stageData, userId) {
     try {
-      const job = await Job.findById(jobId);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) {
         throw new Error('Job not found');
       }
-      
+
       // Determine order
-      const existingStages = await InterviewStage.find({ jobId }).sort('order');
-      const nextOrder = existingStages.length > 0 
-        ? Math.max(...existingStages.map(s => s.order)) + 1 
+      const existingStages = await prisma.interviewStage.findMany({ where: { jobId }, orderBy: { order: 'asc' } });
+      const nextOrder = existingStages.length > 0
+        ? Math.max(...existingStages.map(s => s.order)) + 1
         : 1;
-      
-      const stage = new InterviewStage({
-        ...stageData,
-        jobId,
-        order: stageData.order || nextOrder,
-        createdBy: userId,
-        updatedBy: userId
+
+      // `updatedBy` is not a column on InterviewStage; drop it.
+      const { updatedBy, ...customStageData } = { ...stageData };
+      const stage = await prisma.interviewStage.create({
+        data: {
+          ...customStageData,
+          jobId,
+          order: stageData.order || nextOrder,
+          createdBy: userId
+        }
       });
-      
-      await stage.save();
-      
+
       // Update job
-      job.interviewStages.push(stage._id);
-      job.pipelineConfiguration.useCustomStages = true;
-      job.pipelineConfiguration.totalStages = job.interviewStages.length;
-      await job.save();
-      
+      const interviewStageIds = Array.isArray(job.interviewStageIds) ? [...job.interviewStageIds] : [];
+      interviewStageIds.push(stage.id);
+      const pipelineConfiguration = { ...(job.pipelineConfiguration || {}) };
+      pipelineConfiguration.useCustomStages = true;
+      pipelineConfiguration.totalStages = interviewStageIds.length;
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { interviewStageIds, pipelineConfiguration }
+      });
+
       return stage;
     } catch (error) {
       console.error('❌ Error creating custom stage:', error);
@@ -275,20 +284,17 @@ class InterviewStageService {
    */
   async updateStage(stageId, updateData, userId) {
     try {
-      const stage = await InterviewStage.findByIdAndUpdate(
-        stageId,
-        {
-          ...updateData,
-          updatedBy: userId,
-          updatedAt: new Date()
-        },
-        { new: true, runValidators: true }
-      );
-      
-      if (!stage) {
+      const existing = await prisma.interviewStage.findUnique({ where: { id: stageId }, select: { id: true } });
+      if (!existing) {
         throw new Error('Stage not found');
       }
-      
+      // `updatedBy` is not a column on InterviewStage; drop it.
+      const { updatedBy, ...stageUpdate } = { ...updateData };
+      const stage = await prisma.interviewStage.update({
+        where: { id: stageId },
+        data: { ...stageUpdate, updatedAt: new Date() }
+      });
+
       return stage;
     } catch (error) {
       console.error('❌ Error updating stage:', error);
@@ -301,17 +307,15 @@ class InterviewStageService {
    */
   async reorderStages(jobId, stageOrder, userId) {
     try {
-      const stages = await InterviewStage.find({ jobId });
-      
       for (const { stageId, newOrder } of stageOrder) {
-        await InterviewStage.findByIdAndUpdate(stageId, {
-          order: newOrder,
-          updatedBy: userId,
-          updatedAt: new Date()
+        // `updatedBy` is not a column on InterviewStage; drop it.
+        await prisma.interviewStage.update({
+          where: { id: stageId },
+          data: { order: newOrder, updatedAt: new Date() }
         });
       }
-      
-      return await InterviewStage.find({ jobId }).sort('order');
+
+      return await prisma.interviewStage.findMany({ where: { jobId }, orderBy: { order: 'asc' } });
     } catch (error) {
       console.error('❌ Error reordering stages:', error);
       throw error;
@@ -323,28 +327,31 @@ class InterviewStageService {
    */
   async deleteStage(stageId, userId) {
     try {
-      const stage = await InterviewStage.findById(stageId);
+      const stage = await prisma.interviewStage.findUnique({ where: { id: stageId } });
       if (!stage) {
         throw new Error('Stage not found');
       }
-      
+
       // Check if there are interviews in this stage
-      const Interview = require('../models/Interview');
-      const existingInterviews = await Interview.countDocuments({ stageId });
-      
+      const existingInterviews = await prisma.interview.count({ where: { stageId } });
+
       if (existingInterviews > 0) {
         throw new Error(`Cannot delete stage with ${existingInterviews} existing interviews`);
       }
-      
+
       // Remove from job
-      const job = await Job.findById(stage.jobId);
-      job.interviewStages = job.interviewStages.filter(id => !id.equals(stageId));
-      job.pipelineConfiguration.totalStages = job.interviewStages.length;
-      await job.save();
-      
+      const job = await prisma.job.findUnique({ where: { id: stage.jobId } });
+      const interviewStageIds = (Array.isArray(job.interviewStageIds) ? job.interviewStageIds : []).filter(id => id !== stageId);
+      const pipelineConfiguration = { ...(job.pipelineConfiguration || {}) };
+      pipelineConfiguration.totalStages = interviewStageIds.length;
+      await prisma.job.update({
+        where: { id: job.id },
+        data: { interviewStageIds, pipelineConfiguration }
+      });
+
       // Delete stage
-      await InterviewStage.findByIdAndDelete(stageId);
-      
+      await prisma.interviewStage.delete({ where: { id: stageId } });
+
       return { success: true, deletedStage: stage };
     } catch (error) {
       console.error('❌ Error deleting stage:', error);
@@ -357,27 +364,37 @@ class InterviewStageService {
    */
   async getStagesForJob(jobId) {
     try {
-      const stages = await InterviewStage.find({ jobId, isActive: true })
-        .sort('order')
-        .populate('defaultQuestions')
-        .populate('createdBy', 'profile.firstName profile.lastName');
-      
+      const stages = await prisma.interviewStage.findMany({
+        where: { jobId, isActive: true },
+        orderBy: { order: 'asc' }
+      });
+
+      // Stitch defaultQuestions (array of question ids) and createdBy (user id)
+      const questionIds = [...new Set(stages.flatMap(s => (Array.isArray(s.defaultQuestions) ? s.defaultQuestions : [])).filter(Boolean))];
+      const creatorIds = [...new Set(stages.map(s => s.createdBy).filter(Boolean))];
+      const [questionDocs, creatorDocs] = await Promise.all([
+        questionIds.length ? prisma.interviewQuestion.findMany({ where: { id: { in: questionIds } } }) : [],
+        creatorIds.length ? prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, profile: true } }) : []
+      ]);
+      const questionMap = new Map(questionDocs.map(q => [q.id, q]));
+      const creatorMap = new Map(creatorDocs.map(u => [u.id, u]));
+
       // Add interview count for each stage
-      const Interview = require('../models/Interview');
       const stagesWithCounts = await Promise.all(
         stages.map(async (stage) => {
-          const interviewCount = await Interview.countDocuments({ 
-            jobId, 
-            stageId: stage._id 
+          const interviewCount = await prisma.interview.count({
+            where: { jobId, stageId: stage.id }
           });
-          
+
           return {
-            ...stage.toObject(),
+            ...stage,
+            defaultQuestions: (Array.isArray(stage.defaultQuestions) ? stage.defaultQuestions : []).map(qid => questionMap.get(qid) || qid),
+            createdBy: creatorMap.get(stage.createdBy) || stage.createdBy,
             interviewCount
           };
         })
       );
-      
+
       return stagesWithCounts;
     } catch (error) {
       console.error('❌ Error getting stages:', error);
@@ -390,15 +407,13 @@ class InterviewStageService {
    */
   async getStageAnalytics(stageId) {
     try {
-      const stage = await InterviewStage.findById(stageId);
+      const stage = await prisma.interviewStage.findUnique({ where: { id: stageId } });
       if (!stage) {
         throw new Error('Stage not found');
       }
 
-      const Interview = require('../models/Interview');
-      
       // Get all interviews for this stage
-      const interviews = await Interview.find({ stageId });
+      const interviews = await prisma.interview.findMany({ where: { stageId } });
       
       // Calculate analytics
       const analytics = {
@@ -442,12 +457,15 @@ class InterviewStageService {
         userId: stage.createdBy
       };
       
-      const questions = await interviewService.generateQuestionsWithAI(job._id, options);
-      
+      const questions = await interviewService.generateQuestionsWithAI(job.id, options);
+
       // Link questions to stage
-      stage.defaultQuestions = questions.map(q => q._id);
-      await stage.save();
-      
+      stage.defaultQuestions = questions.map(q => q.id);
+      await prisma.interviewStage.update({
+        where: { id: stage.id },
+        data: { defaultQuestions: stage.defaultQuestions }
+      });
+
       console.log(`✅ Generated ${questions.length} questions for stage ${stage.name}`);
     } catch (error) {
       console.error('⚠️ Error generating questions for stage:', error);

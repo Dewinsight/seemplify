@@ -1,6 +1,6 @@
 const { Queue, Worker, QueueEvents } = require('bullmq');
 const IORedis = require('ioredis');
-const mongoose = require('mongoose');
+const prisma = require('../db/client');
 const path = require('path');
 const fs = require('fs');
 const { promisify } = require('util');
@@ -122,7 +122,6 @@ async function initQueue() {
       await job.updateProgress(10);
 
       const RetryHelper = require('../utils/retryHelper');
-      const Candidate = require('../models/Candidate');
       const embeddingService = require('./embeddingService');
 
       const [cloudinaryResult, cvParsingResult] = await Promise.all([
@@ -169,7 +168,7 @@ async function initQueue() {
         resumeText: cvParsingResult.resumeText || '',
         status: 'New',
         source: 'Bulk Upload',
-        organization: organizationId,
+        organizationId: organizationId,
         createdBy: userId || null,
         cloudinaryPublicId: cloudinaryResult.publicId,
         cloudinaryResourceType: cloudinaryResult.resourceType,
@@ -200,8 +199,7 @@ async function initQueue() {
 
       await job.updateProgress(70);
 
-      const candidate = new Candidate(candidateData);
-      await candidate.save();
+      const candidate = await prisma.candidate.create({ data: candidateData });
 
       await job.updateProgress(85);
 
@@ -209,7 +207,10 @@ async function initQueue() {
         await embeddingService.createCandidateEmbedding(candidate);
         candidate.isEmbedded = true;
         candidate.embeddingCreatedAt = new Date();
-        await candidate.save();
+        await prisma.candidate.update({
+          where: { id: candidate.id },
+          data: { isEmbedded: true, embeddingCreatedAt: candidate.embeddingCreatedAt },
+        });
       } catch (embErr) {
         console.error(`⚠️ Embedding failed for ${originalName}: ${embErr.message}`);
       }

@@ -1,4 +1,4 @@
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
 const creditsService = require('./creditsService');
 const currencyConversionService = require('./currencyConversionService');
 const {
@@ -20,7 +20,10 @@ async function getReferenceCreditRate() {
 }
 
 async function getOrganizationCurrency(organizationId) {
-  const organization = await Organization.findById(organizationId).select('settings.defaultCurrency').lean();
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { settings: true }
+  });
   return currencyConversionService.normalizeCurrencyCode(organization?.settings?.defaultCurrency || 'USD');
 }
 

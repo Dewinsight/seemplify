@@ -1,7 +1,89 @@
-const FeedbackFormTemplate = require('../models/FeedbackFormTemplate');
-const CustomField = require('../models/CustomField');
-const CustomFieldResponse = require('../models/CustomFieldResponse');
-const Job = require('../models/Job');
+const prisma = require('../db/client');
+const { oid, isObjectIdLike, newId } = require('../db/objectId');
+
+// ---- helpers (replace Mongoose statics/methods/virtuals) ----
+
+// Stitch populated CustomField docs into a template's customFields Json array,
+// replacing each entry's customFieldRef id with the full CustomField object
+// (mirrors Mongoose .populate('customFields.customFieldRef')).
+async function populateTemplateCustomFields(template) {
+  if (!template || !Array.isArray(template.customFields)) return template;
+  const refIds = template.customFields
+    .map(f => (f && f.customFieldRef && typeof f.customFieldRef === 'object' ? f.customFieldRef._id || f.customFieldRef.id : f && f.customFieldRef))
+    .filter(Boolean)
+    .map(String);
+  if (refIds.length === 0) return template;
+  const fields = await prisma.customField.findMany({ where: { id: { in: refIds } } });
+  const byId = new Map(fields.map(f => [f.id, f]));
+  template.customFields = template.customFields.map(f => {
+    if (!f || !f.customFieldRef) return f;
+    const refId = typeof f.customFieldRef === 'object' ? f.customFieldRef._id || f.customFieldRef.id : f.customFieldRef;
+    const full = byId.get(String(refId));
+    return full ? { ...f, customFieldRef: full } : f;
+  });
+  return template;
+}
+
+// FeedbackFormTemplate.getDefault static
+async function getDefaultTemplate(organizationId) {
+  return prisma.feedbackFormTemplate.findFirst({
+    where: { organizationId, isDefault: true, isDeleted: false }
+  });
+}
+
+// FeedbackFormTemplate.findByOrganization static
+async function findTemplatesByOrganization(organizationId, includeDeleted = false) {
+  const where = { organizationId };
+  if (!includeDeleted) where.isDeleted = false;
+  return prisma.feedbackFormTemplate.findMany({
+    where,
+    orderBy: [{ isDefault: 'desc' }, { name: 'asc' }]
+  });
+}
+
+// FeedbackFormTemplate canDelete virtual
+const templateCanDelete = (t) => !t.isDefault && (t.usageCount || 0) === 0;
+
+// FeedbackFormTemplate.incrementUsage method
+async function incrementTemplateUsage(template, jobId) {
+  const jobsUsing = Array.isArray(template.jobsUsingIds) ? [...template.jobsUsingIds] : [];
+  if (jobId && !jobsUsing.map(String).includes(String(jobId))) jobsUsing.push(String(jobId));
+  return prisma.feedbackFormTemplate.update({
+    where: { id: template.id },
+    data: { usageCount: (template.usageCount || 0) + 1, jobsUsingIds: jobsUsing }
+  });
+}
+
+// FeedbackFormTemplate.decrementUsage method
+async function decrementTemplateUsage(template, jobId) {
+  const jobsUsing = (Array.isArray(template.jobsUsingIds) ? template.jobsUsingIds : [])
+    .filter(id => String(id) !== String(jobId));
+  return prisma.feedbackFormTemplate.update({
+    where: { id: template.id },
+    data: { usageCount: Math.max(0, (template.usageCount || 0) - 1), jobsUsingIds: jobsUsing }
+  });
+}
+
+// CustomField canDelete virtual
+const customFieldCanDelete = (f) => (f.usageCount || 0) === 0;
+
+// CustomField.incrementUsage method
+async function incrementCustomFieldUsage(field) {
+  return prisma.customField.update({
+    where: { id: field.id },
+    data: { usageCount: (field.usageCount || 0) + 1 }
+  });
+}
+
+// CustomField.decrementUsage method
+async function decrementCustomFieldUsage(field) {
+  if ((field.usageCount || 0) > 0) {
+    return prisma.customField.update({
+      where: { id: field.id },
+      data: { usageCount: field.usageCount - 1 }
+    });
+  }
+}
 
 // ==================== TEMPLATE ENDPOINTS ====================
 
@@ -50,10 +132,12 @@ exports.createTemplate = async (req, res) => {
     }
 
     // Check for duplicate template name in organization
-    const existingTemplate = await FeedbackFormTemplate.findOne({
-      organization: organizationId,
-      name: name.trim(),
-      isDeleted: false
+    const existingTemplate = await prisma.feedbackFormTemplate.findFirst({
+      where: {
+        organizationId: organizationId,
+        name: name.trim(),
+        isDeleted: false
+      }
     });
 
     if (existingTemplate) {
@@ -77,10 +161,12 @@ exports.createTemplate = async (req, res) => {
         .filter(Boolean);
       
       if (customFieldIds.length > 0) {
-        const validFields = await CustomField.find({
-          _id: { $in: customFieldIds },
-          organization: organizationId,
-          isDeleted: false
+        const validFields = await prisma.customField.findMany({
+          where: {
+            id: { in: customFieldIds.map(String) },
+            organizationId: organizationId,
+            isDeleted: false
+          }
         });
 
         if (validFields.length !== customFieldIds.length) {
@@ -116,33 +202,41 @@ exports.createTemplate = async (req, res) => {
       }
     }
 
+    // Enforce a single default template per organization (mirrors model pre-save)
+    if (isDefault) {
+      await prisma.feedbackFormTemplate.updateMany({
+        where: { organizationId: organizationId, isDefault: true },
+        data: { isDefault: false }
+      });
+    }
+
     // Create template
-    const template = new FeedbackFormTemplate({
-      organization: organizationId,
-      name: name.trim(),
-      description: description?.trim() || '',
-      isDefault: isDefault || false,
-      systemFields: systemFields || [],
-      customFields: sanitizedCustomFields,
-      createdBy: userId
+    const template = await prisma.feedbackFormTemplate.create({
+      data: {
+        organizationId: organizationId,
+        name: name.trim(),
+        description: description?.trim() || '',
+        isDefault: isDefault || false,
+        systemFields: systemFields || [],
+        customFields: sanitizedCustomFields,
+        createdById: userId
+      }
     });
 
-    await template.save();
-
     // Populate custom field references
-    await template.populate('customFields.customFieldRef');
+    await populateTemplateCustomFields(template);
 
     // Update usage count for custom fields
     if (template.customFields && template.customFields.length > 0) {
       for (const field of template.customFields) {
         if (field.customFieldRef) {
           // Extract ID whether it's a string or populated object
-          const fieldId = typeof field.customFieldRef === 'object' && field.customFieldRef._id 
-            ? field.customFieldRef._id 
+          const fieldId = typeof field.customFieldRef === 'object' && (field.customFieldRef._id || field.customFieldRef.id)
+            ? (field.customFieldRef._id || field.customFieldRef.id)
             : field.customFieldRef;
-          const customField = await CustomField.findById(fieldId);
+          const customField = await prisma.customField.findUnique({ where: { id: String(fieldId) } });
           if (customField) {
-            await customField.incrementUsage();
+            await incrementCustomFieldUsage(customField);
           }
         }
       }
@@ -189,9 +283,19 @@ exports.getTemplates = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
 
-    const templates = await FeedbackFormTemplate.findByOrganization(organizationId)
-      .populate('customFields.customFieldRef')
-      .populate('createdBy', 'profile.firstName profile.lastName email');
+    const templates = await findTemplatesByOrganization(organizationId);
+
+    // Stitch custom field refs + createdBy user onto each template (mirrors .populate)
+    const creatorIds = [...new Set(templates.map(t => t.createdById).filter(Boolean).map(String))];
+    const creators = creatorIds.length
+      ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, profile: true, email: true } })
+      : [];
+    const creatorById = new Map(creators.map(u => [u.id, u]));
+
+    for (const template of templates) {
+      await populateTemplateCustomFields(template);
+      template.createdBy = template.createdById ? (creatorById.get(template.createdById) || null) : null;
+    }
 
     res.json({
       success: true,
@@ -215,14 +319,13 @@ exports.getTemplateById = async (req, res) => {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
 
-    const template = await FeedbackFormTemplate.findOne({
-      _id: id,
-      organization: organizationId,
-      isDeleted: false
-    })
-      .populate('customFields.customFieldRef')
-      .populate('createdBy', 'profile.firstName profile.lastName email')
-      .populate('updatedBy', 'profile.firstName profile.lastName email');
+    const template = await prisma.feedbackFormTemplate.findFirst({
+      where: {
+        id: id,
+        organizationId: organizationId,
+        isDeleted: false
+      }
+    });
 
     if (!template) {
       return res.status(404).json({
@@ -230,6 +333,14 @@ exports.getTemplateById = async (req, res) => {
         error: 'Template not found'
       });
     }
+
+    await populateTemplateCustomFields(template);
+    template.createdBy = template.createdById
+      ? await prisma.user.findUnique({ where: { id: template.createdById }, select: { id: true, profile: true, email: true } })
+      : null;
+    template.updatedBy = template.updatedById
+      ? await prisma.user.findUnique({ where: { id: template.updatedById }, select: { id: true, profile: true, email: true } })
+      : null;
 
     res.json({
       success: true,
@@ -262,10 +373,12 @@ exports.updateTemplate = async (req, res) => {
       customFields
     } = req.body;
 
-    const template = await FeedbackFormTemplate.findOne({
-      _id: id,
-      organization: organizationId,
-      isDeleted: false
+    const template = await prisma.feedbackFormTemplate.findFirst({
+      where: {
+        id: id,
+        organizationId: organizationId,
+        isDeleted: false
+      }
     });
 
     if (!template) {
@@ -276,56 +389,68 @@ exports.updateTemplate = async (req, res) => {
     }
 
     // Get old custom fields to update usage counts
-    const oldCustomFieldIds = template.customFields
-      .map(f => f.customFieldRef?.toString())
+    const oldCustomFieldIds = (Array.isArray(template.customFields) ? template.customFields : [])
+      .map(f => f.customFieldRef ? String(f.customFieldRef) : null)
       .filter(Boolean);
 
-    // Update fields
-    if (name !== undefined) template.name = name;
-    if (description !== undefined) template.description = description;
-    if (isDefault !== undefined) template.isDefault = isDefault;
-    if (systemFields !== undefined) template.systemFields = systemFields;
+    // Build update payload
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (isDefault !== undefined) updateData.isDefault = isDefault;
+    if (systemFields !== undefined) updateData.systemFields = systemFields;
     if (customFields !== undefined) {
       // Sanitize customFields to ensure customFieldRef is always a string ID, not an object
-      template.customFields = customFields.map(field => ({
+      updateData.customFields = customFields.map(field => ({
         ...field,
         customFieldRef: field.customFieldRef?._id || field.customFieldRef // Extract _id if it's an object
       }));
     }
-    
-    template.updatedBy = userId;
 
-    await template.save();
-    await template.populate('customFields.customFieldRef');
+    updateData.updatedById = userId;
+
+    // Enforce a single default template per organization (mirrors model pre-save)
+    if (isDefault === true && !template.isDefault) {
+      await prisma.feedbackFormTemplate.updateMany({
+        where: { organizationId: organizationId, isDefault: true, id: { not: template.id } },
+        data: { isDefault: false }
+      });
+    }
+
+    const updatedTemplate = await prisma.feedbackFormTemplate.update({
+      where: { id: template.id },
+      data: updateData
+    });
+    await populateTemplateCustomFields(updatedTemplate);
 
     // Update custom field usage counts
     // Extract IDs from potentially populated customFieldRef
-    const newCustomFieldIds = template.customFields
+    const newCustomFieldIds = (Array.isArray(updatedTemplate.customFields) ? updatedTemplate.customFields : [])
       .map(f => {
         const ref = f.customFieldRef;
         if (!ref) return null;
         // If it's a populated object, get its _id, otherwise use as-is
-        return typeof ref === 'object' && ref._id ? ref._id.toString() : ref.toString();
+        return typeof ref === 'object' && (ref._id || ref.id) ? String(ref._id || ref.id) : String(ref);
       })
       .filter(Boolean);
 
     // Decrement removed fields
     const removedFields = oldCustomFieldIds.filter(id => !newCustomFieldIds.includes(id));
     for (const fieldId of removedFields) {
-      const field = await CustomField.findById(fieldId);
-      if (field) await field.decrementUsage();
+      const field = await prisma.customField.findUnique({ where: { id: fieldId } });
+      if (field) await decrementCustomFieldUsage(field);
     }
 
     // Increment added fields
     const addedFields = newCustomFieldIds.filter(id => !oldCustomFieldIds.includes(id));
     for (const fieldId of addedFields) {
-      const field = await CustomField.findById(fieldId);
-      if (field) await field.incrementUsage();
+      const field = await prisma.customField.findUnique({ where: { id: fieldId } });
+      if (field) await incrementCustomFieldUsage(field);
     }
 
     res.json({
       success: true,
-      data: template
+      data: updatedTemplate
     });
   } catch (error) {
     console.error('Error updating template:', error);
@@ -346,10 +471,12 @@ exports.deleteTemplate = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
 
-    const template = await FeedbackFormTemplate.findOne({
-      _id: id,
-      organization: organizationId,
-      isDeleted: false
+    const template = await prisma.feedbackFormTemplate.findFirst({
+      where: {
+        id: id,
+        organizationId: organizationId,
+        isDeleted: false
+      }
     });
 
     if (!template) {
@@ -360,7 +487,7 @@ exports.deleteTemplate = async (req, res) => {
     }
 
     // Check if template can be deleted
-    if (!template.canDelete) {
+    if (!templateCanDelete(template)) {
       return res.status(400).json({
         success: false,
         error: 'Cannot delete default template or template in use'
@@ -368,16 +495,16 @@ exports.deleteTemplate = async (req, res) => {
     }
 
     // Soft delete
-    template.isDeleted = true;
-    template.deletedAt = new Date();
-    template.deletedBy = userId;
-    await template.save();
+    await prisma.feedbackFormTemplate.update({
+      where: { id: template.id },
+      data: { isDeleted: true, deletedAt: new Date(), deletedById: userId }
+    });
 
     // Decrement usage count for custom fields
-    for (const field of template.customFields) {
+    for (const field of (Array.isArray(template.customFields) ? template.customFields : [])) {
       if (field.customFieldRef) {
-        const customField = await CustomField.findById(field.customFieldRef);
-        if (customField) await customField.decrementUsage();
+        const customField = await prisma.customField.findUnique({ where: { id: String(field.customFieldRef) } });
+        if (customField) await decrementCustomFieldUsage(customField);
       }
     }
 
@@ -405,10 +532,12 @@ exports.duplicateTemplate = async (req, res) => {
     const userId = req.user.id;
     const { name } = req.body;
 
-    const template = await FeedbackFormTemplate.findOne({
-      _id: id,
-      organization: organizationId,
-      isDeleted: false
+    const template = await prisma.feedbackFormTemplate.findFirst({
+      where: {
+        id: id,
+        organizationId: organizationId,
+        isDeleted: false
+      }
     });
 
     if (!template) {
@@ -418,14 +547,28 @@ exports.duplicateTemplate = async (req, res) => {
       });
     }
 
-    const duplicate = await template.duplicate(userId, name);
-    await duplicate.populate('customFields.customFieldRef');
+    // Duplicate template (mirrors FeedbackFormTemplate.duplicate method)
+    const duplicate = await prisma.feedbackFormTemplate.create({
+      data: {
+        organizationId: template.organizationId,
+        name: name || `${template.name} (Copy)`,
+        description: template.description,
+        isDefault: false,
+        systemFields: Array.isArray(template.systemFields) ? template.systemFields : [],
+        customFields: Array.isArray(template.customFields) ? template.customFields : [],
+        createdById: userId
+      }
+    });
+    await populateTemplateCustomFields(duplicate);
 
     // Increment usage count for custom fields
-    for (const field of duplicate.customFields) {
+    for (const field of (Array.isArray(duplicate.customFields) ? duplicate.customFields : [])) {
       if (field.customFieldRef) {
-        const customField = await CustomField.findById(field.customFieldRef);
-        if (customField) await customField.incrementUsage();
+        const fieldId = typeof field.customFieldRef === 'object'
+          ? (field.customFieldRef._id || field.customFieldRef.id)
+          : field.customFieldRef;
+        const customField = await prisma.customField.findUnique({ where: { id: String(fieldId) } });
+        if (customField) await incrementCustomFieldUsage(customField);
       }
     }
 
@@ -490,20 +633,20 @@ exports.createCustomField = async (req, res) => {
     }
 
     // Create custom field
-    const customField = new CustomField({
-      organization: organizationId,
-      name,
-      label,
-      description,
-      type,
-      options,
-      validation,
-      ratingConfig,
-      calculationFormula,
-      createdBy: userId
+    const customField = await prisma.customField.create({
+      data: {
+        organizationId: organizationId,
+        name,
+        label,
+        description,
+        type,
+        options,
+        validation,
+        ratingConfig,
+        calculationFormula,
+        createdById: userId
+      }
     });
-
-    await customField.save();
 
     res.status(201).json({
       success: true,
@@ -529,15 +672,26 @@ exports.getCustomFields = async (req, res) => {
 
     let customFields;
     if (type) {
-      customFields = await CustomField.findByType(organizationId, type);
+      customFields = await prisma.customField.findMany({
+        where: { organizationId: organizationId, type: type, isDeleted: false },
+        orderBy: { name: 'asc' }
+      });
     } else {
-      customFields = await CustomField.findByOrganization(organizationId);
+      customFields = await prisma.customField.findMany({
+        where: { organizationId: organizationId, isDeleted: false },
+        orderBy: { name: 'asc' }
+      });
     }
 
-    customFields = await CustomField.populate(customFields, {
-      path: 'createdBy',
-      select: 'profile.firstName profile.lastName email'
-    });
+    // Stitch createdBy user onto each field (mirrors CustomField.populate)
+    const fieldCreatorIds = [...new Set(customFields.map(f => f.createdById).filter(Boolean).map(String))];
+    const fieldCreators = fieldCreatorIds.length
+      ? await prisma.user.findMany({ where: { id: { in: fieldCreatorIds } }, select: { id: true, profile: true, email: true } })
+      : [];
+    const fieldCreatorById = new Map(fieldCreators.map(u => [u.id, u]));
+    for (const f of customFields) {
+      f.createdBy = f.createdById ? (fieldCreatorById.get(f.createdById) || null) : null;
+    }
 
     res.json({
       success: true,
@@ -561,13 +715,13 @@ exports.getCustomFieldById = async (req, res) => {
     const { id } = req.params;
     const organizationId = req.user.currentOrganization;
 
-    const customField = await CustomField.findOne({
-      _id: id,
-      organization: organizationId,
-      isDeleted: false
-    })
-      .populate('createdBy', 'profile.firstName profile.lastName email')
-      .populate('updatedBy', 'profile.firstName profile.lastName email');
+    const customField = await prisma.customField.findFirst({
+      where: {
+        id: id,
+        organizationId: organizationId,
+        isDeleted: false
+      }
+    });
 
     if (!customField) {
       return res.status(404).json({
@@ -575,6 +729,13 @@ exports.getCustomFieldById = async (req, res) => {
         error: 'Custom field not found'
       });
     }
+
+    customField.createdBy = customField.createdById
+      ? await prisma.user.findUnique({ where: { id: customField.createdById }, select: { id: true, profile: true, email: true } })
+      : null;
+    customField.updatedBy = customField.updatedById
+      ? await prisma.user.findUnique({ where: { id: customField.updatedById }, select: { id: true, profile: true, email: true } })
+      : null;
 
     res.json({
       success: true,
@@ -610,10 +771,12 @@ exports.updateCustomField = async (req, res) => {
       calculationFormula
     } = req.body;
 
-    const customField = await CustomField.findOne({
-      _id: id,
-      organization: organizationId,
-      isDeleted: false
+    const customField = await prisma.customField.findFirst({
+      where: {
+        id: id,
+        organizationId: organizationId,
+        isDeleted: false
+      }
     });
 
     if (!customField) {
@@ -624,22 +787,26 @@ exports.updateCustomField = async (req, res) => {
     }
 
     // Update fields
-    if (name !== undefined) customField.name = name;
-    if (label !== undefined) customField.label = label;
-    if (description !== undefined) customField.description = description;
-    if (type !== undefined) customField.type = type;
-    if (options !== undefined) customField.options = options;
-    if (validation !== undefined) customField.validation = validation;
-    if (ratingConfig !== undefined) customField.ratingConfig = ratingConfig;
-    if (calculationFormula !== undefined) customField.calculationFormula = calculationFormula;
+    const fieldUpdate = {};
+    if (name !== undefined) fieldUpdate.name = name;
+    if (label !== undefined) fieldUpdate.label = label;
+    if (description !== undefined) fieldUpdate.description = description;
+    if (type !== undefined) fieldUpdate.type = type;
+    if (options !== undefined) fieldUpdate.options = options;
+    if (validation !== undefined) fieldUpdate.validation = validation;
+    if (ratingConfig !== undefined) fieldUpdate.ratingConfig = ratingConfig;
+    if (calculationFormula !== undefined) fieldUpdate.calculationFormula = calculationFormula;
 
-    customField.updatedBy = userId;
+    fieldUpdate.updatedById = userId;
 
-    await customField.save();
+    const updatedCustomField = await prisma.customField.update({
+      where: { id: customField.id },
+      data: fieldUpdate
+    });
 
     res.json({
       success: true,
-      data: customField
+      data: updatedCustomField
     });
   } catch (error) {
     console.error('Error updating custom field:', error);
@@ -660,10 +827,12 @@ exports.deleteCustomField = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const userId = req.user.id;
 
-    const customField = await CustomField.findOne({
-      _id: id,
-      organization: organizationId,
-      isDeleted: false
+    const customField = await prisma.customField.findFirst({
+      where: {
+        id: id,
+        organizationId: organizationId,
+        isDeleted: false
+      }
     });
 
     if (!customField) {
@@ -674,7 +843,7 @@ exports.deleteCustomField = async (req, res) => {
     }
 
     // Check if field can be deleted
-    if (!customField.canDelete) {
+    if (!customFieldCanDelete(customField)) {
       return res.status(400).json({
         success: false,
         error: 'Cannot delete custom field that is in use',
@@ -683,10 +852,10 @@ exports.deleteCustomField = async (req, res) => {
     }
 
     // Soft delete
-    customField.isDeleted = true;
-    customField.deletedAt = new Date();
-    customField.deletedBy = userId;
-    await customField.save();
+    await prisma.customField.update({
+      where: { id: customField.id },
+      data: { isDeleted: true, deletedAt: new Date(), deletedById: userId }
+    });
 
     res.json({
       success: true,
@@ -712,10 +881,12 @@ exports.getJobFeedbackConfig = async (req, res) => {
     const { jobId } = req.params;
     const organizationId = req.user.currentOrganization;
 
-    const job = await Job.findOne({
-      _id: jobId,
-      organization: organizationId
-    }).populate('feedbackFormConfig.templateId');
+    const job = await prisma.job.findFirst({
+      where: {
+        id: jobId,
+        organizationId: organizationId
+      }
+    });
 
     if (!job) {
       return res.status(404).json({
@@ -726,8 +897,8 @@ exports.getJobFeedbackConfig = async (req, res) => {
 
     // If no config exists, return default template
     if (!job.feedbackFormConfig || !job.feedbackFormConfig.templateId) {
-      const defaultTemplate = await FeedbackFormTemplate.getDefault(organizationId);
-      
+      const defaultTemplate = await getDefaultTemplate(organizationId);
+
       return res.json({
         success: true,
         data: {
@@ -738,16 +909,31 @@ exports.getJobFeedbackConfig = async (req, res) => {
       });
     }
 
-    // Populate custom field references in overrides
-    if (job.feedbackFormConfig.overrides && job.feedbackFormConfig.overrides.customFields) {
-      await Job.populate(job, {
-        path: 'feedbackFormConfig.overrides.customFields.customFieldId'
+    // Populate feedbackFormConfig.templateId (soft ref -> full template object)
+    const feedbackFormConfig = { ...job.feedbackFormConfig };
+    if (feedbackFormConfig.templateId) {
+      feedbackFormConfig.templateId = await prisma.feedbackFormTemplate.findUnique({
+        where: { id: String(feedbackFormConfig.templateId) }
       });
+    }
+
+    // Populate custom field references in overrides
+    if (feedbackFormConfig.overrides && Array.isArray(feedbackFormConfig.overrides.customFields)) {
+      feedbackFormConfig.overrides = { ...feedbackFormConfig.overrides };
+      feedbackFormConfig.overrides.customFields = await Promise.all(
+        feedbackFormConfig.overrides.customFields.map(async (cf) => {
+          if (cf && cf.customFieldId) {
+            const full = await prisma.customField.findUnique({ where: { id: String(cf.customFieldId) } });
+            return { ...cf, customFieldId: full || cf.customFieldId };
+          }
+          return cf;
+        })
+      );
     }
 
     res.json({
       success: true,
-      data: job.feedbackFormConfig
+      data: feedbackFormConfig
     });
   } catch (error) {
     console.error('Error fetching job feedback config:', error);
@@ -773,9 +959,11 @@ exports.updateJobFeedbackConfig = async (req, res) => {
       overrides
     } = req.body;
 
-    const job = await Job.findOne({
-      _id: jobId,
-      organization: organizationId
+    const job = await prisma.job.findFirst({
+      where: {
+        id: jobId,
+        organizationId: organizationId
+      }
     });
 
     if (!job) {
@@ -788,51 +976,56 @@ exports.updateJobFeedbackConfig = async (req, res) => {
     // Track old template to update usage counts
     const oldTemplateId = job.feedbackFormConfig?.templateId;
 
-    // Update configuration
-    if (!job.feedbackFormConfig) {
-      job.feedbackFormConfig = {};
-    }
+    // Update configuration (read-modify-write the Json column)
+    const feedbackFormConfig = job.feedbackFormConfig ? { ...job.feedbackFormConfig } : {};
 
     if (useTemplate !== undefined) {
-      job.feedbackFormConfig.useTemplate = useTemplate;
+      feedbackFormConfig.useTemplate = useTemplate;
     }
 
     if (templateId !== undefined) {
-      job.feedbackFormConfig.templateId = templateId;
+      feedbackFormConfig.templateId = templateId;
     }
 
     if (overrides !== undefined) {
       // If overrides is explicitly null, clear existing overrides
       if (overrides === null) {
-        job.feedbackFormConfig.overrides = null;
+        feedbackFormConfig.overrides = null;
       } else {
-        job.feedbackFormConfig.overrides = overrides;
+        feedbackFormConfig.overrides = overrides;
       }
     }
 
-    await job.save();
+    await prisma.job.update({
+      where: { id: job.id },
+      data: { feedbackFormConfig }
+    });
 
     // Update template usage counts
     if (oldTemplateId && oldTemplateId.toString() !== templateId) {
-      const oldTemplate = await FeedbackFormTemplate.findById(oldTemplateId);
+      const oldTemplate = await prisma.feedbackFormTemplate.findUnique({ where: { id: String(oldTemplateId) } });
       if (oldTemplate) {
-        await oldTemplate.decrementUsage(jobId);
+        await decrementTemplateUsage(oldTemplate, jobId);
       }
     }
 
     if (templateId && (!oldTemplateId || oldTemplateId.toString() !== templateId)) {
-      const newTemplate = await FeedbackFormTemplate.findById(templateId);
+      const newTemplate = await prisma.feedbackFormTemplate.findUnique({ where: { id: String(templateId) } });
       if (newTemplate) {
-        await newTemplate.incrementUsage(jobId);
+        await incrementTemplateUsage(newTemplate, jobId);
       }
     }
 
-    // Populate and return updated config
-    await job.populate('feedbackFormConfig.templateId');
+    // Populate and return updated config (templateId soft ref -> full template object)
+    if (feedbackFormConfig.templateId) {
+      feedbackFormConfig.templateId = await prisma.feedbackFormTemplate.findUnique({
+        where: { id: String(feedbackFormConfig.templateId) }
+      });
+    }
 
     res.json({
       success: true,
-      data: job.feedbackFormConfig
+      data: feedbackFormConfig
     });
   } catch (error) {
     console.error('Error updating job feedback config:', error);
@@ -852,12 +1045,12 @@ exports.getJobFeedbackFormPreview = async (req, res) => {
     const { jobId } = req.params;
     const organizationId = req.user.currentOrganization;
 
-    const job = await Job.findOne({
-      _id: jobId,
-      organization: organizationId
-    })
-      .populate('feedbackFormConfig.templateId')
-      .populate('feedbackFormConfig.overrides.customFields.customFieldId');
+    const job = await prisma.job.findFirst({
+      where: {
+        id: jobId,
+        organizationId: organizationId
+      }
+    });
 
     if (!job) {
       return res.status(404).json({
@@ -866,12 +1059,15 @@ exports.getJobFeedbackFormPreview = async (req, res) => {
       });
     }
 
+    // Populate feedbackFormConfig refs (templateId + overrides custom fields)
+    const feedbackFormConfig = job.feedbackFormConfig ? { ...job.feedbackFormConfig } : null;
+
     // Get effective template
     let template;
-    if (job.feedbackFormConfig && job.feedbackFormConfig.templateId) {
-      template = job.feedbackFormConfig.templateId;
+    if (feedbackFormConfig && feedbackFormConfig.templateId) {
+      template = await prisma.feedbackFormTemplate.findUnique({ where: { id: String(feedbackFormConfig.templateId) } });
     } else {
-      template = await FeedbackFormTemplate.getDefault(organizationId);
+      template = await getDefaultTemplate(organizationId);
     }
 
     if (!template) {
@@ -882,19 +1078,33 @@ exports.getJobFeedbackFormPreview = async (req, res) => {
     }
 
     // Populate custom fields in template
-    await template.populate('customFields.customFieldRef');
+    await populateTemplateCustomFields(template);
+
+    // Populate custom field references in overrides
+    if (feedbackFormConfig && feedbackFormConfig.overrides && Array.isArray(feedbackFormConfig.overrides.customFields)) {
+      feedbackFormConfig.overrides = { ...feedbackFormConfig.overrides };
+      feedbackFormConfig.overrides.customFields = await Promise.all(
+        feedbackFormConfig.overrides.customFields.map(async (cf) => {
+          if (cf && cf.customFieldId) {
+            const full = await prisma.customField.findUnique({ where: { id: String(cf.customFieldId) } });
+            return { ...cf, customFieldId: full || cf.customFieldId };
+          }
+          return cf;
+        })
+      );
+    }
 
     // Apply overrides if they exist
-    let fields = [...template.systemFields, ...template.customFields];
+    let fields = [...(template.systemFields || []), ...(template.customFields || [])];
 
-    if (job.feedbackFormConfig && job.feedbackFormConfig.overrides) {
-      const overrides = job.feedbackFormConfig.overrides;
-      
+    if (feedbackFormConfig && feedbackFormConfig.overrides) {
+      const overrides = feedbackFormConfig.overrides;
+
       // Apply system field overrides
       if (overrides.systemFields && overrides.systemFields.length > 0) {
         fields = fields.map(field => {
           const override = overrides.systemFields.find(o => o.fieldId === field.fieldId);
-          return override ? { ...field.toObject(), ...override } : field;
+          return override ? { ...field, ...override } : field;
         });
       }
 

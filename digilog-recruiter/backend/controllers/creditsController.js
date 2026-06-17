@@ -1,5 +1,6 @@
 const creditsService = require('../services/creditsService');
-const User = require('../models/User');
+const prisma = require('../db/client');
+const orgAccess = require('../db/orgAccess');
 
 const DEFAULT_CREDIT_COSTS = {
   createJob: 0,
@@ -67,23 +68,31 @@ const resolveCurrentOrganization = async (req) => {
     return null;
   }
 
-  const user = await User.findById(req.user.id).select('currentOrganization organizationMemberships hasCompletedOrganizationSetup');
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { currentOrganizationId: true, hasCompletedOrganizationSetup: true }
+  });
   if (!user) {
     return null;
   }
 
-  if (user.currentOrganization) {
-    req.user.currentOrganization = user.currentOrganization;
-    return user.currentOrganization;
+  if (user.currentOrganizationId) {
+    req.user.currentOrganization = user.currentOrganizationId;
+    return user.currentOrganizationId;
   }
 
-  const activeMembership = user.organizationMemberships?.find((membership) => membership.isActive);
-  if (activeMembership?.organization) {
-    user.currentOrganization = activeMembership.organization;
-    user.hasCompletedOrganizationSetup = true;
-    await user.save();
-    req.user.currentOrganization = user.currentOrganization;
-    return user.currentOrganization;
+  const activeMemberships = await orgAccess.getActiveMemberships(req.user.id);
+  const activeMembership = activeMemberships?.[0];
+  if (activeMembership?.organizationId) {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        currentOrganizationId: activeMembership.organizationId,
+        hasCompletedOrganizationSetup: true
+      }
+    });
+    req.user.currentOrganization = activeMembership.organizationId;
+    return activeMembership.organizationId;
   }
 
   return null;

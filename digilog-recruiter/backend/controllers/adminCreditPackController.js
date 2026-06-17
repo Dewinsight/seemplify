@@ -1,6 +1,9 @@
-const CreditPack = require('../models/CreditPack');
-const CreditPurchaseRequest = require('../models/CreditPurchaseRequest');
-const Organization = require('../models/Organization');
+const prisma = require('../db/client');
+const { isObjectIdLike } = require('../db/objectId');
+
+// Recompute the totalCredits field that the Mongoose pre-save hook used to derive.
+const computeTotalCredits = (credits, bonusCredits) =>
+  (Number(credits) || 0) + (Number(bonusCredits) || 0);
 
 /**
  * Get all credit packs (admin)
@@ -9,9 +12,10 @@ const Organization = require('../models/Organization');
  */
 exports.getAllCreditPacks = async (req, res) => {
   try {
-    const creditPacks = await CreditPack.find()
-      .sort({ displayOrder: 1, price: 1 });
-    
+    const creditPacks = await prisma.creditPack.findMany({
+      orderBy: [{ displayOrder: 'asc' }, { price: 'asc' }]
+    });
+
     res.json({
       success: true,
       creditPacks
@@ -32,9 +36,11 @@ exports.getAllCreditPacks = async (req, res) => {
  */
 exports.createCreditPack = async (req, res) => {
   try {
-    const creditPack = new CreditPack(req.body);
-    await creditPack.save();
-    
+    const data = { ...req.body };
+    // Replicate the pre-save hook that computed totalCredits.
+    data.totalCredits = computeTotalCredits(data.credits, data.bonusCredits);
+    const creditPack = await prisma.creditPack.create({ data });
+
     console.log('✅ Admin created credit pack:', creditPack.name);
     
     res.json({
@@ -61,23 +67,26 @@ exports.updateCreditPack = async (req, res) => {
     const { id } = req.params;
     
     // Find the credit pack first
-    const creditPack = await CreditPack.findById(id);
-    
-    if (!creditPack) {
-      return res.status(404).json({ 
+    const existing = isObjectIdLike(id)
+      ? await prisma.creditPack.findUnique({ where: { id } })
+      : null;
+
+    if (!existing) {
+      return res.status(404).json({
         success: false,
-        msg: 'Credit pack not found' 
+        msg: 'Credit pack not found'
       });
     }
-    
+
     // Update fields from request body
-    Object.keys(req.body).forEach(key => {
-      creditPack[key] = req.body[key];
-    });
-    
-    // Save to trigger pre-save hooks (which calculates totalCredits)
-    await creditPack.save();
-    
+    const data = { ...req.body };
+    // Recompute totalCredits the way the pre-save hook did.
+    const nextCredits = data.credits !== undefined ? data.credits : existing.credits;
+    const nextBonus = data.bonusCredits !== undefined ? data.bonusCredits : existing.bonusCredits;
+    data.totalCredits = computeTotalCredits(nextCredits, nextBonus);
+
+    const creditPack = await prisma.creditPack.update({ where: { id }, data });
+
     console.log('✅ Admin updated credit pack:', creditPack.name);
     
     res.json({
@@ -103,15 +112,19 @@ exports.deleteCreditPack = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const creditPack = await CreditPack.findByIdAndDelete(id);
-    
+    const creditPack = isObjectIdLike(id)
+      ? await prisma.creditPack.findUnique({ where: { id } })
+      : null;
+
     if (!creditPack) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        msg: 'Credit pack not found' 
+        msg: 'Credit pack not found'
       });
     }
-    
+
+    await prisma.creditPack.delete({ where: { id } });
+
     console.log('✅ Admin deleted credit pack:', creditPack.name);
     
     res.json({
@@ -140,20 +153,42 @@ exports.getAllPurchaseRequests = async (req, res) => {
     if (status && status !== 'all') {
       query.status = status;
     }
-    
+
     const skip = (page - 1) * limit;
-    
-    const requests = await CreditPurchaseRequest.find(query)
-      .populate('organization', 'name')
-      .populate('requestedBy', 'profile.firstName profile.lastName email')
-      .populate('creditPack')
-      .populate('reviewedBy', 'profile.firstName profile.lastName')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .skip(skip);
-    
-    const totalCount = await CreditPurchaseRequest.countDocuments(query);
-    
+
+    const [rawRequests, totalCount] = await Promise.all([
+      prisma.creditPurchaseRequest.findMany({
+        where: query,
+        orderBy: { createdAt: 'desc' },
+        take: parseInt(limit),
+        skip
+      }),
+      prisma.creditPurchaseRequest.count({ where: query })
+    ]);
+
+    // Stitch soft-ref populates (organization, requestedBy -> User, creditPack, reviewedBy -> Admin)
+    const orgIds = [...new Set(rawRequests.map(r => r.organizationId).filter(Boolean))];
+    const userIds = [...new Set(rawRequests.map(r => r.requestedById).filter(Boolean))];
+    const packIds = [...new Set(rawRequests.map(r => r.creditPackId).filter(Boolean))];
+    const adminIds = [...new Set(rawRequests.map(r => r.reviewedById).filter(Boolean))];
+    const [orgs, users, packs, admins] = await Promise.all([
+      orgIds.length ? prisma.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } }) : [],
+      userIds.length ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, profile: true, email: true } }) : [],
+      packIds.length ? prisma.creditPack.findMany({ where: { id: { in: packIds } } }) : [],
+      adminIds.length ? prisma.admin.findMany({ where: { id: { in: adminIds } }, select: { id: true, name: true } }) : []
+    ]);
+    const orgMap = new Map(orgs.map(o => [o.id, o]));
+    const userMap = new Map(users.map(u => [u.id, u]));
+    const packMap = new Map(packs.map(p => [p.id, p]));
+    const adminMap = new Map(admins.map(a => [a.id, a]));
+    const requests = rawRequests.map(r => ({
+      ...r,
+      organization: r.organizationId ? (orgMap.get(r.organizationId) || null) : null,
+      requestedBy: r.requestedById ? (userMap.get(r.requestedById) || null) : null,
+      creditPack: r.creditPackId ? (packMap.get(r.creditPackId) || null) : null,
+      reviewedBy: r.reviewedById ? (adminMap.get(r.reviewedById) || null) : null
+    }));
+
     res.json({
       success: true,
       requests,
@@ -184,83 +219,96 @@ exports.approvePurchaseRequest = async (req, res) => {
     const { reviewNotes } = req.body;
     const adminId = req.admin.id;
     
-    const request = await CreditPurchaseRequest.findById(requestId)
-      .populate('organization')
-      .populate('creditPack');
-    
+    let request = isObjectIdLike(requestId)
+      ? await prisma.creditPurchaseRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        msg: 'Purchase request not found' 
+        msg: 'Purchase request not found'
       });
     }
-    
+
     if (request.status !== 'pending') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        msg: 'Only pending requests can be approved' 
+        msg: 'Only pending requests can be approved'
       });
     }
-    
-    // Approve the request
-    request.approve(adminId, reviewNotes);
-    await request.save();
-    
-    // Grant credits to the organization
-    const organization = await Organization.findById(request.organization._id);
-    
-    if (!organization.subscription.creditUsage) {
-      organization.subscription.creditUsage = {
+
+    // Approve the request (inlines CreditPurchaseRequest#approve)
+    request = await prisma.creditPurchaseRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'approved',
+        reviewedById: adminId,
+        reviewedAt: new Date(),
+        reviewNotes: reviewNotes || ''
+      }
+    });
+
+    // Grant credits to the organization (subscription is a Json column -> read-modify-write)
+    const organization = await prisma.organization.findUnique({ where: { id: request.organizationId } });
+
+    const subscription = organization.subscription || {};
+    if (!subscription.creditUsage) {
+      subscription.creditUsage = {
         totalCredits: 0,
         usedCredits: 0,
         remainingCredits: 0,
         transactions: []
       };
     }
-    
+
     const creditsToAdd = request.packDetails.totalCredits;
-    
+
     // Add credits
-    organization.subscription.creditUsage.totalCredits += creditsToAdd;
-    organization.subscription.creditUsage.remainingCredits += creditsToAdd;
-    
+    subscription.creditUsage.totalCredits += creditsToAdd;
+    subscription.creditUsage.remainingCredits += creditsToAdd;
+
     // Record transaction
-    organization.subscription.creditUsage.transactions.push({
+    subscription.creditUsage.transactions.push({
       action: 'creditPurchase',
       credits: creditsToAdd,
       entityType: 'system',
       performedBy: adminId,
       timestamp: new Date(),
-      balanceAfter: organization.subscription.creditUsage.remainingCredits,
+      balanceAfter: subscription.creditUsage.remainingCredits,
       metadata: {
-        requestId: request._id,
+        requestId: request.id,
         creditPackName: request.packDetails.name,
         creditPackCode: request.packDetails.code,
         price: request.packDetails.price,
         currency: request.packDetails.currency
       }
     });
-    
-    await organization.save();
-    
-    // Mark credits as granted
-    request.markCreditsGranted();
-    await request.save();
-    
+
+    await prisma.organization.update({
+      where: { id: organization.id },
+      data: { subscription }
+    });
+
+    // Mark credits as granted (inlines CreditPurchaseRequest#markCreditsGranted)
+    request = await prisma.creditPurchaseRequest.update({
+      where: { id: request.id },
+      data: { creditsGranted: true, grantedAt: new Date() }
+    });
+
     console.log('✅ Admin approved credit purchase request:', {
-      requestId: request._id,
-      organizationId: organization._id,
+      requestId: request.id,
+      organizationId: organization.id,
       organizationName: organization.name,
       creditsGranted: creditsToAdd,
-      newBalance: organization.subscription.creditUsage.remainingCredits
+      newBalance: subscription.creditUsage.remainingCredits
     });
-    
+
     res.json({
       success: true,
       msg: 'Purchase request approved and credits granted successfully',
       request,
       creditsGranted: creditsToAdd,
-      newCreditBalance: organization.subscription.creditUsage.remainingCredits
+      newCreditBalance: subscription.creditUsage.remainingCredits
     });
   } catch (error) {
     console.error('Error approving purchase request:', error);
@@ -282,28 +330,37 @@ exports.rejectPurchaseRequest = async (req, res) => {
     const { reviewNotes } = req.body;
     const adminId = req.admin.id;
     
-    const request = await CreditPurchaseRequest.findById(requestId);
-    
+    let request = isObjectIdLike(requestId)
+      ? await prisma.creditPurchaseRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        msg: 'Purchase request not found' 
+        msg: 'Purchase request not found'
       });
     }
-    
+
     if (request.status !== 'pending') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        msg: 'Only pending requests can be rejected' 
+        msg: 'Only pending requests can be rejected'
       });
     }
-    
-    // Reject the request
-    request.reject(adminId, reviewNotes);
-    await request.save();
-    
+
+    // Reject the request (inlines CreditPurchaseRequest#reject)
+    request = await prisma.creditPurchaseRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'rejected',
+        reviewedById: adminId,
+        reviewedAt: new Date(),
+        reviewNotes: reviewNotes || ''
+      }
+    });
+
     console.log('✅ Admin rejected credit purchase request:', {
-      requestId: request._id,
+      requestId: request.id,
       reviewNotes
     });
     

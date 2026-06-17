@@ -1,7 +1,13 @@
-const CreditPack = require('../models/CreditPack');
-const CreditPurchaseRequest = require('../models/CreditPurchaseRequest');
-const Organization = require('../models/Organization');
-const User = require('../models/User');
+const prisma = require('../db/client');
+const { isObjectIdLike } = require('../db/objectId');
+
+// Inlined replacement for CreditPack#toPublicJSON (adds the `pricePerCredit` virtual).
+const creditPackToPublicJSON = (pack) => {
+  if (!pack) return pack;
+  const totalCredits = pack.totalCredits;
+  const pricePerCredit = (!totalCredits || totalCredits <= 0) ? 0 : (pack.price / totalCredits);
+  return { ...pack, pricePerCredit };
+};
 
 /**
  * Get all active credit packs
@@ -10,12 +16,14 @@ const User = require('../models/User');
  */
 exports.getCreditPacks = async (req, res) => {
   try {
-    const creditPacks = await CreditPack.find({ isActive: true })
-      .sort({ displayOrder: 1, price: 1 });
-    
+    const creditPacks = await prisma.creditPack.findMany({
+      where: { isActive: true },
+      orderBy: [{ displayOrder: 'asc' }, { price: 'asc' }]
+    });
+
     res.json({
       success: true,
-      creditPacks: creditPacks.map(pack => pack.toPublicJSON())
+      creditPacks: creditPacks.map(pack => creditPackToPublicJSON(pack))
     });
   } catch (error) {
     console.error('Error fetching credit packs:', error);
@@ -36,22 +44,24 @@ exports.getCreditPackById = async (req, res) => {
     const { identifier } = req.params;
     
     // Try to find by ID first, then by code
-    let creditPack = await CreditPack.findById(identifier);
-    
+    let creditPack = isObjectIdLike(identifier)
+      ? await prisma.creditPack.findUnique({ where: { id: identifier } })
+      : null;
+
     if (!creditPack) {
-      creditPack = await CreditPack.findOne({ code: identifier, isActive: true });
+      creditPack = await prisma.creditPack.findFirst({ where: { code: identifier, isActive: true } });
     }
-    
+
     if (!creditPack) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        msg: 'Credit pack not found' 
+        msg: 'Credit pack not found'
       });
     }
-    
+
     res.json({
       success: true,
-      creditPack: creditPack.toPublicJSON()
+      creditPack: creditPackToPublicJSON(creditPack)
     });
   } catch (error) {
     console.error('Error fetching credit pack:', error);
@@ -81,48 +91,53 @@ exports.createPurchaseRequest = async (req, res) => {
     }
     
     // Verify credit pack exists and is active
-    const creditPack = await CreditPack.findById(creditPackId);
-    
+    const creditPack = isObjectIdLike(creditPackId)
+      ? await prisma.creditPack.findUnique({ where: { id: creditPackId } })
+      : null;
+
     if (!creditPack || !creditPack.isActive) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        msg: 'Credit pack not found or not available' 
+        msg: 'Credit pack not found or not available'
       });
     }
-    
+
     // Check if there's already a pending request for this org
-    const existingRequest = await CreditPurchaseRequest.findOne({
-      organization: organizationId,
-      creditPack: creditPackId,
-      status: 'pending'
+    const existingRequest = await prisma.creditPurchaseRequest.findFirst({
+      where: {
+        organizationId: organizationId,
+        creditPackId: creditPackId,
+        status: 'pending'
+      }
     });
-    
+
     if (existingRequest) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        msg: 'You already have a pending request for this credit pack' 
+        msg: 'You already have a pending request for this credit pack'
       });
     }
-    
+
     // Create the purchase request
-    const purchaseRequest = new CreditPurchaseRequest({
-      organization: organizationId,
-      requestedBy: userId,
-      creditPack: creditPackId,
-      packDetails: {
-        name: creditPack.name,
-        code: creditPack.code,
-        credits: creditPack.credits,
-        bonusCredits: creditPack.bonusCredits,
-        totalCredits: creditPack.totalCredits,
-        price: creditPack.price,
-        currency: creditPack.currency
-      },
-      notes: notes || ''
+    const purchaseRequest = await prisma.creditPurchaseRequest.create({
+      data: {
+        organizationId: organizationId,
+        requestedById: userId,
+        creditPackId: creditPackId,
+        status: 'pending',
+        packDetails: {
+          name: creditPack.name,
+          code: creditPack.code,
+          credits: creditPack.credits,
+          bonusCredits: creditPack.bonusCredits,
+          totalCredits: creditPack.totalCredits,
+          price: creditPack.price,
+          currency: creditPack.currency
+        },
+        notes: notes || ''
+      }
     });
-    
-    await purchaseRequest.save();
-    
+
     console.log('✅ Credit purchase request created:', {
       requestId: purchaseRequest._id,
       organizationId,
@@ -160,17 +175,33 @@ exports.getOrganizationPurchaseRequests = async (req, res) => {
       });
     }
     
-    const requests = await CreditPurchaseRequest.find({ 
-      organization: organizationId 
-    })
-      .populate('requestedBy', 'profile.firstName profile.lastName email')
-      .populate('creditPack')
-      .populate('reviewedBy', 'profile.firstName profile.lastName')
-      .sort({ createdAt: -1 });
-    
+    const requests = await prisma.creditPurchaseRequest.findMany({
+      where: { organizationId: organizationId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Stitch soft-ref populates (requestedBy -> User, creditPack -> CreditPack, reviewedBy -> Admin)
+    const userIds = [...new Set(requests.map(r => r.requestedById).filter(Boolean))];
+    const packIds = [...new Set(requests.map(r => r.creditPackId).filter(Boolean))];
+    const adminIds = [...new Set(requests.map(r => r.reviewedById).filter(Boolean))];
+    const [users, packs, admins] = await Promise.all([
+      userIds.length ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, profile: true, email: true } }) : [],
+      packIds.length ? prisma.creditPack.findMany({ where: { id: { in: packIds } } }) : [],
+      adminIds.length ? prisma.admin.findMany({ where: { id: { in: adminIds } }, select: { id: true, name: true } }) : []
+    ]);
+    const userMap = new Map(users.map(u => [u.id, u]));
+    const packMap = new Map(packs.map(p => [p.id, p]));
+    const adminMap = new Map(admins.map(a => [a.id, a]));
+    const stitched = requests.map(r => ({
+      ...r,
+      requestedBy: r.requestedById ? (userMap.get(r.requestedById) || null) : null,
+      creditPack: r.creditPackId ? (packMap.get(r.creditPackId) || null) : null,
+      reviewedBy: r.reviewedById ? (adminMap.get(r.reviewedById) || null) : null
+    }));
+
     res.json({
       success: true,
-      requests
+      requests: stitched
     });
   } catch (error) {
     console.error('Error fetching purchase requests:', error);
@@ -191,33 +222,37 @@ exports.cancelPurchaseRequest = async (req, res) => {
     const { requestId } = req.params;
     const userId = req.user.id;
     
-    const request = await CreditPurchaseRequest.findById(requestId);
-    
+    const request = isObjectIdLike(requestId)
+      ? await prisma.creditPurchaseRequest.findUnique({ where: { id: requestId } })
+      : null;
+
     if (!request) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        msg: 'Purchase request not found' 
+        msg: 'Purchase request not found'
       });
     }
-    
+
     // Only allow cancellation by the requester and only if status is pending
-    if (request.requestedBy.toString() !== userId) {
-      return res.status(403).json({ 
+    if ((request.requestedById || '').toString() !== userId) {
+      return res.status(403).json({
         success: false,
-        msg: 'You can only cancel your own requests' 
+        msg: 'You can only cancel your own requests'
       });
     }
-    
+
     if (request.status !== 'pending') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        msg: 'Only pending requests can be cancelled' 
+        msg: 'Only pending requests can be cancelled'
       });
     }
-    
-    request.status = 'cancelled';
-    await request.save();
-    
+
+    await prisma.creditPurchaseRequest.update({
+      where: { id: request.id },
+      data: { status: 'cancelled' }
+    });
+
     res.json({
       success: true,
       msg: 'Purchase request cancelled successfully'

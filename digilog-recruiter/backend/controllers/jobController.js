@@ -1,9 +1,6 @@
-const Job = require('../models/Job');
-const Department = require('../models/Department');
-const Notification = require('../models/Notification');
-const Candidate = require('../models/Candidate');
-const Organization = require('../models/Organization');
-const Plan = require('../models/Plan');
+const prisma = require('../db/client');
+const { oid, isObjectIdLike, newId } = require('../db/objectId');
+const Notification = require('../db/notify');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
 const fs = require('fs');
@@ -24,12 +21,12 @@ const interviewService = new InterviewService();
  */
 async function getUploadCandidateCost(organizationId) {
   try {
-    const organization = await Organization.findById(organizationId);
+    const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) throw new Error('Organization not found');
-    
-    const plan = await Plan.findOne({ code: organization.subscription?.plan });
+
+    const plan = await prisma.plan.findFirst({ where: { code: organization.subscription?.plan } });
     const uploadCost = plan?.credits?.creditCosts?.uploadCandidate || 3; // Default to 3 if not found
-    
+
     return uploadCost;
   } catch (error) {
     console.error('Error getting upload candidate cost:', error);
@@ -41,10 +38,11 @@ async function getUploadCandidateCost(organizationId) {
  * Helper: Reserve credits for public job
  */
 async function reserveCreditsForJob(organizationId, jobId, creditsToReserve) {
-  const organization = await Organization.findById(organizationId);
+  const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
   if (!organization) throw new Error('Organization not found');
-  
-  const creditUsage = organization.subscription?.creditUsage || {};
+
+  const subscription = organization.subscription || {};
+  const creditUsage = subscription.creditUsage || {};
   const remainingCredits = creditUsage.remainingCredits || 0;
   
   if (remainingCredits < creditsToReserve) {
@@ -70,9 +68,9 @@ async function reserveCreditsForJob(organizationId, jobId, creditsToReserve) {
     }
   });
   
-  organization.subscription.creditUsage = creditUsage;
-  await organization.save();
-  
+  subscription.creditUsage = creditUsage;
+  await prisma.organization.update({ where: { id: organization.id }, data: { subscription } });
+
   console.log(`💳 Reserved ${creditsToReserve} credits for public job ${jobId}`);
   return creditsToReserve;
 }
@@ -83,13 +81,14 @@ async function reserveCreditsForJob(organizationId, jobId, creditsToReserve) {
 async function refundReservedCredits(organizationId, jobId, creditsToRefund, reason = 'Job unpublished') {
   if (creditsToRefund <= 0) return 0;
   
-  const organization = await Organization.findById(organizationId);
+  const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
   if (!organization) {
     console.warn(`Cannot refund credits: Organization ${organizationId} not found`);
     return 0;
   }
-  
-  const creditUsage = organization.subscription?.creditUsage || {};
+
+  const subscription = organization.subscription || {};
+  const creditUsage = subscription.creditUsage || {};
   
   // Add back to organization's credit pool
   creditUsage.usedCredits = Math.max(0, (creditUsage.usedCredits || 0) - creditsToRefund);
@@ -112,9 +111,9 @@ async function refundReservedCredits(organizationId, jobId, creditsToRefund, rea
     }
   });
   
-  organization.subscription.creditUsage = creditUsage;
-  await organization.save();
-  
+  subscription.creditUsage = creditUsage;
+  await prisma.organization.update({ where: { id: organization.id }, data: { subscription } });
+
   console.log(`💰 Refunded ${creditsToRefund} credits from job ${jobId}. Reason: ${reason}`);
   return creditsToRefund;
 }
@@ -124,21 +123,26 @@ exports.createJob = async (req, res) => {
     // Decode HTML entities from request body before saving
     const decodedBody = decodeObjectHtmlEntities(req.body);
     
-    const jobData = { 
-      ...decodedBody, 
-      createdBy: req.user?.id || null, 
-      organization: req.user.currentOrganization,
-      uploadMetadata: { source: 'manual' } 
+    const { department: departmentRef, hiringManager: hiringManagerRef, createdBy: createdByRef, ...restDecodedBody } = decodedBody;
+    const jobData = {
+      ...restDecodedBody,
+      createdById: req.user?.id || null,
+      organizationId: req.user.currentOrganization,
+      uploadMetadata: { source: 'manual' }
     };
-    
+    if (departmentRef) jobData.departmentId = departmentRef;
+    if (hiringManagerRef) jobData.hiringManagerId = hiringManagerRef;
+
     // Validate department belongs to organization
-    if (jobData.department) {
-      const department = await Department.findOne({
-        _id: jobData.department,
-        organization: req.user.currentOrganization,
-        isActive: true
+    if (jobData.departmentId) {
+      const department = await prisma.department.findFirst({
+        where: {
+          id: jobData.departmentId,
+          organizationId: req.user.currentOrganization,
+          isActive: true
+        }
       });
-      
+
       if (!department) {
         return res.status(400).json({
           success: false,
@@ -146,7 +150,7 @@ exports.createJob = async (req, res) => {
         });
       }
     }
-    
+
     if (req.body.salary && (req.body.salary.min || req.body.salary.max)) {
       jobData.salary = {
         min: req.body.salary.min || 0,
@@ -157,10 +161,9 @@ exports.createJob = async (req, res) => {
     }
     if (req.body.applicationDeadline) jobData.applicationDeadline = new Date(req.body.applicationDeadline);
     if (req.body.startDate) jobData.startDate = new Date(req.body.startDate);
-    if (!jobData.createdBy) delete jobData.createdBy;
+    if (!jobData.createdById) delete jobData.createdById;
 
-    const job = new Job(jobData);
-    await job.save();
+    const job = await prisma.job.create({ data: jobData });
     console.log(`✅ Job created successfully: ${job.title}`);
 
     // Create activity notification for all organization members
@@ -173,9 +176,7 @@ exports.createJob = async (req, res) => {
     }
 
     embeddingService.createJobEmbedding(job).then(() => {
-      job.isEmbedded = true;
-      job.embeddingCreatedAt = new Date();
-      return job.save();
+      return prisma.job.update({ where: { id: job.id }, data: { isEmbedded: true, embeddingCreatedAt: new Date() } });
     }).then(() => {
       console.log(`✅ Job embedding created for: ${job.title}`);
     }).catch(embeddingError => {
@@ -193,23 +194,38 @@ exports.getAllJobs = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const { status, department, type, search } = req.query;
-    const filter = { organization: organizationId };
-    
+    const filter = { organizationId };
+
     if (status) filter.status = status;
-    if (department) filter.department = new RegExp(department, 'i');
+    if (department) filter.departmentId = { contains: department, mode: 'insensitive' };
     if (type) filter.type = type;
     if (search) {
-      filter.$or = [
-        { title: new RegExp(search, 'i') },
-        { description: new RegExp(search, 'i') },
-        { department: new RegExp(search, 'i') },
+      filter.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { departmentId: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const jobs = await Job.find(filter)
-      .populate('department', 'name')
-      .populate('hiringManager', 'firstName lastName email')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(req.query.limit || 20));
+    let jobs = await prisma.job.findMany({
+      where: filter,
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(req.query.limit || 20)
+    });
+
+    // Stitch soft-ref populates (department.name, hiringManager profile)
+    const deptIds = [...new Set(jobs.map(j => j.departmentId).filter(Boolean))];
+    const hmIds = [...new Set(jobs.map(j => j.hiringManagerId).filter(Boolean))];
+    const [depts, hms] = await Promise.all([
+      deptIds.length ? prisma.department.findMany({ where: { id: { in: deptIds } }, select: { id: true, name: true } }) : [],
+      hmIds.length ? prisma.user.findMany({ where: { id: { in: hmIds } }, select: { id: true, profile: true, email: true } }) : []
+    ]);
+    const deptMap = new Map(depts.map(d => [d.id, d]));
+    const hmMap = new Map(hms.map(u => [u.id, u]));
+    jobs = jobs.map(j => ({
+      ...j,
+      department: j.departmentId ? (deptMap.get(j.departmentId) || null) : null,
+      hiringManager: j.hiringManagerId ? (hmMap.get(j.hiringManagerId) || null) : null,
+    }));
     res.json(jobs);
   } catch (error) {
     console.error('❌ Error fetching jobs:', error);
@@ -220,25 +236,61 @@ exports.getAllJobs = async (req, res) => {
 exports.getJobById = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId })
-      .populate('department', 'name description')
-      .populate('hiringManager', 'firstName lastName email')
-      .populate({ path: 'applicants.candidate', select: 'firstName lastName email phone position experience education skills location resumeUrl' })
-      .populate({ path: 'applicants.statusHistory.changedBy', select: 'firstName lastName email' })
-      .populate({ path: 'applicants.addedBy', select: 'firstName lastName email' });
-    
+    const job = await prisma.job.findFirst({ where: { id: req.params.id, organizationId } });
+
     if (!job) return res.status(404).json({ msg: 'Job not found' });
-    
-    // Clean up any null candidate references in applicants
-    const originalApplicantsLength = job.applicants.length;
-    job.applicants = job.applicants.filter(applicant => applicant.candidate !== null);
-    
-    // If we found deleted candidates, clean up the database
-    if (job.applicants.length !== originalApplicantsLength) {
-      console.log(`🧹 Cleaning up ${originalApplicantsLength - job.applicants.length} deleted candidate(s) from job ${req.params.id} applicants`);
-      await job.save();
+
+    // Stitch soft-ref populates for department + hiringManager
+    if (job.departmentId) {
+      job.department = await prisma.department.findUnique({ where: { id: job.departmentId }, select: { id: true, name: true, description: true } });
+    } else {
+      job.department = null;
     }
-    
+    if (job.hiringManagerId) {
+      job.hiringManager = await prisma.user.findUnique({ where: { id: job.hiringManagerId }, select: { id: true, profile: true, email: true } });
+    } else {
+      job.hiringManager = null;
+    }
+
+    // Populate nested applicants (candidate, statusHistory.changedBy, addedBy) from the Json array
+    const applicants = Array.isArray(job.applicants) ? job.applicants : [];
+    const candidateIds = [...new Set(applicants.map(a => a.candidate ? String(a.candidate) : null).filter(Boolean))];
+    const userIds = new Set();
+    applicants.forEach(a => {
+      if (a.addedBy) userIds.add(String(a.addedBy));
+      (a.statusHistory || []).forEach(h => { if (h.changedBy) userIds.add(String(h.changedBy)); });
+    });
+    const [cands, users] = await Promise.all([
+      candidateIds.length ? prisma.candidate.findMany({ where: { id: { in: candidateIds } }, select: { id: true, firstName: true, lastName: true, email: true, phone: true, position: true, experience: true, education: true, skills: true, location: true, resumeUrl: true } }) : [],
+      userIds.size ? prisma.user.findMany({ where: { id: { in: [...userIds] } }, select: { id: true, profile: true, email: true } }) : []
+    ]);
+    const candMap = new Map(cands.map(c => [c.id, c]));
+    const userMap = new Map(users.map(u => [u.id, u]));
+    const populatedApplicants = applicants.map(a => ({
+      ...a,
+      candidate: a.candidate ? (candMap.get(String(a.candidate)) || null) : null,
+      addedBy: a.addedBy ? (userMap.get(String(a.addedBy)) || null) : (a.addedBy ?? null),
+      statusHistory: (a.statusHistory || []).map(h => ({
+        ...h,
+        changedBy: h.changedBy ? (userMap.get(String(h.changedBy)) || null) : (h.changedBy ?? null)
+      }))
+    }));
+
+    // Clean up any null candidate references in applicants
+    const originalApplicantsLength = populatedApplicants.length;
+    const cleanedApplicants = populatedApplicants.filter(applicant => applicant.candidate !== null);
+    job.applicants = cleanedApplicants;
+
+    // If we found deleted candidates, clean up the database
+    if (cleanedApplicants.length !== originalApplicantsLength) {
+      console.log(`🧹 Cleaning up ${originalApplicantsLength - cleanedApplicants.length} deleted candidate(s) from job ${req.params.id} applicants`);
+      // Persist the cleaned applicants (store raw candidate ids, not populated docs)
+      const rawCleaned = applicants
+        .map(a => ({ ...a }))
+        .filter(a => candMap.has(a.candidate ? String(a.candidate) : ''));
+      await prisma.job.update({ where: { id: job.id }, data: { applicants: rawCleaned } });
+    }
+
     res.json(job);
   } catch (error) {
     console.error('❌ Error fetching job:', error);
@@ -252,7 +304,7 @@ exports.updateJob = async (req, res) => {
     const decodedBody = decodeObjectHtmlEntities(req.body);
     const { isPublic, candidateApplyLimit, ...otherUpdateData } = decodedBody;
 
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: req.params.id, organizationId } });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
@@ -307,22 +359,31 @@ exports.updateJob = async (req, res) => {
         
         job.isPublic = false;
         job.reservedCredits = 0;
-        job.candidateApplyLimit = undefined;
+        job.candidateApplyLimit = null;
       }
     }
 
-    // Update other job data
-    Object.assign(job, otherUpdateData);
-    job.updatedBy = req.user?.id || null;
-    job.updatedAt = new Date();
+    // Build update data: public/credit fields mutated above + otherUpdateData
+    const { department: deptRef, hiringManager: hmRef, createdBy: _cb, organization: _org, _id: _ignoreId, id: _ignoreId2, ...restUpdate } = otherUpdateData;
+    const data = {
+      ...restUpdate,
+      isPublic: job.isPublic,
+      reservedCredits: job.reservedCredits,
+      candidateApplyLimit: job.candidateApplyLimit,
+      publicApplicationCount: job.publicApplicationCount,
+      updatedById: req.user?.id || null,
+    };
+    if (deptRef !== undefined) data.departmentId = deptRef;
+    if (hmRef !== undefined) data.hiringManagerId = hmRef;
     if (otherUpdateData.applicationDeadline) {
-      job.applicationDeadline = new Date(otherUpdateData.applicationDeadline);
+      data.applicationDeadline = new Date(otherUpdateData.applicationDeadline);
     }
     if (otherUpdateData.startDate) {
-      job.startDate = new Date(otherUpdateData.startDate);
+      data.startDate = new Date(otherUpdateData.startDate);
     }
 
-    await job.save();
+    const updatedJob = await prisma.job.update({ where: { id: job.id }, data });
+    Object.assign(job, updatedJob);
 
     // Invalidate AI match cache if relevant fields changed
     const cacheInvalidatingFields = ['description', 'requirements', 'skills', 'experience', 'education', 'level'];
@@ -344,7 +405,7 @@ exports.updateJob = async (req, res) => {
 exports.deleteJob = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: req.params.id, organizationId } });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
     console.log(`🗑️ Deleting job: ${job.title} (${req.params.id})`);
     
@@ -366,7 +427,7 @@ exports.deleteJob = async (req, res) => {
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete job embedding for ${req.params.id}:`, embeddingError.message);
     }
-    await Job.findByIdAndDelete(req.params.id);
+    await prisma.job.delete({ where: { id: req.params.id } });
     console.log(`✅ Job and embedding successfully deleted: ${job.title}`);
     res.json({ msg: 'Job deleted successfully', deletedJob: { id: job._id, title: job.title, embeddingDeleted: true } });
   } catch (error) {
@@ -390,7 +451,7 @@ exports.bulkDeleteJobs = async (req, res) => {
 
     for (const id of jobIds) {
       try {
-        const job = await Job.findOne({ _id: id, organization: organizationId });
+        const job = await prisma.job.findFirst({ where: { id, organizationId } });
         if (!job) {
           failures.push({ id, error: 'Job not found or access denied' });
           continue;
@@ -402,7 +463,7 @@ exports.bulkDeleteJobs = async (req, res) => {
           console.warn(`⚠️ Failed to delete job embedding for ${id}:`, embeddingError.message);
         }
 
-        await Job.findByIdAndDelete(id);
+        await prisma.job.delete({ where: { id } });
         results.push({ id, title: job.title, success: true });
       } catch (err) {
         failures.push({ id, error: err.message });
@@ -439,7 +500,7 @@ exports.bulkUploadJobs = async (req, res) => {
         const rowData = jobsData[i];
         const jobData = {
           title: rowData.title || rowData['Job Title'] || rowData['Position'],
-          department: rowData.department || rowData['Department'],
+          departmentId: rowData.department || rowData['Department'],
           location: rowData.location || rowData['Location'],
           type: rowData.type || rowData['Job Type'] || 'Full-time',
           level: rowData.level || rowData['Level'] || 'Mid',
@@ -450,19 +511,17 @@ exports.bulkUploadJobs = async (req, res) => {
           experience: rowData.experience || rowData['Experience'] || '1-3',
           education: rowData.education || rowData['Education'] || 'Bachelor',
           status: 'active',
-          createdBy: req.user?.id || null,
-          organization: req.user.currentOrganization,
+          createdById: req.user?.id || null,
+          organizationId: req.user.currentOrganization,
           uploadMetadata: { source: 'bulk_upload', batchId, originalData: rowData },
         };
-        if (!jobData.title || !jobData.department || !jobData.location) throw new Error('Missing required fields: title, department, or location');
-        const job = new Job(jobData);
-        await job.save();
+        if (!jobData.title || !jobData.departmentId || !jobData.location) throw new Error('Missing required fields: title, department, or location');
+        if (!jobData.createdById) delete jobData.createdById;
+        const job = await prisma.job.create({ data: jobData });
         embeddingService.createJobEmbedding(job).then(() => {
-          job.isEmbedded = true;
-          job.embeddingCreatedAt = new Date();
-          return job.save();
+          return prisma.job.update({ where: { id: job.id }, data: { isEmbedded: true, embeddingCreatedAt: new Date() } });
         }).catch(err => console.error(err.message));
-        results.successful.push({ row: i + 1, job: { id: job._id, title: job.title, department: job.department } });
+        results.successful.push({ row: i + 1, job: { id: job._id, title: job.title, department: job.departmentId } });
       } catch (error) {
         results.failed.push({ row: i + 1, data: jobsData[i], error: error.message });
       }
@@ -498,7 +557,7 @@ function parseExcel(filePath) {
 exports.getJobEmbeddingStatus = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: req.params.id, organizationId } });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
     const vectorIndexExists = await embeddingService.checkEmbeddingExists(job._id.toString(), embeddingService.jobIndexName);
     res.json({
@@ -516,12 +575,12 @@ exports.getJobEmbeddingStatus = async (req, res) => {
 exports.createJobEmbedding = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: req.params.id, organizationId } });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
     await embeddingService.createJobEmbedding(job);
-    job.isEmbedded = true;
     job.embeddingCreatedAt = new Date();
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { isEmbedded: true, embeddingCreatedAt: job.embeddingCreatedAt } });
+    job.isEmbedded = true;
     res.json({ msg: 'Job embedding created successfully', jobId: job._id, embeddingCreatedAt: job.embeddingCreatedAt });
   } catch (error) {
     console.error('❌ Error creating job embedding:', error);
@@ -534,7 +593,7 @@ exports.getMatchingCandidates = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const topK = parseInt(req.query.topK) || 10;
     const includeExplanations = req.query.includeExplanations !== 'false';
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: req.params.id, organizationId } });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
 
     const LARGE_SCALE_THRESHOLD = 100;
@@ -579,11 +638,10 @@ exports.getCandidateExplanation = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const { jobId, candidateId } = req.params;
 
-    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: jobId, organizationId } });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
 
-    const Candidate = require('../models/Candidate');
-    const candidate = await Candidate.findOne({ _id: candidateId, organization: organizationId });
+    const candidate = await prisma.candidate.findFirst({ where: { id: candidateId, organizationId } });
     if (!candidate) return res.status(404).json({ msg: 'Candidate not found' });
 
     const gptAnalysisService = require('../services/gptAnalysisService');
@@ -696,49 +754,57 @@ exports.getShortlist = async (req, res) => {
     const { jobId } = req.params;
     const organizationId = req.user?.currentOrganization;
 
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    const job = await Job.findOne(query).populate({
-      path: 'shortlist.candidate',
-      select: 'firstName lastName position experience skills location email phone isInternalCandidate employeeId'
-    });
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
-    // Get current pipeline candidates to check actual pipeline status
-    const pipelineCandidateIds = job.applicants?.map(app => app.candidate._id.toString()) || [];
+    // Populate shortlist candidates from the Json array (soft-ref stitch)
+    const shortlistArr = Array.isArray(job.shortlist) ? job.shortlist : [];
+    const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+    const shortlistCandidateIds = [...new Set(shortlistArr.map(i => i.candidate ? String(i.candidate) : null).filter(Boolean))];
+    const shortlistCands = shortlistCandidateIds.length
+      ? await prisma.candidate.findMany({ where: { id: { in: shortlistCandidateIds } }, select: { id: true, firstName: true, lastName: true, position: true, experience: true, skills: true, location: true, email: true, phone: true, isInternalCandidate: true, employeeId: true } })
+      : [];
+    const shortlistCandMap = new Map(shortlistCands.map(c => [c.id, c]));
+
+    // Get current pipeline candidates to check actual pipeline status (applicants candidate is a raw id)
+    const pipelineCandidateIds = applicantsArr.map(app => app.candidate ? String(app.candidate) : null).filter(Boolean);
 
     // Create a map of candidate IDs to application types for quick lookup
     const applicationTypeMap = new Map();
-    job.applicants?.forEach(app => {
-      applicationTypeMap.set(app.candidate._id.toString(), app.applicationType || 'manual');
+    applicantsArr.forEach(app => {
+      if (app.candidate) applicationTypeMap.set(String(app.candidate), app.applicationType || 'manual');
     });
 
     // Filter out any null/deleted candidate references and construct full names
-    const validShortlistItems = job.shortlist
+    const validShortlistItems = shortlistArr
+      .map(item => ({ ...item, candidate: item.candidate ? (shortlistCandMap.get(String(item.candidate)) || null) : null }))
       .filter(item => item.candidate !== null)
       .map(item => {
+        const candId = String(item.candidate.id);
         // Determine actual status: check if in pipeline first, then shortlist status
         let actualStatus = item.status || 'shortlisted';
-        if (pipelineCandidateIds.includes(item.candidate._id.toString())) {
+        if (pipelineCandidateIds.includes(candId)) {
           actualStatus = 'moved_to_pipeline';
         }
 
         // Get application type from the applicants array
-        const applicationType = applicationTypeMap.get(item.candidate._id.toString()) || 'manual';
+        const applicationType = applicationTypeMap.get(candId) || 'manual';
 
         return {
-          ...item.toObject(),
+          ...item,
           status: actualStatus, // Use actual status
           applicationType, // Include application type (public, internal, manual)
           candidate: {
-            ...item.candidate.toObject(),
-            name: item.candidate.firstName && item.candidate.lastName 
+            ...item.candidate,
+            name: item.candidate.firstName && item.candidate.lastName
               ? `${item.candidate.firstName} ${item.candidate.lastName}`.trim()
               : item.candidate.firstName || item.candidate.lastName || 'Unnamed Candidate'
           }
@@ -778,34 +844,37 @@ exports.addCandidateToShortlist = async (req, res) => {
     const isPublicApplication = !req.user; // Public if no user context
     
     // Build query based on whether we have organization context
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
-    
-    const job = await Job.findOne(query);
+
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
     // Ensure candidate exists and belongs to the same organization context.
-    const candidateQuery = { _id: candidateId };
+    const candidateQuery = { id: candidateId };
     if (organizationId) {
-      candidateQuery.organization = organizationId;
-    } else if (job.organization) {
-      candidateQuery.organization = job.organization;
+      candidateQuery.organizationId = organizationId;
+    } else if (job.organizationId) {
+      candidateQuery.organizationId = job.organizationId;
     }
-    const candidate = await Candidate.findOne(candidateQuery);
+    let candidate = await prisma.candidate.findFirst({ where: candidateQuery });
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
+    const shortlistArr = Array.isArray(job.shortlist) ? job.shortlist : [];
+    const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+
     // Check if candidate is already in the shortlist or pipeline
-    if (job.shortlist.some(item => item.candidate.toString() === candidateId)) {
+    if (shortlistArr.some(item => item.candidate && item.candidate.toString() === candidateId)) {
       return res.status(400).json({ msg: 'Candidate already in shortlist' });
     }
-    if (job.applicants.some(item => item.candidate.toString() === candidateId)) {
+    if (applicantsArr.some(item => item.candidate && item.candidate.toString() === candidateId)) {
       return res.status(400).json({ msg: 'Candidate already in pipeline' });
     }
 
@@ -813,35 +882,32 @@ exports.addCandidateToShortlist = async (req, res) => {
       const staffValue = typeof isOrganizationStaff === 'string'
         ? isOrganizationStaff.toLowerCase() === 'true'
         : Boolean(isOrganizationStaff);
-      candidate.isInternalCandidate = staffValue;
-      await candidate.save();
+      candidate = await prisma.candidate.update({ where: { id: candidate.id }, data: { isInternalCandidate: staffValue } });
     }
 
-    job.shortlist.push({ candidate: candidateId, addedBy: req.user?.id });
-    
+    shortlistArr.push({ candidate: candidateId, addedBy: req.user?.id });
+    job.shortlist = shortlistArr;
+
     // For public applications, also update analytics
     if (isPublicApplication) {
       if (!job.analytics) job.analytics = {};
       job.analytics.publicApplications = (job.analytics.publicApplications || 0) + 1;
       job.analytics.applications = (job.analytics.applications || 0) + 1;
     }
-    
-    await job.save();
+
+    await prisma.job.update({ where: { id: job.id }, data: { shortlist: job.shortlist, analytics: job.analytics } });
 
     // Send application confirmation email for public applications
     if (isPublicApplication) {
       try {
         // Get candidate data
-        const Candidate = require('../models/Candidate');
-        const candidate = await Candidate.findById(candidateId);
-        
+        const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
+
         if (candidate) {
           // Populate job organization and department for email service
-          await job.populate([
-            { path: 'organization' },
-            { path: 'department', select: 'name' }
-          ]);
-          
+          job.organization = job.organizationId ? await prisma.organization.findUnique({ where: { id: job.organizationId } }) : null;
+          job.department = job.departmentId ? await prisma.department.findUnique({ where: { id: job.departmentId }, select: { id: true, name: true } }) : null;
+
                   console.log(`📧 Sending application confirmation email for public job application`);
                   await candidateEmailNotificationService.sendApplicationConfirmationEmail({
                     candidate,
@@ -876,16 +942,18 @@ exports.bulkAddCandidatesToShortlist = async (req, res) => {
       return res.status(400).json({ msg: 'candidateIds must be a non-empty array' });
     }
 
-    const query = { _id: jobId };
-    if (organizationId) query.organization = organizationId;
+    const query = { id: jobId };
+    if (organizationId) query.organizationId = organizationId;
 
-    const job = await Job.findOne(query);
+    const job = await prisma.job.findFirst({ where: query });
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
-    const alreadyInShortlist = new Set(job.shortlist.map(i => i.candidate.toString()));
-    const alreadyInPipeline = new Set((job.applicants || []).map(i => i.candidate.toString()));
+    const shortlistArr = Array.isArray(job.shortlist) ? job.shortlist : [];
+    const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+    const alreadyInShortlist = new Set(shortlistArr.map(i => i.candidate ? i.candidate.toString() : null).filter(Boolean));
+    const alreadyInPipeline = new Set(applicantsArr.map(i => i.candidate ? i.candidate.toString() : null).filter(Boolean));
 
     const added = [];
     const skipped = [];
@@ -899,11 +967,12 @@ exports.bulkAddCandidatesToShortlist = async (req, res) => {
         skipped.push({ id: cid, reason: 'already_in_pipeline' });
         continue;
       }
-      job.shortlist.push({ candidate: cid, addedBy: req.user?.id });
+      shortlistArr.push({ candidate: cid, addedBy: req.user?.id });
       added.push(cid);
     }
+    job.shortlist = shortlistArr;
 
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { shortlist: job.shortlist } });
 
     res.json({
       success: true,
@@ -925,15 +994,12 @@ exports.getRankedShortlist = async (req, res) => {
     const organizationId = req.user?.currentOrganization;
     
     // Build query based on whether we have organization context
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
-    
-    const job = await Job.findOne(query).populate({
-      path: 'shortlist.candidate',
-      select: 'firstName lastName position experience skills location email phone isInternalCandidate employeeId'
-    });
+
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
@@ -942,18 +1008,32 @@ exports.getRankedShortlist = async (req, res) => {
     if (!job.isEmbedded) {
       return res.status(400).json({ msg: 'Job embedding not created. Cannot rank candidates.' });
     }
-    
+
+    // Populate shortlist candidates from the Json array (soft-ref stitch)
+    const rawShortlist = Array.isArray(job.shortlist) ? job.shortlist : [];
+    const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+    const shortlistCandidateIds = [...new Set(rawShortlist.map(i => i.candidate ? String(i.candidate) : null).filter(Boolean))];
+    const shortlistCands = shortlistCandidateIds.length
+      ? await prisma.candidate.findMany({ where: { id: { in: shortlistCandidateIds } }, select: { id: true, firstName: true, lastName: true, position: true, experience: true, skills: true, location: true, email: true, phone: true, isInternalCandidate: true, employeeId: true } })
+      : [];
+    const shortlistCandMap = new Map(shortlistCands.map(c => [c.id, c]));
+
+    const originalShortlistLength = rawShortlist.length;
     // Filter out any null/deleted candidate references and clean up the shortlist
-    const validShortlistItems = job.shortlist.filter(item => item.candidate !== null);
-    
+    const validShortlistItems = rawShortlist
+      .map(item => ({ ...item, candidate: item.candidate && shortlistCandMap.has(String(item.candidate)) ? shortlistCandMap.get(String(item.candidate)) : null }))
+      .filter(item => item.candidate !== null);
+    // Keep raw shortlist filtered to valid candidates for writeback
+    let workingShortlist = rawShortlist.filter(item => item.candidate && shortlistCandMap.has(String(item.candidate)));
+
     // If we found deleted candidates, clean up the database
-    if (validShortlistItems.length !== job.shortlist.length) {
-      console.log(`🧹 Cleaning up ${job.shortlist.length - validShortlistItems.length} deleted candidate(s) from job ${jobId} shortlist`);
-      job.shortlist = validShortlistItems;
-      await job.save();
+    if (validShortlistItems.length !== originalShortlistLength) {
+      console.log(`🧹 Cleaning up ${originalShortlistLength - validShortlistItems.length} deleted candidate(s) from job ${jobId} shortlist`);
+      job.shortlist = workingShortlist;
+      await prisma.job.update({ where: { id: job.id }, data: { shortlist: workingShortlist } });
     }
-    
-    const candidateIds = validShortlistItems.map(item => item.candidate._id);
+
+    const candidateIds = validShortlistItems.map(item => item.candidate.id);
 
     if (candidateIds.length === 0) {
       return res.json({
@@ -961,25 +1041,22 @@ exports.getRankedShortlist = async (req, res) => {
         jobTitle: job.title,
         matchCount: 0,
         matches: [],
-        cleanedUp: job.shortlist.length !== validShortlistItems.length
+        cleanedUp: originalShortlistLength !== validShortlistItems.length
       });
     }
 
     const matches = await embeddingService.rankCandidatesByIds(job, candidateIds);
 
     // Get current pipeline candidates to check actual pipeline status
-    const pipelineCandidateIds = job.applicants?.map(app => app.candidate._id.toString()) || [];
+    const pipelineCandidateIds = applicantsArr.map(app => app.candidate ? String(app.candidate) : null).filter(Boolean);
 
     // Merge ranking results with shortlist metadata and actual pipeline status
     const enrichedMatches = matches.map(match => {
-      const shortlistItem = validShortlistItems.find(item => 
-        item.candidate._id.toString() === match.candidateId
+      const shortlistItem = validShortlistItems.find(item =>
+        item.candidate.id.toString() === match.candidateId
       );
-      const shortlistCandidate = shortlistItem?.candidate;
-      const normalizedCandidate = shortlistCandidate && typeof shortlistCandidate.toObject === 'function'
-        ? shortlistCandidate.toObject()
-        : shortlistCandidate;
-      
+      const normalizedCandidate = shortlistItem?.candidate;
+
       // Determine actual status: check if in pipeline first, then shortlist status
       let actualStatus = shortlistItem?.status || 'shortlisted';
       if (pipelineCandidateIds.includes(match.candidateId)) {
@@ -1007,23 +1084,24 @@ exports.getRankedShortlist = async (req, res) => {
       };
     });
 
-    // Save the ranking results back to the database
+    // Save the ranking results back to the database (writeback into raw shortlist items)
     for (const match of enrichedMatches) {
-      const shortlistItem = job.shortlist.find(item => 
-        item.candidate._id.toString() === match.candidateId
+      const shortlistItem = workingShortlist.find(item =>
+        item.candidate && item.candidate.toString() === match.candidateId
       );
       if (shortlistItem) {
         shortlistItem.relevanceScore = match.relevanceScore;
       }
     }
-    await job.save();
+    job.shortlist = workingShortlist;
+    await prisma.job.update({ where: { id: job.id }, data: { shortlist: workingShortlist } });
 
     res.json({
       jobId: job._id,
       jobTitle: job.title,
       matchCount: enrichedMatches.length,
       matches: enrichedMatches,
-      cleanedUp: job.shortlist.length !== validShortlistItems.length
+      cleanedUp: originalShortlistLength !== validShortlistItems.length
     });
   } catch (error) {
     console.error('❌ Error ranking shortlist:', error);
@@ -1037,19 +1115,20 @@ exports.removeCandidateFromShortlist = async (req, res) => {
     const organizationId = req.user?.currentOrganization;
     
     // Build query based on whether we have organization context
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
-    
-    const job = await Job.findOne(query);
+
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
-    job.shortlist = job.shortlist.filter(item => item.candidate.toString() !== candidateId);
-    await job.save();
+    const shortlistArr = Array.isArray(job.shortlist) ? job.shortlist : [];
+    job.shortlist = shortlistArr.filter(item => !item.candidate || item.candidate.toString() !== candidateId);
+    await prisma.job.update({ where: { id: job.id }, data: { shortlist: job.shortlist } });
 
     res.json({ msg: 'Candidate removed from shortlist', shortlist: job.shortlist });
   } catch (error) {
@@ -1071,19 +1150,24 @@ exports.updateShortlistCandidateStatus = async (req, res) => {
     }
     
     // Build query based on whether we have organization context
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
-    
-    const job = await Job.findOne(query);
+
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
+    const shortlistArr = Array.isArray(job.shortlist) ? job.shortlist : [];
+    const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+    job.shortlist = shortlistArr;
+    job.applicants = applicantsArr;
+
     // Find the shortlist item and update its status
-    const shortlistItem = job.shortlist.find(item => item.candidate.toString() === candidateId);
+    const shortlistItem = shortlistArr.find(item => item.candidate && item.candidate.toString() === candidateId);
     if (!shortlistItem) {
       return res.status(404).json({ msg: 'Candidate not found in shortlist' });
     }
@@ -1094,27 +1178,27 @@ exports.updateShortlistCandidateStatus = async (req, res) => {
     } else if (status === 'shortlisted') {
       // Clear the movedToPipelineAt when returning to shortlist
       shortlistItem.movedToPipelineAt = undefined;
-      
+
       // ALSO remove candidate from pipeline (job.applicants array)
-      const applicantIndex = job.applicants.findIndex(
-        app => app.candidate.toString() === candidateId
+      const applicantIndex = applicantsArr.findIndex(
+        app => app.candidate && app.candidate.toString() === candidateId
       );
-      
+
       if (applicantIndex !== -1) {
-        job.applicants.splice(applicantIndex, 1);
+        applicantsArr.splice(applicantIndex, 1);
         console.log(`✅ Removed candidate ${candidateId} from pipeline when returning to shortlist`);
       }
     }
 
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { shortlist: job.shortlist, applicants: job.applicants } });
 
     // Send appropriate email notifications
     try {
       // Get full candidate data for email
-      const candidate = await Candidate.findById(candidateId);
+      const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
       if (candidate) {
         // Populate job organization for email service
-        await job.populate('organization');
+        job.organization = job.organizationId ? await prisma.organization.findUnique({ where: { id: job.organizationId } }) : null;
 
         if (status === 'moved_to_pipeline') {
           // Send congratulations email for moving from shortlist to pipeline
@@ -1159,27 +1243,29 @@ exports.clearShortlistRanking = async (req, res) => {
     const organizationId = req.user?.currentOrganization;
     
     // Build query based on whether we have organization context
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
-    
-    const job = await Job.findOne(query);
+
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
+    const shortlistArr = Array.isArray(job.shortlist) ? job.shortlist : [];
+    job.shortlist = shortlistArr;
     // Clear relevanceScore from all shortlist items
-    job.shortlist.forEach(item => {
+    shortlistArr.forEach(item => {
       if (item.relevanceScore !== undefined) {
         item.relevanceScore = undefined;
       }
     });
 
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { shortlist: job.shortlist } });
 
-    res.json({ 
+    res.json({
       msg: 'Shortlist ranking cleared successfully',
       clearedCount: job.shortlist.length
     });
@@ -1209,12 +1295,12 @@ exports.bulkMoveShortlistToPipeline = async (req, res) => {
     console.log('🔍 req.user.id:', req.user?.id);
 
     // Build query based on whether we have organization context
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
-    
-    const job = await Job.findOne(query);
+
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
@@ -1237,14 +1323,16 @@ exports.bulkMoveShortlistToPipeline = async (req, res) => {
         console.log(`🔍 Processing candidate ${candidateId} for bulk move to pipeline`);
         
         // Refetch job to get latest version
-        const freshJob = await Job.findOne(query);
+        const freshJob = await prisma.job.findFirst({ where: query });
         if (!freshJob) {
           throw new Error('Job not found during processing');
         }
-        
+        const freshShortlist = Array.isArray(freshJob.shortlist) ? freshJob.shortlist : [];
+        const freshApplicants = Array.isArray(freshJob.applicants) ? freshJob.applicants : [];
+
         // Check if candidate is in shortlist
-        const shortlistItem = freshJob.shortlist.find(item => 
-          item.candidate.toString() === candidateId.toString()
+        const shortlistItem = freshShortlist.find(item =>
+          item.candidate && item.candidate.toString() === candidateId.toString()
         );
 
         if (!shortlistItem) {
@@ -1257,8 +1345,8 @@ exports.bulkMoveShortlistToPipeline = async (req, res) => {
         }
 
         // Check if candidate is already in pipeline
-        const existingApplicant = freshJob.applicants.find(app => 
-          app.candidate.toString() === candidateId.toString()
+        const existingApplicant = freshApplicants.find(app =>
+          app.candidate && app.candidate.toString() === candidateId.toString()
         );
 
         if (existingApplicant) {
@@ -1285,27 +1373,31 @@ exports.bulkMoveShortlistToPipeline = async (req, res) => {
         console.log(`✅ Successfully added candidate ${candidateId} to pipeline`);
 
         // Now refetch again to update shortlist status
-        const jobForShortlistUpdate = await Job.findOne(query);
+        const jobForShortlistUpdate = await prisma.job.findFirst({ where: query });
         if (jobForShortlistUpdate) {
-          const shortlistItemToUpdate = jobForShortlistUpdate.shortlist.find(item => 
-            item.candidate.toString() === candidateId.toString()
+          const jfsuShortlist = Array.isArray(jobForShortlistUpdate.shortlist) ? jobForShortlistUpdate.shortlist : [];
+          const shortlistItemToUpdate = jfsuShortlist.find(item =>
+            item.candidate && item.candidate.toString() === candidateId.toString()
           );
 
           if (shortlistItemToUpdate) {
             shortlistItemToUpdate.status = 'moved_to_pipeline';
             shortlistItemToUpdate.movedToPipelineAt = new Date();
-            await jobForShortlistUpdate.save();
+            await prisma.job.update({ where: { id: jobForShortlistUpdate.id }, data: { shortlist: jfsuShortlist } });
             console.log(`✅ Updated shortlist status for candidate ${candidateId}`);
           }
         }
 
         // Send email notification to candidate about moving to pipeline
         try {
-          const candidate = await Candidate.findById(candidateId);
+          const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
           if (candidate) {
             // Populate job organization for email service
-            const jobForEmail = await Job.findOne(query).populate('organization');
-            
+            const jobForEmail = await prisma.job.findFirst({ where: query });
+            if (jobForEmail) {
+              jobForEmail.organization = jobForEmail.organizationId ? await prisma.organization.findUnique({ where: { id: jobForEmail.organizationId } }) : null;
+            }
+
             if (jobForEmail) {
               console.log(`📧 Sending shortlist email to candidate ${candidateId}`);
               await candidateEmailNotificationService.sendShortlistEmail({
@@ -1369,16 +1461,17 @@ exports.bulkRemoveFromShortlist = async (req, res) => {
     console.log(`🗑️ Bulk removing ${candidateIds.length} candidates from shortlist`);
 
     // Build query based on whether we have organization context
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
-    
-    const job = await Job.findOne(query);
+
+    const job = await prisma.job.findFirst({ where: query });
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
+    if (!Array.isArray(job.shortlist)) job.shortlist = [];
 
     const results = [];
     const failed = [];
@@ -1387,16 +1480,16 @@ exports.bulkRemoveFromShortlist = async (req, res) => {
     for (const candidateId of candidateIds) {
       try {
         const initialLength = job.shortlist.length;
-        
+
         console.log(`🔍 Looking for candidate ${candidateId} in shortlist of ${initialLength} items`);
-        
+
         // Log the candidate IDs in the shortlist for debugging
-        const shortlistIds = job.shortlist.map(item => item.candidate.toString());
+        const shortlistIds = job.shortlist.map(item => item.candidate ? item.candidate.toString() : null).filter(Boolean);
         console.log(`📋 Current shortlist IDs:`, shortlistIds);
-        
+
         // Remove from shortlist
-        job.shortlist = job.shortlist.filter(item => 
-          item.candidate.toString() !== candidateId.toString()
+        job.shortlist = job.shortlist.filter(item =>
+          !item.candidate || item.candidate.toString() !== candidateId.toString()
         );
 
         if (job.shortlist.length === initialLength) {
@@ -1422,7 +1515,7 @@ exports.bulkRemoveFromShortlist = async (req, res) => {
     }
 
     // Save job with updated shortlist
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { shortlist: job.shortlist } });
 
     console.log(`✅ Bulk removal completed: ${results.length} successful, ${failed.length} failed`);
 
@@ -1653,11 +1746,11 @@ exports.getPipelineAnalytics = async (req, res) => {
     
     // Fallback to basic analytics if enhanced fails
     try {
-      const job = await Job.findById(jobId);
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
       if (!job) return res.status(404).json({ msg: 'Job not found' });
 
       const fallbackAnalytics = {
-        totalApplicants: job.applicants.length,
+        totalApplicants: (Array.isArray(job.applicants) ? job.applicants : []).length,
         stageBreakdown: [],
         conversions: [],
         bottlenecks: [],
@@ -1987,54 +2080,62 @@ exports.getAllJobFeedback = async (req, res) => {
     console.log('📊 [JOB-FEEDBACK] Fetching all feedback for job:', jobId);
 
     // Verify job exists and user has access
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    const job = await Job.findOne(query);
+    const job = await prisma.job.findFirst({ where: query });
     if (!job) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
 
-    const Interview = require('../models/Interview');
-    const InterviewComment = require('../models/InterviewComment');
-
     // Get ALL interviews for this job
-    const interviews = await Interview.find({ jobId }).select('_id');
+    const interviews = await prisma.interview.findMany({ where: { jobId }, select: { id: true } });
     const interviewIds = interviews.map(i => i._id);
 
     console.log('📊 [JOB-FEEDBACK] Found', interviews.length, 'interviews for job');
 
     // Get ALL feedback for these interviews
-    const feedback = await InterviewComment.find({
-      interviewId: { $in: interviewIds },
-      commentType: 'feedback',
-      organization: organizationId
-    })
-    .populate({
-      path: 'interviewId',
-      select: 'title scheduledAt status structuredFeedback candidateId stageId stageName stageOrder',
-      populate: [
-        {
-          path: 'candidateId',
-          select: 'firstName lastName email position avatar'
-        },
-        {
-          path: 'stageId',
-          select: 'name order type'
-        }
-      ]
-    })
-    .populate('authorId', 'profile.firstName profile.lastName email')
-    .populate('questionId', 'question type')
-    .sort({ createdAt: -1 });
+    const feedback = await prisma.interviewComment.findMany({
+      where: {
+        interviewId: { in: interviewIds },
+        commentType: 'feedback',
+        organization: organizationId
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Stitch populated refs (interviewId + nested candidate/stage, authorId, questionId)
+    const fbInterviewIds = [...new Set(feedback.map(f => f.interviewId).filter(Boolean))];
+    const fbAuthorIds = [...new Set(feedback.map(f => f.authorId).filter(Boolean))];
+    const fbQuestionIds = [...new Set(feedback.map(f => f.questionId).filter(Boolean))];
+    const fbInterviews = fbInterviewIds.length
+      ? await prisma.interview.findMany({ where: { id: { in: fbInterviewIds } }, select: { id: true, title: true, scheduledAt: true, status: true, structuredFeedback: true, candidateId: true, stageId: true, stageName: true, stageOrder: true } })
+      : [];
+    const fbCandidateIds = [...new Set(fbInterviews.map(i => i.candidateId).filter(Boolean))];
+    const fbStageIds = [...new Set(fbInterviews.map(i => i.stageId).filter(Boolean))];
+    const [fbCandidates, fbStages, fbAuthors, fbQuestions] = await Promise.all([
+      fbCandidateIds.length ? prisma.candidate.findMany({ where: { id: { in: fbCandidateIds } }, select: { id: true, firstName: true, lastName: true, email: true, position: true } }) : [],
+      fbStageIds.length ? prisma.interviewStage.findMany({ where: { id: { in: fbStageIds } }, select: { id: true, name: true, order: true, type: true } }) : [],
+      fbAuthorIds.length ? prisma.user.findMany({ where: { id: { in: fbAuthorIds } }, select: { id: true, profile: true, email: true } }) : [],
+      fbQuestionIds.length ? prisma.interviewQuestion.findMany({ where: { id: { in: fbQuestionIds } }, select: { id: true, question: true, type: true } }) : []
+    ]);
+    const fbCandMap = new Map(fbCandidates.map(c => [c.id, c]));
+    const fbStageMap = new Map(fbStages.map(s => [s.id, s]));
+    const fbInterviewMap = new Map(fbInterviews.map(i => [i.id, { ...i, candidateId: i.candidateId ? (fbCandMap.get(i.candidateId) || null) : null, stageId: i.stageId ? (fbStageMap.get(i.stageId) || null) : null }]));
+    const fbAuthorMap = new Map(fbAuthors.map(u => [u.id, u]));
+    const fbQuestionMap = new Map(fbQuestions.map(q => [q.id, q]));
+    feedback.forEach(f => {
+      f.interviewId = f.interviewId ? (fbInterviewMap.get(f.interviewId) || null) : null;
+      f.authorId = f.authorId ? (fbAuthorMap.get(f.authorId) || null) : null;
+      f.questionId = f.questionId ? (fbQuestionMap.get(f.questionId) || null) : null;
+    });
 
     console.log('📊 [JOB-FEEDBACK] Found', feedback.length, 'feedback comments');
 
     // Get stages for reference
-    const InterviewStage = require('../models/InterviewStage');
-    const stages = await InterviewStage.find({ jobId }).sort({ order: 1 });
+    const stages = await prisma.interviewStage.findMany({ where: { jobId }, orderBy: { order: 'asc' } });
 
     res.json({
       success: true,
@@ -2074,24 +2175,18 @@ exports.getFeedbackLeaderboard = async (req, res) => {
     console.log('📊 [LEADERBOARD] Fetching feedback leaderboard for job:', jobId);
 
     // Verify job exists and user has access
-    const query = { _id: jobId };
+    const query = { id: jobId };
     if (organizationId) {
-      query.organization = organizationId;
+      query.organizationId = organizationId;
     }
 
-    const job = await Job.findOne(query);
+    const job = await prisma.job.findFirst({ where: query });
     if (!job) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
 
-    // Get interview stages for this job
-    const InterviewStage = require('../models/InterviewStage');
-    const Interview = require('../models/Interview');
-    const InterviewComment = require('../models/InterviewComment');
-    const Candidate = require('../models/Candidate');
-    
-    let stages = await InterviewStage.find({ jobId }).sort({ order: 1 });
-    
+    let stages = await prisma.interviewStage.findMany({ where: { jobId }, orderBy: { order: 'asc' } });
+
     // Filter by specific stage if requested
     if (stageId && stageId !== 'all') {
       stages = stages.filter(s => s._id.toString() === stageId);
@@ -2102,36 +2197,37 @@ exports.getFeedbackLeaderboard = async (req, res) => {
     // Process each stage
     const stageLeaderboards = await Promise.all(stages.map(async (stage) => {
       // First, get all feedback comments for this job/stage to find which interviews have feedback
-      const stageComments = await InterviewComment.find({
-        stageId: stage._id,
-        commentType: 'feedback',
-        'rating.overall': { $exists: true, $ne: null }
+      // (rating.overall lives in a Json column -> filter in JS)
+      const stageCommentsRaw = await prisma.interviewComment.findMany({
+        where: { stageId: stage._id, commentType: 'feedback' }
       });
+      const stageComments = stageCommentsRaw.filter(c => c.rating && c.rating.overall != null);
 
       const interviewIdsWithFeedback = [...new Set(stageComments.map(c => c.interviewId.toString()))];
 
       console.log('📊 [LEADERBOARD] Stage:', stage.name, '- Found', interviewIdsWithFeedback.length, 'interviews with feedback comments');
 
-      // Build query conditions
-      const orConditions = [
-        { 'structuredFeedback.overallScore': { $exists: true, $ne: null } },
-        { status: 'completed' }
-      ];
-
-      // Only add the $in condition if there are interviews with feedback
-      if (interviewIdsWithFeedback.length > 0) {
-        orConditions.push({ _id: { $in: interviewIdsWithFeedback } });
-      }
-
-      // Get all interviews for this stage that either:
+      // Get all interviews for this stage, then filter to those that either:
       // 1. Have feedback comments, OR
-      // 2. Have structured feedback, OR  
+      // 2. Have structured feedback, OR
       // 3. Are completed
-      const interviews = await Interview.find({
-        jobId,
-        stageId: stage._id,
-        $or: orConditions
-      }).populate('candidateId', 'firstName lastName email position avatar');
+      // (structuredFeedback.overallScore lives in a Json column -> filter in JS)
+      let interviews = await prisma.interview.findMany({
+        where: { jobId, stageId: stage._id }
+      });
+      interviews = interviews.filter(i =>
+        (i.structuredFeedback && i.structuredFeedback.overallScore != null) ||
+        i.status === 'completed' ||
+        (interviewIdsWithFeedback.length > 0 && interviewIdsWithFeedback.includes(i._id.toString()))
+      );
+
+      // Populate candidateId (soft-ref stitch)
+      const intvCandIds = [...new Set(interviews.map(i => i.candidateId).filter(Boolean))];
+      const intvCands = intvCandIds.length
+        ? await prisma.candidate.findMany({ where: { id: { in: intvCandIds } }, select: { id: true, firstName: true, lastName: true, email: true, position: true } })
+        : [];
+      const intvCandMap = new Map(intvCands.map(c => [c.id, c]));
+      interviews = interviews.map(i => ({ ...i, candidateId: i.candidateId ? (intvCandMap.get(i.candidateId) || null) : null }));
 
       console.log('📊 [LEADERBOARD] Stage:', stage.name, '- Total interviews to process:', interviews.length);
 
@@ -2159,10 +2255,16 @@ exports.getFeedbackLeaderboard = async (req, res) => {
 
       // Get feedback for all interviews
       const interviewIds = interviews.map(i => i._id);
-      const allComments = await InterviewComment.find({
-        interviewId: { $in: interviewIds },
-        commentType: 'feedback'
-      }).populate('authorId', 'profile.firstName profile.lastName email');
+      const allComments = await prisma.interviewComment.findMany({
+        where: { interviewId: { in: interviewIds }, commentType: 'feedback' }
+      });
+      // Populate authorId (soft-ref stitch)
+      const commentAuthorIds = [...new Set(allComments.map(c => c.authorId).filter(Boolean))];
+      const commentAuthors = commentAuthorIds.length
+        ? await prisma.user.findMany({ where: { id: { in: commentAuthorIds } }, select: { id: true, profile: true, email: true } })
+        : [];
+      const commentAuthorMap = new Map(commentAuthors.map(u => [u.id, u]));
+      allComments.forEach(c => { c.authorId = c.authorId ? (commentAuthorMap.get(c.authorId) || null) : null; });
 
       // Process each candidate
       const candidateScores = await Promise.all(interviews.map(async (interview) => {
@@ -2434,7 +2536,6 @@ exports.saveStagesAsTemplate = async (req, res) => {
   try {
     const { jobId } = req.params;
     const { templateName, templateDescription } = req.body;
-    const InterviewStage = require('../models/InterviewStage');
     const stageTemplateService = require('../services/stageTemplateService');
 
     if (!templateName) {
@@ -2462,9 +2563,8 @@ exports.saveStagesAsTemplate = async (req, res) => {
     }
 
     // Get job and verify ownership
-    const job = await Job.findOne({
-      _id: jobId,
-      organization: req.user.currentOrganization
+    const job = await prisma.job.findFirst({
+      where: { id: jobId, organizationId: req.user.currentOrganization }
     });
 
     if (!job) {
@@ -2475,9 +2575,7 @@ exports.saveStagesAsTemplate = async (req, res) => {
     }
 
     // Get job's interview stages
-    const stages = await InterviewStage.find({ jobId })
-      .sort('order')
-      .lean();
+    const stages = await prisma.interviewStage.findMany({ where: { jobId }, orderBy: { order: 'asc' } });
 
     if (stages.length === 0) {
       return res.status(400).json({
@@ -2522,7 +2620,7 @@ exports.saveStagesAsTemplate = async (req, res) => {
     // Link template to job
     job.pipelineConfiguration = job.pipelineConfiguration || {};
     job.pipelineConfiguration.customTemplateId = template._id;
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { pipelineConfiguration: job.pipelineConfiguration } });
 
     res.status(201).json({
       success: true,
@@ -2548,9 +2646,7 @@ exports.applyTemplate = async (req, res) => {
   try {
     const { jobId } = req.params;
     const { templateId } = req.body;
-    const InterviewStage = require('../models/InterviewStage');
     const stageTemplateService = require('../services/stageTemplateService');
-    const mongoose = require('mongoose');
 
     console.log('Apply template request:', { jobId, templateId, userId: req.user?.id, orgId: req.user?.currentOrganization });
 
@@ -2562,9 +2658,8 @@ exports.applyTemplate = async (req, res) => {
     }
 
     // Get job and verify ownership
-    const job = await Job.findOne({
-      _id: jobId,
-      organization: req.user.currentOrganization
+    const job = await prisma.job.findFirst({
+      where: { id: jobId, organizationId: req.user.currentOrganization }
     });
 
     if (!job) {
@@ -2575,9 +2670,9 @@ exports.applyTemplate = async (req, res) => {
     }
 
     // Check if job already has stages
-    const existingStages = await InterviewStage.countDocuments({ jobId });
+    const existingStages = await prisma.interviewStage.count({ where: { jobId } });
     console.log('Existing stages count:', existingStages);
-    
+
     if (existingStages > 0) {
       console.log('Job already has stages, blocking template application');
       return res.status(400).json({
@@ -2594,16 +2689,13 @@ exports.applyTemplate = async (req, res) => {
     );
     console.log('Template found:', template?.name, 'with', template?.stages?.length, 'stages');
 
-    // Start transaction
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
-      // Create InterviewStage documents from template
+      // Create InterviewStage documents from template.
+      // NOTE[pg]: the legacy `organization` field is not a column on InterviewStage,
+      // so it is dropped here (it was never read back from the stage records).
       const stagesToCreate = template.stages.map((stage, index) => ({
         ...stage,
         jobId,
-        organization: req.user.currentOrganization,
         // Ensure required fields are present with sequential ordering
         order: index + 1,  // Force sequential ordering starting from 1
         name: stage.name || `Stage ${index + 1}`,
@@ -2613,18 +2705,22 @@ exports.applyTemplate = async (req, res) => {
       console.log('Creating stages from template:', stagesToCreate.length, 'stages');
       console.log('Sample stage data:', stagesToCreate[0]);
 
-      const createdStages = await InterviewStage.insertMany(stagesToCreate, { session });
-
       // Update job with template reference
       job.pipelineConfiguration = job.pipelineConfiguration || {};
       job.pipelineConfiguration.customTemplateId = template._id;
-      job.pipelineConfiguration.totalStages = createdStages.length;
-      await job.save({ session });
+      job.pipelineConfiguration.totalStages = stagesToCreate.length;
+
+      const createdStages = await prisma.$transaction(async (tx) => {
+        const created = [];
+        for (const data of stagesToCreate) {
+          created.push(await tx.interviewStage.create({ data }));
+        }
+        await tx.job.update({ where: { id: job.id }, data: { pipelineConfiguration: job.pipelineConfiguration } });
+        return created;
+      });
 
       // Increment template usage
       await template.incrementUsageCount();
-
-      await session.commitTransaction();
 
       res.status(201).json({
         success: true,
@@ -2632,10 +2728,7 @@ exports.applyTemplate = async (req, res) => {
         message: `Template applied successfully. ${createdStages.length} stages created.`
       });
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error) {
     console.error('Error applying template:', error);
@@ -2709,7 +2802,7 @@ exports.enableInternalRecruitment = async (req, res) => {
     const organizationId = req.user.currentOrganization;
 
     // Find the job
-    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: jobId, organizationId } });
     if (!job) {
       return res.status(404).json({
         success: false,
@@ -2731,8 +2824,7 @@ exports.enableInternalRecruitment = async (req, res) => {
       creditsNeeded = internalCandidateApplyLimit;
 
       // Check organization credits (use subscription.creditUsage)
-      const Organization = require('../models/Organization');
-      const organization = await Organization.findById(organizationId);
+      const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
 
       if (!organization) {
         return res.status(404).json({
@@ -2783,7 +2875,7 @@ exports.enableInternalRecruitment = async (req, res) => {
       });
 
       organization.subscription.creditUsage = creditUsage;
-      await organization.save();
+      await prisma.organization.update({ where: { id: organization.id }, data: { subscription: organization.subscription } });
     }
 
     // Enable internal recruitment
@@ -2794,9 +2886,15 @@ exports.enableInternalRecruitment = async (req, res) => {
       requireEmployeeId: requireEmployeeId || false,
       notifyHiringManager: notifyHiringManager !== false // Default true
     };
-    job.updatedBy = userId;
+    job.updatedById = userId;
 
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: {
+      isInternalEnabled: job.isInternalEnabled,
+      internalCandidateApplyLimit: job.internalCandidateApplyLimit,
+      reservedInternalCredits: job.reservedInternalCredits,
+      internalSettings: job.internalSettings,
+      updatedById: job.updatedById
+    } });
 
     res.json({
       success: true,
@@ -2828,7 +2926,7 @@ exports.disableInternalRecruitment = async (req, res) => {
     const organizationId = req.user.currentOrganization;
 
     // Find the job
-    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    const job = await prisma.job.findFirst({ where: { id: jobId, organizationId } });
     if (!job) {
       return res.status(404).json({
         success: false,
@@ -2854,9 +2952,9 @@ exports.disableInternalRecruitment = async (req, res) => {
 
     // Disable internal recruitment
     job.isInternalEnabled = false;
-    job.updatedBy = userId;
+    job.updatedById = userId;
 
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { isInternalEnabled: false, updatedById: userId } });
 
     res.json({
       success: true,
@@ -2884,10 +2982,7 @@ exports.getInternalJobById = async (req, res) => {
     const { jobId } = req.params;
 
     // Find the job
-    const job = await Job.findById(jobId)
-      .populate('department', 'name')
-      .populate('hiringManager', 'firstName lastName email')
-      .populate('interviewStages');
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
 
     if (!job) {
       return res.status(404).json({
@@ -2895,6 +2990,11 @@ exports.getInternalJobById = async (req, res) => {
         message: 'Job not found'
       });
     }
+
+    // Stitch soft-ref populates (department, hiringManager, interviewStages)
+    job.department = job.departmentId ? await prisma.department.findUnique({ where: { id: job.departmentId }, select: { id: true, name: true } }) : null;
+    job.hiringManager = job.hiringManagerId ? await prisma.user.findUnique({ where: { id: job.hiringManagerId }, select: { id: true, profile: true, email: true } }) : null;
+    job.interviewStages = await prisma.interviewStage.findMany({ where: { jobId: job.id }, orderBy: { order: 'asc' } });
 
     // Check if internal recruitment is enabled
     if (!job.isInternalEnabled) {
@@ -2922,8 +3022,9 @@ exports.getInternalJobById = async (req, res) => {
     }
 
     // Increment internal view count
+    if (!job.analytics) job.analytics = {};
     job.analytics.internalViews = (job.analytics.internalViews || 0) + 1;
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: { analytics: job.analytics } });
 
     res.json({
       success: true,
@@ -2948,9 +3049,9 @@ exports.submitInternalApplication = async (req, res) => {
     const organizationId = req.user?.currentOrganization || req.user?.organization;
 
     // Find the job (when unauthenticated, find by id only - internal URL is secret)
-    const jobQuery = organizationId ? { _id: jobId, organization: organizationId } : { _id: jobId };
-    const job = await Job.findOne(jobQuery);
-    const orgId = organizationId || (job && job.organization?.toString());
+    const jobQuery = organizationId ? { id: jobId, organizationId } : { id: jobId };
+    const job = await prisma.job.findFirst({ where: jobQuery });
+    const orgId = organizationId || (job && job.organizationId?.toString());
     if (!job) {
       return res.status(404).json({
         success: false,
@@ -2984,8 +3085,7 @@ exports.submitInternalApplication = async (req, res) => {
     }
 
     // Find or create candidate
-    const Candidate = require('../models/Candidate');
-    let candidate = await Candidate.findOne({ _id: candidateId, organization: orgId });
+    let candidate = await prisma.candidate.findFirst({ where: { id: candidateId, organizationId: orgId } });
 
     if (!candidate) {
       return res.status(404).json({
@@ -2995,15 +3095,18 @@ exports.submitInternalApplication = async (req, res) => {
     }
 
     // Mark candidate as internal
-    candidate.isInternalCandidate = true;
+    const candidateUpdate = { isInternalCandidate: true };
     if (employeeId) {
-      candidate.employeeId = employeeId;
+      candidateUpdate.employeeId = employeeId;
     }
-    await candidate.save();
+    candidate = await prisma.candidate.update({ where: { id: candidate.id }, data: candidateUpdate });
+
+    const applicantsArr = Array.isArray(job.applicants) ? job.applicants : [];
+    job.applicants = applicantsArr;
 
     // Check if already applied
-    const alreadyApplied = job.applicants.some(
-      app => app.candidate.toString() === candidateId
+    const alreadyApplied = applicantsArr.some(
+      app => app.candidate && app.candidate.toString() === candidateId
     );
 
     if (alreadyApplied) {
@@ -3021,7 +3124,9 @@ exports.submitInternalApplication = async (req, res) => {
         message: 'Authentication required to submit internal application'
       });
     }
-    job.applicants.push({
+    const newApplicantId = newId();
+    applicantsArr.push({
+      _id: newApplicantId,
       candidate: candidateId,
       applicationType: 'internal',
       status: 'applied',
@@ -3037,15 +3142,20 @@ exports.submitInternalApplication = async (req, res) => {
 
     // Update counters
     job.internalApplicationCount = (job.internalApplicationCount || 0) + 1;
+    if (!job.analytics) job.analytics = {};
     job.analytics.internalApplications = (job.analytics.internalApplications || 0) + 1;
     job.analytics.applications = (job.analytics.applications || 0) + 1;
 
     // Credits were already deducted when internal recruitment was enabled; no per-apply deduction needed
 
-    await job.save();
+    await prisma.job.update({ where: { id: job.id }, data: {
+      applicants: job.applicants,
+      internalApplicationCount: job.internalApplicationCount,
+      analytics: job.analytics
+    } });
 
     // Send notification if enabled
-    if (job.internalSettings?.notifyHiringManager && job.hiringManager) {
+    if (job.internalSettings?.notifyHiringManager && job.hiringManagerId) {
       // TODO: Implement notification service
       console.log('Notification should be sent to hiring manager');
     }
@@ -3053,7 +3163,7 @@ exports.submitInternalApplication = async (req, res) => {
     res.json({
       success: true,
       message: 'Internal application submitted successfully',
-      applicationId: job.applicants[job.applicants.length - 1]._id
+      applicationId: newApplicantId
     });
   } catch (error) {
     console.error('Error submitting internal application:', error);

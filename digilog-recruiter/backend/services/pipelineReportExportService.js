@@ -6,9 +6,7 @@ try {
   // Fallback: standard SheetJS (styles may be limited, data export remains intact).
   xlsx = require('xlsx');
 }
-const Job = require('../models/Job');
-const Interview = require('../models/Interview');
-const InterviewStage = require('../models/InterviewStage');
+const prisma = require('../db/client');
 
 const MAX_SHEET_NAME_LENGTH = 31;
 const INVALID_SHEET_CHARS = /[:\\/?*\[\]]/g;
@@ -286,32 +284,7 @@ function compositeScore({ applicant, shortlist, scores }) {
 }
 
 async function buildDetailedPipelineWorkbook({ jobId, organizationId }) {
-  const job = await Job.findOne({ _id: jobId, organization: organizationId })
-    .populate('department', 'name')
-    .populate('hiringManager', 'firstName lastName email profile.firstName profile.lastName')
-    .populate('recruiters', 'firstName lastName email profile.firstName profile.lastName')
-    .populate('interviewers', 'firstName lastName email profile.firstName profile.lastName')
-    .populate({
-      path: 'shortlist.candidate',
-      select: 'firstName lastName email phone position experience skills location source isInternalCandidate employeeId'
-    })
-    .populate({
-      path: 'shortlist.addedBy',
-      select: 'firstName lastName email profile.firstName profile.lastName'
-    })
-    .populate({
-      path: 'applicants.candidate',
-      select: 'firstName lastName email phone position experience skills location source isInternalCandidate employeeId'
-    })
-    .populate({
-      path: 'applicants.addedBy',
-      select: 'firstName lastName email profile.firstName profile.lastName'
-    })
-    .populate({
-      path: 'applicants.statusHistory.changedBy',
-      select: 'firstName lastName email profile.firstName profile.lastName'
-    })
-    .lean();
+  const job = await prisma.job.findFirst({ where: { id: jobId, organizationId: organizationId } });
 
   if (!job) {
     const error = new Error('Job not found');
@@ -319,12 +292,99 @@ async function buildDetailedPipelineWorkbook({ jobId, organizationId }) {
     throw error;
   }
 
-  const stages = await InterviewStage.find({ jobId, isActive: true }).sort('order').lean();
-  const interviews = await Interview.find({ jobId })
-    .populate('candidateId', 'firstName lastName email')
-    .populate('interviewerId', 'firstName lastName email profile.firstName profile.lastName')
-    .populate('stageId', 'name order')
-    .lean();
+  // --- Stitch soft refs to mirror the original .populate(...) chain. ---
+  const candidateSelect = {
+    id: true, firstName: true, lastName: true, email: true, phone: true, position: true,
+    experience: true, skills: true, location: true, source: true,
+    isInternalCandidate: true, employeeId: true
+  };
+  const userSelect = { id: true, email: true, profile: true };
+
+  const fetchUser = async (id) => (id ? prisma.user.findUnique({ where: { id: String(id) }, select: userSelect }) : null);
+  const fetchUsers = async (ids) => {
+    const clean = [...new Set((ids || []).filter(Boolean).map(String))];
+    if (!clean.length) return new Map();
+    const rows = await prisma.user.findMany({ where: { id: { in: clean } }, select: userSelect });
+    return new Map(rows.map((r) => [r.id, r]));
+  };
+  const fetchCandidates = async (ids) => {
+    const clean = [...new Set((ids || []).filter(Boolean).map(String))];
+    if (!clean.length) return new Map();
+    const rows = await prisma.candidate.findMany({ where: { id: { in: clean } }, select: candidateSelect });
+    return new Map(rows.map((r) => [r.id, r]));
+  };
+
+  // Job-level refs: department, hiringManager, recruiters[], interviewers[].
+  job.department = job.departmentId
+    ? await prisma.department.findUnique({ where: { id: job.departmentId }, select: { id: true, name: true } })
+    : null;
+  job.hiringManager = await fetchUser(job.hiringManagerId);
+  const recruiterMap = await fetchUsers(job.recruiterIds);
+  job.recruiters = (job.recruiterIds || []).map((id) => recruiterMap.get(String(id))).filter(Boolean);
+  const interviewerMap = await fetchUsers(job.interviewerIds);
+  job.interviewers = (job.interviewerIds || []).map((id) => interviewerMap.get(String(id))).filter(Boolean);
+
+  if (!Array.isArray(job.shortlist)) job.shortlist = [];
+  if (!Array.isArray(job.applicants)) job.applicants = [];
+
+  // Collect ids referenced inside the shortlist/applicants Json arrays.
+  const collectId = (ref) => (ref && (ref._id || ref.id || ref)) || null;
+  const candidateIds = [];
+  const userIds = [];
+  job.shortlist.forEach((item) => {
+    candidateIds.push(collectId(item.candidate));
+    userIds.push(collectId(item.addedBy));
+  });
+  job.applicants.forEach((item) => {
+    candidateIds.push(collectId(item.candidate));
+    userIds.push(collectId(item.addedBy));
+    (item.statusHistory || []).forEach((h) => userIds.push(collectId(h.changedBy)));
+  });
+  const candidateMap = await fetchCandidates(candidateIds);
+  const userMap = await fetchUsers(userIds);
+
+  const stitchCandidate = (ref) => {
+    const id = collectId(ref);
+    return id ? (candidateMap.get(String(id)) || null) : null;
+  };
+  const stitchUser = (ref) => {
+    const id = collectId(ref);
+    return id ? (userMap.get(String(id)) || null) : null;
+  };
+
+  job.shortlist.forEach((item) => {
+    item.candidate = stitchCandidate(item.candidate);
+    item.addedBy = stitchUser(item.addedBy);
+  });
+  job.applicants.forEach((item) => {
+    item.candidate = stitchCandidate(item.candidate);
+    item.addedBy = stitchUser(item.addedBy);
+    (item.statusHistory || []).forEach((h) => { h.changedBy = stitchUser(h.changedBy); });
+  });
+
+  const stages = await prisma.interviewStage.findMany({
+    where: { jobId, isActive: true },
+    orderBy: { order: 'asc' }
+  });
+  const interviews = await prisma.interview.findMany({ where: { jobId } });
+
+  // Stitch interview refs: candidateId, interviewerId, stageId.
+  const interviewCandidateMap = await fetchCandidates(interviews.map((i) => i.candidateId));
+  const interviewUserMap = await fetchUsers(interviews.map((i) => i.interviewerId));
+  const stageMapById = new Map(stages.map((s) => [s.id, s]));
+  for (const interview of interviews) {
+    interview.candidateId = interview.candidateId
+      ? (interviewCandidateMap.get(String(interview.candidateId)) || null)
+      : null;
+    interview.interviewerId = interview.interviewerId
+      ? (interviewUserMap.get(String(interview.interviewerId)) || null)
+      : null;
+    if (interview.stageId) {
+      interview.stageId = stageMapById.get(String(interview.stageId))
+        || await prisma.interviewStage.findUnique({ where: { id: String(interview.stageId) }, select: { id: true, name: true, order: true } })
+        || null;
+    }
+  }
 
   const shortlist = (job.shortlist || []).filter((item) => item.candidate && item.candidate._id);
   const applicants = (job.applicants || []).filter((item) => item.candidate && item.candidate._id);

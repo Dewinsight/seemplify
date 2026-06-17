@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const https = require('https');
 const WebSocket = require('ws');
 const sdk = require('microsoft-cognitiveservices-speech-sdk');
-const AIInterviewSession = require('../models/AIInterviewSession');
+const prisma = require('../db/client');
 
 function hashPublicToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -84,16 +84,19 @@ function buildSpeechConfig(config) {
 
 async function findPublicSession(token) {
   const tokenHash = hashPublicToken(token);
-  return AIInterviewSession.findOne({ tokenHash })
-    .populate({
-      path: 'aiInterview',
-      populate: [
-        { path: 'job', select: 'title description organization' },
-        { path: 'organization', select: 'name' }
-      ]
-    })
-    .populate('job', 'title description')
-    .populate('candidate', 'firstName lastName email');
+  const session = await prisma.aIInterviewSession.findFirst({ where: { tokenHash } });
+  if (!session) return null;
+  if (session.aiInterviewId) {
+    const ai = await prisma.aIInterview.findUnique({ where: { id: session.aiInterviewId } });
+    if (ai) {
+      if (ai.jobId) ai.job = await prisma.job.findUnique({ where: { id: ai.jobId }, select: { id: true, title: true, description: true, organizationId: true } });
+      if (ai.organizationId) ai.organization = await prisma.organization.findUnique({ where: { id: ai.organizationId }, select: { id: true, name: true } });
+      session.aiInterview = ai;
+    }
+  }
+  if (session.jobId) session.job = await prisma.job.findUnique({ where: { id: session.jobId }, select: { id: true, title: true, description: true } });
+  if (session.candidateId) session.candidate = await prisma.candidate.findUnique({ where: { id: session.candidateId }, select: { id: true, firstName: true, lastName: true, email: true } });
+  return session;
 }
 
 class AIInterviewVoiceLiveService {

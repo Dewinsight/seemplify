@@ -1,5 +1,18 @@
-const Notification = require('../models/Notification');
-const User = require('../models/User');
+const prisma = require('../db/client');
+
+// Inlined from Notification.getUnreadCount: unread, non-expired notifications for a user.
+async function getNotificationUnreadCount(userId) {
+  return prisma.notification.count({
+    where: {
+      userId,
+      read: false,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } }
+      ]
+    }
+  });
+}
 
 // Get notifications for current user
 exports.getUserNotifications = async (req, res) => {
@@ -8,25 +21,26 @@ exports.getUserNotifications = async (req, res) => {
     const { page = 1, limit = 20, unreadOnly = false } = req.query;
     
     const query = {
-      user: userId,
-      $or: [
+      userId,
+      OR: [
         { expiresAt: null },
-        { expiresAt: { $gt: new Date() } }
+        { expiresAt: { gt: new Date() } }
       ]
     };
-    
+
     if (unreadOnly === 'true') {
       query.read = false;
     }
-    
-    const notifications = await Notification.find(query)
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .lean();
-    
-    const total = await Notification.countDocuments(query);
-    const unreadCount = await Notification.getUnreadCount(userId);
+
+    const notifications = await prisma.notification.findMany({
+      where: query,
+      orderBy: { createdAt: 'desc' },
+      take: limit * 1,
+      skip: (page - 1) * limit
+    });
+
+    const total = await prisma.notification.count({ where: query });
+    const unreadCount = await getNotificationUnreadCount(userId);
     
     
     // Enrich notifications with organization context for UI badges and switching
@@ -42,11 +56,10 @@ exports.getUserNotifications = async (req, res) => {
     let orgIdToName = {};
     if (orgIdsSet.size > 0) {
       try {
-        const Organization = require('../models/Organization');
         const ids = Array.from(orgIdsSet);
-        const orgs = await Organization.find({ _id: { $in: ids } }).select('name').lean();
+        const orgs = await prisma.organization.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
         orgIdToName = orgs.reduce((acc, org) => {
-          acc[org._id.toString()] = org.name;
+          acc[org.id.toString()] = org.name;
           return acc;
         }, {});
       } catch (e) {
@@ -108,8 +121,8 @@ exports.getUserNotifications = async (req, res) => {
 exports.getUnreadCount = async (req, res) => {
   try {
     const userId = req.user.id;
-    const count = await Notification.getUnreadCount(userId);
-    
+    const count = await getNotificationUnreadCount(userId);
+
     res.json({ count });
   } catch (error) {
     console.error('Error getting unread count:', error);
@@ -123,18 +136,20 @@ exports.markAsRead = async (req, res) => {
     const { notificationId } = req.params;
     const userId = req.user.id;
     
-    const notification = await Notification.findOne({
-      _id: notificationId,
-      user: userId
+    const notification = await prisma.notification.findFirst({
+      where: { id: notificationId, userId }
     });
-    
+
     if (!notification) {
       return res.status(404).json({ msg: 'Notification not found' });
     }
-    
-    notification.markAsRead();
-    await notification.save();
-    
+
+    // Inlined from Notification.markAsRead()
+    await prisma.notification.update({
+      where: { id: notification.id },
+      data: { read: true, updatedAt: new Date() }
+    });
+
     res.json({ msg: 'Notification marked as read' });
   } catch (error) {
     console.error('Error marking notification as read:', error);
@@ -147,11 +162,11 @@ exports.markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    await Notification.updateMany(
-      { user: userId, read: false },
-      { read: true, updatedAt: Date.now() }
-    );
-    
+    await prisma.notification.updateMany({
+      where: { userId, read: false },
+      data: { read: true }
+    });
+
     res.json({ msg: 'All notifications marked as read' });
   } catch (error) {
     console.error('Error marking all notifications as read:', error);
@@ -165,12 +180,11 @@ exports.deleteNotification = async (req, res) => {
     const { notificationId } = req.params;
     const userId = req.user.id;
     
-    const result = await Notification.deleteOne({
-      _id: notificationId,
-      user: userId
+    const result = await prisma.notification.deleteMany({
+      where: { id: notificationId, userId }
     });
-    
-    if (result.deletedCount === 0) {
+
+    if (result.count === 0) {
       return res.status(404).json({ msg: 'Notification not found' });
     }
     
@@ -188,14 +202,13 @@ exports.createTestNotification = async (req, res) => {
     const { title, message, type = 'general', organizationId } = req.body;
     
     // Get user's organization for embedding (allow override for testing)
-    const currentUser = await User.findById(userId).select('currentOrganization').lean();
-    const targetOrgId = organizationId || currentUser?.currentOrganization;
-    
+    const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { currentOrganizationId: true } });
+    const targetOrgId = organizationId || currentUser?.currentOrganizationId;
+
     let orgName = null;
     if (targetOrgId) {
       try {
-        const Organization = require('../models/Organization');
-        const org = await Organization.findById(targetOrgId).select('name').lean();
+        const org = await prisma.organization.findUnique({ where: { id: targetOrgId }, select: { name: true } });
         orgName = org?.name || null;
       } catch (e) {
         console.warn('Failed to get org name for test notification:', e.message);
@@ -204,17 +217,19 @@ exports.createTestNotification = async (req, res) => {
     
     console.log(`🧪 Creating test notification for user ${userId} with org ${targetOrgId} (${orgName})`);
     
-    const notification = await Notification.create({
-      user: userId,
-      type,
-      title: title || `Test notification - ${orgName || 'No Org'}`,
-      message: message || `This is a test notification from ${orgName || 'unknown organization'}`,
+    const notification = await prisma.notification.create({
       data: {
-        organizationId: targetOrgId || null,
-        organizationName: orgName
-      },
-      actionUrl: '/dashboard',
-      actionText: 'View Dashboard'
+        userId,
+        type,
+        title: title || `Test notification - ${orgName || 'No Org'}`,
+        message: message || `This is a test notification from ${orgName || 'unknown organization'}`,
+        data: {
+          organizationId: targetOrgId || null,
+          organizationName: orgName
+        },
+        actionUrl: '/dashboard',
+        actionText: 'View Dashboard'
+      }
     });
     
     console.log('🧪 Test notification created:', {
@@ -237,33 +252,34 @@ exports.getRecentActivities = async (req, res) => {
     const { limit = 10 } = req.query;
     
     // Get current user to find their organization
-    const User = require('../models/User');
-    const currentUser = await User.findById(userId);
-    if (!currentUser || !currentUser.currentOrganization) {
+    const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!currentUser || !currentUser.currentOrganizationId) {
       return res.status(400).json({ msg: 'User organization not found' });
     }
 
     // Get all users in the same organization
-    const orgUsers = await User.find({ 
-      currentOrganization: currentUser.currentOrganization 
-    }).select('_id');
-    
-    const orgUserIds = orgUsers.map(user => user._id);
-    
+    const orgUsers = await prisma.user.findMany({
+      where: { currentOrganizationId: currentUser.currentOrganizationId },
+      select: { id: true }
+    });
+
+    const orgUserIds = orgUsers.map(user => user.id);
+
     // Get activity notifications from all organization members
     const activityTypes = ['job_created', 'candidate_uploaded', 'interview_created'];
-    
-    const activities = await Notification.find({
-      user: { $in: orgUserIds }, // Activities from all organization members
-      type: { $in: activityTypes },
-      $or: [
-        { expiresAt: null },
-        { expiresAt: { $gt: new Date() } }
-      ]
-    })
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .lean();
+
+    const activities = await prisma.notification.findMany({
+      where: {
+        userId: { in: orgUserIds }, // Activities from all organization members
+        type: { in: activityTypes },
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } }
+        ]
+      },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit)
+    });
     
     // Transform notifications into activity format for dashboard
     const formattedActivities = activities.map(notification => ({

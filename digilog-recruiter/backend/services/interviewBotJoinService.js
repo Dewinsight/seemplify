@@ -1,5 +1,4 @@
-const Interview = require('../models/Interview');
-const NylasAccount = require('../models/NylasAccount');
+const prisma = require('../db/client');
 const nylasV3Service = require('./nylasV3Service');
 
 const ACTIVE_STATUSES = new Set(['joining', 'joined', 'recording', 'processing', 'completed']);
@@ -121,7 +120,7 @@ class InterviewBotJoinService {
       return null;
     }
 
-    const nylasAccount = await NylasAccount.findById(interviewer.nylasAccountId).select('+apiKey');
+    const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interviewer.nylasAccountId } });
     if (!nylasAccount) {
       return null;
     }
@@ -173,7 +172,10 @@ class InterviewBotJoinService {
         if (mappedStatus !== interview.notetakerStatus) {
           interview.notetakerStatus = mappedStatus;
           interview.notetakerType = 'standalone';
-          await interview.save();
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notetakerStatus: mappedStatus, notetakerType: 'standalone' }
+          });
         }
 
         if (ACTIVE_STATUSES.has(mappedStatus) || TERMINAL_STATUSES.has(mappedStatus)) {
@@ -192,12 +194,18 @@ class InterviewBotJoinService {
           interview.notetakerId = null;
           interview.notetakerStatus = 'cancelled';
           interview.notetakerType = 'standalone';
-          await interview.save();
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notetakerId: null, notetakerStatus: 'cancelled', notetakerType: 'standalone' }
+          });
         } catch (cancelError) {
           if (cancelError?.message?.includes('NOTETAKER_NOT_FOUND')) {
             interview.notetakerStatus = 'deleted';
             interview.notetakerId = null;
-            await interview.save();
+            await prisma.interview.update({
+              where: { id: interview.id },
+              data: { notetakerStatus: 'deleted', notetakerId: null }
+            });
           } else {
             console.warn(
               `[BOT-JOIN] Could not cancel existing notetaker ${existingNotetakerId} for interview ${interview._id}: ${cancelError.message}`
@@ -209,7 +217,10 @@ class InterviewBotJoinService {
         if (statusError?.message?.includes('NOTETAKER_NOT_FOUND')) {
           interview.notetakerStatus = 'deleted';
           interview.notetakerId = null;
-          await interview.save();
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notetakerStatus: 'deleted', notetakerId: null }
+          });
         } else {
           console.warn(
             `[BOT-JOIN] Could not fetch status for interview ${interview._id}: ${statusError.message}`
@@ -244,7 +255,16 @@ class InterviewBotJoinService {
     interview.notetakerType = 'standalone';
     interview.notetakerStatus = 'joining';
     interview.notetakerError = null;
-    await interview.save();
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: {
+        notetakerEnabled: true,
+        notetakerId: notetakerId,
+        notetakerType: 'standalone',
+        notetakerStatus: 'joining',
+        notetakerError: null
+      }
+    });
 
     console.log(
       `[BOT-JOIN] Triggered join for interview ${interview._id} with notetaker ${notetakerId}`
@@ -270,14 +290,31 @@ class InterviewBotJoinService {
       const lowerBound = new Date(now.getTime() - this.lookbackMs);
       const upperBound = new Date(now.getTime() + this.preStartWindowMs);
 
-      const interviews = await Interview.find({
-        status: { $in: ['scheduled', 'confirmed', 'in_progress'] },
-        notetakerEnabled: true,
-        scheduledAt: { $gte: lowerBound, $lte: upperBound }
-      }).populate('interviewerId', 'nylasAccountId');
+      const interviews = await prisma.interview.findMany({
+        where: {
+          status: { in: ['scheduled', 'confirmed', 'in_progress'] },
+          notetakerEnabled: true,
+          scheduledAt: { gte: lowerBound, lte: upperBound }
+        }
+      });
 
       if (!interviews.length) {
         return;
+      }
+
+      // Stitch interviewer (soft ref) — replaces .populate('interviewerId', 'nylasAccountId').
+      const interviewerIds = [...new Set(interviews.map(i => i.interviewerId).filter(Boolean))];
+      if (interviewerIds.length) {
+        const interviewers = await prisma.user.findMany({
+          where: { id: { in: interviewerIds } },
+          select: { id: true, nylasAccountId: true }
+        });
+        const interviewerMap = new Map(interviewers.map(u => [u.id, u]));
+        for (const interview of interviews) {
+          interview.interviewerId = interview.interviewerId
+            ? (interviewerMap.get(interview.interviewerId) || null)
+            : null;
+        }
       }
 
       for (const interview of interviews) {

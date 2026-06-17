@@ -1,11 +1,6 @@
 const cron = require('node-cron');
-const mongoose = require('mongoose');
-const InterviewSlotRetryTask = require('../models/InterviewSlotRetryTask');
-const Interview = require('../models/Interview');
-const Candidate = require('../models/Candidate');
-const Job = require('../models/Job');
-const User = require('../models/User');
-const NylasAccount = require('../models/NylasAccount');
+const prisma = require('../db/client');
+const { isObjectIdLike } = require('../db/objectId');
 const nylasV3Service = require('./nylasV3Service');
 const emailService = require('./emailService');
 const pdfService = require('./pdfService');
@@ -50,12 +45,14 @@ class MultiCandidateRetryService {
   }
 
   async enqueueRetryTask(taskPayload) {
-    const task = await InterviewSlotRetryTask.create({
-      ...taskPayload,
-      nextAttemptAt: new Date(Date.now() + RETRY_BACKOFF_MINUTES[0] * 60 * 1000),
-      status: 'queued',
-      attemptsMade: 0,
-      maxAttempts: 2
+    const task = await prisma.interviewSlotRetryTask.create({
+      data: {
+        ...taskPayload,
+        nextAttemptAt: new Date(Date.now() + RETRY_BACKOFF_MINUTES[0] * 60 * 1000),
+        status: 'queued',
+        attemptsMade: 0,
+        maxAttempts: 2
+      }
     });
 
     return task;
@@ -66,18 +63,18 @@ class MultiCandidateRetryService {
       return { matchedCount: 0, modifiedCount: 0 };
     }
 
-    const result = await InterviewSlotRetryTask.updateMany(
-      {
+    const result = await prisma.interviewSlotRetryTask.updateMany({
+      where: {
         sessionId,
         status: 'queued',
-        $or: [{ sharedMeetingLink: null }, { sharedMeetingLink: '' }]
+        OR: [{ sharedMeetingLink: null }, { sharedMeetingLink: '' }]
       },
-      { $set: { sharedMeetingLink } }
-    );
+      data: { sharedMeetingLink }
+    });
 
     return {
-      matchedCount: result?.matchedCount || result?.n || 0,
-      modifiedCount: result?.modifiedCount || result?.nModified || 0
+      matchedCount: result?.count || 0,
+      modifiedCount: result?.count || 0
     };
   }
 
@@ -110,10 +107,13 @@ class MultiCandidateRetryService {
 
   async recoverStaleProcessingTasks() {
     const staleCutoff = new Date(Date.now() - STALE_PROCESSING_TIMEOUT_MINUTES * 60 * 1000);
-    const staleTasks = await InterviewSlotRetryTask.find({
-      status: 'processing',
-      lastAttemptAt: { $lte: staleCutoff }
-    }).limit(MAX_TASKS_PER_TICK);
+    const staleTasks = await prisma.interviewSlotRetryTask.findMany({
+      where: {
+        status: 'processing',
+        lastAttemptAt: { lte: staleCutoff }
+      },
+      take: MAX_TASKS_PER_TICK
+    });
 
     if (!staleTasks.length) {
       return;
@@ -134,7 +134,16 @@ class MultiCandidateRetryService {
         task.completedAt = new Date();
       }
 
-      await task.save();
+      await prisma.interviewSlotRetryTask.update({
+        where: { id: task.id },
+        data: {
+          attemptsMade: task.attemptsMade,
+          lastError: task.lastError,
+          status: task.status,
+          nextAttemptAt: task.nextAttemptAt,
+          completedAt: task.completedAt
+        }
+      });
       touchedSessions.add(task.sessionId);
     }
 
@@ -147,22 +156,25 @@ class MultiCandidateRetryService {
   }
 
   async claimNextQueuedTask(now) {
-    return InterviewSlotRetryTask.findOneAndUpdate(
-      {
+    // findFirst (ordered) + update replaces the atomic findOneAndUpdate. The
+    // scheduler is single-instance and guarded by `isRunning`, so the claim is safe.
+    const candidate = await prisma.interviewSlotRetryTask.findFirst({
+      where: {
         status: 'queued',
-        nextAttemptAt: { $lte: now }
+        nextAttemptAt: { lte: now }
       },
-      {
-        $set: {
-          status: 'processing',
-          lastAttemptAt: new Date()
-        }
-      },
-      {
-        sort: { nextAttemptAt: 1 },
-        new: true
+      orderBy: { nextAttemptAt: 'asc' }
+    });
+    if (!candidate) {
+      return null;
+    }
+    return prisma.interviewSlotRetryTask.update({
+      where: { id: candidate.id },
+      data: {
+        status: 'processing',
+        lastAttemptAt: new Date()
       }
-    );
+    });
   }
 
   async processQueuedRetries() {
@@ -182,16 +194,19 @@ class MultiCandidateRetryService {
     if (!options.alreadyClaimed) {
       task.status = 'processing';
       task.lastAttemptAt = new Date();
-      await task.save();
+      await prisma.interviewSlotRetryTask.update({
+        where: { id: task.id },
+        data: { status: task.status, lastAttemptAt: task.lastAttemptAt }
+      });
     }
 
     try {
-      const interviewer = await User.findById(task.interviewerId);
+      const interviewer = await prisma.user.findUnique({ where: { id: task.interviewerId } });
       if (!interviewer || !interviewer.calendarConnected || !interviewer.nylasGrantId) {
         throw new Error('Interviewer calendar is not connected');
       }
 
-      const candidate = await Candidate.findById(task.slot.candidateId);
+      const candidate = await prisma.candidate.findUnique({ where: { id: task.slot.candidateId } });
       if (!candidate) {
         throw new Error('Candidate not found for retry task');
       }
@@ -263,15 +278,15 @@ class MultiCandidateRetryService {
       }
 
       if (meetingLink && !task.sharedMeetingLink) {
-        await InterviewSlotRetryTask.updateMany(
-          {
+        await prisma.interviewSlotRetryTask.updateMany({
+          where: {
             sessionId: task.sessionId,
             status: 'queued',
-            _id: { $ne: task._id },
-            $or: [{ sharedMeetingLink: null }, { sharedMeetingLink: '' }]
+            id: { not: task.id },
+            OR: [{ sharedMeetingLink: null }, { sharedMeetingLink: '' }]
           },
-          { $set: { sharedMeetingLink: meetingLink } }
-        );
+          data: { sharedMeetingLink: meetingLink }
+        });
       }
 
       const bccParticipants = (task.sessionContext?.bccParticipants || [])
@@ -302,8 +317,8 @@ class MultiCandidateRetryService {
 
       const selectedQuestions = Array.isArray(task.sessionContext?.selectedQuestionIds)
         ? task.sessionContext.selectedQuestionIds
-            .filter(id => mongoose.Types.ObjectId.isValid(id))
-            .map(id => new mongoose.Types.ObjectId(id))
+            .filter(id => isObjectIdLike(id))
+            .map(id => String(id))
         : [];
 
       let notetakerDetails = {
@@ -335,9 +350,9 @@ class MultiCandidateRetryService {
         }
       }
 
-      const interview = new Interview({
-        candidateId: candidate._id,
-        interviewerId: interviewer._id,
+      const interviewData = {
+        candidateId: candidate.id,
+        interviewerId: interviewer.id,
         jobId: task.slot.jobId || null,
         stageId: task.slot.stageId || null,
         organizationId: task.organizationId,
@@ -376,10 +391,11 @@ class MultiCandidateRetryService {
         notetakerType: notetakerDetails.type,
         notetakerStatus: notetakerDetails.status,
         notetakerError: notetakerDetails.error
-      });
+      };
 
+      let interview;
       try {
-        await interview.save();
+        interview = await prisma.interview.create({ data: interviewData });
       } catch (saveError) {
         if (calendarEvent?.id) {
           try {
@@ -420,11 +436,22 @@ class MultiCandidateRetryService {
       task.status = 'completed';
       task.completedAt = new Date();
       task.attemptsMade += 1;
-      task.createdInterviewId = interview._id;
+      task.createdInterviewId = interview.id;
       task.createdEventId = calendarEvent.id;
       task.lastError = null;
       task.sharedMeetingLink = meetingLink || task.sharedMeetingLink || null;
-      await task.save();
+      await prisma.interviewSlotRetryTask.update({
+        where: { id: task.id },
+        data: {
+          status: task.status,
+          completedAt: task.completedAt,
+          attemptsMade: task.attemptsMade,
+          createdInterviewId: task.createdInterviewId,
+          createdEventId: task.createdEventId,
+          lastError: task.lastError,
+          sharedMeetingLink: task.sharedMeetingLink
+        }
+      });
 
       await this.sendFinalSummaryIfSessionResolved(task.sessionId, task.reportEmail || interviewer.email);
     } catch (error) {
@@ -441,7 +468,16 @@ class MultiCandidateRetryService {
         task.completedAt = new Date();
       }
 
-      await task.save();
+      await prisma.interviewSlotRetryTask.update({
+        where: { id: task.id },
+        data: {
+          attemptsMade: task.attemptsMade,
+          lastError: task.lastError,
+          status: task.status,
+          nextAttemptAt: task.nextAttemptAt,
+          completedAt: task.completedAt
+        }
+      });
 
       if (task.status === 'failed') {
         await this.sendFinalSummaryIfSessionResolved(task.sessionId, task.reportEmail);
@@ -450,13 +486,18 @@ class MultiCandidateRetryService {
   }
 
   async sendImmediateFeedbackIfNeeded(interviewId) {
-    const interview = await Interview.findById(interviewId)
-      .populate('candidateId')
-      .populate('jobId')
-      .populate('notifications.selectedQuestions');
+    const interview = await prisma.interview.findUnique({ where: { id: String(interviewId) } });
 
     if (!interview) {
       return;
+    }
+
+    // Stitch soft refs to mirror .populate('candidateId').populate('jobId').
+    if (interview.candidateId) {
+      interview.candidateId = await prisma.candidate.findUnique({ where: { id: interview.candidateId } });
+    }
+    if (interview.jobId) {
+      interview.jobId = await prisma.job.findUnique({ where: { id: interview.jobId } });
     }
 
     if (!interview.notifications?.sendQuestionsToInterviewers || interview.notifications?.questionsSentAt) {
@@ -471,7 +512,10 @@ class MultiCandidateRetryService {
       const sent = await interviewFeedbackEmailService.sendQuestionEmail(interview);
       if (sent) {
         interview.notifications.questionsSentAt = now;
-        await interview.save();
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { notifications: interview.notifications }
+        });
       }
     }
   }
@@ -512,9 +556,14 @@ class MultiCandidateRetryService {
 
       if (slot?.jobId) {
         try {
-          const attachmentJob = await Job.findById(slot.jobId).select(
-            'title description requirements responsibilities skills location type level experience education benefits'
-          );
+          const attachmentJob = await prisma.job.findUnique({
+            where: { id: slot.jobId },
+            select: {
+              id: true, title: true, description: true, requirements: true, responsibilities: true,
+              skills: true, location: true, type: true, level: true, experience: true,
+              education: true, benefits: true
+            }
+          });
           const jobDescriptionAttachment = await pdfService.generateJobDescriptionPdfAttachment(attachmentJob, organizationName);
           if (jobDescriptionAttachment) {
             candidateInviteOptions = { attachments: [jobDescriptionAttachment] };
@@ -588,16 +637,17 @@ class MultiCandidateRetryService {
     }
 
     try {
-      const job = await Job.findById(slot.jobId);
+      const job = await prisma.job.findUnique({ where: { id: slot.jobId } });
       if (!job) {
         return;
       }
 
-      const applicant = job.applicants?.find(
-        app => app.candidate?.toString() === candidate._id.toString()
+      const applicants = Array.isArray(job.applicants) ? job.applicants : [];
+      const applicant = applicants.find(
+        app => app.candidate?.toString() === candidate.id.toString()
       );
       if (!applicant) {
-        console.warn(`Pipeline applicant missing for recovered interview ${interview._id} (candidate ${candidate._id})`);
+        console.warn(`Pipeline applicant missing for recovered interview ${interview.id} (candidate ${candidate.id})`);
         return;
       }
 
@@ -606,12 +656,12 @@ class MultiCandidateRetryService {
       }
 
       const exists = applicant.interviews.some(
-        interviewRef => interviewRef.interviewId?.toString() === interview._id.toString()
+        interviewRef => interviewRef.interviewId?.toString() === interview.id.toString()
       );
 
       if (!exists) {
         applicant.interviews.push({
-          interviewId: interview._id,
+          interviewId: interview.id,
           stageId: slot.stageId || applicant.currentStage?.stageId || null,
           scheduledAt: interview.scheduledAt,
           status: 'scheduled'
@@ -622,7 +672,10 @@ class MultiCandidateRetryService {
         applicant.status = 'interviewing';
       }
 
-      await job.save();
+      await prisma.job.update({
+        where: { id: job.id },
+        data: { applicants }
+      });
     } catch (pipelineError) {
       console.error(`Failed to sync pipeline for recovered interview ${interview._id}:`, pipelineError.message);
     }
@@ -639,11 +692,14 @@ class MultiCandidateRetryService {
       };
     }
 
-    const existingSessionInterview = await Interview.findOne({
-      multiCandidateSessionId: sessionId,
-      notetakerId: { $ne: null },
-      notetakerStatus: { $nin: ['failed', 'deleted', 'cancelled'] }
-    }).sort({ createdAt: 1 });
+    const existingSessionInterview = await prisma.interview.findFirst({
+      where: {
+        multiCandidateSessionId: sessionId,
+        notetakerId: { not: null },
+        notetakerStatus: { notIn: ['failed', 'deleted', 'cancelled'] }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
 
     if (existingSessionInterview?.notetakerId) {
       return {
@@ -676,21 +732,19 @@ class MultiCandidateRetryService {
       throw new Error('Notetaker created without an ID');
     }
 
-    await Interview.updateMany(
-      {
+    await prisma.interview.updateMany({
+      where: {
         multiCandidateSessionId: sessionId,
-        $or: [{ notetakerId: null }, { notetakerId: '' }]
+        OR: [{ notetakerId: null }, { notetakerId: '' }]
       },
-      {
-        $set: {
-          notetakerEnabled: true,
-          notetakerId,
-          notetakerType: 'standalone',
-          notetakerStatus: 'enabled',
-          notetakerError: null
-        }
+      data: {
+        notetakerEnabled: true,
+        notetakerId,
+        notetakerType: 'standalone',
+        notetakerStatus: 'enabled',
+        notetakerError: null
       }
-    );
+    });
 
     return {
       enabled: true,
@@ -706,25 +760,29 @@ class MultiCandidateRetryService {
       return;
     }
 
-    const pendingCount = await InterviewSlotRetryTask.countDocuments({
-      sessionId,
-      status: { $in: ['queued', 'processing'] }
+    const pendingCount = await prisma.interviewSlotRetryTask.count({
+      where: {
+        sessionId,
+        status: { in: ['queued', 'processing'] }
+      }
     });
 
     if (pendingCount > 0) {
       return;
     }
 
-    const pendingEmailCount = await InterviewSlotRetryTask.countDocuments({
-      sessionId,
-      finalStatusEmailSent: false
+    const pendingEmailCount = await prisma.interviewSlotRetryTask.count({
+      where: {
+        sessionId,
+        finalStatusEmailSent: false
+      }
     });
 
     if (pendingEmailCount === 0) {
       return;
     }
 
-    const tasks = await InterviewSlotRetryTask.find({ sessionId });
+    const tasks = await prisma.interviewSlotRetryTask.findMany({ where: { sessionId } });
     const organizationName = tasks[0]?.sessionContext?.organizationName || DEFAULT_ORGANIZATION_NAME;
     const completed = tasks.filter(t => t.status === 'completed');
     const failed = tasks.filter(t => t.status === 'failed');
@@ -752,10 +810,10 @@ class MultiCandidateRetryService {
       }
     );
 
-    await InterviewSlotRetryTask.updateMany(
-      { sessionId, finalStatusEmailSent: false },
-      { $set: { finalStatusEmailSent: true } }
-    );
+    await prisma.interviewSlotRetryTask.updateMany({
+      where: { sessionId, finalStatusEmailSent: false },
+      data: { finalStatusEmailSent: true }
+    });
   }
 
   buildEventParticipants({ candidate, interviewer, additionalInterviewers, bccParticipants, ccParticipants }) {
@@ -857,7 +915,7 @@ class MultiCandidateRetryService {
       return null;
     }
 
-    const nylasAccount = await NylasAccount.findById(interviewer.nylasAccountId).select('+apiKey');
+    const nylasAccount = await prisma.nylasAccount.findUnique({ where: { id: interviewer.nylasAccountId } });
     if (!nylasAccount) {
       return null;
     }

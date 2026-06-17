@@ -1,5 +1,4 @@
-const User = require('../models/User');
-const Interview = require('../models/Interview');
+const prisma = require('../db/client');
 const nylasV3Service = require('../services/nylasV3Service');
 const { handleNylasError } = require('../utils/errorHandler');
 
@@ -102,33 +101,40 @@ const handleSchedulerEvents = async (req, res) => {
 
 // Grant lifecycle handlers
 async function handleGrantExpired(data) {
-  const user = await User.findOne({ nylasGrantId: data.grant_id });
-  
+  const user = await prisma.user.findFirst({ where: { nylasGrantId: data.grant_id } });
+
   if (user) {
     console.log(`Grant expired for user: ${user.email}`);
-    
+
     user.nylasGrantId = null;
     user.nylasGrantStatus = 'expired';
     user.calendarConnected = false;
-    user.lastGrantExpiry = new Date();
-    await user.save();
-    
+    // NOTE: lastGrantExpiry is not a schema column; persist only known fields.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        nylasGrantId: null,
+        nylasGrantStatus: 'expired',
+        calendarConnected: false
+      }
+    });
+
     // Cancel future interviews for this user
-    const cancelledInterviews = await Interview.updateMany(
-      { 
-        interviewerId: user._id,
+    const cancelledInterviews = await prisma.interview.updateMany({
+      where: {
+        interviewerId: user.id,
         status: 'scheduled',
-        scheduledAt: { $gte: new Date() }
+        scheduledAt: { gte: new Date() }
       },
-      { 
+      data: {
         status: 'cancelled',
         cancellationReason: 'Calendar access expired - please reconnect',
         cancelledAt: new Date(),
-        cancelledBy: user._id
+        cancelledBy: user.id
       }
-    );
-    
-    console.log(`Cancelled ${cancelledInterviews.modifiedCount} interviews due to expired grant`);
+    });
+
+    console.log(`Cancelled ${cancelledInterviews.count} interviews due to expired grant`);
     
     // TODO: Send notification email to user
     // await emailService.sendGrantExpiredNotification(user.email);
@@ -136,33 +142,41 @@ async function handleGrantExpired(data) {
 }
 
 async function handleGrantDeleted(data) {
-  const user = await User.findOne({ nylasGrantId: data.grant_id });
-  
+  const user = await prisma.user.findFirst({ where: { nylasGrantId: data.grant_id } });
+
   if (user) {
     console.log(`Grant deleted for user: ${user.email}`);
-    
+
     user.nylasGrantId = null;
     user.nylasGrantStatus = 'revoked';
     user.calendarConnected = false;
     user.lastGrantRevocation = new Date();
-    await user.save();
-    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        nylasGrantId: null,
+        nylasGrantStatus: 'revoked',
+        calendarConnected: false,
+        lastGrantRevocation: new Date()
+      }
+    });
+
     // Cancel and notify for revoked access
-    const cancelledInterviews = await Interview.updateMany(
-      { 
-        interviewerId: user._id,
+    const cancelledInterviews = await prisma.interview.updateMany({
+      where: {
+        interviewerId: user.id,
         status: 'scheduled',
-        scheduledAt: { $gte: new Date() }
+        scheduledAt: { gte: new Date() }
       },
-      { 
+      data: {
         status: 'cancelled',
         cancellationReason: 'Calendar access revoked',
         cancelledAt: new Date(),
-        cancelledBy: user._id
+        cancelledBy: user.id
       }
-    );
-    
-    console.log(`Cancelled ${cancelledInterviews.modifiedCount} interviews due to revoked grant`);
+    });
+
+    console.log(`Cancelled ${cancelledInterviews.count} interviews due to revoked grant`);
     
     // TODO: Send notification email to user
     // await emailService.sendGrantRevokedNotification(user.email);
@@ -170,98 +184,124 @@ async function handleGrantDeleted(data) {
 }
 
 async function handleGrantInvalid(data) {
-  const user = await User.findOne({ nylasGrantId: data.grant_id });
-  
+  const user = await prisma.user.findFirst({ where: { nylasGrantId: data.grant_id } });
+
   if (user) {
     console.log(`Grant invalid for user: ${user.email}`);
-    
+
     user.nylasGrantStatus = 'invalid';
     user.calendarConnected = false;
-    await user.save();
-    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { nylasGrantStatus: 'invalid', calendarConnected: false }
+    });
+
     // TODO: Send notification to reconnect calendar
     // await emailService.sendGrantInvalidNotification(user.email);
   }
 }
 
 async function handleGrantStopped(data) {
-  const user = await User.findOne({ nylasGrantId: data.grant_id });
-  
+  const user = await prisma.user.findFirst({ where: { nylasGrantId: data.grant_id } });
+
   if (user) {
     console.log(`Grant stopped for user: ${user.email}`);
-    
+
     user.nylasGrantStatus = 'stopped';
     user.calendarConnected = false;
-    await user.save();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { nylasGrantStatus: 'stopped', calendarConnected: false }
+    });
   }
 }
 
 // Calendar event handlers
 async function handleEventCreated(data) {
   // Check if this is one of our interview events
-  const interview = await Interview.findOne({ nylasEventId: data.id });
-  
+  const interview = await prisma.interview.findFirst({ where: { nylasEventId: data.id } });
+
   if (interview) {
     console.log(`Interview event created: ${data.id}`);
     interview.webhookStatus = {
       lastSync: new Date(),
       eventVersion: data.version || '1'
     };
-    await interview.save();
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: { webhookStatus: interview.webhookStatus }
+    });
   }
 }
 
 async function handleEventUpdated(data) {
-  const interview = await Interview.findOne({ nylasEventId: data.id });
-  
+  const interview = await prisma.interview.findFirst({ where: { nylasEventId: data.id } });
+
   if (interview) {
     console.log(`Interview event updated: ${data.id}`);
-    
+
     // Update interview details if the event was modified
     if (data.when) {
       interview.scheduledAt = new Date(data.when.start_time * 1000);
       interview.duration = Math.floor((data.when.end_time - data.when.start_time) / 60);
     }
-    
+
     if (data.title) {
       interview.title = data.title;
     }
-    
+
     if (data.description) {
       interview.description = data.description;
     }
-    
+
     interview.webhookStatus = {
       lastSync: new Date(),
       eventVersion: data.version || '1'
     };
-    
-    await interview.save();
-    
+
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: {
+        scheduledAt: interview.scheduledAt,
+        duration: interview.duration,
+        title: interview.title,
+        description: interview.description,
+        webhookStatus: interview.webhookStatus
+      }
+    });
+
     console.log(`Updated interview ${interview._id} from webhook`);
   }
 }
 
 async function handleEventDeleted(data) {
-  const interview = await Interview.findOne({ nylasEventId: data.id });
-  
+  const interview = await prisma.interview.findFirst({ where: { nylasEventId: data.id } });
+
   if (interview) {
     console.log(`Interview event deleted: ${data.id}`);
-    
+
     // Mark interview as cancelled if it was deleted externally
     if (interview.status !== 'cancelled') {
       interview.status = 'cancelled';
       interview.cancellationReason = 'Event deleted from calendar';
       interview.cancelledAt = new Date();
     }
-    
+
     interview.webhookStatus = {
       lastSync: new Date(),
       syncErrors: ['Event deleted from calendar']
     };
-    
-    await interview.save();
-    
+
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: {
+        status: interview.status,
+        cancellationReason: interview.cancellationReason,
+        cancelledAt: interview.cancelledAt,
+        webhookStatus: interview.webhookStatus
+      }
+    });
+
     console.log(`Marked interview ${interview._id} as cancelled due to event deletion`);
   }
 }

@@ -1,6 +1,4 @@
-const Interview = require('../models/Interview');
-const Job = require('../models/Job');
-const Candidate = require('../models/Candidate');
+const prisma = require('../db/client');
 const AzureOpenAIService = require('./azureOpenAIService');
 const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
 const embeddingService = require('./embeddingService');
@@ -11,6 +9,89 @@ class AIInterviewAnalysisService {
     this.azureOpenAIService = new AzureOpenAIService();
   }
 
+  // --- Postgres soft-ref stitch helpers (replace Mongoose .populate) ---
+
+  /** Extract a plain id string from either a stitched ref object or a raw id. */
+  _refId(value) {
+    if (value == null) return null;
+    if (typeof value === 'object') return value.id != null ? String(value.id) : null;
+    return String(value);
+  }
+
+  /**
+   * Attach soft-ref documents (stage/job/candidate) onto a single interview row,
+   * mirroring the shape Mongoose .populate produced. `opts.<rel>` may be `true`
+   * (full row) or a Prisma `select` object.
+   */
+  async _stitchInterviewRefs(interview, opts = {}) {
+    if (!interview) return interview;
+    if (opts.stage && interview.stageId) {
+      const select = opts.stage === true ? undefined : { id: true, ...opts.stage };
+      interview.stageId = await prisma.interviewStage.findUnique({
+        where: { id: this._refId(interview.stageId) },
+        ...(select ? { select } : {})
+      });
+    }
+    if (opts.job && interview.jobId) {
+      const select = opts.job === true ? undefined : { id: true, ...opts.job };
+      interview.jobId = await prisma.job.findUnique({
+        where: { id: this._refId(interview.jobId) },
+        ...(select ? { select } : {})
+      });
+    }
+    if (opts.candidate && interview.candidateId) {
+      const select = opts.candidate === true ? undefined : { id: true, ...opts.candidate };
+      interview.candidateId = await prisma.candidate.findUnique({
+        where: { id: this._refId(interview.candidateId) },
+        ...(select ? { select } : {})
+      });
+    }
+    return interview;
+  }
+
+  /** Same as _stitchInterviewRefs but for an array of interviews (batched lookups). */
+  async _stitchManyInterviewRefs(interviews, opts = {}) {
+    if (!Array.isArray(interviews) || interviews.length === 0) return interviews;
+
+    const stitch = async (idKey, delegate, optKey) => {
+      if (!opts[optKey]) return;
+      const ids = Array.from(new Set(interviews.map((i) => this._refId(i[idKey])).filter(Boolean)));
+      if (!ids.length) return;
+      const select = opts[optKey] === true ? undefined : { id: true, ...opts[optKey] };
+      const rows = await delegate.findMany({
+        where: { id: { in: ids } },
+        ...(select ? { select } : {})
+      });
+      const byId = new Map(rows.map((r) => [String(r.id), r]));
+      for (const i of interviews) {
+        const rid = this._refId(i[idKey]);
+        if (rid) i[idKey] = byId.get(rid) || null;
+      }
+    };
+
+    await stitch('stageId', prisma.interviewStage, 'stage');
+    await stitch('jobId', prisma.job, 'job');
+    await stitch('candidateId', prisma.candidate, 'candidate');
+    return interviews;
+  }
+
+  /**
+   * Resolve the next interview stage for the same job, ordered by `order`.
+   * Replaces the Mongoose InterviewStage.getNextStage() instance method.
+   */
+  async _getNextStage(stage) {
+    if (!stage) return null;
+    const stageId = this._refId(stage);
+    const current = typeof stage === 'object' && stage.jobId != null
+      ? stage
+      : await prisma.interviewStage.findUnique({ where: { id: stageId } });
+    if (!current || current.jobId == null || current.order == null) return null;
+    return prisma.interviewStage.findFirst({
+      where: { jobId: current.jobId, order: { gt: current.order } },
+      orderBy: { order: 'asc' }
+    });
+  }
+
   /**
    * Analyze interview transcript
    */
@@ -18,11 +99,11 @@ class AIInterviewAnalysisService {
     try {
       console.log(`🤖 Starting AI analysis for interview ${interviewId}`);
       
-      const interview = await Interview.findById(interviewId)
-        .populate('stageId')
-        .populate('jobId')
-        .populate('candidateId');
-      
+      const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+      if (interview) {
+        await this._stitchInterviewRefs(interview, { stage: true, job: true, candidate: true });
+      }
+
       if (!interview) {
         throw new Error('Interview not found');
       }
@@ -48,8 +129,8 @@ class AIInterviewAnalysisService {
         insights: analysis.insights,
         comparativeAnalysis
       };
-      
-      await interview.save();
+
+      await prisma.interview.update({ where: { id: interview.id }, data: { aiAnalysis: interview.aiAnalysis } });
       
       // Update pipeline recommendations
       await this._updatePipelineRecommendations(interview, analysis);
@@ -186,14 +267,18 @@ Focus on:
    */
   async _performComparativeAnalysis(interview, analysis) {
     try {
-      // Get other interviews for the same job and stage
-      const otherInterviews = await Interview.find({
-        jobId: interview.jobId,
-        stageId: interview.stageId,
-        _id: { $ne: interview._id },
-        'aiAnalysis.analyzed': true
-      }).select('aiAnalysis candidateId');
-      
+      // Get other interviews for the same job and stage.
+      // aiAnalysis is a Json column -> filter analyzed in JS.
+      const otherCandidates = await prisma.interview.findMany({
+        where: {
+          jobId: this._refId(interview.jobId),
+          stageId: this._refId(interview.stageId),
+          id: { not: interview.id }
+        },
+        select: { id: true, aiAnalysis: true, candidateId: true }
+      });
+      const otherInterviews = otherCandidates.filter((i) => i.aiAnalysis?.analyzed === true);
+
       if (otherInterviews.length === 0) {
         return {
           comparedAt: new Date(),
@@ -304,22 +389,24 @@ Focus on:
    */
   async _updatePipelineRecommendations(interview, analysis) {
     try {
-      const job = await Job.findById(interview.jobId);
-      const applicantIndex = job.applicants.findIndex(
-        app => app.candidate.toString() === interview.candidateId.toString()
+      const job = await prisma.job.findUnique({ where: { id: this._refId(interview.jobId) } });
+      const applicants = Array.isArray(job?.applicants) ? job.applicants : [];
+      const candidateIdStr = String(this._refId(interview.candidateId));
+      const applicantIndex = applicants.findIndex(
+        app => app.candidate.toString() === candidateIdStr
       );
-      
+
       if (applicantIndex !== -1) {
         // Update applicant with AI insights
-        job.applicants[applicantIndex].aiInsights = {
+        applicants[applicantIndex].aiInsights = {
           lastAnalyzed: new Date(),
           recommendedAction: analysis.insights.recommendedNextSteps.recommendation,
           confidence: analysis.insights.recommendedNextSteps.confidence,
           keyStrengths: analysis.insights.strengths.slice(0, 3).map(s => s.area),
           keyConcerns: analysis.insights.concerns.slice(0, 3).map(c => c.type)
         };
-        
-        await job.save();
+
+        await prisma.job.update({ where: { id: job.id }, data: { applicants } });
       }
     } catch (error) {
       console.error('⚠️ Error updating pipeline recommendations:', error);
@@ -331,12 +418,13 @@ Focus on:
    */
   async getCandidateInsights(candidateId, jobId) {
     try {
-      const interviews = await Interview.find({
-        candidateId,
-        jobId,
-        'aiAnalysis.analyzed': true
-      }).populate('stageId');
-      
+      const candidateInterviews = await prisma.interview.findMany({
+        where: { candidateId, jobId }
+      });
+      // aiAnalysis is a Json column -> filter analyzed in JS.
+      const interviews = candidateInterviews.filter((i) => i.aiAnalysis?.analyzed === true);
+      await this._stitchManyInterviewRefs(interviews, { stage: true });
+
       if (interviews.length === 0) {
         return {
           totalInterviews: 0,
@@ -374,19 +462,19 @@ Focus on:
    */
   async getComparativeAnalysis(jobId, stageId = null) {
     try {
-      const query = {
-        jobId,
-        'aiAnalysis.analyzed': true
-      };
-      
+      const where = { jobId };
       if (stageId) {
-        query.stageId = stageId;
+        where.stageId = stageId;
       }
-      
-      const interviews = await Interview.find(query)
-        .populate('candidateId', 'firstName lastName')
-        .populate('stageId', 'name type');
-      
+
+      const jobInterviews = await prisma.interview.findMany({ where });
+      // aiAnalysis is a Json column -> filter analyzed in JS.
+      const interviews = jobInterviews.filter((i) => i.aiAnalysis?.analyzed === true);
+      await this._stitchManyInterviewRefs(interviews, {
+        candidate: { firstName: true, lastName: true },
+        stage: { name: true, type: true }
+      });
+
       if (interviews.length === 0) {
         return {
           totalCandidates: 0,
@@ -432,18 +520,21 @@ Focus on:
    */
   async getNextStepRecommendations(interviewId) {
     try {
-      const interview = await Interview.findById(interviewId)
-        .populate('stageId')
-        .populate('jobId');
-      
+      const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+      if (interview) {
+        await this._stitchInterviewRefs(interview, { stage: true, job: true });
+      }
+
       if (!interview?.aiAnalysis?.analyzed) {
         throw new Error('Interview not analyzed yet');
       }
-      
+
       const recommendations = interview.aiAnalysis.insights.recommendedNextSteps;
-      
+
       // Get stage progression info
-      const nextStage = await interview.stageId.getNextStage();
+      // TODO[pg]: stageId.getNextStage() was a Mongoose instance method; resolve the
+      // next stage by querying InterviewStage by jobId ordered by `order`.
+      const nextStage = await this._getNextStage(interview.stageId);
       
       return {
         recommendation: recommendations.recommendation,
@@ -470,18 +561,17 @@ Focus on:
    */
   async bulkAnalyzeInterviews(jobId, stageId = null) {
     try {
-      const query = {
-        jobId,
-        'transcript.content': { $exists: true, $ne: null },
-        'aiAnalysis.analyzed': { $ne: true }
-      };
-      
+      const where = { jobId };
       if (stageId) {
-        query.stageId = stageId;
+        where.stageId = stageId;
       }
-      
-      const interviews = await Interview.find(query);
-      
+
+      // transcript/aiAnalysis are Json columns -> fetch then filter in JS.
+      const jobInterviews = await prisma.interview.findMany({ where });
+      const interviews = jobInterviews.filter(
+        (i) => i.transcript?.content != null && i.aiAnalysis?.analyzed !== true
+      );
+
       if (interviews.length === 0) {
         return {
           totalInterviews: 0,
@@ -687,7 +777,7 @@ Focus on:
     return {
       job: interview.jobId,
       stage: interview.stageId,
-      totalStages: await Interview.countDocuments({ jobId: interview.jobId })
+      totalStages: await prisma.interview.count({ where: { jobId: this._refId(interview.jobId) } })
     };
   }
 
@@ -918,12 +1008,11 @@ Focus on:
       console.log(`🤖 Starting multi-candidate session analysis for: ${sessionId}`);
       
       // Get all interviews in this session
-      const interviews = await Interview.find({ 
-        multiCandidateSessionId: sessionId 
-      })
-      .populate('candidateId')
-      .populate('jobId')
-      .sort({ multiCandidateOrder: 1 });
+      const interviews = await prisma.interview.findMany({
+        where: { multiCandidateSessionId: sessionId },
+        orderBy: { multiCandidateOrder: 'asc' }
+      });
+      await this._stitchManyInterviewRefs(interviews, { candidate: true, job: true });
 
       if (!interviews || interviews.length === 0) {
         throw new Error('No interviews found for this session');
@@ -978,21 +1067,17 @@ Focus on:
       );
 
       // Update each interview with its analysis
+      // TODO[pg]: the Mongoose Interview had a `comparativeAnalysis` field but the
+      // Prisma Interview model has no `comparativeAnalysis` column (only
+      // aiInterviewSummary / comprehensiveAnalytics). Persisting it would throw
+      // "Unknown argument", so it is dropped here until a column is added.
       for (const candidateAnalysis of candidateAnalyses) {
-        await Interview.findByIdAndUpdate(
-          candidateAnalysis.interviewId,
-          {
-            'aiInterviewSummary': candidateAnalysis.analysis,
-            'comparativeAnalysis': {
-              comparedAt: new Date(),
-              totalCandidatesCompared: candidateAnalyses.length,
-              percentile: candidateAnalysis.analysis.percentile,
-              rankings: comparativeAnalysis.rankings[candidateAnalysis.candidateId],
-              strongerAreas: candidateAnalysis.analysis.strongerAreas,
-              weakerAreas: candidateAnalysis.analysis.weakerAreas
-            }
+        await prisma.interview.update({
+          where: { id: String(candidateAnalysis.interviewId) },
+          data: {
+            aiInterviewSummary: candidateAnalysis.analysis
           }
-        );
+        });
       }
 
       return {
