@@ -17,10 +17,12 @@ STATE_DIR="${BENCH_DIR}/sites/${SITE_NAME_VALUE}/.deploy-state"
 STATE_FILE="${STATE_DIR}/lms_app_source.sig"
 LMS_HTML_PATH="${APP_DEST}/lms/www/lms.html"
 
-export PATH="/home/frappe/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/home/frappe/.pyenv/shims:/home/frappe/.pyenv/bin:/home/frappe/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 select_node() {
   for node_dir in \
+    /home/frappe/.nvm/versions/node/v24*/bin \
+    /home/frappe/.nvm/versions/node/*/bin \
     /home/frappe/.nvm/versions/node/v24.12.0/bin \
     /home/frappe/.nvm/versions/node/v22.17.0/bin \
     /home/frappe/.nvm/versions/node/v20.19.0/bin \
@@ -44,7 +46,10 @@ import pathlib
 
 root = pathlib.Path(os.environ["APP_SOURCE_PATH"]).resolve()
 include_roots = ["lms", "www", "docker", "scripts", "frontend"]
-include_files = {"setup.py", "pyproject.toml", "package.json", "yarn.lock"}
+include_files = {
+    "README.md", "MANIFEST.in", "license.txt", "setup.py", "pyproject.toml",
+    "package.json", "yarn.lock",
+}
 include_ext = {
     ".py", ".html", ".js", ".ts", ".vue", ".json", ".yml", ".yaml", ".toml",
     ".css", ".scss", ".md", ".txt", ".sh", ".ps1", ".sql",
@@ -95,6 +100,13 @@ fi
 
 select_node || true
 
+if [ -f "${BENCH_DIR}/sites/apps.txt" ]; then
+  sed -i '/^frappelms$/d' "${BENCH_DIR}/sites/apps.txt"
+  if ! grep -qxF "lms" "${BENCH_DIR}/sites/apps.txt"; then
+    echo "lms" >> "${BENCH_DIR}/sites/apps.txt"
+  fi
+fi
+
 mkdir -p "${APP_DEST}"
 
 current_sig="$(calc_source_signature || true)"
@@ -124,7 +136,7 @@ else
       fi
     done
 
-    for file in setup.py pyproject.toml package.json yarn.lock; do
+    for file in README.md MANIFEST.in license.txt setup.py pyproject.toml package.json yarn.lock; do
       if [ -f "${APP_SOURCE_PATH}/${file}" ]; then
         cp -f "${APP_SOURCE_PATH}/${file}" "${APP_DEST}/"
       fi
