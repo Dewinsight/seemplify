@@ -4,9 +4,9 @@
   var hostname = window.location.hostname;
   var isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
 
-  // Self-hosted digiLog backend on the Azure VM (HTTPS via nip.io)
-  var apiBase = 'https://172-182-227-84.nip.io';
-  var wsBase = 'wss://172-182-227-84.nip.io';
+  // Self-hosted digiLog backend (production)
+  var apiBase = 'https://recruit-api.radiantdigilog.com';
+  var wsBase = 'wss://recruit-api.radiantdigilog.com';
 
   // Local development uses a local backend
   if (isLocal) {
