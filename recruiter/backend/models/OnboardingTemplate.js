@@ -54,7 +54,7 @@ const OnboardingTemplateSchema = new mongoose.Schema({
   },
   processType: {
     type: String,
-    enum: ['onboarding', 'exit', 'retirement'],
+    enum: ['onboarding', 'exit', 'retirement', 'team_signing', 'compliance_documents'],
     default: 'onboarding',
     index: true
   },

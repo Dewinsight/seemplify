@@ -1,7 +1,7 @@
 import { apiRequest } from "./apiConfig";
 
 export type OnboardingStatus = "draft" | "pending" | "in_progress" | "completed" | "cancelled";
-export type ProcessType = "onboarding" | "exit" | "retirement";
+export type ProcessType = "onboarding" | "exit" | "retirement" | "team_signing" | "compliance_documents";
 export type EnvelopeStatus = "draft" | "sent" | "viewed" | "partially_signed" | "completed" | "voided" | "expired";
 export type DocumentSourceType = "builder" | "uploaded_pdf" | "uploaded_docx";
 export type WorkflowItemStatus = "not_started" | "pending" | "in_progress" | "completed" | "blocked" | "skipped" | "failed";
@@ -15,7 +15,7 @@ export interface BuilderBlock {
 
 export interface SignatureField {
   id: string;
-  role: "candidate" | "internal";
+  role: "candidate" | "internal" | "external";
   type: "signature" | "date" | "name" | "email" | "text" | "image";
   label?: string;
   placeholder?: string;
@@ -86,7 +86,7 @@ export interface OnboardingEnvelopeDocument {
 export interface OnboardingSigner {
   _id: string;
   key?: string;
-  role: "candidate" | "internal";
+  role: "candidate" | "internal" | "external";
   name?: string;
   email: string;
   order: number;
@@ -100,6 +100,8 @@ export interface OnboardingEnvelope {
   _id: string;
   title: string;
   message?: string;
+  contextType?: "candidate_transition" | "team_signing";
+  processType?: ProcessType;
   status: EnvelopeStatus;
   documents: OnboardingEnvelopeDocument[];
   signers: OnboardingSigner[];
@@ -108,6 +110,60 @@ export interface OnboardingEnvelope {
   voidedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface InternalSigningQueueItem {
+  _id: string;
+  title: string;
+  message?: string;
+  contextType?: "candidate_transition" | "team_signing";
+  processType?: ProcessType;
+  status: EnvelopeStatus;
+  sentAt?: string;
+  signedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  assignmentStatus: "pending" | "signed";
+  signer: Pick<OnboardingSigner, "_id" | "key" | "role" | "name" | "email" | "order" | "status" | "signedAt">;
+  documentCount: number;
+  assignedFieldCount: number;
+  pendingDocumentCount: number;
+  signedDocumentCount: number;
+  documents: Array<{
+    _id: string;
+    title: string;
+    status: OnboardingEnvelopeDocument["status"];
+    assignedFieldCount: number;
+  }>;
+}
+
+export interface MySigningDocuments {
+  pending: InternalSigningQueueItem[];
+  signed: InternalSigningQueueItem[];
+}
+
+export interface MySigningDocument {
+  _id: string;
+  document?: string | OnboardingDocument;
+  title: string;
+  status: OnboardingEnvelopeDocument["status"];
+  signedAt?: string;
+  signatureFields: SignatureField[];
+  actionType?: "document_sign" | "document_fill" | "document_review" | null;
+}
+
+export interface MySigningEnvelope {
+  _id: string;
+  title: string;
+  message?: string;
+  status: EnvelopeStatus;
+  sentAt?: string;
+  completedAt?: string;
+  organization?: { _id?: string; name?: string; logo?: string; website?: string };
+  signer: Pick<OnboardingSigner, "_id" | "key" | "role" | "name" | "email" | "order" | "status" | "viewedAt" | "signedAt">;
+  signers?: Array<Pick<OnboardingSigner, "key" | "role" | "name" | "order" | "status">>;
+  documents: MySigningDocument[];
+  canSign: boolean;
 }
 
 export interface OnboardingWorkflowItem {
@@ -131,6 +187,13 @@ export interface OnboardingWorkflowItem {
   isDueSoon?: boolean;
   dependencySummary?: Array<{ _id: string; title?: string; status?: WorkflowItemStatus; type?: string }>;
   completedAt?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ComplianceDocumentInput {
+  name: string;
+  expiresAt: string;
+  notes?: string;
 }
 
 export interface OnboardingFormField {
@@ -249,6 +312,7 @@ export interface CandidateOnboarding {
   envelopes?: OnboardingEnvelope[];
   workflowItems?: OnboardingWorkflowItem[];
   forms?: OnboardingFormSubmission[];
+  complianceDocuments?: Array<ComplianceDocumentInput & { workflowItem?: string }>;
   approvals?: OnboardingApproval[];
   handoffs?: OnboardingHandoff[];
   nextAction?: PeopleTransitionNextAction;
@@ -294,7 +358,7 @@ export async function getOnboardingRecords(params: { status?: string; search?: s
 }
 
 export interface PeopleTransitionNextAction {
-  type: "form" | "document_fill" | "document_sign" | "waiting" | "complete";
+  type: "form" | "document_fill" | "document_sign" | "compliance_document" | "waiting" | "complete";
   label: string;
   href: string;
   dueAt?: string;
@@ -392,7 +456,7 @@ export async function updatePeopleTransitionWorkflowItem(
   return result.data;
 }
 
-export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType; candidateForm?: { title?: string; description?: string; fields?: OnboardingFormField[] } } = {}) {
+export async function startOnboarding(candidateId: string, data: { title?: string; notes?: string; templateId?: string; processType?: ProcessType; candidateForm?: { title?: string; description?: string; fields?: OnboardingFormField[] }; complianceDocuments?: ComplianceDocumentInput[] } = {}) {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/candidates/${candidateId}/start`, {
     method: "POST",
     body: JSON.stringify(data),
@@ -598,10 +662,110 @@ export async function createEnvelope(data: {
   return result.data;
 }
 
+export async function createTeamSigningEnvelope(data: {
+  documentIds: string[];
+  title?: string;
+  message?: string;
+  signers: Array<{ key?: string; role: "internal" | "external"; name?: string; email: string; order?: number }>;
+  documentFields?: Record<string, SignatureField[]>;
+}) {
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/team-signing/envelopes`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const result = await parseResponse<{ data: OnboardingEnvelope }>(response, "Failed to create team signing envelope");
+  return result.data;
+}
+
 export async function getEnvelope(id: string) {
   const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/${id}`);
   const result = await parseResponse<{ data: OnboardingEnvelope }>(response, "Failed to load envelope");
   return result.data;
+}
+
+export async function getMySigningQueue(limit = 5) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/my-signing-queue?${query}`);
+  const result = await parseResponse<{ data: InternalSigningQueueItem[] }>(response, "Failed to load signing queue");
+  return result.data || [];
+}
+
+export async function getMySigningDocuments(limit = 8) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/my-documents?${query}`);
+  const result = await parseResponse<{ data: MySigningDocuments }>(response, "Failed to load my documents");
+  return result.data || { pending: [], signed: [] };
+}
+
+export async function getMySigningEnvelope(id: string, signerKey?: string) {
+  const query = new URLSearchParams();
+  if (signerKey) query.set("signerKey", signerKey);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/my-documents/${id}${query.toString() ? `?${query}` : ""}`);
+  const result = await parseResponse<{ data: MySigningEnvelope }>(response, "Failed to load document packet");
+  return result.data;
+}
+
+export async function getMySigningDocumentPreviewBlob(envelopeId: string, documentId: string, signerKey?: string) {
+  const query = new URLSearchParams();
+  if (signerKey) query.set("signerKey", signerKey);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/my-documents/${envelopeId}/documents/${documentId}/preview${query.toString() ? `?${query}` : ""}`, {
+    headers: { Accept: "application/pdf" },
+  });
+
+  if (!response.ok) {
+    const result = await response.clone().json().catch(() => ({}));
+    throw new Error(result.msg || result.error || "Failed to load document preview");
+  }
+
+  const blob = await response.blob();
+  return new Blob([blob], { type: "application/pdf" });
+}
+
+function filenameFromDisposition(disposition: string | null, fallback: string) {
+  if (!disposition) return fallback;
+
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1].replace(/"/g, ""));
+  }
+
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1] || fallback;
+}
+
+export async function getMySigningDocumentDownloadBlob(envelopeId: string, documentId: string, signerKey?: string, title?: string) {
+  const query = new URLSearchParams();
+  if (signerKey) query.set("signerKey", signerKey);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/my-documents/${envelopeId}/documents/${documentId}/preview${query.toString() ? `?${query}` : ""}`, {
+    headers: { Accept: "application/pdf" },
+  });
+
+  if (!response.ok) {
+    const result = await response.clone().json().catch(() => ({}));
+    throw new Error(result.msg || result.error || "Failed to download document");
+  }
+
+  const blob = await response.blob();
+  const fallbackName = `${(title || "document").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "document"}.pdf`;
+  return {
+    blob: new Blob([blob], { type: "application/pdf" }),
+    fileName: filenameFromDisposition(response.headers.get("content-disposition"), fallbackName),
+  };
+}
+
+export async function signMySigningDocument(
+  envelopeId: string,
+  documentId: string,
+  data: { signatureDataUrl?: string; fieldValues?: Record<string, string>; imageFieldValues?: Record<string, string> },
+  signerKey?: string,
+) {
+  const query = new URLSearchParams();
+  if (signerKey) query.set("signerKey", signerKey);
+  const response = await apiRequest(`${PEOPLE_TRANSITIONS_API}/envelopes/my-documents/${envelopeId}/documents/${documentId}/sign${query.toString() ? `?${query}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return parseResponse<{ data: MySigningEnvelope; nextDocumentId?: string | null; completed?: boolean }>(response, "Failed to sign document");
 }
 
 export async function sendEnvelope(id: string) {
@@ -676,14 +840,15 @@ export async function getEnvelopeAudit(id: string) {
   return result.data;
 }
 
-export function newSignatureField(role: "candidate" | "internal" = "candidate"): SignatureField {
+export function newSignatureField(role: "candidate" | "internal" | "external" = "candidate"): SignatureField {
   const timestamp = Date.now();
+  const signerLabel = role === "candidate" ? "Candidate" : role === "external" ? "External signer" : "Internal signer";
   return {
     id: `${role}-signature-${timestamp}`,
     role,
     signerKey: role === "candidate" ? "candidate-primary" : undefined,
     type: "signature",
-    label: role === "candidate" ? "Candidate signature" : "Internal signature",
+    label: `${signerLabel} signature`,
     page: 1,
     x: 0.12,
     y: 0.72,

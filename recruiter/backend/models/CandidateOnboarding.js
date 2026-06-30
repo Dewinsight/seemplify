@@ -24,7 +24,7 @@ const CandidateOnboardingSchema = new mongoose.Schema({
   },
   processType: {
     type: String,
-    enum: ['onboarding', 'exit', 'retirement'],
+    enum: ['onboarding', 'exit', 'retirement', 'team_signing', 'compliance_documents'],
     default: 'onboarding',
     index: true
   },
@@ -93,6 +93,15 @@ const CandidateOnboardingSchema = new mongoose.Schema({
   forms: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OnboardingFormSubmission'
+  }],
+  complianceDocuments: [{
+    name: { type: String, trim: true },
+    expiresAt: Date,
+    notes: { type: String, trim: true },
+    workflowItem: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OnboardingWorkflowItem'
+    }
   }],
   approvals: [{
     type: mongoose.Schema.Types.ObjectId,

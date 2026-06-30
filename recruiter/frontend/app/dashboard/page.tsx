@@ -13,6 +13,7 @@ import {
   Users,
   Briefcase,
   Clock,
+  FileSignature,
   FileText,
   GraduationCap,
   Bot,
@@ -34,7 +35,7 @@ import { ProgressiveDisclosure } from "@/components/ui/progressive-disclosure"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getIdpBaseUrl } from "@/utils/env"
-import { getOnboardingRecords, type CandidateOnboarding } from "@/services/onboardingService"
+import { getMySigningDocuments, getOnboardingRecords, type CandidateOnboarding, type MySigningDocuments } from "@/services/onboardingService"
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
 
 type WorkQueueSummary = {
@@ -50,6 +51,7 @@ type WorkQueueSummary = {
     candidates: number;
     completedSessions: number;
   };
+  myDocuments: MySigningDocuments;
 };
 
 const emptyWorkQueueSummary: WorkQueueSummary = {
@@ -64,6 +66,10 @@ const emptyWorkQueueSummary: WorkQueueSummary = {
     open: 0,
     candidates: 0,
     completedSessions: 0,
+  },
+  myDocuments: {
+    pending: [],
+    signed: [],
   },
 };
 
@@ -128,16 +134,24 @@ export default function Dashboard() {
     async function loadWorkQueues() {
       try {
         setWorkQueuesLoading(true);
-        const [onboardingResult, aiInterviews] = await Promise.all([
+        const [onboardingResult, aiInterviewsResult, myDocumentsResult] = await Promise.allSettled([
           getOnboardingRecords(),
           aiInterviewService.list(),
+          getMySigningDocuments(8),
         ]);
 
         if (!mounted) return;
 
         setWorkQueues({
-          onboarding: summarizeOnboarding(onboardingResult.data || []),
-          aiInterviews: summarizeAIInterviews(aiInterviews || []),
+          onboarding: onboardingResult.status === "fulfilled"
+            ? summarizeOnboarding(onboardingResult.value.data || [])
+            : emptyWorkQueueSummary.onboarding,
+          aiInterviews: aiInterviewsResult.status === "fulfilled"
+            ? summarizeAIInterviews(aiInterviewsResult.value || [])
+            : emptyWorkQueueSummary.aiInterviews,
+          myDocuments: myDocumentsResult.status === "fulfilled"
+            ? myDocumentsResult.value
+            : emptyWorkQueueSummary.myDocuments,
         });
       } catch (error) {
         console.error("Failed to load dashboard work queues:", error);
@@ -369,6 +383,28 @@ export default function Dashboard() {
           </Alert>
         )}
 
+        {workQueues.myDocuments.pending.length > 0 && (
+          <Alert className="rounded-md border-border bg-muted/40">
+            <FileSignature className="h-4 w-4 text-muted-foreground" />
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <strong>Documents waiting for your signature</strong>
+                <span className="ml-1 text-muted-foreground">
+                  {workQueues.myDocuments.pending.length === 1
+                    ? `${workQueues.myDocuments.pending[0].title} needs your review.`
+                    : `${workQueues.myDocuments.pending.length} packets need your review.`}
+                </span>
+              </div>
+              <Button asChild size="sm" variant="outline" className="w-fit">
+                <Link href="/my-documents">
+                  Open My Documents
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Profile and Quick Actions */}
         {sections.quickActions?.visible && (
           <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
@@ -471,7 +507,7 @@ export default function Dashboard() {
             {workQueuesLoading && <Badge variant="secondary">Loading</Badge>}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-3">
             <Card className="rounded-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                 <div>
@@ -557,6 +593,63 @@ export default function Dashboard() {
                     </Link>
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-md">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-base">My Documents</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Packets waiting for you and documents you have signed</p>
+                </div>
+                <FileSignature className="h-5 w-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.myDocuments.pending.length}</div>
+                    <div className="text-xs text-muted-foreground">To sign</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.myDocuments.signed.length}</div>
+                    <div className="text-xs text-muted-foreground">Signed</div>
+                  </div>
+                </div>
+
+                {workQueues.myDocuments.pending.length > 0 ? (
+                  <div className="overflow-hidden rounded-md border">
+                    {workQueues.myDocuments.pending.slice(0, 3).map((item) => {
+                      const signerQuery = item.signer.key ? `?signer=${encodeURIComponent(item.signer.key)}` : "";
+                      return (
+                        <Link
+                          key={`pending-${item._id}-${item.signer.key || item.signer._id}`}
+                          href={`/my-documents/${item._id}${signerQuery}`}
+                          className="flex items-center justify-between gap-3 border-b px-3 py-3 text-sm last:border-b-0 hover:bg-muted/50"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-foreground">{item.title}</div>
+                            <div className="mt-1 truncate text-xs text-muted-foreground">
+                              {item.documentCount} document{item.documentCount === 1 ? "" : "s"}
+                              {item.assignedFieldCount ? ` - ${item.assignedFieldCount} assigned field${item.assignedFieldCount === 1 ? "" : "s"}` : ""}
+                            </div>
+                          </div>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                    No documents are waiting for your signature.
+                  </div>
+                )}
+
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/my-documents">
+                    Open My Documents
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           </div>

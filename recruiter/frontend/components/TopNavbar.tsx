@@ -17,6 +17,7 @@ import {
   Moon,
   Shield,
   GraduationCap,
+  FileSignature,
   FileText,
   PlusCircle,
   ClipboardList,
@@ -71,6 +72,7 @@ type NavigationItem = NavigationLink | NavigationGroup;
 
 const navigationItems: NavigationItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
+  { title: "My Documents", href: "/my-documents", icon: FileSignature },
   {
     title: "Recruitment",
     icon: Users,

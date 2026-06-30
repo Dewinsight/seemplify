@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
@@ -49,6 +48,9 @@ const {
 const { serializeSubmission } = require('../services/onboardingSecurityService');
 
 const cloudinaryUploadService = new CloudinaryUploadService();
+const ACTIVE_SIGNING_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
+const VIEWABLE_SIGNING_ENVELOPE_STATUSES = [...ACTIVE_SIGNING_ENVELOPE_STATUSES, 'completed'];
+const SIGNABLE_DOCUMENT_STATUSES = ['pending', 'signed'];
 
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'onboarding');
 const upload = multer({
@@ -85,19 +87,6 @@ function organizationId(req) {
   return req.activeOrganization || req.user.currentOrganization;
 }
 
-function sha256(value) {
-  return crypto.createHash('sha256').update(String(value)).digest('hex');
-}
-
-function createInviteToken() {
-  const token = crypto.randomBytes(32).toString('hex');
-  return {
-    token,
-    tokenHash: sha256(token),
-    expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-  };
-}
-
 function candidateDisplayName(candidate) {
   return `${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim() || candidate?.email || 'Candidate';
 }
@@ -124,6 +113,90 @@ function processTypeFilter(processType, field = 'processType') {
 function processTypeQueryFromRequest(req) {
   const value = req.query?.processType || 'all';
   return value === 'all' ? 'all' : normalizeProcessType(value);
+}
+
+function normalizeComplianceDocuments(documents = []) {
+  return (Array.isArray(documents) ? documents : [])
+    .map((document, index) => {
+      const name = String(document?.name || document?.title || '').trim().slice(0, 160);
+      const expiresAtValue = document?.expiresAt || document?.expiryDate || document?.dueAt;
+      const expiresAt = expiresAtValue ? new Date(expiresAtValue) : null;
+      if (!name || !expiresAt || Number.isNaN(expiresAt.getTime())) return null;
+      return {
+        name,
+        expiresAt,
+        notes: String(document?.notes || '').trim().slice(0, 1000),
+        order: Number.isFinite(Number(document?.order)) ? Number(document.order) : (index + 1) * 10
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.order - b.order);
+}
+
+async function createComplianceWorkflowItems({ req, onboarding, documents }) {
+  if (!documents.length) return [];
+  const insertedItems = await OnboardingWorkflowItem.insertMany(documents.map((document, index) => ({
+    organization: onboarding.organization,
+    onboarding: onboarding._id,
+    type: 'task',
+    title: document.name,
+    description: document.notes || `Renew ${document.name} before it expires.`,
+    status: 'pending',
+    ownerType: 'candidate',
+    required: true,
+    sourceType: 'manual',
+    order: document.order || (index + 1) * 10,
+    dueAt: document.expiresAt,
+    metadata: {
+      complianceDocument: true,
+      documentName: document.name,
+      expiresAt: document.expiresAt,
+      renewalAlert: true
+    }
+  })));
+
+  await CandidateOnboarding.findByIdAndUpdate(onboarding._id, {
+    $addToSet: {
+      workflowItems: { $each: insertedItems.map((item) => item._id) }
+    },
+    complianceDocuments: insertedItems.map((item, index) => ({
+      name: documents[index].name,
+      expiresAt: documents[index].expiresAt,
+      notes: documents[index].notes,
+      workflowItem: item._id
+    })),
+    templateSnapshot: {
+      name: 'Compliance document renewals',
+      processType: 'compliance_documents',
+      workflowItems: insertedItems.map((item) => ({
+        id: item._id,
+        type: item.type,
+        title: item.title,
+        ownerType: item.ownerType,
+        dueAt: item.dueAt,
+        required: item.required,
+        order: item.order,
+        metadata: item.metadata
+      })),
+      capturedAt: new Date()
+    }
+  });
+
+  await updateProgress(onboarding._id);
+  await logOnboardingEvent({
+    req,
+    organization: onboarding.organization,
+    onboarding: onboarding._id,
+    candidate: onboarding.candidate,
+    actorType: 'system',
+    action: 'compliance_documents_initialized',
+    metadata: {
+      workflowItems: insertedItems.length,
+      documentNames: documents.map((document) => document.name)
+    }
+  });
+
+  return insertedItems;
 }
 
 async function ensureSystemPacketTemplates({ organization, userId }) {
@@ -194,12 +267,17 @@ function systemVariables({ candidate, organization, user } = {}) {
 }
 
 function defaultSignatureFields(role = 'candidate') {
+  const labelPrefix = role === 'candidate'
+    ? 'Candidate'
+    : role === 'external'
+      ? 'External signer'
+      : 'Internal signer';
   return [
     {
       id: `sig-${role}-${Date.now()}`,
       role,
       type: 'signature',
-      label: role === 'candidate' ? 'Candidate signature' : 'Internal signature',
+      label: `${labelPrefix} signature`,
       page: 1,
       x: 0.12,
       y: 0.78,
@@ -239,16 +317,15 @@ function normalizeFieldNumber(value, fallback, min = 0, max = 1) {
 
 function normalizeSignatureFields(fields, signers = []) {
   const signerByKey = new Map(signers.filter((signer) => signer.key).map((signer) => [signer.key, signer]));
+  const validRoles = new Set(['candidate', 'internal', 'external']);
 
   return (Array.isArray(fields) ? fields : [])
     .filter((field) => field && field.id)
     .map((field) => {
       const type = ['signature', 'date', 'name', 'email', 'text', 'image'].includes(field.type) ? field.type : 'signature';
-      const candidateSigner = signers.find((item) => item.role === 'candidate');
-      const signer = type === 'image'
-        ? candidateSigner
-        : field.signerKey ? signerByKey.get(field.signerKey) : null;
-      const role = type === 'image' ? 'candidate' : signer?.role || (field.role === 'internal' ? 'internal' : 'candidate');
+      const signer = field.signerKey ? signerByKey.get(field.signerKey) : null;
+      const requestedRole = validRoles.has(field.role) ? field.role : 'candidate';
+      const role = signer?.role || requestedRole;
       const roleSigners = signers.filter((item) => item.role === role);
       const resolvedSigner = signer || (roleSigners.length === 1 ? roleSigners[0] : null);
       return {
@@ -321,6 +398,45 @@ function buildEnvelopeSigners(req, onboarding) {
     .sort((a, b) => a.order - b.order);
 }
 
+function buildTeamSigningSigners(req) {
+  const requestedSigners = Array.isArray(req.body.signers) ? req.body.signers : [];
+  const allowedRoles = new Set(['internal', 'external']);
+  const signers = requestedSigners
+    .filter((signer) => signer && allowedRoles.has(signer.role) && signer.email)
+    .map((signer, index) => ({
+      key: safeSignerKey(signer.key, `${signer.role}-${index + 1}`),
+      role: signer.role,
+      name: String(signer.name || signer.email || '').trim(),
+      email: String(signer.email || '').trim().toLowerCase(),
+      order: Math.max(1, Number(signer.order || index + 1)),
+      status: 'pending'
+    }));
+
+  const seenKeys = new Set();
+  const seenEmailsByRole = new Set();
+  const normalized = signers
+    .filter((signer) => {
+      const emailKey = `${signer.role}:${signer.email}`;
+      if (seenEmailsByRole.has(emailKey) || seenKeys.has(signer.key)) return false;
+      seenEmailsByRole.add(emailKey);
+      seenKeys.add(signer.key);
+      return Boolean(signer.email);
+    })
+    .sort((a, b) => a.order - b.order)
+    .map((signer, index) => ({
+      ...signer,
+      order: Math.max(1, Number(signer.order || index + 1))
+    }));
+
+  if (!normalized.length) {
+    const error = new Error('At least one internal or external signer is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return normalized;
+}
+
 async function completeEnvelopeIfReady(envelope, req) {
   const allDocumentsComplete = envelope.documents.every((doc) => ['signed', 'completed'].includes(doc.status));
   const allSignersSigned = envelope.signers.every((signer) => signer.status === 'signed');
@@ -331,8 +447,10 @@ async function completeEnvelopeIfReady(envelope, req) {
     envelope.documents.forEach((doc) => {
       if (doc.status === 'signed') doc.status = 'completed';
     });
-    await markDocumentWorkflowComplete(envelope.onboarding, envelope._id);
-    await tryCompleteOnboarding(envelope.onboarding, { req });
+    if (envelope.contextType !== 'team_signing' && envelope.onboarding) {
+      await markDocumentWorkflowComplete(envelope.onboarding, envelope._id);
+      await tryCompleteOnboarding(envelope.onboarding, { req });
+    }
     return true;
   }
 
@@ -344,6 +462,339 @@ async function completeEnvelopeIfReady(envelope, req) {
 
 function canSignerAct(envelope, signer) {
   return !envelope.signers.some((item) => item.order < signer.order && item.status !== 'signed');
+}
+
+function signerMatchesUser(signer, user, requestUser, roles = ['internal']) {
+  const userEmail = String(user?.email || requestUser?.email || '').trim().toLowerCase();
+  const allowedRoles = Array.isArray(roles) ? roles : [roles];
+
+  return allowedRoles.includes(signer?.role) &&
+    userEmail &&
+    String(signer.email || '').trim().toLowerCase() === userEmail;
+}
+
+function signerIsPending(signer) {
+  return ['pending', 'viewed'].includes(signer?.status);
+}
+
+function signerIsSigned(signer) {
+  return signer?.status === 'signed';
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function signerQueryForCurrentUser(user, requestUser) {
+  const userEmail = String(user?.email || requestUser?.email || '').trim().toLowerCase();
+  const signerMatchers = [];
+
+  if (userEmail) signerMatchers.push({ email: new RegExp(`^${escapeRegExp(userEmail)}$`, 'i') });
+
+  return signerMatchers;
+}
+
+function signerAssignmentStatus(envelope, signer) {
+  if (signerIsSigned(signer)) return 'signed';
+  if (signer?.role === 'internal' && signerIsPending(signer) && canSignerAct(envelope, signer)) return 'pending';
+  return null;
+}
+
+function signingItemSortDate(item) {
+  return new Date(item.signedAt || item.sentAt || item.createdAt || 0).getTime();
+}
+
+function signingEnvelopeStatusFilter(includeSigned = false) {
+  return includeSigned
+    ? ['sent', 'viewed', 'partially_signed', 'completed']
+    : ['sent', 'viewed', 'partially_signed'];
+}
+
+function signingSignerStatusFilter(includeSigned = false) {
+  return includeSigned ? ['pending', 'viewed', 'signed'] : ['pending', 'viewed'];
+}
+
+function findMatchingSigningItems({ envelopes, user, requestUser, includeSigned = false, roles = ['internal'] }) {
+  return envelopes
+    .flatMap((envelope) => (envelope.signers || [])
+      .filter((signer) => signerMatchesUser(signer, user, requestUser, roles))
+      .map((signer) => ({ envelope, signer, assignmentStatus: signerAssignmentStatus(envelope, signer) }))
+      .filter(({ assignmentStatus }) => assignmentStatus === 'pending' || (includeSigned && assignmentStatus === 'signed'))
+      .map(({ envelope, signer, assignmentStatus }) => serializeInternalSigningQueueItem(envelope, signer, assignmentStatus)))
+    .sort((a, b) => signingItemSortDate(b) - signingItemSortDate(a));
+}
+
+function signerElemMatch(signerMatchers, includeSigned = false, roles = ['internal']) {
+  return {
+    role: { $in: roles },
+    status: { $in: signingSignerStatusFilter(includeSigned) },
+    $or: signerMatchers
+  };
+}
+
+function signingEnvelopeQuery(req, signerMatchers, includeSigned = false, roles = ['internal']) {
+  return {
+    organization: organizationId(req),
+    status: { $in: signingEnvelopeStatusFilter(includeSigned) },
+    signers: {
+      $elemMatch: signerElemMatch(signerMatchers, includeSigned, roles)
+    }
+  };
+}
+
+function splitSigningItems(items) {
+  return {
+    pending: items.filter((item) => item.assignmentStatus === 'pending'),
+    signed: items.filter((item) => item.assignmentStatus === 'signed')
+  };
+}
+
+function internalSigningQueueLimit(req, fallback = 25) {
+  return Math.max(1, Math.min(100, Number(req.query.limit || fallback)));
+}
+
+function pendingSigningItemsForUser({ envelopes, user, requestUser }) {
+  return findMatchingSigningItems({ envelopes, user, requestUser, includeSigned: false, roles: ['internal'] });
+}
+
+function allSigningItemsForUser({ envelopes, user, requestUser }) {
+  return findMatchingSigningItems({ envelopes, user, requestUser, includeSigned: true, roles: ['internal', 'candidate'] });
+}
+
+function emptySigningDocumentsResponse() {
+  return { pending: [], signed: [] };
+}
+
+function signedDocumentCountForSigner(envelope, signer) {
+  if (!signerIsSigned(signer)) return 0;
+  return (envelope.documents || []).filter((document) =>
+    ['signed', 'completed'].includes(document.status) &&
+    (document.signedPdf?.url || document.signedPdf?.downloadUrl)
+  ).length;
+}
+
+function pendingDocumentCountForSigner(envelope, signer) {
+  if (!signerIsPending(signer)) return 0;
+  return (envelope.documents || []).filter((document) =>
+    !['signed', 'completed', 'voided'].includes(document.status) &&
+    (
+      (document.signatureFields || []).some((field) => fieldBelongsToAssignedSigner(field, signer)) ||
+      !(document.signatureFields || []).length
+    )
+  ).length;
+}
+
+function fieldBelongsToAssignedSigner(field, signer) {
+  if (!field) return false;
+  if (signer?.key && field.signerKey) return field.signerKey === signer.key;
+  return !field.signerKey && (field.role || 'candidate') === signer?.role;
+}
+
+function assignedFieldsForSigner(envelopeDocument, signer) {
+  return (Array.isArray(envelopeDocument?.signatureFields) ? envelopeDocument.signatureFields : [])
+    .filter((field) => fieldBelongsToAssignedSigner(field, signer));
+}
+
+function internalDocumentActionType(envelopeDocument, signer) {
+  const fields = assignedFieldsForSigner(envelopeDocument, signer);
+  if (fields.some((field) => field.type === 'signature')) return 'document_sign';
+  if (fields.some((field) => field.type === 'text' || field.type === 'image')) return 'document_fill';
+  return fields.length ? 'document_review' : null;
+}
+
+function signerCanSignInternalDocument(envelope, envelopeDocument, signer) {
+  return signer?.role === 'internal' &&
+    ACTIVE_SIGNING_ENVELOPE_STATUSES.includes(envelope.status) &&
+    SIGNABLE_DOCUMENT_STATUSES.includes(envelopeDocument.status) &&
+    signerIsPending(signer) &&
+    canSignerAct(envelope, signer) &&
+    Boolean(internalDocumentActionType(envelopeDocument, signer));
+}
+
+function signerCanViewMyDocument(envelope, envelopeDocument, signer) {
+  return VIEWABLE_SIGNING_ENVELOPE_STATUSES.includes(envelope.status) &&
+    ['internal', 'candidate'].includes(signer?.role) &&
+    Boolean(envelopeDocument) &&
+    assignedFieldsForSigner(envelopeDocument, signer).length > 0;
+}
+
+function textValue(field, fieldValues = {}) {
+  if (fieldValues[field.id] !== undefined) return fieldValues[field.id];
+  if (field.key && fieldValues[field.key] !== undefined) return fieldValues[field.key];
+  if (field.label && fieldValues[field.label] !== undefined) return fieldValues[field.label];
+  return '';
+}
+
+function internalTextFieldValues(envelopeDocument, signer, fieldValues = {}) {
+  const fields = assignedFieldsForSigner(envelopeDocument, signer).filter((field) => field.type === 'text');
+  const values = {};
+
+  for (const field of fields) {
+    const value = String(textValue(field, fieldValues) ?? '');
+    if (field.required !== false && !value.trim()) {
+      return { error: `${field.label || 'Text field'} is required`, values: null };
+    }
+    const stampValue = value || ' ';
+    values[field.id] = stampValue;
+    if (field.key) values[field.key] = stampValue;
+    if (field.label) values[field.label] = stampValue;
+  }
+
+  return { error: null, values };
+}
+
+function internalImageFieldValues(envelopeDocument, signer, imageValues = {}) {
+  const fields = assignedFieldsForSigner(envelopeDocument, signer).filter((field) => field.type === 'image');
+  const values = {};
+
+  for (const field of fields) {
+    const value = imageValues[field.id] ??
+      (field.key ? imageValues[field.key] : undefined) ??
+      (field.label ? imageValues[field.label] : undefined) ??
+      '';
+    if (field.required !== false && !String(value || '').trim()) {
+      return { error: `${field.label || 'Image field'} is required`, values: null };
+    }
+    if (value && !String(value).match(/^data:image\/(png|jpeg|jpg);base64,/)) {
+      return { error: `${field.label || 'Image field'} must be a PNG or JPG image`, values: null };
+    }
+    if (!value) continue;
+    values[field.id] = value;
+    if (field.key) values[field.key] = value;
+    if (field.label) values[field.label] = value;
+  }
+
+  return { error: null, values };
+}
+
+function findNextInternalSigningDocumentId(envelope, currentEnvelopeDocument, signer) {
+  const documents = Array.isArray(envelope?.documents) ? envelope.documents : [];
+  const currentId = String(currentEnvelopeDocument?._id || '');
+  const currentIndex = documents.findIndex((document) => String(document._id) === currentId);
+  const orderedDocuments = currentIndex >= 0
+    ? [...documents.slice(currentIndex + 1), ...documents.slice(0, currentIndex)]
+    : documents;
+  const nextDocument = orderedDocuments.find((document) =>
+    String(document._id) !== currentId &&
+    signerCanSignInternalDocument(envelope, document, signer)
+  );
+  return nextDocument?._id?.toString() || null;
+}
+
+function findEnvelopeDocumentByRouteId(envelope, routeId) {
+  return envelope.documents.id(routeId) ||
+    envelope.documents.find((doc) => String(doc.document?._id || doc.document || '') === String(routeId));
+}
+
+function sanitizeMySigningEnvelope(envelope, signer, organization) {
+  const signerCanAct = signer.role === 'internal' &&
+    ACTIVE_SIGNING_ENVELOPE_STATUSES.includes(envelope.status) &&
+    signerIsPending(signer) &&
+    canSignerAct(envelope, signer) &&
+    (envelope.documents || []).some((document) => signerCanSignInternalDocument(envelope, document, signer));
+  const documents = (envelope.documents || [])
+    .map((document) => ({
+      _id: document._id,
+      document: document.document,
+      title: document.title,
+      status: document.status,
+      signedAt: document.signedAt,
+      signatureFields: assignedFieldsForSigner(document, signer),
+      actionType: internalDocumentActionType(document, signer)
+    }))
+    .filter((document) => document.signatureFields.length);
+
+  return {
+    _id: envelope._id,
+    title: envelope.title,
+    message: envelope.message,
+    status: envelope.status,
+    sentAt: envelope.sentAt,
+    completedAt: envelope.completedAt,
+    organization: organization
+      ? { _id: organization._id, name: organization.name, logo: organization.logo, website: organization.website }
+      : undefined,
+    signer: {
+      _id: signer._id,
+      key: signer.key,
+      role: signer.role,
+      name: signer.name,
+      email: signer.email,
+      order: signer.order,
+      status: signer.status,
+      viewedAt: signer.viewedAt,
+      signedAt: signer.signedAt
+    },
+    signers: (envelope.signers || []).map((item) => ({
+      key: item.key,
+      role: item.role,
+      name: item.name,
+      order: item.order,
+      status: item.status
+    })),
+    documents,
+    canSign: signerCanAct
+  };
+}
+
+async function loadMySigningEnvelope(req, envelopeId, signerKey = '') {
+  const user = await getCurrentUser(req);
+  const signerMatchers = signerQueryForCurrentUser(user, req.user);
+  if (!signerMatchers.length) return { envelope: null, signer: null, organization: null, user };
+
+  const envelope = await OnboardingEnvelope.findOne({
+    _id: envelopeId,
+    organization: organizationId(req),
+    status: { $in: VIEWABLE_SIGNING_ENVELOPE_STATUSES }
+  }).populate('documents.document');
+
+  if (!envelope) return { envelope: null, signer: null, organization: null, user };
+
+  const signer = (envelope.signers || []).find((item) =>
+    signerMatchesUser(item, user, req.user, ['internal', 'candidate']) &&
+    (!signerKey || item.key === signerKey)
+  );
+  if (!signer) return { envelope: null, signer: null, organization: null, user };
+
+  const organization = await getOrganization(req);
+  return { envelope, signer, organization, user };
+}
+
+function serializeInternalSigningQueueItem(envelope, signer, assignmentStatus = 'pending') {
+  const documents = (envelope.documents || []).map((document) => ({
+    _id: document._id,
+    title: document.title,
+    status: document.status,
+    assignedFieldCount: assignedFieldsForSigner(document, signer).length
+  }));
+
+  return {
+    _id: envelope._id,
+    title: envelope.title,
+    message: envelope.message,
+    contextType: envelope.contextType,
+    processType: envelope.processType,
+    status: envelope.status,
+    sentAt: envelope.sentAt,
+    createdAt: envelope.createdAt,
+    updatedAt: envelope.updatedAt,
+    assignmentStatus,
+    signedAt: signer.signedAt,
+    signer: {
+      _id: signer._id,
+      key: signer.key,
+      role: signer.role,
+      name: signer.name,
+      email: signer.email,
+      order: signer.order,
+      status: signer.status
+    },
+    documentCount: documents.length,
+    assignedFieldCount: documents.reduce((total, document) => total + document.assignedFieldCount, 0),
+    pendingDocumentCount: pendingDocumentCountForSigner(envelope, signer),
+    signedDocumentCount: signedDocumentCountForSigner(envelope, signer),
+    documents
+  };
 }
 
 function safePdfFileName(title = 'onboarding-document') {
@@ -795,9 +1246,15 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
+    const complianceDocuments = processType === 'compliance_documents'
+      ? normalizeComplianceDocuments(req.body.complianceDocuments)
+      : [];
+    if (processType === 'compliance_documents' && !complianceDocuments.length) {
+      return res.status(400).json({ msg: 'Add at least one compliance document with a valid expiry date' });
+    }
+
     const organization = await getOrganization(req);
     const { account, created: createdCandidateAccount } = await ensureCandidateAccount(candidate, organization);
-    const invite = createdCandidateAccount ? createInviteToken() : null;
     const title = req.body.title || `${candidateDisplayName(candidate)} ${copy.label.toLowerCase()}`;
     const packetTemplate = req.body.templateId
       ? await OnboardingTemplate.findOne({
@@ -829,44 +1286,44 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       } : undefined,
       title,
       notes: req.body.notes || '',
-      startedBy: req.user.id,
-      inviteTokenHash: invite?.tokenHash,
-      inviteTokenExpiresAt: invite?.expiresAt
+      startedBy: req.user.id
     });
 
     account.linkCandidate(candidate._id, organization._id);
     await account.save();
 
+    const loginPath = `/login?email=${encodeURIComponent(candidate.email || '')}&next=${encodeURIComponent(`/public/candidate/transitions/${onboarding._id}`)}`;
     const portalInviteUrl = createdCandidateAccount
       ? await onboardingEmailService.sendCandidateInvite({
           candidate,
           organization,
-          inviteToken: invite.token,
           onboarding,
           request: req
         }).catch((error) => {
           console.error('Failed to send onboarding invite email:', error);
-          return onboardingEmailService.candidatePortalUrl(
-            `/signup?token=${encodeURIComponent(invite.token)}`,
-            { organization, request: req }
-          );
+          return onboardingEmailService.candidatePortalUrl(loginPath, { organization, request: req });
         })
-      : onboardingEmailService.candidatePortalUrl(
-          `/transitions/${onboarding._id}`,
-          { organization, request: req }
-        );
+      : onboardingEmailService.candidatePortalUrl(loginPath, { organization, request: req });
 
     onboarding.portalInviteUrl = portalInviteUrl;
     await onboarding.save();
 
-    await initializeDefaultWorkflow({
-      onboarding,
-      candidate,
-      userId: req.user.id,
-      req,
-      packetTemplate,
-      candidateForm: req.body.candidateForm
-    });
+    if (processType === 'compliance_documents') {
+      await createComplianceWorkflowItems({
+        req,
+        onboarding,
+        documents: complianceDocuments
+      });
+    } else {
+      await initializeDefaultWorkflow({
+        onboarding,
+        candidate,
+        userId: req.user.id,
+        req,
+        packetTemplate,
+        candidateForm: req.body.candidateForm
+      });
+    }
 
     await logOnboardingEvent({
       req,
@@ -1162,6 +1619,18 @@ router.post('/reminders/run', async (req, res) => {
           item,
           request: req
         }).catch((error) => console.error('Failed to send onboarding workflow reminder:', error));
+
+        if (item.metadata?.complianceDocument === true) {
+          await createPeopleTransitionNotifications({
+            organization,
+            onboarding,
+            candidate: onboarding.candidate,
+            notificationType,
+            title: overdue ? 'Compliance document overdue' : 'Compliance document due soon',
+            message: `${item.title} for ${candidateDisplayName(onboarding.candidate)} is ${overdue ? 'overdue' : 'due soon'}.`,
+            priority: overdue ? 'high' : 'medium'
+          });
+        }
       } else if (item.ownerType === 'user' && item.ownerUser) {
         await createPeopleTransitionNotifications({
           organization,
@@ -1441,6 +1910,11 @@ router.patch('/documents/:id', async (req, res) => {
       return res.status(400).json({ msg: 'Sent documents are immutable. Duplicate the document to make changes.' });
     }
 
+    const builderEditFields = ['title', 'description', 'builderBlocks', 'variables'];
+    if (document.sourceType !== 'builder' && builderEditFields.some((field) => req.body[field] !== undefined)) {
+      return res.status(400).json({ msg: 'Uploaded documents cannot be edited. Use Prepare to place signing fields.' });
+    }
+
     [
       'title',
       'description',
@@ -1574,6 +2048,327 @@ router.get('/documents/:id/preview', async (req, res) => {
   }
 });
 
+router.post('/team-signing/envelopes', async (req, res) => {
+  try {
+    const documentIds = Array.isArray(req.body.documentIds)
+      ? [...new Set(req.body.documentIds.map((id) => String(id || '')).filter(Boolean))]
+      : [];
+    if (documentIds.length === 0) {
+      return res.status(400).json({ msg: 'At least one document is required' });
+    }
+
+    const signers = buildTeamSigningSigners(req);
+    const [organization, user] = await Promise.all([getOrganization(req), getCurrentUser(req)]);
+    const documents = await OnboardingDocument.find({
+      _id: { $in: documentIds },
+      organization: organizationId(req),
+      status: { $ne: 'archived' }
+    });
+    if (documents.length !== documentIds.length) {
+      return res.status(400).json({ msg: 'One or more documents could not be found or has been removed from the library' });
+    }
+
+    const documentsById = new Map(documents.map((document) => [document._id.toString(), document]));
+    const orderedDocuments = documentIds.map((id) => documentsById.get(id)).filter(Boolean);
+    const documentFields = req.body.documentFields && typeof req.body.documentFields === 'object'
+      ? req.body.documentFields
+      : {};
+
+    const envelopeDocuments = [];
+    for (const document of orderedDocuments) {
+      const snapshot = await renderDocumentSnapshot(document, {
+        candidate: null,
+        organization,
+        user,
+        folder: 'onboarding/envelopes'
+      });
+      const fieldOverride = documentFields[document._id.toString()];
+      const signatureFields = normalizeSignatureFields(
+        Array.isArray(fieldOverride) && fieldOverride.length
+          ? fieldOverride
+          : document.signatureFields?.length
+            ? document.signatureFields
+            : defaultSignatureFields(signers[0]?.role || 'internal'),
+        signers
+      );
+      envelopeDocuments.push({
+        document: document._id,
+        title: document.title,
+        status: 'pending',
+        pdfSnapshot: snapshot,
+        signatureFields
+      });
+    }
+
+    const envelope = await OnboardingEnvelope.create({
+      organization: organizationId(req),
+      contextType: 'team_signing',
+      processType: 'team_signing',
+      title: req.body.title || 'Team signing packet',
+      message: req.body.message || '',
+      documents: envelopeDocuments,
+      signers,
+      createdBy: req.user.id
+    });
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      envelope: envelope._id,
+      actorType: 'user',
+      actorUser: req.user.id,
+      action: 'team_signing_envelope_created',
+      metadata: {
+        documentCount: envelopeDocuments.length,
+        signerCount: signers.length,
+        externalSignerCount: signers.filter((signer) => signer.role === 'external').length
+      }
+    });
+
+    res.status(201).json({ data: await envelope.populate('documents.document') });
+  } catch (error) {
+    console.error('Create team signing envelope failed:', error);
+    res.status(error.statusCode || 500).json({ msg: error.statusCode ? error.message : 'Failed to create team signing envelope', error: error.message });
+  }
+});
+
+router.get('/team-signing/envelopes', async (req, res) => {
+  try {
+    const envelopes = await OnboardingEnvelope.find({
+      organization: organizationId(req),
+      contextType: 'team_signing'
+    })
+      .populate('documents.document')
+      .sort({ createdAt: -1 })
+      .limit(Math.max(1, Math.min(200, Number(req.query.limit || 100))));
+
+    res.json({ data: envelopes });
+  } catch (error) {
+    res.status(500).json({ msg: 'Failed to load team signing envelopes', error: error.message });
+  }
+});
+
+router.get('/envelopes/my-signing-queue', async (req, res) => {
+  try {
+    const user = await getCurrentUser(req);
+    const signerMatchers = signerQueryForCurrentUser(user, req.user);
+
+    if (!signerMatchers.length) {
+      return res.json({ data: [] });
+    }
+
+    const envelopes = await OnboardingEnvelope.find(signingEnvelopeQuery(req, signerMatchers, false, ['internal']))
+      .populate('documents.document')
+      .sort({ sentAt: -1, createdAt: -1 })
+      .limit(internalSigningQueueLimit(req));
+
+    const data = pendingSigningItemsForUser({ envelopes, user, requestUser: req.user });
+
+    res.json({ data });
+  } catch (error) {
+    console.error('Failed to load internal signing queue:', error);
+    res.status(500).json({ msg: 'Failed to load signing queue', error: error.message });
+  }
+});
+
+router.get('/envelopes/my-documents', async (req, res) => {
+  try {
+    const user = await getCurrentUser(req);
+    const signerMatchers = signerQueryForCurrentUser(user, req.user);
+
+    if (!signerMatchers.length) {
+      return res.json({ data: emptySigningDocumentsResponse() });
+    }
+
+    const limit = internalSigningQueueLimit(req, 50);
+    const envelopes = await OnboardingEnvelope.find(signingEnvelopeQuery(req, signerMatchers, true, ['internal', 'candidate']))
+      .populate('documents.document')
+      .sort({ sentAt: -1, createdAt: -1 })
+      .limit(limit);
+
+    const items = allSigningItemsForUser({ envelopes, user, requestUser: req.user });
+    const data = splitSigningItems(items);
+
+    res.json({
+      data: {
+        pending: data.pending.slice(0, limit),
+        signed: data.signed.slice(0, limit)
+      }
+    });
+  } catch (error) {
+    console.error('Failed to load my signing documents:', error);
+    res.status(500).json({ msg: 'Failed to load my documents', error: error.message });
+  }
+});
+
+router.get('/envelopes/my-documents/:id', async (req, res) => {
+  try {
+    const { envelope, signer, organization } = await loadMySigningEnvelope(req, req.params.id, String(req.query.signerKey || req.query.signer || ''));
+    if (!envelope || !signer) return res.status(404).json({ msg: 'Document packet not found' });
+
+    if (signer.role === 'internal' && signer.status === 'pending' && ACTIVE_SIGNING_ENVELOPE_STATUSES.includes(envelope.status)) {
+      signer.status = 'viewed';
+      signer.viewedAt = new Date();
+      if (envelope.status === 'sent') envelope.status = 'viewed';
+      await envelope.save();
+    }
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: envelope.onboarding,
+      envelope: envelope._id,
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: signer.email,
+      action: 'my_documents_packet_opened',
+      metadata: { signerKey: signer.key, signerRole: signer.role }
+    });
+
+    res.json({ data: sanitizeMySigningEnvelope(envelope, signer, organization) });
+  } catch (error) {
+    console.error('Failed to load my document packet:', error);
+    res.status(500).json({ msg: 'Failed to load document packet', error: error.message });
+  }
+});
+
+router.get('/envelopes/my-documents/:id/documents/:documentId/preview', async (req, res) => {
+  try {
+    const { envelope, signer } = await loadMySigningEnvelope(req, req.params.id, String(req.query.signerKey || req.query.signer || ''));
+    if (!envelope || !signer) return res.status(404).json({ msg: 'Document packet not found' });
+
+    const envelopeDocument = findEnvelopeDocumentByRouteId(envelope, req.params.documentId);
+    if (!signerCanViewMyDocument(envelope, envelopeDocument, signer)) {
+      return res.status(404).json({ msg: 'Document not found' });
+    }
+
+    const buffer = await loadEnvelopeDocumentPdfBuffer(envelopeDocument);
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: envelope.onboarding,
+      envelope: envelope._id,
+      document: envelopeDocument.document,
+      candidate: envelope.candidate,
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: signer.email,
+      action: 'my_documents_document_previewed',
+      metadata: { signerKey: signer.key, signerRole: signer.role }
+    });
+
+    sendPdf(res, buffer, { title: envelopeDocument.title, disposition: 'inline' });
+  } catch (error) {
+    console.error('Failed to preview my document:', error);
+    res.status(500).json({ msg: 'Failed to preview document', error: error.message });
+  }
+});
+
+router.post('/envelopes/my-documents/:id/documents/:documentId/sign', async (req, res) => {
+  try {
+    const { envelope, signer, organization, user } = await loadMySigningEnvelope(req, req.params.id, String(req.query.signerKey || req.query.signer || ''));
+    if (!envelope || !signer) return res.status(404).json({ msg: 'Document packet not found' });
+    if (signer.role !== 'internal') return res.status(403).json({ msg: 'Only internal signers can sign in My Documents' });
+
+    const envelopeDocument = findEnvelopeDocumentByRouteId(envelope, req.params.documentId);
+    if (!envelopeDocument || !signerCanSignInternalDocument(envelope, envelopeDocument, signer)) {
+      return res.status(404).json({ msg: 'Document not found or not available for signing' });
+    }
+
+    const signerFields = assignedFieldsForSigner(envelopeDocument, signer);
+    const requiresSignature = signerFields.some((field) => field.type === 'signature');
+    if (requiresSignature && !req.body.signatureDataUrl) {
+      return res.status(400).json({ msg: 'Signature image is required' });
+    }
+
+    const { values: textValues, error: textError } = internalTextFieldValues(envelopeDocument, signer, req.body.fieldValues || {});
+    if (textError) return res.status(400).json({ msg: textError });
+
+    const { values: imageValues, error: imageError } = internalImageFieldValues(envelopeDocument, signer, req.body.imageFieldValues || {});
+    if (imageError) return res.status(400).json({ msg: imageError });
+
+    const sourceBuffer = await loadEnvelopeDocumentPdfBuffer(envelopeDocument);
+    const signedAt = new Date();
+    const signerInfo = {
+      name: signer.name || `${user?.profile?.firstName || ''} ${user?.profile?.lastName || ''}`.trim() || user?.email || signer.email,
+      email: signer.email || user?.email
+    };
+    const stamped = await onboardingPdfService.stampSignedPdf({
+      pdfBuffer: sourceBuffer,
+      signatureFields: envelopeDocument.signatureFields,
+      signer: signerInfo,
+      signerRole: 'internal',
+      signerKey: signer.key,
+      signatureDataUrl: req.body.signatureDataUrl || null,
+      fieldValues: textValues,
+      imageFieldValues: imageValues,
+      signedAt,
+      auditText: `Signed by ${signerInfo.email} via SmartHR My Documents`
+    });
+
+    envelopeDocument.signedPdf = await onboardingStorageService.uploadBuffer(stamped, {
+      folder: 'onboarding/signed',
+      fileName: `${envelopeDocument.title}-internal-signed-${Date.now()}.pdf`
+    });
+    envelopeDocument.status = envelope.signers.every((item) => String(item._id) === String(signer._id) || item.status === 'signed')
+      ? 'completed'
+      : 'signed';
+    envelopeDocument.signedAt = signedAt;
+
+    const nextDocumentId = findNextInternalSigningDocumentId(envelope, envelopeDocument, signer);
+    if (!nextDocumentId) {
+      signer.status = 'signed';
+      signer.signedAt = signedAt;
+    }
+
+    const completed = await completeEnvelopeIfReady(envelope, req);
+    await envelope.save();
+
+    let notifiedSigners = [];
+    if (completed) {
+      const recipients = Array.from(new Set(envelope.signers.map((item) => item.email).filter(Boolean)));
+      await Promise.all(recipients.map((recipientEmail) =>
+        onboardingEmailService.sendEnvelopeCompleted({
+          recipientEmail,
+          organization,
+          envelope,
+          request: req
+        }).catch((error) => console.error('Failed to send completion email:', error))
+      ));
+    } else if (!nextDocumentId) {
+      notifiedSigners = await notifyReadySigners({
+        envelope,
+        organization,
+        req,
+        excludeKeys: [signer.key]
+      });
+    }
+
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: envelope.onboarding,
+      envelope: envelope._id,
+      document: envelopeDocument.document,
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: signerInfo.email,
+      action: 'my_documents_internal_signed',
+      metadata: { signerKey: signer.key, completed, readySigners: notifiedSigners.map((item) => item.email) }
+    });
+
+    res.json({
+      data: sanitizeMySigningEnvelope(envelope, signer, organization),
+      nextDocumentId,
+      completed
+    });
+  } catch (error) {
+    console.error('Failed to sign my document:', error);
+    res.status(500).json({ msg: 'Failed to sign document', error: error.message });
+  }
+});
+
 router.post('/envelopes', async (req, res) => {
   try {
     const onboarding = await CandidateOnboarding.findOne({
@@ -1636,6 +2431,8 @@ router.post('/envelopes', async (req, res) => {
       organization: organizationId(req),
       onboarding: onboarding._id,
       candidate: onboarding.candidate._id,
+      contextType: 'candidate_transition',
+      processType: normalizeProcessType(onboarding.processType),
       title: req.body.title || `${onboarding.title} documents`,
       message: req.body.message || '',
       documents: envelopeDocuments,
@@ -1682,21 +2479,25 @@ router.post('/envelopes/:id/send', async (req, res) => {
     envelope.sentAt = new Date();
     await envelope.save();
 
-    await CandidateOnboarding.findByIdAndUpdate(envelope.onboarding, { status: 'in_progress' });
-    await markDocumentWorkflowInProgress(envelope.onboarding, envelope._id);
-
     const organization = await getOrganization(req);
-    await onboardingEmailService.sendEnvelopeNotification({
-      candidate: envelope.candidate,
-      organization,
-      envelope,
-      request: req
-    }).catch((error) => console.error('Failed to send envelope email:', error));
+    if (envelope.contextType !== 'team_signing') {
+      await CandidateOnboarding.findByIdAndUpdate(envelope.onboarding, { status: 'in_progress' });
+      await markDocumentWorkflowInProgress(envelope.onboarding, envelope._id);
+
+      await onboardingEmailService.sendEnvelopeNotification({
+        candidate: envelope.candidate,
+        organization,
+        envelope,
+        request: req
+      }).catch((error) => console.error('Failed to send envelope email:', error));
+    }
     const readySigners = await notifyReadySigners({
       envelope,
       organization,
       req,
-      excludeKeys: envelope.signers.filter((signer) => signer.role === 'candidate').map((signer) => signer.key)
+      excludeKeys: envelope.contextType === 'team_signing'
+        ? []
+        : envelope.signers.filter((signer) => signer.role === 'candidate').map((signer) => signer.key)
     });
 
     await logOnboardingEvent({
@@ -1704,10 +2505,10 @@ router.post('/envelopes/:id/send', async (req, res) => {
       organization: organizationId(req),
       onboarding: envelope.onboarding,
       envelope: envelope._id,
-      candidate: envelope.candidate._id,
+      candidate: envelope.candidate?._id,
       actorType: 'user',
       actorUser: req.user.id,
-      action: 'envelope_sent',
+      action: envelope.contextType === 'team_signing' ? 'team_signing_envelope_sent' : 'envelope_sent',
       metadata: { readySigners: readySigners.map((signer) => signer.email) }
     });
 
@@ -1888,7 +2689,7 @@ router.post('/envelopes/:id/countersign', async (req, res) => {
         signatureDataUrl: req.body.signatureDataUrl,
         fieldValues: req.body.fieldValues || {},
         signedAt: new Date(),
-        auditText: `Countersigned by ${signerInfo.email} via Seemplify Recruiter`
+        auditText: `Countersigned by ${signerInfo.email} via SmartHR`
       });
       envelopeDocument.signedPdf = await onboardingStorageService.uploadBuffer(stamped, {
         folder: 'onboarding/signed',

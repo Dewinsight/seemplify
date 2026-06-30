@@ -4,7 +4,7 @@ const SignatureFieldSchema = new mongoose.Schema({
   id: { type: String, required: true },
   role: {
     type: String,
-    enum: ['candidate', 'internal'],
+    enum: ['candidate', 'internal', 'external'],
     default: 'candidate'
   },
   type: {
@@ -67,7 +67,7 @@ const SignerSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['candidate', 'internal'],
+    enum: ['candidate', 'internal', 'external'],
     required: true
   },
   name: String,
@@ -98,20 +98,53 @@ const SignerSchema = new mongoose.Schema({
   signedAt: Date,
   declinedAt: Date,
   declinedReason: String,
-  lastReminderAt: Date
+  lastReminderAt: Date,
+  loginCodeHash: {
+    type: String,
+    select: false
+  },
+  loginCodeExpiresAt: {
+    type: Date,
+    select: false
+  },
+  loginCodeAttempts: {
+    type: Number,
+    default: 0,
+    select: false
+  },
+  loginCodeSentAt: {
+    type: Date,
+    select: false
+  }
 }, { _id: true });
 
 const OnboardingEnvelopeSchema = new mongoose.Schema({
   organization: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
-    required: true,
+    required() {
+      return this.contextType !== 'team_signing';
+    },
     index: true
   },
   onboarding: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CandidateOnboarding',
-    required: true,
+    required() {
+      return this.contextType !== 'team_signing';
+    },
+    index: true
+  },
+  contextType: {
+    type: String,
+    enum: ['candidate_transition', 'team_signing'],
+    default: 'candidate_transition',
+    index: true
+  },
+  processType: {
+    type: String,
+    enum: ['onboarding', 'exit', 'retirement', 'team_signing'],
+    default: 'onboarding',
     index: true
   },
   candidate: {
@@ -156,5 +189,6 @@ const OnboardingEnvelopeSchema = new mongoose.Schema({
 
 OnboardingEnvelopeSchema.index({ organization: 1, status: 1, createdAt: -1 });
 OnboardingEnvelopeSchema.index({ organization: 1, candidate: 1, createdAt: -1 });
+OnboardingEnvelopeSchema.index({ organization: 1, contextType: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('OnboardingEnvelope', OnboardingEnvelopeSchema);

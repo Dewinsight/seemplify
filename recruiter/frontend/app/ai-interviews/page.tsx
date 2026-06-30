@@ -42,12 +42,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { InterviewQuestionSelector } from "@/components/ui/interview-question-selector";
 import { getAllJobs, type JobData } from "@/services/jobService";
 import { getAllCandidates } from "@/services/candidateService";
 import interviewService from "@/services/interviewService";
 import aiInterviewService, { type AIInterview, type AIInterviewCostEstimate, type AIInterviewVoiceOption } from "@/services/aiInterviewService";
 import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog";
+import { AIVoiceAvatar, AIVoiceWave } from "@/components/ai-voice-avatar";
+import { getAIInterviewVoiceAvatar } from "@/lib/aiVoiceAvatars";
 
 function toLocalInputValue(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -72,11 +75,6 @@ function formatCurrencyValue(amount?: number | null, currency = "USD", locale?: 
   }
 }
 
-function formatCompactNumber(value?: number | null) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "-";
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
-}
-
 function voiceTierClass(tier?: string) {
   switch (tier) {
     case "hd":
@@ -88,11 +86,6 @@ function voiceTierClass(tier?: string) {
     default:
       return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200";
   }
-}
-
-function voiceInitials(voice?: AIInterviewVoiceOption | null) {
-  const name = voice?.name || voice?.displayName || "AI";
-  return name.slice(0, 2).toUpperCase();
 }
 
 function statusColor(status: string) {
@@ -125,6 +118,22 @@ function formatRecommendation(value?: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatStatusLabel(value?: string) {
+  if (!value) return "Unknown";
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getInterviewJobMeta(interview?: AIInterview | null) {
+  const job = interview?.job && typeof interview.job === "object" ? interview.job : null;
+  return {
+    jobId: job?._id || job?.id || "",
+    jobTitle: job?.title || "Unlinked job"
+  };
 }
 
 function recommendationColor(value?: string) {
@@ -210,6 +219,71 @@ type GuestRecipient = {
   email: string;
 };
 
+type CreateStepId = "model" | "job" | "questions" | "recipients" | "review";
+
+type ScheduledInterviewSummary = {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  title: string;
+  candidateCount: number;
+  sendAt: string;
+  expiresAt: string;
+  totalCredits?: number;
+  voiceName?: string;
+};
+
+type ScheduleDialogState =
+  | {
+      type: "error";
+      title: string;
+      message: string;
+      details?: string[];
+      targetStep?: CreateStepId;
+    }
+  | {
+      type: "success";
+      interview: ScheduledInterviewSummary;
+    };
+
+const CREATE_STEPS = [
+  {
+    id: "model",
+    label: "AI Model",
+    description: "Interviewer voice and tier",
+    icon: Sparkles
+  },
+  {
+    id: "job",
+    label: "Job",
+    description: "Role and candidate guidance",
+    icon: Briefcase
+  },
+  {
+    id: "questions",
+    label: "Questions",
+    description: "Interview question set",
+    icon: FileQuestion
+  },
+  {
+    id: "recipients",
+    label: "Recipients",
+    description: "Saved and guest candidates",
+    icon: Users
+  },
+  {
+    id: "review",
+    label: "Review",
+    description: "Schedule, voice, and credits",
+    icon: CalendarClock
+  }
+] satisfies Array<{
+  id: CreateStepId;
+  label: string;
+  description: string;
+  icon: typeof Briefcase;
+}>;
+
 export default function AIInterviewsPage() {
   const searchParams = useSearchParams();
   const presetJobId = searchParams.get("jobId") || "";
@@ -233,21 +307,13 @@ export default function AIInterviewsPage() {
   const [guestEmail, setGuestEmail] = useState("");
   const [questionSelectorKey, setQuestionSelectorKey] = useState(0);
   const [activeTab, setActiveTab] = useState("create");
-  const [selectedJobRankingId, setSelectedJobRankingId] = useState<string | null>(null);
+  const [createStep, setCreateStep] = useState<CreateStepId>("model");
+  const [scheduleDialog, setScheduleDialog] = useState<ScheduleDialogState | null>(null);
+  const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(null);
   const [rankingListTopN, setRankingListTopN] = useState(10);
   const [rankingListEntries, setRankingListEntries] = useState<any[]>([]);
   const [showRankingListDialog, setShowRankingListDialog] = useState(false);
-  const [lastScheduledInterview, setLastScheduledInterview] = useState<{
-    id: string;
-    jobId: string;
-    jobTitle: string;
-    title: string;
-    candidateCount: number;
-    sendAt: string;
-    expiresAt: string;
-    totalCredits?: number;
-    voiceName?: string;
-  } | null>(null);
+  const [lastScheduledInterview, setLastScheduledInterview] = useState<ScheduledInterviewSummary | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -324,99 +390,87 @@ export default function AIInterviewsPage() {
     }, 0);
     return scoredSessionCount > 0 ? Math.round(weighted / scoredSessionCount) : null;
   }, [interviews, scoredSessionCount]);
-  const jobRankingGroups = useMemo(() => {
-    const groups = new Map<string, {
-      jobId: string;
-      jobTitle: string;
-      interviews: AIInterview[];
-      candidateCount: number;
-      completedCount: number;
-      blockedCount: number;
-      failedCount: number;
-      proctorFailedCount: number;
-      activeCount: number;
-      scheduledCount: number;
-      rankings: JobRankingCandidate[];
-    }>();
-
-    interviews.forEach((interview) => {
-      const job = interview.job && typeof interview.job === "object" ? interview.job : null;
-      const jobId = job?._id || job?.id || `unlinked-${interview._id}`;
-      const jobTitle = job?.title || "Unlinked job";
-      let group = groups.get(jobId);
-
-      if (!group) {
-        group = {
-          jobId,
-          jobTitle,
-          interviews: [],
-          candidateCount: 0,
-          completedCount: 0,
-          blockedCount: 0,
-          failedCount: 0,
-          proctorFailedCount: 0,
-          activeCount: 0,
-          scheduledCount: 0,
-          rankings: []
-        };
-        groups.set(jobId, group);
-      }
-
-      group.interviews.push(interview);
-      group.candidateCount += Number(interview.candidateCount || 0);
-      group.completedCount += Number(interview.stats?.completed || 0);
-      group.blockedCount += Number(interview.stats?.blocked || 0);
-      group.failedCount += Number(interview.stats?.failed || 0);
-      group.proctorFailedCount += Number(interview.stats?.proctorFailed || 0);
-      if (interview.status === "active") group.activeCount += 1;
-      if (interview.status === "scheduled") group.scheduledCount += 1;
-
-      (interview.scoringSummary?.rankings || []).forEach((ranking) => {
-        group.rankings.push({
-          ...ranking,
-          interviewId: interview._id,
-          interviewTitle: interview.title,
-          jobId,
-          jobTitle,
-          jobRank: 0
-        });
-      });
-    });
-
-    return Array.from(groups.values())
-      .map((group) => {
-        const rankings = [...group.rankings]
-          .sort((a, b) => b.score - a.score || a.candidateName.localeCompare(b.candidateName))
-          .map((candidate, index) => ({ ...candidate, jobRank: index + 1 }));
-        const scoredCount = rankings.length;
-        const averageScore = scoredCount
-          ? Math.round(rankings.reduce((sum, candidate) => sum + candidate.score, 0) / scoredCount)
-          : null;
-        const completion = group.candidateCount > 0
-          ? Math.round((group.completedCount / group.candidateCount) * 100)
-          : 0;
-        const priorityCount = rankings.filter((candidate) => candidate.score >= 85).length;
-
-        return {
-          ...group,
-          rankings,
-          scoredCount,
-          averageScore,
-          completion,
-          priorityCount,
-          topCandidate: rankings[0] || null
-        };
-      })
-      .sort((a, b) => {
-        const scoreDelta = Number(b.averageScore ?? -1) - Number(a.averageScore ?? -1);
-        if (scoreDelta) return scoreDelta;
-        return b.candidateCount - a.candidateCount;
-      });
-  }, [interviews]);
-  const selectedJobRanking = useMemo(
-    () => jobRankingGroups.find((group) => group.jobId === selectedJobRankingId) || null,
-    [jobRankingGroups, selectedJobRankingId]
+  const selectedInterview = useMemo(
+    () => interviews.find((interview) => interview._id === selectedInterviewId) || null,
+    [interviews, selectedInterviewId]
   );
+  const selectedInterviewJob = useMemo(() => getInterviewJobMeta(selectedInterview), [selectedInterview]);
+  const selectedInterviewRankings = useMemo<JobRankingCandidate[]>(() => {
+    if (!selectedInterview) return [];
+    const { jobId, jobTitle } = getInterviewJobMeta(selectedInterview);
+    return [...(selectedInterview.scoringSummary?.rankings || [])]
+      .sort((a, b) => b.score - a.score || a.candidateName.localeCompare(b.candidateName))
+      .map((ranking, index) => ({
+        ...ranking,
+        interviewId: selectedInterview._id,
+        interviewTitle: selectedInterview.title,
+        jobId,
+        jobTitle,
+        jobRank: index + 1
+      }));
+  }, [selectedInterview]);
+  const topRankedInterview = useMemo(
+    () => [...interviews]
+      .filter((interview) => Number(interview.scoringSummary?.scoredCount || 0) > 0)
+      .sort((a, b) => {
+        const scoreDelta = Number(b.scoringSummary?.averageScore ?? -1) - Number(a.scoringSummary?.averageScore ?? -1);
+        if (scoreDelta) return scoreDelta;
+        return Number(b.scoringSummary?.scoredCount || 0) - Number(a.scoringSummary?.scoredCount || 0);
+      })[0] || null,
+    [interviews]
+  );
+  const jobRankingGroups = useMemo(() => interviews.map((interview) => {
+    const { jobId, jobTitle } = getInterviewJobMeta(interview);
+    const rankings = [...(interview.scoringSummary?.rankings || [])]
+      .sort((a, b) => b.score - a.score || a.candidateName.localeCompare(b.candidateName))
+      .map((candidate, index) => ({
+        ...candidate,
+        interviewId: interview._id,
+        interviewTitle: interview.title,
+        jobId,
+        jobTitle,
+        jobRank: index + 1
+      }));
+    const scoredCount = rankings.length;
+    const averageScore = scoredCount
+      ? Math.round(rankings.reduce((sum, candidate) => sum + candidate.score, 0) / scoredCount)
+      : null;
+    const candidateCount = Number(interview.candidateCount || 0);
+    const completedCount = Number(interview.stats?.completed || 0);
+    const completion = candidateCount > 0 ? Math.round((completedCount / candidateCount) * 100) : 0;
+
+    return {
+      jobId: interview._id,
+      jobTitle: interview.title,
+      roleTitle: jobTitle,
+      roleId: jobId,
+      interviews: [interview],
+      questionCount: interview.questionSnapshots?.length || 0,
+      candidateCount,
+      completedCount,
+      blockedCount: Number(interview.stats?.blocked || 0),
+      failedCount: Number(interview.stats?.failed || 0),
+      proctorFailedCount: Number(interview.stats?.proctorFailed || 0),
+      activeCount: interview.status === "active" ? 1 : 0,
+      scheduledCount: interview.status === "scheduled" ? 1 : 0,
+      rankings,
+      scoredCount,
+      averageScore,
+      completion,
+      priorityCount: rankings.filter((candidate) => candidate.score >= 85).length,
+      topCandidate: rankings[0] || null
+    };
+  }).sort((a, b) => {
+    const dateDelta = new Date(b.interviews[0]?.createdAt || b.interviews[0]?.schedule?.sendAt || 0).getTime()
+      - new Date(a.interviews[0]?.createdAt || a.interviews[0]?.schedule?.sendAt || 0).getTime();
+    if (dateDelta) return dateDelta;
+    return a.jobTitle.localeCompare(b.jobTitle);
+  }), [interviews]);
+  const selectedJobRanking = useMemo(
+    () => jobRankingGroups.find((group) => group.jobId === selectedInterviewId) || null,
+    [jobRankingGroups, selectedInterviewId]
+  );
+  const setSelectedJobRankingId = setSelectedInterviewId;
 
   const resolveRankingCandidateId = (ranking: JobRankingCandidate) => {
     if (ranking.candidateId) return ranking.candidateId;
@@ -432,19 +486,20 @@ export default function AIInterviewsPage() {
   };
 
   const openRankingList = () => {
-    if (!selectedJobRanking?.rankings.length) {
+    if (!selectedInterview || !selectedInterviewRankings.length) {
       toast.error("No ranked candidates available");
       return;
     }
 
-    const entries = selectedJobRanking.rankings
-      .slice(0, Math.max(1, rankingListTopN))
+    const topCount = Math.min(Math.max(Number(rankingListTopN) || 1, 1), selectedInterviewRankings.length);
+    const entries = selectedInterviewRankings
+      .slice(0, topCount)
       .map((candidate) => ({
         candidateId: resolveRankingCandidateId(candidate),
         rank: candidate.jobRank,
         score: candidate.score,
         source: "ai_interview",
-        notes: `${candidate.score} interview score for ${selectedJobRanking.jobTitle}`,
+        notes: `${candidate.score} AI interview score for ${selectedInterview.title}`,
       }))
       .filter((entry) => entry.candidateId);
 
@@ -456,11 +511,6 @@ export default function AIInterviewsPage() {
     setRankingListEntries(entries);
     setShowRankingListDialog(true);
   };
-
-  const topRankedJob = useMemo(
-    () => jobRankingGroups.find((group) => group.scoredCount > 0) || null,
-    [jobRankingGroups]
-  );
   const activeInterviews = useMemo(
     () => interviews.filter((interview) => interview.status === "active").length,
     [interviews]
@@ -471,13 +521,92 @@ export default function AIInterviewsPage() {
   );
   const createProgress = useMemo(() => {
     const steps = [
+      Boolean(form.voiceId),
       Boolean(form.jobId),
-      selectedRecipientCount > 0,
       selectedQuestionIds.length > 0,
+      selectedRecipientCount > 0,
       Boolean(form.sendAt && form.expiresAt)
     ];
     return Math.round((steps.filter(Boolean).length / steps.length) * 100);
-  }, [form.jobId, form.sendAt, form.expiresAt, selectedQuestionIds.length, selectedRecipientCount]);
+  }, [form.jobId, form.sendAt, form.expiresAt, form.voiceId, selectedQuestionIds.length, selectedRecipientCount]);
+  const createStepIndex = CREATE_STEPS.findIndex((step) => step.id === createStep);
+  const stepIssues = useMemo<Record<CreateStepId, string[]>>(() => {
+    const reviewIssues: string[] = [];
+    const sendAtMs = form.sendAt ? new Date(form.sendAt).getTime() : NaN;
+    const expiresAtMs = form.expiresAt ? new Date(form.expiresAt).getTime() : NaN;
+
+    if (!form.sendAt || !form.expiresAt) {
+      reviewIssues.push("Set both the send time and the deadline.");
+    } else {
+      if (Number.isNaN(sendAtMs)) reviewIssues.push("Use a valid send time.");
+      if (Number.isNaN(expiresAtMs)) reviewIssues.push("Use a valid deadline.");
+      if (!Number.isNaN(sendAtMs) && !Number.isNaN(expiresAtMs) && expiresAtMs <= sendAtMs) {
+        reviewIssues.push("Deadline must be after the send time.");
+      }
+    }
+
+    if (!Number(form.perQuestionMinutes) || Number(form.perQuestionMinutes) < 1) {
+      reviewIssues.push("Minutes per question must be at least 1.");
+    }
+    if (!Number(form.totalMinutes) || Number(form.totalMinutes) < 1) {
+      reviewIssues.push("Total minutes must be at least 1.");
+    }
+    if (costEstimate?.enoughCredits === false) {
+      reviewIssues.push("Not enough credits are available for this batch.");
+    }
+
+    return {
+      model: form.voiceId ? [] : ["Choose the AI interviewer model for this batch."],
+      job: form.jobId
+        ? []
+        : jobs.length
+          ? ["Select the job this AI interview belongs to."]
+          : ["Create a job before scheduling an AI interview."],
+      questions: selectedQuestionIds.length > 0 ? [] : ["Choose or generate at least one interview question."],
+      recipients: selectedRecipientCount > 0 ? [] : ["Add at least one saved candidate or guest recipient."],
+      review: reviewIssues
+    };
+  }, [costEstimate?.enoughCredits, form.expiresAt, form.jobId, form.perQuestionMinutes, form.sendAt, form.totalMinutes, form.voiceId, jobs.length, selectedQuestionIds.length, selectedRecipientCount]);
+  const showStepError = (stepId: CreateStepId, title = "Complete this step") => {
+    const details = stepIssues[stepId];
+    if (!details.length) return false;
+
+    setCreateStep(stepId);
+    setScheduleDialog({
+      type: "error",
+      title,
+      message: "Fix these items before continuing.",
+      details,
+      targetStep: stepId
+    });
+    return true;
+  };
+
+  const goToNextStep = () => {
+    if (showStepError(createStep)) return;
+    const nextStep = CREATE_STEPS[Math.min(createStepIndex + 1, CREATE_STEPS.length - 1)];
+    setCreateStep(nextStep.id);
+  };
+
+  const goToPreviousStep = () => {
+    const previousStep = CREATE_STEPS[Math.max(createStepIndex - 1, 0)];
+    setCreateStep(previousStep.id);
+  };
+
+  const openFirstScheduleIssue = () => {
+    const firstStepWithIssues = CREATE_STEPS.find((step) => stepIssues[step.id].length > 0);
+    if (!firstStepWithIssues) return false;
+
+    setCreateStep(firstStepWithIssues.id);
+    setScheduleDialog({
+      type: "error",
+      title: "AI interview is not ready",
+      message: "Complete the required items before scheduling.",
+      details: CREATE_STEPS.flatMap((step) => stepIssues[step.id].map((issue) => `${step.label}: ${issue}`)),
+      targetStep: firstStepWithIssues.id
+    });
+    return true;
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -547,11 +676,11 @@ export default function AIInterviewsPage() {
   }, [jobs, presetJobId]);
 
   useEffect(() => {
-    if (!selectedJobRankingId || loading) return;
-    if (!jobRankingGroups.some((group) => group.jobId === selectedJobRankingId)) {
-      setSelectedJobRankingId(null);
+    if (!selectedInterviewId || loading) return;
+    if (!interviews.some((interview) => interview._id === selectedInterviewId)) {
+      setSelectedInterviewId(null);
     }
-  }, [jobRankingGroups, loading, selectedJobRankingId]);
+  }, [interviews, loading, selectedInterviewId]);
 
   useEffect(() => {
     if (!form.voiceId || !voiceOptions.length) return;
@@ -716,7 +845,167 @@ export default function AIInterviewsPage() {
     }
   };
 
+  const renderWizardFooter = () => (
+    <div className="flex flex-col gap-3 rounded-xl border bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 sm:flex-row sm:items-center sm:justify-between">
+      <Button type="button" variant="outline" onClick={goToPreviousStep} disabled={createStepIndex === 0}>
+        Back
+      </Button>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {createStep !== "review" ? (
+          <Button type="button" onClick={goToNextStep}>
+            Continue
+          </Button>
+        ) : (
+          <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={submit} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+            Schedule AI Interview
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderRecipientsCard = () => (
+    <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
+      <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
+              <Users className="h-4 w-4 text-blue-600" />
+              Recipients
+            </CardTitle>
+            <CardDescription>
+              {selectedRecipientCount} selected: {selectedCandidateIds.length} saved, {guestRecipients.length} guest
+            </CardDescription>
+          </div>
+          <Badge variant="outline">{selectedVisibleCount}/{filteredCandidateIds.length} visible</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 p-5">
+        <Input
+          placeholder="Search all saved candidates"
+          value={candidateSearch}
+          onChange={(event) => setCandidateSearch(event.target.value)}
+          className="bg-white dark:bg-slate-950"
+        />
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950/60">
+          <label className="flex cursor-pointer items-center gap-3">
+            <Checkbox
+              checked={allVisibleSelected ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  selectVisibleCandidates();
+                } else {
+                  clearVisibleCandidates();
+                }
+              }}
+            />
+            <span className="font-medium text-slate-900 dark:text-white">Select all visible saved candidates</span>
+          </label>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={selectVisibleCandidates} disabled={!filteredCandidateIds.length}>
+              Select visible
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={clearVisibleCandidates} disabled={!selectedVisibleCount}>
+              Clear visible
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setSelectedCandidateIds([])} disabled={!selectedCandidateIds.length}>
+              Clear all
+            </Button>
+          </div>
+        </div>
+        <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 dark:border-blue-900/50 dark:bg-blue-950/20">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-950 dark:text-white">Add guest candidate</div>
+              <div className="text-xs text-muted-foreground">Invite someone who is not saved in the candidate database.</div>
+            </div>
+            <Badge variant="outline">{guestRecipients.length} guest</Badge>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <Input
+              placeholder="Full name"
+              value={guestFullName}
+              onChange={(event) => setGuestFullName(event.target.value)}
+              className="bg-white dark:bg-slate-950"
+            />
+            <Input
+              type="email"
+              placeholder="Email address"
+              value={guestEmail}
+              onChange={(event) => setGuestEmail(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addGuestRecipient();
+                }
+              }}
+              className="bg-white dark:bg-slate-950"
+            />
+            <Button type="button" variant="outline" onClick={addGuestRecipient} className="shrink-0 bg-white dark:bg-slate-950">
+              <Plus className="mr-2 h-4 w-4" />
+              Add
+            </Button>
+          </div>
+          {guestRecipients.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {guestRecipients.map((guest) => (
+                <span key={guest.id} className="inline-flex max-w-full items-center gap-2 rounded-full bg-white px-3 py-1 text-xs text-slate-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-slate-200 dark:ring-blue-900">
+                  <span className="truncate">{guest.fullName} - {guest.email}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeGuestRecipient(guest.id)}
+                    className="rounded-full text-slate-400 hover:text-red-600"
+                    aria-label={`Remove ${guest.fullName}`}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+          {loadingCandidates && (
+            <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-950/40">
+              Loading saved candidates...
+            </div>
+          )}
+          {!loadingCandidates && filteredCandidates.map((candidate) => {
+            const checked = selectedCandidateIds.includes(candidate._id);
+            const name = candidateName(candidate);
+            return (
+              <label
+                key={candidate._id}
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition-colors ${
+                  checked
+                    ? "border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30"
+                    : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900"
+                }`}
+              >
+                <Checkbox checked={checked} onCheckedChange={() => toggleCandidate(candidate._id)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-slate-900 dark:text-white">{name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{candidate.email}</span>
+                </span>
+              </label>
+            );
+          })}
+          {!loadingCandidates && !filteredCandidates.length && (
+            <Alert>
+              <AlertDescription>No saved candidates found. Add a guest recipient above.</AlertDescription>
+            </Alert>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   const submit = async () => {
+    if (openFirstScheduleIssue()) {
+      return;
+    }
+
     // Tell the user exactly what's missing before scheduling
     const missing: string[] = [];
     if (!form.jobId) missing.push("a job");
@@ -752,7 +1041,7 @@ export default function AIInterviewsPage() {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       });
 
-      setLastScheduledInterview({
+      const scheduledInterview: ScheduledInterviewSummary = {
         id: result.aiInterview._id,
         jobId: form.jobId,
         jobTitle: selectedJob?.title || result.aiInterview.job?.title || "Job",
@@ -762,15 +1051,17 @@ export default function AIInterviewsPage() {
         expiresAt: result.aiInterview.schedule?.expiresAt || new Date(form.expiresAt).toISOString(),
         totalCredits: result.creditPreview?.estimate?.totalCredits || result.aiInterview.costEstimate?.totalCredits,
         voiceName: result.aiInterview.voice?.displayName || selectedVoice?.displayName
-      });
-      setSelectedJobRankingId(form.jobId);
-      setActiveTab("interviews");
-      toast.success("AI interview scheduled");
+      };
+
+      setLastScheduledInterview(scheduledInterview);
+      setScheduleDialog({ type: "success", interview: scheduledInterview });
+      setSelectedInterviewId(scheduledInterview.id);
       setSelectedCandidateIds([]);
       setGuestRecipients([]);
       setGuestFullName("");
       setGuestEmail("");
       setSelectedQuestionIds([]);
+      setCreateStep("job");
       setForm((current) => ({
         ...current,
         title: "",
@@ -779,14 +1070,23 @@ export default function AIInterviewsPage() {
       }));
       await loadData();
     } catch (error: any) {
-      toast.error(error.data?.message || error.message || "Failed to schedule AI interview");
+      const message = error.data?.message || error.message || "Failed to schedule AI interview";
+      const details = Array.isArray(error.data?.errors)
+        ? error.data.errors.map((item: any) => String(item?.message || item))
+        : undefined;
+      setScheduleDialog({
+        type: "error",
+        title: "Could not schedule AI interview",
+        message,
+        details
+      });
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/60 to-indigo-50/70 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <div className="min-h-screen bg-background">
       <div className="container max-w-screen-2xl space-y-6 py-6">
         <div className="rounded-2xl border border-white/70 bg-white/85 p-5 shadow-lg shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-none">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -850,7 +1150,7 @@ export default function AIInterviewsPage() {
               </div>
               <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{averageAIScore ?? "-"}</div>
               <p className="truncate text-xs text-violet-700/80 dark:text-violet-300/80">
-                {topRankedJob ? `Top job: ${topRankedJob.jobTitle}` : "No scored jobs yet"}
+                {topRankedInterview ? `Top interview: ${topRankedInterview.title}` : "No scored interviews yet"}
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
@@ -906,10 +1206,10 @@ export default function AIInterviewsPage() {
                   className="bg-emerald-700 text-white hover:bg-emerald-800"
                   onClick={() => {
                     setActiveTab("interviews");
-                    setSelectedJobRankingId(lastScheduledInterview.jobId);
+                    setSelectedInterviewId(lastScheduledInterview.id);
                   }}
                 >
-                  Open job ranking
+                  Open interview
                   <ArrowUpRight className="ml-2 h-4 w-4" />
                 </Button>
                 <Button asChild variant="outline" className="border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-100">
@@ -950,7 +1250,7 @@ export default function AIInterviewsPage() {
                           Interview Setup
                         </CardTitle>
                         <CardDescription className="mt-1 text-slate-300">
-                          Select the role, candidate instructions, and timing controls.
+                          Choose the AI model, job, questions, recipients, then review the schedule.
                         </CardDescription>
                       </div>
                       <Badge className="w-fit border-white/20 bg-white/10 text-white">
@@ -959,154 +1259,223 @@ export default function AIInterviewsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-5 p-5">
-                    <div className="grid gap-3 md:grid-cols-4">
-                      {[
-                        { label: "Job", done: Boolean(form.jobId), icon: Briefcase },
-                        { label: "Recipients", done: selectedRecipientCount > 0, icon: Users },
-                        { label: "Questions", done: selectedQuestionIds.length > 0, icon: FileQuestion },
-                        { label: "Schedule", done: Boolean(form.sendAt && form.expiresAt), icon: CalendarClock }
-                      ].map((step, index) => {
+                    <div className="grid gap-3 md:grid-cols-5">
+                      {CREATE_STEPS.map((step, index) => {
                         const StepIcon = step.icon;
+                        const selected = step.id === createStep;
+                        const hasIssues = stepIssues[step.id].length > 0;
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={step.label}
-                            className={`flex items-center gap-3 rounded-xl border p-3 ${
-                              step.done
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
-                                : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            onClick={() => setCreateStep(step.id)}
+                            className={`flex min-h-[76px] items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                              selected
+                                ? "border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                                : !hasIssues
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                                  : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                             }`}
                           >
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-white">
+                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm ${
+                              selected
+                                ? "bg-white text-slate-950 dark:bg-slate-950 dark:text-white"
+                                : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            }`}
+                            >
                               <StepIcon className="h-4 w-4" />
                             </div>
                             <div className="min-w-0">
                               <div className="text-[11px] font-semibold uppercase tracking-wide">Step {index + 1}</div>
                               <div className="truncate text-sm font-medium">{step.label}</div>
+                              <div className={`truncate text-xs ${selected ? "text-slate-300 dark:text-slate-700" : "text-muted-foreground"}`}>
+                                {step.description}
+                              </div>
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
                     <Progress value={createProgress} className="h-2" />
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Job</Label>
-                        <Select
-                          value={form.jobId}
-                          onValueChange={(jobId) => {
-                            setForm((current) => ({ ...current, jobId }));
-                            setSelectedQuestionIds([]);
-                            setQuestionSelectorKey((value) => value + 1);
-                          }}
-                        >
-                          <SelectTrigger className="bg-white dark:bg-slate-950">
-                            <SelectValue placeholder="Select job" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {jobs.map((job) => (
-                              <SelectItem key={job._id} value={job._id}>
-                                {job.title}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Title</Label>
-                        <Input
-                          value={form.title}
-                          onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                          placeholder={selectedJob ? `${selectedJob.title} AI Interview` : "AI Interview title"}
-                          className="bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                    </div>
+                    {createStep === "job" && (
+                      <div className="space-y-5">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <Label>Job</Label>
+                              <Button asChild variant="outline" size="sm" className="h-8 bg-white dark:bg-slate-950">
+                                <Link href="/jobs/new?returnTo=%2Fai-interviews">
+                                  <Plus className="mr-2 h-3.5 w-3.5" />
+                                  Create job
+                                </Link>
+                              </Button>
+                            </div>
+                            {jobs.length > 0 ? (
+                              <Select
+                                value={form.jobId}
+                                onValueChange={(jobId) => {
+                                  setForm((current) => ({ ...current, jobId }));
+                                  setSelectedQuestionIds([]);
+                                  setQuestionSelectorKey((value) => value + 1);
+                                }}
+                              >
+                                <SelectTrigger className="bg-white dark:bg-slate-950">
+                                  <SelectValue placeholder="Select job" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {jobs.map((job) => (
+                                    <SelectItem key={job._id} value={job._id}>
+                                      {job.title}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950/60">
+                                <div className="font-medium text-slate-950 dark:text-white">No jobs found</div>
+                                <p className="mt-1 text-muted-foreground">
+                                  Create a job first so the AI interview can load role-specific questions and candidates.
+                                </p>
+                                <Button asChild className="mt-3">
+                                  <Link href="/jobs/new?returnTo=%2Fai-interviews">
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Create job
+                                  </Link>
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Title</Label>
+                            <Input
+                              value={form.title}
+                              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                              placeholder={selectedJob ? `${selectedJob.title} AI Interview` : "AI Interview title"}
+                              className="bg-white dark:bg-slate-950"
+                            />
+                          </div>
+                        </div>
 
-                    {selectedJob && (
-                      <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/25">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-950 dark:text-white">{selectedJob.title}</div>
-                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
-                              <span>{getDepartmentName(selectedJob.department) || "Department not set"}</span>
-                              <span>{selectedJob.location || "Location not set"}</span>
-                              <span>{selectedJob.type || "Type not set"}</span>
+                        {selectedJob && (
+                          <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/25">
+                            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-950 dark:text-white">{selectedJob.title}</div>
+                                <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                  <span>{getDepartmentName(selectedJob.department) || "Department not set"}</span>
+                                  <span>{selectedJob.location || "Location not set"}</span>
+                                  <span>{selectedJob.type || "Type not set"}</span>
+                                </div>
+                              </div>
+                              <Button asChild variant="outline" size="sm" className="w-fit bg-white/80 dark:bg-slate-900">
+                                <Link href={`/jobs/${selectedJob._id}`}>
+                                  View job
+                                </Link>
+                              </Button>
                             </div>
                           </div>
-                          <Button asChild variant="outline" size="sm" className="w-fit bg-white/80 dark:bg-slate-900">
-                            <Link href={`/jobs/${selectedJob._id}`}>
-                              View job
-                            </Link>
-                          </Button>
+                        )}
+
+                        <div className="space-y-2">
+                          <Label>Candidate guidelines</Label>
+                          <Textarea
+                            rows={5}
+                            value={form.guidelines}
+                            onChange={(event) => setForm((current) => ({ ...current, guidelines: event.target.value }))}
+                            className="bg-white leading-6 dark:bg-slate-950"
+                          />
                         </div>
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <Label>Candidate guidelines</Label>
-                      <Textarea
-                        rows={5}
-                        value={form.guidelines}
-                        onChange={(event) => setForm((current) => ({ ...current, guidelines: event.target.value }))}
-                        className="bg-white leading-6 dark:bg-slate-950"
-                      />
-                    </div>
+                    {createStep === "review" && (
+                      <div className="space-y-5">
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="space-y-2">
+                            <Label>Send time</Label>
+                            <Input
+                              type="datetime-local"
+                              value={form.sendAt}
+                              onChange={(event) => setForm((current) => ({ ...current, sendAt: event.target.value }))}
+                              className="bg-white dark:bg-slate-950"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Deadline</Label>
+                            <Input
+                              type="datetime-local"
+                              value={form.expiresAt}
+                              onChange={(event) => setForm((current) => ({ ...current, expiresAt: event.target.value }))}
+                              className="bg-white dark:bg-slate-950"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Minutes per question</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={120}
+                              value={form.perQuestionMinutes}
+                              onChange={(event) => setForm((current) => ({ ...current, perQuestionMinutes: Number(event.target.value) }))}
+                              className="bg-white dark:bg-slate-950"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Total minutes</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={480}
+                              value={form.totalMinutes}
+                              onChange={(event) => setForm((current) => ({ ...current, totalMinutes: Number(event.target.value) }))}
+                              className="bg-white dark:bg-slate-950"
+                            />
+                          </div>
+                        </div>
 
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <div className="space-y-2">
-                        <Label>Send time</Label>
-                        <Input
-                          type="datetime-local"
-                          value={form.sendAt}
-                          onChange={(event) => setForm((current) => ({ ...current, sendAt: event.target.value }))}
-                          className="bg-white dark:bg-slate-950"
-                        />
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                            <div className="text-xs text-muted-foreground">AI model</div>
+                            <div className="mt-1 font-semibold text-slate-950 dark:text-white">
+                              {selectedVoice ? `${selectedVoice.displayName} (${selectedVoice.tierLabel})` : "Not selected"}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                            <div className="text-xs text-muted-foreground">Job</div>
+                            <div className="mt-1 font-semibold text-slate-950 dark:text-white">
+                              {selectedJob?.title || "Not selected"}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                            <div className="text-xs text-muted-foreground">Questions</div>
+                            <div className="mt-1 font-semibold text-slate-950 dark:text-white">
+                              {selectedQuestionIds.length} selected
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                            <div className="text-xs text-muted-foreground">Recipients</div>
+                            <div className="mt-1 font-semibold text-slate-950 dark:text-white">
+                              {selectedRecipientCount} selected
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Deadline</Label>
-                        <Input
-                          type="datetime-local"
-                          value={form.expiresAt}
-                          onChange={(event) => setForm((current) => ({ ...current, expiresAt: event.target.value }))}
-                          className="bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Minutes per question</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={120}
-                          value={form.perQuestionMinutes}
-                          onChange={(event) => setForm((current) => ({ ...current, perQuestionMinutes: Number(event.target.value) }))}
-                          className="bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Total minutes</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={480}
-                          value={form.totalMinutes}
-                          onChange={(event) => setForm((current) => ({ ...current, totalMinutes: Number(event.target.value) }))}
-                          className="bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                    </div>
+                    )}
+
                   </CardContent>
                 </Card>
 
+                {createStep === "model" && (
                 <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
                   <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
                           <Volume2 className="h-4 w-4 text-emerald-600" />
-                          Interview Voice
+                          AI Interviewer Model
                         </CardTitle>
-                        <CardDescription>Select the interviewer voice and quality tier. Azure Speech remains the TTS provider.</CardDescription>
+                        <CardDescription>Select the interviewer avatar, voice, and quality tier.</CardDescription>
                       </div>
                       {selectedVoice && (
                         <Badge variant="outline" className={voiceTierClass(selectedVoice.tier)}>
@@ -1120,6 +1489,7 @@ export default function AIInterviewsPage() {
                       {voiceOptions.map((voice) => {
                         const selected = form.voiceId === voice.id;
                         const previewing = previewingVoiceId === voice.id;
+                        const avatar = getAIInterviewVoiceAvatar(voice);
                         return (
                           <div
                             key={voice.id}
@@ -1136,11 +1506,13 @@ export default function AIInterviewsPage() {
                                 className="flex min-w-0 flex-1 items-start gap-3 text-left"
                                 aria-pressed={selected}
                               >
-                                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold ${
-                                  selected ? "bg-white text-slate-950 dark:bg-slate-950 dark:text-white" : "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
-                                }`}>
-                                  {voiceInitials(voice)}
-                                </div>
+                                <AIVoiceAvatar
+                                  voice={voice}
+                                  size="xl"
+                                  active={previewing}
+                                  decorative
+                                  className={selected ? "ring-2 ring-white/30" : "ring-1 ring-slate-200 dark:ring-slate-800"}
+                                />
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <div className="font-semibold">{voice.displayName}</div>
@@ -1152,6 +1524,12 @@ export default function AIInterviewsPage() {
                                   </div>
                                   <div className={`mt-1 text-xs ${selected ? "text-slate-200 dark:text-slate-700" : "text-muted-foreground"}`}>
                                     {voice.description}
+                                  </div>
+                                  <div className={`mt-2 flex min-h-6 items-center gap-2 text-[11px] font-medium ${
+                                    selected ? "text-slate-200 dark:text-slate-700" : "text-slate-500 dark:text-slate-400"
+                                  }`}>
+                                    <AIVoiceWave active={previewing} compact level={previewing ? 72 : 18} tone={avatar.tone} />
+                                    <span>{previewing ? "Playing voice sample" : "AI interviewer avatar"}</span>
                                   </div>
                                 </div>
                               </button>
@@ -1206,10 +1584,10 @@ export default function AIInterviewsPage() {
                         <div>
                           <div className="flex items-center gap-2 font-semibold text-slate-950 dark:text-white">
                             <Sparkles className="h-4 w-4 text-blue-600" />
-                            Voice cost estimate
+                            Voice credit estimate
                           </div>
                           <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                            Based on estimated Azure + LLM cost, a $1 target profit per candidate, then rounded to credits.
+                            Based on the selected voice, duration, questions, and recipients.
                           </p>
                         </div>
                         {estimatingCost && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
@@ -1219,7 +1597,7 @@ export default function AIInterviewsPage() {
                           Add candidates or guest recipients to calculate the real batch total. Showing a one-candidate preview for now.
                         </div>
                       )}
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
                           <div className="text-xs text-muted-foreground">Per candidate</div>
                           <div className="mt-1 text-lg font-bold">{costEstimate?.creditCostPerCandidate ?? 8} credits</div>
@@ -1229,11 +1607,7 @@ export default function AIInterviewsPage() {
                           <div className="mt-1 text-lg font-bold">{costEstimate?.totalCredits ?? estimateRecipientCount * 8} credits</div>
                         </div>
                         <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
-                          <div className="text-xs text-muted-foreground">Estimated backend cost</div>
-                          <div className="mt-1 text-lg font-bold">{formatCurrencyValue(costEstimate?.estimatedBackendCostUsd, "USD")}</div>
-                        </div>
-                        <div className="rounded-xl bg-white p-3 dark:bg-slate-950/60">
-                          <div className="text-xs text-muted-foreground">Customer charge</div>
+                          <div className="text-xs text-muted-foreground">Estimated charge</div>
                           <div className="mt-1 text-lg font-bold">
                             {formatCurrencyValue(
                               costEstimate?.estimatedUsdValue,
@@ -1243,7 +1617,6 @@ export default function AIInterviewsPage() {
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-300">
-                        <span>Target profit {formatCurrencyValue(costEstimate?.targetProfitUsd, "USD")}</span>
                         {Number(costEstimate?.voiceSurchargeCredits || 0) > 0 && (
                           <span>
                             Premium voice +{costEstimate?.voiceSurchargeCredits} credits ({formatCurrencyValue(costEstimate?.voiceSurchargeUsd, "USD")})
@@ -1259,12 +1632,13 @@ export default function AIInterviewsPage() {
                             )}
                           </span>
                         )}
-                        <span>Estimated TTS {formatCompactNumber(costEstimate?.estimatedSpeechCharacters)} characters</span>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
+                )}
 
+                {createStep === "questions" && (
                 <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
                   <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1290,143 +1664,14 @@ export default function AIInterviewsPage() {
                     />
                   </CardContent>
                 </Card>
+                )}
+
+                {createStep === "recipients" && renderRecipientsCard()}
+
+                {renderWizardFooter()}
               </div>
 
               <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-                <Card className="overflow-hidden border-0 bg-white/90 shadow-lg shadow-slate-200/70 dark:bg-slate-900/90 dark:shadow-none">
-                  <CardHeader className="border-b bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <CardTitle className="flex items-center gap-2 text-base text-slate-950 dark:text-white">
-                          <Users className="h-4 w-4 text-blue-600" />
-                          Recipients
-                        </CardTitle>
-                        <CardDescription>
-                          {selectedRecipientCount} selected: {selectedCandidateIds.length} saved, {guestRecipients.length} guest
-                        </CardDescription>
-                      </div>
-                      <Badge variant="outline">{selectedVisibleCount}/{filteredCandidateIds.length} visible</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3 p-5">
-                    <Input
-                      placeholder="Search all saved candidates"
-                      value={candidateSearch}
-                      onChange={(event) => setCandidateSearch(event.target.value)}
-                      className="bg-white dark:bg-slate-950"
-                    />
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950/60">
-                      <label className="flex cursor-pointer items-center gap-3">
-                        <Checkbox
-                          checked={allVisibleSelected ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              selectVisibleCandidates();
-                            } else {
-                              clearVisibleCandidates();
-                            }
-                          }}
-                        />
-                        <span className="font-medium text-slate-900 dark:text-white">Select all visible saved candidates</span>
-                      </label>
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={selectVisibleCandidates} disabled={!filteredCandidateIds.length}>
-                          Select visible
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={clearVisibleCandidates} disabled={!selectedVisibleCount}>
-                          Clear visible
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setSelectedCandidateIds([])} disabled={!selectedCandidateIds.length}>
-                          Clear all
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 dark:border-blue-900/50 dark:bg-blue-950/20">
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold text-slate-950 dark:text-white">Add guest candidate</div>
-                          <div className="text-xs text-muted-foreground">Invite someone who is not saved in the candidate database.</div>
-                        </div>
-                        <Badge variant="outline">{guestRecipients.length} guest</Badge>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                        <Input
-                          placeholder="Full name"
-                          value={guestFullName}
-                          onChange={(event) => setGuestFullName(event.target.value)}
-                          className="bg-white dark:bg-slate-950"
-                        />
-                        <Input
-                          type="email"
-                          placeholder="Email address"
-                          value={guestEmail}
-                          onChange={(event) => setGuestEmail(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              addGuestRecipient();
-                            }
-                          }}
-                          className="bg-white dark:bg-slate-950"
-                        />
-                        <Button type="button" variant="outline" onClick={addGuestRecipient} className="shrink-0 bg-white dark:bg-slate-950">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add
-                        </Button>
-                      </div>
-                      {guestRecipients.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {guestRecipients.map((guest) => (
-                            <span key={guest.id} className="inline-flex max-w-full items-center gap-2 rounded-full bg-white px-3 py-1 text-xs text-slate-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-slate-200 dark:ring-blue-900">
-                              <span className="truncate">{guest.fullName} - {guest.email}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeGuestRecipient(guest.id)}
-                                className="rounded-full text-slate-400 hover:text-red-600"
-                                aria-label={`Remove ${guest.fullName}`}
-                              >
-                                <XCircle className="h-3.5 w-3.5" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                      {loadingCandidates && (
-                        <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-950/40">
-                          Loading saved candidates...
-                        </div>
-                      )}
-                      {!loadingCandidates && filteredCandidates.map((candidate) => {
-                        const checked = selectedCandidateIds.includes(candidate._id);
-                        const name = candidateName(candidate);
-                        return (
-                          <label
-                            key={candidate._id}
-                            className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition-colors ${
-                              checked
-                                ? "border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30"
-                                : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900"
-                            }`}
-                          >
-                            <Checkbox checked={checked} onCheckedChange={() => toggleCandidate(candidate._id)} />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-medium text-slate-900 dark:text-white">{name}</span>
-                              <span className="block truncate text-xs text-muted-foreground">{candidate.email}</span>
-                            </span>
-                          </label>
-                        );
-                      })}
-                      {!loadingCandidates && !filteredCandidates.length && (
-                        <Alert>
-                          <AlertDescription>No saved candidates found. Add a guest recipient above.</AlertDescription>
-                        </Alert>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
                 <Card className="overflow-hidden border-0 bg-slate-950 text-white shadow-xl shadow-slate-300/60 dark:shadow-none">
                   <CardHeader className="border-b border-white/10 px-5 py-4">
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -1503,27 +1748,21 @@ export default function AIInterviewsPage() {
                           <span className="font-semibold">{costEstimate?.totalCredits ?? estimateRecipientCount * 8} credits</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-400">Backend cost</span>
-                          <span className="font-semibold">{formatCurrencyValue(costEstimate?.estimatedBackendCostUsd, "USD")}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-400">Target profit</span>
-                          <span className="font-semibold">{formatCurrencyValue(costEstimate?.targetProfitUsd, "USD")}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-400">Customer charge</span>
+                          <span className="text-slate-400">Estimated charge</span>
                           <span className="font-semibold">{formatCurrencyValue(costEstimate?.estimatedUsdValue, "USD")}</span>
                         </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-slate-400">{costEstimate?.displayValue?.currency || "Org currency"}</span>
-                          <span className="font-semibold">
-                            {formatCurrencyValue(
-                              costEstimate?.displayValue?.amount,
-                              costEstimate?.displayValue?.currency || "USD",
-                              costEstimate?.displayValue?.metadata?.locale
-                            )}
-                          </span>
-                        </div>
+                        {costEstimate?.displayValue?.currency && costEstimate.displayValue.currency !== "USD" && (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-400">{costEstimate.displayValue.currency}</span>
+                            <span className="font-semibold">
+                              {formatCurrencyValue(
+                                costEstimate.displayValue.amount,
+                                costEstimate.displayValue.currency,
+                                costEstimate.displayValue.metadata?.locale
+                              )}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       {costEstimate?.remainingCredits !== null && typeof costEstimate?.remainingCredits === "number" && (
                         <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${
@@ -1554,9 +1793,15 @@ export default function AIInterviewsPage() {
                       </div>
                     )}
 
-                    <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600" onClick={submit} disabled={saving}>
-                      {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                      Schedule AI Interview
+                    <Button
+                      className="w-full bg-emerald-500 text-white hover:bg-emerald-600"
+                      onClick={createStep === "review" ? submit : () => {
+                        if (!openFirstScheduleIssue()) setCreateStep("review");
+                      }}
+                      disabled={saving}
+                    >
+                      {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : createStep === "review" ? <Send className="mr-2 h-4 w-4" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                      {createStep === "review" ? "Schedule AI Interview" : "Review schedule"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1584,23 +1829,23 @@ export default function AIInterviewsPage() {
                             onClick={() => setSelectedJobRankingId(null)}
                           >
                             <ArrowLeft className="mr-2 h-4 w-4" />
-                            Jobs
+                            Interviews
                           </Button>
                           <div>
                             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
                               <Trophy className="h-3.5 w-3.5" />
-                              Job candidate ranking
+                              Interview candidate ranking
                             </div>
                             <h2 className="mt-3 text-2xl font-semibold">{selectedJobRanking.jobTitle}</h2>
                             <p className="mt-1 max-w-2xl text-sm text-slate-300">
-                              Rankings here are scoped to this job across every AI interview batch for the role.
+                              Rankings here are scoped to this interview batch only.
                             </p>
                           </div>
                         </div>
                         <div className="grid w-full gap-2 sm:grid-cols-4 lg:max-w-2xl">
                           <div className="rounded-xl border border-white/10 bg-white/10 p-3">
-                            <div className="text-xs text-slate-300">Batches</div>
-                            <div className="text-2xl font-semibold">{selectedJobRanking.interviews.length}</div>
+                            <div className="text-xs text-slate-300">Questions</div>
+                            <div className="text-2xl font-semibold">{selectedJobRanking.questionCount}</div>
                           </div>
                           <div className="rounded-xl border border-white/10 bg-white/10 p-3">
                             <div className="text-xs text-slate-300">Candidates</div>
@@ -1625,7 +1870,7 @@ export default function AIInterviewsPage() {
                         <div>
                           <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Candidate ranking</h3>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            All scored candidates for this job, highest Llama score first. Interview batches are grouped beside this ranking.
+                            Scored candidates for this interview batch, highest score first.
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -1687,7 +1932,7 @@ export default function AIInterviewsPage() {
                           </div>
                         ) : (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-muted-foreground dark:border-slate-800 dark:bg-slate-950/50">
-                            Ranking appears here after candidates complete interviews for this job and Llama scoring finishes.
+                            Ranking appears here after candidates complete this interview and scoring finishes.
                           </div>
                         )}
                       </div>
@@ -1697,8 +1942,8 @@ export default function AIInterviewsPage() {
                       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <h3 className="text-base font-semibold text-slate-950 dark:text-white">Interview batches</h3>
-                            <p className="mt-1 text-xs text-muted-foreground">Included in this ranking</p>
+                            <h3 className="text-base font-semibold text-slate-950 dark:text-white">Interview details</h3>
+                            <p className="mt-1 text-xs text-muted-foreground">Schedule and candidate progress</p>
                           </div>
                           <Badge variant="outline">{selectedJobRanking.interviews.length}</Badge>
                         </div>
@@ -1725,7 +1970,7 @@ export default function AIInterviewsPage() {
                                   <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-950 dark:group-hover:text-white" />
                                 </div>
                                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                                  <Badge className={statusColor(interview.status)}>{interview.status}</Badge>
+                                  <Badge className={statusColor(interview.status)}>{formatStatusLabel(interview.status)}</Badge>
                                   <Badge variant="outline">{completed}/{total} complete</Badge>
                                   {Number(interview.stats?.proctorFailed || 0) > 0 && (
                                     <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
@@ -1766,7 +2011,7 @@ export default function AIInterviewsPage() {
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <h3 className="text-base font-semibold text-slate-950 dark:text-white">Score distribution</h3>
-                            <p className="mt-1 text-xs text-muted-foreground">This job only</p>
+                            <p className="mt-1 text-xs text-muted-foreground">This interview only</p>
                           </div>
                           <Medal className="h-5 w-5 text-violet-600" />
                         </div>
@@ -1791,7 +2036,7 @@ export default function AIInterviewsPage() {
                       </div>
 
                       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
-                        <h3 className="text-base font-semibold text-slate-950 dark:text-white">Job activity</h3>
+                        <h3 className="text-base font-semibold text-slate-950 dark:text-white">Interview activity</h3>
                         <div className="mt-4 space-y-3 text-sm">
                           <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">Completion</span>
@@ -1829,13 +2074,13 @@ export default function AIInterviewsPage() {
                 <div className="space-y-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                     <div>
-                      <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Jobs with AI interviews</h2>
+                      <h2 className="text-xl font-semibold text-slate-950 dark:text-white">AI interview batches</h2>
                       <p className="text-sm text-muted-foreground">
-                        Open a job to rank candidates only against other candidates for that role.
+                        Open an interview to view its details, candidates, and ranking.
                       </p>
                     </div>
                     <Badge variant="outline" className="w-fit">
-                      {jobRankingGroups.length} job{jobRankingGroups.length === 1 ? "" : "s"}
+                      {jobRankingGroups.length} interview{jobRankingGroups.length === 1 ? "" : "s"}
                     </Badge>
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
@@ -1854,9 +2099,10 @@ export default function AIInterviewsPage() {
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                                     <Briefcase className="h-3.5 w-3.5" />
-                                    Job ranking
+                                    AI interview
                                   </div>
                                   <h3 className="mt-2 truncate text-lg font-semibold text-slate-950 dark:text-white">{group.jobTitle}</h3>
+                                  <div className="mt-1 truncate text-sm text-muted-foreground">{group.roleTitle}</div>
                                   {group.proctorFailedCount > 0 && (
                                     <Badge variant="outline" className="mt-2 border-amber-200 bg-amber-50 text-amber-800">
                                       {group.proctorFailedCount} proctor ended
@@ -1867,8 +2113,8 @@ export default function AIInterviewsPage() {
                               </div>
                               <div className="mt-5 grid grid-cols-2 gap-3 text-sm xl:grid-cols-4">
                                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
-                                  <div className="text-muted-foreground">Batches</div>
-                                  <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{group.interviews.length}</div>
+                                  <div className="text-muted-foreground">Questions</div>
+                                  <div className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{group.questionCount}</div>
                                 </div>
                                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
                                   <div className="text-muted-foreground">Candidates</div>
@@ -1885,42 +2131,22 @@ export default function AIInterviewsPage() {
                               </div>
                               <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/50">
                                 {hasScores ? (
-                                  <div className="p-3">
-                                    <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-950 p-4 text-white">
-                                      <div className="min-w-0">
-                                        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-emerald-200">
-                                          <Trophy className="h-3.5 w-3.5" />
-                                          Top ranked
-                                        </div>
-                                        <div className="mt-1 truncate text-sm font-semibold">{group.topCandidate?.candidateName}</div>
-                                        <div className="mt-1 text-xs text-slate-400">{group.priorityCount} priority candidate{group.priorityCount === 1 ? "" : "s"}</div>
-                                      </div>
-                                      <div className="text-right">
-                                        <div className="text-3xl font-semibold">{group.averageScore}</div>
-                                        <div className="text-xs text-slate-400">avg score</div>
+                                  <div className="flex items-center justify-between gap-3 p-4 text-sm">
+                                    <div className="min-w-0">
+                                      <div className="font-medium text-slate-950 dark:text-white">Scoring complete</div>
+                                      <div className="mt-1 text-xs text-muted-foreground">
+                                        {group.scoredCount} scored candidate{group.scoredCount === 1 ? "" : "s"} ready inside this interview.
                                       </div>
                                     </div>
-                                    <div className="mt-3 space-y-2">
-                                      {group.rankings.slice(0, 3).map((candidate) => (
-                                        <div key={`${candidate.interviewId}-${candidate.sessionId}`} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-xs dark:bg-slate-900">
-                                          <div className="flex min-w-0 items-center gap-2">
-                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-[11px] font-semibold text-white">
-                                              {candidate.jobRank}
-                                            </span>
-                                            <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{candidate.candidateName}</span>
-                                          </div>
-                                          <span className="flex shrink-0 items-center gap-1 font-semibold">
-                                            <Star className="h-3.5 w-3.5 text-amber-500" />
-                                            {candidate.score}
-                                          </span>
-                                        </div>
-                                      ))}
+                                    <div className="shrink-0 text-right">
+                                      <div className="text-xl font-semibold text-slate-950 dark:text-white">{group.averageScore ?? "-"}</div>
+                                      <div className="text-xs text-muted-foreground">avg score</div>
                                     </div>
                                   </div>
                                 ) : (
                                   <div className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
                                     <Medal className="h-4 w-4 text-slate-400" />
-                                    Ranking appears after candidates complete interviews for this job.
+                                    Ranking appears after candidates complete this interview.
                                   </div>
                                 )}
                               </div>
@@ -1948,14 +2174,143 @@ export default function AIInterviewsPage() {
         </Tabs>
       </div>
 
+      <Dialog
+        open={scheduleDialog?.type === "error"}
+        onOpenChange={(open) => {
+          if (!open) setScheduleDialog(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          {scheduleDialog?.type === "error" && (
+            <>
+              <DialogHeader>
+                <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300">
+                  <XCircle className="h-5 w-5" />
+                </div>
+                <DialogTitle>{scheduleDialog.title}</DialogTitle>
+                <DialogDescription>{scheduleDialog.message}</DialogDescription>
+              </DialogHeader>
+              {scheduleDialog.details?.length ? (
+                <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
+                  <ul className="space-y-1.5">
+                    {scheduleDialog.details.map((detail) => (
+                      <li key={detail} className="flex gap-2">
+                        <span aria-hidden="true">-</span>
+                        <span>{detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setScheduleDialog(null)}>
+                  Close
+                </Button>
+                {scheduleDialog.targetStep && (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setCreateStep(scheduleDialog.targetStep!);
+                      setScheduleDialog(null);
+                    }}
+                  >
+                    Go to {CREATE_STEPS.find((step) => step.id === scheduleDialog.targetStep)?.label || "step"}
+                  </Button>
+                )}
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={scheduleDialog?.type === "success"}
+        onOpenChange={(open) => {
+          if (!open) setScheduleDialog(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          {scheduleDialog?.type === "success" && (
+            <>
+              <DialogHeader>
+                <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+                <DialogTitle>AI interview scheduled</DialogTitle>
+                <DialogDescription>
+                  {scheduleDialog.interview.title} is queued for {scheduleDialog.interview.candidateCount} recipient{scheduleDialog.interview.candidateCount === 1 ? "" : "s"}.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 rounded-xl border bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-950/50 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-muted-foreground">Job</div>
+                  <div className="mt-1 font-medium text-slate-950 dark:text-white">{scheduleDialog.interview.jobTitle}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Recipients</div>
+                  <div className="mt-1 font-medium text-slate-950 dark:text-white">{scheduleDialog.interview.candidateCount}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Send time</div>
+                  <div className="mt-1 font-medium text-slate-950 dark:text-white">{formatDate(scheduleDialog.interview.sendAt)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Deadline</div>
+                  <div className="mt-1 font-medium text-slate-950 dark:text-white">{formatDate(scheduleDialog.interview.expiresAt)}</div>
+                </div>
+                {scheduleDialog.interview.voiceName && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">Voice</div>
+                    <div className="mt-1 font-medium text-slate-950 dark:text-white">{scheduleDialog.interview.voiceName}</div>
+                  </div>
+                )}
+                {typeof scheduleDialog.interview.totalCredits === "number" && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">Credits</div>
+                    <div className="mt-1 font-medium text-slate-950 dark:text-white">{scheduleDialog.interview.totalCredits}</div>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setScheduleDialog(null)}>
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setScheduleDialog(null);
+                    setSelectedInterviewId(scheduleDialog.interview.id);
+                    setActiveTab("interviews");
+                  }}
+                >
+                  Open interview
+                </Button>
+                <Button asChild className="bg-emerald-600 text-white hover:bg-emerald-700">
+                  <Link href={`/ai-interviews/${scheduleDialog.interview.id}`}>
+                    Open batch
+                    <ArrowUpRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <AddToCandidateListDialog
         open={showRankingListDialog}
         onOpenChange={setShowRankingListDialog}
         entries={rankingListEntries}
         source="ai_interview"
-        sourceRef={{ jobId: selectedJobRanking?.jobId, jobTitle: selectedJobRanking?.jobTitle }}
-        defaultName={`${selectedJobRanking?.jobTitle || "AI interview"} - top ${rankingListEntries.length || rankingListTopN}`}
-        defaultDescription={selectedJobRanking?.jobTitle ? `AI interview ranking for ${selectedJobRanking.jobTitle}` : "AI interview ranking"}
+        sourceRef={{
+          jobId: selectedInterviewJob.jobId,
+          jobTitle: selectedInterviewJob.jobTitle,
+          interviewId: selectedInterview?._id,
+          interviewTitle: selectedInterview?.title
+        }}
+        defaultName={`${selectedInterview?.title || "AI interview"} - top ${rankingListEntries.length || rankingListTopN}`}
+        defaultDescription={selectedInterview?.title ? `AI interview ranking for ${selectedInterview.title}` : "AI interview ranking"}
         countLabel={`${rankingListEntries.length} ranked candidate${rankingListEntries.length === 1 ? "" : "s"} will be saved.`}
         onCompleted={() => setRankingListEntries([])}
       />
