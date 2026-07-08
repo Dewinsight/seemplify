@@ -21,6 +21,7 @@ export PATH="/home/frappe/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/u
 
 select_node() {
   for node_dir in \
+    /home/frappe/.nvm/versions/node/v24.13.0/bin \
     /home/frappe/.nvm/versions/node/v24.12.0/bin \
     /home/frappe/.nvm/versions/node/v22.17.0/bin \
     /home/frappe/.nvm/versions/node/v20.19.0/bin \
