@@ -49,6 +49,7 @@ include_ext = {
     ".py", ".html", ".js", ".ts", ".vue", ".json", ".yml", ".yaml", ".toml",
     ".css", ".scss", ".md", ".txt", ".sh", ".ps1", ".sql",
 }
+exclude_files = {".env"}
 exclude_dirs = {
     "node_modules", ".git", "__pycache__", "dist", ".vite", ".cache", ".venv", ".yarn",
 }
@@ -72,6 +73,8 @@ for base in include_roots:
     for dirpath, dirnames, filenames in os.walk(base_path):
         dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
         for fn in filenames:
+            if fn in exclude_files:
+                continue
             p = pathlib.Path(dirpath) / fn
             if p.name in include_files or p.suffix.lower() in include_ext:
                 try:
@@ -120,7 +123,18 @@ else
     for part in lms www docker scripts frontend; do
       if [ -d "${APP_SOURCE_PATH}/${part}" ]; then
         rm -rf "${APP_DEST:?}/${part}"
-        cp -a "${APP_SOURCE_PATH}/${part}" "${APP_DEST}/"
+        if [ "${part}" = "docker" ]; then
+          mkdir -p "${APP_DEST}/docker"
+          (
+            cd "${APP_SOURCE_PATH}/docker"
+            tar --exclude="./.env" -cf - .
+          ) | (
+            cd "${APP_DEST}/docker"
+            tar -xf -
+          )
+        else
+          cp -a "${APP_SOURCE_PATH}/${part}" "${APP_DEST}/"
+        fi
       fi
     done
 
