@@ -214,7 +214,7 @@
 		<div v-else-if="!user.data?.name">
 			<NotPermitted
 				text="Please login to access this page."
-				:buttonLink="`/login?redirect-to=/lms/billing/${type}/${name}`"
+				:buttonLink="`/lms-login?redirect-to=/lms/billing/${type}/${name}`"
 			/>
 		</div>
 	</div>

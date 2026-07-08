@@ -94,6 +94,132 @@
 					</div>
 				</div>
 
+				<div class="pb-5 border-t pt-5">
+					<div class="text-lg font-semibold text-ink-gray-9 mb-4">
+						{{ __('Certification') }}
+					</div>
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+						<div class="space-y-4">
+							<FormControl
+								v-model="program.enable_certification"
+								:label="__('Enable Program Certificate')"
+								type="checkbox"
+								@change="dirty = true"
+							/>
+							<Link
+								v-if="program.enable_certification"
+								v-model="program.certificate_template"
+								doctype="Print Format"
+								:filters="{ doc_type: 'LMS Certificate' }"
+								:label="__('Certificate Template')"
+								@change="dirty = true"
+							/>
+						</div>
+						<div v-if="program.enable_certification">
+							<div class="text-xs text-ink-gray-5 mb-2">
+								{{ __('Certificate Image') }}
+							</div>
+							<FileUploader
+								v-if="!program.certificate_image"
+								:fileTypes="['image/*']"
+								:validateFile="validateFile"
+								@success="(file) => saveCertificateImage(file)"
+							>
+								<template #default="{ progress, uploading, openFileSelector }">
+									<div class="lms-program-form-image-upload-shell">
+										<div
+											class="lms-program-form-image-placeholder"
+											@click="openFileSelector"
+										>
+											<Image class="size-6 stroke-1.5 text-ink-gray-6" />
+										</div>
+										<div>
+											<Button @click="openFileSelector" :loading="uploading">
+												{{
+													uploading
+														? __('Uploading {0}%').format(
+																Math.round(progress || 0)
+															)
+														: __('Upload Image')
+												}}
+											</Button>
+											<div class="mt-1 text-sm text-ink-gray-6">
+												{{ __('Shown on generated program certificates.') }}
+											</div>
+										</div>
+									</div>
+								</template>
+							</FileUploader>
+							<div v-else class="lms-program-form-image-preview-shell">
+								<img
+									:src="program.certificate_image"
+									:alt="__('Certificate Image')"
+									class="lms-program-form-certificate-image-preview"
+								/>
+								<div>
+									<Button @click="removeCertificateImage()" variant="outline">
+										{{ __('Remove') }}
+									</Button>
+									<div class="mt-1 text-sm text-ink-gray-6">
+										{{ __('Shown on generated program certificates.') }}
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="pb-5 border-t pt-5">
+					<div class="flex items-center justify-between mt-2 mb-4">
+						<div class="text-lg font-semibold text-ink-gray-9">
+							{{ __('Schools') }}
+						</div>
+						<Button @click="openForm('school')">
+							<template #prefix>
+								<Plus class="h-4 w-4 stroke-1.5" />
+							</template>
+							<span>
+								{{ __('Add') }}
+							</span>
+						</Button>
+					</div>
+					<ListView
+						v-if="program.program_schools?.length > 0"
+						:columns="schoolColumns"
+						:rows="program.program_schools"
+						:options="{
+							selectable: true,
+							resizeColumn: true,
+							showTooltip: false,
+						}"
+						:rowKey="programName === 'new' ? 'school' : 'name'"
+					>
+						<ListHeader
+							class="mb-2 grid items-center space-x-4 rounded bg-surface-gray-2 p-2"
+						>
+							<ListHeaderItem :item="item" v-for="item in schoolColumns" />
+						</ListHeader>
+						<ListRows>
+							<ListRow :row="row" v-for="row in program.program_schools" />
+						</ListRows>
+						<ListSelectBanner>
+							<template #actions="{ unselectAll, selections }">
+								<div class="flex gap-2">
+									<Button
+										variant="ghost"
+										@click="remove(selections, unselectAll, 'schools')"
+									>
+										<Trash2 class="h-4 w-4 stroke-1.5" />
+									</Button>
+								</div>
+							</template>
+						</ListSelectBanner>
+					</ListView>
+					<div v-else class="text-ink-gray-7">
+						{{ __('No schools assigned yet. Unassigned programs remain visible to learners without a school assignment.') }}
+					</div>
+				</div>
+
 				<div class="pb-5">
 					<div class="flex items-center justify-between mt-5 mb-4">
 						<div class="text-lg font-semibold text-ink-gray-9">
@@ -222,18 +348,13 @@
 			<Dialog
 				v-model="showFormDialog"
 				:options="{
-					title:
-						currentForm == 'course'
-							? __('Add Course to Program')
-							: __('Enroll Member to Program'),
+					title: formDialogTitle,
 					actions: [
 						{
 							label: __('Add'),
 							variant: 'solid',
 							onClick: ({ close }: { close: () => void }) =>
-								currentForm == 'course'
-									? addCourse(close)
-									: addMember(close),
+								addCurrentFormItem(close),
 						},
 					],
 				}"
@@ -256,6 +377,13 @@
 							}"
 							:label="__('Program Member')"
 							:onCreate="(value: string, close: () => void) => openSettings('Members', close)"
+						/>
+
+						<Link
+							v-if="currentForm == 'school'"
+							v-model="school"
+							doctype="LMS School"
+							:label="__('School')"
 						/>
 					</div>
 				</template>
@@ -310,6 +438,7 @@ import type {
 	Program,
 	ProgramCourse,
 	ProgramMember,
+	ProgramSchool,
 	Programs,
 } from '@/pages/Programs/types'
 import { escapeHTML, openSettings, validateFile } from '@/utils'
@@ -320,9 +449,10 @@ import ProgramProgressSummary from '@/pages/Programs/ProgramProgressSummary.vue'
 const show = defineModel<boolean>()
 const programs = defineModel<Programs>('programs')
 const showFormDialog = ref(false)
-const currentForm = ref<'course' | 'member'>('course')
+const currentForm = ref<'course' | 'member' | 'school'>('course')
 const course = ref<string>('')
 const member = ref<string>('')
+const school = ref<string>('')
 const showProgressDialog = ref(false)
 const dirty = ref(false)
 
@@ -344,8 +474,12 @@ const program = ref<Program>({
 	image: '',
 	published: false,
 	enforce_course_order: false,
+	enable_certification: false,
+	certificate_template: '',
+	certificate_image: '',
 	program_courses: [],
 	program_members: [],
+	program_schools: [],
 })
 
 watch(
@@ -354,6 +488,7 @@ watch(
 		setProgramData()
 		fetchCourses()
 		fetchMembers()
+		fetchSchools()
 	}
 )
 
@@ -373,8 +508,12 @@ const setProgramData = () => {
 			image: '',
 			published: false,
 			enforce_course_order: false,
+			enable_certification: false,
+			certificate_template: '',
+			certificate_image: '',
 			program_courses: [],
 			program_members: [],
+			program_schools: [],
 		}
 	} else if (props.programName && props.programName !== 'new') {
 		void loadProgramImage(props.programName)
@@ -428,6 +567,17 @@ const programMembers = createListResource({
 	},
 })
 
+const programSchools = createListResource({
+	doctype: 'LMS Program School',
+	fields: ['school', 'school_title', 'name', 'idx'],
+	cache: ['programSchools', props.programName],
+	parent: 'LMS Program',
+	orderBy: 'idx',
+	onSuccess(data: ProgramSchool[]) {
+		program.value.program_schools = data
+	},
+})
+
 const fetchCourses = () => {
 	programCourses.update({
 		filters: {
@@ -444,10 +594,20 @@ const fetchMembers = () => {
 		filters: {
 			parent: props.programName,
 			parenttype: 'LMS Program',
-			parentfield: 'program_members',
 		},
 	})
 	programMembers.reload()
+}
+
+const fetchSchools = () => {
+	programSchools.update({
+		filters: {
+			parent: props.programName,
+			parenttype: 'LMS Program',
+			parentfield: 'program_schools',
+		},
+	})
+	programSchools.reload()
 }
 
 const validateTitle = () => {
@@ -523,14 +683,28 @@ const updateProgram = (close: () => void) => {
 	)
 }
 
-const openForm = (formType: 'course' | 'member') => {
+const openForm = (formType: 'course' | 'member' | 'school') => {
 	currentForm.value = formType
 	showFormDialog.value = true
 	if (formType === 'course') {
 		course.value = ''
-	} else {
+	} else if (formType === 'member') {
 		member.value = ''
+	} else {
+		school.value = ''
 	}
+}
+
+const formDialogTitle = computed(() => {
+	if (currentForm.value === 'course') return __('Add Course to Program')
+	if (currentForm.value === 'member') return __('Enroll Member to Program')
+	return __('Assign Program to School')
+})
+
+const addCurrentFormItem = (close: () => void) => {
+	if (currentForm.value === 'course') return addCourse(close)
+	if (currentForm.value === 'member') return addMember(close)
+	return addSchool(close)
 }
 
 const addCourse = (close: () => void) => {
@@ -573,6 +747,16 @@ const removeImage = () => {
 	dirty.value = true
 }
 
+const saveCertificateImage = (file: { file_url: string }) => {
+	program.value.certificate_image = file.file_url
+	dirty.value = true
+}
+
+const removeCertificateImage = () => {
+	program.value.certificate_image = ''
+	dirty.value = true
+}
+
 const addMember = (close: () => void) => {
 	if (!member.value) {
 		toast.warning(__('Please select a member'))
@@ -593,6 +777,30 @@ const addMember = (close: () => void) => {
 		toast.success(__('Member added to program successfully'))
 	} else {
 		toast.warning(__('Member already added to program'))
+	}
+}
+
+const addSchool = (close: () => void) => {
+	if (!school.value) {
+		toast.warning(__('Please select a school'))
+		return
+	}
+
+	const existingSchool = program.value.program_schools.find(
+		(s) => s.school === school.value
+	)
+	if (!existingSchool) {
+		program.value.program_schools.push({
+			school: school.value,
+			idx: program.value.program_schools.length + 1,
+		})
+		if (props.programName !== 'new') {
+			dirty.value = true
+		}
+		close()
+		toast.success(__('School assigned to program successfully'))
+	} else {
+		toast.warning(__('School already assigned to program'))
 	}
 }
 
@@ -672,9 +880,13 @@ const remove = (
 		program.value.program_courses = program.value.program_courses.filter(
 			(c: any) => !selectionsArray.includes(c.name || c.course)
 		)
-	} else {
+	} else if (type === 'members') {
 		program.value.program_members = program.value.program_members.filter(
 			(m: any) => !selectionsArray.includes(m.name || m.member)
+		)
+	} else {
+		program.value.program_schools = program.value.program_schools.filter(
+			(s: any) => !selectionsArray.includes(s.name || s.school)
 		)
 	}
 	dirty.value = true
@@ -734,6 +946,16 @@ const memberColumns = computed(() => {
 			key: 'full_name',
 			width: 3,
 			align: 'left',
+		},
+	]
+})
+
+const schoolColumns = computed(() => {
+	return [
+		{
+			label: 'School',
+			key: props.programName === 'new' ? 'school' : 'school_title',
+			width: 1,
 		},
 	]
 })

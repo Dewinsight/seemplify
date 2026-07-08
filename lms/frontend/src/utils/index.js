@@ -461,7 +461,7 @@ const getSidebarItems = () => {
 					icon: 'Search',
 					to: 'Search',
 					condition: () => {
-						return userResource?.data
+						return isAdmin()
 					},
 				},
 				{
@@ -489,15 +489,27 @@ const getSidebarItems = () => {
 						'CourseForm',
 						'LessonForm',
 					],
+					condition: () => {
+						return isAdmin()
+					},
 				},
 				{
 					label: 'Programs',
 					icon: 'Route',
 					to: 'Programs',
-					activeFor: ['Programs', 'ProgramDetail'],
+					activeFor: ['Programs', 'ProgramDetail', 'ProgramAnalytics'],
 					await: true,
 					condition: () => {
 						return checkIfCanAddProgram()
+					},
+				},
+				{
+					label: 'Schools',
+					icon: 'School',
+					to: 'Schools',
+					activeFor: ['Schools'],
+					condition: () => {
+						return isAdmin()
 					},
 				},
 				{
@@ -505,24 +517,36 @@ const getSidebarItems = () => {
 					icon: 'Users',
 					to: 'Batches',
 					activeFor: ['Batches', 'BatchDetail', 'Batch', 'BatchForm'],
+					condition: () => {
+						return isAdmin()
+					},
 				},
 				{
 					label: 'Certifications',
 					icon: 'GraduationCap',
 					to: 'CertifiedParticipants',
 					activeFor: ['CertifiedParticipants'],
+					condition: () => {
+						return isAdmin()
+					},
 				},
 				{
 					label: 'Jobs',
 					icon: 'Briefcase',
 					to: 'Jobs',
 					activeFor: ['Jobs', 'JobDetail'],
+					condition: () => {
+						return isAdmin()
+					},
 				},
 				{
 					label: 'Statistics',
 					icon: 'TrendingUp',
 					to: 'Statistics',
 					activeFor: ['Statistics'],
+					condition: () => {
+						return isAdmin()
+					},
 				},
 				{
 					label: 'Contact Us',

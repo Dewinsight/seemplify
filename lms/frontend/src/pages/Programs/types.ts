@@ -4,10 +4,15 @@ export interface Program {
     image: string;
     published: boolean;
     enforce_course_order: boolean;
+    enable_certification: boolean;
+    certificate_template: string;
+    certificate_image: string;
     program_courses: ProgramCourse[];
     program_members: ProgramMember[];
+    program_schools: ProgramSchool[];
     course_count: number;
     member_count: number;
+    school_count: number;
 }
 
 export interface ProgramCourse {
@@ -23,7 +28,14 @@ export interface ProgramMember {
     progress: number;
     idx: number;
     name: string;
-}  
+}
+
+export interface ProgramSchool {
+    school: string;
+    school_title: string;
+    idx: number;
+    name: string;
+}
 
 export interface Programs {
     data: Program[];

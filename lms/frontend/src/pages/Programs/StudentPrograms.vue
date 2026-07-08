@@ -1,8 +1,16 @@
 <template>
 	<div class="lms-student-programs-page py-6 px-4 md:px-6">
-		<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-			<div class="lms-student-programs-heading text-lg text-ink-gray-9 font-semibold">
-				{{ __('All Programs') }}
+		<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+			<div>
+				<div class="lms-programs-overline text-xs font-semibold uppercase mb-1">
+					{{ __('Stanbic IBTC STEM Series') }}
+				</div>
+				<div class="lms-student-programs-heading text-lg text-ink-gray-9 font-semibold">
+					{{ __('Choose Your Learning Level') }}
+				</div>
+				<div class="lms-student-programs-subtitle text-sm text-ink-gray-7 mt-1">
+					{{ __('Start with Primary, JSS, or Senior Secondary, then continue into the mapped AI learning courses.') }}
+				</div>
 			</div>
 			<TabButtons v-model="currentTab" :buttons="tabs" class="w-fit" />
 		</div>
@@ -68,10 +76,13 @@
 									{{ Math.ceil(program.progress) }}% {{ __('completed') }}
 								</div>
 							</div>
+							<div v-else class="lms-program-card-cta">
+								{{ __('Start Learning') }}
+							</div>
 						</div>
 					</div>
 				</div>
-				<EmptyState v-else :type="convertToTitleCase(category) + ' Programs'" />
+				<EmptyState v-else :type="getEmptyStateType(category)" />
 				<!-- <div v-else class="col-span-3 text-center text-ink-gray-5">
                     {{ __('No programs found in this category.') }}
                 </div> -->
@@ -85,7 +96,7 @@
 </template>
 <script setup lang="ts">
 import { createResource, TabButtons } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { BookOpen, User } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { convertToTitleCase } from '@/utils'
@@ -93,7 +104,7 @@ import ProgressBar from '@/components/ProgressBar.vue'
 import ProgramEnrollment from '@/pages/Programs/ProgramEnrollment.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
-const currentTab = ref('enrolled')
+const currentTab = ref('published')
 const router = useRouter()
 const showEnrollmentConfirmation = ref(false)
 const enrollmentProgram = ref(null)
@@ -102,6 +113,15 @@ const programs = createResource({
 	url: 'lms.lms.utils.get_programs',
 	auto: true,
 })
+
+watch(
+	() => programs.data,
+	(data) => {
+		if (!data) return
+		currentTab.value = data.enrolled?.length ? 'enrolled' : 'published'
+	},
+	{ immediate: true }
+)
 
 const getProgramGradient = (programName = '') => {
 	const gradients = [
@@ -132,13 +152,19 @@ const openDetails = (programName: any, category: string) => {
 const tabs = computed(() => {
 	return [
 		{
-			label: __('Enrolled'),
-			value: 'enrolled',
+			label: __('Available Levels'),
+			value: 'published',
 		},
 		{
-			label: __('Published'),
-			value: 'published',
+			label: __('My Levels'),
+			value: 'enrolled',
 		},
 	]
 })
+
+const getEmptyStateType = (category: string) => {
+	if (category === 'published') return __('Available Learning Levels')
+	if (category === 'enrolled') return __('Enrolled Learning Levels')
+	return convertToTitleCase(category) + ' ' + __('Programs')
+}
 </script>

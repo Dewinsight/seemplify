@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 from frappe.model.naming import append_number_if_name_exists
-from frappe.utils import escape_html, random_string
+from frappe.utils import escape_html, random_string, validate_email_address
 from frappe.website.utils import cleanup_page_name, is_signup_disabled
 import requests
 
@@ -63,14 +63,25 @@ def reset_password(user):
 		frappe.throw(_("User is disabled"))
 
 	user_doc.validate_reset_password()
-	user_doc.reset_password(send_email=True)
+	user_doc._reset_password(send_email=True)
 	return True
 
 
 @frappe.whitelist(allow_guest=True)
-def sign_up(email, full_name, verify_terms, user_category):
+def sign_up(email, full_name, verify_terms=0, user_category=None):
 	if is_signup_disabled():
 		frappe.throw(_("Sign Up is disabled"), _("Not Allowed"))
+
+	email = (email or "").strip().lower()
+	full_name = (full_name or "").strip()
+	verify_terms = int(verify_terms or 0)
+	user_category = (user_category or "").strip()
+
+	if not full_name:
+		return 0, _("Please enter your full name")
+
+	if not email or not validate_email_address(email):
+		return 0, _("Please enter a valid email address")
 
 	user = frappe.db.get("User", {"email": email})
 	if user:

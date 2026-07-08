@@ -1,43 +1,45 @@
 .ui-skin-v2 {
-	--v2-font-heading: 'Baloo 2', 'Nunito', 'Inter', sans-serif;
-	--v2-font-body: 'Nunito', 'Inter', sans-serif;
-	--v2-font-playful: 'Fredoka One', var(--v2-font-heading);
-	--v2-sidebar-start: #5f63ea;
-	--v2-sidebar-end: #c24dbf;
+	--v2-font-heading: 'Fredoka One', 'Baloo 2', 'Nunito', system-ui, sans-serif;
+	--v2-font-body: 'Nunito', 'Baloo 2', system-ui, sans-serif;
+	--v2-font-playful: 'Fredoka One', 'Baloo 2', 'Nunito', system-ui, sans-serif;
+	--v2-sidebar-start: #003f9e;
+	--v2-sidebar-end: #001a4d;
 	--v2-sidebar-ink: #f7f9ff;
-	--v2-page-bg: #dfe8f0;
+	--v2-page-bg: #eef4fb;
 	--v2-surface: #ffffff;
-	--v2-surface-soft: #eef4ff;
-	--v2-text-strong: #1b263b;
-	--v2-text: #3f4c66;
-	--v2-text-muted: #66738f;
-	--v2-border: #d5dfef;
-	--v2-ring: rgba(69, 125, 255, 0.35);
-	--v2-shadow: 0 18px 40px rgba(37, 56, 88, 0.14);
-	--v2-shadow-soft: 0 10px 24px rgba(37, 56, 88, 0.1);
-	--v2-accent: #35b3f5;
-	--v2-accent-strong: #4f61ff;
+	--v2-surface-soft: #e8f1ff;
+	--v2-text-strong: #08224a;
+	--v2-text: #243b5a;
+	--v2-text-muted: #667891;
+	--v2-border: #ccd8e8;
+	--v2-ring: rgba(0, 102, 204, 0.32);
+	--v2-shadow: 0 18px 38px rgba(8, 34, 74, 0.12);
+	--v2-shadow-soft: 0 8px 20px rgba(8, 34, 74, 0.08);
+	--v2-accent: #00a1e4;
+	--v2-accent-strong: #003f9e;
+	--v2-accent-gold: #f6b21a;
 	font-family: var(--v2-font-body);
 	background: var(--v2-page-bg);
 	color: var(--v2-text);
 }
 
 html[data-theme='dark'] .ui-skin-v2 {
-	--v2-sidebar-start: #2b2e66;
-	--v2-sidebar-end: #66305f;
+	--v2-sidebar-start: #002b73;
+	--v2-sidebar-end: #000f31;
 	--v2-sidebar-ink: #e9ecff;
-	--v2-page-bg: #151b2a;
-	--v2-surface: #1f2740;
-	--v2-surface-soft: #28324f;
+	--v2-page-bg: #08162e;
+	--v2-surface: #102345;
+	--v2-surface-soft: #172f5b;
 	--v2-text-strong: #ecf2ff;
 	--v2-text: #d0d9ef;
 	--v2-text-muted: #a2b0cf;
-	--v2-border: #334269;
-	--v2-ring: rgba(98, 139, 255, 0.5);
+	--v2-border: #294776;
+	--v2-ring: rgba(0, 161, 228, 0.5);
 	--v2-shadow: 0 20px 44px rgba(6, 10, 19, 0.45);
 	--v2-shadow-soft: 0 10px 26px rgba(6, 10, 19, 0.3);
-	--v2-accent: #4dc6ff;
-	--v2-accent-strong: #7f8dff;
+	--v2-accent: #5cc7ff;
+	--v2-accent-strong: #8bc9ff;
+	--v2-accent-gold: #f6c04d;
 }
 
 .ui-skin-v2,
@@ -52,7 +54,7 @@ html[data-theme='dark'] .ui-skin-v2 {
 .ui-skin-v2 .font-extrabold,
 .ui-skin-v2 .font-bold {
 	font-family: var(--v2-font-heading);
-	letter-spacing: 0.01em;
+	letter-spacing: 0;
 }
 
 .ui-skin-v2 .text-ink-gray-9 {
@@ -115,9 +117,9 @@ html[data-theme='dark'] .ui-skin-v2 {
 }
 
 .ui-skin-v2 .rounded-md {
-	border-radius: 1rem;
+	border-radius: 0.5rem;
 }
 
 .ui-skin-v2 .rounded {
-	border-radius: 0.85rem;
+	border-radius: 0.5rem;
 }

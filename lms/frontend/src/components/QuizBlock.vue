@@ -25,6 +25,6 @@ const props = defineProps({
 })
 
 const redirectToLogin = () => {
-	window.location.href = `/login`
+	window.location.href = `/lms-login`
 }
 </script>

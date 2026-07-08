@@ -28,6 +28,7 @@ from frappe.utils import (
 from lms.lms.md import find_macros
 
 RE_SLUG_NOTALLOWED = re.compile("[^a-z0-9]+")
+SCHOOL_ADMIN_ROLES = {"System Manager", "Moderator", "Course Creator"}
 
 
 def slugify(title, used_slugs=None):
@@ -318,6 +319,172 @@ def has_course_instructor_role(member=None):
 	)
 
 
+def school_feature_enabled():
+	try:
+		return bool(
+			frappe.db.exists("DocType", "LMS School")
+			and frappe.db.exists("DocType", "LMS School Member")
+			and frappe.db.exists("DocType", "LMS Program School")
+			and frappe.db.has_column("LMS Program", "school_count")
+		)
+	except Exception:
+		return False
+
+
+def has_school_admin_access(user=None):
+	user = user or frappe.session.user
+	if user == "Guest":
+		return False
+
+	roles = set(frappe.get_roles(user))
+	return bool(roles.intersection(SCHOOL_ADMIN_ROLES))
+
+
+def has_all_school_access(user=None):
+	user = user or frappe.session.user
+	if user == "Guest":
+		return False
+
+	if has_school_admin_access(user) or not school_feature_enabled():
+		return True
+
+	return bool(
+		frappe.db.exists(
+			"LMS School Member",
+			{
+				"member": user,
+				"all_schools": 1,
+				"parenttype": "LMS School",
+			},
+		)
+	)
+
+
+def get_user_school_names(user=None):
+	user = user or frappe.session.user
+	if user == "Guest" or not school_feature_enabled():
+		return []
+
+	school_rows = frappe.get_all(
+		"LMS School Member",
+		{
+			"member": user,
+			"parenttype": "LMS School",
+		},
+		pluck="parent",
+	)
+	if not school_rows:
+		return []
+
+	return frappe.get_all(
+		"LMS School",
+		{
+			"name": ["in", list(set(school_rows))],
+			"published": 1,
+		},
+		pluck="name",
+	)
+
+
+def get_programs_without_school_assignment():
+	assigned_programs = frappe.get_all(
+		"LMS Program School",
+		{"parenttype": "LMS Program"},
+		pluck="parent",
+	)
+	filters = {}
+	if assigned_programs:
+		filters["name"] = ["not in", list(set(assigned_programs))]
+	return frappe.get_all("LMS Program", filters, pluck="name")
+
+
+def get_visible_program_names_for_user(user=None):
+	user = user or frappe.session.user
+	if user == "Guest" or has_all_school_access(user):
+		return None
+
+	school_names = get_user_school_names(user)
+	visible_programs = set(get_programs_without_school_assignment())
+
+	if school_names:
+		school_programs = frappe.get_all(
+			"LMS Program School",
+			{
+				"parenttype": "LMS Program",
+				"school": ["in", school_names],
+			},
+			pluck="parent",
+		)
+		visible_programs.update(school_programs)
+
+	return list(visible_programs)
+
+
+def apply_name_access_filter(filters, allowed_names):
+	if allowed_names is None:
+		return filters
+
+	allowed_names = list(dict.fromkeys(allowed_names))
+	existing_name_filter = filters.get("name")
+
+	if isinstance(existing_name_filter, list) and existing_name_filter[:1] == ["in"]:
+		allowed_names = [
+			name for name in allowed_names if name in set(existing_name_filter[1] or [])
+		]
+	elif isinstance(existing_name_filter, str):
+		allowed_names = [existing_name_filter] if existing_name_filter in allowed_names else []
+
+	filters["name"] = ["in", allowed_names or ["__no_access__"]]
+	return filters
+
+
+def get_visible_course_names_for_user(user=None):
+	visible_programs = get_visible_program_names_for_user(user)
+	if visible_programs is None:
+		return None
+
+	if not visible_programs:
+		return []
+
+	course_names = frappe.get_all(
+		"LMS Program Course",
+		{"parent": ["in", visible_programs]},
+		pluck="course",
+	)
+	return list(dict.fromkeys(course_names))
+
+
+def validate_program_school_access(program_name, user=None):
+	user = user or frappe.session.user
+	if user == "Guest" or has_all_school_access(user):
+		return
+
+	visible_programs = get_visible_program_names_for_user(user)
+	if visible_programs is None or program_name in visible_programs:
+		return
+
+	frappe.throw(
+		_("You do not have access to this program for your assigned school."),
+		frappe.PermissionError,
+	)
+
+
+def validate_course_school_access(course, user=None):
+	user = user or frappe.session.user
+	instructor_viewing_own_course = user == frappe.session.user and is_instructor(course)
+	if user == "Guest" or has_all_school_access(user) or instructor_viewing_own_course:
+		return
+
+	visible_courses = get_visible_course_names_for_user(user)
+	if visible_courses is None or course in visible_courses:
+		return
+
+	frappe.throw(
+		_("You do not have access to this course for your assigned school."),
+		frappe.PermissionError,
+	)
+
+
 def can_create_batches(member=None):
 	if not member:
 		member = frappe.session.user
@@ -581,7 +748,7 @@ def get_chart_date_range(from_date, to_date):
 		to_date = getdate()
 
 	from_date = get_datetime(from_date).strftime("%Y-%m-%d")
-	to_date = get_datetime(to_date)
+	to_date = get_datetime(to_date).replace(hour=23, minute=59, second=59, microsecond=999999)
 
 	return from_date, to_date
 
@@ -604,10 +771,11 @@ def get_chart_filters(doctype, chart, datefield, from_date, to_date):
 def get_chart_details(doctype, datefield, value_field, chart, from_date, to_date):
 	filters = get_chart_filters(doctype, chart, datefield, from_date, to_date)
 	version = get_frappe_version()
-	if version.startswith("16."):
+	value_aggregation = {"COUNT": "*"} if str(value_field) == "1" else {"SUM": value_field}
+	if version.startswith(("16.", "17.")):
 		return frappe.db.get_all(
 			doctype,
-			fields=[datefield, {"SUM": value_field}, {"COUNT": "*"}],
+			fields=[datefield, value_aggregation, {"COUNT": "*"}],
 			filters=filters,
 			group_by=datefield,
 			order_by=datefield,
@@ -765,6 +933,7 @@ def get_courses(filters=None, start=0):
 		filters = {}
 
 	filters, or_filters, show_featured = update_course_filters(filters)
+	filters = apply_name_access_filter(filters, get_visible_course_names_for_user())
 	fields = get_course_fields()
 
 	courses = frappe.get_all(
@@ -909,6 +1078,10 @@ def get_course_details(course):
 		fields,
 		as_dict=1,
 	)
+	if not course_details:
+		frappe.throw(_("Course does not exist."))
+
+	validate_course_school_access(course_details.name)
 
 	course_details.instructors = get_instructors("LMS Course", course_details.name)
 	# course_details.is_instructor = is_instructor(course_details.name)
@@ -1000,6 +1173,8 @@ def get_course_outline(course, progress=False):
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=500, seconds=60 * 60)
 def get_lesson(course, chapter, lesson):
+	validate_course_school_access(course)
+
 	chapter_name = frappe.db.get_value("Chapter Reference", {"parent": course, "idx": chapter}, "chapter")
 	lesson_name = frappe.db.get_value("Lesson Reference", {"parent": chapter_name, "idx": lesson}, "lesson")
 	lesson_details = frappe.db.get_value(
@@ -1875,8 +2050,13 @@ def update_certificate_purchase(course, payment_name):
 @frappe.whitelist()
 def get_programs():
 	program_fields = get_program_fields()
+	visible_programs = get_visible_program_names_for_user()
+	member_filters = {"member": frappe.session.user}
+	if visible_programs is not None:
+		member_filters["parent"] = ["in", visible_programs or ["__no_access__"]]
+
 	enrolled_programs = frappe.get_all(
-		"LMS Program Member", {"member": frappe.session.user}, ["parent as name", "progress"]
+		"LMS Program Member", member_filters, ["parent as name", "progress"]
 	)
 	for program in enrolled_programs:
 		program_details = frappe.db.get_value(
@@ -1887,13 +2067,11 @@ def get_programs():
 		)
 		program.update(normalize_program_details(program_details))
 
-	published_programs = frappe.get_all(
-		"LMS Program",
-		{
-			"published": 1,
-		},
-		program_fields,
-	)
+	published_filters = {"published": 1}
+	if visible_programs is not None:
+		published_filters["name"] = ["in", visible_programs or ["__no_access__"]]
+
+	published_programs = frappe.get_all("LMS Program", published_filters, program_fields)
 	published_programs = [normalize_program_details(program) for program in published_programs]
 
 	programs_to_remove = []
@@ -1911,12 +2089,20 @@ def get_programs():
 @frappe.whitelist()
 def get_program_cards():
 	program_fields = get_program_fields()
-	programs = frappe.get_all("LMS Program", fields=program_fields, order_by="creation desc")
+	filters = {}
+	visible_programs = get_visible_program_names_for_user()
+	if visible_programs is not None:
+		filters["name"] = ["in", visible_programs or ["__no_access__"]]
+	programs = frappe.get_all(
+		"LMS Program", filters=filters, fields=program_fields, order_by="creation desc"
+	)
 	return [normalize_program_details(program) for program in programs]
 
 
 @frappe.whitelist()
 def get_program_details(program_name):
+	validate_program_school_access(program_name)
+
 	program_fields = get_program_fields(include_enforce_course_order=True)
 	program = frappe.db.get_value(
 		"LMS Program",
@@ -1926,6 +2112,13 @@ def get_program_details(program_name):
 	)
 	program = normalize_program_details(program)
 	program.enforce_course_order = program.get("enforce_course_order") or 0
+	if frappe.session.user != "Guest":
+		program.certificate = frappe.db.get_value(
+			"LMS Certificate",
+			{"program": program_name, "member": frappe.session.user},
+			["name", "template"],
+			as_dict=True,
+		)
 	program_courses = frappe.get_all(
 		"LMS Program Course", {"parent": program_name}, ["course"], order_by="idx"
 	)
@@ -1951,6 +2144,536 @@ def get_program_details(program_name):
 			)
 
 	return program
+
+
+@frappe.whitelist()
+def get_program_analytics(program_name):
+	validate_program_analytics_access(program_name)
+
+	program_fields = get_program_fields(include_enforce_course_order=True)
+	program = frappe.db.get_value("LMS Program", program_name, program_fields, as_dict=True)
+	program = normalize_program_details(program)
+	program.enforce_course_order = program.get("enforce_course_order") or 0
+
+	courses = get_program_analytics_courses(program_name)
+	members = get_program_analytics_members(program_name)
+	course_names = [course.name for course in courses]
+	member_names = [member.member for member in members]
+	quizzes = get_program_analytics_quizzes(course_names)
+	quiz_names = [quiz.name for quiz in quizzes]
+	submissions = get_program_analytics_submissions(member_names, quiz_names)
+
+	enrollment_map = get_program_enrollment_map(member_names, course_names)
+	completed_lesson_map = get_program_completed_lesson_map(member_names, course_names)
+	submissions_by_member_quiz = group_submissions_by_member_quiz(submissions)
+
+	students = get_program_analytics_students(
+		members,
+		courses,
+		quizzes,
+		enrollment_map,
+		completed_lesson_map,
+		submissions_by_member_quiz,
+	)
+	course_summaries = get_program_course_summaries(
+		courses,
+		members,
+		quizzes,
+		enrollment_map,
+		submissions_by_member_quiz,
+	)
+	quiz_summaries = get_program_quiz_summaries(quizzes, members, submissions_by_member_quiz)
+
+	return {
+		"program": program,
+		"summary": get_program_analytics_summary(program, students, quizzes, quiz_summaries),
+		"students": students,
+		"courses": course_summaries,
+		"quizzes": quiz_summaries,
+	}
+
+
+def validate_program_analytics_access(program_name):
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please login to view program analytics."), frappe.PermissionError)
+
+	if not frappe.db.exists("LMS Program", program_name):
+		frappe.throw(_("Program does not exist."))
+
+	roles = set(frappe.get_roles(frappe.session.user))
+	if roles.intersection({"System Manager", "Moderator", "Course Creator"}):
+		return
+
+	course_names = frappe.get_all("LMS Program Course", {"parent": program_name}, pluck="course")
+	if course_names:
+		instructor_courses = frappe.get_all(
+			"Course Instructor",
+			{
+				"parenttype": "LMS Course",
+				"parent": ["in", course_names],
+				"instructor": frappe.session.user,
+			},
+			pluck="parent",
+			limit=1,
+		)
+		if instructor_courses:
+			return
+
+	frappe.throw(_("You do not have permission to view this program analytics."), frappe.PermissionError)
+
+
+def get_program_analytics_courses(program_name):
+	rows = frappe.get_all(
+		"LMS Program Course",
+		{"parent": program_name},
+		["course as name", "course_title", "idx"],
+		order_by="idx asc",
+	)
+	for row in rows:
+		details = frappe.db.get_value(
+			"LMS Course",
+			row.name,
+			["title", "image", "lessons", "enrollments"],
+			as_dict=True,
+		) or frappe._dict()
+		row.title = row.course_title or details.get("title") or row.name
+		row.image = details.get("image")
+		row.lesson_count = get_lessons(row.name, get_details=False)
+		row.enrollments = details.get("enrollments") or 0
+	return rows
+
+
+def get_program_analytics_members(program_name):
+	members = frappe.get_all(
+		"LMS Program Member",
+		{"parent": program_name},
+		["name", "member", "full_name", "progress"],
+		order_by="idx asc",
+	)
+	for member in members:
+		user = frappe.db.get_value(
+			"User",
+			member.member,
+			["email", "username", "full_name", "user_image", "last_active", "enabled"],
+			as_dict=True,
+		) or frappe._dict()
+		member.email = user.get("email") or member.member
+		member.username = user.get("username")
+		member.full_name = member.full_name or user.get("full_name") or member.member
+		member.user_image = user.get("user_image")
+		member.last_active = format_datetime(user.get("last_active"), "dd MMM yyyy, h:mm a") if user.get("last_active") else None
+		member.enabled = user.get("enabled")
+		member.progress = flt(member.progress or 0, 2)
+	return members
+
+
+def get_program_analytics_quizzes(course_names):
+	if not course_names:
+		return []
+
+	quizzes = frappe.get_all(
+		"LMS Quiz",
+		{"course": ["in", course_names]},
+		["name", "title", "course", "lesson", "total_marks", "passing_percentage"],
+		order_by="creation asc",
+	)
+	quiz_map = {quiz.name: quiz for quiz in quizzes}
+
+	lessons = frappe.get_all(
+		"Course Lesson",
+		{"course": ["in", course_names]},
+		["name", "title", "course", "quiz_id"],
+		order_by="creation asc",
+	)
+	lesson_quiz_map = {lesson.quiz_id: lesson for lesson in lessons if lesson.quiz_id}
+	for quiz_name, lesson in lesson_quiz_map.items():
+		quiz = quiz_map.get(quiz_name)
+		if quiz and not quiz.course:
+			quiz.course = lesson.course
+		if quiz and not quiz.lesson:
+			quiz.lesson = lesson.name
+
+	missing_quiz_names = [quiz for quiz in lesson_quiz_map if quiz not in quiz_map]
+	if missing_quiz_names:
+		extra_quizzes = frappe.get_all(
+			"LMS Quiz",
+			{"name": ["in", missing_quiz_names]},
+			["name", "title", "course", "lesson", "total_marks", "passing_percentage"],
+			order_by="creation asc",
+		)
+		for quiz in extra_quizzes:
+			lesson = lesson_quiz_map.get(quiz.name)
+			if lesson and not quiz.course:
+				quiz.course = lesson.course
+			quiz_map[quiz.name] = quiz
+
+	for quiz in quiz_map.values():
+		quiz.total_marks = cint(quiz.total_marks or 0)
+		quiz.passing_percentage = cint(quiz.passing_percentage or 60)
+
+	return [quiz for quiz in quiz_map.values() if quiz.course in course_names]
+
+
+def get_program_analytics_submissions(member_names, quiz_names):
+	if not member_names or not quiz_names:
+		return []
+
+	return frappe.get_all(
+		"LMS Quiz Submission",
+		{
+			"member": ["in", member_names],
+			"quiz": ["in", quiz_names],
+		},
+		[
+			"name",
+			"quiz",
+			"quiz_title",
+			"course",
+			"member",
+			"member_name",
+			"score",
+			"score_out_of",
+			"percentage",
+			"passing_percentage",
+			"creation",
+			"modified",
+		],
+		order_by="creation desc",
+	)
+
+
+def get_program_enrollment_map(member_names, course_names):
+	enrollment_map = {}
+	if not member_names or not course_names:
+		return enrollment_map
+
+	enrollments = frappe.get_all(
+		"LMS Enrollment",
+		{
+			"member": ["in", member_names],
+			"course": ["in", course_names],
+		},
+		["name", "course", "member", "member_name", "current_lesson", "progress", "modified"],
+	)
+	for enrollment in enrollments:
+		if enrollment.current_lesson:
+			enrollment.current_lesson_title = frappe.db.get_value(
+				"Course Lesson", enrollment.current_lesson, "title"
+			)
+		enrollment.progress = flt(enrollment.progress or 0, 2)
+		enrollment_map[(enrollment.member, enrollment.course)] = enrollment
+	return enrollment_map
+
+
+def get_program_completed_lesson_map(member_names, course_names):
+	completed_map = {}
+	if not member_names or not course_names:
+		return completed_map
+
+	progress_rows = frappe.get_all(
+		"LMS Course Progress",
+		{
+			"member": ["in", member_names],
+			"course": ["in", course_names],
+			"status": "Complete",
+		},
+		["member", "course"],
+	)
+	for row in progress_rows:
+		key = (row.member, row.course)
+		completed_map[key] = completed_map.get(key, 0) + 1
+	return completed_map
+
+
+def group_submissions_by_member_quiz(submissions):
+	grouped = {}
+	for submission in submissions:
+		submission.percentage = flt(submission.percentage or 0, 2)
+		submission.passing_percentage = cint(submission.passing_percentage or 60)
+		key = (submission.member, submission.quiz)
+		grouped.setdefault(key, []).append(submission)
+	return grouped
+
+
+def get_program_analytics_students(
+	members,
+	courses,
+	quizzes,
+	enrollment_map,
+	completed_lesson_map,
+	submissions_by_member_quiz,
+):
+	students = []
+	for member in members:
+		course_rows = []
+		quiz_rows = []
+		last_activity_values = []
+
+		for course in courses:
+			enrollment = enrollment_map.get((member.member, course.name))
+			if enrollment and enrollment.get("modified"):
+				last_activity_values.append(enrollment.modified)
+
+			course_quizzes = [quiz for quiz in quizzes if quiz.course == course.name]
+			course_quiz_rows = [
+				get_program_student_quiz_row(member.member, quiz, submissions_by_member_quiz, last_activity_values)
+				for quiz in course_quizzes
+			]
+			quiz_rows.extend(course_quiz_rows)
+
+			course_rows.append(
+				{
+					"name": course.name,
+					"title": course.title,
+					"progress": flt(enrollment.progress if enrollment else 0, 2),
+					"enrollment": enrollment.name if enrollment else None,
+					"current_lesson": enrollment.current_lesson if enrollment else None,
+					"current_lesson_title": enrollment.get("current_lesson_title") if enrollment else None,
+					"completed_lessons": completed_lesson_map.get((member.member, course.name), 0),
+					"lesson_count": course.lesson_count,
+					"quiz_count": len(course_quiz_rows),
+					"quizzes": course_quiz_rows,
+				}
+			)
+
+		attempted_quizzes = [quiz for quiz in quiz_rows if quiz["attempts"]]
+		passed_quizzes = [quiz for quiz in attempted_quizzes if quiz["passed"]]
+		average_quiz_percentage = (
+			flt(sum(quiz["best_percentage"] for quiz in attempted_quizzes) / len(attempted_quizzes), 2)
+			if attempted_quizzes
+			else 0
+		)
+
+		students.append(
+			{
+				"member": member.member,
+				"email": member.email,
+				"full_name": member.full_name,
+				"username": member.username,
+				"user_image": member.user_image,
+				"last_active": member.last_active,
+				"last_activity": format_program_activity(max(last_activity_values)) if last_activity_values else member.last_active,
+				"progress": member.progress,
+				"status": get_program_progress_status(member.progress),
+				"courses": course_rows,
+				"course_count": len(courses),
+				"completed_courses": len([course for course in course_rows if course["progress"] >= 100]),
+				"quiz_count": len(quiz_rows),
+				"attempted_quizzes": len(attempted_quizzes),
+				"passed_quizzes": len(passed_quizzes),
+				"failed_quizzes": len(attempted_quizzes) - len(passed_quizzes),
+				"average_quiz_percentage": average_quiz_percentage,
+			}
+		)
+
+	return sorted(students, key=lambda student: student["progress"], reverse=True)
+
+
+def get_program_student_quiz_row(member, quiz, submissions_by_member_quiz, last_activity_values):
+	attempts = submissions_by_member_quiz.get((member, quiz.name), [])
+	for attempt in attempts:
+		if attempt.get("creation"):
+			last_activity_values.append(attempt.creation)
+
+	best = get_best_quiz_submission(attempts)
+	latest = attempts[0] if attempts else None
+	passing_percentage = cint((best or quiz).get("passing_percentage") or 60)
+	best_percentage = flt(best.percentage if best else 0, 2)
+
+	return {
+		"name": quiz.name,
+		"title": quiz.title,
+		"course": quiz.course,
+		"lesson": quiz.lesson,
+		"total_marks": cint(quiz.total_marks or 0),
+		"passing_percentage": passing_percentage,
+		"attempts": len(attempts),
+		"best_submission": best.name if best else None,
+		"best_score": cint(best.score if best else 0),
+		"score_out_of": cint((best or quiz).get("score_out_of") or quiz.total_marks or 0),
+		"best_percentage": best_percentage,
+		"latest_submission": latest.name if latest else None,
+		"latest_score": cint(latest.score if latest else 0),
+		"latest_score_out_of": cint(latest.score_out_of if latest else quiz.total_marks or 0),
+		"latest_percentage": flt(latest.percentage if latest else 0, 2),
+		"passed": bool(best and best_percentage >= passing_percentage),
+		"status": get_quiz_status(best, passing_percentage),
+		"last_attempt": format_program_activity(latest.creation) if latest else None,
+		"submissions": [format_program_quiz_submission(attempt) for attempt in attempts[:5]],
+	}
+
+
+def get_program_course_summaries(courses, members, quizzes, enrollment_map, submissions_by_member_quiz):
+	course_summaries = []
+	for course in courses:
+		course_enrollments = [
+			enrollment_map.get((member.member, course.name))
+			for member in members
+		]
+		progress_values = [
+			flt(enrollment.progress, 2)
+			if enrollment
+			else 0
+			for enrollment in course_enrollments
+		]
+		course_quizzes = [quiz for quiz in quizzes if quiz.course == course.name]
+		best_attempts = get_best_attempts_for_quizzes(course_quizzes, members, submissions_by_member_quiz)
+		passed_attempts = [attempt for attempt in best_attempts if attempt["passed"]]
+
+		course_summaries.append(
+			{
+				"name": course.name,
+				"title": course.title,
+				"image": course.image,
+				"lesson_count": course.lesson_count,
+				"member_count": len(members),
+				"enrolled_members": len([enrollment for enrollment in course_enrollments if enrollment]),
+				"started_members": len([progress for progress in progress_values if progress > 0]),
+				"average_progress": flt(sum(progress_values) / len(progress_values), 2) if progress_values else 0,
+				"completed_members": len([progress for progress in progress_values if progress >= 100]),
+				"not_started_members": len([progress for progress in progress_values if progress <= 0]),
+				"needs_attention_members": len([progress for progress in progress_values if progress < 60]),
+				"quiz_count": len(course_quizzes),
+				"quiz_attempts": sum(attempt["attempt_count"] for attempt in best_attempts),
+				"quiz_attempted_members": len(best_attempts),
+				"quiz_average": get_average_best_percentage(best_attempts),
+				"quiz_pass_rate": get_pass_rate(passed_attempts, best_attempts),
+			}
+		)
+	return course_summaries
+
+
+def get_program_quiz_summaries(quizzes, members, submissions_by_member_quiz):
+	summaries = []
+	for quiz in quizzes:
+		best_attempts = get_best_attempts_for_quizzes([quiz], members, submissions_by_member_quiz)
+		passed_attempts = [attempt for attempt in best_attempts if attempt["passed"]]
+		summaries.append(
+			{
+				"name": quiz.name,
+				"title": quiz.title,
+				"course": quiz.course,
+				"lesson": quiz.lesson,
+				"total_marks": cint(quiz.total_marks or 0),
+				"passing_percentage": cint(quiz.passing_percentage or 60),
+				"attempts": sum(attempt["attempt_count"] for attempt in best_attempts),
+				"attempted_members": len(best_attempts),
+				"passed_members": len(passed_attempts),
+				"failed_members": len(best_attempts) - len(passed_attempts),
+				"not_attempted_members": max(len(members) - len(best_attempts), 0),
+				"average_best_percentage": get_average_best_percentage(best_attempts),
+				"pass_rate": get_pass_rate(passed_attempts, best_attempts),
+			}
+		)
+	return summaries
+
+
+def get_best_attempts_for_quizzes(quizzes, members, submissions_by_member_quiz):
+	best_attempts = []
+	for quiz in quizzes:
+		for member in members:
+			attempts = submissions_by_member_quiz.get((member.member, quiz.name), [])
+			best = get_best_quiz_submission(attempts)
+			if not best:
+				continue
+			passing_percentage = cint(best.passing_percentage or quiz.passing_percentage or 60)
+			best_attempts.append(
+				{
+					"quiz": quiz.name,
+					"member": member.member,
+					"percentage": flt(best.percentage or 0, 2),
+					"passed": flt(best.percentage or 0, 2) >= passing_percentage,
+					"attempt_count": len(attempts),
+				}
+			)
+	return best_attempts
+
+
+def get_program_analytics_summary(program, students, quizzes, quiz_summaries):
+	progress_values = [flt(student["progress"] or 0, 2) for student in students]
+	total_attempts = sum(quiz["attempts"] for quiz in quiz_summaries)
+	attempted_member_quizzes = sum(quiz["attempted_members"] for quiz in quiz_summaries)
+	passed_member_quizzes = sum(quiz["passed_members"] for quiz in quiz_summaries)
+	failed_member_quizzes = sum(quiz["failed_members"] for quiz in quiz_summaries)
+	possible_member_quizzes = len(students) * len(quizzes)
+	quiz_average_values = [
+		quiz["average_best_percentage"] for quiz in quiz_summaries if quiz["attempted_members"]
+	]
+	needs_attention_members = len(
+		[
+			student
+			for student in students
+			if flt(student["progress"] or 0, 2) < 60 or cint(student.get("failed_quizzes") or 0) > 0
+		]
+	)
+
+	return {
+		"member_count": len(students),
+		"course_count": cint(program.course_count or 0),
+		"quiz_count": len(quizzes),
+		"average_progress": flt(sum(progress_values) / len(progress_values), 2) if progress_values else 0,
+		"completed_members": len([progress for progress in progress_values if progress >= 100]),
+		"in_progress_members": len([progress for progress in progress_values if 0 < progress < 100]),
+		"not_started_members": len([progress for progress in progress_values if progress <= 0]),
+		"quiz_attempts": total_attempts,
+		"attempted_member_quizzes": attempted_member_quizzes,
+		"possible_member_quizzes": possible_member_quizzes,
+		"passed_member_quizzes": passed_member_quizzes,
+		"failed_member_quizzes": failed_member_quizzes,
+		"not_attempted_member_quizzes": max(possible_member_quizzes - attempted_member_quizzes, 0),
+		"needs_attention_members": needs_attention_members,
+		"quiz_pass_rate": get_pass_rate([None] * passed_member_quizzes, [None] * attempted_member_quizzes),
+		"quiz_average": flt(sum(quiz_average_values) / len(quiz_average_values), 2) if quiz_average_values else 0,
+	}
+
+
+def get_best_quiz_submission(attempts):
+	if not attempts:
+		return None
+	return sorted(attempts, key=lambda attempt: (flt(attempt.percentage or 0), attempt.creation), reverse=True)[0]
+
+
+def get_quiz_status(best, passing_percentage):
+	if not best:
+		return "Not Attempted"
+	return "Passed" if flt(best.percentage or 0) >= passing_percentage else "Failed"
+
+
+def get_program_progress_status(progress):
+	progress = flt(progress or 0, 2)
+	if progress >= 100:
+		return "Completed"
+	if progress > 0:
+		return "In Progress"
+	return "Not Started"
+
+
+def get_average_best_percentage(best_attempts):
+	if not best_attempts:
+		return 0
+	return flt(sum(attempt["percentage"] for attempt in best_attempts) / len(best_attempts), 2)
+
+
+def get_pass_rate(passed_attempts, attempted_attempts):
+	if not attempted_attempts:
+		return 0
+	return flt((len(passed_attempts) / len(attempted_attempts)) * 100, 2)
+
+
+def format_program_activity(value):
+	return format_datetime(value, "dd MMM yyyy, h:mm a") if value else None
+
+
+def format_program_quiz_submission(submission):
+	return {
+		"name": submission.name,
+		"score": cint(submission.score or 0),
+		"score_out_of": cint(submission.score_out_of or 0),
+		"percentage": flt(submission.percentage or 0, 2),
+		"passing_percentage": cint(submission.passing_percentage or 60),
+		"passed": flt(submission.percentage or 0) >= cint(submission.passing_percentage or 60),
+		"created": format_program_activity(submission.creation),
+	}
 
 
 @frappe.whitelist()
@@ -2001,6 +2724,15 @@ def get_program_fields(include_enforce_course_order=False):
 	if include_enforce_course_order:
 		fields.append("enforce_course_order")
 
+	for field in [
+		"school_count",
+		"enable_certification",
+		"certificate_template",
+		"certificate_image",
+	]:
+		if frappe.db.has_column("LMS Program", field):
+			fields.append(field)
+
 	return fields
 
 
@@ -2010,7 +2742,11 @@ def normalize_program_details(program):
 	program.image = get_program_image_url(program.get("name"), program.get("image"))
 	program.course_count = program.get("course_count") or 0
 	program.member_count = program.get("member_count") or 0
+	program.school_count = program.get("school_count") or 0
 	program.published = program.get("published") or 0
+	program.enable_certification = program.get("enable_certification") or 0
+	program.certificate_template = program.get("certificate_template")
+	program.certificate_image = validate_image(program.get("certificate_image")) if program.get("certificate_image") else None
 	return program
 
 
@@ -2138,7 +2874,7 @@ def enroll_in_program(program):
 			{
 				"parent": program,
 				"parenttype": "LMS Program",
-				"parentfield": "members",
+				"parentfield": "program_members",
 				"member": frappe.session.user,
 			}
 		)
@@ -2148,6 +2884,8 @@ def enroll_in_program(program):
 def validate_program_enrollment(program):
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Please login to enroll in the program."))
+
+	validate_program_school_access(program)
 
 	published = frappe.db.get_value("LMS Program", program, "published")
 	if not published:

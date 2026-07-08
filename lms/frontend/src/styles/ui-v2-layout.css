@@ -8,22 +8,25 @@
 }
 
 .lms-app-root .lms-desktop-sidebar-wrap.bg-surface-menu-bar {
-	--lms-nav-ink: #2d3436;
-	--lms-nav-muted: #636e72;
-	--lms-nav-card: rgba(255, 255, 255, 0.72);
-	--lms-nav-card-strong: rgba(255, 255, 255, 0.92);
-	--lms-nav-card-border: rgba(255, 255, 255, 0.88);
-	--lms-nav-card-border-soft: rgba(255, 255, 255, 0.65);
-	--lms-nav-shadow: 0 18px 40px rgba(18, 26, 54, 0.12);
-	--lms-nav-shadow-soft: 0 10px 22px rgba(18, 26, 54, 0.1);
-	--lms-nav-accent: #4ecdc4;
-	--lms-nav-accent-2: #ff6b6b;
-	--lms-nav-accent-3: #ffe66d;
+	--lms-nav-ink: #ffffff;
+	--lms-nav-muted: rgba(255, 255, 255, 0.88);
+	--lms-nav-card: rgba(255, 255, 255, 0.12);
+	--lms-nav-card-strong: rgba(255, 255, 255, 0.2);
+	--lms-nav-card-border: rgba(255, 255, 255, 0.34);
+	--lms-nav-card-border-soft: rgba(255, 255, 255, 0.22);
+	--lms-nav-shadow: 0 18px 34px rgba(0, 16, 49, 0.22);
+	--lms-nav-shadow-soft: 0 10px 24px rgba(0, 16, 49, 0.2);
+	--lms-nav-accent: #00a1e4;
+	--lms-nav-accent-2: #f6b21a;
+	--lms-nav-accent-3: #ffffff;
+	--lms-nav-icon-active: #003f9e;
 
 	position: relative;
 	z-index: 0;
-	border-color: rgba(45, 52, 54, 0.14) !important;
-	background: linear-gradient(180deg, #87ceeb 0%, #e0f4ff 32%, #ffe5b4 72%, #ffdab9 100%) !important;
+	border-color: rgba(0, 35, 91, 0.28) !important;
+	background:
+		linear-gradient(180deg, rgba(0, 38, 102, 0.52) 0%, rgba(0, 14, 54, 0.76) 100%),
+		url('/assets/lms/images/stanbic/stanbic-sidebar-bg.png') right center / cover no-repeat !important;
 	box-shadow: var(--lms-nav-shadow);
 }
 
@@ -32,44 +35,21 @@
 	position: absolute;
 	inset: 0;
 	background:
-		radial-gradient(
-			circle at 18% 18%,
-			rgba(255, 255, 255, 0.7) 0 92px,
-			rgba(255, 255, 255, 0) 170px
-		),
-		radial-gradient(
-			circle at 82% 22%,
-			rgba(255, 255, 255, 0.62) 0 72px,
-			rgba(255, 255, 255, 0) 150px
-		),
-		radial-gradient(
-			circle at 28% 58%,
-			rgba(78, 205, 196, 0.26) 0 118px,
-			rgba(78, 205, 196, 0) 210px
-		),
-		radial-gradient(
-			circle at 70% 76%,
-			rgba(255, 107, 107, 0.2) 0 140px,
-			rgba(255, 107, 107, 0) 242px
-		),
-		radial-gradient(
-			circle at 56% 38%,
-			rgba(255, 230, 109, 0.22) 0 128px,
-			rgba(255, 230, 109, 0) 220px
-		);
-	opacity: 0.9;
+		linear-gradient(90deg, rgba(0, 20, 64, 0.56) 0%, rgba(0, 20, 64, 0.22) 48%, transparent 100%),
+		linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%);
+	opacity: 1;
 	pointer-events: none;
 }
 
 .lms-app-root .lms-desktop-sidebar-wrap.bg-surface-menu-bar::after {
 	content: '';
 	position: absolute;
-	inset: 0;
-	background:
-		radial-gradient(circle at 18% 40%, rgba(255, 255, 255, 0.48) 0 2px, rgba(255, 255, 255, 0) 5px),
-		radial-gradient(circle at 72% 46%, rgba(255, 215, 0, 0.42) 0 2px, rgba(255, 215, 0, 0) 6px),
-		radial-gradient(circle at 48% 86%, rgba(255, 255, 255, 0.4) 0 2px, rgba(255, 255, 255, 0) 6px);
-	opacity: 0.65;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 4px;
+	background: linear-gradient(90deg, #f6b21a, #00a1e4);
+	opacity: 1;
 	pointer-events: none;
 }
 
@@ -82,18 +62,18 @@
 	z-index: 1;
 	border-right-width: 0 !important;
 	background: transparent !important;
-	color: var(--lms-nav-ink, #2d3436);
+	color: var(--lms-nav-ink, #f7fbff);
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link {
 	position: relative;
 	min-height: 2.72rem;
-	border-radius: 1.2rem !important;
+	border-radius: 0.5rem !important;
 	padding-left: 0.1rem;
 	padding-right: 0.1rem;
 	justify-content: flex-start;
-	color: var(--lms-nav-ink, #2d3436) !important;
-	border: 2px solid transparent;
+	color: var(--lms-nav-ink, #f7fbff) !important;
+	border: 1px solid transparent;
 	transition:
 		transform 0.18s ease,
 		background-color 0.18s ease,
@@ -102,25 +82,25 @@
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-group-label {
-	color: rgba(45, 52, 54, 0.72) !important;
+	color: var(--lms-nav-muted) !important;
 	font-family: var(--v2-font-playful, 'Fredoka One', 'Baloo 2', 'Nunito', 'Inter', sans-serif);
-	font-size: 0.95rem;
-	letter-spacing: 0.02em;
-	text-transform: none;
+	font-size: 0.78rem;
+	letter-spacing: 0;
+	text-transform: uppercase;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link:hover {
-	background: var(--lms-nav-card) !important;
+	background: rgba(255, 255, 255, 0.15) !important;
 	border-color: var(--lms-nav-card-border-soft) !important;
 	box-shadow: var(--lms-nav-shadow-soft) !important;
 	transform: translateY(-1px);
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link.bg-surface-selected {
-	background: var(--lms-nav-card-strong) !important;
-	color: var(--lms-nav-ink, #2d3436) !important;
+	background: rgba(255, 255, 255, 0.22) !important;
+	color: var(--lms-nav-ink, #f7fbff) !important;
 	border-color: var(--lms-nav-card-border) !important;
-	box-shadow: 0 14px 32px rgba(18, 26, 54, 0.14) !important;
+	box-shadow: 0 14px 32px rgba(0, 16, 49, 0.22) !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link.bg-surface-selected::before {
@@ -132,8 +112,8 @@
 	width: 0.35rem;
 	height: 1.6rem;
 	border-radius: 999px;
-	background: linear-gradient(180deg, var(--lms-nav-accent-2), var(--lms-nav-accent));
-	box-shadow: 0 10px 22px rgba(78, 205, 196, 0.2);
+	background: var(--lms-nav-accent-2);
+	box-shadow: 0 10px 22px rgba(246, 178, 26, 0.22);
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link.bg-surface-selected .lms-sidebar-link-icon,
@@ -141,7 +121,7 @@
 	.lms-sidebar-link.bg-surface-selected
 	.lms-sidebar-link-icon
 	.text-ink-gray-8 {
-	color: #ffffff !important;
+	color: var(--lms-nav-icon-active) !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link.bg-surface-selected .lms-sidebar-link-emoji {
@@ -149,9 +129,10 @@
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link-icon {
-	border-radius: 0.95rem;
-	background: rgba(255, 255, 255, 0.4);
-	border: 2px solid rgba(255, 255, 255, 0.65);
+	border-radius: 0.5rem;
+	background: rgba(255, 255, 255, 0.16);
+	border: 1px solid rgba(255, 255, 255, 0.24);
+	color: #ffffff !important;
 	transition:
 		transform 0.18s ease,
 		background-color 0.18s ease,
@@ -161,29 +142,35 @@
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link-icon-svg {
 	opacity: 1 !important;
+	color: #ffffff !important;
+	stroke: currentColor !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link:hover .lms-sidebar-link-icon {
-	background: rgba(255, 255, 255, 0.55);
-	border-color: rgba(255, 255, 255, 0.78);
-	transform: translateY(-0.5px) rotate(-1deg);
+	background: rgba(255, 255, 255, 0.24);
+	border-color: rgba(255, 255, 255, 0.38);
+	transform: translateY(-0.5px);
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link.bg-surface-selected .lms-sidebar-link-icon {
-	background: linear-gradient(135deg, var(--lms-nav-accent-2) 0%, var(--lms-nav-accent-3) 50%, var(--lms-nav-accent) 100%);
+	background: #ffffff;
 	border-color: rgba(255, 255, 255, 0.92);
-	box-shadow: 0 10px 22px rgba(78, 205, 196, 0.22);
+	box-shadow: 0 10px 22px rgba(0, 16, 49, 0.22);
+	color: var(--lms-nav-icon-active) !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link .lms-sidebar-icon-active {
-	color: #ffffff !important;
+	color: var(--lms-nav-icon-active) !important;
+	stroke: currentColor !important;
+	opacity: 1 !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link-label {
 	font-size: 0.93rem;
 	font-weight: 700;
-	letter-spacing: 0.01em;
+	letter-spacing: 0;
 	text-align: left;
+	color: var(--lms-nav-ink, #ffffff) !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-link-emoji {
@@ -194,6 +181,13 @@
 	line-height: 1;
 }
 
+.lms-app-root .lms-app-sidebar .lms-sidebar-footer svg,
+.lms-app-root .lms-app-sidebar .lms-sidebar-footer .text-ink-gray-7,
+.lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button svg {
+	color: rgba(255, 255, 255, 0.86) !important;
+	stroke: currentColor !important;
+}
+
 .lms-app-root .lms-app-sidebar.w-14 .lms-sidebar-link {
 	min-height: 2.6rem;
 	padding-left: 0;
@@ -201,9 +195,9 @@
 }
 
 .lms-app-root .lms-app-sidebar.w-14 .lms-sidebar-link.bg-surface-selected {
-	background: rgba(255, 255, 255, 0.86) !important;
-	color: var(--lms-nav-ink, #2d3436) !important;
-	box-shadow: 0 12px 24px rgba(18, 26, 54, 0.12) !important;
+	background: rgba(255, 255, 255, 0.14) !important;
+	color: var(--lms-nav-ink, #f7fbff) !important;
+	box-shadow: 0 12px 24px rgba(0, 16, 49, 0.22) !important;
 }
 
 .lms-app-root
@@ -215,11 +209,11 @@
 	.lms-sidebar-link.bg-surface-selected
 	.lms-sidebar-link-icon
 	.text-ink-gray-8 {
-	color: #ffffff !important;
+	color: var(--lms-nav-icon-active) !important;
 }
 
 .lms-app-root .lms-app-sidebar.w-14 .lms-sidebar-link .lms-sidebar-icon-active {
-	color: #ffffff !important;
+	color: var(--lms-nav-icon-active) !important;
 }
 
 .lms-app-root .lms-app-sidebar.w-14 .lms-sidebar-link.bg-surface-selected::before {
@@ -231,10 +225,10 @@
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button {
-	border-radius: 1.25rem;
-	border: 2px solid rgba(255, 255, 255, 0.72);
-	background: rgba(255, 255, 255, 0.55);
-	box-shadow: 0 10px 22px rgba(18, 26, 54, 0.08);
+	border-radius: 0.5rem;
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	background: rgba(255, 255, 255, 0.1);
+	box-shadow: 0 10px 22px rgba(0, 16, 49, 0.14);
 	backdrop-filter: blur(10px);
 	transition:
 		transform 0.18s ease,
@@ -244,43 +238,48 @@
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button:hover {
-	background: rgba(255, 255, 255, 0.68) !important;
-	border-color: rgba(255, 255, 255, 0.84) !important;
-	box-shadow: 0 14px 30px rgba(18, 26, 54, 0.12) !important;
+	background: rgba(255, 255, 255, 0.14) !important;
+	border-color: rgba(255, 255, 255, 0.24) !important;
+	box-shadow: 0 14px 30px rgba(0, 16, 49, 0.2) !important;
 	transform: translateY(-1px);
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button.bg-surface-white {
-	background: rgba(255, 255, 255, 0.92) !important;
-	border-color: rgba(255,  255, 255, 0.92);
-	box-shadow: 0 16px 34px rgba(18, 26, 54, 0.14) !important;
+	background: rgba(255, 255, 255, 0.16) !important;
+	border-color: rgba(255, 255, 255, 0.26);
+	box-shadow: 0 16px 34px rgba(0, 16, 49, 0.22) !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button:hover .lms-sidebar-user-title,
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button:hover .lms-sidebar-user-name,
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button.bg-surface-white .lms-sidebar-user-title,
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button.bg-surface-white .lms-sidebar-user-name {
-	color: var(--lms-nav-ink, #2d3436) !important;
+	color: var(--lms-nav-ink, #f7fbff) !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-title {
 	font-family: var(--v2-font-playful, 'Fredoka One', 'Baloo 2', 'Nunito', 'Inter', sans-serif);
 	font-size: 1.03rem;
 	font-weight: 700;
-	letter-spacing: 0.015em;
+	letter-spacing: 0;
 	line-height: 1.12;
 	display: -webkit-box;
 	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
-	color: var(--lms-nav-ink, #2d3436);
+	color: var(--lms-nav-ink, #f7fbff);
+}
+
+.lms-app-root .lms-app-sidebar .lms-sidebar-user-title,
+.lms-app-root .lms-app-sidebar .lms-sidebar-user-title span {
+	color: var(--lms-nav-ink, #ffffff) !important;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-name {
-	color: rgba(45, 52, 54, 0.72) !important;
+	color: var(--lms-nav-muted) !important;
 	font-size: 0.84rem;
 	font-weight: 600;
-	letter-spacing: 0.005em;
+	letter-spacing: 0;
 }
 
 .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button {
@@ -296,8 +295,8 @@
 }
 
 html[data-theme='dark'] .lms-app-root .lms-desktop-sidebar-wrap.bg-surface-menu-bar {
-	--lms-nav-ink: rgba(247, 249, 255, 0.92);
-	--lms-nav-muted: rgba(233, 236, 255, 0.78);
+	--lms-nav-ink: #ffffff;
+	--lms-nav-muted: rgba(255, 255, 255, 0.82);
 	--lms-nav-card: rgba(255, 255, 255, 0.12);
 	--lms-nav-card-strong: rgba(255, 255, 255, 0.18);
 	--lms-nav-card-border: rgba(255, 255, 255, 0.22);
@@ -305,13 +304,15 @@ html[data-theme='dark'] .lms-app-root .lms-desktop-sidebar-wrap.bg-surface-menu-
 	--lms-nav-shadow-soft: 0 10px 26px rgba(6, 10, 19, 0.28);
 
 	border-color: rgba(233, 236, 255, 0.18) !important;
-	background: linear-gradient(180deg, #0b2038 0%, #0e7490 52%, #6d28d9 100%) !important;
+	background:
+		linear-gradient(180deg, rgba(0, 38, 102, 0.56) 0%, rgba(0, 14, 54, 0.78) 100%),
+		url('/assets/lms/images/stanbic/stanbic-sidebar-bg.png') right center / cover no-repeat !important;
 	box-shadow: 0 20px 44px rgba(6, 10, 19, 0.38);
 }
 
 html[data-theme='dark'] .lms-app-root .lms-desktop-sidebar-wrap.bg-surface-menu-bar::before {
-	opacity: 0.6;
-	filter: saturate(0.85);
+	opacity: 0.9;
+	filter: saturate(1.05);
 }
 
 html[data-theme='dark'] .lms-app-root .lms-desktop-sidebar-wrap.bg-surface-menu-bar::after {
@@ -327,8 +328,9 @@ html[data-theme='dark'] .lms-app-root .lms-app-sidebar .lms-sidebar-user-name {
 }
 
 html[data-theme='dark'] .lms-app-root .lms-app-sidebar .lms-sidebar-link-icon {
-	background: rgba(255, 255, 255, 0.16);
-	border-color: rgba(255, 255, 255, 0.22);
+	background: rgba(255, 255, 255, 0.18);
+	border-color: rgba(255, 255, 255, 0.28);
+	color: #ffffff !important;
 }
 
 html[data-theme='dark'] .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdown-button {
@@ -350,9 +352,7 @@ html[data-theme='dark'] .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdow
 }
 
 .ui-skin-v2 .lms-home-page {
-	background:
-		radial-gradient(circle at 8% 4%, rgba(255, 255, 255, 0.48) 0, rgba(255, 255, 255, 0) 26rem),
-		var(--v2-page-bg);
+	background: var(--v2-page-bg);
 	min-height: 100%;
 	padding: 2rem 2.25rem 2.5rem;
 }
@@ -361,7 +361,7 @@ html[data-theme='dark'] .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdow
 	font-family: var(--v2-font-heading);
 	font-size: clamp(2rem, 3vw, 3rem);
 	font-weight: 800;
-	letter-spacing: 0.01em;
+	letter-spacing: 0;
 	line-height: 1.05;
 }
 
@@ -429,10 +429,13 @@ html[data-theme='dark'] .lms-app-root .lms-app-sidebar .lms-sidebar-user-dropdow
 }
 
 .ui-skin-v2 .lms-mobile-menu-sheet {
-	background: var(--v2-surface);
-	border: 1px solid var(--v2-border);
+	background:
+		linear-gradient(180deg, rgba(0, 45, 115, 0.92), rgba(0, 26, 77, 0.96)),
+		url('/assets/lms/images/stanbic/stanbic-sidebar-bg.png') center / cover no-repeat;
+	border: 1px solid rgba(255, 255, 255, 0.24);
 	border-radius: 1.2rem;
 	box-shadow: var(--v2-shadow);
+	color: #ffffff;
 }
 
 .ui-skin-v2 .lms-mobile-bottom-nav {

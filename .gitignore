@@ -26,7 +26,13 @@ secrets/
 *.log
 logs/
 .playwright-cli/
-output/playwright/
+
+# Local test and automation artifacts
+.codex-temp/
+output/
+test-results/
+playwright-report/
+.playwright/
 
 # OS files
 .DS_Store

@@ -14,7 +14,11 @@
 				@click="openCertificate(certificate)"
 			>
 				<div class="font-medium leading-5 mb-2 text-ink-gray-9">
-					{{ certificate.course_title || certificate.batch_title }}
+					{{
+						certificate.course_title ||
+						certificate.program_title ||
+						certificate.batch_title
+					}}
 				</div>
 				<div class="text-sm text-ink-gray-7 font-medium mt-auto">
 					<span> {{ __('Issued on') }}: </span>
@@ -50,7 +54,14 @@ const certificates = createListResource({
 	filters: {
 		member: props.profile.data?.name,
 	},
-	fields: ['name', 'course_title', 'batch_title', 'issue_date', 'template'],
+	fields: [
+		'name',
+		'course_title',
+		'program_title',
+		'batch_title',
+		'issue_date',
+		'template',
+	],
 	cache: ['certificates', props.profile.data?.name],
 })
 

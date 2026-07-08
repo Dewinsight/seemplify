@@ -177,6 +177,10 @@ website_route_rules = [
 
 website_redirects = [
 	{"source": "/sign-up", "target": "/lms-login"},
+	{"source": "/signup", "target": "/lms-login"},
+	{"source": "/new-sign-up", "target": "/lms-login"},
+	{"source": "/forgot-password", "target": "/lms-login"},
+	{"source": "/forgot", "target": "/lms-login"},
 	{"source": "/update-profile", "target": "/edit-profile"},
 	{"source": "/courses", "target": "/lms/courses"},
 	{
@@ -197,6 +201,7 @@ website_redirects = [
 	},
 	{"source": "/statistics", "target": "/lms/statistics"},
 	{"source": "/login", "target": "/lms-login"},
+	{"source": "/login/", "target": "/lms-login"},
 ]
 
 update_website_context = [

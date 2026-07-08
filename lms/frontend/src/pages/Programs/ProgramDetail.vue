@@ -48,6 +48,25 @@
 						)
 					}}
 				</div>
+				<div
+					v-if="program.data.enable_certification && (program.data.progress || 0) >= 100"
+					class="mt-4 flex flex-wrap items-center gap-3"
+				>
+					<Button
+						variant="solid"
+						:loading="programCertificate.loading"
+						@click="openProgramCertificate"
+					>
+						<template #prefix>
+							<Award class="size-4 stroke-1.5" />
+						</template>
+						{{
+							program.data.certificate
+								? __('View Program Certificate')
+								: __('Get Program Certificate')
+						}}
+					</Button>
+				</div>
 			</div>
 		</div>
 		<div class="lms-program-detail-section-title text-lg font-semibold text-ink-gray-9 mb-4">
@@ -90,13 +109,15 @@ import { computed, ref, watch } from 'vue'
 import {
 	Badge,
 	Breadcrumbs,
+	Button,
 	call,
 	createResource,
 	Tooltip,
+	toast,
 	usePageMeta,
 } from 'frappe-ui'
 import { sessionStore } from '@/stores/session'
-import { LockKeyhole, Info } from 'lucide-vue-next'
+import { Award, LockKeyhole, Info } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import CourseCard from '@/components/CourseCard.vue'
 
@@ -182,6 +203,10 @@ const program = createResource({
 	},
 })
 
+const programCertificate = createResource({
+	url: 'lms.lms.doctype.lms_certificate.lms_certificate.create_program_certificate',
+})
+
 watch(
 	() => props.programName,
 	() => {
@@ -197,6 +222,39 @@ const openCourse = (course: any, enforceCourseOrder: boolean) => {
 		name: 'CourseDetail',
 		params: { courseName: course.name },
 	})
+}
+
+const openProgramCertificate = () => {
+	if (program.data?.certificate) {
+		openCertificate(program.data.certificate)
+		return
+	}
+
+	programCertificate.submit(
+		{
+			program: props.programName,
+		},
+		{
+			onSuccess(data: any) {
+				const certificate = data?.message || data
+				if (certificate?.name) {
+					program.data.certificate = certificate
+					openCertificate(certificate)
+				}
+			},
+			onError(err: any) {
+				toast.warning(__(err.messages?.[0] || err))
+			},
+		}
+	)
+}
+
+const openCertificate = (certificate: any) => {
+	window.open(
+		`/api/method/frappe.utils.print_format.download_pdf?doctype=LMS+Certificate&name=${
+			certificate.name
+		}&format=${encodeURIComponent(certificate.template)}`
+	)
 }
 
 const breadcrumbs = computed(() => {

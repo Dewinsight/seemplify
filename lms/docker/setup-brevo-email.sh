@@ -29,7 +29,7 @@ fi
 #   password: SMTP key (preferred), fallback to BREVO_API_KEY for backward compatibility
 #   login   : Brevo SMTP login user (can differ from FROM_EMAIL)
 SMTP_PASS="${BREVO_SMTP_KEY:-${SMTP_PASS:-${BREVO_API_KEY:-}}}"
-FROM_EMAIL="${BREVO_FROM_EMAIL:-${FROM_EMAIL:-${SENDER_EMAIL:-}}}"
+FROM_EMAIL="${BREVO_FROM_EMAIL:-${FROM_EMAIL:-${SENDER_EMAIL:-no-reply@aiinnigeria.com}}}"
 SMTP_LOGIN="${BREVO_SMTP_LOGIN:-${SMTP_LOGIN:-$FROM_EMAIL}}"
 
 if [ -z "$SMTP_PASS" ] || [ -z "$FROM_EMAIL" ]; then
@@ -45,7 +45,7 @@ cd /home/frappe/frappe-bench
 echo "Configuring Brevo SMTP for LMS site: ${SITE_NAME_VALUE} ..."
 
 SITE_CONFIG_PATH="/home/frappe/frappe-bench/sites/${SITE_NAME_VALUE}/site_config.json"
-SENDER_NAME_VALUE="${SENDER_NAME:-Simplify LMS}"
+SENDER_NAME_VALUE="${SENDER_NAME:-Stanbic IBTC STEM Series}"
 
 # Site config updates are nice-to-have, but email sending primarily relies on the
 # default outgoing Email Account. Don't fail hard if site_config.json isn't writable.
@@ -57,6 +57,7 @@ if [ -w "${SITE_CONFIG_PATH}" ]; then
   bench --site "${SITE_NAME_VALUE}" set-config mail_password "$SMTP_PASS" || true
   bench --site "${SITE_NAME_VALUE}" set-config mail_email_id "$FROM_EMAIL" || true
   bench --site "${SITE_NAME_VALUE}" set-config mail_sender_name "$SENDER_NAME_VALUE" || true
+  bench --site "${SITE_NAME_VALUE}" set-config smtp_no_ehlo_after_auth 1 || true
 else
   echo "Warning: ${SITE_CONFIG_PATH} is not writable; skipping bench set-config and creating Email Account only."
 fi
@@ -67,6 +68,7 @@ bench --site "${SITE_NAME_VALUE}" clear-cache || true
 export SMTP_PASS
 export SMTP_LOGIN
 export FROM_EMAIL
+export SENDER_NAME="$SENDER_NAME_VALUE"
 if bench --site "${SITE_NAME_VALUE}" execute lms.docker.setup_email_account.setup_brevo_email_account; then
   echo "Brevo email configured for ${SITE_NAME_VALUE}."
 else

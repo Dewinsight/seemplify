@@ -47,7 +47,7 @@
 			<div
 				v-for="program in programCards.data"
 				:key="program.name"
-				@click="openForm(program.name)"
+				@click="openProgramAnalytics(program.name)"
 				class="lms-program-card border rounded-md cursor-pointer"
 			>
 				<div class="lms-program-card-cover">
@@ -83,6 +83,13 @@
 								{{ program.member_count == 1 ? __('member') : __('members') }}
 							</span>
 						</div>
+						<div class="flex items-center space-x-1">
+							<School class="h-4 w-4 stroke-1.5" />
+							<span>
+								{{ program.school_count || 0 }}
+								{{ program.school_count == 1 ? __('school') : __('schools') }}
+							</span>
+						</div>
 					</div>
 					<div class="mt-4 flex items-center justify-between">
 						<div
@@ -100,6 +107,20 @@
 									: __('Flexible Path')
 							}}
 						</div>
+					</div>
+					<div class="lms-program-card-actions">
+						<Button variant="solid" @click.stop="openProgramAnalytics(program.name)">
+							<template #prefix>
+								<Eye class="h-4 w-4 stroke-1.5" />
+							</template>
+							{{ __('View Program') }}
+						</Button>
+						<Button @click.stop="openForm(program.name)">
+							<template #prefix>
+								<Pencil class="h-4 w-4 stroke-1.5" />
+							</template>
+							{{ __('Edit') }}
+						</Button>
 					</div>
 				</div>
 			</div>
@@ -122,13 +143,15 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 import { computed, inject, onMounted, ref, watch } from 'vue'
-import { BookOpen, Plus, User } from 'lucide-vue-next'
+import { BookOpen, Eye, Pencil, Plus, School, User } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import { sessionStore } from '@/stores/session'
 import ProgramForm from '@/pages/Programs/ProgramForm.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StudentPrograms from '@/pages/Programs/StudentPrograms.vue'
 
 const { brand } = sessionStore()
+const router = useRouter()
 const user = inject('$user')
 const showForm = ref(false)
 const currentProgram = ref(null)
@@ -136,7 +159,7 @@ const readOnlyMode = window.read_only_mode
 
 onMounted(() => {
 	if (!user.data) {
-		window.location.href = '/login'
+		window.location.href = '/lms-login'
 	}
 	if (user.data?.is_moderator || user.data?.is_instructor) {
 		programs.reload()
@@ -157,8 +180,12 @@ const programs = createListResource({
 		'title',
 		'member_count',
 		'course_count',
+		'school_count',
 		'published',
 		'enforce_course_order',
+		'enable_certification',
+		'certificate_template',
+		'certificate_image',
 	],
 	auto: false,
 	orderBy: 'creation desc',
@@ -170,10 +197,23 @@ const canCreateProgram = () => {
 	return false
 }
 
+const canViewProgramAnalytics = () => {
+	if (user.data?.is_moderator || user.data?.is_instructor) return true
+	return false
+}
+
 const openForm = (programName) => {
 	if (!canCreateProgram()) return
 	currentProgram.value = programName
 	showForm.value = true
+}
+
+const openProgramAnalytics = (programName) => {
+	if (!canViewProgramAnalytics()) return
+	router.push({
+		name: 'ProgramAnalytics',
+		params: { programName },
+	})
 }
 
 watch(showForm, (isOpen) => {

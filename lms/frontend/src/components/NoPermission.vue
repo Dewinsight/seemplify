@@ -38,7 +38,7 @@ const user = inject('$user')
 const { brand } = sessionStore()
 
 const redirectToLogin = () => {
-	window.location.href = '/login'
+	window.location.href = '/lms-login'
 }
 
 usePageMeta(() => {

@@ -217,7 +217,7 @@ function enrollStudent() {
 	if (!user.data) {
 		toast.success(__('You need to login first to enroll for this course'))
 		setTimeout(() => {
-			window.location.href = `/login?redirect-to=${window.location.pathname}`
+			window.location.href = `/lms-login?redirect-to=${window.location.pathname}`
 		}, 500)
 	} else {
 		call('frappe.client.insert', {

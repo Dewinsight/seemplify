@@ -12,13 +12,21 @@
   "column_break_cwjx",
   "enforce_course_order",
   "column_break_mikl",
+  "certification_section",
+  "enable_certification",
+  "certificate_template",
+  "column_break_certificate",
+  "certificate_image",
+  "section_break_schools",
+  "program_schools",
   "section_break_vhhu",
   "program_courses",
   "program_members",
   "section_break_pppe",
   "course_count",
   "column_break_qwhf",
-  "member_count"
+  "member_count",
+  "school_count"
  ],
  "fields": [
   {
@@ -63,6 +71,45 @@
    "label": "Enforce Course Order"
   },
   {
+   "fieldname": "certification_section",
+   "fieldtype": "Section Break",
+   "label": "Certification"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_certification",
+   "fieldtype": "Check",
+   "label": "Enable Program Certificate"
+  },
+  {
+   "depends_on": "eval:doc.enable_certification",
+   "fieldname": "certificate_template",
+   "fieldtype": "Link",
+   "label": "Certificate Template",
+   "options": "Print Format"
+  },
+  {
+   "fieldname": "column_break_certificate",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.enable_certification",
+   "fieldname": "certificate_image",
+   "fieldtype": "Attach Image",
+   "label": "Certificate Image"
+  },
+  {
+   "fieldname": "section_break_schools",
+   "fieldtype": "Section Break",
+   "label": "Schools"
+  },
+  {
+   "fieldname": "program_schools",
+   "fieldtype": "Table",
+   "label": "Program Schools",
+   "options": "LMS Program School"
+  },
+  {
    "fieldname": "section_break_vhhu",
    "fieldtype": "Section Break"
   },
@@ -89,6 +136,13 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Member Count"
+  },
+  {
+   "fieldname": "school_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "School Count",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_mikl",
