@@ -1,4 +1,4 @@
-# Deploy LMS to Dokploy
+# Deploy LMS to Dokploy-managed VM
 name: Deploy LMS
 
 on:
@@ -9,50 +9,87 @@ on:
       - ".github/workflows/deploy-lms.yml"
   workflow_dispatch:
 
+concurrency:
+  group: deploy-lms
+  cancel-in-progress: false
+
 env:
-  APP_NAME: lms
-  APP_PATH: lms
+  VM_HOST: 4.180.153.209
+  VM_USER: seemplify
+  LMS_SOURCE_PATH: /etc/dokploy/compose/lms-sj7l83/code
 
 jobs:
   deploy:
-    name: Deploy to Dokploy
+    name: Deploy to Dokploy VM
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Validate Required Secrets
-        run: |
-          missing=0
-          for var in DOKPLOY_URL DOKPLOY_TOKEN LMS_APP_ID; do
-            if [ -z "${!var}" ]; then
-              echo "[ERROR] Missing required secret: $var"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "Set the missing secrets in GitHub repo settings before deploying."
-            exit 1
-          fi
+      - name: Configure SSH
         env:
-          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
-          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
-          LMS_APP_ID: ${{ secrets.LMS_APP_ID }}
-
-      - name: Trigger Dokploy Deployment
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
         run: |
-          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
-            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -H "accept: application/json" \
-            -d "{\"applicationId\": \"${{ secrets.LMS_APP_ID }}\"}")
-
-          if [ "$response" -eq 200 ]; then
-            echo "[OK] ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"
-            cat /tmp/response.txt 2>/dev/null || true
-          else
-            echo "[ERROR] Deployment failed with HTTP status code: $response"
-            cat /tmp/response.txt 2>/dev/null || true
+          key="${SSH_PRIVATE_KEY:-$VM_SSH_KEY}"
+          if [ -z "$key" ]; then
+            echo "[ERROR] Missing SSH_PRIVATE_KEY or VM_SSH_KEY secret."
             exit 1
           fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$key" > ~/.ssh/id_vm
+          chmod 600 ~/.ssh/id_vm
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Pull, deploy stack, migrate, and build
+        run: |
+          ssh -i ~/.ssh/id_vm -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          SRC="/etc/dokploy/compose/lms-sj7l83/code"
+          SAFE="-c safe.directory=${SRC}"
+
+          sudo git ${SAFE} -C "${SRC}" fetch origin main
+          if [ -n "$(sudo git ${SAFE} -C "${SRC}" status --porcelain)" ]; then
+            sudo git ${SAFE} -C "${SRC}" stash push -u -m "pre-gh-lms-deploy-$(date -u +%Y%m%dT%H%M%SZ)" >/dev/null
+          fi
+          sudo git ${SAFE} -C "${SRC}" checkout main
+          sudo git ${SAFE} -C "${SRC}" pull --ff-only origin main
+          echo "source=$(sudo git ${SAFE} -C "${SRC}" rev-parse --short HEAD)"
+
+          sudo python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          src = Path("/etc/dokploy/compose/lms-sj7l83/code")
+          env_path = src / "lms/docker/.env"
+
+          for raw in env_path.read_text().splitlines():
+              line = raw.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              key, value = line.split("=", 1)
+              os.environ[key.strip()] = value.strip()
+
+          subprocess.run(
+              ["docker", "stack", "deploy", "-c", str(src / "lms/docker/docker-compose.yml"), "lms"],
+              check=True,
+          )
+          PY
+
+          for _ in $(seq 1 60); do
+            CID="$(docker ps --filter name=lms_frappe -q | head -n 1)"
+            if [ -n "${CID}" ] && docker exec "${CID}" test -f /workspace/post-deploy-sync.sh; then
+              break
+            fi
+            sleep 5
+          done
+
+          CID="$(docker ps --filter name=lms_frappe -q | head -n 1)"
+          if [ -z "${CID}" ]; then
+            echo "[ERROR] LMS frappe container not found."
+            exit 1
+          fi
+
+          docker exec -w /home/frappe/frappe-bench "${CID}" bash /workspace/post-deploy-sync.sh
+          REMOTE
