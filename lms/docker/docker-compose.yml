@@ -66,7 +66,7 @@ services:
       - "traefik.http.routers.lms.rule=Host(`${LMS_HOSTNAME:-lms.seemplifyai.com}`)"
       - "traefik.http.routers.lms.entrypoints=websecure"
       - "traefik.http.routers.lms.tls.certresolver=letsencrypt"
-      - "traefik.http.services.lms.loadbalancer.server.port=8002"
+      - "traefik.http.services.lms.loadbalancer.server.port=8000"
 
 volumes:
   mariadb-data:
