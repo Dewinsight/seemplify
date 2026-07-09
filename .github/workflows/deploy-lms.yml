@@ -40,7 +40,7 @@ jobs:
           chmod 600 ~/.ssh/id_vm
           ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Pull, deploy stack, migrate, and build
+      - name: Pull, deploy stack, and wait for health
         run: |
           ssh -i ~/.ssh/id_vm -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
@@ -77,19 +77,21 @@ jobs:
           )
           PY
 
-          for _ in $(seq 1 60); do
-            CID="$(docker ps --filter name=lms_frappe -q | head -n 1)"
-            if [ -n "${CID}" ] && docker exec "${CID}" test -f /workspace/post-deploy-sync.sh; then
-              break
+          for _ in $(seq 1 120); do
+            replicas="$(docker service ls --filter name=lms_frappe --format '{{.Replicas}}' | head -n 1)"
+            status="$(curl -k -s -o /dev/null -w '%{http_code}' https://lms.seemplifyai.com/lms || true)"
+
+            if [ "${replicas}" = "1/1" ] && [ "${status}" = "200" ]; then
+              echo "health=ok"
+              exit 0
             fi
+
+            echo "waiting replicas=${replicas:-none} status=${status:-none}"
             sleep 5
           done
 
-          CID="$(docker ps --filter name=lms_frappe -q | head -n 1)"
-          if [ -z "${CID}" ]; then
-            echo "[ERROR] LMS frappe container not found."
-            exit 1
-          fi
-
-          docker exec -w /home/frappe/frappe-bench "${CID}" bash /workspace/post-deploy-sync.sh
+          echo "[ERROR] LMS did not become healthy."
+          docker service ps lms_frappe --no-trunc || true
+          docker service logs lms_frappe --tail 120 || true
+          exit 1
           REMOTE
