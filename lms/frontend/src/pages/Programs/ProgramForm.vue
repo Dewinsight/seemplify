@@ -192,7 +192,7 @@
 							resizeColumn: true,
 							showTooltip: false,
 						}"
-						:rowKey="programName === 'new' ? 'school' : 'name'"
+						rowKey="school"
 					>
 						<ListHeader
 							class="mb-2 grid items-center space-x-4 rounded bg-surface-gray-2 p-2"
@@ -289,7 +289,7 @@
 
 						<div class="space-x-2">
 							<Button
-								v-if="programMembers.data.length > 0"
+								v-if="(programMembers.data?.length || 0) > 0"
 								@click="
 									() => {
 										showProgressDialog = true
@@ -468,7 +468,7 @@ const props = withDefaults(
 	}
 )
 
-const program = ref<Program>({
+const getEmptyProgram = (): Program => ({
 	name: '',
 	title: '',
 	image: '',
@@ -480,7 +480,20 @@ const program = ref<Program>({
 	program_courses: [],
 	program_members: [],
 	program_schools: [],
+	course_count: 0,
+	member_count: 0,
+	school_count: 0,
 })
+
+const normalizeProgram = (data?: Partial<Program>): Program => ({
+	...getEmptyProgram(),
+	...(data || {}),
+	program_courses: data?.program_courses || [],
+	program_members: data?.program_members || [],
+	program_schools: data?.program_schools || [],
+})
+
+const program = ref<Program>(getEmptyProgram())
 
 watch(
 	() => props.programName,
@@ -497,24 +510,12 @@ const setProgramData = () => {
 	programs.value?.data.forEach((p: Program) => {
 		if (p.name === props.programName) {
 			isNew = false
-			program.value = { ...p }
+			program.value = normalizeProgram(p)
 		}
 	})
 
 	if (isNew) {
-		program.value = {
-			name: '',
-			title: '',
-			image: '',
-			published: false,
-			enforce_course_order: false,
-			enable_certification: false,
-			certificate_template: '',
-			certificate_image: '',
-			program_courses: [],
-			program_members: [],
-			program_schools: [],
-		}
+		program.value = getEmptyProgram()
 	} else if (props.programName && props.programName !== 'new') {
 		void loadProgramImage(props.programName)
 	}
@@ -792,6 +793,7 @@ const addSchool = (close: () => void) => {
 	if (!existingSchool) {
 		program.value.program_schools.push({
 			school: school.value,
+			school_title: school.value,
 			idx: program.value.program_schools.length + 1,
 		})
 		if (props.programName !== 'new') {
@@ -954,7 +956,7 @@ const schoolColumns = computed(() => {
 	return [
 		{
 			label: 'School',
-			key: props.programName === 'new' ? 'school' : 'school_title',
+			key: 'school_title',
 			width: 1,
 		},
 	]
