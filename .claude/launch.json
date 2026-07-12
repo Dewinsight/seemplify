@@ -12,6 +12,18 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "C:/Users/Michael/Documents/GitHub/seemplify/digilog-recruiter/candidates", "dev"],
       "port": 5300
+    },
+    {
+      "name": "recruiter-candidates",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "C:/Users/Michael/Documents/GitHub/seemplify/recruiter/candidates", "dev"],
+      "port": 5300
+    },
+    {
+      "name": "recruiter-frontend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "C:/Users/Michael/Documents/GitHub/seemplify/recruiter/frontend", "dev"],
+      "port": 5000
     }
   ]
 }

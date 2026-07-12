@@ -337,6 +337,56 @@
       font-size: 12px;
       color: var(--muted);
     }
+    .quiz-celebration {
+      border: 1px solid rgba(37, 99, 235, 0.16);
+      border-radius: 14px;
+      background: #f8fbff;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      color: var(--text);
+    }
+    .quiz-celebration.is-retry {
+      border-color: rgba(245, 158, 11, 0.24);
+      background: #fffaf0;
+    }
+    .quiz-celebration img {
+      width: 82px;
+      height: 82px;
+      object-fit: contain;
+    }
+    .quiz-celebration h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    .quiz-celebration p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .quiz-celebration strong {
+      color: var(--text);
+    }
+    .quiz-confetti {
+      position: fixed;
+      width: 9px;
+      height: 14px;
+      top: -18px;
+      left: 50%;
+      z-index: 2000;
+      border-radius: 2px;
+      pointer-events: none;
+      animation: quiz-confetti-fall 1.25s ease-out forwards;
+    }
+    @keyframes quiz-confetti-fall {
+      0% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
+      100% { transform: translate3d(var(--x, 0), calc(100vh + 80px), 0) rotate(var(--r, 360deg)); opacity: 0; }
+    }
     .quiz-results {
       display: grid;
       gap: 8px;
@@ -465,6 +515,11 @@
       .player-media { min-height: 220px; }
       .player-media iframe,
       .player-media video { height: 240px; }
+      .quiz-celebration {
+        grid-template-columns: 1fr;
+        text-align: center;
+        justify-items: center;
+      }
     }
   </style>
 </head>
@@ -804,6 +859,38 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
 
+      const renderQuizCelebration = ({ passed, score, maxScore, percent }) => {
+        const title = passed ? 'Quiz complete' : 'Review and try again'
+        const message = passed
+          ? `Strong work. You scored ${score}/${maxScore} (${percent}%) and can continue the lesson path.`
+          : `You scored ${score}/${maxScore} (${percent}%). Review the feedback below, then try the quiz again.`
+        return `
+          <div class="quiz-celebration ${passed ? 'is-pass' : 'is-retry'}" role="status" aria-live="polite">
+            <img src="/images/stanbic/stanbic-quiz-trophy.png" alt="Quiz achievement trophy">
+            <div>
+              <h3>${title}</h3>
+              <p>${escapeHtml(message)}</p>
+            </div>
+          </div>
+        `
+      }
+
+      const launchQuizConfetti = () => {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+        const colors = ['#053c86', '#0ea5e9', '#f4b400', '#22c55e', '#ffffff']
+        for (let index = 0; index < 28; index += 1) {
+          const piece = document.createElement('span')
+          piece.className = 'quiz-confetti'
+          piece.style.background = colors[index % colors.length]
+          piece.style.left = `${18 + Math.random() * 64}%`
+          piece.style.animationDelay = `${Math.random() * 0.18}s`
+          piece.style.setProperty('--x', `${(Math.random() * 260) - 130}px`)
+          piece.style.setProperty('--r', `${180 + Math.random() * 540}deg`)
+          document.body.appendChild(piece)
+          window.setTimeout(() => piece.remove(), 1500)
+        }
+      }
+
       const setModalOpen = (isOpen) => {
         if (!modal) return
         modal.classList.toggle('open', Boolean(isOpen))
@@ -971,7 +1058,15 @@
 
           const quizPercent = quizMaxScore > 0 ? Math.round((quizScore / quizMaxScore) * 100) : 0
           const quizPassed = quizPercent >= 70
-          statusNode.innerHTML = `${quizPassed ? '<strong class="quiz-result-pass">Passed</strong>' : '<strong class="quiz-result-fail">Not passed</strong>'} - Score: <strong>${quizScore}/${quizMaxScore}</strong> (${quizPercent}%).`
+          statusNode.innerHTML = renderQuizCelebration({
+            passed: quizPassed,
+            score: quizScore,
+            maxScore: quizMaxScore,
+            percent: quizPercent
+          })
+          if (quizPassed) {
+            launchQuizConfetti()
+          }
 
           if (resultsNode) {
             resultsNode.innerHTML = lessonResults.map((result) => {
@@ -1006,7 +1101,7 @@
           }
 
           if (activeQuizSession.autoAdvanceOnPass && quizPassed) {
-            statusNode.innerHTML += ' Moving to the next lesson...'
+            statusNode.insertAdjacentHTML('beforeend', '<p class="quiz-modal-meta">Moving to the next lesson...</p>')
             window.setTimeout(() => {
               activeQuizSession = null
               if (form) form.innerHTML = ''

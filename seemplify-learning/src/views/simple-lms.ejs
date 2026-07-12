@@ -293,6 +293,124 @@
       justify-content: center;
     }
     .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .stanbic-logo-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: #053c86;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .stanbic-logo-lockup img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+    .stanbic-hero-card {
+      border: 1px solid rgba(5, 60, 134, 0.16);
+      border-radius: 18px;
+      background: #f8fbff;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      min-height: 100%;
+    }
+    .stanbic-hero-card img {
+      max-width: 190px;
+      width: 52%;
+      min-width: 120px;
+      justify-self: end;
+    }
+    .stanbic-track-list {
+      display: grid;
+      gap: 8px;
+    }
+    .stanbic-track-row {
+      border: 1px solid rgba(5, 60, 134, 0.12);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .stanbic-track-row span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .stanbic-welcome {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 18px;
+      align-items: center;
+    }
+    .stanbic-welcome-copy {
+      display: grid;
+      gap: 12px;
+      align-content: center;
+    }
+    .stanbic-welcome-copy h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: clamp(28px, 3vw, 42px);
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+    .stanbic-welcome-copy p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .stanbic-welcome-media {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .stanbic-welcome-media img {
+      width: 100%;
+      min-height: 150px;
+      object-fit: cover;
+      border: 1px solid rgba(5, 60, 134, 0.14);
+      border-radius: 16px;
+      background: #05164f;
+    }
+    .stanbic-welcome-media img:first-child {
+      grid-column: 1 / -1;
+      min-height: 190px;
+    }
+    .stanbic-program-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    }
+    .stanbic-program-card {
+      border-color: rgba(5, 60, 134, 0.18);
+    }
+    .stanbic-program-card .media,
+    .stanbic-course-card .media {
+      height: 228px;
+      background: #06175a;
+    }
+    .stanbic-program-card .media img,
+    .stanbic-course-card .media img {
+      object-fit: cover;
+      object-position: center;
+    }
+    .stanbic-track-label {
+      width: fit-content;
+      border-color: rgba(5, 60, 134, 0.18);
+      color: #053c86;
+      background: #edf5ff;
+    }
+    .btn.disabled,
+    .btn:disabled {
+      opacity: 0.58;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
     .body { padding: 12px; display: grid; gap: 8px; }
     .body h3 { margin: 0; font-size: 18px; letter-spacing: -.02em; line-height: 1.2; }
     .body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
@@ -830,6 +948,7 @@
     }
     @media (max-width: 1080px) {
       .hero-layout { grid-template-columns: 1fr; }
+      .stanbic-welcome { grid-template-columns: 1fr; }
     }
     @media (max-width: 1040px) { .studio { grid-template-columns: 1fr; } }
     @media (max-width: 760px) {
@@ -858,6 +977,15 @@
         font-size: 20px;
       }
       .grid { grid-template-columns: 1fr; }
+      .stanbic-welcome-media { grid-template-columns: 1fr; }
+      .stanbic-welcome-media img,
+      .stanbic-welcome-media img:first-child {
+        min-height: 170px;
+      }
+      .stanbic-program-card .media,
+      .stanbic-course-card .media {
+        height: 190px;
+      }
       .form-grid { grid-template-columns: 1fr; }
       .actions .btn { flex: 1; min-width: calc(50% - 4px); justify-content: center; }
       .body h3 { font-size: 17px; }
@@ -882,18 +1010,24 @@
   <% const selectCurrency = (value, fallback = 'NGN') => { const normalized = String(value || '').trim().toUpperCase(); if (currencyCodes.includes(normalized)) return normalized; const fallbackCode = String(fallback || '').trim().toUpperCase(); if (currencyCodes.includes(fallbackCode)) return fallbackCode; return currencyCodes[0] || 'NGN' } %>
   <% const defaultCurrency = selectCurrency(defaultCurrencyCode || platformDefaults.defaultCurrency || 'NGN', 'NGN') %>
   <% const minorToMajorInput = (value) => { const minor = Number(value || 0); const safeMinor = Number.isFinite(minor) ? Math.max(0, minor) : 0; const major = safeMinor / 100; if (Number.isInteger(major)) return String(major); return major.toFixed(2).replace(/\.?0+$/, '') } %>
+  <% const stanbicTracks = Array.isArray(stanbicProgramCards) ? stanbicProgramCards : [] %>
+  <% const stanbicImage = (key) => { const match = stanbicTracks.find((track) => track.key === key); return match ? match.image : `/images/stanbic/stanbic-stem-${key}.png` } %>
 
   <main class="shell">
     <section class="hero">
       <div class="hero-layout">
         <div class="hero-main">
-          <p class="hero-kicker">Learning Workspace</p>
-          <h1 class="title"><%= learningName %></h1>
-          <p class="subtitle">Course delivery, pathways, assignments, and payment-enabled enrollments in one focused workspace.</p>
+          <div class="stanbic-logo-lockup">
+            <img src="/images/stanbic/stanbic-ibtc-logo.png" alt="Stanbic IBTC logo">
+            <span>Stanbic STEM Learning</span>
+          </div>
+          <p class="hero-kicker">Learner Portal</p>
+          <h1 class="title">Welcome to Stanbic STEM</h1>
+          <p class="subtitle">Start with the right school program, move through guided lessons, and complete each quiz with clear progress feedback.</p>
           <div class="hero-actions">
-            <a class="btn btn-primary btn-sm" href="<%= tab('catalog') %>">Explore Catalog</a>
+            <a class="btn btn-primary btn-sm" href="<%= tab('programs') %>">Start Learning</a>
             <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">Continue Learning</a>
-            <a class="btn btn-secondary btn-sm" href="/simple-lms/cart">Open Cart (<%= stats.cartItemCount %>)</a>
+            <a class="btn btn-secondary btn-sm" href="<%= tab('catalog') %>">All Courses</a>
             <% if (canCreateCourses) { %>
               <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses">Open Course Studio</a>
             <% } %>
@@ -908,20 +1042,23 @@
             <span class="chip">Cart: <%= stats.cartItemCount %></span>
           </div>
         </div>
-        <aside class="hero-pulse">
-          <h2>Workspace Pulse</h2>
-          <ul class="hero-pulse-list">
-            <li><span>Published Courses</span><strong><%= stats.publishedCourseCount %></strong></li>
-            <li><span>Programs</span><strong><%= stats.publishedProgramCount %></strong></li>
-            <li><span>Total Learners</span><strong><%= stats.learnerCount %></strong></li>
-            <li><span>Completed Enrollments</span><strong><%= stats.completionCount %></strong></li>
-          </ul>
-          <p class="hero-pulse-note">Live workspace metrics update as new enrollments, programs, and completions happen.</p>
+        <aside class="stanbic-hero-card">
+          <img src="/images/stanbic/stanbic-ibtc-logo.png" alt="Stanbic IBTC">
+          <div class="stanbic-track-list">
+            <% stanbicTracks.forEach((track) => { %>
+              <div class="stanbic-track-row">
+                <strong><%= track.label %></strong>
+                <span><%= track.totalSteps || 0 %> courses</span>
+              </div>
+            <% }) %>
+          </div>
+          <p class="hero-pulse-note">Primary, JSS, and SSS now sit in a focused program selection journey.</p>
         </aside>
       </div>
       <div class="tabs">
         <a class="tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= tab('overview') %>">Overview</a>
-        <a class="tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= tab('catalog') %>">Catalog</a>
+        <a class="tab <%= viewMode === 'programs' ? 'active' : '' %>" href="<%= tab('programs') %>">Programs</a>
+        <a class="tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= tab('catalog') %>">All Courses</a>
         <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="/simple-lms/cart">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
         <a class="tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= tab('my-learning') %>">My Learning</a>
         <% if (canCreateCourses) { %>
@@ -943,21 +1080,85 @@
 
     <% if (viewMode === 'overview') { %>
       <section class="panel">
-        <div class="head"><div><h2>Overview</h2><p>Workspace snapshot and core metrics.</p></div></div>
-        <div class="kpis">
-          <article class="kpi"><small>Published Courses</small><strong><%= stats.publishedCourseCount %></strong></article>
-          <article class="kpi"><small>Published Programs</small><strong><%= stats.publishedProgramCount %></strong></article>
-          <article class="kpi"><small>Total Learners</small><strong><%= stats.learnerCount %></strong></article>
-          <article class="kpi"><small>Completed Enrollments</small><strong><%= stats.completionCount %></strong></article>
+        <div class="stanbic-welcome">
+          <div class="stanbic-welcome-copy">
+            <span class="pill stanbic-track-label">Stanbic IBTC STEM Series</span>
+            <h2>Choose your school level and begin the right STEM path.</h2>
+            <p>The learner journey now starts with Primary, JSS, and SSS program selection instead of a mixed catalog. Each program keeps related courses together so students can follow the correct path from first lesson to quiz completion.</p>
+            <div class="actions">
+              <a class="btn btn-primary" href="<%= tab('programs') %>">Start Learning</a>
+              <a class="btn btn-secondary" href="<%= tab('my-learning') %>">Continue Learning</a>
+            </div>
+          </div>
+          <div class="stanbic-welcome-media" aria-label="Stanbic STEM program previews">
+            <img src="<%= stanbicImage('primary') %>" alt="Stanbic Primary STEM banner">
+            <img src="<%= stanbicImage('jss') %>" alt="Stanbic JSS STEM banner">
+            <img src="<%= stanbicImage('sss') %>" alt="Stanbic SSS STEM banner">
+          </div>
         </div>
       </section>
 
     <% } %>
 
+    <% if (viewMode === 'programs') { %>
+      <section class="panel" id="stanbic-programs">
+        <div class="head">
+          <div>
+            <h2>Start Learning</h2>
+            <p>Select the Primary, JSS, or SSS program that matches the learner's school level.</p>
+          </div>
+          <div class="actions">
+            <a class="btn btn-secondary btn-sm" href="<%= tab('catalog') %>">View All Courses</a>
+          </div>
+        </div>
+        <div class="stanbic-program-grid">
+          <% stanbicTracks.forEach((track) => { %>
+            <article class="card stanbic-program-card" id="<%= track.anchor || `stanbic-program-${track.key}` %>">
+              <div class="media">
+                <img src="<%= track.image %>" alt="<%= track.label %> STEM program banner">
+              </div>
+              <div class="body">
+                <span class="pill stanbic-track-label"><%= track.audience %></span>
+                <h3><%= track.program?.name || track.title %></h3>
+                <p><%= track.program?.objective || track.program?.description || track.description %></p>
+                <div class="actions">
+                  <span class="pill"><%= track.totalSteps || 0 %> courses</span>
+                  <span class="pill"><%= track.requiredSteps || 0 %> required</span>
+                  <% if (track.isEnrolled) { %><span class="pill">In progress</span><% } %>
+                </div>
+                <% if (track.isEnrolled && track.progressPercent > 0) { %>
+                  <div class="progress" style="--progress:<%= track.progressPercent %>%"><span></span></div>
+                  <p><strong><%= track.progressPercent %>%</strong> complete</p>
+                <% } %>
+                <div class="actions">
+                  <% if (track.program) { %>
+                    <% if (track.isEnrolled) { %>
+                      <a class="btn btn-primary btn-sm" href="<%= track.continuePath %>">Continue Program</a>
+                      <form method="post" action="/simple-lms/programs/<%= track.programId %>/enroll" style="display:inline-flex;">
+                        <input type="hidden" name="returnTo" value="/simple-lms?view=programs#<%= track.anchor %>">
+                        <button class="btn btn-secondary btn-sm" type="submit">Refresh Enrollment</button>
+                      </form>
+                    <% } else { %>
+                      <form method="post" action="/simple-lms/programs/<%= track.programId %>/enroll" style="display:inline-flex;">
+                        <input type="hidden" name="returnTo" value="/simple-lms?view=programs#<%= track.anchor %>">
+                        <button class="btn btn-primary btn-sm" type="submit">Select Program</button>
+                      </form>
+                    <% } %>
+                  <% } else { %>
+                    <span class="btn btn-secondary btn-sm disabled">Program Pending</span>
+                  <% } %>
+                </div>
+              </div>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
+
     <% if (viewMode === 'catalog') { %>
       <section class="panel">
         <div class="head">
-          <div><h2>Course Catalog</h2><p>Start free courses instantly. Paid courses can be added to cart first, then checked out in one clean flow.</p></div>
+          <div><h2>All Courses</h2><p>Browse individual courses after choosing the main Primary, JSS, or SSS program path.</p></div>
           <div class="actions">
             <% if (cartSummary && cartSummary.totalsByCurrency && cartSummary.totalsByCurrency.length > 0) { %>
               <% cartSummary.totalsByCurrency.forEach((entry) => { %>
@@ -988,12 +1189,13 @@
         <% } else { %>
           <div class="grid">
             <% catalogCourses.forEach((course) => { %>
-              <article class="card">
-                <div class="media"><% if (course.banner?.url) { %><img src="<%= course.banner.url %>" alt="<%= course.title %> banner"><% } else { %><span class="pill"><%= course.levelLabel %></span><% } %></div>
+              <article class="card <%= course.stanbicTrack ? 'stanbic-course-card' : '' %>">
+                <div class="media"><% if (course.displayBannerUrl) { %><img src="<%= course.displayBannerUrl %>" alt="<%= course.displayBannerAlt || `${course.title} banner` %>"><% } else { %><span class="pill"><%= course.levelLabel %></span><% } %></div>
                 <div class="body">
                   <h3><%= course.title %></h3>
                   <p><%= course.summaryText %></p>
                   <div class="actions">
+                    <% if (course.stanbicTrack) { %><span class="pill stanbic-track-label"><%= course.stanbicTrack.label %></span><% } %>
                     <span class="pill"><%= course.levelLabel %></span>
                     <span class="pill"><%= course.lessonCount %> lessons</span>
                     <% if (course.requiresPayment) { %><span class="pill">Paid</span><% } %>
@@ -1031,18 +1233,20 @@
       </section>
 
       <section class="panel">
-        <div class="head"><div><h2>Programs</h2><p>Structured pathways using multiple courses.</p></div></div>
+        <div class="head"><div><h2>Program Library</h2><p>Structured pathways using multiple courses. Primary, JSS, and SSS are highlighted in Start Learning.</p></div></div>
         <% if (!catalogPrograms || catalogPrograms.length === 0) { %>
           <div class="empty">No programs published yet.</div>
         <% } else { %>
           <div class="grid">
             <% catalogPrograms.forEach((program) => { %>
-              <article class="card">
+              <article class="card <%= program.stanbicTrack ? 'stanbic-course-card' : '' %>">
+                <div class="media"><% if (program.displayBannerUrl) { %><img src="<%= program.displayBannerUrl %>" alt="<%= program.displayBannerAlt || `${program.name} banner` %>"><% } else { %><span class="pill">Program</span><% } %></div>
                 <div class="body">
                   <h3><%= program.name %></h3>
                   <p><%= program.objective || program.description || 'Program pathway' %></p>
-                  <div class="actions"><span class="pill"><%= program.totalSteps %> courses</span><span class="pill"><%= program.requiredSteps %> required</span></div>
+                  <div class="actions"><% if (program.stanbicTrack) { %><span class="pill stanbic-track-label"><%= program.stanbicTrack.label %></span><% } %><span class="pill"><%= program.totalSteps %> courses</span><span class="pill"><%= program.requiredSteps %> required</span></div>
                   <form method="post" action="/simple-lms/programs/<%= program._id %>/enroll" class="actions">
+                    <input type="hidden" name="returnTo" value="/simple-lms?view=catalog">
                     <button class="btn btn-primary btn-sm" type="submit"><%= program.isEnrolled ? 'Refresh Enrollment' : 'Enroll Program' %></button>
                   </form>
                 </div>

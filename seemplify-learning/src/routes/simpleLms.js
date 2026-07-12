@@ -95,7 +95,7 @@ const lessonMediaUpload = multer({
 })
 
 const ROLES = LEARNING_ROLES
-const VIEW_MODES = ['overview', 'settings', 'catalog', 'cart', 'my-learning', 'course-studio', 'program-studio', 'admin']
+const VIEW_MODES = ['overview', 'settings', 'programs', 'catalog', 'cart', 'my-learning', 'course-studio', 'program-studio', 'admin']
 const LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const SORT_OPTIONS = ['newest', 'popular', 'title_asc', 'duration_desc']
 const PUBLIC_VISIBILITY_VALUES = ['organization_public', 'system_public']
@@ -137,6 +137,37 @@ const LEVEL_LABELS = Object.freeze({
   advanced: 'Advanced',
   mixed: 'Mixed'
 })
+
+const STANBIC_ASSET_BASE = '/images/stanbic'
+const STANBIC_PROGRAM_TRACKS = Object.freeze([
+  {
+    key: 'primary',
+    label: 'Primary',
+    title: 'Primary STEM Adventures',
+    audience: 'Primary school learners',
+    description: 'A colourful foundation track for early STEM confidence, curiosity, and hands-on discovery.',
+    image: `${STANBIC_ASSET_BASE}/stanbic-stem-primary.png`,
+    matchers: ['primary', 'primary school', 'basic school', 'lower primary', 'upper primary']
+  },
+  {
+    key: 'jss',
+    label: 'JSS',
+    title: 'JSS STEM Discovery',
+    audience: 'Junior secondary learners',
+    description: 'A structured discovery track for junior learners moving deeper into science, technology, and problem solving.',
+    image: `${STANBIC_ASSET_BASE}/stanbic-stem-jss.png`,
+    matchers: ['jss', 'junior secondary', 'junior school', 'junior stem']
+  },
+  {
+    key: 'sss',
+    label: 'SSS',
+    title: 'SSS STEM Accelerator',
+    audience: 'Senior secondary learners',
+    description: 'An advanced track for senior learners preparing for more technical STEM concepts and future pathways.',
+    image: `${STANBIC_ASSET_BASE}/stanbic-stem-sss.png`,
+    matchers: ['sss', 'senior secondary', 'senior school', 'senior stem']
+  }
+])
 
 const PLATFORM_SETTING_DEFAULTS = Object.freeze({
   defaultCurrency: 'NGN',
@@ -227,6 +258,106 @@ const toIdString = (value) => {
   if (typeof value === 'string') return value
   if (typeof value === 'object' && value._id) return String(value._id)
   return String(value)
+}
+
+const normalizeStanbicSearchText = (...values) => values
+  .flatMap((value) => Array.isArray(value) ? value : [value])
+  .map((value) => String(value || '').toLowerCase())
+  .join(' ')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const resolveStanbicTrackFromText = (...values) => {
+  const haystack = normalizeStanbicSearchText(...values)
+  if (!haystack) return null
+  return STANBIC_PROGRAM_TRACKS.find((track) => (
+    track.matchers.some((matcher) => haystack.includes(matcher))
+  )) || null
+}
+
+const resolveStanbicTrackForCourse = (course) => resolveStanbicTrackFromText(
+  course?.title,
+  course?.summary,
+  course?.description,
+  course?.category,
+  course?.level,
+  course?.tags
+)
+
+const resolveStanbicTrackForProgram = (program) => {
+  const stepCourseValues = Array.isArray(program?.steps)
+    ? program.steps.flatMap((step) => [
+      step?.courseTitle,
+      step?.course?.title,
+      step?.course?.summary,
+      step?.course?.description,
+      step?.course?.category,
+      step?.course?.tags
+    ])
+    : []
+  return resolveStanbicTrackFromText(
+    program?.name,
+    program?.objective,
+    program?.description,
+    program?.tags,
+    stepCourseValues
+  )
+}
+
+const buildStanbicCoursePresentation = (course) => {
+  const track = resolveStanbicTrackForCourse(course)
+  const fallbackImage = track?.image || ''
+  return {
+    stanbicTrack: track,
+    displayBannerUrl: fallbackImage || course?.banner?.url || '',
+    displayBannerAlt: track
+      ? `${track.label} STEM course image`
+      : `${String(course?.title || 'Course').trim()} banner`
+  }
+}
+
+const buildStanbicProgramPresentation = (program) => {
+  const track = resolveStanbicTrackForProgram(program)
+  const fallbackImage = track?.image || ''
+  return {
+    stanbicTrack: track,
+    displayBannerUrl: fallbackImage || program?.banner?.url || '',
+    displayBannerAlt: track
+      ? `${track.label} STEM program image`
+      : `${String(program?.name || 'Program').trim()} banner`
+  }
+}
+
+const buildStanbicProgramCards = ({ programs = [], myPrograms = [] } = {}) => {
+  const progressByProgramId = new Map(
+    (myPrograms || []).map((entry) => [
+      toIdString(entry?.program?._id || entry?.program),
+      entry
+    ])
+  )
+
+  return STANBIC_PROGRAM_TRACKS.map((track) => {
+    const program = (programs || []).find((candidate) => candidate?.stanbicTrack?.key === track.key) || null
+    const programId = toIdString(program?._id)
+    const progress = progressByProgramId.get(programId) || null
+    const continuePath = progress?.nextEnrollmentId
+      ? `/simple-lms/learn/${encodeURIComponent(String(progress.nextEnrollmentId))}/${encodeURIComponent(String(progress.nextLessonKey || ''))}`
+      : '/simple-lms?view=my-learning'
+
+    return {
+      ...track,
+      program,
+      programId,
+      isAvailable: Boolean(program),
+      isEnrolled: Boolean(program?.isEnrolled || progress),
+      progressPercent: progress ? Math.max(0, Math.min(100, Number(progress.progressPercent || 0))) : 0,
+      totalSteps: Math.max(0, Number(program?.totalSteps || 0)),
+      requiredSteps: Math.max(0, Number(program?.requiredSteps || 0)),
+      anchor: programId ? `stanbic-program-${programId}` : '',
+      continuePath
+    }
+  })
 }
 
 const resolveRole = (account) => {
@@ -3173,9 +3304,11 @@ const decorateCourse = (course) => {
   const sellingAssignments = getCourseSellingAssignments(course, { onlyActive: false })
   const activeSellingAssignments = sellingAssignments.filter((assignment) => assignment.status === 'active')
   const reviewSummary = buildCourseReviewSummary(course)
+  const stanbicPresentation = buildStanbicCoursePresentation(course)
 
   return {
     ...course,
+    ...stanbicPresentation,
     createdById: toIdString(course?.createdBy),
     levelLabel: LEVEL_LABELS[course?.level] || 'Mixed',
     summaryText: String(course?.summary || '').trim() || String(course?.description || '').trim() || 'No summary yet.',
@@ -3851,12 +3984,17 @@ const decorateProgram = (program, courseLookupMap = new Map()) => {
     : []
 
   const visibilityDisplay = program?.visibility === 'organization_public' ? 'Public' : 'Private'
-  return {
+  const baseProgram = {
     ...program,
     steps,
     totalSteps: steps.length,
     requiredSteps: steps.filter(step => step.required).length,
     visibilityDisplay
+  }
+  const stanbicPresentation = buildStanbicProgramPresentation(baseProgram)
+  return {
+    ...baseProgram,
+    ...stanbicPresentation
   }
 }
 
@@ -6946,10 +7084,11 @@ pageRouter.post('/programs/:programId/restore', requirePageAuth, async (req, res
 pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res) => {
   try {
     const programId = String(req.params.programId || '').trim()
+    const returnTo = sanitizeInternalPath(req.body?.returnTo || '/simple-lms?view=programs', '/simple-lms?view=programs')
     if (!mongoose.Types.ObjectId.isValid(programId)) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=catalog',
+        path: returnTo,
         error: 'Invalid program selected.'
       })
     }
@@ -6963,7 +7102,7 @@ pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res)
     if (!program) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=catalog',
+        path: returnTo,
         error: 'Program not found or unavailable.'
       })
     }
@@ -6980,7 +7119,7 @@ pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res)
     if (orderedSteps.length === 0) {
       return redirectWithMessage({
         res,
-        path: '/simple-lms?view=catalog',
+        path: returnTo,
         error: 'This program has no valid courses yet.'
       })
     }
@@ -7014,7 +7153,7 @@ pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res)
 
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=my-learning',
+      path: createdCount > 0 ? '/simple-lms?view=my-learning' : returnTo,
       success: createdCount > 0
         ? `Program added to your learning path: ${program.name}.`
         : `Program already in your learning path: ${program.name}.`
@@ -7023,7 +7162,7 @@ pageRouter.post('/programs/:programId/enroll', requirePageAuth, async (req, res)
     console.error('Program enroll error:', error)
     return redirectWithMessage({
       res,
-      path: '/simple-lms?view=catalog',
+      path: '/simple-lms?view=programs',
       error: 'Failed to enroll in program.'
     })
   }
@@ -10147,6 +10286,10 @@ const renderWorkspacePage = async (
       isEnrolled: enrolledProgramIds.has(toIdString(program._id))
     }))
     const recommendedPrograms = catalogPrograms.filter(program => !program.isEnrolled).slice(0, 6)
+    const stanbicProgramCards = buildStanbicProgramCards({
+      programs: catalogPrograms,
+      myPrograms
+    })
 
     const adminAccounts = adminAccountsRaw.map((account) => {
       const partnerOrganizationId = toIdString(account.partnerOrganization)
@@ -11455,7 +11598,7 @@ const renderWorkspacePage = async (
           ? 'admin-dashboard'
           : (viewMode === 'settings'
               ? 'simple-lms-settings'
-              : (viewMode === 'overview' ? 'simple-lms-workspace' : 'simple-lms')))
+              : 'simple-lms'))
 
     return res.render(templateName, {
       title: studioPortal
@@ -11495,6 +11638,7 @@ const renderWorkspacePage = async (
       recommendedCourses,
       catalogPrograms,
       recommendedPrograms,
+      stanbicProgramCards,
       managedCourses,
       adminCourses: filteredManagedCourses,
       managedPrograms,

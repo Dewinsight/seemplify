@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "seed:stanbic-learner": "node scripts/createStanbicLearnerReviewUser.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
