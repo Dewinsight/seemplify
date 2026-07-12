@@ -1,6 +1,3 @@
-# Access credentials - DO NOT COMMIT
-access/
-
 # Environment files
 *.env
 *.env.local
@@ -21,6 +18,7 @@ secrets/
 !recruiter/frontend/app/public/ai-interview/\[token\]/page.tsx
 !ai-interview/frontend/app/public/ai-interview/\[token\]/
 !ai-interview/frontend/app/public/ai-interview/\[token\]/page.tsx
+access/
 
 # Logs
 *.log
