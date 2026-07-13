@@ -443,11 +443,6 @@ const JobSchema = new mongoose.Schema({
       type: Boolean,
       default: false // Require manual approval by default
     },
-    senderName: {
-      type: String,
-      trim: true,
-      default: 'SmartHR'
-    },
     senderEmail: {
       type: String,
       trim: true,
@@ -644,4 +639,4 @@ JobSchema.virtual('daysUntilDeadline').get(function() {
 // Ensure virtual fields are serialized
 JobSchema.set('toJSON', { virtuals: true });
 
-module.exports = mongoose.model('Job', JobSchema); 
+module.exports = mongoose.model('Job', JobSchema);

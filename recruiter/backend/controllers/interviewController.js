@@ -12,6 +12,7 @@ const multiNylasService = require('../services/multiNylasService'); // Multi-acc
 const AzureOpenAIService = require('../services/azureOpenAIService');
 const emailService = require('../services/emailService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { handleNylasError, handleInterviewError } = require('../utils/errorHandler');
 const timezoneUtils = require('../utils/timezoneUtils');
 const mongoose = require('mongoose');
@@ -336,6 +337,12 @@ const scheduleInterview = async (req, res) => {
       jobTitle = decodeHtmlEntities(candidate.position) || 'Position';
       jobCompany = 'Company';
     }
+
+    const organization = await resolveOrganizationForEmail({
+      job,
+      organizationId: req.user.currentOrganization
+    });
+    const organizationName = decodeHtmlEntities(organization.name);
     
     console.log('Job info:', { 
       jobId: job?._id, 
@@ -628,6 +635,7 @@ const scheduleInterview = async (req, res) => {
       jobId: job?._id,
       candidateId: candidate._id,
       interviewerId: interviewerId,
+      organizationId: organization._id,
       nylasEventId: event.id,
       title: event.title,
       subject: decodeHtmlEntities(subject || `Interview Invitation - ${job?.title || 'Position'}`),
@@ -816,9 +824,6 @@ const scheduleInterview = async (req, res) => {
       timeZone: emailTimezone,
       timeZoneName: 'short'
     });
-    
-    // Get organization name from interviewer's organization (interviewer already fetched above)
-    const organizationName = interviewer?.organization?.name || 'SmartHR';
     
     // Format interview type
     const formattedType = type === 'video' ? 'Video Call' : 
@@ -2856,7 +2861,11 @@ const cancelInterview = async (req, res) => {
         
         // Prepare interviewer info
         const interviewer = populatedInterview.interviewerId;
-        const organizationName = interviewer?.organization?.name || 'SmartHR';
+        const organization = await resolveOrganizationForEmail({
+          job: populatedInterview.jobId,
+          interview: populatedInterview
+        });
+        const organizationName = decodeHtmlEntities(organization.name);
         
         console.log('Cancellation email data preparation:', {
           candidateEmail: populatedInterview.candidateId.email,
@@ -4641,6 +4650,8 @@ const scheduleMultiCandidateInterview = async (req, res) => {
 
     const userId = req.user.id;
     const organizationId = req.user.currentOrganization;
+    const organization = await resolveOrganizationForEmail({ organizationId });
+    const organizationName = decodeHtmlEntities(organization.name);
     
     // Get interviewer details
     const interviewer = await User.findById(userId);
@@ -5244,7 +5255,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                     ? `${interviewer.profile.firstName} ${interviewer.profile.lastName}`
                     : interviewer.email,
                   interviewerEmail: interviewer.email,
-                  organizationName: interviewer.organization?.name || 'SmartHR'
+                  organizationName
                 };
                 
                 // Send the email - Use Nylas if available, fallback to Brevo
@@ -5349,7 +5360,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                 notes: slot.notes || '',
                 interviewerName: participant.name || participant.email.split('@')[0],
                 interviewerEmail: interviewer?.email || 'no-reply@smarthr.app',
-                organizationName: 'SmartHR',
+                organizationName,
                 // ✅ ADD CANDIDATE INFORMATION FOR ENHANCED NOTIFICATION
                 interviewId: interview._id,
                 candidateResumeUrl: candidate.cvUrl,
@@ -6158,4 +6169,4 @@ module.exports = {
   getAnalyticsScore,
   getComprehensiveAnalytics,
   getComprehensiveAnalyticsForInterview
-}; 
+};

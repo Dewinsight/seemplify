@@ -1077,9 +1077,10 @@ SmartHR Team
    * @param {String} options.subject - Email subject
    * @param {String} options.html - HTML content
    * @param {String} options.text - Plain text content (optional)
+   * @param {String} options.senderName - Sender display name (optional)
    * @returns {Promise} Send result
    */
-  async sendEmail({ to, subject, html, text }) {
+  async sendEmail({ to, subject, html, text, senderName }) {
     if (!this.apiKey) {
       console.error('❌ BREVO_API_KEY environment variable is not set! Email will fail to send.');
       throw new Error('Email service not properly configured');
@@ -1088,7 +1089,7 @@ SmartHR Team
     try {
       const emailData = {
         sender: {
-          name: 'SmartHR',
+          name: decodeHtmlEntities(senderName) || 'SmartHR',
           email: 'michael.egbo@aiinnigeria.com',
         },
         to: [{ email: to }],

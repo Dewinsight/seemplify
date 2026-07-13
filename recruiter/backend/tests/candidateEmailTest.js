@@ -25,7 +25,7 @@ const mockJob = {
     enableRejectionEmails: true,
     enableShortlistEmails: true,
     autoSendRejections: false,
-    senderName: 'Test Company',
+    senderName: 'Mega', // Legacy value must never be used as organization branding.
     senderEmail: 'hr@testcompany.com'
   }
 };
@@ -55,10 +55,13 @@ async function testEmailNotificationService() {
     // Test 3: Job Email Configuration
     console.log('3. Testing job email configuration...');
     const emailConfig = candidateEmailNotificationService.getJobEmailConfig(mockJob);
+    if ('senderName' in emailConfig) {
+      throw new Error('Legacy senderName fallback is still present');
+    }
     console.log('   ✅ Email configuration retrieved:', {
       enableAdvancementEmails: emailConfig.enableAdvancementEmails,
       enableRejectionEmails: emailConfig.enableRejectionEmails,
-      senderName: emailConfig.senderName
+      senderEmail: emailConfig.senderEmail
     });
 
     // Test 4: Email Template Processing (without sending)

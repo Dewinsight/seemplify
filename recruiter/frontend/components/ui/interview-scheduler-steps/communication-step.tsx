@@ -13,8 +13,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { InterviewSchedulerData } from '../multi-step-interview-scheduler';
 import { InterviewQuestionSelector } from '../interview-question-selector';
 import { toast } from 'sonner';
-import { useUser } from '@/context/UserContext';
-import { useOrganization } from '@/context/OrganizationContext';
 
 interface CommunicationStepProps {
   data: InterviewSchedulerData;
@@ -24,8 +22,6 @@ interface CommunicationStepProps {
 }
 
 export function CommunicationStep({ data, updateData, onNext, onPrevious }: CommunicationStepProps) {
-  const { state } = useUser();
-  const { currentOrganization } = useOrganization();
   const [localData, setLocalData] = useState({
     subject: data.subject || '',
     sendCustomEmail: data.sendCustomEmail !== undefined ? data.sendCustomEmail : true,
@@ -46,7 +42,6 @@ export function CommunicationStep({ data, updateData, onNext, onPrevious }: Comm
   }, []);
 
   const initializeEmailTemplate = () => {
-    const organizationName = currentOrganization?.name || 'Our Company';
     const defaultTemplate = `Dear {{candidateName}},
 
 We're pleased to confirm your upcoming interview for the {{jobTitle}} position.
