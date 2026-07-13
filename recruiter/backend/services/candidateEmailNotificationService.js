@@ -3,6 +3,7 @@ const Handlebars = require('handlebars');
 const path = require('path');
 const fs = require('fs').promises;
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 
 class CandidateEmailNotificationService {
   constructor() {
@@ -64,15 +65,27 @@ class CandidateEmailNotificationService {
       enableAdvancementEmails: true,
       enableRejectionEmails: true,
       enableShortlistEmails: true,
-      senderName: job?.organization?.name || 'SmartHR',
       senderEmail: job?.organization?.email || 'michael.egbo@aiinnigeria.com',
       autoSendRejections: false, // Manual by default
       customTemplates: {}
     };
 
-    // Merge with job-specific settings
-    const jobConfig = job?.emailSettings || {};
+    // Ignore the retired senderName field even when legacy jobs still contain it.
+    const rawJobConfig = job?.emailSettings || {};
+    const jobConfig = typeof rawJobConfig.toObject === 'function'
+      ? rawJobConfig.toObject()
+      : { ...rawJobConfig };
+    delete jobConfig.senderName;
     return { ...defaultConfig, ...jobConfig };
+  }
+
+  async getOrganizationEmailContext(job) {
+    const organization = await resolveOrganizationForEmail({ job });
+    return {
+      organization,
+      organizationName: decodeHtmlEntities(organization.name),
+      companyLogo: organization.logo || organization.logoUrl || ''
+    };
   }
 
   /**
@@ -201,18 +214,19 @@ class CandidateEmailNotificationService {
         return { sent: false, reason: 'Advancement emails disabled for this job' };
       }
 
+      const { organizationName, companyLogo } = await this.getOrganizationEmailContext(job);
+
       // Prepare template data (decode HTML entities)
-      const { decodeHtmlEntities } = require('../utils/htmlDecode');
       const templateData = {
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
         jobTitle: decodeHtmlEntities(job.title),
-        organizationName: job.organization?.name || emailConfig.senderName,
+        organizationName,
         nextStageName: toStage?.name || 'Next Stage',
         previousStageName: fromStage?.name || 'Previous Stage',
         stageDescription: toStage?.description || '',
         notes: notes || '',
         applicationDate: new Date().toLocaleDateString(),
-        companyLogo: job.organization?.logoUrl || ''
+        companyLogo
       };
 
       // Load and process template
@@ -237,7 +251,8 @@ class CandidateEmailNotificationService {
       const emailResult = await this.emailService.sendEmail({
         to: candidate.email,
         subject: decodeHtmlEntities(`Congratulations! Next steps for ${job.title} position`),
-        html: htmlContent
+        html: htmlContent,
+        organizationName
       });
 
       console.log('✅ Advancement email sent to:', candidate.email);
@@ -264,14 +279,15 @@ class CandidateEmailNotificationService {
         return { sent: false, reason: 'Shortlist emails disabled for this job' };
       }
 
+      const { organizationName, companyLogo } = await this.getOrganizationEmailContext(job);
+
       // Prepare template data (decode HTML entities)
-      const { decodeHtmlEntities } = require('../utils/htmlDecode');
       const templateData = {
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
         jobTitle: decodeHtmlEntities(job.title),
-        organizationName: job.organization?.name || emailConfig.senderName,
+        organizationName,
         applicationDate: new Date().toLocaleDateString(),
-        companyLogo: job.organization?.logoUrl || ''
+        companyLogo
       };
 
       // Load and process template
@@ -296,7 +312,8 @@ class CandidateEmailNotificationService {
       const emailResult = await this.emailService.sendEmail({
         to: candidate.email,
         subject: decodeHtmlEntities(`Great news about your application for ${job.title}`),
-        html: htmlContent
+        html: htmlContent,
+        organizationName
       });
 
       console.log('✅ Shortlist email sent to:', candidate.email);
@@ -333,8 +350,9 @@ class CandidateEmailNotificationService {
         return { sent: false, reason: 'Manual approval required', queued: true };
       }
 
+      const { organizationName, companyLogo } = await this.getOrganizationEmailContext(job);
+
       // Prepare template data (decode HTML entities)
-      const { decodeHtmlEntities } = require('../utils/htmlDecode');
       
       console.log('🔍 REJECTION EMAIL DEBUG:', {
         candidateEmail: candidate.email,
@@ -348,11 +366,11 @@ class CandidateEmailNotificationService {
       const templateData = {
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
         jobTitle: decodeHtmlEntities(job.title),
-        organizationName: job.organization?.name || emailConfig.senderName,
+        organizationName,
         feedback: reason || '',
         stage: stage || '',
         applicationDate: new Date().toLocaleDateString(),
-        companyLogo: job.organization?.logoUrl || ''
+        companyLogo
       };
       
       console.log('📧 Template data prepared:', {
@@ -391,7 +409,8 @@ class CandidateEmailNotificationService {
       const emailResult = await this.emailService.sendEmail({
         to: candidate.email,
         subject: subject,
-        html: htmlContent
+        html: htmlContent,
+        organizationName
       });
 
       console.log('✅ Rejection email sent to:', candidate.email);
@@ -491,9 +510,12 @@ class CandidateEmailNotificationService {
       
       const templateName = 'application-confirmation';
       const template = await this.loadTemplate(templateName);
-      
+      const { organization, organizationName } = await this.getOrganizationEmailContext(job);
+      const organizationData = typeof organization.toObject === 'function'
+        ? organization.toObject()
+        : organization;
+
       // Decode HTML entities in job data
-      const { decodeHtmlEntities } = require('../utils/htmlDecode');
       const templateData = {
         candidate: {
           firstName: candidate.firstName,
@@ -502,7 +524,10 @@ class CandidateEmailNotificationService {
         },
         job: {
           title: decodeHtmlEntities(job.title),
-          organization: job.organization,
+          organization: {
+            ...organizationData,
+            name: organizationName
+          },
           location: decodeHtmlEntities(job.location),
           contactEmail: job.contactEmail
         },
@@ -511,22 +536,14 @@ class CandidateEmailNotificationService {
 
       const htmlContent = template(templateData);
       
-      const subject = decodeHtmlEntities(`Application Received - ${job.title} at ${job.organization.name}`);
-      
-      // Use basic email settings for application confirmations
-      const basicEmailSettings = {
-        senderName: job.organization.name || 'SmartHR',
-        senderEmail: job.contactEmail || process.env.DEFAULT_FROM_EMAIL,
-        ccEmails: [],
-        bccEmails: [],
-        emailSignature: ''
-      };
+      const subject = decodeHtmlEntities(`Application Received - ${job.title} at ${organizationName}`);
       
       // Send email using the EmailService (Brevo)
       const emailResult = await this.emailService.sendEmail({
         to: candidate.email,
         subject,
-        html: htmlContent
+        html: htmlContent,
+        organizationName
       });
 
       console.log('✅ Application confirmation email sent to:', candidate.email);
@@ -552,6 +569,7 @@ class CandidateEmailNotificationService {
         return null;
       }
 
+      const { organizationName } = await this.getOrganizationEmailContext(job);
       const subject = `Application Limit Reached: ${job.title}`;
       
       const htmlContent = `
@@ -597,7 +615,7 @@ class CandidateEmailNotificationService {
               </a>
             </div>
             <div class="footer">
-              <p>This is an automated notification from SmartHR</p>
+              <p>This is an automated notification from ${organizationName}</p>
             </div>
           </div>
         </body>
@@ -608,7 +626,8 @@ class CandidateEmailNotificationService {
       const emailResult = await this.emailService.sendEmail({
         to: recipientEmail,
         subject: decodeHtmlEntities(subject),
-        html: htmlContent
+        html: htmlContent,
+        organizationName
       });
 
       console.log('✅ Application limit reached email sent to:', recipientEmail);

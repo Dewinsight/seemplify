@@ -5,7 +5,6 @@ interface EmailSettings {
   enableRejectionEmails?: boolean;
   enableShortlistEmails?: boolean;
   autoSendRejections?: boolean;
-  senderName?: string;
   customTemplates?: {
     advancement?: string;
     shortlist?: string;

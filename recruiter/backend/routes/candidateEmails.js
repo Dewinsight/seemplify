@@ -317,7 +317,6 @@ router.put('/job/:jobId/email-settings',
     body('enableRejectionEmails').optional().isBoolean(),
     body('enableShortlistEmails').optional().isBoolean(),
     body('autoSendRejections').optional().isBoolean(),
-    body('senderName').optional().isString().trim(),
     body('senderEmail').optional().isEmail().normalizeEmail(),
     body('customTemplates').optional().isObject(),
     body('emailSignature').optional().isString().trim(),
@@ -336,6 +335,7 @@ router.put('/job/:jobId/email-settings',
       const { jobId } = req.params;
       const organizationId = req.user?.currentOrganization;
       const emailSettings = decodeObjectHtmlEntities(req.body || {});
+      delete emailSettings.senderName;
 
       // Build query to ensure job belongs to organization
       const query = { _id: jobId };
@@ -348,9 +348,13 @@ router.put('/job/:jobId/email-settings',
         return res.status(404).json({ msg: 'Job not found' });
       }
 
-      // Update email settings
+      // Update email settings without carrying forward the retired senderName field.
+      const currentEmailSettings = typeof job.emailSettings?.toObject === 'function'
+        ? job.emailSettings.toObject()
+        : { ...(job.emailSettings || {}) };
+      delete currentEmailSettings.senderName;
       job.emailSettings = {
-        ...job.emailSettings,
+        ...currentEmailSettings,
         ...emailSettings,
         lastUpdated: new Date(),
         updatedBy: req.user._id

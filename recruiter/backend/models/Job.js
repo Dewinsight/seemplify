@@ -420,11 +420,6 @@ const JobSchema = new mongoose.Schema({
       type: Boolean,
       default: false // Require manual approval by default
     },
-    senderName: {
-      type: String,
-      trim: true,
-      default: 'SmartHR'
-    },
     senderEmail: {
       type: String,
       trim: true,

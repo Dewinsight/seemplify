@@ -4,6 +4,8 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const nylasEmailService = require('../services/nylasEmailService');
 const User = require('../models/User');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 
 /**
  * GET /api/nylas-grants/email-permissions
@@ -147,6 +149,11 @@ router.post('/test-email', authMiddleware, requireOrganization, async (req, res)
       });
     }
 
+    const organization = await resolveOrganizationForEmail({
+      organizationId: req.user.currentOrganization
+    });
+    const organizationName = decodeHtmlEntities(organization.name);
+
     // Test email data
     const templateData = {
       candidateName: 'Test User',
@@ -157,7 +164,7 @@ router.post('/test-email', authMiddleware, requireOrganization, async (req, res)
       interviewType: 'Video',
       meetingLink: 'https://meet.google.com/test-link',
       interviewerName: user.name || user.email,
-      organizationName: 'Smart HR System',
+      organizationName,
       interviewerEmail: user.email
     };
 

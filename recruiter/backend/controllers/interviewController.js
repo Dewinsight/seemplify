@@ -3,7 +3,6 @@ const InterviewComment = require('../models/InterviewComment');
 const Candidate = require('../models/Candidate');
 const Job = require('../models/Job');
 const User = require('../models/User');
-const Organization = require('../models/Organization');
 const InterviewStage = require('../models/InterviewStage');
 const Notification = require('../models/Notification');
 const nylasV3Service = require('../services/nylasV3Service');
@@ -15,7 +14,7 @@ const AzureOpenAIService = require('../services/azureOpenAIService');
 const emailService = require('../services/emailService');
 const pdfService = require('../services/pdfService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
-const { resolveOrganizationBrand } = require('../utils/organizationBrand');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { handleNylasError, handleInterviewError } = require('../utils/errorHandler');
 const timezoneUtils = require('../utils/timezoneUtils');
 const mongoose = require('mongoose');
@@ -338,36 +337,6 @@ function buildTeamsPreflightError({ provider, grantVerification }) {
   return null;
 }
 
-async function resolveOrganizationName({
-  interviewer = null,
-  organizationId = null,
-  fallback = resolveOrganizationBrand()
-} = {}) {
-  try {
-    const fromInterviewer = interviewer?.organization?.name;
-    if (fromInterviewer) {
-      return decodeHtmlEntities(fromInterviewer);
-    }
-
-    const resolvedOrganizationId =
-      organizationId ||
-      interviewer?.currentOrganization ||
-      interviewer?.organization?._id ||
-      interviewer?.organization;
-
-    if (resolvedOrganizationId && mongoose.Types.ObjectId.isValid(String(resolvedOrganizationId))) {
-      const org = await Organization.findById(resolvedOrganizationId).select('name');
-      if (org?.name) {
-        return decodeHtmlEntities(org.name);
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to resolve organization name for interview email branding:', error.message);
-  }
-
-  return fallback;
-}
-
 function resolveJobDetailsLink(job = null) {
   if (!job) {
     return null;
@@ -566,6 +535,12 @@ const scheduleInterview = async (req, res) => {
       jobTitle = decodeHtmlEntities(candidate.position) || 'Position';
       jobCompany = 'Company';
     }
+
+    const organization = await resolveOrganizationForEmail({
+      job,
+      organizationId: req.user?.currentOrganization
+    });
+    const organizationName = decodeHtmlEntities(organization.name);
     
     console.log('Job info:', { 
       jobId: job?._id, 
@@ -574,11 +549,6 @@ const scheduleInterview = async (req, res) => {
       source: jobId ? 'request' : (candidate.jobAppliedFor ? 'candidate' : 'fallback')
     });
 
-    const resolvedOrganizationName = await resolveOrganizationName({
-      interviewer,
-      organizationId: req.user?.currentOrganization
-    });
-    
     // CRITICAL: Check availability BEFORE creating event
     console.log('Checking availability for interviewer...');
     console.log('Candidate info:', { 
@@ -768,7 +738,7 @@ const scheduleInterview = async (req, res) => {
       startTime: timeData.startTimeISO,  // FIXED: Use processed ISO time
       endTime: timeData.endTimeISO,      // FIXED: Use processed ISO time  
       location: 'Video Call',
-      organizationName: resolvedOrganizationName,
+      organizationName,
       addNotetaker,
       skipServiceNotetaker: true,
       notifyParticipants: true,
@@ -888,6 +858,7 @@ const scheduleInterview = async (req, res) => {
       jobId: job?._id,
       candidateId: candidate._id,
       interviewerId: interviewerId,
+      organizationId: organization._id,
       nylasEventId: event.id,
       title: event.title,
       subject: decodeHtmlEntities(subject || `Interview Invitation - ${job?.title || 'Position'}`),
@@ -1063,9 +1034,6 @@ const scheduleInterview = async (req, res) => {
       timeZone: emailTimezone,
       timeZoneName: 'short'
     });
-    
-    // Get organization name from interviewer's organization (interviewer already fetched above)
-    const organizationName = resolvedOrganizationName;
     
     // Format interview type
     const formattedType = type === 'video' ? 'Video Call' : 
@@ -3161,10 +3129,12 @@ const cancelInterview = async (req, res) => {
         
         // Prepare interviewer info
         const interviewer = populatedInterview.interviewerId;
-        const organizationName = await resolveOrganizationName({
-          interviewer,
-          organizationId: populatedInterview.organizationId || req.user?.currentOrganization
+        const organization = await resolveOrganizationForEmail({
+          job: populatedInterview.jobId,
+          interview: populatedInterview,
+          organizationId: req.user?.currentOrganization
         });
+        const organizationName = decodeHtmlEntities(organization.name);
         
         console.log('Cancellation email data preparation:', {
           candidateEmail: populatedInterview.candidateId.email,
@@ -3188,9 +3158,7 @@ const cancelInterview = async (req, res) => {
         };
         
         // Send the cancellation email
-        const emailService = require('../services/emailService');
-        const emailServiceInstance = new emailService();
-        await emailServiceInstance.sendInterviewCancellationEmail(
+        await emailService.sendInterviewCancellationEmail(
           populatedInterview.candidateId.email,
           templateData
         );
@@ -4949,6 +4917,8 @@ const scheduleMultiCandidateInterview = async (req, res) => {
 
     const userId = req.user.id;
     const organizationId = req.user.currentOrganization;
+    const organization = await resolveOrganizationForEmail({ organizationId });
+    const sessionOrganizationName = decodeHtmlEntities(organization.name);
     
     // Get interviewer details
     const interviewer = await User.findById(userId);
@@ -4959,11 +4929,6 @@ const scheduleMultiCandidateInterview = async (req, res) => {
       });
     }
 
-    const sessionOrganizationName = await resolveOrganizationName({
-      interviewer,
-      organizationId
-    });
-    
     // Decode timezone string (may be HTML-encoded from frontend)
     const rawSessionTimezone = req.body.timezone || interviewer?.profile?.timezone || 'UTC';
     const sessionTimezone = decodeHtmlEntities(rawSessionTimezone);

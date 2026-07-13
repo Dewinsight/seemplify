@@ -12,8 +12,9 @@ function normalizeBrand(value) {
   return decodeHtmlEntities(String(value)).replace(/\s+/g, ' ').trim();
 }
 
-// Env-configured brands are sanitized so leftover junk (e.g. "Mega") is ignored.
-function envBrand(value) {
+// Organization brands are sanitized so leftover junk (e.g. "Mega") is ignored
+// regardless of whether it came from the database, request context, or env.
+function normalizeOrganizationBrand(value) {
   const brand = normalizeBrand(value);
   return INVALID_BRAND_VALUES.has(brand.toLowerCase()) ? '' : brand;
 }
@@ -33,15 +34,16 @@ function envBrand(value) {
  */
 function resolveOrganizationBrand(organizationName = null) {
   return (
-    normalizeBrand(organizationName) ||
-    envBrand(process.env.DEFAULT_ORGANIZATION_NAME) ||
-    envBrand(process.env.ORGANIZATION_NAME) ||
-    envBrand(process.env.BREVO_SENDER_NAME) ||
+    normalizeOrganizationBrand(organizationName) ||
+    normalizeOrganizationBrand(process.env.DEFAULT_ORGANIZATION_NAME) ||
+    normalizeOrganizationBrand(process.env.ORGANIZATION_NAME) ||
+    normalizeOrganizationBrand(process.env.BREVO_SENDER_NAME) ||
     DEFAULT_ORGANIZATION_BRAND
   );
 }
 
 module.exports = {
   resolveOrganizationBrand,
+  normalizeOrganizationBrand,
   DEFAULT_ORGANIZATION_BRAND
 };

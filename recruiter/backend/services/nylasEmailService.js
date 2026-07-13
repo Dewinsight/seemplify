@@ -38,10 +38,10 @@ class NylasEmailService {
       return content;
     }
     const brand = resolveOrganizationBrand(organizationName);
-    // Replace only standalone SmartHR labels in text content.
-    // Do NOT replace when SmartHR is part of URLs/domains/emails (e.g. smarthr.aiinnigeria.com).
+    // Replace standalone product labels and the retired Mega placeholder.
+    // Do not replace labels inside URLs, domains, or email addresses.
     return String(content).replace(
-      /(^|[^A-Za-z0-9_./@-])(smarthr)(?=$|[^A-Za-z0-9_./@-])/gi,
+      /(^|[^A-Za-z0-9_./@-])(smarthr|mega)(?=$|[^A-Za-z0-9_./@-])/gi,
       (_match, prefix) => `${prefix}${brand}`
     );
   }
@@ -61,7 +61,8 @@ class NylasEmailService {
       [/https:\/\/teams\.microsoft\.com\/l\/meetup-join\/example/gi, '{{meetingLink}}'],
       [/please have your portfolio ready for screen sharing\./gi, '{{notes}}'],
       [/michael\s+adams/gi, '{{interviewerName}}'],
-      [/smarthr/gi, '{{organizationName}}']
+      [/smarthr/gi, '{{organizationName}}'],
+      [/\bmega\b/gi, '{{organizationName}}']
     ];
 
     let normalized = String(template);
@@ -178,7 +179,10 @@ class NylasEmailService {
 
       const organizationName = resolveOrganizationBrand(templateData.organizationName);
       const brandedHtmlContent = this.applyOrganizationBrand(htmlContent, organizationName);
-      const baseSubject = decodeHtmlEntities(customSubject || `Interview Invitation: ${templateData.jobTitle} - ${templateData.interviewDate}`);
+      const baseSubject = this.applyOrganizationBrand(
+        decodeHtmlEntities(customSubject || `Interview Invitation: ${templateData.jobTitle} - ${templateData.interviewDate}`),
+        organizationName
+      );
       const normalizedSubject = baseSubject.toLowerCase();
       const normalizedOrganization = organizationName.toLowerCase();
       const brandedSubject = normalizedSubject.startsWith(`${normalizedOrganization} -`) ||
