@@ -178,7 +178,11 @@ class InterviewFeedbackEmailService {
       // Get job data (decode HTML entities)
       const job = interview.jobId;
       const jobTitle = job ? decodeHtmlEntities(job.title) : 'Position';
-      const organization = await resolveOrganizationForEmail({ job, interview });
+      const organization = await resolveOrganizationForEmail({
+        job,
+        interview,
+        userId: mainInterviewer?._id
+      });
       const organizationName = decodeHtmlEntities(organization.name);
       
       // Format interview date/time

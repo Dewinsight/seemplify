@@ -80,7 +80,10 @@ class CandidateEmailNotificationService {
   }
 
   async getOrganizationEmailContext(job) {
-    const organization = await resolveOrganizationForEmail({ job });
+    const organization = await resolveOrganizationForEmail({
+      job,
+      userId: job?.createdBy?._id || job?.createdBy
+    });
     return {
       organization,
       organizationName: decodeHtmlEntities(organization.name),

@@ -8,6 +8,10 @@ const otpService = require('../services/otpService');
 const sessionService = require('../services/sessionService');
 const jwt = require('jsonwebtoken');
 const { Issuer, generators } = require('openid-client');
+const {
+  getAuthoritativeOrganizationName,
+  organizationNameNeedsSync
+} = require('../utils/organizationIdentitySync');
 
 const router = express.Router();
 
@@ -749,6 +753,17 @@ router.get('/oidc/callback', async (req, res) => {
               console.log('🔄 Will update user role in organization:', organization.name);
             }
           }
+        }
+
+        if (organization && organizationNameNeedsSync(organization, orgClaim)) {
+          const authoritativeName = getAuthoritativeOrganizationName(orgClaim);
+          orgsToUpdate.push({
+            updateOne: {
+              filter: { _id: organization._id },
+              update: { $set: { name: authoritativeName, updatedAt: new Date() } }
+            }
+          });
+          organization.name = authoritativeName;
         }
 
         // Sync user's org memberships to match IdP claims (source of truth)

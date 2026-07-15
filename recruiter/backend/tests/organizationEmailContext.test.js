@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { syncOrganizationNameFromIdp } = require('../utils/organizationIdentitySync');
 
 test('uses a populated job organization without a lookup', async () => {
   const organization = { _id: 'org-1', name: 'Acme Ltd' };
@@ -38,6 +39,48 @@ test('uses interview organization for a jobless interview', async () => {
   );
 
   assert.equal(resolved.name, 'Interview Org');
+});
+
+test('repairs a legacy Mega name from the job organization IdP record', async () => {
+  const localOrganization = {
+    _id: 'job-org',
+    idpOrganizationId: 'idp-org',
+    name: 'Mega'
+  };
+  let persistedUpdate = null;
+
+  const resolved = await resolveOrganizationForEmail(
+    {
+      job: { organization: 'job-org' },
+      organizationId: 'request-org',
+      userId: 'user-1'
+    },
+    {
+      lookupOrganization: async (id) => {
+        assert.equal(id, 'job-org');
+        return localOrganization;
+      },
+      refreshOrganization: async (organization, userId) => {
+        assert.equal(organization, localOrganization);
+        assert.equal(userId, 'user-1');
+        return syncOrganizationNameFromIdp(
+          organization,
+          { id: 'idp-org', name: 'Acme Ltd' },
+          {
+            persistName: async (organizationId, name) => {
+              persistedUpdate = { organizationId, name };
+            }
+          }
+        );
+      }
+    }
+  );
+
+  assert.equal(resolved.name, 'Acme Ltd');
+  assert.deepEqual(persistedUpdate, {
+    organizationId: 'job-org',
+    name: 'Acme Ltd'
+  });
 });
 
 test('does not fall back when the job organization fails', async () => {

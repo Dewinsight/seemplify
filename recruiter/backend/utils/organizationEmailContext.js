@@ -1,4 +1,5 @@
 const { normalizeOrganizationBrand } = require('./organizationBrand');
+const { syncOrganizationNameFromIdp } = require('./organizationIdentitySync');
 
 const getOrganizationId = (value) => {
   if (!value) return null;
@@ -8,8 +9,29 @@ const getOrganizationId = (value) => {
 async function findOrganizationById(organizationId) {
   const Organization = require('../models/Organization');
   return Organization.findById(organizationId)
-    .select('name logo website')
+    .select('name logo website idpOrganizationId')
     .lean();
+}
+
+async function fetchIdpOrganization(idpOrganizationId, userId) {
+  const idpService = require('../services/idpService');
+  return idpService.getOrganization(idpOrganizationId, userId);
+}
+
+async function refreshOrganizationFromIdp(
+  organization,
+  userId,
+  {
+    fetchOrganization = fetchIdpOrganization,
+    syncOrganization = syncOrganizationNameFromIdp
+  } = {}
+) {
+  if (!organization?.idpOrganizationId || !userId) {
+    return null;
+  }
+
+  const idpOrganization = await fetchOrganization(organization.idpOrganizationId, userId);
+  return syncOrganization(organization, idpOrganization);
 }
 
 /**
@@ -18,8 +40,11 @@ async function findOrganizationById(organizationId) {
  * as another organization when stale user data is present.
  */
 async function resolveOrganizationForEmail(
-  { job, interview, organization, organizationId } = {},
-  { lookupOrganization = findOrganizationById } = {}
+  { job, interview, organization, organizationId, userId } = {},
+  {
+    lookupOrganization = findOrganizationById,
+    refreshOrganization = refreshOrganizationFromIdp
+  } = {}
 ) {
   const sources = [
     job?.organization,
@@ -45,9 +70,20 @@ async function resolveOrganizationForEmail(
     return resolved;
   }
 
+  const refreshableOrganization = resolved || (
+    typeof source === 'object' && source?.idpOrganizationId ? source : null
+  );
+  if (refreshableOrganization && userId) {
+    const refreshed = await refreshOrganization(refreshableOrganization, userId);
+    if (normalizeOrganizationBrand(refreshed?.name)) {
+      return refreshed;
+    }
+  }
+
   throw new Error('Cannot send organization email because its organization could not be resolved');
 }
 
 module.exports = {
+  refreshOrganizationFromIdp,
   resolveOrganizationForEmail
 };

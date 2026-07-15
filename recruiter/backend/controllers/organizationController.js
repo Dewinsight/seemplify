@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const planService = require('../services/planService');
 const idpService = require('../services/idpService');
+const { syncOrganizationNameFromIdp } = require('../utils/organizationIdentitySync');
 
 // Create organization - REQUIRES IdP as the source of truth
 exports.createOrganization = async (req, res) => {
@@ -231,6 +232,8 @@ exports.getUserOrganizations = async (req, res) => {
           console.log('✅ Created local shell org:', localOrg._id);
         }
 
+        await syncOrganizationNameFromIdp(localOrg, idpOrg);
+
         organizations.push({
           _id: localOrg._id, // Always use local MongoDB ID
           idpOrganizationId: idpOrg.id,
@@ -370,6 +373,8 @@ exports.switchOrganization = async (req, res) => {
         console.log('❌ Access denied - user is not a member in IdP:', localOrg.idpOrganizationId);
         return res.status(403).json({ msg: 'Access denied to this organization' });
       }
+
+      await syncOrganizationNameFromIdp(localOrg, idpOrg);
 
       console.log('✅ User is member of organization in IdP, switching...');
 
@@ -663,6 +668,7 @@ exports.getOrganization = async (req, res) => {
       const idpOrg = await idpService.getOrganization(localOrg.idpOrganizationId, userId);
 
       console.log('✅ IdP returned organization:', idpOrg.name);
+      await syncOrganizationNameFromIdp(localOrg, idpOrg);
 
       // Merge IdP data with local plan data
       const organization = {

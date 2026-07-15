@@ -150,7 +150,8 @@ router.post('/test-email', authMiddleware, requireOrganization, async (req, res)
     }
 
     const organization = await resolveOrganizationForEmail({
-      organizationId: req.user.currentOrganization
+      organizationId: req.user.currentOrganization,
+      userId: req.user.id
     });
     const organizationName = decodeHtmlEntities(organization.name);
 

@@ -538,7 +538,8 @@ const scheduleInterview = async (req, res) => {
 
     const organization = await resolveOrganizationForEmail({
       job,
-      organizationId: req.user?.currentOrganization
+      organizationId: req.user?.currentOrganization,
+      userId: req.user?.id
     });
     const organizationName = decodeHtmlEntities(organization.name);
     
@@ -3132,7 +3133,8 @@ const cancelInterview = async (req, res) => {
         const organization = await resolveOrganizationForEmail({
           job: populatedInterview.jobId,
           interview: populatedInterview,
-          organizationId: req.user?.currentOrganization
+          organizationId: req.user?.currentOrganization,
+          userId: req.user?.id
         });
         const organizationName = decodeHtmlEntities(organization.name);
         
@@ -4917,7 +4919,10 @@ const scheduleMultiCandidateInterview = async (req, res) => {
 
     const userId = req.user.id;
     const organizationId = req.user.currentOrganization;
-    const organization = await resolveOrganizationForEmail({ organizationId });
+    const organization = await resolveOrganizationForEmail({
+      organizationId,
+      userId: req.user?.id
+    });
     const sessionOrganizationName = decodeHtmlEntities(organization.name);
     
     // Get interviewer details
