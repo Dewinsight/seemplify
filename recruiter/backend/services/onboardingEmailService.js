@@ -1,8 +1,11 @@
-const mongoose = require('mongoose');
 const CandidateOnboarding = require('../models/CandidateOnboarding');
-const Organization = require('../models/Organization');
 const emailService = require('./emailService');
 const { processCopy } = require('./onboardingWorkflowService');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const {
+  DEFAULT_ORGANIZATION_BRAND,
+  requireOrganizationBrand
+} = require('../utils/organizationBrand');
 
 const DEFAULT_CANDIDATE_PORTAL_URL = 'https://candidate.seemplifyai.com';
 const DEFAULT_AKWA_IBOM_CANDIDATE_PORTAL_URL = 'https://candidate-ibom.aiinnigeria.com';
@@ -99,35 +102,31 @@ function compactText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function organizationIdFrom(value) {
-  if (!value) return '';
-  if (typeof value === 'object') {
-    return value._id || value.id || '';
-  }
-  return value;
+function contextUserId({ request, req, envelope, onboarding } = {}) {
+  const activeRequest = request || req;
+  return (
+    activeRequest?.user?.id ||
+    activeRequest?.user?._id ||
+    envelope?.createdBy?._id ||
+    envelope?.createdBy ||
+    onboarding?.startedBy?._id ||
+    onboarding?.startedBy ||
+    null
+  );
 }
 
-async function resolveOrganization(organization) {
+async function resolveOrganization(organization, context = {}) {
   if (!organization) return null;
-  if (typeof organization === 'object' && compactText(organization.name)) {
-    return organization;
-  }
-
-  const organizationId = organizationIdFrom(organization);
-  if (!organizationId || !mongoose.Types.ObjectId.isValid(String(organizationId))) {
-    return typeof organization === 'object' ? organization : null;
-  }
-
-  const resolved = await Organization.findById(organizationId)
-    .select('name logo website idpOrganizationId')
-    .lean()
-    .catch(() => null);
-
-  return resolved || (typeof organization === 'object' ? organization : null);
+  return resolveOrganizationForEmail({
+    organization,
+    userId: contextUserId(context)
+  });
 }
 
 function organizationDisplayName(organization) {
-  return compactText(organization?.name) || 'Seemplify';
+  return organization
+    ? requireOrganizationBrand(organization.name)
+    : DEFAULT_ORGANIZATION_BRAND;
 }
 
 function formatDate(value) {
@@ -300,7 +299,7 @@ function envelopeDocumentCount(envelope = {}) {
 }
 
 async function sendCandidateInvite({ candidate, organization, inviteToken, onboarding, request, req }) {
-  const resolvedOrganization = await resolveOrganization(organization);
+  const resolvedOrganization = await resolveOrganization(organization, { request, req, onboarding });
   const portalContext = { organization: resolvedOrganization || organization, request: request || req };
   const portalUrl = candidatePortalUrl(`/signup?token=${encodeURIComponent(inviteToken)}`, portalContext);
   const name = candidateName(candidate);
@@ -339,7 +338,7 @@ async function sendCandidateInvite({ candidate, organization, inviteToken, onboa
 }
 
 async function sendEnvelopeNotification({ candidate, organization, envelope, request, req }) {
-  const resolvedOrganization = await resolveOrganization(organization);
+  const resolvedOrganization = await resolveOrganization(organization, { request, req, envelope });
   const transition = await transitionSummary(envelope);
   const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization: resolvedOrganization || organization, request: request || req });
   const name = candidateName(candidate);
@@ -377,7 +376,7 @@ async function sendEnvelopeNotification({ candidate, organization, envelope, req
 }
 
 async function sendEnvelopeReminder({ signer, organization, envelope, request, req }) {
-  const resolvedOrganization = await resolveOrganization(organization);
+  const resolvedOrganization = await resolveOrganization(organization, { request, req, envelope });
   const transition = await transitionSummary(envelope);
   const portalUrl = signerActionUrl({ signer, envelope, transition, organization: resolvedOrganization || organization, request, req });
   const organizationName = organizationDisplayName(resolvedOrganization || organization);
@@ -417,7 +416,7 @@ async function sendEnvelopeReminder({ signer, organization, envelope, request, r
 }
 
 async function sendEnvelopeSignerNotification({ signer, organization, envelope, request, req }) {
-  const resolvedOrganization = await resolveOrganization(organization);
+  const resolvedOrganization = await resolveOrganization(organization, { request, req, envelope });
   const transition = await transitionSummary(envelope);
   const portalUrl = signerActionUrl({ signer, envelope, transition, organization: resolvedOrganization || organization, request, req });
   const organizationName = organizationDisplayName(resolvedOrganization || organization);
@@ -457,7 +456,7 @@ async function sendEnvelopeSignerNotification({ signer, organization, envelope, 
 }
 
 async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, request, req }) {
-  const resolvedOrganization = await resolveOrganization(organization);
+  const resolvedOrganization = await resolveOrganization(organization, { request, req, envelope });
   const transition = await transitionSummary(envelope);
   const recipientSigner = Array.isArray(envelope.signers)
     ? envelope.signers.find((signer) => String(signer.email || '').toLowerCase() === String(recipientEmail || '').toLowerCase())
@@ -507,7 +506,7 @@ async function sendEnvelopeCompleted({ recipientEmail, organization, envelope, r
 }
 
 async function sendWorkflowReminder({ candidate, organization, onboarding, item, request, req }) {
-  const resolvedOrganization = await resolveOrganization(organization);
+  const resolvedOrganization = await resolveOrganization(organization, { request, req, onboarding });
   const transition = await transitionSummary(onboarding);
   const portalUrl = candidatePortalUrl(transitionPortalPath(transition), { organization: resolvedOrganization || organization, request: request || req });
   const name = candidateName(candidate);

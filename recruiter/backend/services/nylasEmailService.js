@@ -2,7 +2,10 @@ const Nylas = require('nylas').default;
 const Handlebars = require('handlebars');
 const configLoader = require('../config/configLoader');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
-const { resolveOrganizationBrand } = require('../utils/organizationBrand');
+const {
+  resolveOrganizationBrand,
+  requireOrganizationBrand
+} = require('../utils/organizationBrand');
 const {
   isHtmlLike,
   sanitizeEmailHtml,
@@ -177,7 +180,7 @@ class NylasEmailService {
         });
       }
 
-      const organizationName = resolveOrganizationBrand(templateData.organizationName);
+      const organizationName = requireOrganizationBrand(templateData.organizationName);
       const brandedHtmlContent = this.applyOrganizationBrand(htmlContent, organizationName);
       const baseSubject = this.applyOrganizationBrand(
         decodeHtmlEntities(customSubject || `Interview Invitation: ${templateData.jobTitle} - ${templateData.interviewDate}`),

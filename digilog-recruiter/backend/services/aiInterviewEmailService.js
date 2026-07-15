@@ -2,9 +2,10 @@ const crypto = require('crypto');
 const cron = require('node-cron');
 const AIInterview = require('../models/AIInterview');
 const AIInterviewSession = require('../models/AIInterviewSession');
-const Organization = require('../models/Organization');
 const emailService = require('./emailService');
 const creditsService = require('./creditsService');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
 
@@ -198,14 +199,16 @@ class AIInterviewEmailService {
     }
     session = claimedSession;
 
-    const organizationName =
-      interview.organization?.name ||
-      (await Organization.findById(organizationId).select('name'))?.name ||
-      'Organization';
     const jobTitle = interview.job?.title || 'the role';
     const candidateName = session.candidateSnapshot?.name || candidateEmail;
 
     try {
+      const organization = await resolveOrganizationForEmail({
+        job: interview.job,
+        organization: interview.organization,
+        organizationId
+      });
+      const organizationName = decodeHtmlEntities(organization.name);
       const result = await emailService.sendEmail({
         to: candidateEmail,
         subject: `AI Interview Invitation - ${jobTitle}`,

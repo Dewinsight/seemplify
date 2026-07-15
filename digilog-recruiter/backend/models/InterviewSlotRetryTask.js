@@ -52,6 +52,7 @@ const retryTaskSchema = new mongoose.Schema({
     interviewType: String,
     location: String,
     subject: String,
+    organizationName: String,
     addNotetaker: { type: Boolean, default: false },
     additionalInterviewers: { type: Array, default: [] },
     bccParticipants: { type: Array, default: [] },

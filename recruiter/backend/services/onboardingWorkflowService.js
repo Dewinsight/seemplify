@@ -9,6 +9,8 @@ const OnboardingWorkflowItem = require('../models/OnboardingWorkflowItem');
 const Notification = require('../models/Notification');
 const Organization = require('../models/Organization');
 const { logOnboardingEvent } = require('./onboardingAuditService');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { normalizeOrganizationBrand } = require('../utils/organizationBrand');
 const {
   encryptValue,
   isSensitiveField,
@@ -1135,7 +1137,9 @@ async function createPeopleTransitionNotifications({
     const organizationId = organization?._id || organization;
     if (!organizationId || !onboarding?._id) return [];
 
-    const orgDoc = await Organization.findById(organizationId).select('name members').lean();
+    const orgDoc = await Organization.findById(organizationId)
+      .select('name members idpOrganizationId')
+      .lean();
     if (!orgDoc) return [];
 
     const organizationUserIds = (orgDoc.members || [])
@@ -1148,6 +1152,12 @@ async function createPeopleTransitionNotifications({
       ...(actorUserId && !(Array.isArray(userIds) && userIds.length) ? [String(actorUserId)] : [])
     ]));
     if (!uniqueUserIds.length) return [];
+
+    const resolvedOrganization = await resolveOrganizationForEmail({
+      organization: orgDoc,
+      userId: actorUserId || onboarding.startedBy?._id || onboarding.startedBy || organizationUserIds[0]
+    });
+    const organizationName = normalizeOrganizationBrand(resolvedOrganization.name);
 
     const processType = normalizeProcessType(onboarding.processType);
     const copy = processCopy(processType);
@@ -1163,7 +1173,7 @@ async function createPeopleTransitionNotifications({
       message: transitionMessage,
       data: {
         organizationId,
-        organizationName: orgDoc.name,
+        organizationName,
         onboardingId: onboarding._id,
         transitionId: onboarding._id,
         processType,

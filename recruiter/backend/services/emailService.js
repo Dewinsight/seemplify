@@ -1,6 +1,9 @@
 const Handlebars = require('handlebars');
 const { decodeHtmlEntities, decodeObjectHtmlEntities } = require('../utils/htmlDecode');
-const { resolveOrganizationBrand } = require('../utils/organizationBrand');
+const {
+  resolveOrganizationBrand,
+  requireOrganizationBrand
+} = require('../utils/organizationBrand');
 const {
   isHtmlLike,
   escapeHtml,
@@ -37,6 +40,10 @@ class EmailService {
 
   getOrganizationBrand(organizationName = null) {
     return resolveOrganizationBrand(organizationName);
+  }
+
+  requireOrganizationBrand(organizationName) {
+    return requireOrganizationBrand(organizationName);
   }
 
   ensureOrganizationSubject(subject, organizationName = null) {
@@ -329,7 +336,7 @@ This email was sent to ${to} because a password reset was requested for your acc
   }
 
   async sendOrganizationInviteEmail(to, inviterName, organizationName, appUrl) {
-    const brandName = this.getOrganizationBrand(organizationName);
+    const brandName = this.requireOrganizationBrand(organizationName);
     const emailData = {
       sender: {
         name: brandName,
@@ -444,7 +451,7 @@ This email was sent to ${to} because ${inviterName} invited you to join ${brandN
         hasNotesPlaceholder: textContent.includes('{{notes}}')
       });
       
-      const organizationName = this.getOrganizationBrand(normalizedData.organizationName);
+      const organizationName = this.requireOrganizationBrand(normalizedData.organizationName);
       const emailData = {
         sender: {
           name: organizationName,
@@ -622,7 +629,7 @@ Best regards,
       // Create HTML version with basic formatting
       const htmlContent = textContent.replace(/\n/g, '<br>');
       
-      const organizationName = this.getOrganizationBrand(decodedData.organizationName);
+      const organizationName = this.requireOrganizationBrand(decodedData.organizationName);
       const emailData = {
         sender: {
           name: organizationName,
@@ -851,8 +858,15 @@ This is an automated email. Please do not reply to this message.
    * @returns {Object} - Status of the email sending operation
    */
   async sendUserNotification(to, subject, message, options = {}) {
+    const hasOrganizationBrand =
+      Object.prototype.hasOwnProperty.call(options, 'senderName') ||
+      Object.prototype.hasOwnProperty.call(options, 'organizationName');
+    const requestedBrand = options.senderName ?? options.organizationName;
+    const senderDisplayName = hasOrganizationBrand
+      ? this.requireOrganizationBrand(requestedBrand)
+      : this.getOrganizationBrand();
+
     try {
-      const senderDisplayName = this.getOrganizationBrand(options.senderName || options.organizationName);
       // Check if this is a custom HTML email (like interview feedback)
       const isCustomHtml = options.htmlContent || message.includes('<div') || message.includes('<html');
       
@@ -1045,9 +1059,10 @@ This is an automated email. Please do not reply to this message.
         </html>
       `;
       
+      const organizationName = this.requireOrganizationBrand(templateData.organizationName);
       const emailData = {
         sender: {
-          name: this.getOrganizationBrand(templateData.organizationName),
+          name: organizationName,
           email: 'no-reply@aiinnigeria.com',
         },
         to: [
@@ -1055,9 +1070,9 @@ This is an automated email. Please do not reply to this message.
             email: to,
           },
         ],
-        subject: this.ensureOrganizationSubject(`Interview Notification: ${templateData.candidateName} - ${templateData.jobTitle}`, templateData.organizationName),
-        textContent: this.applyOrganizationBrand(textContent, templateData.organizationName),
-        htmlContent: this.applyOrganizationBrand(htmlContent, templateData.organizationName),
+        subject: this.ensureOrganizationSubject(`Interview Notification: ${templateData.candidateName} - ${templateData.jobTitle}`, organizationName),
+        textContent: this.applyOrganizationBrand(textContent, organizationName),
+        htmlContent: this.applyOrganizationBrand(htmlContent, organizationName),
       };
       
       console.log('Sending interview notification email with data:', JSON.stringify(emailData, null, 2));
@@ -1138,7 +1153,7 @@ This is an automated email. Please do not reply to this message.
         : '';
 
       const subject = `Interview Schedule: ${entries.length} Candidates - ${sessionDateLabel}`;
-      const organizationName = this.getOrganizationBrand(digestData.organizationName);
+      const organizationName = this.requireOrganizationBrand(digestData.organizationName);
       const safeParticipantName = escapeHtml(participantName || 'Team Member');
       const safeSessionDateLabel = escapeHtml(sessionDateLabel);
       const safeSessionStartLabel = escapeHtml(sessionStartLabel);
@@ -1327,7 +1342,9 @@ ${organizationName} Team
     }
 
     try {
-      const brandName = this.getOrganizationBrand(organizationName);
+      const brandName = organizationName == null
+        ? this.getOrganizationBrand()
+        : this.requireOrganizationBrand(organizationName);
       const emailData = {
         sender: {
           name: brandName,

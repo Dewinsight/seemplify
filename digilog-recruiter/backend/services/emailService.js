@@ -1,6 +1,10 @@
 const Handlebars = require('handlebars');
 const { decodeHtmlEntities, decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const {
+  resolveOrganizationBrand,
+  requireOrganizationBrand
+} = require('../utils/organizationBrand');
+const {
   isHtmlLike,
   escapeHtml,
   sanitizeEmailHtml,
@@ -35,13 +39,11 @@ class EmailService {
   }
 
   getOrganizationBrand(organizationName = null) {
-    return decodeHtmlEntities(
-      organizationName ||
-      process.env.DEFAULT_ORGANIZATION_NAME ||
-      process.env.ORGANIZATION_NAME ||
-      process.env.BREVO_SENDER_NAME ||
-      'Organization'
-    );
+    return resolveOrganizationBrand(organizationName);
+  }
+
+  requireOrganizationBrand(organizationName) {
+    return requireOrganizationBrand(organizationName);
   }
 
   ensureOrganizationSubject(subject, organizationName = null) {
@@ -65,10 +67,10 @@ class EmailService {
       return content;
     }
     const brand = this.getOrganizationBrand(organizationName);
-    // Replace only standalone SmartHR labels in text content.
-    // Do NOT replace when SmartHR is part of URLs/domains/emails (e.g. smarthr.aiinnigeria.com).
+    // Replace standalone product labels and the retired Mega placeholder.
+    // Do not replace labels inside URLs, domains, or email addresses.
     return String(content).replace(
-      /(^|[^A-Za-z0-9_./@-])(smarthr)(?=$|[^A-Za-z0-9_./@-])/gi,
+      /(^|[^A-Za-z0-9_./@-])(smarthr|mega)(?=$|[^A-Za-z0-9_./@-])/gi,
       (_match, prefix) => `${prefix}${brand}`
     );
   }
@@ -88,7 +90,8 @@ class EmailService {
       [/https:\/\/teams\.microsoft\.com\/l\/meetup-join\/example/gi, '{{meetingLink}}'],
       [/please have your portfolio ready for screen sharing\./gi, '{{notes}}'],
       [/michael\s+adams/gi, '{{interviewerName}}'],
-      [/smarthr/gi, '{{organizationName}}']
+      [/smarthr/gi, '{{organizationName}}'],
+      [/\bmega\b/gi, '{{organizationName}}']
     ];
 
     let normalized = String(template);
@@ -330,7 +333,7 @@ This email was sent to ${to} because a password reset was requested for your acc
   }
 
   async sendOrganizationInviteEmail(to, inviterName, organizationName, appUrl) {
-    const brandName = this.getOrganizationBrand(organizationName);
+    const brandName = this.requireOrganizationBrand(organizationName);
     const emailData = {
       sender: {
         name: brandName,
@@ -445,7 +448,7 @@ This email was sent to ${to} because ${inviterName} invited you to join ${brandN
         hasNotesPlaceholder: textContent.includes('{{notes}}')
       });
       
-      const organizationName = this.getOrganizationBrand(normalizedData.organizationName);
+      const organizationName = this.requireOrganizationBrand(normalizedData.organizationName);
       const emailData = {
         sender: {
           name: organizationName,
@@ -623,7 +626,7 @@ Best regards,
       // Create HTML version with basic formatting
       const htmlContent = textContent.replace(/\n/g, '<br>');
       
-      const organizationName = this.getOrganizationBrand(decodedData.organizationName);
+      const organizationName = this.requireOrganizationBrand(decodedData.organizationName);
       const emailData = {
         sender: {
           name: organizationName,
@@ -852,8 +855,15 @@ This is an automated email. Please do not reply to this message.
    * @returns {Object} - Status of the email sending operation
    */
   async sendUserNotification(to, subject, message, options = {}) {
+    const hasOrganizationBrand =
+      Object.prototype.hasOwnProperty.call(options, 'senderName') ||
+      Object.prototype.hasOwnProperty.call(options, 'organizationName');
+    const requestedBrand = options.senderName ?? options.organizationName;
+    const senderDisplayName = hasOrganizationBrand
+      ? this.requireOrganizationBrand(requestedBrand)
+      : this.getOrganizationBrand();
+
     try {
-      const senderDisplayName = this.getOrganizationBrand(options.senderName || options.organizationName);
       // Check if this is a custom HTML email (like interview feedback)
       const isCustomHtml = options.htmlContent || message.includes('<div') || message.includes('<html');
       
@@ -1046,9 +1056,10 @@ This is an automated email. Please do not reply to this message.
         </html>
       `;
       
+      const organizationName = this.requireOrganizationBrand(templateData.organizationName);
       const emailData = {
         sender: {
-          name: this.getOrganizationBrand(templateData.organizationName),
+          name: organizationName,
           email: 'no-reply@aiinnigeria.com',
         },
         to: [
@@ -1056,9 +1067,9 @@ This is an automated email. Please do not reply to this message.
             email: to,
           },
         ],
-        subject: this.ensureOrganizationSubject(`Interview Notification: ${templateData.candidateName} - ${templateData.jobTitle}`, templateData.organizationName),
-        textContent: this.applyOrganizationBrand(textContent, templateData.organizationName),
-        htmlContent: this.applyOrganizationBrand(htmlContent, templateData.organizationName),
+        subject: this.ensureOrganizationSubject(`Interview Notification: ${templateData.candidateName} - ${templateData.jobTitle}`, organizationName),
+        textContent: this.applyOrganizationBrand(textContent, organizationName),
+        htmlContent: this.applyOrganizationBrand(htmlContent, organizationName),
       };
       
       console.log('Sending interview notification email with data:', JSON.stringify(emailData, null, 2));
@@ -1139,7 +1150,7 @@ This is an automated email. Please do not reply to this message.
         : '';
 
       const subject = `Interview Schedule: ${entries.length} Candidates - ${sessionDateLabel}`;
-      const organizationName = this.getOrganizationBrand(digestData.organizationName);
+      const organizationName = this.requireOrganizationBrand(digestData.organizationName);
       const safeParticipantName = escapeHtml(participantName || 'Team Member');
       const safeSessionDateLabel = escapeHtml(sessionDateLabel);
       const safeSessionStartLabel = escapeHtml(sessionStartLabel);
@@ -1328,7 +1339,9 @@ ${organizationName} Team
     }
 
     try {
-      const brandName = this.getOrganizationBrand(organizationName);
+      const brandName = organizationName == null
+        ? this.getOrganizationBrand()
+        : this.requireOrganizationBrand(organizationName);
       const emailData = {
         sender: {
           name: brandName,

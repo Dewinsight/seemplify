@@ -4,6 +4,7 @@ const path = require('path');
 const Plan = require('../models/Plan');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { isHtmlLike, htmlToText } = require('../utils/emailHtmlSanitizer');
+const { requireOrganizationBrand } = require('../utils/organizationBrand');
 
 /**
  * Generate an invoice PDF
@@ -15,6 +16,9 @@ const { isHtmlLike, htmlToText } = require('../utils/emailHtmlSanitizer');
 const generateInvoicePdf = async (request, user, organization = null) => {
   return new Promise(async (resolve, reject) => {
     try {
+      const organizationName = request.requestType === 'organization'
+        ? requireOrganizationBrand(organization?.name)
+        : null;
       // Create uploads directory if it doesn't exist
       const uploadsDir = path.join(__dirname, '..', 'uploads');
       const invoicesDir = path.join(uploadsDir, 'invoices');
@@ -85,7 +89,7 @@ const generateInvoicePdf = async (request, user, organization = null) => {
       doc.text(user.email);
       
       if (organization && request.requestType === 'organization') {
-        doc.text(`Organization: ${organization.name}`);
+        doc.text(`Organization: ${organizationName}`);
       }
       doc.moveDown();
       
@@ -205,10 +209,11 @@ const toSafeFilename = (value = '') =>
  * @param {string} organizationName - Organization display name.
  * @returns {Promise<{name: string, content: string, contentType: string}|null>}
  */
-const generateJobDescriptionPdfAttachment = async (job = null, organizationName = 'Organization') => {
+const generateJobDescriptionPdfAttachment = async (job = null, organizationName = null) => {
   if (!job) {
     return null;
   }
+  organizationName = requireOrganizationBrand(organizationName);
 
   const jobTitle = normalizeRichText(job.title || 'Job');
   const description = normalizeRichText(job.description || '');
@@ -232,12 +237,12 @@ const generateJobDescriptionPdfAttachment = async (job = null, organizationName 
       doc.on('error', reject);
 
       doc.info.Title = `${jobTitle} - Job Description`;
-      doc.info.Author = normalizeRichText(organizationName || 'Organization');
+      doc.info.Author = normalizeRichText(organizationName);
       doc.info.Subject = `Job description for ${jobTitle}`;
 
       doc.fontSize(18).font('Helvetica-Bold').text(jobTitle || 'Job Description', { align: 'left' });
       doc.moveDown(0.4);
-      doc.fontSize(11).font('Helvetica').fillColor('#444444').text(`Organization: ${normalizeRichText(organizationName || 'Organization')}`);
+      doc.fontSize(11).font('Helvetica').fillColor('#444444').text(`Organization: ${normalizeRichText(organizationName)}`);
       doc.text(`Generated: ${new Date().toLocaleDateString('en-US')}`);
 
       const metadataEntries = [

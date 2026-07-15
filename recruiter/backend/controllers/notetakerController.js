@@ -6,6 +6,8 @@ const emailService = require('../services/emailService');
 const { handleInterviewError } = require('../utils/errorHandler');
 const { updatePipelineStatusOnCompletion } = require('../services/interviewCompletionService');
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 // Helper function to get account credentials for a user
 async function getAccountCredentials(user) {
@@ -119,17 +121,26 @@ const handleNotetakerWebhook = async (req, res) => {
 
           try {
             const interviewWithInterviewer = failedInterview
-              ? await Interview.findById(failedInterview._id).populate('interviewerId', 'email name')
+              ? await Interview.findById(failedInterview._id)
+                  .populate('interviewerId', 'email name')
+                  .populate('jobId', 'organization')
               : null;
 
             const recipient = interviewWithInterviewer?.interviewerId?.email;
             if (recipient) {
+              const organization = await resolveOrganizationForEmail({
+                job: interviewWithInterviewer.jobId,
+                interview: interviewWithInterviewer,
+                userId: interviewWithInterviewer.interviewerId?._id
+              });
+              const organizationName = decodeHtmlEntities(organization.name);
               const teamsChecklistUrl = 'https://developer.nylas.com/docs/v3/notetaker/support/troubleshooting/';
               await emailService.sendUserNotification(
                 recipient,
                 'Notetaker failed to join a Teams interview',
                 'The notetaker could not join the meeting. Please review Teams setup and Nylas prerequisites.',
                 {
+                  organizationName,
                   htmlContent: `
                     <p>The notetaker reported <strong>failed_entry</strong> for interview <strong>${interviewWithInterviewer._id}</strong>.</p>
                     <p>Checklist:</p>

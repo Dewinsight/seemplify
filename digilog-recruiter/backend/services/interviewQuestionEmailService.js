@@ -3,9 +3,9 @@ const Interview = require('../models/Interview');
 const InterviewQuestion = require('../models/InterviewQuestion');
 const User = require('../models/User');
 const Candidate = require('../models/Candidate');
-const Organization = require('../models/Organization');
 const emailService = require('./emailService');
-const mongoose = require('mongoose');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 class InterviewFeedbackEmailService {
   constructor() {
@@ -176,27 +176,14 @@ class InterviewFeedbackEmailService {
       }
       
       // Get job data (decode HTML entities)
-      const { decodeHtmlEntities } = require('../utils/htmlDecode');
       const job = interview.jobId;
       const jobTitle = job ? decodeHtmlEntities(job.title) : 'Position';
-      let organizationName =
-        process.env.DEFAULT_ORGANIZATION_NAME ||
-        process.env.ORGANIZATION_NAME ||
-        process.env.BREVO_SENDER_NAME ||
-        'Organization';
-      if (interview.organizationId && mongoose.Types.ObjectId.isValid(String(interview.organizationId))) {
-        const org = await Organization.findById(interview.organizationId).select('name');
-        if (org?.name) {
-          organizationName = decodeHtmlEntities(org.name);
-        }
-      } else if (job?.organization && mongoose.Types.ObjectId.isValid(String(job.organization))) {
-        const org = await Organization.findById(job.organization).select('name');
-        if (org?.name) {
-          organizationName = decodeHtmlEntities(org.name);
-        }
-      } else if (mainInterviewer?.organization?.name) {
-        organizationName = decodeHtmlEntities(mainInterviewer.organization.name);
-      }
+      const organization = await resolveOrganizationForEmail({
+        job,
+        interview,
+        organization: mainInterviewer?.organization
+      });
+      const organizationName = decodeHtmlEntities(organization.name);
       
       // Format interview date/time
       const interviewDate = new Date(interview.scheduledAt).toLocaleDateString('en-US', { 

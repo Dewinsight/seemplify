@@ -1,7 +1,10 @@
 const Nylas = require('nylas').default;
 const configLoader = require('../config/configLoader');
 const emailService = require('./emailService');
-const { resolveOrganizationBrand } = require('../utils/organizationBrand');
+const {
+  resolveOrganizationBrand,
+  requireOrganizationBrand
+} = require('../utils/organizationBrand');
 const DEFAULT_ORGANIZATION_NAME = resolveOrganizationBrand();
 
 class NylasV3Service {
@@ -145,7 +148,7 @@ class NylasV3Service {
 
       const organizerEmail = event?.organizer?.email || '';
       const organizerName = event?.organizer?.name || '';
-      const senderName = eventData?.organizationName || organizerName || DEFAULT_ORGANIZATION_NAME;
+      const senderName = requireOrganizationBrand(eventData?.organizationName);
       const meetingLink =
         event?.conferencing?.details?.url ||
         event?.conferencing?.details?.meeting_url ||

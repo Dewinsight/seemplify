@@ -15,6 +15,7 @@ const AzureOpenAIService = require('../services/azureOpenAIService');
 const emailService = require('../services/emailService');
 const pdfService = require('../services/pdfService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { handleNylasError, handleInterviewError } = require('../utils/errorHandler');
 const timezoneUtils = require('../utils/timezoneUtils');
 const mongoose = require('mongoose');
@@ -339,32 +340,18 @@ function buildTeamsPreflightError({ provider, grantVerification }) {
 
 async function resolveOrganizationName({
   interviewer = null,
-  organizationId = null,
-  fallback = process.env.DEFAULT_ORGANIZATION_NAME || process.env.ORGANIZATION_NAME || process.env.BREVO_SENDER_NAME || 'Organization'
+  organizationId = null
 } = {}) {
-  try {
-    const fromInterviewer = interviewer?.organization?.name;
-    if (fromInterviewer) {
-      return decodeHtmlEntities(fromInterviewer);
-    }
-
-    const resolvedOrganizationId =
-      organizationId ||
-      interviewer?.currentOrganization ||
-      interviewer?.organization?._id ||
-      interviewer?.organization;
-
-    if (resolvedOrganizationId && mongoose.Types.ObjectId.isValid(String(resolvedOrganizationId))) {
-      const org = await Organization.findById(resolvedOrganizationId).select('name');
-      if (org?.name) {
-        return decodeHtmlEntities(org.name);
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to resolve organization name for interview email branding:', error.message);
-  }
-
-  return fallback;
+  const resolvedOrganizationId =
+    organizationId ||
+    interviewer?.currentOrganization ||
+    interviewer?.organization?._id ||
+    interviewer?.organization;
+  const organization = await resolveOrganizationForEmail({
+    organization: interviewer?.organization || resolvedOrganizationId,
+    organizationId: resolvedOrganizationId
+  });
+  return decodeHtmlEntities(organization.name);
 }
 
 function resolveJobDetailsLink(job = null) {

@@ -2,6 +2,8 @@ const { decodeHtmlEntities } = require('./htmlDecode');
 
 // Product brand shown when an organization has no name of its own.
 const DEFAULT_ORGANIZATION_BRAND = 'Seemplify';
+const ORGANIZATION_EMAIL_CONTEXT_ERROR =
+  'Cannot send organization email because its organization could not be resolved';
 
 // Stale / placeholder values that must never surface as a sender brand.
 // "mega" is a leftover deployment value; "organization" is the old generic default.
@@ -17,6 +19,14 @@ function normalizeBrand(value) {
 function normalizeOrganizationBrand(value) {
   const brand = normalizeBrand(value);
   return INVALID_BRAND_VALUES.has(brand.toLowerCase()) ? '' : brand;
+}
+
+function requireOrganizationBrand(value) {
+  const brand = normalizeOrganizationBrand(value);
+  if (!brand) {
+    throw new Error(ORGANIZATION_EMAIL_CONTEXT_ERROR);
+  }
+  return brand;
 }
 
 /**
@@ -45,5 +55,7 @@ function resolveOrganizationBrand(organizationName = null) {
 module.exports = {
   resolveOrganizationBrand,
   normalizeOrganizationBrand,
-  DEFAULT_ORGANIZATION_BRAND
+  requireOrganizationBrand,
+  DEFAULT_ORGANIZATION_BRAND,
+  ORGANIZATION_EMAIL_CONTEXT_ERROR
 };

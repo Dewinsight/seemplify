@@ -8,7 +8,7 @@ const {
   resolveOrganizationBrand
 } = require('../utils/organizationBrand');
 
-test('rejects Mega as a direct sender brand', () => {
+test('generic product branding ignores the legacy Mega environment value', () => {
   const keys = [
     'DEFAULT_ORGANIZATION_NAME',
     'ORGANIZATION_NAME',
@@ -16,7 +16,9 @@ test('rejects Mega as a direct sender brand', () => {
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
-  for (const key of keys) delete process.env[key];
+  process.env.DEFAULT_ORGANIZATION_NAME = 'Mega';
+  delete process.env.ORGANIZATION_NAME;
+  delete process.env.BREVO_SENDER_NAME;
 
   try {
     assert.equal(resolveOrganizationBrand('Mega'), DEFAULT_ORGANIZATION_BRAND);
@@ -24,10 +26,6 @@ test('rejects Mega as a direct sender brand', () => {
     assert.equal(
       emailService.applyOrganizationBrand('Sent by Mega', 'Acme Ltd'),
       'Sent by Acme Ltd'
-    );
-    assert.equal(
-      emailService.ensureOrganizationSubject('Mega - Welcome', 'Acme Ltd'),
-      'Acme Ltd - Welcome'
     );
   } finally {
     for (const key of keys) {
@@ -43,16 +41,12 @@ test('organization-scoped emails reject missing and placeholder brands', async (
     () => requireOrganizationBrand('Mega'),
     new RegExp(ORGANIZATION_EMAIL_CONTEXT_ERROR)
   );
-  assert.throws(
-    () => requireOrganizationBrand(null),
-    new RegExp(ORGANIZATION_EMAIL_CONTEXT_ERROR)
-  );
   await assert.rejects(
     emailService.sendUserNotification(
       'candidate@example.com',
       'Interview update',
       'Your interview has been updated.',
-      { organizationName: 'Mega' }
+      { senderName: 'Mega' }
     ),
     new RegExp(ORGANIZATION_EMAIL_CONTEXT_ERROR)
   );

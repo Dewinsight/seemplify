@@ -1,4 +1,7 @@
-const { normalizeOrganizationBrand } = require('./organizationBrand');
+const {
+  normalizeOrganizationBrand,
+  ORGANIZATION_EMAIL_CONTEXT_ERROR
+} = require('./organizationBrand');
 const { syncOrganizationNameFromIdp } = require('./organizationIdentitySync');
 
 const getOrganizationId = (value) => {
@@ -56,7 +59,7 @@ async function resolveOrganizationForEmail(
 
   const source = sources.find(Boolean);
   if (!source) {
-    throw new Error('Cannot send organization email because its organization could not be resolved');
+    throw new Error(ORGANIZATION_EMAIL_CONTEXT_ERROR);
   }
 
   if (normalizeOrganizationBrand(source?.name)) {
@@ -80,7 +83,7 @@ async function resolveOrganizationForEmail(
     }
   }
 
-  throw new Error('Cannot send organization email because its organization could not be resolved');
+  throw new Error(ORGANIZATION_EMAIL_CONTEXT_ERROR);
 }
 
 module.exports = {

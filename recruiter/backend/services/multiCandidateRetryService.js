@@ -11,12 +11,12 @@ const emailService = require('./emailService');
 const pdfService = require('./pdfService');
 const interviewFeedbackEmailService = require('./interviewQuestionEmailService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
-const { resolveOrganizationBrand } = require('../utils/organizationBrand');
+const { requireOrganizationBrand } = require('../utils/organizationBrand');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 
 const RETRY_BACKOFF_MINUTES = [2, 10];
 const MAX_TASKS_PER_TICK = 20;
 const STALE_PROCESSING_TIMEOUT_MINUTES = 15;
-const DEFAULT_ORGANIZATION_NAME = resolveOrganizationBrand();
 
 class MultiCandidateRetryService {
   constructor() {
@@ -78,10 +78,12 @@ class MultiCandidateRetryService {
     };
   }
 
-  async sendInitialRetryQueuedEmail({ recipientEmail, sessionId, queuedCount, failedSlots, organizationName = DEFAULT_ORGANIZATION_NAME }) {
+  async sendInitialRetryQueuedEmail({ recipientEmail, sessionId, queuedCount, failedSlots, organizationName }) {
     if (!recipientEmail || queuedCount <= 0) {
       return;
     }
+
+    organizationName = requireOrganizationBrand(organizationName);
 
     const listHtml = failedSlots
       .map(slot => `<li>${slot.candidateName || 'Unknown candidate'} (${slot.startTime}) - ${slot.reason || 'Calendar creation failed'}</li>`)
@@ -193,6 +195,17 @@ class MultiCandidateRetryService {
         throw new Error('Candidate not found for retry task');
       }
 
+      const organization = await resolveOrganizationForEmail({
+        organization: task.sessionContext?.organizationName
+          ? { _id: task.organizationId, name: task.sessionContext.organizationName }
+          : task.organizationId,
+        organizationId: task.organizationId,
+        userId: task.interviewerId
+      });
+      const organizationName = decodeHtmlEntities(organization.name);
+      task.sessionContext = task.sessionContext || {};
+      task.sessionContext.organizationName = organizationName;
+
       const slotStartAt = new Date(task.slot.startTime);
       if (slotStartAt <= new Date()) {
         throw new Error('Retry skipped because slot start time is already in the past');
@@ -236,7 +249,7 @@ class MultiCandidateRetryService {
         description: eventDescription,
         startTime: new Date(task.slot.startTime).toISOString(),
         endTime: new Date(task.slot.endTime).toISOString(),
-        organizationName: task.sessionContext?.organizationName || DEFAULT_ORGANIZATION_NAME,
+        organizationName,
         notifyParticipants: true,
         participants: eventParticipants,
         location: task.sessionContext?.location || meetingLink || 'Video Call',
@@ -402,7 +415,8 @@ class MultiCandidateRetryService {
           interviewer,
           meetingLink,
           slot: task.slot,
-          sessionContext: task.sessionContext || {}
+          sessionContext: task.sessionContext || {},
+          organizationName
         });
       } catch (retryNotificationError) {
         console.error(`Retry notifications failed for task ${task._id}:`, retryNotificationError.message);
@@ -473,9 +487,9 @@ class MultiCandidateRetryService {
     }
   }
 
-  async sendRetryNotifications({ interview, candidate, interviewer, meetingLink, slot, sessionContext }) {
+  async sendRetryNotifications({ interview, candidate, interviewer, meetingLink, slot, sessionContext, organizationName }) {
     const timezone = sessionContext?.timezone || 'UTC';
-    const organizationName = sessionContext?.organizationName || DEFAULT_ORGANIZATION_NAME;
+    organizationName = requireOrganizationBrand(organizationName);
     const interviewDate = new Date(slot.startTime).toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
@@ -722,7 +736,15 @@ class MultiCandidateRetryService {
     }
 
     const tasks = await InterviewSlotRetryTask.find({ sessionId });
-    const organizationName = tasks[0]?.sessionContext?.organizationName || DEFAULT_ORGANIZATION_NAME;
+    const firstTask = tasks[0];
+    const organization = await resolveOrganizationForEmail({
+      organization: firstTask?.sessionContext?.organizationName
+        ? { _id: firstTask.organizationId, name: firstTask.sessionContext.organizationName }
+        : firstTask?.organizationId,
+      organizationId: firstTask?.organizationId,
+      userId: firstTask?.interviewerId
+    });
+    const organizationName = decodeHtmlEntities(organization.name);
     const completed = tasks.filter(t => t.status === 'completed');
     const failed = tasks.filter(t => t.status === 'failed');
 

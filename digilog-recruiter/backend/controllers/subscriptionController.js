@@ -6,6 +6,31 @@ const Plan = require('../models/Plan');
 const emailService = require('../services/emailService');
 const pdfService = require('../services/pdfService');
 const path = require('path');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
+
+function documentId(value) {
+  return value?._id || value || null;
+}
+
+async function resolveSubscriptionOrganization(request, organization = null) {
+  if (!request?.organizationId) {
+    return null;
+  }
+
+  const resolved = await resolveOrganizationForEmail({
+    organization: organization || request.organizationId,
+    organizationId: documentId(request.organizationId)
+  });
+  resolved.name = decodeHtmlEntities(resolved.name);
+  return resolved;
+}
+
+function organizationEmailOptions(organization, options = {}) {
+  return organization
+    ? { ...options, organizationName: organization.name }
+    : options;
+}
 
 /**
  * Helper function to grant credits from a plan to an organization
@@ -451,6 +476,7 @@ exports.generateInvoice = async (req, res) => {
     
     if (request.organizationId) {
       organization = await Organization.findById(request.organizationId);
+      organization = await resolveSubscriptionOrganization(request, organization);
     }
     
     // Generate PDF
@@ -508,6 +534,7 @@ exports.getInvoicePdf = async (req, res) => {
     
     if (request.organizationId) {
       organization = await Organization.findById(request.organizationId);
+      organization = await resolveSubscriptionOrganization(request, organization);
     }
     
     // Generate PDF on-the-fly
@@ -558,6 +585,7 @@ exports.emailInvoice = async (req, res) => {
     let organization = null;
     if (request.organizationId) {
       organization = await Organization.findById(request.organizationId);
+      organization = await resolveSubscriptionOrganization(request, organization);
     }
     
     // Generate PDF
@@ -621,7 +649,7 @@ exports.emailInvoice = async (req, res) => {
       request.userId.email,
       `Invoice for Subscription Upgrade - ${request.invoiceDetails.invoiceNumber || pdfDetails.invoiceId}`,
       emailContent,
-      { attachments }
+      organizationEmailOptions(organization, { attachments })
     );
     
     // Update request with sent timestamp
@@ -721,6 +749,7 @@ exports.updateRequestStatus = async (req, res) => {
     try {
       const user = await User.findById(request.userId);
       if (user && user.email) {
+        const organization = await resolveSubscriptionOrganization(request);
         let emailSubject, emailContent;
         
         if (status === 'approved') {
@@ -734,7 +763,12 @@ exports.updateRequestStatus = async (req, res) => {
           emailContent = `An invoice has been generated for your subscription upgrade request. Please review and complete the payment process.`;
         }
         
-        await emailService.sendUserNotification(user.email, emailSubject, emailContent);
+        await emailService.sendUserNotification(
+          user.email,
+          emailSubject,
+          emailContent,
+          organizationEmailOptions(organization)
+        );
       }
     } catch (emailError) {
       console.error('Failed to send user notification:', emailError);
@@ -827,9 +861,15 @@ exports.markInvoicePaid = async (req, res) => {
     try {
       const user = await User.findById(request.userId);
       if (user && user.email) {
+        const organization = await resolveSubscriptionOrganization(request);
         const emailSubject = 'Your Subscription Has Been Upgraded';
         const emailContent = `Your payment for the ${request.requestedPlan} plan has been received and your subscription has been upgraded.`;
-        await emailService.sendUserNotification(user.email, emailSubject, emailContent);
+        await emailService.sendUserNotification(
+          user.email,
+          emailSubject,
+          emailContent,
+          organizationEmailOptions(organization)
+        );
       }
     } catch (emailError) {
       console.error('Failed to send user notification:', emailError);
