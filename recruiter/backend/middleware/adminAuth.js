@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const { updateAIRequestContext } = require('../services/aiRuntime/requestContext');
 
 const INVALID_TOKEN_VALUES = new Set(['null', 'undefined', '[object Object]']);
 
@@ -70,6 +71,12 @@ const adminAuth = async (req, res, next) => {
       
       // Add admin to request object
       req.admin = admin;
+      updateAIRequestContext({
+        sourceApp: 'admin',
+        actorId: admin.id,
+        actorName: admin.name,
+        actorEmail: admin.email
+      });
       next();
     } catch (err) {
       const expired = err.name === 'TokenExpiredError';

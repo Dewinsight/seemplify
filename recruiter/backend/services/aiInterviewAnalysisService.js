@@ -1,14 +1,14 @@
 const Interview = require('../models/Interview');
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
-const AzureOpenAIService = require('./azureOpenAIService');
-const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
+const AIModelService = require('./aiModelService');
+const { GROQ_120B } = require('../config/aiRuntimeCatalog');
 const embeddingService = require('./embeddingService');
 const transcriptSegmentationService = require('./transcriptSegmentationService');
 
 class AIInterviewAnalysisService {
   constructor() {
-    this.azureOpenAIService = new AzureOpenAIService();
+    this.aiModelService = new AIModelService();
   }
 
   /**
@@ -44,7 +44,7 @@ class AIInterviewAnalysisService {
       interview.aiAnalysis = {
         analyzed: true,
         analyzedAt: new Date(),
-        modelVersion: resolveLlmRuntimeConfig().modelName,
+        modelVersion: GROQ_120B,
         insights: analysis.insights,
         comparativeAnalysis
       };
@@ -72,7 +72,7 @@ class AIInterviewAnalysisService {
     const analysisPrompt = this._buildAnalysisPrompt(interview.transcript, stageContext);
     
     try {
-      const response = await this.azureOpenAIService.analyzeInterview(analysisPrompt);
+      const response = await this.aiModelService.analyzeInterview(analysisPrompt);
       const parsedResponse = JSON.parse(response);
       
       return {
@@ -1035,12 +1035,13 @@ Focus on:
       Format as JSON.
     `;
 
-    const response = await this.azureOpenAIService.generateCompletion(prompt, {
+    const parsed = await this.aiModelService.generateStructuredObject(prompt, {
+      activity: 'interview.analysis',
+      promptVersion: 'interview-segment-analysis-v2',
       temperature: 0.3,
-      maxTokens: 1500
+      maxTokens: 1500,
+      schemaName: 'interview_segment_analysis'
     });
-
-    const parsed = this.azureOpenAIService.extractJsonObject(response);
     return this._normalizeSegmentAnalysis(parsed);
   }
 
@@ -1181,12 +1182,13 @@ Focus on:
       Format as JSON with rankings, differentiators, and recommendations.
     `;
 
-    const response = await this.azureOpenAIService.generateCompletion(prompt, {
+    const parsed = await this.aiModelService.generateStructuredObject(prompt, {
+      activity: 'interview.analysis',
+      promptVersion: 'interview-comparison-v2',
       temperature: 0.2,
-      maxTokens: 1000
+      maxTokens: 1000,
+      schemaName: 'interview_comparison'
     });
-
-    const parsed = this.azureOpenAIService.extractJsonObject(response);
     return this._normalizeComparativeAnalysis(parsed, candidateAnalyses);
   }
 

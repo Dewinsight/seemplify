@@ -1,5 +1,54 @@
 const { chatCompletion, extractJsonObject } = require('./llmClient');
 
+const GENERATED_QUESTIONS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['questions'],
+  properties: {
+    questions: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 20,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['question', 'type', 'difficulty', 'category', 'expectedAnswer', 'scoringCriteria', 'followUpQuestions', 'tags', 'timeLimit'],
+        properties: {
+          question: { type: 'string', minLength: 10 },
+          type: { type: 'string' },
+          difficulty: { type: 'string' },
+          category: { type: 'string' },
+          expectedAnswer: { type: 'string' },
+          scoringCriteria: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['criterion', 'weight', 'description'],
+              properties: {
+                criterion: { type: 'string' },
+                weight: { type: 'number' },
+                description: { type: 'string' }
+              }
+            }
+          },
+          followUpQuestions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['question', 'condition'],
+              properties: { question: { type: 'string' }, condition: { type: 'string' } }
+            }
+          },
+          tags: { type: 'array', items: { type: 'string' } },
+          timeLimit: { type: 'number', minimum: 3, maximum: 20 }
+        }
+      }
+    }
+  }
+};
+
 function distributeQuestionTypes(includeTypes, totalCount) {
   const types = Array.isArray(includeTypes) && includeTypes.length
     ? includeTypes
@@ -97,9 +146,14 @@ Return valid JSON only.`
       },
       { role: 'user', content: prompt }
     ], {
+      activity: 'ai_interview.question_generation',
+      promptVersion: 'ai-interview-questions-v1',
       temperature: 0.75,
       maxTokens: 2400,
-      response_format: { type: 'json_object' }
+      response_format: { type: 'json_object' },
+      jsonSchema: GENERATED_QUESTIONS_SCHEMA,
+      schemaName: 'ai_interview_questions',
+      context: options.context || {}
     });
 
     const parsed = extractJsonObject(result.content);

@@ -40,6 +40,7 @@ const {
   startSession,
   sendMessage,
   confirmQuestion,
+  retryQueuedScoring,
   syncStats,
   buildScoringSummary,
   TERMINAL_SESSION_STATUSES
@@ -530,6 +531,11 @@ async function processDueInvites() {
   });
 }
 
+async function processQueuedScoring() {
+  if (!await platformFeatureClient.isFeatureEnabled('aiInterviews')) return;
+  await mutateStore((store) => retryQueuedScoring(store, 10));
+}
+
 app.get('/health', asyncHandler(async (_req, res) => {
   res.json({
     ok: true,
@@ -828,7 +834,14 @@ app.post('/api/candidates/import-cv', authenticate, upload.single('cv'), asyncHa
     const job = getOwnedRecord(store, 'jobs', req.body?.jobId, req.user);
     if (!job) throw new Error('A valid job is required before importing a CV.');
     if (!req.file) throw new Error('Upload a CV file.');
-    const parsed = await cvParsingService.parseAndAnalyze(req.file);
+    const parsed = await cvParsingService.parseAndAnalyze(req.file, {
+      organizationId: store.settings.organizationId || store.settings._id,
+      organizationName: store.settings.organizationName,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      jobId: job._id
+    });
     const profile = parsed.profile;
     const email = normalizeEmail(profile.email);
     if (!email) throw new Error('The CV was parsed, but no email address was found. Add the candidate manually or upload a clearer CV.');
@@ -918,7 +931,15 @@ app.post('/api/candidates/:id/cv', authenticate, upload.single('cv'), asyncHandl
     const candidate = getOwnedRecord(store, 'candidates', req.params.id, req.user);
     if (!candidate) throw new Error('Candidate not found.');
     if (!req.file) throw new Error('Upload a CV file.');
-    const parsed = await cvParsingService.parseAndAnalyze(req.file);
+    const parsed = await cvParsingService.parseAndAnalyze(req.file, {
+      organizationId: store.settings.organizationId || store.settings._id,
+      organizationName: store.settings.organizationName,
+      actorId: req.user._id,
+      actorName: req.user.name,
+      actorEmail: req.user.email,
+      jobId: candidate.jobId,
+      candidateId: candidate._id
+    });
     mergeCandidateProfile(candidate, parsed.profile, {
       source: 'cv_enrichment',
       fileName: req.file.originalname,
@@ -995,7 +1016,15 @@ app.post('/api/questions/generate', authenticate, asyncHandler(async (req, res) 
       questionCount: req.body?.questionCount,
       difficulty: req.body?.difficulty,
       includeTypes: req.body?.includeTypes,
-      focusAreas: req.body?.focusAreas
+      focusAreas: req.body?.focusAreas,
+      context: {
+        organizationId: store.settings.organizationId || store.settings._id,
+        organizationName: store.settings.organizationName,
+        actorId: req.user._id,
+        actorName: req.user.name,
+        actorEmail: req.user.email,
+        jobId: job._id
+      }
     });
     if (!generated.length) throw new Error('AI question generation returned no usable questions.');
     const now = iso(new Date());
@@ -1170,6 +1199,8 @@ app.post('/api/ai-interviews', authenticate, asyncHandler(async (req, res) => {
       _id: interviewId,
       title: req.body.title || `${job.title} AI Interview`,
       jobId: job._id,
+      organizationId: store.settings.organizationId || store.settings._id,
+      organizationName: store.settings.organizationName,
       status: new Date(req.body.sendAt || now) <= now ? 'active' : 'scheduled',
       guidelines: req.body.guidelines || '',
       questionSnapshots: questions.map((question, index) => ({
@@ -1194,6 +1225,8 @@ app.post('/api/ai-interviews', authenticate, asyncHandler(async (req, res) => {
       voice: findAIInterviewVoiceOption(req.body.voiceId),
       stats: { sent: 0, opened: 0, inProgress: 0, completed: 0, blocked: 0, failed: 0, proctorFailed: 0 },
       createdBy: req.user._id,
+      createdByName: req.user.name,
+      createdByEmail: req.user.email,
       createdAt: iso(now),
       updatedAt: iso(now)
     };
@@ -1485,6 +1518,9 @@ readStore()
     });
     setInterval(() => {
       processDueInvites().catch((error) => console.error('Due invite scheduler failed:', error.message));
+    }, 60 * 1000).unref();
+    setInterval(() => {
+      processQueuedScoring().catch((error) => console.error('Queued scoring retry failed:', error.message));
     }, 60 * 1000).unref();
   })
   .catch((error) => {

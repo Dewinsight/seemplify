@@ -1,7 +1,7 @@
 const fs = require('fs');
 const Tesseract = require('tesseract.js');
 const mammoth = require('mammoth');
-const AzureOpenAIService = require('./azureOpenAIService');
+const AIModelService = require('./aiModelService');
 const { normalizeCvExtractedFields } = require('../utils/normalizeCvExtraction');
 
 // ✅ UPGRADED: Using PDF.js instead of pdf-parse for better text extraction
@@ -10,7 +10,7 @@ let pdfjsLib = null;
 
 class CVParsingService {
   constructor() {
-    this.azureOpenAIService = new AzureOpenAIService();
+    this.aiModelService = new AIModelService();
   }
 
   /**
@@ -98,7 +98,7 @@ class CVParsingService {
   }
 
   /**
-   * Parse CV and analyze with Azure OpenAI
+   * Parse a CV and analyze it with the managed AI runtime.
    * @param {string} filePath - Path to the uploaded file
    * @param {string} fileType - MIME type of the file
    * @returns {Promise<Object>} - Combined parsing and AI analysis result
@@ -133,8 +133,19 @@ class CVParsingService {
       
       console.log(`✅ CV text extracted successfully (${resumeText.length} characters). Proceeding with AI analysis...`);
       
-      // Step 2: Analyze with Azure OpenAI
-      const aiAnalysisResult = await this.azureOpenAIService.analyzeCV(resumeText);
+      // Step 2: analyze only the text extracted from the uploaded document.
+      const aiAnalysisResult = await this.aiModelService.analyzeCV(resumeText);
+      if (!aiAnalysisResult.success) {
+        return {
+          success: false,
+          error: aiAnalysisResult.error || 'AI CV analysis is temporarily unavailable. Please retry the upload.',
+          resumeText,
+          aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+          extractedFields: {},
+          parseSuccess: true,
+          aiSuccess: false
+        };
+      }
       const extractedFields = normalizeCvExtractedFields(aiAnalysisResult.extractedFields || {});
       
       console.log('✅ CV parsing and AI analysis completed');
@@ -174,4 +185,4 @@ class CVParsingService {
   }
 }
 
-module.exports = CVParsingService; 
+module.exports = CVParsingService;

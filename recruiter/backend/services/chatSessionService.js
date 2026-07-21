@@ -1,6 +1,6 @@
 const ChatSession = require('../models/ChatSession');
 const memoryService = require('./memoryService');
-const AzureOpenAIService = require('./azureOpenAIService'); // Added for LLM title generation
+const AIModelService = require('./aiModelService');
 
 class ChatSessionService {
   /**
@@ -218,8 +218,8 @@ class ChatSessionService {
     let titleSource = 'fallback_error';
 
     try {
-      const azureOpenAIService = new AzureOpenAIService();
-      const llmTitleResult = await azureOpenAIService.generateChatTitle(firstUserMessage, firstAssistantMessage);
+      const aiModelService = new AIModelService();
+      const llmTitleResult = await aiModelService.generateChatTitle(firstUserMessage, firstAssistantMessage);
       const resolvedTitle = typeof llmTitleResult === 'string' ? llmTitleResult : llmTitleResult?.title;
       const resolvedSuccess = typeof llmTitleResult === 'string' ? true : llmTitleResult?.success;
 

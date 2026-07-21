@@ -117,6 +117,7 @@ async function initQueue() {
 
   worker = new Worker(QUEUE_NAME, async (job) => {
     const { filePath, fileType, originalName, batchId, organizationId, userId } = job.data;
+    const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
 
     try {
       await job.updateProgress(10);
@@ -131,7 +132,13 @@ async function initQueue() {
           { maxRetries: 3, delay: 1000, operation: `Cloudinary upload ${originalName}` }
         ),
         RetryHelper.withRetry(
-          () => cvParsingService.parseAndAnalyze(filePath, fileType),
+          () => runWithAIRequestContext({
+            sourceApp: 'recruiter-worker',
+            organizationId,
+            actorId: userId,
+            requestId: `bulk-cv:${job.id}`,
+            promptVersion: 'candidate-cv-v1'
+          }, () => cvParsingService.parseAndAnalyze(filePath, fileType)),
           { maxRetries: 3, delay: 1000, operation: `CV parse ${originalName}` }
         ),
       ]);

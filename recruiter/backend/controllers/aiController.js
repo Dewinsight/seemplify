@@ -1,8 +1,8 @@
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
-const AzureOpenAIService = require('../services/azureOpenAIService');
+const AIModelService = require('../services/aiModelService');
 const gptAnalysisService = require('../services/gptAnalysisService');
-const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
+const { GROQ_120B } = require('../config/aiRuntimeCatalog');
 const memoryService = require('../services/memoryService');
 const chatMessageService = require('../services/chatMessageService');
 const AIToolExecutor = require('../services/aiToolExecutor');
@@ -11,8 +11,8 @@ const { Mem0ChatMemory } = require('../services/mem0LangchainWrapper'); // Added
 const { HumanMessage, AIMessage } = require('@langchain/core/messages'); // For constructing chat history
 const chatSessionService = require('../services/chatSessionService'); // Added for chat session logic
 
-// Create instance of Azure OpenAI service and AI Tool Executor
-const azureOpenAIService = new AzureOpenAIService();
+// Create the shared AI model service and tool executor.
+const aiModelService = new AIModelService();
 const aiToolExecutor = new AIToolExecutor();
 
 // Generate job description using AI
@@ -40,7 +40,7 @@ exports.generateJobDescription = async (req, res) => {
       education: education || 'Bachelor'
     };
 
-    const result = await azureOpenAIService.generateJobDescription(jobData);
+    const result = await aiModelService.generateJobDescription(jobData);
 
     if (!result.success) {
       return res.status(500).json({
@@ -93,7 +93,7 @@ exports.generateJobRequirements = async (req, res) => {
       education: education || 'Bachelor'
     };
 
-    const result = await azureOpenAIService.generateJobRequirements(jobData);
+    const result = await aiModelService.generateJobRequirements(jobData);
 
     if (!result.success) {
       return res.status(500).json({
@@ -1133,7 +1133,7 @@ exports.analyzeCandidates = async (req, res) => {
     3. Recommendations for improving recruitment
     4. Key trends or patterns`;
 
-    const aiResult = await azureOpenAIService.generateChatResponse(prompt);
+    const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'analytics.candidates' });
 
     res.json({
       totalCandidates,
@@ -1203,7 +1203,7 @@ exports.analyzeJobs = async (req, res) => {
     3. Potential bottlenecks in hiring
     4. Recommendations for improving job postings`;
 
-    const aiResult = await azureOpenAIService.generateChatResponse(prompt);
+    const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'analytics.jobs' });
 
     res.json({
       totalJobs,
@@ -1317,7 +1317,7 @@ Based on these AI-powered matches, provide:
 4. Recommendations for improving the hiring process
 5. Insights on why these candidates scored high in the AI matching`;
 
-      const aiResult = await azureOpenAIService.generateChatResponse(prompt);
+      const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'matching.report' });
       aiInsights = aiResult.response;
     } else {
       aiInsights = "No matching candidates found. Consider expanding your search criteria or posting the job on more platforms to attract qualified candidates.";
@@ -1366,7 +1366,7 @@ Based on these AI-powered matches, provide:
     aiMatchCacheService.setCachedReport(jobId, reportData, {
       candidateCount: matches.length,
       generationTime,
-      modelUsed: azureOpenAIService.modelName,
+      modelUsed: aiModelService.modelName,
       version: 1
     }).catch(err => console.error('Failed to cache report:', err));
 
@@ -1457,7 +1457,7 @@ exports.getHiringAnalytics = async (req, res) => {
     4. Strategic hiring recommendations
     5. Areas for process improvement`;
 
-    const aiResult = await azureOpenAIService.generateChatResponse(prompt);
+    const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'analytics.hiring' });
 
     res.json({
       overview: {
@@ -1492,20 +1492,19 @@ exports.getHiringAnalytics = async (req, res) => {
   }
 };
 
-// Test Azure OpenAI connection
+// Test the managed AI runtime connection.
 exports.testConnection = async (req, res) => {
   try {
-    console.log('🧪 Testing Azure OpenAI connection...');
+    console.log('Testing managed AI runtime connection.');
     
-    const result = await azureOpenAIService.testConnection();
+    const result = await aiModelService.testConnection();
     
-    const runtime = resolveLlmRuntimeConfig();
     if (result.success) {
       res.json({
         msg: 'AI model connection successful',
-        model: azureOpenAIService.modelName,
-        provider: 'azure-openai',
-        defaultDeployment: runtime.deployment,
+        model: aiModelService.modelName,
+        provider: 'groq',
+        defaultDeployment: GROQ_120B,
         matchingAnalysis: {
           enabled: gptAnalysisService.isEnabled,
           model: gptAnalysisService.modelName,
@@ -1515,9 +1514,9 @@ exports.testConnection = async (req, res) => {
     } else {
       res.status(500).json({
         msg: 'AI model connection failed',
-        model: azureOpenAIService.modelName,
-        provider: 'azure-openai',
-        defaultDeployment: runtime.deployment,
+        model: aiModelService.modelName,
+        provider: 'groq',
+        defaultDeployment: GROQ_120B,
         matchingAnalysis: {
           enabled: gptAnalysisService.isEnabled,
           model: gptAnalysisService.modelName,
@@ -1858,17 +1857,17 @@ exports.handleChatStream = async (req, res) => {
         } else if (chunk.event === "on_chain_end" && chunk.name === "AgentExecutor") {
             // This often contains the final structured output of the agent
             agentFinalOutput = chunk.data?.output;
-            console.log('🎯 AgentExecutor final output:', JSON.stringify(agentFinalOutput, null, 2));
+            console.log('AgentExecutor final output received.');
             
             // If the final output is just a string, it might have already been streamed.
             // If it's an object (e.g., { output: "...", tool_calls: [] }), we can use it.
             // The `accumulatedFinalResponse` should ideally be the `output` string from here.
             if (typeof agentFinalOutput?.output === 'string') {
                 accumulatedFinalResponse = agentFinalOutput.output; // Override if this is more definitive
-                console.log('✅ Set final response from AgentExecutor output:', accumulatedFinalResponse);
+                console.log('Set final response from AgentExecutor output.');
             } else if (typeof agentFinalOutput === 'string') {
                 accumulatedFinalResponse = agentFinalOutput; // Sometimes the output is directly a string
-                console.log('✅ Set final response from direct AgentExecutor string:', accumulatedFinalResponse);
+                console.log('Set final response from direct AgentExecutor string.');
             }
             // We'll use agentFinalOutput in onComplete to extract actions/metadata
         }
@@ -1876,8 +1875,8 @@ exports.handleChatStream = async (req, res) => {
         // Handle LangChain streamLog ops format (this is the main format we're receiving)
         if (chunk.ops && chunk.ops.length > 0) {
             for (const op of chunk.ops) {
-                // Handle streaming text content from Azure OpenAI
-                if (op.op === "add" && op.path.match(/^\/logs\/AzureChatOpenAI\/streamed_output_str\/.*$/)) {
+                // Handle streaming text content from the OpenAI-compatible LangChain client.
+                if (op.op === "add" && op.path.match(/^\/logs\/ChatOpenAI\/streamed_output_str\/.*$/)) {
                     const token = op.value;
                     if (token && typeof token === 'string') {
                         accumulatedFinalResponse += token;
@@ -1889,7 +1888,7 @@ exports.handleChatStream = async (req, res) => {
                     const finalOutput = op.value?.output;
                     if (finalOutput && typeof finalOutput === 'string') {
                         accumulatedFinalResponse = finalOutput; // Use the complete final output
-                        console.log('✅ Set final response from /final_output:', accumulatedFinalResponse);
+                        console.log('Set final response from final output event.');
                     }
                 }
                 // Legacy fallback for older LangChain structures
@@ -1945,7 +1944,7 @@ exports.handleChatStream = async (req, res) => {
         console.log('SSE stream completed.');
         console.log('📊 Stream completion summary:');
         console.log('  - accumulatedFinalResponse:', accumulatedFinalResponse);
-        console.log('  - agentFinalOutput:', JSON.stringify(agentFinalOutput, null, 2));
+        console.log('  - agentFinalOutput present:', Boolean(agentFinalOutput));
         console.log('  - accumulatedToolInfo:', accumulatedToolInfo.length, 'tools used');
         
         const processingTime = Date.now() - processingStartTime;
@@ -1955,13 +1954,13 @@ exports.handleChatStream = async (req, res) => {
 
         if (agentFinalOutput && typeof agentFinalOutput.output === 'string') {
             finalContent = agentFinalOutput.output; // Prefer structured final output if available
-            console.log('✅ Using agentFinalOutput.output as finalContent:', finalContent);
+            console.log('Using AgentExecutor output as final content.');
         } else if (agentFinalOutput && typeof agentFinalOutput === 'string') {
             finalContent = agentFinalOutput; // Sometimes the output is directly a string
             console.log('✅ Using agentFinalOutput directly as finalContent:', finalContent);
         }
         
-        console.log('🎯 Final content to be sent:', finalContent);
+        console.log('Final assistant content prepared for delivery.');
         // Example: if agentFinalOutput.actions exists and is an array
         // if (agentFinalOutput && Array.isArray(agentFinalOutput.actions)) {
         //    finalActions = agentFinalOutput.actions;

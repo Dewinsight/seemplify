@@ -1,12 +1,12 @@
 const InterviewQuestion = require('../models/InterviewQuestion');
 const Job = require('../models/Job');
-const AzureOpenAIService = require('./azureOpenAIService');
-const { resolveLlmRuntimeConfig } = require('../config/llmRuntimeConfig');
+const AIModelService = require('./aiModelService');
+const { GROQ_120B } = require('../config/aiRuntimeCatalog');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 class InterviewService {
   constructor() {
-    this.azureOpenAIService = new AzureOpenAIService();
+    this.aiModelService = new AIModelService();
   }
 
   /**
@@ -311,7 +311,7 @@ class InterviewService {
     
     try {
       console.log(`🎯 Generating ${count} ${type} questions...`);
-      const response = await this.azureOpenAIService.generateInterviewQuestions(prompt);
+      const response = await this.aiModelService.generateInterviewQuestions(prompt);
       const parsedQuestions = this._parseAIResponse(response, type, difficulty);
       
       if (parsedQuestions.length === 0) {
@@ -613,7 +613,7 @@ ADDITIONAL CONTEXT:
           isAIGenerated: true,
           aiGenerationMetadata: {
             generatedAt: new Date(),
-            model: resolveLlmRuntimeConfig().modelName,
+            model: GROQ_120B,
             confidence: 0.9,
             questionType: type
           },
@@ -1214,7 +1214,7 @@ ADDITIONAL CONTEXT:
   async _analyzeBias(questionText, jobContext = null) {
     try {
       console.log(`🔬 Calling AI for bias analysis on: "${questionText.substring(0, 100)}..."`);
-      const aiAnalysisResult = await this.azureOpenAIService.analyzeTextForBias(questionText, jobContext);
+      const aiAnalysisResult = await this.aiModelService.analyzeTextForBias(questionText, jobContext);
 
       if (aiAnalysisResult.success && aiAnalysisResult.analysis) {
         const analysis = aiAnalysisResult.analysis;

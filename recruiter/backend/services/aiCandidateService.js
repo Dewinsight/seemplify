@@ -4,11 +4,38 @@
 
 const Candidate = require('../models/Candidate');
 const embeddingService = require('./embeddingService');
-const AzureOpenAIService = require('./azureOpenAIService');
+const AIModelService = require('./aiModelService');
+
+const CANDIDATE_INSIGHTS_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['summary', 'strengths', 'potentialConcerns', 'skillsAssessment', 'fitAssessment', 'recommendations'],
+    properties: {
+        summary: { type: 'string' },
+        strengths: { type: 'array', items: { type: 'string' } },
+        potentialConcerns: { type: 'array', items: { type: 'string' } },
+        skillsAssessment: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['technical', 'soft'],
+            properties: { technical: { type: 'string' }, soft: { type: 'string' } }
+        },
+        fitAssessment: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['overallFit', 'reasoning'],
+            properties: {
+                overallFit: { type: 'number', minimum: 0, maximum: 100 },
+                reasoning: { type: 'string' }
+            }
+        },
+        recommendations: { type: 'array', items: { type: 'string' } }
+    }
+};
 
 class AiCandidateService {
     constructor() {
-        this.azureOpenAIService = new AzureOpenAIService();
+        this.aiModelService = new AIModelService();
         console.log('AiCandidateService initialized');
     }
 
@@ -297,7 +324,7 @@ class AiCandidateService {
                 Current Status: ${candidate.status}
             `;
 
-            const analysis = await this.azureOpenAIService.chatCompletion([
+            const analysis = await this.aiModelService.structuredCompletion([
                 {
                     role: 'system',
                     content: `You are an expert HR analyst. Analyze the candidate profile and provide insights in JSON format with the following structure:
@@ -320,22 +347,20 @@ class AiCandidateService {
                     role: 'user',
                     content: candidateContext
                 }
-            ]);
+            ], {
+                activity: 'candidate.insights',
+                promptVersion: 'candidate-insights-v2',
+                context: {
+                    organizationId: candidate.organization,
+                    candidateId: candidate._id
+                },
+                temperature: 0.35,
+                maxTokens: 1400,
+                jsonSchema: CANDIDATE_INSIGHTS_SCHEMA,
+                schemaName: 'candidate_insights'
+            });
 
-            let parsedAnalysis;
-            try {
-                parsedAnalysis = this.azureOpenAIService.extractJsonObject(analysis.content);
-            } catch (parseError) {
-                console.warn('[AiCandidateService] Failed to parse AI analysis as JSON, using text response');
-                parsedAnalysis = {
-                    summary: analysis.content,
-                    strengths: [],
-                    potentialConcerns: [],
-                    skillsAssessment: { technical: 'N/A', soft: 'N/A' },
-                    fitAssessment: { overallFit: 50, reasoning: 'Analysis could not be parsed' },
-                    recommendations: []
-                };
-            }
+            const parsedAnalysis = analysis.data;
 
             // Update candidate with AI analysis
             await Candidate.findByIdAndUpdate(candidate._id, {
@@ -343,7 +368,7 @@ class AiCandidateService {
                     summary: parsedAnalysis.summary,
                     strengths: parsedAnalysis.strengths || [],
                     potentialFlags: parsedAnalysis.potentialConcerns || [],
-                    matchingScore: parsedAnalysis.fitAssessment?.overallFit || 50
+                    matchingScore: parsedAnalysis.fitAssessment.overallFit
                 }
             });
 

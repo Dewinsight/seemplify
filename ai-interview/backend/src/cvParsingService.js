@@ -1,6 +1,41 @@
 const mammoth = require('mammoth');
 const { chatCompletion, extractJsonObject } = require('./llmClient');
 
+const CV_PROFILE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'firstName', 'lastName', 'email', 'phone', 'location', 'currentTitle', 'yearsOfExperience', 'skills', 'education', 'workExperience', 'summary', 'strengths', 'risks'],
+  properties: {
+    name: { type: 'string' },
+    firstName: { type: 'string' },
+    lastName: { type: 'string' },
+    email: { type: 'string' },
+    phone: { type: 'string' },
+    location: { type: 'string' },
+    currentTitle: { type: 'string' },
+    yearsOfExperience: { type: ['number', 'null'], minimum: 0 },
+    skills: { type: 'array', items: { type: 'string' } },
+    education: { type: 'array', items: { type: 'string' } },
+    workExperience: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'company', 'duration', 'summary'],
+        properties: {
+          title: { type: 'string' },
+          company: { type: 'string' },
+          duration: { type: 'string' },
+          summary: { type: 'string' }
+        }
+      }
+    },
+    summary: { type: 'string' },
+    strengths: { type: 'array', items: { type: 'string' } },
+    risks: { type: 'array', items: { type: 'string' } }
+  }
+};
+
 let pdfjsLib = null;
 
 async function loadPdfJs() {
@@ -86,7 +121,7 @@ class CvParsingService {
     throw new Error('Only text-based PDF, DOCX, and TXT CV files are supported.');
   }
 
-  async analyzeResumeText(resumeText) {
+  async analyzeResumeText(resumeText, context = {}) {
     if (!resumeText || resumeText.trim().length < 50) {
       throw new Error('Could not extract enough text from this CV. Upload a text-based PDF/DOCX or enter the candidate manually.');
     }
@@ -122,9 +157,14 @@ Return:
 }`
       }
     ], {
+      activity: 'ai_interview.cv_parse',
+      promptVersion: 'ai-interview-cv-v1',
       temperature: 0.2,
       maxTokens: 1600,
-      response_format: { type: 'json_object' }
+      response_format: { type: 'json_object' },
+      jsonSchema: CV_PROFILE_SCHEMA,
+      schemaName: 'ai_interview_cv_profile',
+      context
     });
 
     const parsed = extractJsonObject(result.content) || {};
@@ -135,9 +175,9 @@ Return:
     };
   }
 
-  async parseAndAnalyze(file) {
+  async parseAndAnalyze(file, context = {}) {
     const resumeText = await this.extractText(file);
-    return this.analyzeResumeText(resumeText);
+    return this.analyzeResumeText(resumeText, context);
   }
 }
 

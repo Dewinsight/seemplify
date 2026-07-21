@@ -18,6 +18,7 @@ const interviewBotJoinService = require('./services/interviewBotJoinService');
 const aiInterviewEmailService = require('./services/aiInterviewEmailService');
 const { requestValidation } = require('./middleware/requestValidation');
 const { requireFeature } = require('./middleware/featureFlagMiddleware');
+const { aiRequestContextMiddleware } = require('./services/aiRuntime/requestContext');
 
 // Load environment variables
 dotenv.config();
@@ -84,6 +85,7 @@ app.use((req, res, next) => {
 
 // Request Validation Middleware (prevents HTTP desync attacks)
 app.use(requestValidation);
+app.use(aiRequestContextMiddleware);
 
 // Enhanced CORS configuration with proper preflight handling
 const corsOptions = {
@@ -194,6 +196,16 @@ app.use('/api/webhooks', express.raw({ type: 'application/json' }), (req, res, n
   }
 });
 
+app.use('/api/internal/ai', express.raw({ type: 'application/json', limit: '2mb' }), (req, res, next) => {
+  try {
+    req.rawBody = req.body;
+    req.body = JSON.parse(req.body.toString('utf8'));
+    next();
+  } catch (_error) {
+    return res.status(400).json({ code: 'AI_GATEWAY_INVALID_JSON', message: 'Invalid JSON payload' });
+  }
+});
+
 // Debug middleware for file uploads
 app.use((req, res, next) => {
   if (req.path.includes('/upload-cv')) {
@@ -216,7 +228,8 @@ app.use((req, res, next) => {
   // Skip JSON parsing for file upload routes (multer will handle these)
   if (req.path.includes('/upload-cv') || 
       req.path.includes('/bulk-upload') || 
-      req.path.includes('/cv/parse')) {
+      req.path.includes('/cv/parse') ||
+      req.path.includes('/api/internal/ai')) {
     console.log(`⏭️ Skipping JSON parser for file upload route: ${req.path}`);
     return next();
   }
@@ -326,9 +339,11 @@ app.use('/api/credit-packs', require('./routes/creditPacks')); // Credit pack pu
 // Admin portal routes
 app.use('/api/admin/ai-interviews', require('./routes/adminAIInterviews')); // Platform AI interview monitoring
 app.use('/api/admin/activity', require('./routes/adminActivity')); // Organization and user activity monitoring
+app.use('/api/admin/ai-runtime', require('./routes/adminAIRuntime')); // AI provider configuration and monitoring
 app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management
+app.use('/api/internal/ai', require('./routes/internalAI')); // Signed service-to-service AI gateway
 
 // Serve static files from the "uploads" directory (if needed for direct access, though Cloudinary is primary)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -366,6 +381,7 @@ interviewCompletionService.startPeriodicCompletionCheck();
 
 // Start interview status service (handles missed interviews)
 const interviewStatusService = require('./services/interviewStatusService');
+const aiInterviewScoringRetryService = require('./services/aiInterviewScoringRetryService');
 
 // Register all background services
 backgroundServiceManager.register('interviewFeedbackEmail', interviewFeedbackEmailService);
@@ -375,6 +391,7 @@ backgroundServiceManager.register('interviewStatus', interviewStatusService);
 backgroundServiceManager.register('interviewBotJoin', interviewBotJoinService);
 backgroundServiceManager.register('grantVerification', grantVerificationScheduler);
 backgroundServiceManager.register('multiCandidateRetry', multiCandidateRetryService);
+backgroundServiceManager.register('aiInterviewScoringRetry', aiInterviewScoringRetryService);
 
 // Start all background services
 backgroundServiceManager.startAll();

@@ -1,12 +1,37 @@
-const AzureOpenAIService = require('./azureOpenAIService');
+const AIModelService = require('./aiModelService');
 
-let azureOpenAIService;
-
-function getAzureOpenAIService() {
-  if (!azureOpenAIService) {
-    azureOpenAIService = new AzureOpenAIService();
+const INTERVIEW_SCORE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['overallScore', 'recommendation', 'summary', 'strengths', 'concerns', 'questionScores'],
+  properties: {
+    overallScore: { type: 'number', minimum: 0, maximum: 100 },
+    recommendation: { type: 'string', enum: ['strong_yes', 'yes', 'maybe', 'no'] },
+    summary: { type: 'string' },
+    strengths: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    concerns: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    questionScores: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['questionIndex', 'score', 'rationale'],
+        properties: {
+          questionIndex: { type: 'integer', minimum: 0 },
+          score: { type: 'number', minimum: 1, maximum: 5 },
+          rationale: { type: 'string' }
+        }
+      }
+    }
   }
-  return azureOpenAIService;
+};
+
+let aiModelService;
+
+function getAIModelService() {
+  if (!aiModelService) {
+    aiModelService = new AIModelService();
+  }
+  return aiModelService;
 }
 
 class AIModelUnavailableError extends Error {
@@ -21,7 +46,7 @@ class AIModelUnavailableError extends Error {
 
 function safeJsonParse(content) {
   try {
-    return getAzureOpenAIService().extractJsonObject(content);
+    return getAIModelService().extractJsonObject(content);
   } catch (_error) {
     try {
       return JSON.parse(content);
@@ -46,6 +71,18 @@ function requireModelContent(result, operation) {
 }
 
 class AIInterviewerService {
+  buildTelemetryContext({ interview, session }) {
+    return {
+      organizationId: interview?.organization?._id || interview?.organization || session?.organization,
+      organizationName: interview?.organization?.name,
+      actorId: interview?.createdBy?._id || interview?.createdBy,
+      interviewId: interview?._id,
+      sessionId: session?._id,
+      candidateId: session?.candidate,
+      jobId: interview?.job
+    };
+  }
+
   buildBaseContext({ interview, session, question, questionNumber }) {
     return [
       `Interview title: ${interview.title}`,
@@ -58,7 +95,7 @@ class AIInterviewerService {
   async introduceQuestion({ interview, session, question, questionNumber }) {
     try {
       const context = this.buildBaseContext({ interview, session, question, questionNumber });
-      const result = await getAzureOpenAIService().chatCompletion([
+      const result = await getAIModelService().chatCompletion([
         {
           role: 'system',
           content: `You are a professional AI interviewer.
@@ -72,13 +109,18 @@ End by telling the candidate they can ask for clarification or answer when ready
           role: 'user',
           content: `${context}\n\nWrite the interviewer message for this question in 2-4 concise sentences.`
         }
-      ], { temperature: 0.45, maxTokens: 260 });
+      ], {
+        activity: 'ai_interview.chat.introduction',
+        promptVersion: 'ai-interview-introduction-v1',
+        context: this.buildTelemetryContext({ interview, session }),
+        temperature: 0.45,
+        maxTokens: 260
+      });
 
       return requireModelContent(result, 'question introduction');
     } catch (error) {
       console.warn('AI question intro failed:', error.message);
-      if (error.code === 'AI_MODEL_UNAVAILABLE') throw error;
-      throw new AIModelUnavailableError('question introduction', error);
+      return `${question.question}\n\nYou can ask for clarification or answer when you are ready.`;
     }
   }
 
@@ -125,7 +167,7 @@ End by telling the candidate they can ask for clarification or answer when ready
   async clarifyQuestion({ interview, session, question, questionNumber, candidateMessage }) {
     try {
       const context = this.buildBaseContext({ interview, session, question, questionNumber });
-      const result = await getAzureOpenAIService().chatCompletion([
+      const result = await getAIModelService().chatCompletion([
         {
           role: 'system',
           content: `You are clarifying one interview question for a candidate.
@@ -144,7 +186,13 @@ Keep the clarification brief, practical, and specific to the candidate's questio
           role: 'user',
           content: `${context}\n\nCandidate asks: ${truncate(candidateMessage, 800)}\n\nClarify only what the candidate asked in 2-4 sentences.`
         }
-      ], { temperature: 0.35, maxTokens: 260 });
+      ], {
+        activity: 'ai_interview.chat.clarification',
+        promptVersion: 'ai-interview-clarification-v1',
+        context: this.buildTelemetryContext({ interview, session }),
+        temperature: 0.35,
+        maxTokens: 260
+      });
 
       return requireModelContent(result, 'question clarification');
     } catch (error) {
@@ -156,7 +204,7 @@ Keep the clarification brief, practical, and specific to the candidate's questio
 
   async acknowledgeAnswer({ interview, session, question, candidateMessage }) {
     try {
-      const result = await getAzureOpenAIService().chatCompletion([
+      const result = await getAIModelService().chatCompletion([
         {
           role: 'system',
           content: `You are an AI interviewer acknowledging a candidate answer.
@@ -168,13 +216,18 @@ Tell the candidate to use the confirm button when ready to move on.`
           role: 'user',
           content: `Question: ${question.question}\nCandidate answer: ${truncate(candidateMessage, 1200)}\nInterview title: ${interview.title}\nCandidate: ${session.candidateSnapshot?.name || 'Candidate'}`
         }
-      ], { temperature: 0.35, maxTokens: 180 });
+      ], {
+        activity: 'ai_interview.chat.acknowledgement',
+        promptVersion: 'ai-interview-acknowledgement-v1',
+        context: this.buildTelemetryContext({ interview, session }),
+        temperature: 0.35,
+        maxTokens: 180
+      });
 
       return requireModelContent(result, 'answer acknowledgement');
     } catch (error) {
       console.warn('AI acknowledgement failed:', error.message);
-      if (error.code === 'AI_MODEL_UNAVAILABLE') throw error;
-      throw new AIModelUnavailableError('answer acknowledgement', error);
+      return 'Thank you. Use the confirm button when you are ready to move to the next question.';
     }
   }
 
@@ -193,7 +246,7 @@ Tell the candidate to use the confirm button when ready to move on.`
     });
 
     try {
-      const result = await getAzureOpenAIService().chatCompletion([
+      const result = await getAIModelService().structuredCompletion([
         {
           role: 'system',
           content: `You score async interview responses for recruiters.
@@ -218,12 +271,16 @@ Use the expected answer and scoring criteria only for scoring. Do not include hi
           })
         }
       ], {
+        activity: 'ai_interview.scoring',
+        context: this.buildTelemetryContext({ interview, session }),
         temperature: 0.2,
         maxTokens: 1200,
-        response_format: { type: 'json_object' }
+        jsonSchema: INTERVIEW_SCORE_SCHEMA,
+        schemaName: 'ai_interview_score',
+        promptVersion: 'ai-interview-scoring-v2'
       });
 
-      const parsed = safeJsonParse(result.content);
+      const parsed = result.data || safeJsonParse(result.content);
       if (!parsed) {
         throw new AIModelUnavailableError('interview scoring', new Error('Invalid JSON model response'));
       }

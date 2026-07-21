@@ -1,45 +1,38 @@
-/**
- * Verifies Azure chat deployment config and pings the model (same stack as production).
- * Usage: from recruiter/backend: npm run test:llm
- * Requires .env with LLAMA_* or azure_openai_* (see docs/llama-env-vars.txt).
- */
-
 const path = require('path');
+const mongoose = require('mongoose');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-const { resolveLlmRuntimeConfig, DEFAULT_DEPLOYMENT } = require('../config/llmRuntimeConfig');
+const AIProviderCredential = require('../models/AIProviderCredential');
+const { GROQ_120B, GROQ_20B } = require('../config/aiRuntimeCatalog');
 
 async function main() {
-  const cfg = resolveLlmRuntimeConfig();
-  console.log('Resolved deployment name:', cfg.deployment);
-  console.log('Default when env unset:', DEFAULT_DEPLOYMENT);
-  console.log('API version:', cfg.apiVersion);
-  console.log('Endpoint present:', !!cfg.endpoint);
-  console.log('API key present:', !!cfg.apiKey);
-
-  if (!cfg.endpoint || !cfg.apiKey) {
-    console.error('\n❌ Missing endpoint or API key. Set LLAMA_AZURE_* or azure_openai_* in recruiter/backend/.env');
-    process.exit(1);
+  if (process.env.RUN_LIVE_GROQ_CHECK !== '1') {
+    console.log('Live Groq check skipped. Set RUN_LIVE_GROQ_CHECK=1 to run it outside normal CI.');
+    return;
+  }
+  if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required for a live Groq check');
+  if (!process.env.AI_PROVIDER_ENCRYPTION_KEY && !process.env.AI_PROVIDER_ENCRYPTION_KEYS) {
+    throw new Error('The dedicated AI provider encryption key is required');
   }
 
-  const AzureOpenAIService = require('../services/azureOpenAIService');
-  const gptAnalysisService = require('../services/gptAnalysisService');
+  await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+  const credential = process.env.AI_LIVE_CHECK_CREDENTIAL_ID
+    ? await AIProviderCredential.findById(process.env.AI_LIVE_CHECK_CREDENTIAL_ID)
+    : await AIProviderCredential.findOne({ provider: 'groq', enabled: true, status: { $ne: 'revoked' } }).sort({ priority: 1 });
+  if (!credential) throw new Error('No enabled Groq credential is available');
 
-  const svc = new AzureOpenAIService();
-  console.log('\nChat service model:', svc.modelName);
-  console.log('Matching analysis model:', gptAnalysisService.modelName);
-  console.log('ENABLE_LLM_MATCHING:', gptAnalysisService.isEnabled);
-
-  const result = await svc.testConnection();
-  if (result.success) {
-    console.log('\n✅ testConnection OK. Sample reply:', (result.response || '').slice(0, 200));
-    process.exit(0);
+  const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
+  for (const model of [GROQ_20B, GROQ_120B]) {
+    const result = await aiRuntimeService.testCredential(credential._id, model);
+    console.log(`${model}: ${result.success ? 'healthy' : 'failed'}`);
   }
-  console.error('\n❌ testConnection failed:', result.error);
-  process.exit(1);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .catch((error) => {
+    console.error(`Live Groq check failed: ${error.message}`);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    if (mongoose.connection.readyState) await mongoose.disconnect();
+  });

@@ -1,4 +1,7 @@
-const { resolveLlmRuntimeConfig } = require('./llmRuntimeConfig');
+const crypto = require('crypto');
+
+const COMPLETE_PATH = '/api/internal/ai/v1/complete';
+const DEFAULT_GATEWAY_TIMEOUT_MS = 30_000;
 
 function extractJsonObject(content) {
   const text = String(content || '').trim();
@@ -27,68 +30,123 @@ function extractJsonObject(content) {
   }
 }
 
-async function chatCompletion(messages, options = {}) {
-  const config = resolveLlmRuntimeConfig();
-  if (!config.apiKey || !config.endpoint) {
-    const error = new Error('LLAMA_AZURE_ENDPOINT and LLAMA_AZURE_API_KEY are required for AI interview harness calls.');
-    error.code = 'LLM_NOT_CONFIGURED';
-    error.statusCode = 503;
-    throw error;
-  }
+function resolveGatewayUrl(env) {
+  const configured = String(
+    env.SEEMPLIFY_AI_GATEWAY_URL
+      || env.SEEMPLIFY_PLATFORM_API_URL
+      || 'https://api.seemplifyai.com'
+  ).trim().replace(/\/$/, '');
+  if (configured.endsWith(COMPLETE_PATH)) return configured;
+  return `${configured}${COMPLETE_PATH}`;
+}
 
-  const body = {
-    messages,
-    temperature: options.temperature ?? 0.35,
-    top_p: options.topP ?? 1,
-    max_tokens: options.maxTokens ?? 500,
-    model: config.modelName
-  };
+function buildSignature({ timestamp, serviceId, path, body, secret }) {
+  const canonical = [timestamp, serviceId, 'POST', path, body].join('\n');
+  return crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+}
 
-  if (options.response_format) {
-    body.response_format = options.response_format;
-  }
-
-  const response = await fetch(config.chatCompletionsUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'api-key': config.apiKey
-    },
-    body: JSON.stringify(body)
-  });
-
-  const text = await response.text();
-  let payload = null;
-  try {
-    payload = text ? JSON.parse(text) : null;
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
-    const errorMessage = payload?.error?.message || payload?.message || text || `Azure Llama request failed with ${response.status}`;
-    const error = new Error(errorMessage);
-    error.code = 'LLM_REQUEST_FAILED';
-    error.statusCode = response.status;
-    throw error;
-  }
-
-  const content = payload?.choices?.[0]?.message?.content;
-  if (!String(content || '').trim()) {
-    const error = new Error('Azure Llama returned an empty chat completion.');
-    error.code = 'LLM_EMPTY_RESPONSE';
-    error.statusCode = 503;
-    throw error;
-  }
-
+function createAIPlatformClient({ env = process.env, fetchImpl = global.fetch, now = () => Date.now() } = {}) {
   return {
-    content: String(content).trim(),
-    model: payload?.model || config.modelName,
-    raw: payload
+    async chatCompletion(messages, options = {}) {
+      const secret = String(env.AI_GATEWAY_HMAC_SECRET || '');
+      if (!secret) {
+        const error = new Error('AI_GATEWAY_HMAC_SECRET is required for AI Interview model calls.');
+        error.code = 'LLM_NOT_CONFIGURED';
+        error.statusCode = 503;
+        throw error;
+      }
+      if (typeof fetchImpl !== 'function') {
+        const error = new Error('No fetch implementation is available for the Seemplify AI gateway.');
+        error.code = 'LLM_NOT_CONFIGURED';
+        error.statusCode = 503;
+        throw error;
+      }
+
+      const url = resolveGatewayUrl(env);
+      const path = new URL(url).pathname;
+      const serviceId = String(env.AI_GATEWAY_SERVICE_ID || 'ai-interview');
+      const timestamp = String(now());
+      const requestBody = {
+        activity: options.activity || 'ai_interview.chat.clarification',
+        promptVersion: options.promptVersion || '1',
+        messages,
+        temperature: options.temperature ?? 0.35,
+        topP: options.topP ?? 1,
+        maxTokens: options.maxTokens ?? 500,
+        context: options.context || {}
+      };
+      if (options.response_format) requestBody.responseFormat = options.response_format;
+      if (options.jsonSchema) requestBody.jsonSchema = options.jsonSchema;
+      if (options.schemaName) requestBody.schemaName = options.schemaName;
+
+      const body = JSON.stringify(requestBody);
+      const signature = buildSignature({ timestamp, serviceId, path, body, secret });
+      const requestedTimeout = Number(options.timeoutMs || env.AI_GATEWAY_TIMEOUT_MS || DEFAULT_GATEWAY_TIMEOUT_MS);
+      const timeoutMs = Math.min(120_000, Math.max(1_000, Number.isFinite(requestedTimeout)
+        ? requestedTimeout
+        : DEFAULT_GATEWAY_TIMEOUT_MS));
+      let response;
+      try {
+        response = await fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-seemplify-service': serviceId,
+            'x-seemplify-timestamp': timestamp,
+            'x-seemplify-signature': signature,
+            ...(options.context?.requestId ? { 'x-request-id': String(options.context.requestId) } : {})
+          },
+          body,
+          signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+        });
+      } catch (cause) {
+        const error = new Error('Seemplify AI gateway could not be reached before the request deadline.');
+        error.code = 'LLM_REQUEST_FAILED';
+        error.statusCode = 503;
+        error.cause = cause;
+        throw error;
+      }
+
+      const text = await response.text();
+      let payload = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const error = new Error(payload?.message || text || `Seemplify AI gateway request failed with ${response.status}`);
+        error.code = payload?.code || 'LLM_REQUEST_FAILED';
+        error.statusCode = response.status;
+        throw error;
+      }
+
+      const content = String(payload?.content || '').trim();
+      if (!content) {
+        const error = new Error('Seemplify AI gateway returned an empty completion.');
+        error.code = 'LLM_EMPTY_RESPONSE';
+        error.statusCode = 503;
+        throw error;
+      }
+
+      return {
+        content,
+        model: payload.model,
+        requestId: payload.requestId,
+        usage: payload.usage || {},
+        raw: payload
+      };
+    }
   };
 }
 
+const defaultClient = createAIPlatformClient();
+
 module.exports = {
-  chatCompletion,
-  extractJsonObject
+  buildSignature,
+  chatCompletion: (...args) => defaultClient.chatCompletion(...args),
+  createAIPlatformClient,
+  extractJsonObject,
+  resolveGatewayUrl
 };

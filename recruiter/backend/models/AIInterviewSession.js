@@ -183,9 +183,13 @@ const AIInterviewSessionSchema = new mongoose.Schema({
   scoring: {
     status: {
       type: String,
-      enum: ['pending', 'processing', 'completed', 'failed'],
+      enum: ['pending', 'processing', 'queued', 'completed', 'failed'],
       default: 'pending'
     },
+    attempts: { type: Number, min: 0, default: 0 },
+    startedAt: Date,
+    queuedAt: Date,
+    nextAttemptAt: Date,
     overallScore: {
       type: Number,
       min: 0,

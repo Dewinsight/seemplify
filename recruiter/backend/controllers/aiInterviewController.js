@@ -8,6 +8,7 @@ const Job = require('../models/Job');
 const Organization = require('../models/Organization');
 const creditsService = require('../services/creditsService');
 const aiInterviewerService = require('../services/aiInterviewerService');
+const aiInterviewScoringRetryService = require('../services/aiInterviewScoringRetryService');
 const aiInterviewEmailService = require('../services/aiInterviewEmailService');
 const aiInterviewVoiceLiveService = require('../services/aiInterviewVoiceLiveService');
 const azureSpeechTtsService = require('../services/azureSpeechTtsService');
@@ -378,29 +379,7 @@ async function completeSession(session, interview) {
     questionIndex: null,
     messageType: 'transition'
   });
-  session.scoring.status = 'processing';
-  await session.save();
-
-  try {
-    const score = await aiInterviewerService.scoreInterview({ interview, session });
-    session.scoring = {
-      status: 'completed',
-      overallScore: score.overallScore,
-      recommendation: score.recommendation,
-      summary: score.summary,
-      strengths: score.strengths,
-      concerns: score.concerns,
-      questionScores: score.questionScores,
-      raw: score.raw,
-      error: score.error,
-      scoredAt: new Date()
-    };
-  } catch (error) {
-    session.scoring.status = 'failed';
-    session.scoring.error = error.message;
-  }
-
-  await session.save();
+  await aiInterviewScoringRetryService.scoreSession(session, interview);
   await syncInterviewStats(interview._id);
   return session;
 }

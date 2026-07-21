@@ -3,8 +3,6 @@
   "version": "1.0.0",
   "main": "server.js",
   "dependencies": {
-    "@azure/core-auth": "^1.9.0",
-    "@azure/openai": "^2.0.0",
     "@langchain/core": "^0.3.58",
     "@langchain/openai": "^0.5.13",
     "axios": "^1.14.0",
@@ -73,7 +71,8 @@
     "cleanup-sessions": "node scripts/sessionCleanup.js",
     "test-email": "node scripts/test-email.js",
     "test-questions": "node scripts/testInterviewQuestions.js",
-    "compare-cv-models": "node scripts/compareCvExtractionModels.js",
+    "compare-cv-models": "node scripts/evaluateAIRuntimeModels.js",
+    "evaluate:ai-runtime": "node scripts/evaluateAIRuntimeModels.js",
     "test:bulk-pipeline": "node scripts/testBulkPipeline.js",
     "test:llm": "node scripts/verifyLlmDeployment.js",
     "test:candidate-transition-flow": "node scripts/verifyCandidateTransitionFlow.js",
@@ -85,7 +84,10 @@
     "seed:onboarding-templates": "node scripts/seedOnboardingTemplates.js",
     "seed:onboarding-templates:dry-run": "node scripts/seedOnboardingTemplates.js --dry-run",
     "seed:onboarding-templates:akwa-ibom": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom",
-    "seed:onboarding-templates:akwa-ibom:dry-run": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom --dry-run"
+    "seed:onboarding-templates:akwa-ibom:dry-run": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom --dry-run",
+    "seed:ai-runtime": "node scripts/seedAIRuntime.js",
+    "seed:ai-runtime:apply": "node scripts/seedAIRuntime.js --apply",
+    "test:ai-runtime": "node --test tests/aiRuntime*.test.js"
   },
   "keywords": [],
   "author": "",

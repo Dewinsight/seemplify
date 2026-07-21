@@ -4,6 +4,7 @@ const aiMatchCacheService = require('./aiMatchCacheService');
 const creditsService = require('./creditsService');
 const embeddingService = require('./embeddingService');
 const gptAnalysisService = require('./gptAnalysisService');
+const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
 
 const REDIS_ENABLED = process.env.REDIS_ENABLED
   ? process.env.REDIS_ENABLED !== 'false'
@@ -311,6 +312,8 @@ async function processEnrichmentBatch(job) {
   }
 
   const Job = require('../models/Job');
+  const Organization = require('../models/Organization');
+  const User = require('../models/User');
   const dbJob = await Job.findOne({ _id: jobId, organization: organizationId }).lean();
   if (!dbJob) {
     throw new Error(`Job ${jobId} not found for enrichment`);
@@ -339,7 +342,22 @@ async function processEnrichmentBatch(job) {
 
   await job.updateProgress(35);
 
-  const gptResults = await gptAnalysisService.batchAnalyzeCandidates(dbJob, candidates);
+  const [organization, actor] = await Promise.all([
+    Organization.findById(organizationId).select('name').lean(),
+    User.findById(userId).select('email profile').lean()
+  ]);
+  const gptResults = await runWithAIRequestContext({
+    sourceApp: 'recruiter-worker',
+    organizationId,
+    organizationName: organization?.name,
+    actorId: userId,
+    actorName: actor?.profile?.displayName
+      || `${actor?.profile?.firstName || ''} ${actor?.profile?.lastName || ''}`.trim(),
+    actorEmail: actor?.email,
+    jobId,
+    requestId: `matching-enrichment:${enrichmentId}:${batchIndex}`,
+    promptVersion: 'matching-v2'
+  }, () => gptAnalysisService.batchAnalyzeCandidates(dbJob, candidates));
   const resultById = mapResultsByCandidateId(gptResults);
 
   await job.updateProgress(75);

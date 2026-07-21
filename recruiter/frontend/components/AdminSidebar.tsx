@@ -20,7 +20,8 @@ import {
   Server,
   Coins,
   AudioLines,
-  Activity
+  Activity,
+  Cpu
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -105,6 +106,12 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       title: 'AI Interviews',
       icon: AudioLines,
       href: '/admin/analytics',
+      permission: 'viewAnalytics' as const
+    },
+    {
+      title: 'AI Runtime',
+      icon: Cpu,
+      href: '/admin/ai-runtime',
       permission: 'viewAnalytics' as const
     },
     {

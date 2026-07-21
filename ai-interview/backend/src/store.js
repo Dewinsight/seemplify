@@ -134,6 +134,8 @@ function seedStore() {
     _id: 'ai_demo_product_owner',
     title: 'Product Owner AI Interview',
     jobId: job._id,
+    organizationId: 'settings',
+    organizationName: 'Seemplify AI Interview',
     status: 'active',
     guidelines: 'Please answer each question with a specific example. You may ask the interviewer to clarify the current question before answering.',
     questionSnapshots: questions.map((question, index) => ({

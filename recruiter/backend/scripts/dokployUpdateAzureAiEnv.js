@@ -1,7 +1,7 @@
 /**
- * Updates Azure embedding + Llama env vars on Dokploy recruiter-backend.
+ * Updates Azure embedding and AI runtime security env vars on Dokploy recruiter-backend.
  * Usage:
- *   DOKPLOY_TOKEN=... AZURE_OPENAI_API_KEY=... node scripts/dokployUpdateAzureAiEnv.js
+ *   Set the required embedding, encryption, and HMAC variables listed below, then run this script.
  *   DOKPLOY_TOKEN=... RECRUITER_BACKEND_APP_ID=dev-rec-be-001-seemp node scripts/dokployUpdateAzureAiEnv.js
  */
 const axios = require('axios');
@@ -11,15 +11,12 @@ const TOKEN = process.env.DOKPLOY_TOKEN;
 const APP_ID = process.env.RECRUITER_BACKEND_APP_ID || 'tPMolDg5OEdQUBZ4MKMFh';
 
 const REQUIRED_UPDATE_KEYS = [
-  'azure_openai_key',
   'azure_openai_embedding_url',
   'azure_openai_embedding_key',
-  'LLAMA_AZURE_ENDPOINT',
-  'LLAMA_AZURE_API_KEY',
-  'AZURE_OPENAI_API_KEY',
-  'AZURE_OPENAI_ENDPOINT',
-  'AZURE_GPT4O_ENDPOINT',
-  'AZURE_GPT4O_API_KEY',
+  'AI_PROVIDER_ENCRYPTION_KEY',
+  'AI_PROVIDER_ENCRYPTION_KEY_VERSION',
+  'AI_GATEWAY_HMAC_SECRET',
+  'AI_GATEWAY_ALLOWED_SERVICES'
 ];
 
 function getUpdatesFromEnv() {

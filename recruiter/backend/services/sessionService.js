@@ -103,7 +103,9 @@ async function validateAccessToken(token) {
     throw new Error('session_revoked');
   }
 
-  const user = await User.findById(decoded.user.id).select('security currentOrganization');
+  const user = await User.findById(decoded.user.id)
+    .select('security currentOrganization email profile')
+    .populate('currentOrganization', 'name');
   if (!user) {
     throw new Error('user_not_found');
   }

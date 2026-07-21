@@ -10,7 +10,7 @@ const nylasEmailService = require('../services/nylasEmailService');
 const grantManagementService = require('../services/grantManagementService'); // NEW: Grant management
 const multiNylasService = require('../services/multiNylasService'); // Multi-account support
 const multiCandidateRetryService = require('../services/multiCandidateRetryService');
-const AzureOpenAIService = require('../services/azureOpenAIService');
+const AIModelService = require('../services/aiModelService');
 const emailService = require('../services/emailService');
 const pdfService = require('../services/pdfService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
@@ -3437,7 +3437,7 @@ const generateAISummary = async (req, res) => {
     console.log('🎯 Generating AI summary for interview:', interviewId);
     
     // Generate AI summary using Azure OpenAI
-    const azureService = new AzureOpenAIService();
+    const azureService = new AIModelService();
     const summaryResult = await azureService.generateInterviewSummary(interviewData);
     
     if (!summaryResult.success) {
@@ -4822,7 +4822,7 @@ const analyzeTeamComments = async (req, res) => {
     console.log('🤝 Analyzing team comments for interview:', interviewId);
     
     // Analyze comments using Azure OpenAI
-    const azureService = new AzureOpenAIService();
+    const azureService = new AIModelService();
     const analysisResult = await azureService.analyzeTeamComments(commentsData);
     
     if (!analysisResult.success) {

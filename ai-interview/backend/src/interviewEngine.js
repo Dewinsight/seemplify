@@ -120,13 +120,44 @@ function upsertAnswer(interview, session, answerText, status = 'answered') {
 }
 
 async function scoreSession(interview, session) {
-  session.scoring = { status: 'processing', startedAt: nowIso() };
-  const score = await aiInterviewerService.scoreInterview({ interview, session });
-  session.scoring = {
-    status: 'completed',
-    ...score,
-    scoredAt: nowIso()
-  };
+  const attempts = Number(session.scoring?.attempts || 0) + 1;
+  session.scoring = { status: 'processing', attempts, startedAt: nowIso() };
+  try {
+    const score = await aiInterviewerService.scoreInterview({ interview, session });
+    session.scoring = {
+      status: 'completed',
+      attempts,
+      ...score,
+      scoredAt: nowIso()
+    };
+  } catch (error) {
+    const retryDelayMinutes = Math.min(60, 2 ** Math.min(attempts, 5));
+    session.scoring = {
+      status: 'queued',
+      attempts,
+      queuedAt: nowIso(),
+      nextAttemptAt: iso(addMinutes(new Date(), retryDelayMinutes)),
+      lastError: {
+        code: error.code || 'AI_MODEL_UNAVAILABLE',
+        message: error.message || 'Interview scoring is temporarily unavailable'
+      }
+    };
+  }
+}
+
+async function retryQueuedScoring(store, limit = 10) {
+  const now = new Date();
+  const queued = store.sessions.filter((session) => (
+    session.status === 'completed'
+      && session.scoring?.status === 'queued'
+      && (!session.scoring.nextAttemptAt || new Date(session.scoring.nextAttemptAt) <= now)
+  )).slice(0, limit);
+
+  for (const session of queued) {
+    const interview = store.interviews.find((item) => item._id === session.aiInterview);
+    if (interview) await scoreSession(interview, session);
+  }
+  return queued.length;
 }
 
 async function sendMessage(interview, session, message) {
@@ -222,6 +253,7 @@ module.exports = {
   sendMessage,
   confirmQuestion,
   scoreSession,
+  retryQueuedScoring,
   syncStats,
   buildScoringSummary
 };

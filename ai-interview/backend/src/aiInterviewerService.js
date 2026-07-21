@@ -1,5 +1,31 @@
 const { chatCompletion, extractJsonObject } = require('./llmClient');
 
+const INTERVIEW_SCORE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['overallScore', 'recommendation', 'summary', 'strengths', 'concerns', 'questionScores'],
+  properties: {
+    overallScore: { type: 'number', minimum: 0, maximum: 100 },
+    recommendation: { type: 'string', enum: ['strong_yes', 'yes', 'maybe', 'no'] },
+    summary: { type: 'string' },
+    strengths: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    concerns: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    questionScores: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['questionIndex', 'score', 'rationale'],
+        properties: {
+          questionIndex: { type: 'integer', minimum: 0 },
+          score: { type: 'number', minimum: 1, maximum: 5 },
+          rationale: { type: 'string' }
+        }
+      }
+    }
+  }
+};
+
 class AIModelUnavailableError extends Error {
   constructor(operation, cause) {
     super(`AI model failed during ${operation}: ${cause?.message || 'empty model response'}`);
@@ -22,6 +48,20 @@ function requireContent(result, operation) {
 }
 
 class AIInterviewerService {
+  buildTelemetryContext({ interview, session }) {
+    return {
+      organizationId: interview.organizationId,
+      organizationName: interview.organizationName,
+      actorId: interview.createdBy,
+      actorName: interview.createdByName,
+      actorEmail: interview.createdByEmail,
+      interviewId: interview._id,
+      sessionId: session._id,
+      jobId: interview.jobId || session.jobId,
+      candidateId: session.candidateId
+    };
+  }
+
   buildBaseContext({ interview, session, question, questionNumber }) {
     return [
       `Interview title: ${interview.title}`,
@@ -49,10 +89,16 @@ End by telling the candidate they can ask for clarification or answer when ready
           role: 'user',
           content: `${context}\n\nWrite the interviewer message for this question in 2-4 concise sentences.`
         }
-      ], { temperature: 0.45, maxTokens: 260 });
+      ], {
+        activity: 'ai_interview.chat.introduction',
+        promptVersion: 'ai-interview-introduction-v1',
+        temperature: 0.45,
+        maxTokens: 260,
+        context: this.buildTelemetryContext({ interview, session })
+      });
       return requireContent(result, 'question introduction');
-    } catch (error) {
-      throw new AIModelUnavailableError('question introduction', error);
+    } catch {
+      return `Let's continue with this question: ${question.question} You can ask for clarification or answer when you are ready.`;
     }
   }
 
@@ -114,7 +160,13 @@ Keep the clarification brief, practical, and specific to the candidate's questio
           role: 'user',
           content: `${context}\n\nCandidate asks: ${truncate(candidateMessage, 800)}\n\nClarify only what the candidate asked in 2-4 sentences.`
         }
-      ], { temperature: 0.35, maxTokens: 260 });
+      ], {
+        activity: 'ai_interview.chat.clarification',
+        promptVersion: 'ai-interview-clarification-v1',
+        temperature: 0.35,
+        maxTokens: 260,
+        context: this.buildTelemetryContext({ interview, session })
+      });
       return requireContent(result, 'question clarification');
     } catch (error) {
       throw new AIModelUnavailableError('question clarification', error);
@@ -135,10 +187,16 @@ Tell the candidate to use the confirm button when ready to move on.`
           role: 'user',
           content: `Question: ${question.question}\nCandidate answer: ${truncate(candidateMessage, 1200)}\nInterview title: ${interview.title}\nCandidate: ${session.candidateSnapshot?.name || 'Candidate'}`
         }
-      ], { temperature: 0.35, maxTokens: 180 });
+      ], {
+        activity: 'ai_interview.chat.acknowledgement',
+        promptVersion: 'ai-interview-acknowledgement-v1',
+        temperature: 0.35,
+        maxTokens: 180,
+        context: this.buildTelemetryContext({ interview, session })
+      });
       return requireContent(result, 'answer acknowledgement');
-    } catch (error) {
-      throw new AIModelUnavailableError('answer acknowledgement', error);
+    } catch {
+      return 'Thank you. I have recorded your answer. Use the confirm button when you are ready to move on.';
     }
   }
 
@@ -182,9 +240,14 @@ Use the expected answer and scoring criteria only for scoring. Do not include hi
           })
         }
       ], {
+        activity: 'ai_interview.scoring',
+        promptVersion: 'ai-interview-scoring-v2',
         temperature: 0.2,
         maxTokens: 1200,
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        jsonSchema: INTERVIEW_SCORE_SCHEMA,
+        schemaName: 'ai_interview_score',
+        context: this.buildTelemetryContext({ interview, session })
       });
 
       const parsed = extractJsonObject(result.content);
