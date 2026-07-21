@@ -325,6 +325,7 @@ app.use('/api/credit-packs', require('./routes/creditPacks')); // Credit pack pu
 
 // Admin portal routes
 app.use('/api/admin/ai-interviews', require('./routes/adminAIInterviews')); // Platform AI interview monitoring
+app.use('/api/admin/activity', require('./routes/adminActivity')); // Organization and user activity monitoring
 app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management

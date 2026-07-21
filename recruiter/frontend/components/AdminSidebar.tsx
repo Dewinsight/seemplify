@@ -19,7 +19,8 @@ import {
   Calendar,
   Server,
   Coins,
-  AudioLines
+  AudioLines,
+  Activity
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +51,12 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       icon: Building2,
       href: '/admin/organizations',
       permission: 'manageOrganizations' as const
+    },
+    {
+      title: 'Usage & Activity',
+      icon: Activity,
+      href: '/admin/activity',
+      permission: 'viewAnalytics' as const
     },
     {
       title: 'Admins',

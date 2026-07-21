@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const sessionService = require('../services/sessionService');
 const adaptiveRiskService = require('../services/adaptiveRiskService');
 const logger = require('../utils/securityLogger');
+const { attachUserActivityTracking } = require('../services/userActivityTrackingService');
 
 const authMiddleware = async (req, res, next) => {
   // Get token from header
@@ -59,6 +60,7 @@ const authMiddleware = async (req, res, next) => {
 
     req.user = decoded.user;
     req.session = session;
+    attachUserActivityTracking(req, res, { user, session });
     next();
   } catch (err) {
     console.error('Token verification failed:', err.message);
@@ -104,4 +106,4 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-module.exports = authMiddleware; 
+module.exports = authMiddleware;
