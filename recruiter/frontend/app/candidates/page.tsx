@@ -54,6 +54,7 @@ import candidateShortlistService, { type CandidateShortlistInfo } from "@/servic
 import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog"
 import { toast } from "sonner"
 import { TourProvider, useTour, type StepType } from "@reactour/tour"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 // Helper function to format date
 function formatDate(dateString: string) {
@@ -235,6 +236,9 @@ export default function CandidatesPage() {
   }
 
   function CandidatesInnerPage() {
+    const { isFeatureEnabled } = useFeatureFlags()
+    const bulkCvUploadEnabled = isFeatureEnabled('bulkCvUpload')
+    const peopleTransitionsEnabled = isFeatureEnabled('peopleTransitions')
     // State management
     const [candidates, setCandidates] = useState<CandidateData[]>([])
     const [loading, setLoading] = useState(true)
@@ -581,12 +585,14 @@ export default function CandidatesPage() {
                   Candidate Lists
                 </Link>
               </Button>
-              <Button asChild variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50" data-tutorial="add-candidate-btn">
-                <Link href="/bulk-upload">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Add Candidates
-                </Link>
-              </Button>
+              {bulkCvUploadEnabled && (
+                <Button asChild variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50" data-tutorial="add-candidate-btn">
+                  <Link href="/bulk-upload">
+                    <Upload className="h-4 w-4 mr-2" />
+                    Add Candidates
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
 
@@ -665,10 +671,12 @@ export default function CandidatesPage() {
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 disabled:opacity-50" onClick={openBulkShortlist}>
                         Move to Shortlist
                       </Button>
-                      <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openBulkOnboarding}>
-                        <FileSignature className="h-4 w-4 mr-2" />
-                        Start transition
-                      </Button>
+                      {peopleTransitionsEnabled && (
+                        <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openBulkOnboarding}>
+                          <FileSignature className="h-4 w-4 mr-2" />
+                          Start transition
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-gray-200 dark:border-gray-700" onClick={openAddSelectedToList}>
                         <ListPlus className="h-4 w-4 mr-2" />
                         Save to List

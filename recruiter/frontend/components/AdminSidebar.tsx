@@ -12,14 +12,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Key,
-  BarChart3,
   AlertCircle,
   UserCog,
   ArrowUp,
   FileText,
   Calendar,
   Server,
-  Coins
+  Coins,
+  AudioLines
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -95,8 +95,8 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       permission: 'manageBilling' as const
     },
     {
-      title: 'Analytics',
-      icon: BarChart3,
+      title: 'AI Interviews',
+      icon: AudioLines,
       href: '/admin/analytics',
       permission: 'viewAnalytics' as const
     },

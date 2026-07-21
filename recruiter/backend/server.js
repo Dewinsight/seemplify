@@ -17,6 +17,7 @@ const multiCandidateRetryService = require('./services/multiCandidateRetryServic
 const interviewBotJoinService = require('./services/interviewBotJoinService');
 const aiInterviewEmailService = require('./services/aiInterviewEmailService');
 const { requestValidation } = require('./middleware/requestValidation');
+const { requireFeature } = require('./middleware/featureFlagMiddleware');
 
 // Load environment variables
 dotenv.config();
@@ -279,22 +280,23 @@ const upload = multer({
 
 // Define Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/platform', require('./routes/platform'));
 app.use('/api/users', require('./routes/user')); // User profile routes
 // REMOVED global multer middleware - handled at route level for better control
 app.use('/api/candidates', require('./routes/candidate')); // File upload handled in route
 app.use('/api/candidate-lists', require('./routes/candidateLists')); // Saved candidate list routes
-app.use('/api/bulk-upload', require('./routes/bulkUpload')); // Bulk CV upload with BullMQ
+app.use('/api/bulk-upload', requireFeature('bulkCvUpload'), require('./routes/bulkUpload')); // Bulk CV upload with BullMQ
 app.use('/api/jobs', require('./routes/job')); // Job routes
 app.use('/api/feedback-forms', require('./routes/feedbackForm')); // Feedback form templates and custom fields
 app.use('/api/embeddings', require('./routes/embeddingRoutes')); // Embedding management routes
 app.use('/api/sessions', sessionMiddleware, require('./routes/sessionRoutes')); // Session routes with session middleware
-app.use('/api/chat-sessions', authMiddleware, sessionMiddleware, require('./routes/chatSessions')); // Chat session routes with auth and session
-app.use('/api/ai', require('./routes/ai')); // AI routes - auth handled per route
+app.use('/api/chat-sessions', requireFeature('aiAssistant'), authMiddleware, sessionMiddleware, require('./routes/chatSessions')); // Chat session routes with auth and session
+app.use('/api/ai', requireFeature('aiAssistant'), require('./routes/ai')); // AI routes - auth handled per route
 app.use('/api/trusted-devices', require('./routes/trustedDevices')); // Trusted devices management
 
 // NEW: Nylas integration routes
 app.use('/api/interviews', require('./routes/interview')); // Interview scheduling routes
-app.use('/api/ai-interviews', require('./routes/aiInterviews')); // Async AI Interviewer routes
+app.use('/api/ai-interviews', requireFeature('aiInterviews'), require('./routes/aiInterviews')); // Async AI Interviewer routes
 app.use('/api/interview-status', require('./routes/interviewStatus')); // Interview status management routes
 app.use('/api/interview-stages', require('./routes/interviewStages')); // Interview stages management routes
 app.use('/api/ai-analysis', require('./routes/aiAnalysis')); // AI interview analysis routes
@@ -312,16 +314,17 @@ app.use('/api/pipeline', require('./routes/pipelineBatch')); // Pipeline batch o
 app.use('/api/candidate-emails', require('./routes/candidateEmails')); // Candidate email notification routes
 app.use('/api/candidate-shortlists', require('./routes/candidateShortlists')); // Candidate shortlist information routes
 const onboardingRoutes = require('./routes/onboarding');
-app.use('/api/onboarding', onboardingRoutes); // Backward-compatible onboarding routes
-app.use('/api/people-transitions', onboardingRoutes); // Recruiter people transitions routes
+app.use('/api/onboarding', requireFeature('peopleTransitions'), onboardingRoutes); // Backward-compatible onboarding routes
+app.use('/api/people-transitions', requireFeature('peopleTransitions'), onboardingRoutes); // Recruiter people transitions routes
 app.use('/api/candidate-portal', require('./routes/candidatePortal')); // External candidate portal routes
-app.use('/api/enrichment', require('./routes/enrichment')); // Background enrichment and ranking routes
+app.use('/api/enrichment', requireFeature('candidateEnrichment'), require('./routes/enrichment')); // Background enrichment and ranking routes
 app.use('/api/subscription', require('./routes/subscription')); // Subscription upgrade request routes
 app.use('/api/plans', require('./routes/plan')); // Subscription plan management routes
 app.use('/api/credits', require('./routes/credits')); // Credits management routes
 app.use('/api/credit-packs', require('./routes/creditPacks')); // Credit pack purchase routes
 
 // Admin portal routes
+app.use('/api/admin/ai-interviews', require('./routes/adminAIInterviews')); // Platform AI interview monitoring
 app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management

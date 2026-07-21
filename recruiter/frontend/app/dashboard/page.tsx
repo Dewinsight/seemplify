@@ -37,6 +37,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getIdpBaseUrl } from "@/utils/env"
 import { getMySigningDocuments, getOnboardingRecords, type CandidateOnboarding, type MySigningDocuments } from "@/services/onboardingService"
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 type WorkQueueSummary = {
   onboarding: {
@@ -99,6 +100,9 @@ export default function Dashboard() {
   const { state, loadAnalytics, getUserDisplayName, isProfileComplete } = useUser()
   const { user, analytics, suggestions, isLoading } = state
   const { viewMode, setViewMode, sections } = useDashboardState()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
+  const peopleTransitionsEnabled = isFeatureEnabled('peopleTransitions')
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [workQueues, setWorkQueues] = useState<WorkQueueSummary>(emptyWorkQueueSummary)
   const [workQueuesLoading, setWorkQueuesLoading] = useState(false)
@@ -135,21 +139,21 @@ export default function Dashboard() {
       try {
         setWorkQueuesLoading(true);
         const [onboardingResult, aiInterviewsResult, myDocumentsResult] = await Promise.allSettled([
-          getOnboardingRecords(),
-          aiInterviewService.list(),
-          getMySigningDocuments(8),
+          peopleTransitionsEnabled ? getOnboardingRecords() : Promise.resolve(null),
+          aiInterviewsEnabled ? aiInterviewService.list() : Promise.resolve(null),
+          peopleTransitionsEnabled ? getMySigningDocuments(8) : Promise.resolve(null),
         ]);
 
         if (!mounted) return;
 
         setWorkQueues({
-          onboarding: onboardingResult.status === "fulfilled"
+          onboarding: onboardingResult.status === "fulfilled" && onboardingResult.value
             ? summarizeOnboarding(onboardingResult.value.data || [])
             : emptyWorkQueueSummary.onboarding,
-          aiInterviews: aiInterviewsResult.status === "fulfilled"
+          aiInterviews: aiInterviewsResult.status === "fulfilled" && aiInterviewsResult.value
             ? summarizeAIInterviews(aiInterviewsResult.value || [])
             : emptyWorkQueueSummary.aiInterviews,
-          myDocuments: myDocumentsResult.status === "fulfilled"
+          myDocuments: myDocumentsResult.status === "fulfilled" && myDocumentsResult.value
             ? myDocumentsResult.value
             : emptyWorkQueueSummary.myDocuments,
         });
@@ -165,7 +169,7 @@ export default function Dashboard() {
     return () => {
       mounted = false;
     };
-  }, [user])
+  }, [aiInterviewsEnabled, peopleTransitionsEnabled, user])
 
   const handleProfileModalClose = (open: boolean) => {
     setShowProfileModal(open)
@@ -383,7 +387,7 @@ export default function Dashboard() {
           </Alert>
         )}
 
-        {workQueues.myDocuments.pending.length > 0 && (
+        {peopleTransitionsEnabled && workQueues.myDocuments.pending.length > 0 && (
           <Alert className="rounded-md border-border bg-muted/40">
             <FileSignature className="h-4 w-4 text-muted-foreground" />
             <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -508,7 +512,7 @@ export default function Dashboard() {
           </div>
 
           <div className="grid gap-4 xl:grid-cols-3">
-            <Card className="rounded-md">
+            {peopleTransitionsEnabled && <Card className="rounded-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                 <div>
                   <CardTitle className="text-base">People Transitions</CardTitle>
@@ -550,9 +554,9 @@ export default function Dashboard() {
                   </Button>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
-            <Card className="rounded-md">
+            {aiInterviewsEnabled && <Card className="rounded-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                 <div>
                   <CardTitle className="text-base">AI interviews</CardTitle>
@@ -594,9 +598,9 @@ export default function Dashboard() {
                   </Button>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
-            <Card className="rounded-md">
+            {peopleTransitionsEnabled && <Card className="rounded-md">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
                 <div>
                   <CardTitle className="text-base">My Documents</CardTitle>
@@ -651,7 +655,7 @@ export default function Dashboard() {
                   </Link>
                 </Button>
               </CardContent>
-            </Card>
+            </Card>}
           </div>
         </div>
 

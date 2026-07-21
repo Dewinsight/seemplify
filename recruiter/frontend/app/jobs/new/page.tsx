@@ -31,6 +31,7 @@ import { CurrencyManagementDialog } from "@/components/settings/currency-managem
 import { getCurrencies } from "@/services/currencyService"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 const jobFormSchema = z.object({
   title: z.string().min(2, {
@@ -120,6 +121,8 @@ const TAB_FIELD_MAPPING = {
 export default function CreateJobPage() {
   const router = useRouter()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiAssistantEnabled = isFeatureEnabled('aiAssistant')
   const [activeTab, setActiveTab] = useState("basic")
   const [completedTabs, setCompletedTabs] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -496,7 +499,7 @@ export default function CreateJobPage() {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
-        <div className="w-full lg:w-2/3">
+        <div className={aiAssistantEnabled ? "w-full lg:w-2/3" : "w-full"}>
           <Card>
             <CardHeader>
               <CardTitle>Job Details</CardTitle>
@@ -692,7 +695,7 @@ export default function CreateJobPage() {
                     <TabsContent value="description" className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-medium">Job Description *</h3>
-                        <TooltipProvider>
+                        {aiAssistantEnabled && <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -719,7 +722,7 @@ export default function CreateJobPage() {
                               <p>Generate a job description based on the title and department</p>
                             </TooltipContent>
                           </Tooltip>
-                        </TooltipProvider>
+                        </TooltipProvider>}
                       </div>
                       <FormField
                         control={form.control}
@@ -773,7 +776,7 @@ export default function CreateJobPage() {
                     <TabsContent value="requirements" className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-medium">Job Requirements *</h3>
-                        <TooltipProvider>
+                        {aiAssistantEnabled && <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -800,7 +803,7 @@ export default function CreateJobPage() {
                               <p>Generate job requirements based on the title and department</p>
                             </TooltipContent>
                           </Tooltip>
-                        </TooltipProvider>
+                        </TooltipProvider>}
                       </div>
                       <FormField
                         control={form.control}
@@ -1102,7 +1105,7 @@ export default function CreateJobPage() {
           </Card>
         </div>
 
-        <div className="w-full lg:w-1/3">
+        {aiAssistantEnabled && <div className="w-full lg:w-1/3">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">AI Assistant</CardTitle>
@@ -1162,7 +1165,7 @@ export default function CreateJobPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </div>}
       </div>
 
       {/* Department Management Dialog */}

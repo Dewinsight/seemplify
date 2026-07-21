@@ -70,6 +70,7 @@ import useWebSocket from "@/hooks/useWebSocket"
 import ThinkingProcess from "@/components/ThinkingProcess"
 import MessageRenderer from "@/components/MessageRenderer"
 import { GuideRenderer } from "@/components/ai-assistant/GuideRenderer"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 // Chat Session Interface
 interface ChatSession {
@@ -241,6 +242,8 @@ function ChatSessionItem({
 export default function AssistantPage() {
   const { toast } = useToast()
   const router = useRouter()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const bulkCvUploadEnabled = isFeatureEnabled('bulkCvUpload')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { state } = useUser()
   const user = state.user
@@ -889,7 +892,9 @@ export default function AssistantPage() {
             { label: "View Jobs", icon: "briefcase", action: "navigate", data: { url: "/jobs" } },
             { label: "View Candidates", icon: "users", action: "navigate", data: { url: "/candidates" } },
             { label: "View Dashboard", icon: "bar-chart", action: "navigate", data: { url: "/" } },
-            { label: "Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } },
+            ...(bulkCvUploadEnabled
+              ? [{ label: "Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } }]
+              : []),
             { label: "View Calendar", icon: "calendar", action: "navigate", data: { url: "/calendar" } }
           ]
         }
@@ -1275,7 +1280,9 @@ export default function AssistantPage() {
         timestamp: new Date(),
         actions: [
           { label: "Upload Single CV", icon: "upload", action: "navigate", data: { url: "/candidates/new" } },
-          { label: "Bulk Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } },
+          ...(bulkCvUploadEnabled
+            ? [{ label: "Bulk Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } }]
+            : []),
           { label: "Create Candidate Manually", icon: "plus", action: "navigate", data: { url: "/candidates/new" } }
         ]
       }

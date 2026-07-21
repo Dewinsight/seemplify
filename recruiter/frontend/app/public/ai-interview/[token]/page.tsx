@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { useFeatureFlags } from "@/context/FeatureFlagsContext";
 import {
   Dialog,
   DialogContent,
@@ -395,7 +396,7 @@ function renderVoiceBars(level: number, tone: "blue" | "emerald" | "slate" | "wh
   );
 }
 
-export default function PublicAIInterviewPage() {
+function PublicAIInterviewExperience() {
   const params = useParams();
   const searchParams = useSearchParams();
   const token = params.token as string;
@@ -2565,4 +2566,32 @@ export default function PublicAIInterviewPage() {
       </div>
     </main>
   );
+}
+
+export default function PublicAIInterviewPage() {
+  const { isLoading, isFeatureEnabled } = useFeatureFlags();
+
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-500" aria-label="Loading interview" />
+      </main>
+    );
+  }
+
+  if (!isFeatureEnabled("aiInterviews")) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
+        <div className="w-full max-w-lg border-l-4 border-slate-300 bg-white px-6 py-8 shadow-sm">
+          <AlertCircle className="mb-4 h-6 w-6 text-slate-500" />
+          <h1 className="text-xl font-semibold text-slate-950">Interview temporarily unavailable</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            AI interviews are currently unavailable. Please contact the hiring team for next steps.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  return <PublicAIInterviewExperience />;
 }

@@ -6,12 +6,18 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { usePathname } from 'next/navigation';
 import TopNavbar from '@/components/TopNavbar';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { FeatureUnavailable } from '@/components/FeatureUnavailable';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { getFeatureForPath } from '@/lib/platformFeatures';
+import { Loader2 } from 'lucide-react';
 // Organization setup modal replaced by page-based flow
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const { needsOrganizationSetup, isLoading: orgLoading, organizations, hasInitialized, getUserPendingInvitations } = useOrganization();
+  const { isLoading: featuresLoading, isFeatureEnabled } = useFeatureFlags();
   const pathname = usePathname();
+  const routeFeature = getFeatureForPath(pathname);
   // State for modal removed - now using page-based flow
 
   // Public routes that don't need authentication
@@ -78,7 +84,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {isAuthenticated ? (
           <div className="relative flex min-h-screen flex-col">
             <TopNavbar />
-            <main className="flex-1  lg:pt-0">{children}</main>
+            <main className="flex-1  lg:pt-0">
+              {routeFeature && featuresLoading ? (
+                <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Checking feature availability...
+                </div>
+              ) : routeFeature && !isFeatureEnabled(routeFeature) ? (
+                <FeatureUnavailable feature={routeFeature} />
+              ) : children}
+            </main>
           </div>
         ) : (
           children

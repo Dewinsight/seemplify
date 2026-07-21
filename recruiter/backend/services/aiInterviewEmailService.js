@@ -6,6 +6,7 @@ const emailService = require('./emailService');
 const creditsService = require('./creditsService');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { getPlatformFeatureSettings } = require('./platformFeatureService');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
 
@@ -114,6 +115,9 @@ class AIInterviewEmailService {
   }
 
   async checkAndSendInvites() {
+    const { features } = await getPlatformFeatureSettings();
+    if (!features.aiInterviews) return;
+
     const now = new Date();
     const sessions = await AIInterviewSession.find({
       status: 'pending_send'

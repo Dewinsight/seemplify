@@ -10,6 +10,7 @@ import BrandTitle from '@/components/BrandTitle';
 import { TutorialRenderer } from '@/components/tutorial/TutorialRenderer';
 import AppShell from '@/components/AppShell';
 import { InactivityWarning } from '@/components/InactivityWarning';
+import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 
 interface ConditionalProvidersProps {
   children: React.ReactNode;
@@ -25,23 +26,29 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
   // BrandProvider always wraps everything so branding is available on every route
   if (isAdminRoute || isPublicRoute) {
     console.log('🚀 Admin or Public route detected - skipping regular providers');
-    return <BrandProvider><BrandTitle />{children}</BrandProvider>;
+    return (
+      <FeatureFlagsProvider>
+        <BrandProvider><BrandTitle />{children}</BrandProvider>
+      </FeatureFlagsProvider>
+    );
   }
 
   return (
-    <BrandProvider>
-      <BrandTitle />
-      <AuthProvider>
-        <UserProvider>
-          <OrganizationProvider>
-            <TutorialProvider>
-              <AppShell>{children}</AppShell>
-              <InactivityWarning />
-              <TutorialRenderer />
-            </TutorialProvider>
-          </OrganizationProvider>
-        </UserProvider>
-      </AuthProvider>
-    </BrandProvider>
+    <FeatureFlagsProvider>
+      <BrandProvider>
+        <BrandTitle />
+        <AuthProvider>
+          <UserProvider>
+            <OrganizationProvider>
+              <TutorialProvider>
+                <AppShell>{children}</AppShell>
+                <InactivityWarning />
+                <TutorialRenderer />
+              </TutorialProvider>
+            </OrganizationProvider>
+          </UserProvider>
+        </AuthProvider>
+      </BrandProvider>
+    </FeatureFlagsProvider>
   );
 }

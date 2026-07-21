@@ -25,6 +25,7 @@ import {
 } from "@/services/enrichmentService"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 interface JobEmbeddingCardProps {
   jobId: string
@@ -133,6 +134,8 @@ const TOP_K_OPTIONS = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
 
 export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds = [], shortlistCandidateIds = [] }: JobEmbeddingCardProps) {
   const router = useRouter()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const candidateEnrichmentEnabled = isFeatureEnabled('candidateEnrichment')
   const [embeddingStatus, setEmbeddingStatus] = useState<any>(null)
   const [matchingCandidates, setMatchingCandidates] = useState<MatchingCandidate[]>([])
   const [loading, setLoading] = useState(true)
@@ -474,7 +477,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
 
   useEffect(() => {
     const loadEstimate = async () => {
-      if (matchMode !== 'vector-ranked' || matchingCandidates.length === 0) {
+      if (!candidateEnrichmentEnabled || matchMode !== 'vector-ranked' || matchingCandidates.length === 0) {
         setEnrichmentEstimate(null)
         return
       }
@@ -492,7 +495,15 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
     }
 
     loadEstimate()
-  }, [jobId, matchMode, matchingCandidates.length, selectedEnrichCount])
+  }, [candidateEnrichmentEnabled, jobId, matchMode, matchingCandidates.length, selectedEnrichCount])
+
+  useEffect(() => {
+    if (candidateEnrichmentEnabled) return
+    setEnrichmentId(null)
+    setEnrichmentStatus(null)
+    setEnrichmentEstimate(null)
+    setEnrichmentStarting(false)
+  }, [candidateEnrichmentEnabled])
 
   useEffect(() => {
     if (!enrichmentId) return
@@ -749,7 +760,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                 </div>
               </div>
             )}
-            {matchMode === 'vector-ranked' && matchingCandidates.length > 0 && (
+            {candidateEnrichmentEnabled && matchMode === 'vector-ranked' && matchingCandidates.length > 0 && (
               <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-3 space-y-3">
                 <div className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
                   <Brain className="h-4 w-4 shrink-0 mt-0.5" />

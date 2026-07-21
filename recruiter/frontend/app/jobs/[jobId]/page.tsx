@@ -125,11 +125,14 @@ import { JobSetupWizard } from "@/components/wizards/JobSetupWizard"
 import { CANDIDATE_EMAIL_TEMPLATE_EVENT } from "@/lib/candidateEmailTemplateNavigation"
 import type { CandidateEmailTemplateEventDetail } from "@/lib/candidateEmailTemplateNavigation"
 import type { CandidateEmailTemplateType } from "@/lib/candidateEmailTemplatePresets"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 function JobDetailInnerPage() {
   const params = useParams()
   const router = useRouter()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
   const [activeTab, setActiveTab] = useState("overview")
   const [candidatesTab, setCandidatesTab] = useState("ai-matches")
   const [interviewsTab, setInterviewsTab] = useState("overview")
@@ -987,14 +990,16 @@ function JobDetailInnerPage() {
       />
       </div>
 
-      <div className="mx-auto flex w-full max-w-screen-2xl justify-end px-4 pt-4 sm:px-6 lg:px-8">
-        <Button asChild className="w-full sm:w-auto">
-          <Link href={`/ai-interviews?jobId=${jobData._id}`}>
-            <Bot className="mr-2 h-4 w-4" />
-            Create AI Interview
-          </Link>
-        </Button>
-      </div>
+      {aiInterviewsEnabled && (
+        <div className="mx-auto flex w-full max-w-screen-2xl justify-end px-4 pt-4 sm:px-6 lg:px-8">
+          <Button asChild className="w-full sm:w-auto">
+            <Link href={`/ai-interviews?jobId=${jobData._id}`}>
+              <Bot className="mr-2 h-4 w-4" />
+              Create AI Interview
+            </Link>
+          </Button>
+        </div>
+      )}
 
       {/* Guided Tour Button moved into header actions */}
 

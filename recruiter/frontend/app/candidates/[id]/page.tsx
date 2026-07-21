@@ -68,6 +68,7 @@ import { embeddingService } from "@/services/embeddingService"
 import interviewService, { Interview } from "@/services/interviewService"
 import { toast } from "sonner"
 import { CandidateEmbeddingCard } from "@/components/ui/candidate-embedding-card"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 // Removed: import { InterviewComments } from "@/components/ui/interview-comments"
 // Tour functionality removed
 
@@ -179,6 +180,8 @@ function WaveformPlayer({ audioUrl, sentiment, duration = "00:00" }: { audioUrl:
 }
 
 function CandidateDetailInnerPage() {
+  const { isLoading: featuresLoading, isFeatureEnabled } = useFeatureFlags()
+  const peopleTransitionsEnabled = isFeatureEnabled('peopleTransitions')
   const [activeTab, setActiveTab] = useState("overview")
   const [candidate, setCandidate] = useState<CandidateData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -265,8 +268,6 @@ function CandidateDetailInnerPage() {
       // Load candidate interviews
       await loadCandidateInterviews(id)
 
-      // Load external onboarding history without embedding the workflow here
-      await loadCandidateOnboarding(id)
     } catch (error) {
       console.error("Error fetching candidate:", error)
       toast.error("Failed to fetch candidate details")
@@ -298,6 +299,18 @@ function CandidateDetailInnerPage() {
       setLoadingOnboarding(false)
     }
   }
+
+  useEffect(() => {
+    if (featuresLoading) return
+    if (!peopleTransitionsEnabled) {
+      setOnboardingRecords([])
+      setActiveTab((tab) => tab === 'onboarding' ? 'overview' : tab)
+      return
+    }
+    if (candidate?._id) {
+      loadCandidateOnboarding(candidate._id)
+    }
+  }, [candidate?._id, featuresLoading, peopleTransitionsEnabled])
 
   const checkEmbeddingStatus = async (candidateId: string) => {
     try {
@@ -607,12 +620,14 @@ function CandidateDetailInnerPage() {
                           <SelectItem value="overview" className="text-base py-3 cursor-pointer">👤 Overview</SelectItem>
                           <SelectItem value="ai-insights" className="text-base py-3 cursor-pointer">✨ AI Insights</SelectItem>
                           <SelectItem value="cv" className="text-base py-3 cursor-pointer">📄 CV</SelectItem>
-                          <SelectItem value="onboarding" className="text-base py-3 cursor-pointer">Transitions</SelectItem>
+                          {peopleTransitionsEnabled && (
+                            <SelectItem value="onboarding" className="text-base py-3 cursor-pointer">Transitions</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     ) : (
                       /* Desktop Tab List Container */
-                      <TabsList className="relative grid w-full grid-cols-4 gap-1 sm:gap-2 bg-white/80 backdrop-blur-sm p-1 sm:p-2 rounded-2xl shadow-lg border border-gray-100/50 h-auto">
+                      <TabsList className={`relative grid w-full ${peopleTransitionsEnabled ? 'grid-cols-4' : 'grid-cols-3'} gap-1 sm:gap-2 bg-white/80 backdrop-blur-sm p-1 sm:p-2 rounded-2xl shadow-lg border border-gray-100/50 h-auto`}>
                       {/* Overview Tab */}
                       <TabsTrigger 
                         value="overview"
@@ -665,7 +680,7 @@ function CandidateDetailInnerPage() {
                         )}
                       </TabsTrigger>
 
-                      <TabsTrigger
+                      {peopleTransitionsEnabled && <TabsTrigger
                         value="onboarding"
                         className="group relative flex flex-col items-center gap-1 sm:gap-1.5 px-2 py-2 sm:px-3 sm:py-3 data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-xl rounded-lg sm:rounded-xl font-medium transition-all duration-300 hover:bg-amber-50"
                       >
@@ -677,7 +692,7 @@ function CandidateDetailInnerPage() {
                         {onboardingRecords.length > 0 && (
                           <span className="absolute -top-1 -right-1 h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-amber-500 ring-1 sm:ring-2 ring-white" />
                         )}
-                      </TabsTrigger>
+                      </TabsTrigger>}
                       </TabsList>
                     )}
                     
@@ -702,7 +717,7 @@ function CandidateDetailInnerPage() {
                         <span className="font-medium">Curriculum Vitae</span> • Candidate's resume and professional profile
                       </p>
                     )}
-                    {activeTab === "onboarding" && (
+                    {peopleTransitionsEnabled && activeTab === "onboarding" && (
                       <p className="text-sm text-gray-600 animate-in fade-in duration-300">
                         <span className="font-medium">People Transitions</span> - documents, signatures, and candidate portal activity
                       </p>
@@ -1412,7 +1427,7 @@ function CandidateDetailInnerPage() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="onboarding" className="space-y-6 animate-in fade-in-50 duration-500">
+            {peopleTransitionsEnabled && <TabsContent value="onboarding" className="space-y-6 animate-in fade-in-50 duration-500">
               <div className="rounded-md border bg-white p-4 sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -1459,7 +1474,7 @@ function CandidateDetailInnerPage() {
                   ))}
                 </div>
               </div>
-            </TabsContent>
+            </TabsContent>}
 
 
           </Tabs>

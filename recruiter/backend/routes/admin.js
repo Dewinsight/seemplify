@@ -10,6 +10,14 @@ const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const currencyConversionService = require('../services/currencyConversionService');
 const {
+  PLATFORM_FEATURE_DEFINITIONS,
+  PLATFORM_FEATURE_KEYS
+} = require('../config/platformFeatures');
+const {
+  getPlatformFeatureSettings,
+  updatePlatformFeatureSettings
+} = require('../services/platformFeatureService');
+const {
   consumeIdpAdminSsoToken,
   upsertAdminFromIdpIdentity,
   verifyIdpAdminSsoToken
@@ -130,6 +138,54 @@ router.get('/auth/me', adminAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   GET /api/admin/system/features
+// @desc    Get platform-wide feature availability
+// @access  Private (Admin with system settings permission)
+router.get('/system/features', adminAuth, requirePermission('systemSettings'), async (req, res) => {
+  try {
+    const settings = await getPlatformFeatureSettings({ forceRefresh: true });
+    res.json({
+      ...settings,
+      definitions: PLATFORM_FEATURE_KEYS.map((key) => ({
+        key,
+        ...PLATFORM_FEATURE_DEFINITIONS[key]
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching platform feature settings:', error);
+    res.status(500).json({ msg: 'Failed to fetch platform feature settings' });
+  }
+});
+
+// @route   PUT /api/admin/system/features
+// @desc    Update one or more platform-wide feature switches
+// @access  Private (Admin with system settings permission)
+router.put('/system/features', adminAuth, requirePermission('systemSettings'), async (req, res) => {
+  try {
+    const settings = await updatePlatformFeatureSettings(
+      req.body?.features,
+      req.admin._id
+    );
+
+    res.json({
+      success: true,
+      message: 'Platform features updated successfully',
+      ...settings,
+      definitions: PLATFORM_FEATURE_KEYS.map((key) => ({
+        key,
+        ...PLATFORM_FEATURE_DEFINITIONS[key]
+      }))
+    });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return res.status(400).json({ msg: error.message });
+    }
+
+    console.error('Error updating platform feature settings:', error);
+    res.status(500).json({ msg: 'Failed to update platform feature settings' });
   }
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -55,36 +55,41 @@ import {
 import OrganizationSwitcher from "@/components/OrganizationSwitcher";
 import { Logo } from "@/components/ui/Logo";
 import NotificationDropdown from "@/components/NotificationDropdown";
+import { useFeatureFlags } from "@/context/FeatureFlagsContext";
+import type { PlatformFeatureKey } from "@/lib/platformFeatures";
 
 type NavigationLink = {
   title: string;
   href: string;
   icon: React.ElementType;
+  feature?: PlatformFeatureKey;
 };
 
 type NavigationGroup = {
   title: string;
   icon: React.ElementType;
   children: NavigationLink[];
+  feature?: PlatformFeatureKey;
 };
 
 type NavigationItem = NavigationLink | NavigationGroup;
 
 const navigationItems: NavigationItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: Home },
-  { title: "My Documents", href: "/my-documents", icon: FileSignature },
+  { title: "My Documents", href: "/my-documents", icon: FileSignature, feature: "peopleTransitions" },
   {
     title: "Recruitment",
     icon: Users,
     children: [
       { title: "Candidates", href: "/candidates", icon: Users },
       { title: "Jobs", href: "/jobs", icon: Briefcase },
-      { title: "AI Interviews", href: "/ai-interviews", icon: Bot },
+      { title: "AI Interviews", href: "/ai-interviews", icon: Bot, feature: "aiInterviews" },
     ],
   },
   {
     title: "People Transitions",
     icon: GraduationCap,
+    feature: "peopleTransitions",
     children: [
       { title: "Overview", href: "/people-transitions", icon: GraduationCap },
       { title: "Start Process", href: "/people-transitions/new", icon: PlusCircle },
@@ -189,7 +194,28 @@ const TopNavbar = () => {
   const { logout } = useAuth();
   const { user } = state;
   const { currentOrganization } = useOrganization();
+  const { isFeatureEnabled } = useFeatureFlags();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const visibleNavigationItems = useMemo<NavigationItem[]>(() =>
+    navigationItems.reduce<NavigationItem[]>((items, item) => {
+      if (item.feature && !isFeatureEnabled(item.feature)) {
+        return items;
+      }
+
+      if (isNavigationGroup(item)) {
+        const children = item.children.filter(
+          (child) => !child.feature || isFeatureEnabled(child.feature)
+        );
+        if (children.length > 0) {
+          items.push({ ...item, children });
+        }
+        return items;
+      }
+
+      items.push(item);
+      return items;
+    }, []),
+  [isFeatureEnabled]);
   
   // Get available theme options from environment configuration
   const availableThemes = getAvailableThemeOptions();
@@ -214,7 +240,7 @@ const TopNavbar = () => {
                   </SheetTitle>
                 </SheetHeader>
                 <nav className="flex flex-col gap-4">
-                  {[...navigationItems, settingsNavigation].map((item) => (
+                  {[...visibleNavigationItems, settingsNavigation].map((item) => (
                     isNavigationGroup(item) ? (
                       <NavDropdown
                         key={item.title}
@@ -244,7 +270,7 @@ const TopNavbar = () => {
 
         {/* Center Section - Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-2">
-          {navigationItems.map((item) => (
+          {visibleNavigationItems.map((item) => (
             isNavigationGroup(item) ? (
               <NavDropdown key={item.title} item={item} pathname={pathname} />
             ) : (

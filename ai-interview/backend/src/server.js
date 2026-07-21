@@ -26,6 +26,10 @@ const brevoEmailService = require('./brevoEmailService');
 const questionGeneratorService = require('./questionGeneratorService');
 const cvParsingService = require('./cvParsingService');
 const {
+  platformFeatureClient,
+  requirePlatformFeature
+} = require('./platformFeatureService');
+const {
   createPasswordRecord,
   verifyPassword,
   signToken,
@@ -500,6 +504,8 @@ async function createSessionForRecipient({ store, interview, recipient, recipien
 }
 
 async function processDueInvites() {
+  if (!await platformFeatureClient.isFeatureEnabled('aiInterviews')) return;
+
   await mutateStore(async (store) => {
     const now = new Date();
     const dueSessions = store.sessions.filter((session) => {
@@ -533,6 +539,14 @@ app.get('/health', asyncHandler(async (_req, res) => {
     time: new Date().toISOString()
   });
 }));
+
+app.get('/api/platform/features', asyncHandler(async (_req, res) => {
+  const settings = await platformFeatureClient.getFeatures();
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.json(settings);
+}));
+
+app.use('/api/ai-interviews', requirePlatformFeature('aiInterviews'));
 
 app.post('/api/ai-interviews/public/:token/speech-transcribe', express.raw({
   type: ['audio/wav', 'audio/x-wav', 'application/octet-stream'],

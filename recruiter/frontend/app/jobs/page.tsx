@@ -55,6 +55,7 @@ import { StatusToggle } from "@/components/ui/status-toggle"
 import { decodeObjectHtmlEntities } from "@/utils/htmlDecode"
 import { PageLoader, CardSkeleton, LoadingOverlay, ErrorState, EmptyState } from "@/components/ui/loading"
 import { TourProvider, useTour, type StepType } from "@reactour/tour"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 // Helper function to get department name
 const getDepartmentName = (department: string | { _id: string; name: string }): string => {
@@ -72,6 +73,8 @@ function JobCard({
   onDelete?: (jobId: string) => void;
 }) {
   const [isDeleting, setIsDeleting] = useState(false)
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
 
   const handleDelete = async () => {
     if (!onDelete) return
@@ -168,12 +171,14 @@ function JobCard({
                     View Details
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href={`/ai-interviews?jobId=${job._id}`} className="flex items-center gap-2">
-                    <Bot className="h-4 w-4" />
-                    Create AI Interview
-                  </Link>
-                </DropdownMenuItem>
+                {aiInterviewsEnabled && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/ai-interviews?jobId=${job._id}`} className="flex items-center gap-2">
+                      <Bot className="h-4 w-4" />
+                      Create AI Interview
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem asChild>
                   <Link href={`/jobs/${job._id}/edit`} className="flex items-center gap-2">
                     <Edit className="h-4 w-4" />
@@ -245,6 +250,8 @@ function JobCard({
 }
 
 function JobsInnerPage() {
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
   const TourPopover = ({ title, children }: { title: string; children: React.ReactNode }) => {
     const { currentStep, setCurrentStep, setIsOpen, steps } = useTour() as any
     const total = (steps?.length ?? 0)
@@ -789,15 +796,17 @@ function JobsInnerPage() {
                               View Details
                             </Link>
                           </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link 
-                              href={`/ai-interviews?jobId=${job._id}`}
-                              className="flex items-center gap-2 cursor-pointer text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
-                            >
-                              <Bot className="h-4 w-4" />
-                              Create AI Interview
-                            </Link>
-                          </DropdownMenuItem>
+                          {aiInterviewsEnabled && (
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={`/ai-interviews?jobId=${job._id}`}
+                                className="flex items-center gap-2 cursor-pointer text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+                              >
+                                <Bot className="h-4 w-4" />
+                                Create AI Interview
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem asChild>
                             <Link 
                               href={`/jobs/${job._id}/edit`}

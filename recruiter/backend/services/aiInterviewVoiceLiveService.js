@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const https = require('https');
 const WebSocket = require('ws');
+const { allowFeatureUpgrade } = require('../middleware/websocketFeatureGuard');
 const sdk = require('microsoft-cognitiveservices-speech-sdk');
 const AIInterviewSession = require('../models/AIInterviewSession');
 
@@ -311,9 +312,10 @@ class AIInterviewVoiceLiveService {
 
     this.wss = new WebSocket.Server({ noServer: true });
 
-    server.on('upgrade', (req, socket, head) => {
+    server.on('upgrade', async (req, socket, head) => {
       const pathname = new URL(req.url, 'http://localhost').pathname;
       if (pathname !== '/ws/ai-interview-voice') return;
+      if (!await allowFeatureUpgrade('aiInterviews', socket)) return;
 
       this.wss.handleUpgrade(req, socket, head, (ws) => {
         this.wss.emit('connection', ws, req);

@@ -52,6 +52,7 @@ import { PageLoader, LoadingOverlay, LoadingButton } from "@/components/ui/loadi
 import { InactivitySettings } from "@/components/InactivitySettings";
 import UserPendingInvitationsSection from "@/components/UserPendingInvitationsSection";
 import { TrustedDevices } from "@/components/settings/trusted-devices";
+import { useFeatureFlags } from "@/context/FeatureFlagsContext";
 
 
 
@@ -67,6 +68,8 @@ const TIMEZONES = [
 
 export default function SettingsPage() {
   const { state, updateProfile, uploadAvatar, changePassword, updatePreferences } = useUser();
+  const { isFeatureEnabled } = useFeatureFlags();
+  const aiAssistantEnabled = isFeatureEnabled('aiAssistant');
   const { user, isLoading } = state;
   
   const [activeTab, setActiveTab] = useState('profile');
@@ -1012,12 +1015,14 @@ export default function SettingsPage() {
                         Dashboard Overview
                       </a>
                     </Button>
-                    <Button variant="outline" size="sm" className="w-full justify-start" asChild>
-                      <a href="/assistant" target="_blank">
-                        <MessageSquare className="h-4 w-4 mr-2" />
-                        AI Assistant Help
-                      </a>
-                    </Button>
+                    {aiAssistantEnabled && (
+                      <Button variant="outline" size="sm" className="w-full justify-start" asChild>
+                        <a href="/assistant" target="_blank">
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          AI Assistant Help
+                        </a>
+                      </Button>
+                    )}
                   </div>
                 </Card>
               </div>
