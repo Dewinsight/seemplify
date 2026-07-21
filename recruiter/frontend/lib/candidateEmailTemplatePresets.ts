@@ -90,6 +90,21 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    {
+      id: 'rejection_warm',
+      name: 'Warm email',
+      description: 'A considerate rejection with a more personal tone.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for the time and care you put into applying for the {{jobTitle}} role at {{organizationName}}.</p>
+  <p>After careful consideration, we have decided not to move forward with your application.</p>
+  {{#if feedback}}
+  <p>{{feedback}}</p>
+  {{/if}}
+  <p>We truly appreciate your interest in joining us and wish you every success in your search.</p>
+  <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
   ],
   shortlistRejection: [
     {
@@ -118,6 +133,21 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    {
+      id: 'shortlist_rejection_warm',
+      name: 'Warm email',
+      description: 'A thoughtful outcome for someone who reached the shortlist.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for the time you invested in the shortlist process for the {{jobTitle}} role at {{organizationName}}.</p>
+  <p>After reviewing the shortlisted applications, we have decided not to progress your application further.</p>
+  {{#if feedback}}
+  <p>{{feedback}}</p>
+  {{/if}}
+  <p>We appreciated the opportunity to learn more about you and wish you all the best in your search.</p>
+  <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
   ],
   shortlist: [
     {
@@ -139,6 +169,17 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Hi {{candidateFirstName}},</p>
   <p>Your application for {{jobTitle}} at {{organizationName}} has been shortlisted. We will be in touch with the next steps.</p>
   <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+    {
+      id: 'shortlist_warm',
+      name: 'Warm email',
+      description: 'A friendly message celebrating a shortlist decision.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for applying for the {{jobTitle}} role at {{organizationName}}.</p>
+  <p>We are delighted to let you know that your application has been shortlisted. We enjoyed learning about your experience and will contact you soon with the next steps.</p>
+  <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
   ],
@@ -170,6 +211,23 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    {
+      id: 'advancement_warm',
+      name: 'Warm email',
+      description: 'An encouraging update for the candidate\'s next stage.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Good news about your application for the {{jobTitle}} role at {{organizationName}}. We would like to move you forward to the {{nextStageName}} stage.</p>
+  {{#if stageDescription}}
+  <p>{{stageDescription}}</p>
+  {{/if}}
+  {{#if notes}}
+  <p>{{notes}}</p>
+  {{/if}}
+  <p>We look forward to continuing the conversation.</p>
+  <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
   ],
   applicationConfirmation: [
     {
@@ -191,6 +249,20 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Hi {{candidateFirstName}},</p>
   <p>We have received your application for {{jobTitle}} at {{organizationName}}. Thank you for your interest.</p>
   <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+    {
+      id: 'application_confirmation_warm',
+      name: 'Warm email',
+      description: 'A welcoming acknowledgement of a new application.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for your interest in the {{jobTitle}} role at {{organizationName}}. We are pleased to confirm that your application has been received.</p>
+  <p>Our hiring team will review your application carefully and will contact you if your experience matches what we are looking for.</p>
+  {{#if contactEmail}}
+  <p>If you need to update anything, you can reach us at <a href="mailto:{{contactEmail}}">{{contactEmail}}</a>.</p>
+  {{/if}}
+  <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
   ],
