@@ -17,9 +17,11 @@ import {
   MessageSquare,
   Search,
   Send,
+  Settings,
   Users,
 } from 'lucide-react'
 import candidateEmailService, { CandidateEmailData } from '@/services/candidateEmailService'
+import { openCandidateEmailTemplate } from '@/lib/candidateEmailTemplateNavigation'
 
 interface PipelineCandidate {
   _id: string
@@ -242,6 +244,10 @@ export function PipelineEmailControls({
                   Pick a scope, reject all candidates in that scope, or choose specific candidates before sending.
                 </p>
               </div>
+              <Button type="button" variant="outline" onClick={() => openCandidateEmailTemplate('rejection')}>
+                <Settings className="mr-2 h-4 w-4" />
+                Customize Rejection Email
+              </Button>
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -340,10 +346,24 @@ export function PipelineEmailControls({
       <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <MessageSquare className="h-5 w-5 text-orange-500" />
-              Pipeline Rejection Center
-            </DialogTitle>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <MessageSquare className="h-5 w-5 text-orange-500" />
+                Pipeline Rejection Center
+              </DialogTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBulkDialogOpen(false)
+                  openCandidateEmailTemplate('rejection')
+                }}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Customize Email
+              </Button>
+            </div>
             <DialogDescription>
               Send rejection emails for <strong>{jobTitle}</strong>. Current scope: <strong>{scopeLabel}</strong>.
             </DialogDescription>

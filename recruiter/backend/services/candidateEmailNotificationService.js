@@ -136,65 +136,51 @@ class CandidateEmailNotificationService {
   getDefaultTemplate(templateName) {
     const defaultTemplates = {
       'advancement-congratulations': `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #2563eb;">Congratulations, {{candidateName}}!</h2>
-          <p>We're excited to inform you that you've been selected to advance to the next stage of our hiring process for the <strong>{{jobTitle}}</strong> position.</p>
-          <div style="background-color: #f8fafc; padding: 15px; border-left: 4px solid #2563eb; margin: 20px 0;">
-            <p><strong>Next Stage:</strong> {{nextStageName}}</p>
-            {{#if stageDescription}}
-            <p><strong>What to Expect:</strong> {{stageDescription}}</p>
-            {{/if}}
-          </div>
-          <p>We'll be in touch soon with more details about the next steps.</p>
-          <p>Best regards,<br>{{organizationName}} Hiring Team</p>
+        <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+          <p>Hi {{candidateFirstName}},</p>
+          <p>Your application for {{jobTitle}} at {{organizationName}} is moving to the {{nextStageName}} stage.</p>
+          {{#if stageDescription}}<p>{{stageDescription}}</p>{{/if}}
+          {{#if notes}}<p>{{notes}}</p>{{/if}}
+          <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
         </div>
       `,
       'shortlist-congratulations': `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #16a34a;">Great News, {{candidateName}}!</h2>
-          <p>We're pleased to inform you that you've been shortlisted for the <strong>{{jobTitle}}</strong> position at {{organizationName}}.</p>
-          <div style="background-color: #f0fdf4; padding: 15px; border-left: 4px solid #16a34a; margin: 20px 0;">
-            <p>Your application stood out among many qualified candidates, and we're excited to move forward with you in our selection process.</p>
-          </div>
-          <p>We'll be reviewing shortlisted candidates and will contact you soon with next steps.</p>
-          <p>Thank you for your interest in joining our team!</p>
-          <p>Best regards,<br>{{organizationName}} Hiring Team</p>
+        <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+          <p>Hi {{candidateFirstName}},</p>
+          <p>Your application for {{jobTitle}} at {{organizationName}} has been shortlisted. We will contact you with the next steps.</p>
+          <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
         </div>
       `,
       'rejection-notice': `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #374151;">Thank you for your interest, {{candidateName}}</h2>
-          <p>We appreciate the time you invested in applying for the <strong>{{jobTitle}}</strong> position at {{organizationName}}.</p>
-          <div style="background-color: #f9fafb; padding: 15px; border-left: 4px solid #6b7280; margin: 20px 0;">
-            <p>After careful consideration, we have decided to move forward with other candidates whose qualifications more closely match our current needs.</p>
-            {{#if feedback}}
-            <p><strong>Feedback:</strong> {{feedback}}</p>
-            {{/if}}
-          </div>
-          <p>This decision doesn't reflect on your qualifications, and we encourage you to apply for other positions that match your skills and experience.</p>
-          <p>We wish you all the best in your career journey.</p>
-          <p>Sincerely,<br>{{organizationName}} Hiring Team</p>
+        <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+          <p>Hi {{candidateFirstName}},</p>
+          <p>Thank you for applying for {{jobTitle}} at {{organizationName}}. We have decided not to move forward with your application.</p>
+          {{#if feedback}}<p>{{feedback}}</p>{{/if}}
+          <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
         </div>
       `,
       'shortlist-rejection': `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #374151;">Thank you for your application, {{candidateName}}</h2>
-          <p>We appreciate your interest in the <strong>{{jobTitle}}</strong> position at {{organizationName}}.</p>
-          <div style="background-color: #f9fafb; padding: 15px; border-left: 4px solid #6b7280; margin: 20px 0;">
-            <p>After reviewing your application, we have decided not to move forward with your candidacy at this time.</p>
-          </div>
-          <p>We received many qualified applications, and while your background is impressive, we've selected candidates whose experience more closely aligns with our specific requirements.</p>
-          <p>We encourage you to apply for future openings that match your skills and interests.</p>
-          <p>Best wishes,<br>{{organizationName}} Hiring Team</p>
+        <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+          <p>Hi {{candidateFirstName}},</p>
+          <p>Thank you for applying for {{jobTitle}} at {{organizationName}}. We have decided not to progress your shortlisted application.</p>
+          {{#if feedback}}<p>{{feedback}}</p>{{/if}}
+          <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+        </div>
+      `,
+      'application-confirmation': `
+        <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+          <p>Hi {{candidateFirstName}},</p>
+          <p>We have received your application for {{jobTitle}} at {{organizationName}}. Thank you for your interest.</p>
+          <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
         </div>
       `
     };
 
     return defaultTemplates[templateName] || `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
         <p>Hello {{candidateName}},</p>
         <p>This is an update regarding your application for {{jobTitle}} at {{organizationName}}.</p>
-        <p>Best regards,<br>{{organizationName}} Team</p>
+        <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
       </div>
     `;
   }
@@ -222,6 +208,9 @@ class CandidateEmailNotificationService {
       // Prepare template data (decode HTML entities)
       const templateData = {
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName || '',
+        candidateLastName: candidate.lastName || '',
+        candidateEmail: candidate.email || '',
         jobTitle: decodeHtmlEntities(job.title),
         organizationName,
         nextStageName: toStage?.name || 'Next Stage',
@@ -237,7 +226,7 @@ class CandidateEmailNotificationService {
       
       let htmlContent;
       
-      if (customTemplateHTML && customTemplateHTML.length > 50) {
+      if (customTemplateHTML?.trim()) {
         // Custom HTML template provided
         console.log('📧 Using custom HTML template for advancement from job settings');
         const Handlebars = require('handlebars');
@@ -287,6 +276,9 @@ class CandidateEmailNotificationService {
       // Prepare template data (decode HTML entities)
       const templateData = {
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName || '',
+        candidateLastName: candidate.lastName || '',
+        candidateEmail: candidate.email || '',
         jobTitle: decodeHtmlEntities(job.title),
         organizationName,
         applicationDate: new Date().toLocaleDateString(),
@@ -298,7 +290,7 @@ class CandidateEmailNotificationService {
       
       let htmlContent;
       
-      if (customTemplateHTML && customTemplateHTML.length > 50) {
+      if (customTemplateHTML?.trim()) {
         // Custom HTML template provided
         console.log('📧 Using custom HTML template for shortlist from job settings');
         const Handlebars = require('handlebars');
@@ -368,6 +360,9 @@ class CandidateEmailNotificationService {
       
       const templateData = {
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName || '',
+        candidateLastName: candidate.lastName || '',
+        candidateEmail: candidate.email || '',
         jobTitle: decodeHtmlEntities(job.title),
         organizationName,
         feedback: reason || '',
@@ -390,7 +385,7 @@ class CandidateEmailNotificationService {
       
       let htmlContent;
       
-      if (customTemplateHTML && customTemplateHTML.length > 50) {
+      if (customTemplateHTML?.trim()) {
         // Custom HTML template provided - compile it with Handlebars
         console.log('📧 Using custom HTML template from job settings');
         const Handlebars = require('handlebars');
@@ -511,8 +506,7 @@ class CandidateEmailNotificationService {
       // Application confirmation emails are always sent (not configurable per job)
       // This is a basic courtesy email to acknowledge receipt
       
-      const templateName = 'application-confirmation';
-      const template = await this.loadTemplate(templateName);
+      const emailConfig = this.getJobEmailConfig(job);
       const { organization, organizationName } = await this.getOrganizationEmailContext(job);
       const organizationData = typeof organization.toObject === 'function'
         ? organization.toObject()
@@ -520,6 +514,15 @@ class CandidateEmailNotificationService {
 
       // Decode HTML entities in job data
       const templateData = {
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateFirstName: candidate.firstName || '',
+        candidateLastName: candidate.lastName || '',
+        candidateEmail: candidate.email || '',
+        jobTitle: decodeHtmlEntities(job.title),
+        organizationName,
+        applicationDate: new Date().toLocaleDateString(),
+        jobLocation: decodeHtmlEntities(job.location),
+        contactEmail: job.emailSettings?.senderEmail || '',
         candidate: {
           firstName: candidate.firstName,
           lastName: candidate.lastName,
@@ -532,12 +535,21 @@ class CandidateEmailNotificationService {
             name: organizationName
           },
           location: decodeHtmlEntities(job.location),
-          contactEmail: job.contactEmail
+          contactEmail: job.emailSettings?.senderEmail || ''
         },
         now: new Date()
       };
 
-      const htmlContent = template(templateData);
+      const customTemplateHTML = emailConfig.customTemplates?.applicationConfirmation;
+      let htmlContent;
+
+      if (customTemplateHTML?.trim()) {
+        const template = Handlebars.compile(customTemplateHTML);
+        htmlContent = template(templateData);
+      } else {
+        const template = await this.loadTemplate('application-confirmation');
+        htmlContent = template(templateData);
+      }
       
       const subject = decodeHtmlEntities(`Application Received - ${job.title} at ${organizationName}`);
       

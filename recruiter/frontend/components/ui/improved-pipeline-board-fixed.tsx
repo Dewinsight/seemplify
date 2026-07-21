@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import pipelineService from '@/services/pipelineService'
+import { openCandidateEmailTemplate } from '@/lib/candidateEmailTemplateNavigation'
 
 interface ImprovedPipelineBoardProps {
   jobId: string
@@ -554,9 +555,20 @@ export function ImprovedPipelineBoard({
               <p className="text-sm text-muted-foreground mt-1">Manage candidates through your multi-stage interview process</p>
             </div>
 
-            <Button variant="outline" size="sm" onClick={() => onNavigateToStages?.()} className="text-sm w-fit">
-              Manage Stages
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openCandidateEmailTemplate('advancement')}
+                className="text-sm"
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                Customize Stage Email
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => onNavigateToStages?.()} className="text-sm">
+                Manage Stages
+              </Button>
+            </div>
           </div>
 
         </div>

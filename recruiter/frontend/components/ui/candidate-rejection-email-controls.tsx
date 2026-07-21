@@ -20,6 +20,7 @@ import {
   Settings
 } from 'lucide-react'
 import candidateEmailService, { CandidateEmailData } from '../../services/candidateEmailService'
+import { openCandidateEmailTemplate } from '@/lib/candidateEmailTemplateNavigation'
 
 const PIPELINE_DEFAULT_MESSAGE =
   "Thank you for your interest in this position. After careful consideration, we've decided to move forward with other candidates whose experience more closely aligns with our current needs."
@@ -161,13 +162,13 @@ function BulkEmailDialog({
               variant="outline"
               size="sm"
               onClick={() => {
-                window.dispatchEvent(new Event('openEmailSettings'))
+                openCandidateEmailTemplate(isShortlistRejection ? 'shortlistRejection' : 'rejection')
                 onOpenChange(false)
               }}
               className="h-8"
             >
               <Settings className="h-4 w-4 mr-1" />
-              Email Settings
+              Customize Email
             </Button>
           </div>
           <DialogDescription>
@@ -189,7 +190,7 @@ function BulkEmailDialog({
                   Your custom message will be included in the email. 
                   <button
                     onClick={() => {
-                      window.dispatchEvent(new Event('openEmailSettings'))
+                      openCandidateEmailTemplate(isShortlistRejection ? 'shortlistRejection' : 'rejection')
                       onOpenChange(false)
                     }}
                     className="underline ml-1 hover:text-blue-900"
@@ -378,13 +379,13 @@ function SingleEmailDialog({
               variant="outline"
               size="sm"
               onClick={() => {
-                window.dispatchEvent(new Event('openEmailSettings'))
+                openCandidateEmailTemplate(isShortlistRejection ? 'shortlistRejection' : 'rejection')
                 onOpenChange(false)
               }}
               className="h-8"
             >
               <Settings className="h-4 w-4 mr-1" />
-              Email Settings
+              Customize Email
             </Button>
           </div>
           <DialogDescription>
@@ -405,7 +406,7 @@ function SingleEmailDialog({
                   Your custom message will be included in the email. 
                   <button
                     onClick={() => {
-                      window.dispatchEvent(new Event('openEmailSettings'))
+                      openCandidateEmailTemplate(isShortlistRejection ? 'shortlistRejection' : 'rejection')
                       onOpenChange(false)
                     }}
                     className="underline ml-1 hover:text-blue-900"

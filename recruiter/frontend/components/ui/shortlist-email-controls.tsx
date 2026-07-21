@@ -14,10 +14,12 @@ import {
   ListChecks,
   Mail, 
   MessageSquare,
+  Settings,
   Users, 
   Send, 
 } from 'lucide-react'
 import candidateEmailService, { CandidateEmailData } from '@/services/candidateEmailService'
+import { openCandidateEmailTemplate } from '@/lib/candidateEmailTemplateNavigation'
 
 interface ShortlistCandidate {
   _id: string
@@ -209,6 +211,10 @@ export function ShortlistEmailControls({
                   Reject selected candidates, reject every eligible candidate, or choose a custom set before sending emails.
                 </p>
               </div>
+              <Button type="button" variant="outline" onClick={() => openCandidateEmailTemplate('shortlistRejection')}>
+                <Settings className="mr-2 h-4 w-4" />
+                Customize Rejection Email
+              </Button>
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -257,10 +263,24 @@ export function ShortlistEmailControls({
       <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <MessageSquare className="h-5 w-5 text-red-500" />
-              Shortlist Rejection Center
-            </DialogTitle>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <MessageSquare className="h-5 w-5 text-red-500" />
+                Shortlist Rejection Center
+              </DialogTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBulkDialogOpen(false)
+                  openCandidateEmailTemplate('shortlistRejection')
+                }}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Customize Email
+              </Button>
+            </div>
             <DialogDescription>
               Select who to reject from <strong>{jobTitle}</strong> and send personalized shortlist rejection emails.
             </DialogDescription>

@@ -1,99 +1,15 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application Update</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333;">
-    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-        <!-- Header -->
-        <div style="background-color: #374151; padding: 30px 20px; text-align: center;">
-            {{#if companyLogo}}
-            <img src="{{companyLogo}}" alt="{{organizationName}}" style="max-height: 50px; margin-bottom: 20px;">
-            {{/if}}
-            <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 500;">Application Status Update</h1>
-        </div>
-        
-        <!-- Main Content -->
-        <div style="padding: 40px 30px;">
-            <h2 style="color: #374151; margin: 0 0 20px; font-size: 20px; font-weight: 500;">
-                Dear {{candidateName}},
-            </h2>
-            
-            <p style="margin: 0 0 20px; font-size: 16px; color: #374151;">
-                Thank you for your application for the <strong>{{jobTitle}}</strong> position at {{organizationName}}. We sincerely appreciate the time and effort you invested in applying to join our team.
-            </p>
-            
-            <div style="background-color: #f9fafb; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #6b7280;">
-                <p style="margin: 0; color: #374151; font-size: 15px; line-height: 1.6;">
-                    After careful review of your application and qualifications, we have decided not to move forward with your candidacy at this time.
-                </p>
-            </div>
-            
-            {{#if feedback}}
-            <div style="background-color: #fef3c7; border: 1px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <h4 style="margin: 0 0 10px; color: #92400e; font-size: 16px; font-weight: 600;">
-                    Feedback from our team:
-                </h4>
-                <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.5;">
-                    {{feedback}}
-                </p>
-            </div>
-            {{/if}}
-            
-            <p style="margin: 25px 0; color: #374151; font-size: 16px;">
-                We received many outstanding applications for this position, and while your background and experience are impressive, we've selected candidates whose specific skills and experience more closely match our current requirements.
-            </p>
-            
-            <div style="background-color: #f0f9ff; border: 1px solid #3b82f6; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <h4 style="margin: 0 0 10px; color: #1e40af; font-size: 16px; font-weight: 600;">
-                    We value your interest in our company
-                </h4>
-                <p style="margin: 0; color: #1e3a8a; font-size: 15px; line-height: 1.5;">
-                    This decision is specific to this particular role and should not discourage you from applying for future positions with us that might be a better fit for your skills and career goals.
-                </p>
-            </div>
-            
-            <div style="background-color: #ecfdf5; border: 1px solid #22c55e; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <h4 style="margin: 0 0 15px; color: #166534; font-size: 16px; font-weight: 600;">
-                    Future opportunities:
-                </h4>
-                <ul style="margin: 0; color: #15803d; font-size: 15px; padding-left: 20px;">
-                    <li style="margin-bottom: 8px;">Keep an eye on our careers page for new openings</li>
-                    <li style="margin-bottom: 8px;">We'll keep your information on file for suitable future roles</li>
-                    <li style="margin-bottom: 8px;">Feel free to apply again when you see a position that matches your expertise</li>
-                </ul>
-            </div>
-            
-            <p style="margin: 25px 0; color: #374151; font-size: 16px;">
-                Your qualifications are valuable, and we're confident that you'll find an excellent opportunity that aligns perfectly with your career aspirations.
-            </p>
-            
-            <div style="text-align: center; margin: 30px 0; padding: 15px; background-color: #f8fafc; border-radius: 6px;">
-                <p style="margin: 0; color: #64748b; font-size: 15px; font-style: italic;">
-                    Thank you for considering {{organizationName}} as a potential employer.<br>
-                    We wish you all the best in your job search.
-                </p>
-            </div>
-        </div>
-        
-        <!-- Footer -->
-        <div style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
-            <p style="margin: 0 0 10px; color: #374151; font-weight: 500; font-size: 16px;">
-                Best wishes,
-            </p>
-            <p style="margin: 0; color: #6b7280; font-size: 15px;">
-                {{organizationName}} Hiring Team
-            </p>
-            
-            <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                <p style="margin: 0; color: #9ca3af; font-size: 12px; line-height: 1.4;">
-                    This email was sent regarding your application for {{jobTitle}}.<br>
-                    Please do not reply directly to this email.
-                </p>
-            </div>
-        </div>
-    </div>
+<body style="margin: 0; padding: 24px; background: #ffffff; color: #111827; font-family: Arial, sans-serif; font-size: 16px; line-height: 1.55;">
+  <div style="max-width: 640px;">
+    <p>Hi {{candidateFirstName}},</p>
+    <p>Thank you for your interest in the {{jobTitle}} role at {{organizationName}}.</p>
+    <p>After reviewing the shortlisted applications, we have decided not to progress your application further.</p>
+    {{#if feedback}}
+    <p>{{feedback}}</p>
+    {{/if}}
+    <p>We appreciate the time you invested and wish you all the best.</p>
+    <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+  </div>
 </body>
 </html>

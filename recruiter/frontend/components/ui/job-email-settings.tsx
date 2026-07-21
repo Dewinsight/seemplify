@@ -1,65 +1,93 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
-import { CheckCircle, Loader2, Mail, Save, Sparkles, Star, TestTube, Trash2, Wand2 } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle,
+  Inbox,
+  Loader2,
+  Mail,
+  Save,
+  Sparkles,
+  Star,
+  TestTube,
+  Trash2,
+  UserCheck,
+  UserX,
+  Wand2,
+} from 'lucide-react';
 import candidateEmailService, { EmailSettings } from '../../services/candidateEmailService';
 import { EmailTemplateDesigner } from '@/components/ui/email-template-designer';
 import { useUser } from '@/context/UserContext';
 import {
-  CANDIDATE_EMAIL_TEMPLATE_PRESETS,
-  CANDIDATE_EMAIL_TEMPLATE_VARIABLES,
-  DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_ID
+  DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE,
+  getCandidateEmailTemplatePresets,
+  getCandidateEmailTemplateVariables,
 } from '@/lib/candidateEmailTemplatePresets';
+import type { CandidateEmailTemplateType } from '@/lib/candidateEmailTemplatePresets';
 
 interface JobEmailSettingsProps {
   jobId: string;
   jobTitle: string;
+  initialTemplate?: CandidateEmailTemplateType;
   onSettingsChange?: (settings: EmailSettings) => void;
 }
-
-type TemplateType = 'rejection' | 'shortlistRejection' | 'shortlist' | 'advancement';
 
 interface SavedTemplateEntry {
   id: string;
   name: string;
-  templateType: TemplateType;
+  templateType: CandidateEmailTemplateType;
   content: string;
   isDefaultForType: boolean;
   createdAt: string;
 }
 
-const TEMPLATE_FILE_NAME_MAP: Record<TemplateType, string> = {
+const TEMPLATE_FILE_NAME_MAP: Record<CandidateEmailTemplateType, string> = {
   rejection: 'rejection-notice',
   shortlistRejection: 'shortlist-rejection',
   shortlist: 'shortlist-congratulations',
-  advancement: 'advancement-congratulations'
+  advancement: 'advancement-congratulations',
+  applicationConfirmation: 'application-confirmation',
 };
 
-const TEMPLATE_LABEL_MAP: Record<TemplateType, string> = {
+const TEMPLATE_LABEL_MAP: Record<CandidateEmailTemplateType, string> = {
   rejection: 'Pipeline Rejection',
   shortlistRejection: 'Shortlist Rejection',
   shortlist: 'Shortlist Congratulations',
-  advancement: 'Advancement Congratulations'
+  advancement: 'Stage Advancement',
+  applicationConfirmation: 'Application Confirmation',
 };
 
-const TEMPLATE_TEST_MAP: Record<TemplateType, 'advancement' | 'shortlist' | 'rejection' | 'shortlist-rejection'> = {
+const TEMPLATE_TEST_MAP: Record<CandidateEmailTemplateType, 'advancement' | 'shortlist' | 'rejection' | 'shortlist-rejection' | 'application-confirmation'> = {
   rejection: 'rejection',
   shortlistRejection: 'shortlist-rejection',
   shortlist: 'shortlist',
-  advancement: 'advancement'
+  advancement: 'advancement',
+  applicationConfirmation: 'application-confirmation',
 };
+
+const TEMPLATE_OPTIONS: Array<{
+  type: CandidateEmailTemplateType;
+  label: string;
+  trigger: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { type: 'rejection', label: 'Pipeline rejection', trigger: 'Candidate rejected from a pipeline stage', icon: UserX },
+  { type: 'shortlistRejection', label: 'Shortlist rejection', trigger: 'Candidate rejected from the shortlist', icon: UserX },
+  { type: 'advancement', label: 'Stage advancement', trigger: 'Candidate moved to another pipeline stage', icon: ArrowRight },
+  { type: 'shortlist', label: 'Shortlist success', trigger: 'Candidate added to the shortlist', icon: UserCheck },
+  { type: 'applicationConfirmation', label: 'Application received', trigger: 'Candidate submits an application', icon: Inbox },
+];
 
 const TEMPLATE_LIBRARY_STORAGE_KEY = 'smarthr.candidate.email.template.library.v1';
 
-export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmailSettingsProps) {
+export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection', onSettingsChange }: JobEmailSettingsProps) {
   const { toast } = useToast();
   const { state } = useUser();
 
@@ -69,7 +97,12 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
   const [settings, setSettings] = useState<EmailSettings>({});
   const [testEmail, setTestEmail] = useState('');
   const [defaultTemplates, setDefaultTemplates] = useState<Record<string, string>>({});
-  const [activeTemplate, setActiveTemplate] = useState<TemplateType>('shortlistRejection');
+  const [activeTemplate, setActiveTemplate] = useState<CandidateEmailTemplateType>(initialTemplate);
+  const [persistedTemplates, setPersistedTemplates] = useState<EmailSettings['customTemplates']>({});
+  const [saveConfirmation, setSaveConfirmation] = useState<{
+    templateType: CandidateEmailTemplateType;
+    savedAt: Date;
+  } | null>(null);
   const [savedTemplateName, setSavedTemplateName] = useState('');
   const [templateLibrary, setTemplateLibrary] = useState<SavedTemplateEntry[]>([]);
   const [templateLibraryLoaded, setTemplateLibraryLoaded] = useState(false);
@@ -82,6 +115,10 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
   useEffect(() => {
     loadEmailSettings();
   }, [jobId]);
+
+  useEffect(() => {
+    setActiveTemplate(initialTemplate);
+  }, [initialTemplate]);
 
   useEffect(() => {
     if (!templateLibraryLoaded) {
@@ -108,13 +145,20 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
 
     return {
       candidateName: 'Alex Candidate',
+      candidateFirstName: 'Alex',
+      candidateLastName: 'Candidate',
+      candidateEmail: 'alex.candidate@example.com',
       jobTitle: jobTitle || 'Open Position',
       organizationName,
+      previousStageName: 'Phone Screen',
       nextStageName: 'Technical Interview',
       stageDescription: '45-minute session with the engineering team.',
       feedback: 'Strong communication. Add more detail on large-scale project impact.',
+      stage: 'Technical Interview',
       notes: 'Please monitor your inbox for scheduling instructions.',
       applicationDate: new Date().toLocaleDateString(),
+      jobLocation: 'London or remote',
+      contactEmail: state.user?.email || 'hiring@example.com',
       interviewerName: senderName,
       companyLogo: ''
     };
@@ -131,16 +175,30 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
       return customTemplate;
     }
 
-    const defaultLibraryTemplate = templateLibrary.find(
-      (item) => item.templateType === activeTemplate && item.isDefaultForType
-    );
-    if (defaultLibraryTemplate?.content?.trim()) {
-      return defaultLibraryTemplate.content;
-    }
-
     const fileName = TEMPLATE_FILE_NAME_MAP[activeTemplate];
     return defaultTemplates[fileName] || '';
-  }, [activeTemplate, defaultTemplates, settings.customTemplates, templateLibrary]);
+  }, [activeTemplate, defaultTemplates, settings.customTemplates]);
+
+  const activePresets = useMemo(
+    () => getCandidateEmailTemplatePresets(activeTemplate),
+    [activeTemplate]
+  );
+
+  const activeVariables = useMemo(
+    () => getCandidateEmailTemplateVariables(activeTemplate),
+    [activeTemplate]
+  );
+
+  const persistedActiveContent = useMemo(() => {
+    const custom = persistedTemplates?.[activeTemplate];
+    if (custom?.trim()) {
+      return custom;
+    }
+    return defaultTemplates[TEMPLATE_FILE_NAME_MAP[activeTemplate]] || '';
+  }, [activeTemplate, defaultTemplates, persistedTemplates]);
+
+  const hasUnsavedChanges = activeTemplateContent.trim() !== persistedActiveContent.trim();
+  const isActiveTemplateCustomized = !!persistedTemplates?.[activeTemplate]?.trim();
 
   const loadTemplateLibrary = () => {
     if (typeof window === 'undefined') {
@@ -174,7 +232,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
             return null;
           }
 
-          if (!['rejection', 'shortlistRejection', 'shortlist', 'advancement'].includes(item.templateType)) {
+          if (!['rejection', 'shortlistRejection', 'shortlist', 'advancement', 'applicationConfirmation'].includes(item.templateType)) {
             return null;
           }
 
@@ -182,7 +240,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
             id: item.id,
             name: item.name,
             content: item.content,
-            templateType: item.templateType as TemplateType,
+            templateType: item.templateType as CandidateEmailTemplateType,
             isDefaultForType: !!item.isDefaultForType,
             createdAt: item.createdAt || new Date().toISOString()
           };
@@ -228,7 +286,10 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
     try {
       setLoading(true);
       const response = await candidateEmailService.getEmailSettings(jobId);
-      setSettings(response.emailSettings || {});
+      const loadedSettings = response.emailSettings || {};
+      setSettings(loadedSettings);
+      setPersistedTemplates(loadedSettings.customTemplates || {});
+      setSaveConfirmation(null);
     } catch (error: any) {
       toast({
         title: 'Error loading email settings',
@@ -240,7 +301,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
     }
   };
 
-  const handleCustomTemplateChange = (templateType: TemplateType, value: string) => {
+  const handleCustomTemplateChange = (templateType: CandidateEmailTemplateType, value: string) => {
     const newSettings: EmailSettings = {
       ...settings,
       customTemplates: {
@@ -249,10 +310,11 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
       }
     };
     setSettings(newSettings);
+    setSaveConfirmation(null);
     onSettingsChange?.(newSettings);
   };
 
-  const resetCurrentTemplateToSystemDefault = () => {
+  const resetCurrentTemplateToSystemDefault = async () => {
     const systemDefault = defaultTemplates[TEMPLATE_FILE_NAME_MAP[activeTemplate]];
     if (!systemDefault) {
       toast({
@@ -263,11 +325,34 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
       return;
     }
 
-    handleCustomTemplateChange(activeTemplate, systemDefault);
-    toast({
-      title: 'Template reset',
-      description: `${TEMPLATE_LABEL_MAP[activeTemplate]} template reset to system default.`
-    });
+    try {
+      setSaving(true);
+      const updatedSettings: EmailSettings = {
+        ...settings,
+        customTemplates: {
+          ...settings.customTemplates,
+          [activeTemplate]: ''
+        }
+      };
+      const response = await candidateEmailService.updateEmailSettings(jobId, updatedSettings);
+      const savedSettings = response.emailSettings || updatedSettings;
+      setSettings(savedSettings);
+      setPersistedTemplates(savedSettings.customTemplates || updatedSettings.customTemplates || {});
+      setSaveConfirmation({ templateType: activeTemplate, savedAt: new Date() });
+      onSettingsChange?.(savedSettings);
+      toast({
+        title: 'System default restored',
+        description: `${TEMPLATE_LABEL_MAP[activeTemplate]} now uses the plain system email.`
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to restore default',
+        description: error.message,
+        variant: 'destructive'
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveCurrentTemplateToLibrary = (markAsDefault: boolean) => {
@@ -361,8 +446,11 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
       };
 
       const response = await candidateEmailService.updateEmailSettings(jobId, updatedSettings);
-      setSettings(response.emailSettings || updatedSettings);
-      onSettingsChange?.(response.emailSettings || updatedSettings);
+      const savedSettings = response.emailSettings || updatedSettings;
+      setSettings(savedSettings);
+      setPersistedTemplates(savedSettings.customTemplates || updatedSettings.customTemplates || {});
+      setSaveConfirmation({ templateType: activeTemplate, savedAt: new Date() });
+      onSettingsChange?.(savedSettings);
 
       toast({
         title: 'Template saved',
@@ -379,28 +467,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
     }
   };
 
-  const saveAllSettings = async () => {
-    try {
-      setSaving(true);
-      const response = await candidateEmailService.updateEmailSettings(jobId, settings);
-      setSettings(response.emailSettings || settings);
-      onSettingsChange?.(response.emailSettings || settings);
-      toast({
-        title: 'Settings saved',
-        description: 'Email notification settings have been updated successfully.'
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Error saving settings',
-        description: error.message,
-        variant: 'destructive'
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const sendTestEmail = async (templateType: TemplateType) => {
+  const sendTestEmail = async (templateType: CandidateEmailTemplateType) => {
     if (!testEmail.trim()) {
       toast({
         title: 'Email required',
@@ -430,137 +497,152 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          Loading email settings...
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Loading candidate email templates...
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+    <div className="space-y-5">
+      <div>
+        <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
           <Mail className="h-5 w-5" />
-          Email Notification Settings
-        </CardTitle>
-        <CardDescription>
-          Configure and save editable, live-preview email templates for the {jobTitle} pipeline.
-        </CardDescription>
-      </CardHeader>
+          Candidate email templates
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">{jobTitle}</p>
+      </div>
 
-      <CardContent>
-        <Tabs defaultValue="templates" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2 gap-1">
-            <TabsTrigger value="templates" className="text-xs sm:text-sm px-2 sm:px-4">
-              <span className="hidden sm:inline">Email Templates</span>
-              <span className="sm:hidden">Templates</span>
-            </TabsTrigger>
-            <TabsTrigger value="test" className="text-xs sm:text-sm px-2 sm:px-4">
-              <span className="hidden sm:inline">Test Emails</span>
-              <span className="sm:hidden">Test</span>
-            </TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="templates" className="space-y-5">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="templates">Customize emails</TabsTrigger>
+          <TabsTrigger value="test">Send a test</TabsTrigger>
+        </TabsList>
 
-          <TabsContent value="templates" className="space-y-4">
-            <div className="rounded-lg border bg-muted/20 p-3 sm:p-4 space-y-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="w-full lg:max-w-sm space-y-1">
-                  <Label className="text-sm">Template Type</Label>
-                  <Select value={activeTemplate} onValueChange={(value) => setActiveTemplate(value as TemplateType)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="shortlistRejection">Shortlist Rejection</SelectItem>
-                      <SelectItem value="rejection">Pipeline Rejection</SelectItem>
-                      <SelectItem value="shortlist">Shortlist Congratulations</SelectItem>
-                      <SelectItem value="advancement">Advancement Congratulations</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+        <TabsContent value="templates" className="space-y-5">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" role="list" aria-label="Candidate email template types">
+            {TEMPLATE_OPTIONS.map(option => {
+              const Icon = option.icon;
+              const isActive = activeTemplate === option.type;
+              const isCustomized = !!persistedTemplates?.[option.type]?.trim();
+              return (
+                <button
+                  key={option.type}
+                  type="button"
+                  onClick={() => setActiveTemplate(option.type)}
+                  aria-pressed={isActive}
+                  data-template-type={option.type}
+                  className={`min-h-24 rounded-md border p-3 text-left transition-colors ${
+                    isActive
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border bg-background hover:bg-muted/40'
+                  }`}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                    <Badge variant={isCustomized ? 'default' : 'secondary'} className="rounded-md text-[10px]">
+                      {isCustomized ? 'Customized' : 'Default'}
+                    </Badge>
+                  </span>
+                  <span className="mt-2 block text-sm font-medium">{option.label}</span>
+                  <span className="mt-1 block text-xs leading-4 text-muted-foreground">{option.trigger}</span>
+                </button>
+              );
+            })}
+          </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={resetCurrentTemplateToSystemDefault}>
-                    <Wand2 className="h-4 w-4 mr-2" />
-                    Use System Default
-                  </Button>
-                  <Button type="button" onClick={saveCurrentTemplateToJob} disabled={saving}>
-                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                    Save This Template
-                  </Button>
-                </div>
-              </div>
+          <div className="border-t pt-5">
+            <EmailTemplateDesigner
+              value={activeTemplateContent}
+              onChange={(nextTemplate) => handleCustomTemplateChange(activeTemplate, nextTemplate)}
+              previewData={previewTemplateData}
+              presets={activePresets}
+              variables={activeVariables}
+              defaultPresetId={DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE[activeTemplate]}
+              label={`${TEMPLATE_LABEL_MAP[activeTemplate]} email`}
+              helperText="Candidate placeholders below are matched to this email and filled automatically when it is sent."
+            />
+          </div>
 
-              <EmailTemplateDesigner
-                value={activeTemplateContent}
-                onChange={(nextTemplate) => handleCustomTemplateChange(activeTemplate, nextTemplate)}
-                previewData={previewTemplateData}
-                presets={CANDIDATE_EMAIL_TEMPLATE_PRESETS}
-                variables={CANDIDATE_EMAIL_TEMPLATE_VARIABLES}
-                defaultPresetId={DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_ID}
-                label={`${TEMPLATE_LABEL_MAP[activeTemplate]} Template`}
-                helperText="Editable live preview is enabled. Pick a preset, edit directly in preview, then save."
-              />
+          <div className="flex flex-col gap-3 border-y py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div aria-live="polite" role="status" className="min-h-5 text-sm">
+              {hasUnsavedChanges ? (
+                <span className="font-medium text-amber-700 dark:text-amber-300">Unsaved changes</span>
+              ) : saveConfirmation?.templateType === activeTemplate ? (
+                <span className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle className="h-4 w-4" />
+                  Saved for this job at {saveConfirmation.savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              ) : (
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  <CheckCircle className="h-4 w-4" />
+                  {isActiveTemplateCustomized ? 'Customized template is saved' : 'Plain system default is active'}
+                </span>
+              )}
             </div>
 
-            <div className="rounded-lg border p-3 sm:p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-indigo-500" />
-                <h4 className="text-sm font-semibold">Reusable Template Library</h4>
-              </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetCurrentTemplateToSystemDefault}
+                disabled={saving || (!isActiveTemplateCustomized && !hasUnsavedChanges)}
+              >
+                <Wand2 className="mr-2 h-4 w-4" />
+                Restore plain default
+              </Button>
+              <Button
+                type="button"
+                onClick={saveCurrentTemplateToJob}
+                disabled={saving || !hasUnsavedChanges || !activeTemplateContent.trim()}
+              >
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {saving ? 'Saving...' : 'Save email template'}
+              </Button>
+            </div>
+          </div>
 
+          <details className="border-b pb-4">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
+              <Sparkles className="h-4 w-4" />
+              Reusable templates
+            </summary>
+            <div className="mt-3 space-y-3">
               <div className="flex flex-col gap-2 lg:flex-row">
                 <Input
                   value={savedTemplateName}
                   onChange={(event) => setSavedTemplateName(event.target.value)}
-                  placeholder="Template name (optional)"
+                  placeholder="Reusable template name"
                   className="lg:flex-1"
                 />
                 <Button type="button" variant="outline" onClick={() => saveCurrentTemplateToLibrary(false)}>
-                  Save Template
+                  Save to library
                 </Button>
                 <Button type="button" variant="outline" onClick={() => saveCurrentTemplateToLibrary(true)}>
-                  <Star className="h-4 w-4 mr-2" />
-                  Save as Default
+                  <Star className="mr-2 h-4 w-4" />
+                  Mark preferred
                 </Button>
               </div>
 
               {activeLibraryTemplates.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No reusable templates saved yet for {TEMPLATE_LABEL_MAP[activeTemplate]}.
-                </p>
+                <p className="text-sm text-muted-foreground">No reusable {TEMPLATE_LABEL_MAP[activeTemplate].toLowerCase()} templates yet.</p>
               ) : (
-                <div className="space-y-2">
-                  {activeLibraryTemplates.map((template) => (
-                    <div
-                      key={template.id}
-                      className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
+                <div className="divide-y rounded-md border">
+                  {activeLibraryTemplates.map(template => (
+                    <div key={template.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium truncate">{template.name}</p>
-                          {template.isDefaultForType && <Badge variant="secondary">Default</Badge>}
+                          <p className="truncate text-sm font-medium">{template.name}</p>
+                          {template.isDefaultForType && <Badge variant="secondary">Preferred</Badge>}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Saved {new Date(template.createdAt).toLocaleString()}
-                        </p>
+                        <p className="text-xs text-muted-foreground">Saved {new Date(template.createdAt).toLocaleString()}</p>
                       </div>
-
                       <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => applyLibraryTemplate(template.id)}>
-                          Apply
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setLibraryTemplateAsDefault(template.id)}
-                        >
-                          <Star className="h-3.5 w-3.5 mr-1" />
-                          Default
+                        <Button type="button" size="sm" variant="outline" onClick={() => applyLibraryTemplate(template.id)}>Apply</Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setLibraryTemplateAsDefault(template.id)}>
+                          <Star className="mr-1 h-3.5 w-3.5" />
+                          Prefer
                         </Button>
                         <Button
                           type="button"
@@ -568,6 +650,7 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
                           variant="ghost"
                           className="text-red-600 hover:text-red-700"
                           onClick={() => deleteLibraryTemplate(template.id)}
+                          aria-label={`Delete ${template.name}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -577,94 +660,37 @@ export function JobEmailSettings({ jobId, jobTitle, onSettingsChange }: JobEmail
                 </div>
               )}
             </div>
-          </TabsContent>
+          </details>
+        </TabsContent>
 
-          <TabsContent value="test" className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="test-email" className="text-sm font-medium">
-                Test Email Address
-              </Label>
-              <Input
-                id="test-email"
-                type="email"
-                placeholder="test@example.com"
-                value={testEmail}
-                onChange={(event) => setTestEmail(event.target.value)}
-              />
-            </div>
+        <TabsContent value="test" className="space-y-4">
+          <div className="max-w-xl space-y-2">
+            <Label htmlFor="test-email">Test email address</Label>
+            <Input
+              id="test-email"
+              type="email"
+              placeholder="name@example.com"
+              value={testEmail}
+              onChange={(event) => setTestEmail(event.target.value)}
+            />
+          </div>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {TEMPLATE_OPTIONS.map(option => (
               <Button
-                onClick={() => sendTestEmail('advancement')}
-                disabled={testingEmail || !testEmail}
+                key={option.type}
+                onClick={() => sendTestEmail(option.type)}
+                disabled={testingEmail || !testEmail.trim()}
                 variant="outline"
-                size="sm"
-                className="h-10 justify-start"
+                className="h-11 justify-start"
               >
-                {testingEmail ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <TestTube className="h-4 w-4 mr-2" />}
-                Advancement
+                {testingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TestTube className="mr-2 h-4 w-4" />}
+                {option.label}
               </Button>
-
-              <Button
-                onClick={() => sendTestEmail('shortlist')}
-                disabled={testingEmail || !testEmail}
-                variant="outline"
-                size="sm"
-                className="h-10 justify-start"
-              >
-                {testingEmail ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <TestTube className="h-4 w-4 mr-2" />}
-                Shortlist
-              </Button>
-
-              <Button
-                onClick={() => sendTestEmail('rejection')}
-                disabled={testingEmail || !testEmail}
-                variant="outline"
-                size="sm"
-                className="h-10 justify-start"
-              >
-                {testingEmail ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <TestTube className="h-4 w-4 mr-2" />}
-                Rejection
-              </Button>
-
-              <Button
-                onClick={() => sendTestEmail('shortlistRejection')}
-                disabled={testingEmail || !testEmail}
-                variant="outline"
-                size="sm"
-                className="h-10 justify-start"
-              >
-                {testingEmail ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <TestTube className="h-4 w-4 mr-2" />}
-                Shortlist Rej.
-              </Button>
-            </div>
-
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h4 className="text-sm font-medium text-blue-900 mb-2">Test Email Information</h4>
-              <p className="text-sm text-blue-700">
-                Test emails use realistic sample candidate data and are sent to the address above, so you can validate
-                your design and variables before sending to real candidates.
-              </p>
-            </div>
-          </TabsContent>
-        </Tabs>
-
-        <div className="flex justify-end pt-6 border-t mt-6">
-          <Button onClick={saveAllSettings} disabled={saving}>
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Save Settings
-              </>
-            )}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

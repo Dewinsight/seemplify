@@ -122,6 +122,9 @@ import { formatCurrency } from "@/lib/currencies"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
 import { JobSetupWizard } from "@/components/wizards/JobSetupWizard"
+import { CANDIDATE_EMAIL_TEMPLATE_EVENT } from "@/lib/candidateEmailTemplateNavigation"
+import type { CandidateEmailTemplateEventDetail } from "@/lib/candidateEmailTemplateNavigation"
+import type { CandidateEmailTemplateType } from "@/lib/candidateEmailTemplatePresets"
 
 function JobDetailInnerPage() {
   const params = useParams()
@@ -348,17 +351,26 @@ function JobDetailInnerPage() {
   const [candidateCount, setCandidateCount] = useState(0)
   const [showEmailSettingsDialog, setShowEmailSettingsDialog] = useState(false)
   const [showBulkRejectionDialog, setShowBulkRejectionDialog] = useState(false)
+  const [emailTemplateToEdit, setEmailTemplateToEdit] = useState<CandidateEmailTemplateType>('rejection')
   const [isExportingReport, setIsExportingReport] = useState(false)
+
+  const openCandidateEmailTemplate = (templateType: CandidateEmailTemplateType) => {
+    setEmailTemplateToEdit(templateType)
+    setActiveTab('hiring-pipeline')
+    setHiringPipelineTab('email-settings')
+    setShowEmailSettingsDialog(false)
+    setShowBulkRejectionDialog(false)
+  }
 
   // Listen for global email settings open event
   useEffect(() => {
-    const handleOpenEmailSettings = () => {
-      setActiveTab('hiring-pipeline')
-      setHiringPipelineTab('email-settings')
+    const handleOpenEmailSettings = (event: Event) => {
+      const detail = (event as CustomEvent<CandidateEmailTemplateEventDetail>).detail
+      openCandidateEmailTemplate(detail?.templateType || 'rejection')
     }
     
-    window.addEventListener('openEmailSettings', handleOpenEmailSettings)
-    return () => window.removeEventListener('openEmailSettings', handleOpenEmailSettings)
+    window.addEventListener(CANDIDATE_EMAIL_TEMPLATE_EVENT, handleOpenEmailSettings)
+    return () => window.removeEventListener(CANDIDATE_EMAIL_TEMPLATE_EVENT, handleOpenEmailSettings)
   }, [])
   const [showSetupWizard, setShowSetupWizard] = useState(false)
 
@@ -963,7 +975,10 @@ function JobDetailInnerPage() {
         onEdit={() => router.push(`/jobs/${jobData?._id}/edit`)}
         onDelete={handleDeleteJob}
         onExportReport={handleExportPipelineReport}
-        onEmailSettings={() => setShowEmailSettingsDialog(true)}
+        onEmailSettings={() => {
+          setEmailTemplateToEdit('rejection')
+          setShowEmailSettingsDialog(true)
+        }}
         onSetupWizard={() => setShowSetupWizard(true)}
         onTogglePublic={() => handleTogglePublicStatus(!jobData.isPublic)}
         isUpdatingPublicStatus={isUpdatingPublicStatus}
@@ -1889,7 +1904,7 @@ function JobDetailInnerPage() {
                       >
                         <div className="flex items-center gap-2">
                           <Mail className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
-                          <span className="hidden sm:inline text-sm font-semibold">Email Settings</span>
+                          <span className="text-xs font-semibold sm:text-sm">Customize Emails</span>
                         </div>
                       </TabsTrigger>
                     </TabsList>
@@ -1908,18 +1923,28 @@ function JobDetailInnerPage() {
                                   Reject selected candidates or reject everyone in a chosen stage from one place.
                                 </p>
                               </div>
-                              <Button
-                                onClick={() => setShowBulkRejectionDialog(true)}
-                                className="w-full sm:w-auto bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700"
-                              >
-                                <Send className="h-4 w-4 mr-2" />
-                                Manage Rejections
-                                {candidateCount > 0 && (
-                                  <Badge className="ml-2 bg-white/20 text-white border-white/30">
-                                    {candidateCount}
-                                  </Badge>
-                                )}
-                              </Button>
+                              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                                <Button
+                                  variant="outline"
+                                  onClick={() => openCandidateEmailTemplate('rejection')}
+                                  className="w-full sm:w-auto"
+                                >
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Customize Rejection Email
+                                </Button>
+                                <Button
+                                  onClick={() => setShowBulkRejectionDialog(true)}
+                                  className="w-full bg-red-600 hover:bg-red-700 sm:w-auto"
+                                >
+                                  <Send className="h-4 w-4 mr-2" />
+                                  Manage Rejections
+                                  {candidateCount > 0 && (
+                                    <Badge className="ml-2 bg-white/20 text-white border-white/30">
+                                      {candidateCount}
+                                    </Badge>
+                                  )}
+                                </Button>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -1960,20 +1985,21 @@ function JobDetailInnerPage() {
                     </TabsContent>
 
                     <TabsContent value="email-settings" className="mt-0">
-                      <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
-                        <CardHeader className="bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-t-lg px-4 sm:px-6">
+                      <Card className="border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                        <CardHeader className="border-b px-4 sm:px-6">
                           <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
                             <Mail className="h-5 w-5 flex-shrink-0" />
-                            <span className="truncate">Email Settings</span>
+                            <span className="truncate">Customize Candidate Emails</span>
                           </CardTitle>
-                          <CardDescription className="text-blue-100 text-sm">
-                            Configure email notification templates and behavior for this job
+                          <CardDescription className="text-sm">
+                            Rejection, stage movement, shortlist, and application emails for this job
                           </CardDescription>
                         </CardHeader>
                         <CardContent className="p-4 sm:p-6">
                           <JobEmailSettings
                             jobId={jobData?._id || ''}
                             jobTitle={jobData?.title || 'Job'}
+                            initialTemplate={emailTemplateToEdit}
                             onSettingsChange={(settings) => {
                               console.log('Email settings updated:', settings)
                             }}
@@ -2323,14 +2349,15 @@ function JobDetailInnerPage() {
       <Dialog open={showEmailSettingsDialog} onOpenChange={setShowEmailSettingsDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Email Settings</DialogTitle>
+            <DialogTitle>Customize Candidate Emails</DialogTitle>
             <DialogDescription>
-              Configure email notification settings for {jobData?.title || 'this job'}
+              Edit the message sent to candidates for {jobData?.title || 'this job'}
             </DialogDescription>
           </DialogHeader>
           <JobEmailSettings
             jobId={jobData?._id || ''}
             jobTitle={jobData?.title || 'Job'}
+            initialTemplate={emailTemplateToEdit}
             onSettingsChange={(settings) => {
               console.log('Email settings updated:', settings)
             }}

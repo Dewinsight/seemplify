@@ -37,6 +37,12 @@ import {
 } from '@/lib/emailTemplatePresets';
 import type { EmailTemplatePreset } from '@/lib/emailTemplatePresets';
 
+export interface EmailTemplateVariable {
+  token: string;
+  label: string;
+  example?: string;
+}
+
 interface EmailTemplateDesignerProps {
   value: string;
   onChange: (value: string) => void;
@@ -44,7 +50,7 @@ interface EmailTemplateDesignerProps {
   helperText?: string;
   previewData?: Record<string, string | number | boolean | null | undefined>;
   presets?: EmailTemplatePreset[];
-  variables?: string[];
+  variables?: Array<string | EmailTemplateVariable>;
   defaultPresetId?: string;
 }
 
@@ -121,6 +127,9 @@ const DEFAULT_PREVIEW_COMPONENTS: PreviewComponent[] = [
 
 const PREVIEW_FALLBACK_DATA: Record<string, string> = {
   candidateName: 'Jane Doe',
+  candidateFirstName: 'Jane',
+  candidateLastName: 'Doe',
+  candidateEmail: 'jane.doe@example.com',
   jobTitle: 'Senior Product Designer',
   jobLink: 'https://smarthr.aiinnigeria.com/public/jobs/1234567890abcdef',
   jobDetailsPdfAttached: 'true',
@@ -131,7 +140,16 @@ const PREVIEW_FALLBACK_DATA: Record<string, string> = {
   meetingLink: 'https://teams.microsoft.com/l/meetup-join/example',
   notes: 'Please have your portfolio ready for screen sharing.',
   interviewerName: 'Michael Adams',
-  organizationName: 'SmartHR'
+  organizationName: 'Example Organization',
+  applicationDate: '21 July 2026',
+  previousStageName: 'Phone screen',
+  nextStageName: 'Technical interview',
+  stageDescription: 'A 45-minute video interview with the hiring team.',
+  stage: 'Technical interview',
+  feedback: 'Thank you for the time and care you invested in the process.',
+  jobLocation: 'London or remote',
+  contactEmail: 'hiring@example.com',
+  companyLogo: ''
 };
 
 const looksLikeHtml = (value: string) => /<\/?[a-z][\s\S]*>/i.test(value);
@@ -589,9 +607,18 @@ export function EmailTemplateDesigner({
     () => (presets && presets.length > 0 ? presets : EMAIL_TEMPLATE_PRESETS),
     [presets]
   );
-  const resolvedVariables = useMemo(
-    () => (variables && variables.length > 0 ? variables : EMAIL_TEMPLATE_VARIABLES),
+  const resolvedVariableOptions = useMemo<EmailTemplateVariable[]>(
+    () =>
+      (variables && variables.length > 0 ? variables : EMAIL_TEMPLATE_VARIABLES).map(variable =>
+        typeof variable === 'string'
+          ? { token: variable, label: variable.replace(/[{}]/g, '') }
+          : variable
+      ),
     [variables]
+  );
+  const resolvedVariables = useMemo(
+    () => resolvedVariableOptions.map(variable => variable.token),
+    [resolvedVariableOptions]
   );
   const resolvedDefaultPresetId = useMemo(() => {
     const requested = defaultPresetId || DEFAULT_EMAIL_TEMPLATE_PRESET_ID;
@@ -1047,9 +1074,9 @@ export function EmailTemplateDesigner({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Label>{label}</Label>
-        <div className="flex items-center gap-2">
+        <div className="w-full sm:w-auto">
           <Select
             value={selectedPresetId}
             onValueChange={(nextPresetId) => {
@@ -1057,7 +1084,7 @@ export function EmailTemplateDesigner({
               applyPreset(nextPresetId);
             }}
           >
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder="Choose preset" />
             </SelectTrigger>
             <SelectContent>
@@ -1088,17 +1115,21 @@ export function EmailTemplateDesigner({
         </TabsList>
 
         <TabsContent value="editor" className="space-y-3 mt-3">
-          <div className="flex flex-wrap gap-2">
-            {resolvedVariables.map(variable => (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {resolvedVariableOptions.map(variable => (
               <Button
-                key={variable}
+                key={variable.token}
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => insertVariableAtCursor(variable)}
-                className="font-mono text-xs"
+                onClick={() => insertVariableAtCursor(variable.token)}
+                className="h-auto min-h-10 justify-start px-3 py-2 text-left"
+                title={variable.example ? `Example: ${variable.example}` : variable.token}
               >
-                {variable}
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium">{variable.label}</span>
+                  <code className="block truncate text-[11px] font-normal text-muted-foreground">{variable.token}</code>
+                </span>
               </Button>
             ))}
           </div>
@@ -1135,7 +1166,7 @@ export function EmailTemplateDesigner({
                 </Button>
                 <Button type="button" onClick={savePreviewEditing}>
                   <Check className="h-4 w-4 mr-2" />
-                  Save Preview Edits
+                  Apply Preview Edits
                 </Button>
               </div>
             )}
@@ -1188,9 +1219,9 @@ export function EmailTemplateDesigner({
                     <SelectValue placeholder="Select variable" />
                   </SelectTrigger>
                   <SelectContent>
-                    {resolvedVariables.map(variable => (
-                      <SelectItem key={variable} value={variable}>
-                        {variable}
+                    {resolvedVariableOptions.map(variable => (
+                      <SelectItem key={variable.token} value={variable.token}>
+                        {variable.label} - {variable.token}
                       </SelectItem>
                     ))}
                   </SelectContent>

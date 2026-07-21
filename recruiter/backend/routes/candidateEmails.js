@@ -390,7 +390,7 @@ router.post('/test-email',
   [
     body('jobId').isMongoId().withMessage('Invalid job ID'),
     body('testEmail').isEmail().withMessage('Valid test email required'),
-    body('templateType').isIn(['advancement', 'shortlist', 'rejection', 'shortlist-rejection']).withMessage('Invalid template type')
+    body('templateType').isIn(['advancement', 'shortlist', 'rejection', 'shortlist-rejection', 'application-confirmation']).withMessage('Invalid template type')
   ],
   async (req, res) => {
     try {
@@ -459,6 +459,12 @@ router.post('/test-email',
             forceManual: true
           });
           break;
+        case 'application-confirmation':
+          emailResult = await candidateEmailNotificationService.sendApplicationConfirmationEmail({
+            candidate: testCandidate,
+            job
+          });
+          break;
       }
 
       console.log(`📧 Test ${templateType} email sent to ${testEmail} by ${req.user.email}`);
@@ -495,7 +501,8 @@ router.get('/templates/:templateName', async (req, res) => {
       'rejection-notice',
       'shortlist-rejection',
       'shortlist-congratulations',
-      'advancement-congratulations'
+      'advancement-congratulations',
+      'application-confirmation'
     ];
     
     if (!validTemplates.includes(templateName)) {

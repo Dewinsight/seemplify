@@ -441,6 +441,10 @@ const JobSchema = new mongoose.Schema({
       shortlistRejection: {
         type: String,
         trim: true
+      },
+      applicationConfirmation: {
+        type: String,
+        trim: true
       }
     },
     emailSignature: {

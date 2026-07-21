@@ -1,3 +1,10 @@
+export type CandidateEmailTemplateType =
+  | 'rejection'
+  | 'shortlistRejection'
+  | 'shortlist'
+  | 'advancement'
+  | 'applicationConfirmation';
+
 export interface CandidateEmailTemplatePreset {
   id: string;
   name: string;
@@ -5,163 +12,203 @@ export interface CandidateEmailTemplatePreset {
   content: string;
 }
 
-export const DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_ID = 'candidate_update_card';
+export interface CandidateEmailTemplateVariable {
+  token: string;
+  label: string;
+  example: string;
+}
 
-export const CANDIDATE_EMAIL_TEMPLATE_VARIABLES: string[] = [
-  '{{candidateName}}',
-  '{{jobTitle}}',
-  '{{organizationName}}',
-  '{{nextStageName}}',
-  '{{stageDescription}}',
-  '{{feedback}}',
-  '{{notes}}',
-  '{{applicationDate}}',
-  '{{companyLogo}}'
+const COMMON_VARIABLES: CandidateEmailTemplateVariable[] = [
+  { token: '{{candidateName}}', label: 'Candidate full name', example: 'Alex Candidate' },
+  { token: '{{candidateFirstName}}', label: 'Candidate first name', example: 'Alex' },
+  { token: '{{candidateLastName}}', label: 'Candidate last name', example: 'Candidate' },
+  { token: '{{candidateEmail}}', label: 'Candidate email', example: 'alex@example.com' },
+  { token: '{{jobTitle}}', label: 'Job title', example: 'Product Manager' },
+  { token: '{{organizationName}}', label: 'Organization name', example: 'Your organization' },
+  { token: '{{applicationDate}}', label: 'Application date', example: '21 July 2026' },
 ];
 
-export const CANDIDATE_EMAIL_TEMPLATE_PRESETS: CandidateEmailTemplatePreset[] = [
-  {
-    id: 'candidate_update_card',
-    name: 'Update Card',
-    description: 'Balanced card layout for status updates.',
-    content: `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
-  <div style="background: #111827; color: #ffffff; padding: 22px;">
-    {{#if companyLogo}}
-    <img src="{{companyLogo}}" alt="{{organizationName}}" style="max-height: 40px; margin-bottom: 10px;" />
-    {{/if}}
-    <h2 style="margin: 0; font-size: 24px;">Application Update</h2>
-    <p style="margin: 8px 0 0 0; color: #d1d5db;">{{organizationName}}</p>
-  </div>
-  <div style="padding: 24px; color: #111827;">
-    <p style="margin-top: 0;">Hello {{candidateName}},</p>
-    <p>Thank you for your interest in the <strong>{{jobTitle}}</strong> role.</p>
-    {{#if nextStageName}}
-    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px; margin: 16px 0;">
-      <p style="margin: 0 0 6px 0;"><strong>Next Stage:</strong> {{nextStageName}}</p>
-      {{#if stageDescription}}
-      <p style="margin: 0;"><strong>What to expect:</strong> {{stageDescription}}</p>
-      {{/if}}
-    </div>
-    {{/if}}
-    {{#if feedback}}
-    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px; margin: 16px 0;">
-      <p style="margin: 0;"><strong>Feedback:</strong> {{feedback}}</p>
-    </div>
-    {{/if}}
-    {{#if notes}}
-    <p><strong>Additional Notes:</strong><br>{{notes}}</p>
-    {{/if}}
-    <p style="margin: 20px 0 0 0;">Best regards,<br>{{organizationName}} Hiring Team</p>
-  </div>
-</div>`
-  },
-  {
-    id: 'modern_gradient_status',
-    name: 'Gradient Status',
-    description: 'Modern visual style with highlighted stage progress.',
-    content: `<div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 680px; margin: 0 auto; border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden;">
-  <div style="background: linear-gradient(135deg, #2563eb, #06b6d4); color: #ffffff; padding: 24px;">
-    <h2 style="margin: 0;">Your Application Status</h2>
-    <p style="margin: 8px 0 0 0; opacity: 0.95;">{{organizationName}}</p>
-  </div>
-  <div style="padding: 24px;">
-    <p style="margin-top: 0;">Hi {{candidateName}},</p>
-    <p>Here is an update for your <strong>{{jobTitle}}</strong> application.</p>
-    {{#if nextStageName}}
-    <p><strong>Current Outcome:</strong> You are moving to <strong>{{nextStageName}}</strong>.</p>
-    {{/if}}
-    {{#if stageDescription}}
-    <p><strong>Details:</strong> {{stageDescription}}</p>
-    {{/if}}
-    {{#if feedback}}
-    <p><strong>Feedback:</strong> {{feedback}}</p>
-    {{/if}}
-    {{#if notes}}
-    <p><strong>Notes:</strong> {{notes}}</p>
-    {{/if}}
-    <p style="margin: 20px 0 0 0;">Thank you,<br>{{organizationName}}</p>
-  </div>
-</div>`
-  },
-  {
-    id: 'executive_brief',
-    name: 'Executive Brief',
-    description: 'Minimal and professional for formal communication.',
-    content: `Dear {{candidateName}},
-
-Thank you for your continued interest in the {{jobTitle}} role at {{organizationName}}.
-
-{{#if nextStageName}}
-Next stage: {{nextStageName}}
-{{/if}}
-{{#if stageDescription}}
-Stage details: {{stageDescription}}
-{{/if}}
-{{#if feedback}}
-Feedback: {{feedback}}
-{{/if}}
-{{#if notes}}
-Additional notes:
-{{notes}}
-{{/if}}
-
-Sincerely,
-{{organizationName}} Hiring Team`
-  },
-  {
-    id: 'warm_plain',
-    name: 'Warm Plain',
-    description: 'Friendly plain-text style for personal tone.',
-    content: `Hello {{candidateName}},
-
-We wanted to share an update about your application for {{jobTitle}}.
-
-{{#if nextStageName}}
-Good news: you are progressing to {{nextStageName}}.
-{{/if}}
-
-{{#if feedback}}
-Team feedback:
-{{feedback}}
-{{/if}}
-
-{{#if notes}}
-Notes:
-{{notes}}
-{{/if}}
-
-Thanks again for your time,
-{{organizationName}}`
-  },
-  {
-    id: 'spotlight_notice',
-    name: 'Spotlight Notice',
-    description: 'Strong highlighted sections for important updates.',
-    content: `<div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-  <div style="background: #0f172a; color: #f8fafc; padding: 20px;">
-    <h2 style="margin: 0;">Candidate Update</h2>
-    <p style="margin: 8px 0 0 0;">{{organizationName}}</p>
-  </div>
-  <div style="padding: 22px;">
-    <p style="margin-top: 0;">Dear {{candidateName}},</p>
-    <p>Regarding your application for <strong>{{jobTitle}}</strong>:</p>
-    {{#if nextStageName}}
-    <div style="background: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 12px; margin: 14px 0;">
-      <strong>Next Stage:</strong> {{nextStageName}}
-    </div>
-    {{/if}}
-    {{#if feedback}}
-    <div style="background: #fff7ed; border-left: 4px solid #f97316; padding: 12px; margin: 14px 0;">
-      <strong>Feedback:</strong> {{feedback}}
-    </div>
-    {{/if}}
-    {{#if notes}}
-    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 14px 0;">
-      <strong>Notes:</strong><br>{{notes}}
-    </div>
-    {{/if}}
-    <p style="margin-bottom: 0;">Best,<br>{{organizationName}} Hiring Team</p>
-  </div>
-</div>`
-  }
+const ADVANCEMENT_VARIABLES: CandidateEmailTemplateVariable[] = [
+  ...COMMON_VARIABLES,
+  { token: '{{previousStageName}}', label: 'Previous stage', example: 'Phone screen' },
+  { token: '{{nextStageName}}', label: 'Next stage', example: 'Technical interview' },
+  { token: '{{stageDescription}}', label: 'Next stage details', example: 'A 45-minute video interview' },
+  { token: '{{notes}}', label: 'Move notes', example: 'Scheduling details will follow shortly.' },
 ];
+
+const REJECTION_VARIABLES: CandidateEmailTemplateVariable[] = [
+  ...COMMON_VARIABLES,
+  { token: '{{stage}}', label: 'Current stage', example: 'Technical interview' },
+  { token: '{{feedback}}', label: 'Rejection message', example: 'Thank you for the time you invested in the process.' },
+];
+
+const APPLICATION_VARIABLES: CandidateEmailTemplateVariable[] = [
+  ...COMMON_VARIABLES,
+  { token: '{{jobLocation}}', label: 'Job location', example: 'London or remote' },
+  { token: '{{contactEmail}}', label: 'Contact email', example: 'hiring@example.com' },
+];
+
+export const CANDIDATE_EMAIL_TEMPLATE_VARIABLES_BY_TYPE: Record<
+  CandidateEmailTemplateType,
+  CandidateEmailTemplateVariable[]
+> = {
+  rejection: REJECTION_VARIABLES,
+  shortlistRejection: REJECTION_VARIABLES,
+  shortlist: COMMON_VARIABLES,
+  advancement: ADVANCEMENT_VARIABLES,
+  applicationConfirmation: APPLICATION_VARIABLES,
+};
+
+export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
+  CandidateEmailTemplateType,
+  CandidateEmailTemplatePreset[]
+> = {
+  rejection: [
+    {
+      id: 'rejection_plain',
+      name: 'Plain email',
+      description: 'A considerate, direct rejection message.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for the time you invested in applying for the {{jobTitle}} role at {{organizationName}}.</p>
+  <p>After careful consideration, we have decided not to move forward with your application.</p>
+  {{#if feedback}}
+  <p>{{feedback}}</p>
+  {{/if}}
+  <p>We appreciate your interest in {{organizationName}} and wish you well in your search.</p>
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+    {
+      id: 'rejection_concise',
+      name: 'Concise',
+      description: 'A shorter application outcome message.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for applying for the {{jobTitle}} role at {{organizationName}}. We will not be progressing your application further on this occasion.</p>
+  {{#if feedback}}<p>{{feedback}}</p>{{/if}}
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+  ],
+  shortlistRejection: [
+    {
+      id: 'shortlist_rejection_plain',
+      name: 'Plain email',
+      description: 'A clear outcome for shortlisted candidates.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for your interest in the {{jobTitle}} role at {{organizationName}}.</p>
+  <p>After reviewing the shortlisted applications, we have decided not to progress your application further.</p>
+  {{#if feedback}}
+  <p>{{feedback}}</p>
+  {{/if}}
+  <p>We appreciate the time you invested and wish you all the best.</p>
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+    {
+      id: 'shortlist_rejection_concise',
+      name: 'Concise',
+      description: 'A brief shortlist outcome message.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for applying for {{jobTitle}} at {{organizationName}}. We have chosen not to progress your shortlisted application on this occasion.</p>
+  {{#if feedback}}<p>{{feedback}}</p>{{/if}}
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+  ],
+  shortlist: [
+    {
+      id: 'shortlist_plain',
+      name: 'Plain email',
+      description: 'A straightforward shortlist update.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for applying for the {{jobTitle}} role at {{organizationName}}.</p>
+  <p>We are pleased to let you know that your application has been shortlisted. Our hiring team will contact you with the next steps.</p>
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+    {
+      id: 'shortlist_concise',
+      name: 'Concise',
+      description: 'A brief shortlist confirmation.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Your application for {{jobTitle}} at {{organizationName}} has been shortlisted. We will be in touch with the next steps.</p>
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+  ],
+  advancement: [
+    {
+      id: 'advancement_plain',
+      name: 'Plain email',
+      description: 'A personal update when a candidate changes stage.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>We are pleased to let you know that your application for {{jobTitle}} at {{organizationName}} is moving to the {{nextStageName}} stage.</p>
+  {{#if stageDescription}}
+  <p>{{stageDescription}}</p>
+  {{/if}}
+  {{#if notes}}
+  <p>{{notes}}</p>
+  {{/if}}
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+    {
+      id: 'advancement_concise',
+      name: 'Concise',
+      description: 'A short stage progression update.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Your application for {{jobTitle}} has progressed to {{nextStageName}}.</p>
+  {{#if notes}}<p>{{notes}}</p>{{/if}}
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+  ],
+  applicationConfirmation: [
+    {
+      id: 'application_confirmation_plain',
+      name: 'Plain email',
+      description: 'A simple acknowledgement after an application.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>Thank you for applying for the {{jobTitle}} role at {{organizationName}}. We have received your application.</p>
+  <p>Our hiring team will review it and contact you if your experience matches the role.</p>
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+    {
+      id: 'application_confirmation_concise',
+      name: 'Concise',
+      description: 'A brief receipt confirmation.',
+      content: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.55; max-width: 640px;">
+  <p>Hi {{candidateFirstName}},</p>
+  <p>We have received your application for {{jobTitle}} at {{organizationName}}. Thank you for your interest.</p>
+  <p>Kind regards,<br>{{organizationName}} Hiring Team</p>
+</div>`,
+    },
+  ],
+};
+
+export const DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE: Record<
+  CandidateEmailTemplateType,
+  string
+> = {
+  rejection: 'rejection_plain',
+  shortlistRejection: 'shortlist_rejection_plain',
+  shortlist: 'shortlist_plain',
+  advancement: 'advancement_plain',
+  applicationConfirmation: 'application_confirmation_plain',
+};
+
+export const getCandidateEmailTemplateVariables = (templateType: CandidateEmailTemplateType) =>
+  CANDIDATE_EMAIL_TEMPLATE_VARIABLES_BY_TYPE[templateType];
+
+export const getCandidateEmailTemplatePresets = (templateType: CandidateEmailTemplateType) =>
+  CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE[templateType];

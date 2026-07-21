@@ -5,7 +5,7 @@ export interface EmailTemplatePreset {
   content: string;
 }
 
-export const DEFAULT_EMAIL_TEMPLATE_PRESET_ID = 'professional_card';
+export const DEFAULT_EMAIL_TEMPLATE_PRESET_ID = 'minimal_text';
 
 export const EMAIL_TEMPLATE_VARIABLES: string[] = [
   '{{candidateName}}',
@@ -59,8 +59,8 @@ export const EMAIL_TEMPLATE_PRESETS: EmailTemplatePreset[] = [
   },
   {
     id: 'minimal_text',
-    name: 'Minimal Text',
-    description: 'Simple and direct plain format.',
+    name: 'Plain Email',
+    description: 'Simple and direct, like a personal email.',
     content: `Dear {{candidateName}},
 
 You are invited to interview for the {{jobTitle}} position.
