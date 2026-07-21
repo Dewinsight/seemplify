@@ -25,6 +25,8 @@ import {
 import candidateEmailService, { EmailSettings } from '../../services/candidateEmailService';
 import { EmailTemplateDesigner } from '@/components/ui/email-template-designer';
 import { useUser } from '@/context/UserContext';
+import { useOrganization } from '@/context/OrganizationContext';
+import { resolveEmailPreviewOrganizationName } from '@/lib/emailOrganizationContext';
 import {
   DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE,
   getDefaultCandidateEmailTemplatePreset,
@@ -122,6 +124,7 @@ const replaceLegacyCandidateTemplates = (emailSettings: EmailSettings) => {
 export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection', onSettingsChange }: JobEmailSettingsProps) {
   const { toast } = useToast();
   const { state } = useUser();
+  const { currentOrganization } = useOrganization();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -166,11 +169,7 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
 
   const previewTemplateData = useMemo(() => {
     const userProfile: any = state.user?.profile || {};
-    const organizationName =
-      (state.user as any)?.organization?.name ||
-      (state.user as any)?.currentOrganizationName ||
-      state.user?.company?.name ||
-      'Organization';
+    const organizationName = resolveEmailPreviewOrganizationName(currentOrganization);
     const senderName =
       [userProfile.firstName, userProfile.lastName].filter(Boolean).join(' ') ||
       (state.user as any)?.fullName ||
@@ -194,9 +193,9 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
       jobLocation: 'London or remote',
       contactEmail: state.user?.email || 'hiring@example.com',
       interviewerName: senderName,
-      companyLogo: ''
+      companyLogo: currentOrganization?.logo || ''
     };
-  }, [jobTitle, state.user]);
+  }, [currentOrganization?.logo, currentOrganization?.name, jobTitle, state.user]);
 
   const activeLibraryTemplates = useMemo(
     () => templateLibrary.filter((item) => item.templateType === activeTemplate),

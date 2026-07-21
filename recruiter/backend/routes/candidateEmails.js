@@ -6,6 +6,7 @@ const Candidate = require('../models/Candidate');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const authMiddleware = require('../middleware/authMiddleware');
+const { requireOrganization } = require('../middleware/organizationMiddleware');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 
 /**
@@ -14,6 +15,7 @@ const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
  */
 router.post('/send-rejection',
   authMiddleware,
+  requireOrganization,
   [
     body('candidateId').isMongoId().withMessage('Invalid candidate ID'),
     body('jobId').isMongoId().withMessage('Invalid job ID'),
@@ -41,11 +43,7 @@ router.post('/send-rejection',
         isShortlistRejection
       });
 
-      // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
-      if (organizationId) {
-        query.organization = organizationId;
-      }
+      const query = { _id: jobId, organization: organizationId };
 
       const job = await Job.findOne(query).populate('organization');
       if (!job) {
@@ -132,6 +130,7 @@ router.post('/send-rejection',
  */
 router.post('/send-bulk-rejection',
   authMiddleware,
+  requireOrganization,
   [
     body('candidates').isArray().withMessage('Candidates must be an array'),
     body('candidates.*.candidateId').isMongoId().withMessage('Invalid candidate ID'),
@@ -162,11 +161,7 @@ router.post('/send-bulk-rejection',
       for (const candidateData of candidates) {
         const { candidateId, jobId, stage } = candidateData;
 
-        // Build query to ensure job belongs to organization
-        const query = { _id: jobId };
-        if (organizationId) {
-          query.organization = organizationId;
-        }
+        const query = { _id: jobId, organization: organizationId };
 
         const job = await Job.findOne(query).populate('organization');
         const candidate = await Candidate.findById(candidateId);
@@ -274,16 +269,12 @@ router.post('/send-bulk-rejection',
  * GET /api/candidate-emails/job/:jobId/email-settings
  * Get email notification settings for a job
  */
-router.get('/job/:jobId/email-settings', authMiddleware, async (req, res) => {
+router.get('/job/:jobId/email-settings', authMiddleware, requireOrganization, async (req, res) => {
   try {
     const { jobId } = req.params;
     const organizationId = req.user?.currentOrganization;
 
-    // Build query to ensure job belongs to organization
-    const query = { _id: jobId };
-    if (organizationId) {
-      query.organization = organizationId;
-    }
+    const query = { _id: jobId, organization: organizationId };
 
     const job = await Job.findOne(query).select('emailSettings title');
     if (!job) {
@@ -312,6 +303,7 @@ router.get('/job/:jobId/email-settings', authMiddleware, async (req, res) => {
  */
 router.put('/job/:jobId/email-settings',
   authMiddleware,
+  requireOrganization,
   [
     body('enableAdvancementEmails').optional().isBoolean(),
     body('enableRejectionEmails').optional().isBoolean(),
@@ -337,11 +329,7 @@ router.put('/job/:jobId/email-settings',
       const emailSettings = decodeObjectHtmlEntities(req.body || {});
       delete emailSettings.senderName;
 
-      // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
-      if (organizationId) {
-        query.organization = organizationId;
-      }
+      const query = { _id: jobId, organization: organizationId };
 
       const job = await Job.findOne(query);
       if (!job) {
@@ -387,6 +375,7 @@ router.put('/job/:jobId/email-settings',
  */
 router.post('/test-email',
   authMiddleware,
+  requireOrganization,
   [
     body('jobId').isMongoId().withMessage('Invalid job ID'),
     body('testEmail').isEmail().withMessage('Valid test email required'),
@@ -402,11 +391,7 @@ router.post('/test-email',
       const { jobId, testEmail, templateType } = req.body;
       const organizationId = req.user?.currentOrganization;
 
-      // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
-      if (organizationId) {
-        query.organization = organizationId;
-      }
+      const query = { _id: jobId, organization: organizationId };
 
       const job = await Job.findOne(query).populate('organization');
       if (!job) {

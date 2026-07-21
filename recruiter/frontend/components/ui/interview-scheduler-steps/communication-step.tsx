@@ -20,7 +20,9 @@ import interviewService, { InterviewQuestionCreateData, GenerateQuestionsOptions
 import { Slider } from '../slider';
 import { toast } from 'sonner';
 import { useUser } from '@/context/UserContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { getDefaultEmailTemplate } from '@/lib/emailTemplatePresets';
+import { resolveEmailPreviewOrganizationName } from '@/lib/emailOrganizationContext';
 
 interface CommunicationStepProps {
   data: InterviewSchedulerData;
@@ -38,6 +40,7 @@ export function CommunicationStep({
   mode = 'both'
 }: CommunicationStepProps) {
   const { state } = useUser();
+  const { currentOrganization } = useOrganization();
   const [localData, setLocalData] = useState({
     subject: data.subject || '',
     sendCustomEmail: data.sendCustomEmail !== undefined ? data.sendCustomEmail : true,
@@ -279,11 +282,7 @@ export function CommunicationStep({
       state.user?.email ||
       '';
 
-    const organizationName =
-      (state.user as any)?.organization?.name ||
-      (state.user as any)?.currentOrganizationName ||
-      state.user?.company?.name ||
-      'Organization';
+    const organizationName = resolveEmailPreviewOrganizationName(currentOrganization);
 
     const previewCandidateName = isMulti ? firstSlot?.candidateName || data.candidateName : data.candidateName;
     const previewJobTitle = isMulti ? firstSlot?.jobTitle || data.jobTitle : data.jobTitle;
@@ -322,6 +321,7 @@ export function CommunicationStep({
     data.notes,
     data.startTime,
     data.type,
+    currentOrganization?.name,
     state.user
   ]);
 

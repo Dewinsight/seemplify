@@ -24,9 +24,11 @@ import organizationService from '@/services/organizationService';
 import { grantService, isGrantError } from '@/services/grantService';
 import { toast } from 'sonner';
 import { useUser } from '@/context/UserContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { getAllCandidates } from '@/services/candidateService';
 import { getAllJobs } from '@/services/jobService';
 import { getDefaultEmailTemplate } from '@/lib/emailTemplatePresets';
+import { resolveEmailPreviewOrganizationName } from '@/lib/emailOrganizationContext';
 
 interface InterviewSchedulerProps {
   candidateId: string;
@@ -100,6 +102,7 @@ export function InterviewScheduler({
   onCancel 
 }: InterviewSchedulerProps) {
   const { state } = useUser();
+  const { currentOrganization } = useOrganization();
   
   const DEFAULT_EMAIL_TEMPLATE = getDefaultEmailTemplate();
 
@@ -1504,11 +1507,7 @@ export function InterviewScheduler({
     state.user?.email ||
     '';
 
-  const organizationName =
-    (state.user as any)?.organization?.name ||
-    (state.user as any)?.currentOrganizationName ||
-    state.user?.company?.name ||
-    'Organization';
+  const organizationName = resolveEmailPreviewOrganizationName(currentOrganization);
 
   const singleTemplatePreviewData = useMemo(() => {
     const { interviewDate, interviewTime } = formatPreviewDateTime(formData.startTime);

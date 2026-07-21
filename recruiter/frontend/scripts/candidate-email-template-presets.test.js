@@ -4,16 +4,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 
-const sourcePath = path.join(__dirname, '..', 'lib', 'candidateEmailTemplatePresets.ts');
-const source = fs.readFileSync(sourcePath, 'utf8');
-const transpiled = ts.transpileModule(source, {
-  compilerOptions: {
-    module: ts.ModuleKind.CommonJS,
-    target: ts.ScriptTarget.ES2022,
-  },
-});
-const loadedModule = { exports: {} };
-new Function('exports', 'module', transpiled.outputText)(loadedModule.exports, loadedModule);
+const loadTypeScriptModule = (...segments) => {
+  const sourcePath = path.join(__dirname, '..', ...segments);
+  const source = fs.readFileSync(sourcePath, 'utf8');
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  });
+  const loadedModule = { exports: {} };
+  new Function('exports', 'module', transpiled.outputText)(loadedModule.exports, loadedModule);
+  return loadedModule.exports;
+};
 
 const {
   CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: presetsByType,
@@ -21,7 +24,12 @@ const {
   DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE: defaultsByType,
   LEGACY_CANDIDATE_EMAIL_TEMPLATE_FINGERPRINTS: legacyFingerprints,
   getLegacyCandidateEmailTemplateReplacement,
-} = loadedModule.exports;
+} = loadTypeScriptModule('lib', 'candidateEmailTemplatePresets.ts');
+
+const {
+  EMAIL_PREVIEW_ORGANIZATION_PLACEHOLDER,
+  resolveEmailPreviewOrganizationName,
+} = loadTypeScriptModule('lib', 'emailOrganizationContext.ts');
 
 const templateTypes = [
   'rejection',
@@ -55,6 +63,17 @@ const assertUsesOnlySupportedVariables = (templateType, content) => {
     );
   }
 };
+
+test('email previews use only the active organization name', () => {
+  assert.equal(
+    resolveEmailPreviewOrganizationName({ name: '  AIIN  ' }),
+    'AIIN'
+  );
+  assert.equal(
+    resolveEmailPreviewOrganizationName(null),
+    EMAIL_PREVIEW_ORGANIZATION_PLACEHOLDER
+  );
+});
 
 test('every candidate email type defaults to its plain email preset', () => {
   for (const templateType of templateTypes) {
