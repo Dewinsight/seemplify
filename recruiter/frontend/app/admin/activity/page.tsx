@@ -881,7 +881,7 @@ function UserDetailPanel({ detail }: { detail: UserDetail }) {
         <div className="mt-1 text-xs text-gray-500">{user.organization?.name || 'No current organization'} · {roleLabel(user.role)}</div>
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-gray-500">
           <span>Last active: {formatDate(user.lastActiveAt)}</span>
-          <span>Lifetime sign-ins: {number(user.loginCount)}</span>
+          <span>Joined: {formatDate(user.joinedAt)}</span>
           <span>Organization memberships: {number(user.membershipCount)}</span>
         </div>
       </div>
