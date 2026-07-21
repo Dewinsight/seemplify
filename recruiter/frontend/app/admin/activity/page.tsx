@@ -63,6 +63,7 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatTrendDate } from '@/lib/adminActivityFormatters';
 
 type RangeKey = '7d' | '30d' | '90d' | 'all';
 type LedgerTab = 'organizations' | 'people' | 'events';
@@ -287,13 +288,6 @@ function formatDate(value: string | Date | null | undefined) {
     hour: '2-digit',
     minute: '2-digit'
   }).format(date);
-}
-
-function formatTrendDate(value: string, interval: 'day' | 'month') {
-  const date = new Date(interval === 'month' ? `${value}-01T00:00:00Z` : `${value}T00:00:00Z`);
-  return new Intl.DateTimeFormat('en-GB', interval === 'month'
-    ? { month: 'short', year: '2-digit' }
-    : { day: '2-digit', month: 'short' }).format(date);
 }
 
 function roleLabel(value: string) {
@@ -583,7 +577,7 @@ export default function AdminActivityPage() {
                   {analytics.trend.length ? (
                     <div className="mt-4 h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={analytics.trend} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                        <LineChart key={analytics.range.key} data={analytics.trend} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
                           <CartesianGrid stroke="#1f2937" vertical={false} />
                           <XAxis dataKey="date" tickFormatter={(value) => formatTrendDate(value, analytics.range.interval)} tick={{ fill: '#6b7280', fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#374151' }} minTickGap={28} />
                           <YAxis allowDecimals={false} tick={{ fill: '#6b7280', fontSize: 11 }} tickLine={false} axisLine={false} />
