@@ -19,6 +19,8 @@ const {
   CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: presetsByType,
   CANDIDATE_EMAIL_TEMPLATE_VARIABLES_BY_TYPE: variablesByType,
   DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE: defaultsByType,
+  LEGACY_CANDIDATE_EMAIL_TEMPLATE_FINGERPRINTS: legacyFingerprints,
+  getLegacyCandidateEmailTemplateReplacement,
 } = loadedModule.exports;
 
 const templateTypes = [
@@ -27,6 +29,13 @@ const templateTypes = [
   'shortlist',
   'advancement',
   'applicationConfirmation',
+];
+
+const designedPresetSuffixes = [
+  'update_card',
+  'branded_status',
+  'executive_brief',
+  'spotlight_notice',
 ];
 
 const assertUsesOnlySupportedVariables = (templateType, content) => {
@@ -69,6 +78,18 @@ test('candidate presets use only placeholders supported by their send path', () 
   }
 });
 
+test('every candidate email type includes the restored HTML designs', () => {
+  for (const templateType of templateTypes) {
+    const presets = presetsByType[templateType];
+    for (const suffix of designedPresetSuffixes) {
+      const preset = presets.find((candidatePreset) => candidatePreset.id.endsWith(`_${suffix}`));
+      assert.ok(preset, `${templateType} is missing its ${suffix} design`);
+      assert.match(preset.content, /<div[^>]+style=/i);
+      assert.match(preset.content, /background:|border:/i);
+    }
+  }
+});
+
 test('every preset communicates the correct candidate outcome', () => {
   for (const preset of presetsByType.rejection) {
     assert.match(preset.content, /not to move forward|not be progressing/i);
@@ -93,5 +114,45 @@ test('every preset communicates the correct candidate outcome', () => {
   for (const preset of presetsByType.applicationConfirmation) {
     assert.match(preset.content, /received your application|application has been received/i);
     assert.doesNotMatch(preset.content, /not to move forward|not to progress|moving to the .* stage/i);
+  }
+});
+
+test('the reported legacy warm template migrates without overwriting user edits', () => {
+  const legacyWarmTemplate = `Hello {{candidateName}},
+
+We wanted to share an update about your application for {{jobTitle}}.
+
+{{#if nextStageName}}
+Good news: you are progressing to {{nextStageName}}.
+{{/if}}
+
+{{#if feedback}}
+Team feedback:
+{{feedback}}
+{{/if}}
+
+{{#if notes}}
+Notes:
+{{notes}}
+{{/if}}
+
+Thanks again for your time,
+{{organizationName}}`;
+
+  assert.deepEqual(
+    new Set(Object.values(legacyFingerprints)),
+    new Set(['update_card', 'branded_status', 'executive_brief', 'warm', 'spotlight_notice'])
+  );
+  for (const templateType of templateTypes) {
+    const replacement = getLegacyCandidateEmailTemplateReplacement(templateType, legacyWarmTemplate);
+    assert.ok(replacement, `${templateType} did not migrate the legacy warm template`);
+    assert.ok(replacement.id.endsWith('_warm'));
+    assert.equal(
+      getLegacyCandidateEmailTemplateReplacement(
+        templateType,
+        `${legacyWarmTemplate}\n\nA user-written sentence.`
+      ),
+      undefined
+    );
   }
 });

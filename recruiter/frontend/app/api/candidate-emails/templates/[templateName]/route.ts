@@ -12,6 +12,7 @@ export async function GET(
       `${process.env.BACKEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5001' : 'https://api.seemplifyai.com')}/api/candidate-emails/templates/${templateName}`,
       {
         method: 'GET',
+        cache: 'no-store',
       }
     )
 
@@ -29,6 +30,7 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': 'text/html',
+        'Cache-Control': 'no-store, max-age=0',
       },
     })
   } catch (error) {

@@ -52,7 +52,10 @@ interface EmailTemplateDesignerProps {
   presets?: EmailTemplatePreset[];
   variables?: Array<string | EmailTemplateVariable>;
   defaultPresetId?: string;
+  contentPresetId?: string;
 }
+
+const CUSTOM_PRESET_ID = '__custom_email_template__';
 
 type BuilderBlockType = 'hero' | 'text' | 'details' | 'button' | 'divider' | 'signature';
 
@@ -601,7 +604,8 @@ export function EmailTemplateDesigner({
   previewData,
   presets,
   variables,
-  defaultPresetId
+  defaultPresetId,
+  contentPresetId
 }: EmailTemplateDesignerProps) {
   const resolvedPresets = useMemo(
     () => (presets && presets.length > 0 ? presets : EMAIL_TEMPLATE_PRESETS),
@@ -620,16 +624,27 @@ export function EmailTemplateDesigner({
     () => resolvedVariableOptions.map(variable => variable.token),
     [resolvedVariableOptions]
   );
-  const resolvedDefaultPresetId = useMemo(() => {
-    const requested = defaultPresetId || DEFAULT_EMAIL_TEMPLATE_PRESET_ID;
-    if (resolvedPresets.some((preset) => preset.id === requested)) {
-      return requested;
+  const resolvedContentPresetId = useMemo(() => {
+    if (contentPresetId && resolvedPresets.some((preset) => preset.id === contentPresetId)) {
+      return contentPresetId;
     }
-    return resolvedPresets[0]?.id || requested;
-  }, [defaultPresetId, resolvedPresets]);
+
+    const normalizedValue = (value || '').trim().replace(/\r\n/g, '\n');
+    const matchingPreset = resolvedPresets.find(
+      (preset) => preset.content.trim().replace(/\r\n/g, '\n') === normalizedValue
+    );
+    if (matchingPreset) {
+      return matchingPreset.id;
+    }
+
+    const requestedDefault = defaultPresetId || DEFAULT_EMAIL_TEMPLATE_PRESET_ID;
+    if (!normalizedValue && resolvedPresets.some((preset) => preset.id === requestedDefault)) {
+      return requestedDefault;
+    }
+    return CUSTOM_PRESET_ID;
+  }, [contentPresetId, defaultPresetId, resolvedPresets, value]);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [selectedPresetId, setSelectedPresetId] = useState(resolvedDefaultPresetId);
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('preview');
   const [builderBlocks, setBuilderBlocks] = useState<BuilderBlock[]>(() => templateToBuilderBlocks(value || ''));
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -696,7 +711,7 @@ export function EmailTemplateDesigner({
     });
   };
 
-  const applyPreset = (presetId: string = selectedPresetId) => {
+  const applyPreset = (presetId: string) => {
     const preset = resolvedPresets.find(item => item.id === presetId);
     if (!preset) {
       return;
@@ -718,12 +733,6 @@ export function EmailTemplateDesigner({
 
     setBuilderBlocks(templateToBuilderBlocks(normalizedValue));
   }, [value]);
-
-  useEffect(() => {
-    if (!resolvedPresets.some((preset) => preset.id === selectedPresetId)) {
-      setSelectedPresetId(resolvedDefaultPresetId);
-    }
-  }, [resolvedDefaultPresetId, resolvedPresets, selectedPresetId]);
 
   useEffect(() => {
     if (!resolvedVariables.includes(previewVariableToInsert)) {
@@ -831,7 +840,7 @@ export function EmailTemplateDesigner({
   }, [activeTab, isPreviewEditing]);
 
   useEffect(() => {
-    if (!isPreviewEditing || activeTab !== 'editor') {
+    if (!isPreviewEditing) {
       return;
     }
     const normalizedValue = value || '';
@@ -843,6 +852,13 @@ export function EmailTemplateDesigner({
     setPreviewEditorSeedHtml(synced);
     setPreviewDraftHtml(synced);
     setPreviewDirty(false);
+    if (activeTab === 'preview') {
+      window.requestAnimationFrame(() => {
+        if (previewEditorRef.current) {
+          previewEditorRef.current.innerHTML = synced;
+        }
+      });
+    }
   }, [value, activeTab, isPreviewEditing]);
 
   const executePreviewCommand = (command: string, commandValue?: string) => {
@@ -1078,16 +1094,20 @@ export function EmailTemplateDesigner({
         <Label>{label}</Label>
         <div className="w-full sm:w-auto">
           <Select
-            value={selectedPresetId}
+            value={resolvedContentPresetId}
             onValueChange={(nextPresetId) => {
-              setSelectedPresetId(nextPresetId);
               applyPreset(nextPresetId);
             }}
           >
-            <SelectTrigger className="w-full sm:w-[220px]">
+            <SelectTrigger className="w-full sm:w-[220px]" aria-label="Template style">
               <SelectValue placeholder="Choose preset" />
             </SelectTrigger>
             <SelectContent>
+              {resolvedContentPresetId === CUSTOM_PRESET_ID && (
+                <SelectItem value={CUSTOM_PRESET_ID} disabled>
+                  Custom content
+                </SelectItem>
+              )}
               {resolvedPresets.map(preset => (
                 <SelectItem key={preset.id} value={preset.id}>
                   {preset.name}
@@ -1147,8 +1167,8 @@ export function EmailTemplateDesigner({
           />
         </TabsContent>
 
-        <TabsContent value="preview" className="space-y-3 mt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsContent value="preview" className="mt-3 flex flex-col gap-3">
+          <div className="order-1 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
               {isPreviewEditing
                 ? 'Preview edit mode: click content directly to edit. Use toolbar controls for formatting and sections.'
@@ -1173,7 +1193,7 @@ export function EmailTemplateDesigner({
           </div>
 
           {isPreviewEditing && (
-            <div className="rounded-md border p-3 bg-muted/20 space-y-3">
+            <div className="order-3 space-y-3 rounded-md border bg-muted/20 p-3">
               <div className="flex flex-wrap gap-2">
                 <Button type="button" size="sm" variant="outline" onClick={() => executePreviewCommand('bold')}>
                   <Bold className="h-3.5 w-3.5 mr-1" />
@@ -1259,87 +1279,96 @@ export function EmailTemplateDesigner({
                 </Button>
               </div>
 
-              <div className="grid gap-3 lg:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Drag components into the preview canvas or click insert.</p>
-                  <div className="space-y-2 max-h-56 overflow-auto pr-1">
-                    {previewComponentLibrary.map(component => (
-                      <div
-                        key={component.id}
-                        draggable
-                        onDragStart={event => handlePreviewComponentDragStart(event, component)}
-                        className="rounded-md border bg-background px-3 py-2 text-xs cursor-grab active:cursor-grabbing"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="font-medium truncate">{component.name}</span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-6 px-2 text-[11px]"
-                              onClick={() => insertPreviewHtml(component.html)}
-                            >
-                              Insert
-                            </Button>
-                            {!component.isDefault && (
+              <details className="border-t pt-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Sections and reusable components
+                </summary>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Drag components into the preview canvas or click insert.</p>
+                    <div className="max-h-56 space-y-2 overflow-auto pr-1">
+                      {previewComponentLibrary.map(component => (
+                        <div
+                          key={component.id}
+                          draggable
+                          onDragStart={event => handlePreviewComponentDragStart(event, component)}
+                          className="cursor-grab rounded-md border bg-background px-3 py-2 text-xs active:cursor-grabbing"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="truncate font-medium">{component.name}</span>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
                               <Button
                                 type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="h-6 w-6 text-red-600"
-                                onClick={() => removeCustomPreviewComponent(component.id)}
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-[11px]"
+                                onClick={() => insertPreviewHtml(component.html)}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                Insert
                               </Button>
-                            )}
+                              {!component.isDefault && (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-red-600"
+                                  onClick={() => removeCustomPreviewComponent(component.id)}
+                                  aria-label={`Delete ${component.name}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Create reusable custom component</p>
-                  <Input
-                    value={previewCustomComponentName}
-                    onChange={event => setPreviewCustomComponentName(event.target.value)}
-                    placeholder="Component name (e.g. Reminder Card)"
-                    className="h-8 text-xs"
-                  />
-                  <Textarea
-                    value={previewCustomComponentHtml}
-                    onChange={event => setPreviewCustomComponentHtml(event.target.value)}
-                    placeholder="<div>Custom HTML block...</div>"
-                    rows={5}
-                    className="text-xs font-mono"
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={addCustomPreviewComponent}
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Save Component
-                    </Button>
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Create reusable custom component</p>
+                    <Input
+                      value={previewCustomComponentName}
+                      onChange={event => setPreviewCustomComponentName(event.target.value)}
+                      placeholder="Component name (e.g. Reminder Card)"
+                      className="h-8 text-xs"
+                    />
+                    <Textarea
+                      value={previewCustomComponentHtml}
+                      onChange={event => setPreviewCustomComponentHtml(event.target.value)}
+                      placeholder="<div>Custom HTML block...</div>"
+                      rows={5}
+                      className="font-mono text-xs"
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={addCustomPreviewComponent}
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        Save Component
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </details>
             </div>
           )}
 
-          <div className="rounded-md border bg-white p-4">
+          <div className="order-2 min-h-[220px] rounded-md border bg-white p-4">
             {isPreviewEditing ? (
               <div
                 ref={previewEditorRef}
                 contentEditable
                 suppressContentEditableWarning
+                role="textbox"
+                aria-label="Editable email preview"
+                aria-multiline="true"
                 onInput={() => {
                   setPreviewDirty(true);
                   if (previewEditorRef.current) {
@@ -1355,7 +1384,7 @@ export function EmailTemplateDesigner({
                     setPreviewDropActive(false);
                   }
                 }}
-                className={`max-h-[520px] overflow-auto outline-none text-sm leading-6 transition-colors ${
+                className={`min-h-[188px] max-h-[520px] overflow-auto text-sm leading-6 outline-none transition-colors ${
                   previewDropActive ? 'ring-2 ring-blue-300 bg-blue-50/40' : ''
                 }`}
               />
@@ -1368,7 +1397,7 @@ export function EmailTemplateDesigner({
           </div>
 
           {isPreviewEditing && (
-            <p className="text-xs text-muted-foreground">
+            <p className="order-4 text-xs text-muted-foreground">
               Locked variable chips preserve placeholders while editing.
               {previewDirty ? ' You have unsaved preview edits.' : ' No unsaved preview edits.'}
             </p>

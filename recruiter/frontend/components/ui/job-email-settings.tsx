@@ -27,8 +27,10 @@ import { EmailTemplateDesigner } from '@/components/ui/email-template-designer';
 import { useUser } from '@/context/UserContext';
 import {
   DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE,
+  getDefaultCandidateEmailTemplatePreset,
   getCandidateEmailTemplatePresets,
   getCandidateEmailTemplateVariables,
+  getLegacyCandidateEmailTemplateReplacement,
 } from '@/lib/candidateEmailTemplatePresets';
 import type { CandidateEmailTemplateType } from '@/lib/candidateEmailTemplatePresets';
 
@@ -87,6 +89,36 @@ const TEMPLATE_OPTIONS: Array<{
 
 const TEMPLATE_LIBRARY_STORAGE_KEY = 'smarthr.candidate.email.template.library.v1';
 
+const BUNDLED_DEFAULT_TEMPLATES = TEMPLATE_OPTIONS.reduce<Record<string, string>>(
+  (templates, option) => {
+    const defaultPreset = getDefaultCandidateEmailTemplatePreset(option.type);
+    templates[TEMPLATE_FILE_NAME_MAP[option.type]] = defaultPreset?.content || '';
+    return templates;
+  },
+  {}
+);
+
+const replaceLegacyCandidateTemplates = (emailSettings: EmailSettings) => {
+  const customTemplates = { ...(emailSettings.customTemplates || {}) };
+  const migratedTypes: CandidateEmailTemplateType[] = [];
+
+  TEMPLATE_OPTIONS.forEach(({ type }) => {
+    const replacement = getLegacyCandidateEmailTemplateReplacement(type, customTemplates[type]);
+    if (!replacement) {
+      return;
+    }
+    customTemplates[type] = replacement.content;
+    migratedTypes.push(type);
+  });
+
+  return {
+    emailSettings: migratedTypes.length > 0
+      ? { ...emailSettings, customTemplates }
+      : emailSettings,
+    migratedTypes,
+  };
+};
+
 export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection', onSettingsChange }: JobEmailSettingsProps) {
   const { toast } = useToast();
   const { state } = useUser();
@@ -96,7 +128,9 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
   const [testingEmail, setTestingEmail] = useState(false);
   const [settings, setSettings] = useState<EmailSettings>({});
   const [testEmail, setTestEmail] = useState('');
-  const [defaultTemplates, setDefaultTemplates] = useState<Record<string, string>>({});
+  const [defaultTemplates, setDefaultTemplates] = useState<Record<string, string>>(
+    BUNDLED_DEFAULT_TEMPLATES
+  );
   const [activeTemplate, setActiveTemplate] = useState<CandidateEmailTemplateType>(initialTemplate);
   const [persistedTemplates, setPersistedTemplates] = useState<EmailSettings['customTemplates']>({});
   const [saveConfirmation, setSaveConfirmation] = useState<{
@@ -264,7 +298,9 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
       await Promise.all(
         templateNames.map(async (name) => {
           try {
-            const response = await fetch(`/api/candidate-emails/templates/${name}`);
+            const response = await fetch(`/api/candidate-emails/templates/${name}`, {
+              cache: 'no-store',
+            });
             if (!response.ok) {
               return;
             }
@@ -276,7 +312,7 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
         })
       );
 
-      setDefaultTemplates(templates);
+      setDefaultTemplates((currentTemplates) => ({ ...currentTemplates, ...templates }));
     } catch (error) {
       console.error('Error loading default candidate email templates:', error);
     }
@@ -287,8 +323,35 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
       setLoading(true);
       const response = await candidateEmailService.getEmailSettings(jobId);
       const loadedSettings = response.emailSettings || {};
-      setSettings(loadedSettings);
-      setPersistedTemplates(loadedSettings.customTemplates || {});
+      const migration = replaceLegacyCandidateTemplates(loadedSettings);
+      let currentSettings = migration.emailSettings;
+      let persistedTemplates = loadedSettings.customTemplates || {};
+
+      if (migration.migratedTypes.length > 0) {
+        try {
+          const migratedResponse = await candidateEmailService.updateEmailSettings(
+            jobId,
+            migration.emailSettings
+          );
+          currentSettings = migratedResponse.emailSettings || migration.emailSettings;
+          persistedTemplates = currentSettings.customTemplates || {};
+          onSettingsChange?.(currentSettings);
+          toast({
+            title: 'Email templates updated',
+            description: 'Older stock templates were replaced with the correct candidate-specific versions.',
+          });
+        } catch (migrationError) {
+          console.error('Failed to persist candidate email template migration:', migrationError);
+          toast({
+            title: 'Review updated email templates',
+            description: 'The corrected content is shown, but it still needs to be saved for this job.',
+            variant: 'destructive',
+          });
+        }
+      }
+
+      setSettings(currentSettings);
+      setPersistedTemplates(persistedTemplates);
       setSaveConfirmation(null);
     } catch (error: any) {
       toast({
@@ -554,12 +617,18 @@ export function JobEmailSettings({ jobId, jobTitle, initialTemplate = 'rejection
 
           <div className="border-t pt-5">
             <EmailTemplateDesigner
+              key={activeTemplate}
               value={activeTemplateContent}
               onChange={(nextTemplate) => handleCustomTemplateChange(activeTemplate, nextTemplate)}
               previewData={previewTemplateData}
               presets={activePresets}
               variables={activeVariables}
               defaultPresetId={DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE[activeTemplate]}
+              contentPresetId={
+                settings.customTemplates?.[activeTemplate]?.trim()
+                  ? undefined
+                  : DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE[activeTemplate]
+              }
               label={`${TEMPLATE_LABEL_MAP[activeTemplate]} email`}
               helperText="Candidate placeholders below are matched to this email and filled automatically when it is sent."
             />

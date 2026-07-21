@@ -513,6 +513,7 @@ router.get('/templates/:templateName', async (req, res) => {
     const templateContent = await fs.readFile(templatePath, 'utf-8');
     
     res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.send(templateContent);
     
   } catch (error) {

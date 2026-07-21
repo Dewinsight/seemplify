@@ -59,6 +59,157 @@ export const CANDIDATE_EMAIL_TEMPLATE_VARIABLES_BY_TYPE: Record<
   applicationConfirmation: APPLICATION_VARIABLES,
 };
 
+type DesignedPresetStyle =
+  | 'update_card'
+  | 'branded_status'
+  | 'executive_brief'
+  | 'spotlight_notice';
+
+interface DesignedTemplateMeta {
+  prefix: string;
+  title: string;
+  accent: string;
+  tint: string;
+  body: string;
+}
+
+const DESIGNED_TEMPLATE_META: Record<CandidateEmailTemplateType, DesignedTemplateMeta> = {
+  rejection: {
+    prefix: 'rejection',
+    title: 'Application outcome',
+    accent: '#374151',
+    tint: '#f3f4f6',
+    body: `<p>Hi {{candidateFirstName}},</p>
+    <p>Thank you for the time you invested in applying for the <strong>{{jobTitle}}</strong> role at {{organizationName}}.</p>
+    <p>After careful consideration, we have decided not to move forward with your application.</p>
+    {{#if feedback}}<p>{{feedback}}</p>{{/if}}
+    <p>We appreciate your interest and wish you every success in your search.</p>
+    <p>Kind regards,<br>{{organizationName}} Hiring Team</p>`,
+  },
+  shortlistRejection: {
+    prefix: 'shortlist_rejection',
+    title: 'Shortlist outcome',
+    accent: '#9a3412',
+    tint: '#fff7ed',
+    body: `<p>Hi {{candidateFirstName}},</p>
+    <p>Thank you for the time you invested in the shortlist process for the <strong>{{jobTitle}}</strong> role at {{organizationName}}.</p>
+    <p>After reviewing the shortlisted applications, we have decided not to progress your application further.</p>
+    {{#if feedback}}<p>{{feedback}}</p>{{/if}}
+    <p>We appreciated the opportunity to learn more about you and wish you all the best.</p>
+    <p>Kind regards,<br>{{organizationName}} Hiring Team</p>`,
+  },
+  shortlist: {
+    prefix: 'shortlist',
+    title: 'You have been shortlisted',
+    accent: '#166534',
+    tint: '#f0fdf4',
+    body: `<p>Hi {{candidateFirstName}},</p>
+    <p>Thank you for applying for the <strong>{{jobTitle}}</strong> role at {{organizationName}}.</p>
+    <p>We are pleased to let you know that your application has been shortlisted. Our hiring team will contact you with the next steps.</p>
+    <p>Kind regards,<br>{{organizationName}} Hiring Team</p>`,
+  },
+  advancement: {
+    prefix: 'advancement',
+    title: 'Next stage update',
+    accent: '#1d4ed8',
+    tint: '#eff6ff',
+    body: `<p>Hi {{candidateFirstName}},</p>
+    <p>We are pleased to let you know that your application for <strong>{{jobTitle}}</strong> at {{organizationName}} is moving to the <strong>{{nextStageName}}</strong> stage.</p>
+    {{#if stageDescription}}<p>{{stageDescription}}</p>{{/if}}
+    {{#if notes}}<p>{{notes}}</p>{{/if}}
+    <p>Kind regards,<br>{{organizationName}} Hiring Team</p>`,
+  },
+  applicationConfirmation: {
+    prefix: 'application_confirmation',
+    title: 'Application received',
+    accent: '#0f766e',
+    tint: '#f0fdfa',
+    body: `<p>Hi {{candidateFirstName}},</p>
+    <p>Thank you for applying for the <strong>{{jobTitle}}</strong> role at {{organizationName}}. We have received your application.</p>
+    <p>Our hiring team will review it and contact you if your experience matches the role.</p>
+    {{#if contactEmail}}<p>Questions? Contact us at <a href="mailto:{{contactEmail}}">{{contactEmail}}</a>.</p>{{/if}}
+    <p>Kind regards,<br>{{organizationName}} Hiring Team</p>`,
+  },
+};
+
+const createUpdateCard = ({ title, accent, tint, body }: DesignedTemplateMeta) =>
+  `<div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; overflow: hidden; border: 1px solid #d1d5db; border-radius: 8px; background: #ffffff; color: #111827;">
+  <div style="padding: 20px 24px; border-bottom: 1px solid #d1d5db; background: ${tint};">
+    <h2 style="margin: 0; color: ${accent}; font-size: 22px;">${title}</h2>
+    <p style="margin: 6px 0 0; color: #4b5563;">{{jobTitle}} at {{organizationName}}</p>
+  </div>
+  <div style="padding: 24px; line-height: 1.55;">${body}</div>
+</div>`;
+
+const createBrandedStatus = ({ title, accent, body }: DesignedTemplateMeta) =>
+  `<div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; overflow: hidden; border: 1px solid #d1d5db; border-radius: 8px; background: #ffffff; color: #111827;">
+  <div style="padding: 22px 24px; background: ${accent}; color: #ffffff;">
+    <h2 style="margin: 0; font-size: 22px;">${title}</h2>
+    <p style="margin: 7px 0 0; opacity: 0.9;">{{organizationName}}</p>
+  </div>
+  <div style="padding: 24px; line-height: 1.55;">${body}</div>
+</div>`;
+
+const createExecutiveBrief = ({ title, accent, body }: DesignedTemplateMeta) =>
+  `<div style="font-family: Georgia, 'Times New Roman', serif; max-width: 680px; margin: 0 auto; border-top: 3px solid ${accent}; border-bottom: 1px solid #d1d5db; background: #ffffff; color: #111827;">
+  <div style="padding: 24px 4px 16px; border-bottom: 1px solid #e5e7eb;">
+    <h2 style="margin: 0; font-size: 22px;">${title}</h2>
+    <p style="margin: 7px 0 0; color: #4b5563;">{{jobTitle}} | {{organizationName}}</p>
+  </div>
+  <div style="padding: 20px 4px 24px; line-height: 1.65;">${body}</div>
+</div>`;
+
+const createSpotlightNotice = ({ title, accent, tint, body }: DesignedTemplateMeta) =>
+  `<div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; border-left: 5px solid ${accent}; background: ${tint}; color: #111827; padding: 24px; line-height: 1.55;">
+  <h2 style="margin: 0 0 6px; color: ${accent}; font-size: 21px;">${title}</h2>
+  <p style="margin: 0 0 20px; color: #4b5563;">{{organizationName}}</p>
+  ${body}
+</div>`;
+
+const createDesignedCandidatePresets = (
+  templateType: CandidateEmailTemplateType
+): CandidateEmailTemplatePreset[] => {
+  const meta = DESIGNED_TEMPLATE_META[templateType];
+  const presets: Array<{
+    style: DesignedPresetStyle;
+    name: string;
+    description: string;
+    content: string;
+  }> = [
+    {
+      style: 'update_card',
+      name: 'Update card',
+      description: 'A structured card with a quiet status header.',
+      content: createUpdateCard(meta),
+    },
+    {
+      style: 'branded_status',
+      name: 'Branded status',
+      description: 'A polished email with a strong branded header.',
+      content: createBrandedStatus(meta),
+    },
+    {
+      style: 'executive_brief',
+      name: 'Executive brief',
+      description: 'A refined letter layout for formal communication.',
+      content: createExecutiveBrief(meta),
+    },
+    {
+      style: 'spotlight_notice',
+      name: 'Spotlight notice',
+      description: 'A focused status message with a clear accent.',
+      content: createSpotlightNotice(meta),
+    },
+  ];
+
+  return presets.map((preset) => ({
+    id: `${meta.prefix}_${preset.style}`,
+    name: preset.name,
+    description: preset.description,
+    content: preset.content,
+  }));
+};
+
 export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   CandidateEmailTemplateType,
   CandidateEmailTemplatePreset[]
@@ -105,6 +256,7 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    ...createDesignedCandidatePresets('rejection'),
   ],
   shortlistRejection: [
     {
@@ -148,6 +300,7 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    ...createDesignedCandidatePresets('shortlistRejection'),
   ],
   shortlist: [
     {
@@ -182,6 +335,7 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    ...createDesignedCandidatePresets('shortlist'),
   ],
   advancement: [
     {
@@ -228,6 +382,7 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    ...createDesignedCandidatePresets('advancement'),
   ],
   applicationConfirmation: [
     {
@@ -265,6 +420,7 @@ export const CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE: Record<
   <p>Warm regards,<br>{{organizationName}} Hiring Team</p>
 </div>`,
     },
+    ...createDesignedCandidatePresets('applicationConfirmation'),
   ],
 };
 
@@ -284,3 +440,52 @@ export const getCandidateEmailTemplateVariables = (templateType: CandidateEmailT
 
 export const getCandidateEmailTemplatePresets = (templateType: CandidateEmailTemplateType) =>
   CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE[templateType];
+
+export const getDefaultCandidateEmailTemplatePreset = (templateType: CandidateEmailTemplateType) => {
+  const defaultId = DEFAULT_CANDIDATE_EMAIL_TEMPLATE_PRESET_BY_TYPE[templateType];
+  return CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE[templateType].find(
+    (preset) => preset.id === defaultId
+  );
+};
+
+export const LEGACY_CANDIDATE_EMAIL_TEMPLATE_FINGERPRINTS: Record<
+  string,
+  DesignedPresetStyle | 'warm'
+> = {
+  '1508:c40c83cc': 'update_card',
+  '1051:cba32f2c': 'branded_status',
+  '385:e5eb71c1': 'executive_brief',
+  '323:a6e25fe8': 'warm',
+  '1184:b9bd9765': 'spotlight_notice',
+};
+
+const getTemplateFingerprint = (content: string) => {
+  const normalized = content.replace(/\r\n/g, '\n').trim();
+  let hash = 2166136261;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = Math.imul(hash ^ normalized.charCodeAt(index), 16777619);
+  }
+  return `${normalized.length}:${(hash >>> 0).toString(16)}`;
+};
+
+export const getLegacyCandidateEmailTemplateReplacement = (
+  templateType: CandidateEmailTemplateType,
+  content?: string
+) => {
+  if (!content?.trim()) {
+    return undefined;
+  }
+
+  const replacementStyle = LEGACY_CANDIDATE_EMAIL_TEMPLATE_FINGERPRINTS[
+    getTemplateFingerprint(content)
+  ];
+  if (!replacementStyle) {
+    return undefined;
+  }
+
+  const prefix = DESIGNED_TEMPLATE_META[templateType].prefix;
+  const replacementId = `${prefix}_${replacementStyle}`;
+  return CANDIDATE_EMAIL_TEMPLATE_PRESETS_BY_TYPE[templateType].find(
+    (preset) => preset.id === replacementId
+  );
+};
