@@ -70,3 +70,11 @@ test('credential setup exposes a quota-group dropdown and no free-text identifie
   assert.match(pageSource, /Choose quota group/);
   assert.doesNotMatch(pageSource, /id="quota-id"/);
 });
+
+test('AI Runtime exposes the synthetic route test workflow', () => {
+  assert.match(pageSource, /TabsTrigger value="test"/);
+  assert.match(pageSource, /<Select value=\{testActivity\}/);
+  assert.match(pageSource, /adminJson<RuntimeTestResult>\('\/api\/admin\/ai-runtime\/test'/);
+  assert.match(pageSource, /Executed model/);
+  assert.match(pageSource, /Request ID/);
+});

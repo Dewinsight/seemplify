@@ -176,6 +176,114 @@ async function createQuotaGroup(input, req) {
   return getRuntimeSettings();
 }
 
+function runtimeTestValidationError(message, code) {
+  const error = new TypeError(message);
+  error.code = code;
+  error.field = 'activity';
+  error.statusCode = 400;
+  return error;
+}
+
+async function runRuntimeTest(activityInput, req) {
+  const activity = String(activityInput || '').trim();
+  const settings = await aiRuntimeService.getSettings({ force: true });
+  const route = (settings.routes || []).find((item) => item.activity === activity);
+  if (!ACTIVITY_DEFINITIONS[activity] || !route) {
+    throw runtimeTestValidationError('Select a configured AI activity', 'AI_RUNTIME_TEST_ACTIVITY_INVALID');
+  }
+  if (route.enabled === false) {
+    throw runtimeTestValidationError('The selected AI activity is disabled', 'AI_RUNTIME_TEST_ACTIVITY_DISABLED');
+  }
+
+  const startedAt = Date.now();
+  try {
+    const result = await aiRuntimeService.complete(activity, {
+      messages: [
+        {
+          role: 'system',
+          content: 'This is a synthetic AI runtime health check. Do not use tools or reveal reasoning. Reply briefly that the AI runtime test passed.'
+        },
+        { role: 'user', content: 'Run the synthetic health check now.' }
+      ],
+      temperature: 0,
+      max_tokens: 64,
+      promptVersion: 'admin-runtime-test-v1',
+      context: {
+        sourceApp: 'admin-runtime-test',
+        actorId: req.admin?._id,
+        actorName: req.admin?.name,
+        actorEmail: req.admin?.email
+      }
+    }, { timeoutMs: 30_000 });
+    const usageEvent = await AIUsageEvent.findOne({ requestId: result.requestId })
+      .select('provider model reasoningEffort routeVersion quotaGroup latencyMs attempts failovers inputTokens cachedInputTokens outputTokens reasoningTokens totalTokens estimatedCostUsd')
+      .lean();
+
+    await writeAudit(req, {
+      category: 'health',
+      action: 'runtime_test_succeeded',
+      targetType: 'AIRuntimeRoute',
+      targetId: activity,
+      model: usageEvent?.model || result.model,
+      quotaGroup: usageEvent?.quotaGroup,
+      message: `AI runtime test succeeded for ${activity}`,
+      metadata: {
+        requestId: result.requestId,
+        provider: usageEvent?.provider || route.provider,
+        latencyMs: usageEvent?.latencyMs ?? (Date.now() - startedAt),
+        totalTokens: usageEvent?.totalTokens ?? result.usage?.totalTokens ?? 0
+      }
+    });
+
+    return {
+      success: true,
+      activity,
+      activityLabel: ACTIVITY_DEFINITIONS[activity].label,
+      configuredRoute: {
+        provider: route.provider,
+        model: route.model,
+        reasoningEffort: route.reasoningEffort,
+        routeVersion: route.routeVersion
+      },
+      execution: {
+        requestId: result.requestId,
+        provider: usageEvent?.provider || route.provider,
+        model: usageEvent?.model || result.model,
+        reasoningEffort: usageEvent?.reasoningEffort || route.reasoningEffort,
+        response: String(result.content || '').slice(0, 1000),
+        finishReason: result.finishReason,
+        latencyMs: usageEvent?.latencyMs ?? (Date.now() - startedAt),
+        attempts: usageEvent?.attempts ?? 1,
+        failovers: usageEvent?.failovers ?? 0,
+        quotaGroup: usageEvent?.quotaGroup || '',
+        usage: {
+          inputTokens: usageEvent?.inputTokens ?? result.usage?.inputTokens ?? 0,
+          cachedInputTokens: usageEvent?.cachedInputTokens ?? result.usage?.cachedInputTokens ?? 0,
+          outputTokens: usageEvent?.outputTokens ?? result.usage?.outputTokens ?? 0,
+          reasoningTokens: usageEvent?.reasoningTokens ?? result.usage?.reasoningTokens ?? 0,
+          totalTokens: usageEvent?.totalTokens ?? result.usage?.totalTokens ?? 0,
+          estimatedCostUsd: usageEvent?.estimatedCostUsd ?? 0
+        }
+      }
+    };
+  } catch (error) {
+    await writeAudit(req, {
+      category: 'health',
+      action: 'runtime_test_failed',
+      status: 'failed',
+      targetType: 'AIRuntimeRoute',
+      targetId: activity,
+      model: route.model,
+      message: `AI runtime test failed for ${activity}`,
+      metadata: {
+        errorCode: error.code || 'AI_RUNTIME_TEST_FAILED',
+        latencyMs: Date.now() - startedAt
+      }
+    }).catch(() => {});
+    throw error;
+  }
+}
+
 async function rotateCredential(id, input, req) {
   const existing = await AIProviderCredential.findById(id);
   if (!existing || existing.status === 'revoked') throw new TypeError('Credential not found');
@@ -465,6 +573,7 @@ module.exports = {
   listRequests,
   revokeCredential,
   rotateCredential,
+  runRuntimeTest,
   serializeCredential,
   setCredentialEnabled,
   updateAlerts,

@@ -11,6 +11,7 @@ const {
   listRequests,
   revokeCredential,
   rotateCredential,
+  runRuntimeTest,
   setCredentialEnabled,
   updateAlerts,
   updateRollout,
@@ -24,7 +25,8 @@ const settingsAccess = [adminAuth, requirePermission('systemSettings')];
 const secretAccess = [adminAuth, requireSuperAdmin];
 
 function handleError(res, error, fallback) {
-  if (error instanceof TypeError || [400, 404, 409].includes(error?.statusCode)) {
+  const knownRuntimeError = error?.name === 'AIRuntimeError' && String(error?.code || '').startsWith('AI_');
+  if (error instanceof TypeError || knownRuntimeError || [400, 404, 409].includes(error?.statusCode)) {
     return res.status(error.statusCode || 400).json({
       code: error.code || 'AI_RUNTIME_VALIDATION_ERROR',
       msg: error.message,
@@ -148,6 +150,14 @@ router.post('/quota-groups', ...settingsAccess, async (req, res) => {
     res.status(201).json({ success: true, ...(await createQuotaGroup(req.body || {}, req)) });
   } catch (error) {
     handleError(res, error, 'Failed to create Groq quota group');
+  }
+});
+
+router.post('/test', ...settingsAccess, async (req, res) => {
+  try {
+    res.json(await runRuntimeTest(req.body?.activity, req));
+  } catch (error) {
+    handleError(res, error, 'AI runtime test failed');
   }
 });
 

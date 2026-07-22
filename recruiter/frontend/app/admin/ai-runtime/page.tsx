@@ -65,7 +65,7 @@ import {
 } from '@/lib/aiRuntimeAdminValidation';
 
 type RangeKey = '7d' | '30d' | '90d' | 'all';
-type TabKey = 'overview' | 'routing' | 'credentials' | 'requests' | 'alerts';
+type TabKey = 'overview' | 'test' | 'routing' | 'credentials' | 'requests' | 'alerts';
 
 interface RuntimeModel {
   id: string;
@@ -149,6 +149,38 @@ interface RuntimeOverview {
   organizations: UsageBreakdown[];
   actors: UsageBreakdown[];
   quotas: QuotaSnapshot[];
+}
+
+interface RuntimeTestResult {
+  success: true;
+  activity: string;
+  activityLabel: string;
+  configuredRoute: {
+    provider: string;
+    model: string;
+    reasoningEffort: string;
+    routeVersion: number;
+  };
+  execution: {
+    requestId: string;
+    provider: string;
+    model: string;
+    reasoningEffort: string;
+    response: string;
+    finishReason?: string;
+    latencyMs: number;
+    attempts: number;
+    failovers: number;
+    quotaGroup: string;
+    usage: {
+      inputTokens: number;
+      cachedInputTokens: number;
+      outputTokens: number;
+      reasoningTokens: number;
+      totalTokens: number;
+      estimatedCostUsd: number;
+    };
+  };
 }
 
 interface Credential {
@@ -266,6 +298,9 @@ export default function AIRuntimeAdminPage() {
   const [quotaForm, setQuotaForm] = useState({ label: '', confirmed: false });
   const [credentialError, setCredentialError] = useState('');
   const [quotaError, setQuotaError] = useState('');
+  const [testActivity, setTestActivity] = useState('');
+  const [testResult, setTestResult] = useState<RuntimeTestResult | null>(null);
+  const [testError, setTestError] = useState('');
   const [alertForm, setAlertForm] = useState({ enabled: true, recipients: '', monthlyBudgetUsd: '' });
 
   const definitions = useMemo(() => new Map(
@@ -276,6 +311,12 @@ export default function AIRuntimeAdminPage() {
     () => (settings?.quotaGroups || []).filter((group) => group.enabled !== false),
     [settings?.quotaGroups]
   );
+
+  const enabledTestRoutes = useMemo(
+    () => (settings?.routes || []).filter((route) => route.enabled),
+    [settings?.routes]
+  );
+  const selectedTestRoute = enabledTestRoutes.find((route) => route.activity === testActivity);
 
   function defaultQuotaGroupId() {
     return availableQuotaGroups.find((group) => group.id === 'groq-primary')?.id
@@ -366,6 +407,43 @@ export default function AIRuntimeAdminPage() {
     if (tab !== 'requests') return;
     loadRequests().catch((error) => toast({ title: 'Unable to load requests', description: error.message, variant: 'destructive' }));
   }, [loadRequests, tab, toast]);
+  useEffect(() => {
+    if (!enabledTestRoutes.length) {
+      if (testActivity) setTestActivity('');
+      return;
+    }
+    if (!enabledTestRoutes.some((route) => route.activity === testActivity)) {
+      setTestActivity(enabledTestRoutes.find((route) => route.activity === 'recruiter.general')?.activity || enabledTestRoutes[0].activity);
+      setTestResult(null);
+      setTestError('');
+    }
+  }, [enabledTestRoutes, testActivity]);
+
+  async function submitRuntimeTest(event: FormEvent) {
+    event.preventDefault();
+    if (!testActivity) {
+      setTestError('Choose an enabled AI activity.');
+      return;
+    }
+    setBusy('runtime-test');
+    setTestError('');
+    setTestResult(null);
+    try {
+      const result = await adminJson<RuntimeTestResult>('/api/admin/ai-runtime/test', {
+        method: 'POST',
+        body: JSON.stringify({ activity: testActivity })
+      });
+      setTestResult(result);
+      await Promise.all([loadOverview(), loadAudits()]);
+      toast({ title: 'Runtime test passed', description: `${result.execution.model} responded in ${formatNumber(result.execution.latencyMs)} ms.` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI runtime test failed';
+      setTestError(message);
+      toast({ title: 'Runtime test failed', description: message, variant: 'destructive' });
+    } finally {
+      setBusy('');
+    }
+  }
 
   async function saveRoute(route: ActivityRoute) {
     setBusy(`route:${route.activity}`);
@@ -585,6 +663,7 @@ export default function AIRuntimeAdminPage() {
               <div className="overflow-x-auto border-b border-gray-800">
                 <TabsList className="h-11 min-w-max justify-start rounded-none bg-transparent p-0">
                   <TabsTrigger value="overview" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Overview</TabsTrigger>
+                  {canConfigure && <TabsTrigger value="test" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Test</TabsTrigger>}
                   {canConfigure && <TabsTrigger value="routing" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Routing</TabsTrigger>}
                   {canConfigure && <TabsTrigger value="credentials" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Credentials</TabsTrigger>}
                   <TabsTrigger value="requests" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Requests</TabsTrigger>
@@ -643,6 +722,49 @@ export default function AIRuntimeAdminPage() {
                     </section>
                   </>
                 )}
+              </TabsContent>
+
+              <TabsContent value="test" className="mt-5 space-y-4">
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+                  <div className="flex flex-col gap-3 border-b border-gray-800 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-950 text-blue-300"><Activity className="h-4 w-4" /></div><div><h2 className="text-sm font-semibold text-white">Runtime test</h2><p className="mt-1 text-xs text-gray-500">Synthetic request with production routing and telemetry.</p></div></div>
+                    <Badge variant="outline" className="w-fit border-green-900 bg-green-950/50 text-green-300">No candidate data</Badge>
+                  </div>
+                  <form onSubmit={submitRuntimeTest} className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(280px,1fr)_auto] lg:items-end">
+                    <div className="space-y-2">
+                      <Label htmlFor="runtime-test-activity">AI activity</Label>
+                      <Select value={testActivity} onValueChange={(activity) => { setTestActivity(activity); setTestResult(null); setTestError(''); }}>
+                        <SelectTrigger id="runtime-test-activity" className="border-gray-700 bg-gray-950"><SelectValue placeholder="Choose activity" /></SelectTrigger>
+                        <SelectContent>{enabledTestRoutes.map((route) => <SelectItem key={route.activity} value={route.activity}>{definitions.get(route.activity)?.group} / {definitions.get(route.activity)?.label || route.activity}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <Button type="submit" disabled={!testActivity || busy === 'runtime-test'} className="min-w-36">{busy === 'runtime-test' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run test</Button>
+                  </form>
+                  <dl className="grid border-t border-gray-800 bg-gray-950/40 sm:grid-cols-4">
+                    <RuntimeTestDatum label="Provider" value={selectedTestRoute?.provider || 'Not selected'} />
+                    <RuntimeTestDatum label="Configured model" value={selectedTestRoute?.model || 'Not selected'} mono />
+                    <RuntimeTestDatum label="Reasoning" value={selectedTestRoute?.reasoningEffort || 'Not selected'} />
+                    <RuntimeTestDatum label="Route version" value={selectedTestRoute ? `v${selectedTestRoute.routeVersion}` : 'Not selected'} />
+                  </dl>
+                </section>
+
+                {testError && <section role="alert" aria-live="polite" className="flex items-start gap-3 rounded-md border border-red-900 bg-red-950/40 px-4 py-4 text-sm text-red-200"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-medium">Runtime test failed</p><p className="mt-1 text-red-300">{testError}</p></div></section>}
+
+                {testResult && <section aria-live="polite" className="overflow-hidden rounded-md border border-green-900/80 bg-gray-900">
+                  <div className="flex flex-col gap-3 border-b border-gray-800 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-green-400" /><div><h2 className="text-sm font-semibold text-white">Test passed</h2><p className="mt-1 text-xs text-gray-500">{testResult.activityLabel}</p></div></div><StatusBadge status="success" /></div>
+                  <div className="border-b border-gray-800 px-5 py-5"><p className="text-xs font-medium uppercase text-gray-500">Synthetic response</p><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-gray-200">{testResult.execution.response || 'The provider returned no visible text.'}</p></div>
+                  <dl className="grid sm:grid-cols-2 lg:grid-cols-4">
+                    <RuntimeTestDatum label="Executed provider" value={testResult.execution.provider} />
+                    <RuntimeTestDatum label="Executed model" value={testResult.execution.model} mono />
+                    <RuntimeTestDatum label="Latency" value={`${formatNumber(testResult.execution.latencyMs)} ms`} />
+                    <RuntimeTestDatum label="Total tokens" value={formatNumber(testResult.execution.usage.totalTokens)} />
+                    <RuntimeTestDatum label="Estimated cost" value={`$${formatNumber(testResult.execution.usage.estimatedCostUsd, 6)}`} />
+                    <RuntimeTestDatum label="Attempts" value={formatNumber(testResult.execution.attempts)} />
+                    <RuntimeTestDatum label="Failovers" value={formatNumber(testResult.execution.failovers)} />
+                    <RuntimeTestDatum label="Quota group" value={testResult.execution.quotaGroup || 'Not reported'} mono />
+                  </dl>
+                  <div className="border-t border-gray-800 bg-gray-950/40 px-5 py-3"><span className="text-xs text-gray-500">Request ID </span><span className="break-all font-mono text-xs text-gray-300">{testResult.execution.requestId}</span></div>
+                </section>}
               </TabsContent>
 
               <TabsContent value="routing" className="mt-5">
@@ -796,6 +918,10 @@ export default function AIRuntimeAdminPage() {
       </Dialog>
     </div>
   );
+}
+
+function RuntimeTestDatum({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return <div className="min-w-0 border-b border-gray-800 px-5 py-4 last:border-b-0 sm:border-b-0"><dt className="text-xs text-gray-500">{label}</dt><dd className={`mt-1 break-words text-sm text-gray-200 ${mono ? 'font-mono' : ''}`}>{value}</dd></div>;
 }
 
 function BreakdownTable({ title, rows, label }: { title: string; rows: UsageBreakdown[]; label: (id: string) => string }) {
