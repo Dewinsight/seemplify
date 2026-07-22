@@ -7,7 +7,7 @@ const AIAuditEvent = require('../models/AIAuditEvent');
 const AIUsageEvent = require('../models/AIUsageEvent');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const { AIRuntimeError } = require('../services/aiRuntime/aiRuntimeService');
-const { runRuntimeTest } = require('../services/adminAIRuntimeService');
+const { listRequests, runRuntimeTest } = require('../services/adminAIRuntimeService');
 
 const route = {
   activity: 'recruiter.general',
@@ -84,7 +84,7 @@ test('admin runtime test uses production routing with a fixed synthetic prompt',
 
   assert.equal(completionInput.context.sourceApp, 'admin-runtime-test');
   assert.equal(completionInput.context.actorId, 'admin-1');
-  assert.equal(completionInput.promptVersion, 'admin-runtime-test-v1');
+  assert.equal(completionInput.promptVersion, 'admin-runtime-test-v2');
   assert.equal(completionInput.max_tokens, 512);
   assert.equal(completionInput.messages.length, 2);
   assert.equal(JSON.stringify(completionInput).includes('candidate'), false);
@@ -94,6 +94,32 @@ test('admin runtime test uses production routing with a fixed synthetic prompt',
   assert.equal(result.execution.usage.totalTokens, 24);
   assert.equal(audit.mock.calls[0].arguments[0].action, 'runtime_test_succeeded');
   assert.equal('response' in audit.mock.calls[0].arguments[0].metadata, false);
+});
+
+test('admin runtime test exercises strict structured transport for structured activities', async () => {
+  const structuredRoute = { ...route, activity: 'interview.questions' };
+  let structuredInput;
+  mock.method(aiRuntimeService, 'getSettings', async () => ({ routes: [structuredRoute] }));
+  mock.method(aiRuntimeService, 'structuredComplete', async (activity, input) => {
+    assert.equal(activity, structuredRoute.activity);
+    structuredInput = input;
+    return {
+      requestId: 'runtime-structured-1',
+      content: JSON.stringify({ passed: true, activity, message: 'Structured route passed.' }),
+      data: { passed: true, activity, message: 'Structured route passed.' },
+      finishReason: 'stop',
+      model: structuredRoute.model,
+      usage: { totalTokens: 30 }
+    };
+  });
+  mock.method(AIUsageEvent, 'findOne', () => mockUsageQuery({ provider: 'groq', model: structuredRoute.model, totalTokens: 30 }));
+  mock.method(AIAuditEvent, 'create', async (event) => event);
+
+  const result = await runRuntimeTest(structuredRoute.activity, request);
+  assert.equal(structuredInput.schemaStrict, true);
+  assert.equal(structuredInput.jsonSchema.additionalProperties, false);
+  assert.equal(result.execution.structuredOutput, true);
+  assert.match(result.execution.response, /Structured route passed/);
 });
 
 test('admin runtime test rejects unknown and disabled activities before provider use', async () => {
@@ -129,4 +155,98 @@ test('admin runtime test records a content-free failed audit', async () => {
   assert.equal(event.action, 'runtime_test_failed');
   assert.equal(event.status, 'failed');
   assert.deepEqual(Object.keys(event.metadata).sort(), ['errorCode', 'latencyMs']);
+});
+
+test('request analytics summarize the complete filtered result set', async () => {
+  const filters = [];
+  mock.method(AIUsageEvent, 'find', (filter) => {
+    filters.push(filter);
+    const latencyOnly = Object.hasOwn(filter, 'latencyMs');
+    return {
+      select() { return this; },
+      sort() { return this; },
+      skip() { return this; },
+      limit() { return this; },
+      async lean() {
+        return latencyOnly
+          ? [{ latencyMs: 900 }, { latencyMs: 100 }, { latencyMs: 400 }]
+          : [{ requestId: 'request-1', activity: 'interview.questions' }];
+      }
+    };
+  });
+  mock.method(AIUsageEvent, 'countDocuments', async () => 42);
+  mock.method(AIUsageEvent, 'aggregate', async (pipeline) => {
+    assert.equal(pipeline[0].$match.activity, 'interview.questions');
+    assert.equal(pipeline[0].$match.status, 'success');
+    assert.equal(pipeline[0].$match.organizationId, 'org-1');
+    return [{
+      calls: 4,
+      successes: 4,
+      failures: 0,
+      inputTokens: 1200,
+      cachedInputTokens: 200,
+      outputTokens: 600,
+      reasoningTokens: 300,
+      totalTokens: 2100,
+      estimatedCostUsd: 0.01234567,
+      averageLatencyMs: 466.6,
+      failovers: 2
+    }];
+  });
+
+  const result = await listRequests({
+    activity: 'interview.questions',
+    status: 'success',
+    organizationId: 'org-1',
+    range: '7d',
+    page: '2',
+    limit: '10'
+  });
+
+  assert.equal(result.items[0].requestId, 'request-1');
+  assert.deepEqual(result.summary, {
+    calls: 4,
+    successes: 4,
+    failures: 0,
+    successRate: 100,
+    inputTokens: 1200,
+    cachedInputTokens: 200,
+    outputTokens: 600,
+    reasoningTokens: 300,
+    totalTokens: 2100,
+    estimatedCostUsd: 0.012346,
+    averageLatencyMs: 467,
+    p50LatencyMs: 400,
+    p95LatencyMs: 900,
+    failovers: 2,
+    detailWindow: '7d'
+  });
+  assert.deepEqual(result.pagination, { page: 2, limit: 10, total: 42, pages: 5 });
+  assert.equal(filters.length, 2);
+  assert.equal(filters[0].activity, 'interview.questions');
+  assert.ok(filters[0].createdAt.$gte instanceof Date);
+});
+
+test('all-time request details remain bounded to the raw-event retention window', async () => {
+  const matches = [];
+  mock.method(AIUsageEvent, 'find', (filter) => {
+    matches.push(filter);
+    return {
+      select() { return this; }, sort() { return this; }, skip() { return this; }, limit() { return this; },
+      async lean() { return []; }
+    };
+  });
+  mock.method(AIUsageEvent, 'countDocuments', async (filter) => {
+    matches.push(filter);
+    return 0;
+  });
+  mock.method(AIUsageEvent, 'aggregate', async (pipeline) => {
+    matches.push(pipeline[0].$match);
+    return [];
+  });
+
+  const result = await listRequests({ range: 'all' });
+  assert.equal(result.summary.detailWindow, 'retained-90d');
+  assert.ok(matches.length >= 4);
+  for (const match of matches) assert.ok(match.createdAt.$gte instanceof Date);
 });

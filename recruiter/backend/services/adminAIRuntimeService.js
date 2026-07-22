@@ -73,12 +73,52 @@ async function sanitizeStoredQuotaGroups(settings) {
   return quotaGroups;
 }
 
+function assessRouting(settings) {
+  const routes = Array.isArray(settings?.routes) ? settings.routes : [];
+  const models = Array.isArray(settings?.models) ? settings.models : [];
+  const issues = [];
+  const duplicateActivities = routes
+    .map((route) => route.activity)
+    .filter((activity, index, all) => all.indexOf(activity) !== index);
+  for (const activity of Object.keys(ACTIVITY_DEFINITIONS)) {
+    const route = routes.find((item) => item.activity === activity);
+    if (!route) {
+      issues.push({ activity, code: 'missing_route', message: 'No route is configured.' });
+      continue;
+    }
+    if (route.provider !== 'groq') issues.push({ activity, code: 'invalid_provider', message: 'Configured provider must be Groq.' });
+    const model = models.find((item) => item.id === route.model && item.provider === route.provider && item.enabled !== false);
+    if (!model) {
+      issues.push({ activity, code: 'missing_model', message: `Model ${route.model || 'unknown'} is not enabled.` });
+      continue;
+    }
+    if (model.available === false) issues.push({ activity, code: 'model_unavailable', message: `Model ${model.id} is unavailable for this credential project.` });
+    const missing = aiRuntimeService.requiredCapabilitiesForActivity(activity)
+      .filter((capability) => !model.capabilities?.includes(capability));
+    if (missing.length) issues.push({ activity, code: 'capability_mismatch', message: `Missing ${missing.join(', ')}.` });
+  }
+  for (const activity of new Set(duplicateActivities)) {
+    issues.push({ activity, code: 'duplicate_route', message: 'More than one route is configured.' });
+  }
+  for (const route of routes.filter((item) => !ACTIVITY_DEFINITIONS[item.activity])) {
+    issues.push({ activity: route.activity, code: 'unknown_route', message: 'Route does not map to a known activity.' });
+  }
+  return {
+    valid: issues.length === 0,
+    configured: routes.filter((route) => ACTIVITY_DEFINITIONS[route.activity]).length,
+    expected: Object.keys(ACTIVITY_DEFINITIONS).length,
+    enabled: routes.filter((route) => route.enabled !== false && ACTIVITY_DEFINITIONS[route.activity]).length,
+    issues
+  };
+}
+
 async function getRuntimeSettings() {
   const settings = await aiRuntimeService.getSettings({ force: true });
   const quotaGroups = await sanitizeStoredQuotaGroups(settings);
   return {
     ...settings,
     quotaGroups,
+    routingHealth: assessRouting({ ...settings, quotaGroups }),
     activityDefinitions: Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({ activity, ...definition }))
   };
 }
@@ -211,24 +251,46 @@ async function runRuntimeTest(activityInput, req) {
 
   const startedAt = Date.now();
   try {
-    const result = await aiRuntimeService.complete(activity, {
+    const completionInput = {
       messages: [
         {
           role: 'system',
-          content: 'This is a synthetic AI runtime health check. Do not use tools or reveal reasoning. Reply briefly that the AI runtime test passed.'
+          content: 'This is a synthetic AI runtime health check. Use no external data, personal data, tools, or hidden reasoning. Follow the requested output exactly.'
         },
-        { role: 'user', content: 'Run the synthetic health check now.' }
+        { role: 'user', content: `Confirm that the ${activity} route can execute a safe synthetic request.` }
       ],
       temperature: 0,
       max_tokens: 512,
-      promptVersion: 'admin-runtime-test-v1',
+      promptVersion: 'admin-runtime-test-v2',
       context: {
         sourceApp: 'admin-runtime-test',
         actorId: req.admin?._id,
         actorName: req.admin?.name,
         actorEmail: req.admin?.email
       }
-    }, { timeoutMs: 30_000 });
+    };
+    const requiresStructuredOutput = aiRuntimeService.requiredCapabilitiesForActivity(activity).includes('json_schema');
+    const result = requiresStructuredOutput
+      ? await aiRuntimeService.structuredComplete(activity, {
+          ...completionInput,
+          messages: [
+            completionInput.messages[0],
+            { role: 'user', content: `${completionInput.messages[1].content}\nReturn passed=true, activity="${activity}", and a brief message.` }
+          ],
+          jsonSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['passed', 'activity', 'message'],
+            properties: {
+              passed: { type: 'boolean' },
+              activity: { type: 'string' },
+              message: { type: 'string' }
+            }
+          },
+          schemaName: 'admin_runtime_test',
+          schemaStrict: true
+        }, { timeoutMs: 30_000 })
+      : await aiRuntimeService.complete(activity, completionInput, { timeoutMs: 30_000 });
     const usageEvent = await AIUsageEvent.findOne({ requestId: result.requestId })
       .select('provider model reasoningEffort routeVersion quotaGroup latencyMs attempts failovers inputTokens cachedInputTokens outputTokens reasoningTokens totalTokens estimatedCostUsd')
       .lean();
@@ -264,7 +326,8 @@ async function runRuntimeTest(activityInput, req) {
         provider: usageEvent?.provider || route.provider,
         model: usageEvent?.model || result.model,
         reasoningEffort: usageEvent?.reasoningEffort || route.reasoningEffort,
-        response: String(result.content || '').slice(0, 1000),
+        response: String(result.content || JSON.stringify(result.data || '')).slice(0, 1000),
+        structuredOutput: requiresStructuredOutput,
         finishReason: result.finishReason,
         latencyMs: usageEvent?.latencyMs ?? (Date.now() - startedAt),
         attempts: usageEvent?.attempts ?? 1,
@@ -403,8 +466,10 @@ async function updateRoute(activity, input, req) {
   const model = settings.models.find((item) => item.id === input.model && item.enabled !== false);
   if (!model) throw new TypeError('Selected model is not enabled');
   if (model.available !== true) throw new TypeError('Sync Groq models and verify access before assigning this model');
-  if (!Array.isArray(model.capabilities) || !model.capabilities.includes('text') || !model.capabilities.includes('reasoning')) {
-    throw new TypeError('Selected model does not support this activity');
+  const missingCapabilities = aiRuntimeService.requiredCapabilitiesForActivity(activity)
+    .filter((capability) => !model.capabilities?.includes(capability));
+  if (missingCapabilities.length) {
+    throw new TypeError(`Selected model cannot run this activity; missing ${missingCapabilities.join(', ')}`);
   }
   const effort = String(input.reasoningEffort || 'medium');
   if (!['low', 'medium', 'high'].includes(effort)) throw new TypeError('Reasoning effort must be low, medium, or high');
@@ -505,12 +570,13 @@ function percentile(sorted, value) {
 
 async function getOverview({ range = '30d' } = {}) {
   const start = rangeStart(range);
+  const detailStart = start || rangeStart('90d');
   const match = start ? { day: { $gte: start } } : {};
   const [totalsRows, byActivity, byModel, byProvider, bySource, organizations, actors, trend, quotas, latencies] = await Promise.all([
     AIUsageDailyRollup.aggregate([{ $match: match }, { $group: {
       _id: null, calls: { $sum: '$calls' }, successes: { $sum: '$successes' }, failures: { $sum: '$failures' },
       inputTokens: { $sum: '$inputTokens' }, cachedInputTokens: { $sum: '$cachedInputTokens' },
-      outputTokens: { $sum: '$outputTokens' }, totalTokens: { $sum: '$totalTokens' },
+      outputTokens: { $sum: '$outputTokens' }, reasoningTokens: { $sum: '$reasoningTokens' }, totalTokens: { $sum: '$totalTokens' },
       estimatedCostUsd: { $sum: '$estimatedCostUsd' }, latencyTotalMs: { $sum: '$latencyTotalMs' }
     } }]),
     AIUsageDailyRollup.aggregate([{ $match: match }, { $group: { _id: '$activity', calls: { $sum: '$calls' }, failures: { $sum: '$failures' }, tokens: { $sum: '$totalTokens' }, cost: { $sum: '$estimatedCostUsd' } } }, { $sort: { calls: -1 } }]),
@@ -521,7 +587,7 @@ async function getOverview({ range = '30d' } = {}) {
     AIUsageDailyRollup.aggregate([{ $match: { ...match, actorId: { $ne: '' } } }, { $group: { _id: '$actorId', name: { $last: '$actorName' }, calls: { $sum: '$calls' }, failures: { $sum: '$failures' }, tokens: { $sum: '$totalTokens' }, cost: { $sum: '$estimatedCostUsd' } } }, { $sort: { calls: -1 } }, { $limit: 20 }]),
     AIUsageDailyRollup.aggregate([{ $match: match }, { $group: { _id: '$day', calls: { $sum: '$calls' }, failures: { $sum: '$failures' }, tokens: { $sum: '$totalTokens' }, cost: { $sum: '$estimatedCostUsd' } } }, { $sort: { _id: 1 } }]),
     AIQuotaSnapshot.find({}).sort({ quotaGroup: 1, model: 1 }).lean(),
-    AIUsageEvent.find({ ...(start ? { createdAt: { $gte: start } } : {}), latencyMs: { $ne: null } }).select('latencyMs').sort({ createdAt: -1 }).limit(50000).lean()
+    AIUsageEvent.find({ createdAt: { $gte: detailStart }, latencyMs: { $ne: null } }).select('latencyMs').sort({ createdAt: -1 }).limit(50000).lean()
   ]);
   const totals = totalsRows[0] || {};
   const sortedLatencies = latencies.map((item) => Number(item.latencyMs || 0)).sort((a, b) => a - b);
@@ -531,7 +597,7 @@ async function getOverview({ range = '30d' } = {}) {
       calls: Number(totals.calls || 0), successes: Number(totals.successes || 0), failures: Number(totals.failures || 0),
       successRate: totals.calls ? Number(((totals.successes / totals.calls) * 100).toFixed(1)) : 0,
       inputTokens: Number(totals.inputTokens || 0), cachedInputTokens: Number(totals.cachedInputTokens || 0),
-      outputTokens: Number(totals.outputTokens || 0), totalTokens: Number(totals.totalTokens || 0),
+      outputTokens: Number(totals.outputTokens || 0), reasoningTokens: Number(totals.reasoningTokens || 0), totalTokens: Number(totals.totalTokens || 0),
       estimatedCostUsd: Number(Number(totals.estimatedCostUsd || 0).toFixed(4)),
       averageLatencyMs: totals.calls ? Math.round(Number(totals.latencyTotalMs || 0) / totals.calls) : 0,
       p50LatencyMs: percentile(sortedLatencies, 50), p95LatencyMs: percentile(sortedLatencies, 95),
@@ -553,13 +619,47 @@ async function listRequests(query = {}) {
   if (query.sourceApp) filter.sourceApp = query.sourceApp;
   if (query.organizationId) filter.organizationId = query.organizationId;
   if (query.actorId) filter.actorId = query.actorId;
-  const start = rangeStart(query.range || '30d');
+  const requestedRange = query.range || '30d';
+  const start = rangeStart(requestedRange === 'all' ? '90d' : requestedRange);
   if (start) filter.createdAt = { $gte: start };
-  const [items, total] = await Promise.all([
+  const [items, total, summaryRows, latencyRows] = await Promise.all([
     AIUsageEvent.find(filter).select('-rateLimit.providerPayload').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
-    AIUsageEvent.countDocuments(filter)
+    AIUsageEvent.countDocuments(filter),
+    AIUsageEvent.aggregate([{ $match: filter }, { $group: {
+      _id: null,
+      calls: { $sum: 1 },
+      successes: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
+      failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+      inputTokens: { $sum: '$inputTokens' }, cachedInputTokens: { $sum: '$cachedInputTokens' },
+      outputTokens: { $sum: '$outputTokens' }, reasoningTokens: { $sum: '$reasoningTokens' },
+      totalTokens: { $sum: '$totalTokens' }, estimatedCostUsd: { $sum: '$estimatedCostUsd' },
+      averageLatencyMs: { $avg: '$latencyMs' }, failovers: { $sum: '$failovers' }
+    } }]),
+    AIUsageEvent.find({ ...filter, latencyMs: { $ne: null } }).select('latencyMs').sort({ createdAt: -1 }).limit(50000).lean()
   ]);
-  return { items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
+  const summary = summaryRows[0] || {};
+  const latencies = latencyRows.map((item) => Number(item.latencyMs || 0)).sort((a, b) => a - b);
+  return {
+    items,
+    summary: {
+      calls: Number(summary.calls || 0),
+      successes: Number(summary.successes || 0),
+      failures: Number(summary.failures || 0),
+      successRate: summary.calls ? Number(((summary.successes / summary.calls) * 100).toFixed(1)) : 0,
+      inputTokens: Number(summary.inputTokens || 0),
+      cachedInputTokens: Number(summary.cachedInputTokens || 0),
+      outputTokens: Number(summary.outputTokens || 0),
+      reasoningTokens: Number(summary.reasoningTokens || 0),
+      totalTokens: Number(summary.totalTokens || 0),
+      estimatedCostUsd: Number(Number(summary.estimatedCostUsd || 0).toFixed(6)),
+      averageLatencyMs: Math.round(Number(summary.averageLatencyMs || 0)),
+      p50LatencyMs: percentile(latencies, 50),
+      p95LatencyMs: percentile(latencies, 95),
+      failovers: Number(summary.failovers || 0),
+      detailWindow: requestedRange === 'all' ? 'retained-90d' : requestedRange
+    },
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+  };
 }
 
 async function listAuditEvents(query = {}) {
@@ -578,6 +678,7 @@ async function listAuditEvents(query = {}) {
 }
 
 module.exports = {
+  assessRouting,
   createCredential,
   createQuotaGroup,
   getOverview,

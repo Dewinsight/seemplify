@@ -115,6 +115,13 @@ interface RuntimeSettings {
     groqPercent: 10 | 50 | 100;
     azureBaselineEnabled: boolean;
   };
+  routingHealth: {
+    valid: boolean;
+    configured: number;
+    expected: number;
+    enabled: number;
+    issues: Array<{ activity: string; code: string; message: string }>;
+  };
 }
 
 interface UsageBreakdown {
@@ -146,6 +153,10 @@ interface RuntimeOverview {
     successes: number;
     failures: number;
     successRate: number;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
     totalTokens: number;
     estimatedCostUsd: number;
     averageLatencyMs: number;
@@ -177,6 +188,7 @@ interface RuntimeTestResult {
     model: string;
     reasoningEffort: string;
     response: string;
+    structuredOutput?: boolean;
     finishReason?: string;
     latencyMs: number;
     attempts: number;
@@ -227,6 +239,26 @@ interface UsageRequest {
   latencyMs: number;
   failovers: number;
   errorCode?: string;
+  errorMessage?: string;
+  attemptErrors?: Array<{ code?: string; message?: string; providerStatus?: number; credentialLabel?: string }>;
+}
+
+interface RequestSummary {
+  calls: number;
+  successes: number;
+  failures: number;
+  successRate: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  averageLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  failovers: number;
+  detailWindow?: string;
 }
 
 interface AuditEvent {
@@ -291,6 +323,7 @@ export default function AIRuntimeAdminPage() {
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [requests, setRequests] = useState<UsageRequest[]>([]);
+  const [requestSummary, setRequestSummary] = useState<RequestSummary | null>(null);
   const [audits, setAudits] = useState<AuditEvent[]>([]);
   const [requestPage, setRequestPage] = useState(1);
   const [requestPages, setRequestPages] = useState(1);
@@ -390,8 +423,9 @@ export default function AIRuntimeAdminPage() {
     if (requestStatus !== 'all') params.set('status', requestStatus);
     if (organizationFilter) params.set('organizationId', organizationFilter);
     if (actorFilter) params.set('actorId', actorFilter);
-    const data = await adminJson<{ items: UsageRequest[]; pagination: { pages: number } }>(`/api/admin/ai-runtime/requests?${params}`);
+    const data = await adminJson<{ items: UsageRequest[]; summary: RequestSummary; pagination: { pages: number } }>(`/api/admin/ai-runtime/requests?${params}`);
     setRequests(data.items);
+    setRequestSummary(data.summary);
     setRequestPages(Math.max(1, data.pagination.pages));
   }, [actorFilter, organizationFilter, range, requestPage, requestStatus]);
 
@@ -772,6 +806,7 @@ export default function AIRuntimeAdminPage() {
                     <RuntimeTestDatum label="Attempts" value={formatNumber(testResult.execution.attempts)} />
                     <RuntimeTestDatum label="Failovers" value={formatNumber(testResult.execution.failovers)} />
                     <RuntimeTestDatum label="Quota group" value={testResult.execution.quotaGroup || 'Not reported'} mono />
+                    <RuntimeTestDatum label="Output contract" value={testResult.execution.structuredOutput ? 'Strict JSON Schema' : 'Text'} />
                   </dl>
                   <div className="border-t border-gray-800 bg-gray-950/40 px-5 py-3"><span className="text-xs text-gray-500">Request ID </span><span className="break-all font-mono text-xs text-gray-300">{testResult.execution.requestId}</span></div>
                 </section>}
@@ -780,7 +815,7 @@ export default function AIRuntimeAdminPage() {
               <TabsContent value="routing" className="mt-5">
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
                   <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div><h2 className="text-sm font-semibold text-white">Activity routing</h2><p className="mt-1 text-xs text-gray-500">Token ceilings and safety constraints remain code-owned.</p></div>
+                    <div><div className="flex items-center gap-2"><h2 className="text-sm font-semibold text-white">Activity routing</h2>{settings?.routingHealth && <StatusBadge status={settings.routingHealth.valid ? 'healthy' : 'failed'} />}</div><p className="mt-1 text-xs text-gray-500">{settings?.routingHealth ? `${settings.routingHealth.configured} of ${settings.routingHealth.expected} activities configured; ${settings.routingHealth.enabled} enabled.` : 'Checking route coverage.'}</p></div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Select value={String(settings?.rollout.groqPercent || 100)} onValueChange={(value) => setSettings((current) => current ? { ...current, rollout: { ...current.rollout, groqPercent: Number(value) as 10 | 50 | 100 } } : current)}>
                         <SelectTrigger className="w-44 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger>
@@ -790,6 +825,7 @@ export default function AIRuntimeAdminPage() {
                       <Button variant="outline" size="sm" onClick={syncModels} disabled={busy === 'model-sync'} className="border-gray-700 bg-gray-950"><RefreshCw className={`mr-2 h-4 w-4 ${busy === 'model-sync' ? 'animate-spin' : ''}`} />Sync models</Button>
                     </div>
                   </div>
+                  {settings?.routingHealth && !settings.routingHealth.valid && <div role="alert" className="border-b border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">{settings.routingHealth.issues.map((issue) => <p key={`${issue.activity}:${issue.code}`}><span className="font-mono">{issue.activity}</span>: {issue.message}</p>)}</div>}
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader><TableRow className="border-gray-800"><TableHead>Activity</TableHead><TableHead>Model</TableHead><TableHead>Reasoning</TableHead><TableHead>Enabled</TableHead><TableHead className="text-right">Save</TableHead></TableRow></TableHeader>
@@ -865,9 +901,17 @@ export default function AIRuntimeAdminPage() {
                   <div className="flex flex-wrap gap-2"><Select value={requestStatus} onValueChange={(value) => { setRequestStatus(value); setRequestPage(1); }}><SelectTrigger className="w-36 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="success">Success</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent></Select>{organizationFilter && <Button variant="outline" onClick={() => setOrganizationFilter('')} className="border-gray-700">Clear organization</Button>}{actorFilter && <Button variant="outline" onClick={() => setActorFilter('')} className="border-gray-700">Clear person</Button>}</div>
                   <span className="text-xs text-gray-500">Detailed events are retained for 90 days.</span>
                 </div>
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+                  <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Overall AI totals</h2><p className="mt-1 text-xs text-gray-500">Complete totals for the selected date range. All time is calculated from permanent daily rollups.</p></div>
+                  <RequestTotals totals={stats} />
+                </section>
+                  <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+                    <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Filtered request totals</h2><p className="mt-1 text-xs text-gray-500">{requestSummary?.detailWindow === 'retained-90d' ? 'Filtered request details cover the retained 90-day window; the overall totals above remain all-time.' : 'Totals for the status, organization, and person filters applied below.'}</p></div>
+                  <RequestTotals totals={requestSummary} includeFailovers />
+                </section>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="overflow-x-auto"><Table>
                   <TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Activity</TableHead><TableHead>Application</TableHead><TableHead>Organization / person</TableHead><TableHead>Model</TableHead><TableHead>Tokens</TableHead><TableHead>Est. cost</TableHead><TableHead>Attempts</TableHead><TableHead>Latency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>{requests.map((request) => <TableRow key={request._id} className="border-gray-800"><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{request.provider}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell>{formatNumber(request.totalTokens)}</TableCell><TableCell>${formatNumber(request.estimatedCostUsd, 6)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>{requests.map((request) => <TableRow key={request._id} className="border-gray-800"><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{request.provider}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell>{formatNumber(request.totalTokens)}</TableCell><TableCell>${formatNumber(request.estimatedCostUsd, 6)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
                 </Table></div>{!requests.length && <div className="py-16 text-center text-sm text-gray-500">No requests match these filters.</div>}</section>
                 <div className="flex items-center justify-end gap-2"><Button variant="outline" size="icon" disabled={requestPage <= 1} onClick={() => setRequestPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{requestPage} of {requestPages}</span><Button variant="outline" size="icon" disabled={requestPage >= requestPages} onClick={() => setRequestPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div>
               </TabsContent>
@@ -961,6 +1005,26 @@ export default function AIRuntimeAdminPage() {
       </Dialog>
     </div>
   );
+}
+
+function RequestTotals({ totals, includeFailovers = false }: { totals: Partial<RequestSummary> | null | undefined; includeFailovers?: boolean }) {
+  const values = [
+    ['Calls', formatNumber(totals?.calls)],
+    ['Successful', formatNumber(totals?.successes)],
+    ['Failed', formatNumber(totals?.failures)],
+    ['Success rate', `${formatNumber(totals?.successRate, 1)}%`],
+    ['Input tokens', formatNumber(totals?.inputTokens)],
+    ['Cached input', formatNumber(totals?.cachedInputTokens)],
+    ['Output tokens', formatNumber(totals?.outputTokens)],
+    ['Reasoning tokens', formatNumber(totals?.reasoningTokens)],
+    ['All tokens', formatNumber(totals?.totalTokens)],
+    ['Estimated cost', `$${formatNumber(totals?.estimatedCostUsd, 6)}`],
+    ['Average latency', `${formatNumber(totals?.averageLatencyMs)} ms`],
+    ['P50 latency', `${formatNumber(totals?.p50LatencyMs)} ms`],
+    ['P95 latency', `${formatNumber(totals?.p95LatencyMs)} ms`]
+  ];
+  if (includeFailovers) values.push(['Failovers', formatNumber(totals?.failovers)]);
+  return <dl className="grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">{values.map(([label, value]) => <RuntimeTestDatum key={label} label={label} value={value} />)}</dl>;
 }
 
 function RuntimeTestDatum({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {

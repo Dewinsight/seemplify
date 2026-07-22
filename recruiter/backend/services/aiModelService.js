@@ -1408,6 +1408,9 @@ Return a JSON object with a "questions" array containing question objects:
   "questions": [
     {
       "question": "The interview question text",
+      "type": "technical | behavioral | situational | cultural_fit | skills_based | experience_based",
+      "difficulty": "easy | medium | hard",
+      "category": "short job-relevant competency",
       "expectedAnswer": "Detailed guidelines for what to look for in responses",
       "scoringCriteria": [
         {
@@ -1430,10 +1433,13 @@ Return a JSON object with a "questions" array containing question objects:
 
 ENSURE:
 - All questions are professional and appropriate
-- Expected answers provide clear evaluation guidance
+- Expected answers provide detailed evidence-based evaluation guidance
 - Scoring criteria are objects with criterion, weight, and description
+- Include 3 or 4 distinct scoring criteria with weights totalling 100
 - Follow-up questions are objects with question and condition fields
 - Tags reflect relevant skills and competencies
+- Every question is grounded in a concrete skill, responsibility, outcome, or constraint from the supplied job context
+- Questions are materially different from one another
 - Always return the questions array wrapped in a questions object`
         },
         {
@@ -1444,11 +1450,11 @@ ENSURE:
 
       const response = await this.requestStructuredCompletion({
         activity: 'interview.questions',
-        promptVersion: 'interview-questions-v2',
+        promptVersion: 'interview-questions-v3',
         messages: messages,
-        max_completion_tokens: 2500,
-        temperature: 0.9, // High temperature for creative and diverse question generation
-        top_p: 0.95,
+        max_completion_tokens: 4000,
+        temperature: 0.6,
+        top_p: 0.9,
         frequency_penalty: 0.1,
         presence_penalty: 0.1,
         model: this.modelName,

@@ -183,6 +183,10 @@ test('structured completion repairs once and validates the final schema', async 
   assert.deepEqual(result.data, { score: 88 });
   assert.equal(result.schemaRepairAttempted, true);
   assert.equal(runtime.providerCalls.length, 2);
+  assert.equal(runtime.providerCalls[0].payload.jsonSchema, undefined);
+  assert.equal(runtime.providerCalls[0].payload.schemaName, undefined);
+  assert.equal(runtime.providerCalls[0].payload.schemaStrict, undefined);
+  assert.equal(runtime.providerCalls[0].payload.response_format.type, 'json_schema');
   assert.equal(runtime.providerCalls[1].payload.messages.at(-1).content.includes('Validation issues'), true);
 });
 

@@ -7,6 +7,8 @@ const { requirePermission, requireSuperAdmin } = require('../middleware/adminAut
 const { createDefaultRuntimeSettings } = require('../config/aiRuntimeCatalog');
 const AIAuditEvent = require('../models/AIAuditEvent');
 const { createBootstrapSettings, mergeCatalogSettings } = require('../scripts/seedAIRuntime');
+const { assessRouting } = require('../services/adminAIRuntimeService');
+const { AIRuntimeService, requiredCapabilitiesForActivity } = require('../services/aiRuntime/aiRuntimeService');
 const { retryDelayMinutes } = require('../services/aiInterviewScoringRetryService');
 const { decryptSecret, encryptSecret, fingerprintSecret, maskSecret } = require('../services/aiRuntime/secretCrypto');
 const { getAIRequestContext, runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
@@ -26,6 +28,40 @@ const TEST_ENV = {
   AI_PROVIDER_ENCRYPTION_KEY: TEST_KEY,
   AI_PROVIDER_ENCRYPTION_KEY_VERSION: 'test-v1'
 };
+
+test('every seeded AI activity has one compatible explicit route', () => {
+  const settings = createDefaultRuntimeSettings();
+  const health = assessRouting(settings);
+  assert.equal(health.valid, true);
+  assert.equal(health.configured, health.expected);
+  assert.ok(requiredCapabilitiesForActivity('interview.questions').includes('json_schema'));
+  assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
+});
+
+test('runtime never falls back to the general route for a missing activity route', () => {
+  const settings = createDefaultRuntimeSettings();
+  settings.routes = settings.routes.filter((route) => route.activity !== 'interview.questions');
+  const health = assessRouting(settings);
+  assert.equal(health.valid, false);
+  assert.ok(health.issues.some((issue) => issue.activity === 'interview.questions' && issue.code === 'missing_route'));
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {} });
+  assert.throws(
+    () => runtime.resolveRoute('interview.questions', settings),
+    (error) => error.code === 'AI_ROUTE_NOT_CONFIGURED'
+  );
+});
+
+test('routing rejects models that lack an activity capability', () => {
+  const settings = createDefaultRuntimeSettings();
+  const route = settings.routes.find((item) => item.activity === 'interview.questions');
+  const model = settings.models.find((item) => item.id === route.model);
+  model.capabilities = model.capabilities.filter((capability) => capability !== 'json_schema');
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {} });
+  assert.throws(
+    () => runtime.resolveRoute('interview.questions', settings),
+    (error) => error.code === 'AI_MODEL_CAPABILITY_MISMATCH'
+  );
+});
 
 test('AES-GCM credentials round-trip, mask, and reject the wrong key', () => {
   const secret = `gsk_${'x'.repeat(36)}`;

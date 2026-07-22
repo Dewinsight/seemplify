@@ -1,4 +1,5 @@
 const { chatCompletion, extractJsonObject } = require('./llmClient');
+const { assessGeneratedQuestions, repairInstructions } = require('./questionQuality');
 
 const GENERATED_QUESTIONS_SCHEMA = {
   type: 'object',
@@ -7,14 +8,12 @@ const GENERATED_QUESTIONS_SCHEMA = {
   properties: {
     questions: {
       type: 'array',
-      minItems: 1,
-      maxItems: 20,
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['question', 'type', 'difficulty', 'category', 'expectedAnswer', 'scoringCriteria', 'followUpQuestions', 'tags', 'timeLimit'],
         properties: {
-          question: { type: 'string', minLength: 10 },
+          question: { type: 'string' },
           type: { type: 'string' },
           difficulty: { type: 'string' },
           category: { type: 'string' },
@@ -103,6 +102,11 @@ function buildJobContext(job) {
 }
 
 class QuestionGeneratorService {
+  constructor({ completion = chatCompletion, parseJson = extractJsonObject } = {}) {
+    this.completion = completion;
+    this.parseJson = parseJson;
+  }
+
   async generateForJob(job, options = {}) {
     const questionCount = Math.max(1, Math.min(20, Number(options.questionCount || 5)));
     const difficulty = String(options.difficulty || 'medium');
@@ -135,39 +139,42 @@ Return JSON only:
   ]
 }`;
 
-    const result = await chatCompletion([
-      {
-        role: 'system',
-        content: `You are an expert interview question generator.
+    const systemMessage = `You are an expert interview question generator.
 Create job-specific, legally compliant, unbiased questions.
 Questions must assess the actual role, skills, responsibilities, and seniority.
 Do not generate generic questions when job details are available.
-Return valid JSON only.`
-      },
-      { role: 'user', content: prompt }
-    ], {
-      activity: 'ai_interview.question_generation',
-      promptVersion: 'ai-interview-questions-v1',
-      temperature: 0.75,
-      maxTokens: 2400,
-      response_format: { type: 'json_object' },
-      jsonSchema: GENERATED_QUESTIONS_SCHEMA,
-      schemaName: 'ai_interview_questions',
-      context: options.context || {}
-    });
+Each question must use a realistic decision or scenario from the job context.
+Provide three or four distinct scoring criteria whose weights total 100, a useful follow-up, and at least two role-relevant tags.
+Hard questions must include ambiguity, scale, failure, risk, or competing trade-offs.
+Return valid JSON only.`;
+    let userMessage = prompt;
+    let lastAssessment = null;
 
-    const parsed = extractJsonObject(result.content);
-    const rawQuestions = Array.isArray(parsed?.questions) ? parsed.questions : [];
-    if (!rawQuestions.length) throw new Error('AI did not return generated questions.');
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const result = await this.completion([
+        { role: 'system', content: systemMessage },
+        { role: 'user', content: userMessage }
+      ], {
+        activity: 'ai_interview.question_generation',
+        promptVersion: 'ai-interview-questions-v2',
+        temperature: 0.6,
+        maxTokens: 3600,
+        response_format: { type: 'json_object' },
+        jsonSchema: GENERATED_QUESTIONS_SCHEMA,
+        schemaName: 'ai_interview_questions',
+        context: options.context || {}
+      });
 
-    return rawQuestions.slice(0, questionCount).map((question, index) => {
-      const plannedType = typePlan[index] || question.type || 'behavioral';
-      return {
+      const parsed = this.parseJson(result.content);
+      const rawQuestions = Array.isArray(parsed?.questions) ? parsed.questions : [];
+      const normalized = rawQuestions.map((question, index) => {
+        const plannedType = typePlan[index] || question.type || 'behavioral';
+        return {
         question: String(question.question || '').trim(),
         type: String(question.type || plannedType || 'behavioral').trim(),
         category: String(question.category || '').trim(),
         difficulty: String(question.difficulty || difficulty).trim(),
-        expectedAnswer: String(question.expectedAnswer || 'Look for a specific example, clear reasoning, and measurable outcome.').trim(),
+        expectedAnswer: String(question.expectedAnswer || '').trim(),
         scoringCriteria: normalizeCriteria(question.scoringCriteria),
         followUpQuestions: normalizeFollowUps(question.followUpQuestions),
         tags: Array.isArray(question.tags) ? question.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
@@ -176,11 +183,34 @@ Return valid JSON only.`
         aiGenerationMetadata: {
           model: result.model,
           generatedAt: new Date().toISOString(),
-          promptVersion: 'standalone-ai-interview-v1'
+          promptVersion: 'ai-interview-questions-v2',
+          requestId: result.requestId
         }
       };
-    }).filter((question) => question.question.length >= 10);
+      });
+      const assessment = assessGeneratedQuestions(normalized, { job, expectedCount: questionCount, typePlan, difficulty });
+      lastAssessment = assessment;
+      if (assessment.passed) {
+        return normalized.map((question, index) => ({
+          ...question,
+          qualityMetrics: {
+            semanticQualityScore: assessment.questions[index]?.score ?? assessment.score,
+            qualityIssues: [],
+            analysisStatus: 'pending'
+          }
+        }));
+      }
+      if (attempt === 1) userMessage = prompt + repairInstructions(assessment);
+    }
+
+    const error = new Error(`AI question generation failed semantic quality checks: ${lastAssessment?.issues?.join(' ') || 'No usable questions returned.'}`);
+    error.code = 'AI_QUESTION_QUALITY_FAILED';
+    error.statusCode = 503;
+    throw error;
   }
 }
 
-module.exports = new QuestionGeneratorService();
+const questionGeneratorService = new QuestionGeneratorService();
+module.exports = questionGeneratorService;
+module.exports.QuestionGeneratorService = QuestionGeneratorService;
+module.exports.GENERATED_QUESTIONS_SCHEMA = GENERATED_QUESTIONS_SCHEMA;

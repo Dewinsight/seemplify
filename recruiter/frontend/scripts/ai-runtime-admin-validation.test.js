@@ -77,6 +77,18 @@ test('AI Runtime exposes the synthetic route test workflow', () => {
   assert.match(pageSource, /adminJson<RuntimeTestResult>\('\/api\/admin\/ai-runtime\/test'/);
   assert.match(pageSource, /Executed model/);
   assert.match(pageSource, /Request ID/);
+  assert.match(pageSource, /Output contract/);
+});
+
+test('requests and routing expose full operational health', () => {
+  assert.match(pageSource, /Overall AI totals/);
+  assert.match(pageSource, /Filtered request totals/);
+  assert.match(pageSource, /permanent daily rollups/);
+  assert.match(pageSource, /retained 90-day window/);
+  assert.match(pageSource, /Reasoning tokens/);
+  assert.match(pageSource, /routingHealth/);
+  assert.match(pageSource, /activities configured/);
+  assert.match(pageSource, /routingHealth\.issues\.map/);
 });
 
 test('credential removal is explicit, confirmed, and permission-aware', () => {

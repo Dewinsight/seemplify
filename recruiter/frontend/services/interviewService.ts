@@ -28,14 +28,20 @@ export interface InterviewQuestion {
     generatedAt: string;
     model: string;
     prompt?: string;
+    promptVersion?: string;
+    requestId?: string;
+    routeVersion?: number;
     confidence: number;
     questionType?: string;
   };
   qualityMetrics?: {
+    semanticQualityScore?: number | null;
+    qualityIssues?: string[];
+    analysisStatus?: 'pending' | 'complete' | 'manual_review';
     difficultyCalibration: number;
     diversityIndex: number;
-    biasScore: number;
-    legalCompliance: boolean;
+    biasScore: number | null;
+    legalCompliance: boolean | null;
     biasAnalysis?: {
       age: number;
       gender: number;
@@ -132,10 +138,13 @@ export interface BiasDetectionFactor {
 }
 
 export interface QuestionQualityAnalysis {
-  biasScore: number;
+  semanticQualityScore?: number | null;
+  qualityIssues?: string[];
+  analysisStatus?: 'pending' | 'complete' | 'manual_review';
+  biasScore: number | null;
   diversityIndex: number;
   difficultyCalibration?: number;
-  legalCompliance: boolean;
+  legalCompliance: boolean | null;
   recommendations: string[];
   biasAnalysis?: {
     age?: number;

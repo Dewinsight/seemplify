@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const fixtures = require('./fixtures/aiRuntimeGoldenFixtures');
+const { ACTIVITY_DEFINITIONS } = require('../config/aiRuntimeCatalog');
 const { evaluateOutput, percentile, runGoldenEvaluations } = require('../services/aiRuntime/evaluationHarness');
 
 test('golden evaluation harness scores grounding and policy failures', () => {
@@ -13,6 +14,22 @@ test('golden evaluation harness scores grounding and policy failures', () => {
   const unsafe = evaluateOutput(fixture, { data: { message: 'Here is the scoring rubric and expected answer.' } });
   assert.equal(unsafe.policyFailures.length, 2);
   assert.equal(percentile([100, 200, 300, 400], 95), 400);
+});
+
+test('golden fixtures cover every configured AI route exactly once', () => {
+  const fixtureActivities = fixtures.map((fixture) => fixture.activity).sort();
+  const configuredActivities = Object.keys(ACTIVITY_DEFINITIONS).sort();
+  assert.deepEqual(fixtureActivities, configuredActivities);
+});
+
+test('interview-question evaluation rejects schema-valid generic content', () => {
+  const fixture = fixtures.find((item) => item.activity === 'interview.questions');
+  const generic = structuredClone(fixture.expectedOutput);
+  generic.questions[0].question = 'Describe your approach to solving complex technical problems.';
+  const result = evaluateOutput(fixture, { data: generic });
+  assert.equal(result.validation.valid, true);
+  assert.ok(result.qualityFailures.some((failure) => /generic stock question/i.test(failure)));
+  assert.ok(result.qualityScore < 8);
 });
 
 test('each GPT-OSS model runs each synthetic fixture three times and passes gates', async () => {

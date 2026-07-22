@@ -1042,6 +1042,7 @@ app.post('/api/questions/generate', authenticate, asyncHandler(async (req, res) 
       timeLimit: Number(question.timeLimit || 5),
       isAIGenerated: true,
       aiGenerationMetadata: question.aiGenerationMetadata,
+      qualityMetrics: question.qualityMetrics,
       createdBy: req.user._id,
       createdAt: now,
       updatedAt: now

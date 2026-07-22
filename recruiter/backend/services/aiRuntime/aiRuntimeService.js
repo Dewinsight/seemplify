@@ -23,6 +23,35 @@ const { AzureTextRollbackAdapter } = require('./azureTextRollbackAdapter');
 
 const SETTINGS_CACHE_MS = 15_000;
 const MAX_PROVIDER_ATTEMPTS = 2;
+const STRUCTURED_ACTIVITIES = new Set([
+  'candidate.cv_parse',
+  'job.description',
+  'job.requirements',
+  'job.normalize',
+  'matching.analysis',
+  'matching.report',
+  'assistant.tool_selection',
+  'assistant.job_extract',
+  'analytics.candidates',
+  'analytics.jobs',
+  'analytics.hiring',
+  'interview.questions',
+  'interview.bias',
+  'interview.analysis',
+  'interview.summary',
+  'interview.team_feedback',
+  'ai_interview.question_generation',
+  'ai_interview.cv_parse',
+  'ai_interview.scoring'
+]);
+
+function requiredCapabilitiesForActivity(activity) {
+  const capabilities = ['text', 'reasoning'];
+  if (STRUCTURED_ACTIVITIES.has(activity)) capabilities.push('json_schema');
+  if (activity === 'assistant.tool_selection') capabilities.push('tools');
+  if (activity === 'assistant.chat' || activity.startsWith('ai_interview.chat.')) capabilities.push('streaming');
+  return capabilities;
+}
 
 class AIRuntimeError extends Error {
   constructor(message, { code = 'AI_RUNTIME_ERROR', statusCode = 503, providerStatus, retryable = false, details } = {}) {
@@ -206,14 +235,28 @@ class AIRuntimeService {
       throw new AIRuntimeError(`Unknown AI activity ${activity}`, { code: 'AI_ACTIVITY_UNKNOWN', statusCode: 400 });
     }
     const normalized = activity;
-    const route = settings.routes.find((item) => item.activity === normalized)
-      || settings.routes.find((item) => item.activity === 'recruiter.general');
+    const route = settings.routes.find((item) => item.activity === normalized);
+    if (!route) {
+      throw new AIRuntimeError(`No route is configured for ${normalized}`, { code: 'AI_ROUTE_NOT_CONFIGURED', statusCode: 503 });
+    }
     if (!route?.enabled || !settings.providerEnabled) {
       throw new AIRuntimeError(`AI activity ${normalized} is disabled`, { code: 'AI_ACTIVITY_DISABLED', statusCode: 503 });
     }
     const model = settings.models.find((item) => item.id === route.model && item.provider === route.provider && item.enabled !== false);
     if (!model) {
       throw new AIRuntimeError(`No enabled model is configured for ${normalized}`, { code: 'AI_MODEL_NOT_CONFIGURED', statusCode: 503 });
+    }
+    if (model.available === false) {
+      throw new AIRuntimeError(`Configured model ${model.id} is unavailable for ${normalized}`, { code: 'AI_MODEL_UNAVAILABLE', statusCode: 503 });
+    }
+    const missingCapabilities = requiredCapabilitiesForActivity(normalized)
+      .filter((capability) => !model.capabilities?.includes(capability));
+    if (missingCapabilities.length) {
+      throw new AIRuntimeError(`Model ${model.id} cannot run ${normalized}; missing ${missingCapabilities.join(', ')}`, {
+        code: 'AI_MODEL_CAPABILITY_MISMATCH',
+        statusCode: 503,
+        details: { missingCapabilities }
+      });
     }
     return { ...route, activity: normalized, modelConfig: model };
   }
@@ -274,6 +317,11 @@ class AIRuntimeService {
     delete payload.context;
     delete payload.metadata;
     delete payload.promptVersion;
+    // These fields configure local validation only. Groq rejects them as
+    // unknown top-level request parameters when they leak into the payload.
+    delete payload.jsonSchema;
+    delete payload.schemaName;
+    delete payload.schemaStrict;
     if (payload.maxTokens !== undefined && payload.max_tokens === undefined) payload.max_tokens = payload.maxTokens;
     if (payload.topP !== undefined && payload.top_p === undefined) payload.top_p = payload.topP;
     delete payload.maxTokens;
@@ -605,7 +653,7 @@ class AIRuntimeService {
     return this.complete(options.activity || 'recruiter.general', { ...options, messages });
   }
 
-  async structuredComplete(activity, input = {}) {
+  async structuredComplete(activity, input = {}, options = {}) {
     const schema = input.jsonSchema;
     if (!schema || typeof schema !== 'object' || schema.type !== 'object') {
       throw new AIRuntimeError('A root object JSON Schema is required', {
@@ -626,7 +674,7 @@ class AIRuntimeService {
           type: 'json_schema',
           json_schema: { name: schemaName, strict: input.schemaStrict !== false, schema }
         }
-      });
+      }, options);
       let parsed;
       try {
         parsed = JSON.parse(result.content);
@@ -860,5 +908,6 @@ module.exports.AIRuntimeService = AIRuntimeService;
 module.exports.deterministicBucket = deterministicBucket;
 module.exports.quotaSnapshotIsAvailable = quotaSnapshotIsAvailable;
 module.exports.rateLimitCooldownUntil = rateLimitCooldownUntil;
+module.exports.requiredCapabilitiesForActivity = requiredCapabilitiesForActivity;
 module.exports.shouldUseGroq = shouldUseGroq;
 module.exports.stripReasoning = stripReasoning;

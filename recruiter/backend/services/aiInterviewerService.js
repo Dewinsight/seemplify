@@ -8,8 +8,8 @@ const INTERVIEW_SCORE_SCHEMA = {
     overallScore: { type: 'number', minimum: 0, maximum: 100 },
     recommendation: { type: 'string', enum: ['strong_yes', 'yes', 'maybe', 'no'] },
     summary: { type: 'string' },
-    strengths: { type: 'array', items: { type: 'string' }, maxItems: 6 },
-    concerns: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    strengths: { type: 'array', items: { type: 'string' } },
+    concerns: { type: 'array', items: { type: 'string' } },
     questionScores: {
       type: 'array',
       items: {

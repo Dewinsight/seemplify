@@ -1510,7 +1510,13 @@ exports.generateInterviewQuestions = async (req, res) => {
     res.status(201).json({ msg: `Successfully generated ${questions.length} interview questions`, questions, count: questions.length, generationOptions: options });
   } catch (error) {
     console.error('❌ Error generating interview questions:', error);
-    res.status(500).json({ msg: 'Server error generating interview questions', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.code === 'AI_QUESTION_QUALITY_FAILED'
+        ? 'AI could not produce a sufficiently job-specific question set. No questions were saved.'
+        : 'Server error generating interview questions',
+      code: error.code,
+      error: error.message
+    });
   }
 };
 
