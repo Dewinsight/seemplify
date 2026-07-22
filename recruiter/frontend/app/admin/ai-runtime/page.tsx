@@ -30,6 +30,16 @@ import { apiRequest } from '@/services/apiConfig';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -293,6 +303,7 @@ export default function AIRuntimeAdminPage() {
   const [busy, setBusy] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [credentialDialog, setCredentialDialog] = useState<{ mode: 'create' | 'rotate'; id?: string } | null>(null);
+  const [credentialToRemove, setCredentialToRemove] = useState<Credential | null>(null);
   const [quotaDialog, setQuotaDialog] = useState(false);
   const [credentialForm, setCredentialForm] = useState({ label: '', apiKey: '', quotaGroup: 'groq-primary', projectLabel: '', priority: '100' });
   const [quotaForm, setQuotaForm] = useState({ label: '', confirmed: false });
@@ -528,14 +539,13 @@ export default function AIRuntimeAdminPage() {
   }
 
   async function credentialAction(id: string, action: 'test' | 'toggle' | 'revoke', enabled?: boolean) {
-    if (action === 'revoke' && !window.confirm('Revoke this credential permanently? This cannot be undone.')) return;
     setBusy(`${action}:${id}`);
     try {
       if (action === 'test') await adminJson(`/api/admin/ai-runtime/credentials/${id}/test`, { method: 'POST', body: '{}' });
       if (action === 'toggle') await adminJson(`/api/admin/ai-runtime/credentials/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
       if (action === 'revoke') await adminJson(`/api/admin/ai-runtime/credentials/${id}`, { method: 'DELETE' });
       await loadSettings();
-      toast({ title: action === 'test' ? 'Connection test passed' : action === 'revoke' ? 'Credential revoked' : 'Credential updated' });
+      toast({ title: action === 'test' ? 'Connection test passed' : action === 'revoke' ? 'Credential removed' : 'Credential updated' });
     } catch (error) {
       toast({ title: 'Credential action failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
     } finally {
@@ -802,7 +812,7 @@ export default function AIRuntimeAdminPage() {
               <TabsContent value="credentials" className="mt-5">
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
                   <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div><h2 className="text-sm font-semibold text-white">Groq credentials</h2><p className="mt-1 text-xs text-gray-500">Add a key, then choose its existing quota group from a dropdown.</p></div>
+                    <div><h2 className="text-sm font-semibold text-white">Groq credentials</h2><p className="mt-1 text-xs text-gray-500">Add, rotate, disable, test, or permanently remove runtime credentials.</p></div>
                     <div className="flex flex-wrap gap-2">
                       <Button size="sm" onClick={() => openCredentialDialog('create')} disabled={!canManageSecrets} title={canManageSecrets ? 'Add Groq credential' : 'Super-admin access is required'}><Plus className="mr-2 h-4 w-4" />Add credential</Button>
                       {canConfigure && <Button variant="outline" size="sm" onClick={openQuotaDialog} className="border-gray-700"><Building2 className="mr-2 h-4 w-4" />New independent group</Button>}
@@ -816,7 +826,7 @@ export default function AIRuntimeAdminPage() {
                         {!availableQuotaGroups.length && <span className="text-xs text-amber-400">No quota groups configured</span>}
                       </div>
                     </div>
-                    {!canManageSecrets && <div role="note" className="mt-3 flex items-start gap-2 border-t border-gray-800 pt-3 text-xs text-amber-300"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>Your admin role can configure routing and quota groups, but only a super admin can add, rotate, or revoke API keys.</span></div>}
+                    {!canManageSecrets && <div role="note" className="mt-3 flex items-start gap-2 border-t border-gray-800 pt-3 text-xs text-amber-300"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>Your admin role can configure routing and quota groups, but only a super admin can add, rotate, or remove API keys.</span></div>}
                   </div>
                   <div className="overflow-x-auto">
                     <Table>
@@ -828,7 +838,18 @@ export default function AIRuntimeAdminPage() {
                             <TableCell>{credential.quotaGroup}<div className="text-xs text-gray-500">{credential.projectLabel || 'No project label'}</div></TableCell>
                             <TableCell>{credential.priority}</TableCell><TableCell><StatusBadge status={credential.status} /></TableCell><TableCell className="text-gray-400">{formatDate(credential.lastSuccessAt)}</TableCell>
                             <TableCell><div className="flex justify-end gap-1">
-                              {canManageSecrets && <><Button variant="ghost" size="icon" title="Test credential" onClick={() => credentialAction(credential._id, 'test')}><Play className="h-4 w-4" /></Button><Button variant="ghost" size="icon" title="Rotate credential" onClick={() => openCredentialDialog('rotate', credential._id, credential)}><RotateCw className="h-4 w-4" /></Button><Switch className="mx-2 mt-2" checked={credential.enabled} onCheckedChange={(enabled) => credentialAction(credential._id, 'toggle', enabled)} /><Button variant="ghost" size="icon" title="Revoke credential" onClick={() => credentialAction(credential._id, 'revoke')} className="text-red-400"><Trash2 className="h-4 w-4" /></Button></>}
+                              {canManageSecrets && <><Button variant="ghost" size="icon" title="Test credential" onClick={() => credentialAction(credential._id, 'test')}><Play className="h-4 w-4" /></Button><Button variant="ghost" size="icon" title="Rotate credential" onClick={() => openCredentialDialog('rotate', credential._id, credential)}><RotateCw className="h-4 w-4" /></Button><Switch className="mx-2 mt-2" checked={credential.enabled} onCheckedChange={(enabled) => credentialAction(credential._id, 'toggle', enabled)} /></>}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!canManageSecrets || busy === `revoke:${credential._id}`}
+                                title={canManageSecrets ? 'Permanently remove credential' : 'Super-admin access is required'}
+                                onClick={() => setCredentialToRemove(credential)}
+                                className="text-red-400 hover:bg-red-950 hover:text-red-300"
+                              >
+                                {busy === `revoke:${credential._id}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                                Remove
+                              </Button>
                             </div></TableCell>
                           </TableRow>
                         ))}
@@ -904,6 +925,28 @@ export default function AIRuntimeAdminPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(credentialToRemove)} onOpenChange={(open) => !open && setCredentialToRemove(null)}>
+        <AlertDialogContent className="border-gray-700 bg-gray-900 text-gray-100">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Groq credential?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-400">
+              This permanently revokes {credentialToRemove?.label || 'this credential'}, erases its encrypted API key, and immediately stops the runtime from using it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-gray-700 bg-transparent text-gray-200 hover:bg-gray-800 hover:text-white">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!credentialToRemove || busy === `revoke:${credentialToRemove?._id}`}
+              onClick={() => credentialToRemove && credentialAction(credentialToRemove._id, 'revoke')}
+              className="bg-red-600 text-white hover:bg-red-500"
+            >
+              {busy === `revoke:${credentialToRemove?._id}` && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Remove credential
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={quotaDialog} onOpenChange={(open) => !open && closeQuotaDialog()}>
         <DialogContent className="border-gray-700 bg-gray-900 text-gray-100">

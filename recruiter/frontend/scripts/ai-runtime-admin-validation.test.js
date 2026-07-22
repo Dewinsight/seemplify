@@ -78,3 +78,12 @@ test('AI Runtime exposes the synthetic route test workflow', () => {
   assert.match(pageSource, /Executed model/);
   assert.match(pageSource, /Request ID/);
 });
+
+test('credential removal is explicit, confirmed, and permission-aware', () => {
+  assert.match(pageSource, /\n\s+Remove\n\s+<\/Button>/);
+  assert.match(pageSource, /Remove Groq credential\?/);
+  assert.match(pageSource, /erases its encrypted API key/);
+  assert.match(pageSource, /disabled=\{!canManageSecrets \|\| busy === `revoke:/);
+  assert.match(pageSource, /credentialAction\(credentialToRemove\._id, 'revoke'\)/);
+  assert.doesNotMatch(pageSource, /window\.confirm\(/);
+});
