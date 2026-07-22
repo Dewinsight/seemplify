@@ -220,7 +220,7 @@ async function runRuntimeTest(activityInput, req) {
         { role: 'user', content: 'Run the synthetic health check now.' }
       ],
       temperature: 0,
-      max_tokens: 64,
+      max_tokens: 512,
       promptVersion: 'admin-runtime-test-v1',
       context: {
         sourceApp: 'admin-runtime-test',

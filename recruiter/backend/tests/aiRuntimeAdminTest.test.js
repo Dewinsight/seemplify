@@ -85,7 +85,7 @@ test('admin runtime test uses production routing with a fixed synthetic prompt',
   assert.equal(completionInput.context.sourceApp, 'admin-runtime-test');
   assert.equal(completionInput.context.actorId, 'admin-1');
   assert.equal(completionInput.promptVersion, 'admin-runtime-test-v1');
-  assert.equal(completionInput.max_tokens, 64);
+  assert.equal(completionInput.max_tokens, 512);
   assert.equal(completionInput.messages.length, 2);
   assert.equal(JSON.stringify(completionInput).includes('candidate'), false);
   assert.equal(result.success, true);
