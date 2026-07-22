@@ -1,0 +1,22 @@
+name: Ensure Recruiter AI Runtime Security
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    name: Ensure production security secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure missing AI Runtime secrets
+        run: node recruiter/backend/scripts/dokployEnsureAIRuntimeEnv.js
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          RECRUITER_BACKEND_APP_ID: ${{ secrets.RECRUITER_BACKEND_APP_ID }}

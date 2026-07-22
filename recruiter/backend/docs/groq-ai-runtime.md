@@ -19,6 +19,8 @@ Do not reuse `JWT_SECRET` for either AI runtime secret. Do not bootstrap with a 
 
 The seeder is dry-run first and refuses to apply without the dedicated encryption key.
 
+For Dokploy, the manual **Ensure Recruiter AI Runtime Security** workflow creates missing encryption and gateway secrets without overwriting existing values or printing them, then redeploys the backend.
+
 ```powershell
 npm run seed:ai-runtime
 npm run seed:ai-runtime:apply
