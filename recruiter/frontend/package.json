@@ -12,6 +12,7 @@
     "start": "next start -p 5000",
     "lint": "next lint",
     "test:admin-activity": "node --test scripts/admin-activity-formatters.test.js",
+    "test:ai-runtime-admin": "node --test scripts/ai-runtime-admin-validation.test.js",
     "test:candidate-emails": "node --test scripts/candidate-email-template-presets.test.js",
     "test:platform-features": "node --test scripts/platform-features.test.js"
   },

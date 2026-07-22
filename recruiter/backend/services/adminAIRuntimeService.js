@@ -12,6 +12,12 @@ const {
 } = require('../config/aiRuntimeCatalog');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
 const { encryptSecret, fingerprintSecret, maskSecret } = require('./aiRuntime/secretCrypto');
+const {
+  assertSafeMetadata,
+  redactGroqApiKeys,
+  sanitizeQuotaGroup,
+  validateQuotaGroupInput
+} = require('./aiRuntime/quotaGroupValidation');
 
 function serializeCredential(credential) {
   const raw = typeof credential?.toObject === 'function' ? credential.toObject() : credential;
@@ -33,10 +39,32 @@ async function writeAudit(req, event) {
   return AIAuditEvent.create({ category: 'configuration', status: 'success', ...auditContext(req), ...event });
 }
 
+async function sanitizeStoredQuotaGroups(settings) {
+  const quotaGroups = (settings.quotaGroups || []).map(sanitizeQuotaGroup);
+  const changed = (settings.quotaGroups || []).some((group, index) => group.label !== quotaGroups[index]?.label);
+  if (!changed) return quotaGroups;
+
+  await AIRuntimeSettings.updateOne({ key: 'global' }, {
+    $set: { quotaGroups },
+    $inc: { version: 1 }
+  });
+  const affectedAudits = await AIAuditEvent.find({ message: /gsk_/i });
+  await Promise.all(affectedAudits.map(async (event) => {
+    event.message = redactGroqApiKeys(event.message);
+    event.metadata = redactGroqApiKeys(event.metadata);
+    event.markModified('metadata');
+    await event.save();
+  }));
+  aiRuntimeService.invalidateSettingsCache();
+  return quotaGroups;
+}
+
 async function getRuntimeSettings() {
   const settings = await aiRuntimeService.getSettings({ force: true });
+  const quotaGroups = await sanitizeStoredQuotaGroups(settings);
   return {
     ...settings,
+    quotaGroups,
     activityDefinitions: Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({ activity, ...definition }))
   };
 }
@@ -56,6 +84,9 @@ function validateApiKey(apiKey) {
 async function createCredential(input, req) {
   const apiKey = validateApiKey(input.apiKey);
   const label = String(input.label || '').trim();
+  const projectLabel = String(input.projectLabel || '').trim();
+  assertSafeMetadata(label, 'label', 'the credential label');
+  assertSafeMetadata(projectLabel, 'projectLabel', 'the project label');
   if (!label || label.length > 100) throw new TypeError('Credential label is required and must be 100 characters or fewer');
   const priority = Number(input.priority ?? 100);
   if (!Number.isInteger(priority) || priority < 1 || priority > 10000) {
@@ -77,7 +108,7 @@ async function createCredential(input, req) {
     fingerprint,
     lastFour: apiKey.slice(-4),
     quotaGroup,
-    projectLabel: String(input.projectLabel || '').trim(),
+    projectLabel,
     priority,
     enabled: true,
     status: 'unknown',
@@ -123,16 +154,10 @@ async function createCredential(input, req) {
 }
 
 async function createQuotaGroup(input, req) {
-  const label = String(input.label || '').trim();
-  if (!label) throw new TypeError('Quota group label is required');
-  if (input.independentQuotaConfirmed !== true) {
-    throw new TypeError('Confirm that this group has an independent authorized Groq quota scope');
-  }
-  const id = String(input.id || label).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
-  if (!id) throw new TypeError('Quota group identifier is invalid');
   const settings = await aiRuntimeService.getSettings({ force: true });
-  if (settings.quotaGroups.some((group) => group.id === id)) throw new TypeError('Quota group already exists');
-  const quotaGroups = [...settings.quotaGroups, {
+  const existingGroups = settings.quotaGroups || [];
+  const { id, label } = validateQuotaGroupInput(input, existingGroups);
+  const quotaGroups = [...existingGroups, {
     id,
     label,
     enabled: true,
@@ -424,7 +449,10 @@ async function listAuditEvents(query = {}) {
     AIAuditEvent.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     AIAuditEvent.countDocuments(filter)
   ]);
-  return { items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
+  return {
+    items: items.map((item) => redactGroqApiKeys(item)),
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+  };
 }
 
 module.exports = {

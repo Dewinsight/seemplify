@@ -24,8 +24,12 @@ const settingsAccess = [adminAuth, requirePermission('systemSettings')];
 const secretAccess = [adminAuth, requireSuperAdmin];
 
 function handleError(res, error, fallback) {
-  if (error instanceof TypeError || error?.statusCode === 400 || error?.statusCode === 404) {
-    return res.status(error.statusCode || 400).json({ code: error.code || 'AI_RUNTIME_VALIDATION_ERROR', msg: error.message });
+  if (error instanceof TypeError || [400, 404, 409].includes(error?.statusCode)) {
+    return res.status(error.statusCode || 400).json({
+      code: error.code || 'AI_RUNTIME_VALIDATION_ERROR',
+      msg: error.message,
+      ...(error.field ? { field: error.field } : {})
+    });
   }
   console.error(fallback, error);
   return res.status(error?.statusCode || 500).json({ code: error?.code || 'AI_RUNTIME_ADMIN_ERROR', msg: fallback });

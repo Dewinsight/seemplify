@@ -58,6 +58,11 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  type QuotaGroupOption,
+  validateCredentialDraft,
+  validateQuotaGroupDraft
+} from '@/lib/aiRuntimeAdminValidation';
 
 type RangeKey = '7d' | '30d' | '90d' | 'all';
 type TabKey = 'overview' | 'routing' | 'credentials' | 'requests' | 'alerts';
@@ -95,7 +100,7 @@ interface RuntimeSettings {
   routes: ActivityRoute[];
   activityDefinitions: ActivityDefinition[];
   alerts: AlertSettings;
-  quotaGroups: Array<{ id: string; label: string }>;
+  quotaGroups: QuotaGroupOption[];
   rollout: {
     groqPercent: 10 | 50 | 100;
     azureBaselineEnabled: boolean;
@@ -258,12 +263,55 @@ export default function AIRuntimeAdminPage() {
   const [credentialDialog, setCredentialDialog] = useState<{ mode: 'create' | 'rotate'; id?: string } | null>(null);
   const [quotaDialog, setQuotaDialog] = useState(false);
   const [credentialForm, setCredentialForm] = useState({ label: '', apiKey: '', quotaGroup: 'groq-primary', projectLabel: '', priority: '100' });
-  const [quotaForm, setQuotaForm] = useState({ label: '', id: '', confirmed: false });
+  const [quotaForm, setQuotaForm] = useState({ label: '', confirmed: false });
+  const [credentialError, setCredentialError] = useState('');
+  const [quotaError, setQuotaError] = useState('');
   const [alertForm, setAlertForm] = useState({ enabled: true, recipients: '', monthlyBudgetUsd: '' });
 
   const definitions = useMemo(() => new Map(
     (settings?.activityDefinitions || []).map((item) => [item.activity, item])
   ), [settings]);
+
+  const availableQuotaGroups = useMemo(
+    () => (settings?.quotaGroups || []).filter((group) => group.enabled !== false),
+    [settings?.quotaGroups]
+  );
+
+  function defaultQuotaGroupId() {
+    return availableQuotaGroups.find((group) => group.id === 'groq-primary')?.id
+      || availableQuotaGroups[0]?.id
+      || '';
+  }
+
+  function openCredentialDialog(mode: 'create' | 'rotate', id?: string, credential?: Credential) {
+    setCredentialError('');
+    setCredentialForm({
+      label: credential?.label || '',
+      apiKey: '',
+      quotaGroup: credential?.quotaGroup || defaultQuotaGroupId(),
+      projectLabel: credential?.projectLabel || '',
+      priority: String(credential?.priority || 100)
+    });
+    setCredentialDialog({ mode, id });
+  }
+
+  function closeCredentialDialog() {
+    setCredentialDialog(null);
+    setCredentialError('');
+    setCredentialForm({ label: '', apiKey: '', quotaGroup: defaultQuotaGroupId(), projectLabel: '', priority: '100' });
+  }
+
+  function openQuotaDialog() {
+    setQuotaError('');
+    setQuotaForm({ label: '', confirmed: false });
+    setQuotaDialog(true);
+  }
+
+  function closeQuotaDialog() {
+    setQuotaDialog(false);
+    setQuotaError('');
+    setQuotaForm({ label: '', confirmed: false });
+  }
 
   const loadOverview = useCallback(async () => {
     const data = await adminJson<RuntimeOverview>(`/api/admin/ai-runtime/overview?range=${range}`);
@@ -345,25 +393,31 @@ export default function AIRuntimeAdminPage() {
   async function submitCredential(event: FormEvent) {
     event.preventDefault();
     if (!credentialDialog) return;
+    const rotating = credentialDialog.mode === 'rotate';
+    const validation = validateCredentialDraft(credentialForm, availableQuotaGroups, rotating);
+    if (!validation.ok) {
+      setCredentialError(validation.message);
+      return;
+    }
+    setCredentialError('');
     setBusy('credential-save');
     try {
-      const rotating = credentialDialog.mode === 'rotate';
       await adminJson(rotating
         ? `/api/admin/ai-runtime/credentials/${credentialDialog.id}/rotate`
         : '/api/admin/ai-runtime/credentials', {
         method: 'POST',
-        body: JSON.stringify(rotating ? { apiKey: credentialForm.apiKey } : {
-          ...credentialForm,
-          priority: Number(credentialForm.priority),
+        body: JSON.stringify(rotating ? { apiKey: validation.value.apiKey } : {
+          ...validation.value,
           verify: true
         })
       });
-      setCredentialDialog(null);
-      setCredentialForm({ label: '', apiKey: '', quotaGroup: 'groq-primary', projectLabel: '', priority: '100' });
+      closeCredentialDialog();
       await loadSettings();
       toast({ title: rotating ? 'Credential rotated' : 'Credential added', description: 'The key was encrypted and its connection test succeeded.' });
     } catch (error) {
-      toast({ title: 'Credential was not saved', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setCredentialError(message);
+      toast({ title: 'Credential was not saved', description: message, variant: 'destructive' });
     } finally {
       setBusy('');
     }
@@ -371,22 +425,25 @@ export default function AIRuntimeAdminPage() {
 
   async function submitQuotaGroup(event: FormEvent) {
     event.preventDefault();
+    const validation = validateQuotaGroupDraft(quotaForm, availableQuotaGroups);
+    if (!validation.ok) {
+      setQuotaError(validation.message);
+      return;
+    }
+    setQuotaError('');
     setBusy('quota-group');
     try {
       await adminJson('/api/admin/ai-runtime/quota-groups', {
         method: 'POST',
-        body: JSON.stringify({
-          label: quotaForm.label,
-          id: quotaForm.id,
-          independentQuotaConfirmed: quotaForm.confirmed
-        })
+        body: JSON.stringify(validation.value)
       });
-      setQuotaDialog(false);
-      setQuotaForm({ label: '', id: '', confirmed: false });
+      closeQuotaDialog();
       await loadSettings();
       toast({ title: 'Quota group added', description: 'Credentials in this group may be used after another independent quota scope is exhausted.' });
     } catch (error) {
-      toast({ title: 'Quota group was not added', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setQuotaError(message);
+      toast({ title: 'Quota group was not added', description: message, variant: 'destructive' });
     } finally {
       setBusy('');
     }
@@ -623,8 +680,21 @@ export default function AIRuntimeAdminPage() {
               <TabsContent value="credentials" className="mt-5">
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
                   <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div><h2 className="text-sm font-semibold text-white">Groq credentials</h2><p className="mt-1 text-xs text-gray-500">Secrets are encrypted and never returned by the API.</p></div>
-                    <div className="flex gap-2">{canConfigure && <Button variant="outline" size="sm" onClick={() => setQuotaDialog(true)} className="border-gray-700"><Building2 className="mr-2 h-4 w-4" />Add quota group</Button>}{canManageSecrets && <Button size="sm" onClick={() => setCredentialDialog({ mode: 'create' })}><Plus className="mr-2 h-4 w-4" />Add credential</Button>}</div>
+                    <div><h2 className="text-sm font-semibold text-white">Groq credentials</h2><p className="mt-1 text-xs text-gray-500">Add a key, then choose its existing quota group from a dropdown.</p></div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => openCredentialDialog('create')} disabled={!canManageSecrets} title={canManageSecrets ? 'Add Groq credential' : 'Super-admin access is required'}><Plus className="mr-2 h-4 w-4" />Add credential</Button>
+                      {canConfigure && <Button variant="outline" size="sm" onClick={openQuotaDialog} className="border-gray-700"><Building2 className="mr-2 h-4 w-4" />New independent group</Button>}
+                    </div>
+                  </div>
+                  <div className="border-b border-gray-800 bg-gray-950/40 px-4 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div><p className="text-xs font-medium text-gray-300">Available quota groups</p><p className="mt-1 text-xs text-gray-500">Keys in the same group share Groq limits. Quota groups never contain API keys.</p></div>
+                      <div className="flex flex-wrap gap-2">
+                        {availableQuotaGroups.map((group) => <Badge key={group.id} variant="outline" className="border-gray-700 bg-gray-900 text-gray-300">{group.label} <span className="ml-1 font-mono text-gray-500">{group.id}</span></Badge>)}
+                        {!availableQuotaGroups.length && <span className="text-xs text-amber-400">No quota groups configured</span>}
+                      </div>
+                    </div>
+                    {!canManageSecrets && <div role="note" className="mt-3 flex items-start gap-2 border-t border-gray-800 pt-3 text-xs text-amber-300"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>Your admin role can configure routing and quota groups, but only a super admin can add, rotate, or revoke API keys.</span></div>}
                   </div>
                   <div className="overflow-x-auto">
                     <Table>
@@ -636,11 +706,11 @@ export default function AIRuntimeAdminPage() {
                             <TableCell>{credential.quotaGroup}<div className="text-xs text-gray-500">{credential.projectLabel || 'No project label'}</div></TableCell>
                             <TableCell>{credential.priority}</TableCell><TableCell><StatusBadge status={credential.status} /></TableCell><TableCell className="text-gray-400">{formatDate(credential.lastSuccessAt)}</TableCell>
                             <TableCell><div className="flex justify-end gap-1">
-                              {canManageSecrets && <><Button variant="ghost" size="icon" title="Test credential" onClick={() => credentialAction(credential._id, 'test')}><Play className="h-4 w-4" /></Button><Button variant="ghost" size="icon" title="Rotate credential" onClick={() => { setCredentialDialog({ mode: 'rotate', id: credential._id }); setCredentialForm((form) => ({ ...form, label: credential.label, quotaGroup: credential.quotaGroup })); }}><RotateCw className="h-4 w-4" /></Button><Switch className="mx-2 mt-2" checked={credential.enabled} onCheckedChange={(enabled) => credentialAction(credential._id, 'toggle', enabled)} /><Button variant="ghost" size="icon" title="Revoke credential" onClick={() => credentialAction(credential._id, 'revoke')} className="text-red-400"><Trash2 className="h-4 w-4" /></Button></>}
+                              {canManageSecrets && <><Button variant="ghost" size="icon" title="Test credential" onClick={() => credentialAction(credential._id, 'test')}><Play className="h-4 w-4" /></Button><Button variant="ghost" size="icon" title="Rotate credential" onClick={() => openCredentialDialog('rotate', credential._id, credential)}><RotateCw className="h-4 w-4" /></Button><Switch className="mx-2 mt-2" checked={credential.enabled} onCheckedChange={(enabled) => credentialAction(credential._id, 'toggle', enabled)} /><Button variant="ghost" size="icon" title="Revoke credential" onClick={() => credentialAction(credential._id, 'revoke')} className="text-red-400"><Trash2 className="h-4 w-4" /></Button></>}
                             </div></TableCell>
                           </TableRow>
                         ))}
-                        {!credentials.length && <TableRow><TableCell colSpan={6} className="h-24 text-center text-gray-500">No Groq credentials are configured.</TableCell></TableRow>}
+                        {!credentials.length && <TableRow><TableCell colSpan={6} className="h-24 text-center text-gray-500">No Groq credentials are configured.{!canManageSecrets && ' A super admin must add the first key.'}</TableCell></TableRow>}
                       </TableBody>
                     </Table>
                   </div>
@@ -671,25 +741,56 @@ export default function AIRuntimeAdminPage() {
         </main>
       </div>
 
-      <Dialog open={Boolean(credentialDialog)} onOpenChange={(open) => !open && setCredentialDialog(null)}>
+      <Dialog open={Boolean(credentialDialog)} onOpenChange={(open) => !open && closeCredentialDialog()}>
         <DialogContent className="border-gray-700 bg-gray-900 text-gray-100">
-          <DialogHeader><DialogTitle>{credentialDialog?.mode === 'rotate' ? 'Rotate Groq credential' : 'Add Groq credential'}</DialogTitle><DialogDescription className="text-gray-400">The key is verified before it becomes available to the runtime.</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{credentialDialog?.mode === 'rotate' ? 'Rotate Groq credential' : 'Add Groq credential'}</DialogTitle>
+            <DialogDescription className="text-gray-400">The key is verified before it becomes available to the runtime.</DialogDescription>
+          </DialogHeader>
           <form onSubmit={submitCredential} className="space-y-4">
-            {credentialDialog?.mode === 'create' && <><div className="space-y-2"><Label htmlFor="credential-label">Label</Label><Input id="credential-label" required value={credentialForm.label} onChange={(event) => setCredentialForm((form) => ({ ...form, label: event.target.value }))} className="border-gray-700 bg-gray-950" /></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="quota-group">Quota group</Label><Select value={credentialForm.quotaGroup} onValueChange={(quotaGroup) => setCredentialForm((form) => ({ ...form, quotaGroup }))}><SelectTrigger id="quota-group" className="border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent>{(settings?.quotaGroups || []).map((group) => <SelectItem key={group.id} value={group.id}>{group.label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="priority">Priority</Label><Input id="priority" type="number" min="1" required value={credentialForm.priority} onChange={(event) => setCredentialForm((form) => ({ ...form, priority: event.target.value }))} className="border-gray-700 bg-gray-950" /></div></div><div className="space-y-2"><Label htmlFor="project-label">Project label</Label><Input id="project-label" value={credentialForm.projectLabel} onChange={(event) => setCredentialForm((form) => ({ ...form, projectLabel: event.target.value }))} className="border-gray-700 bg-gray-950" /></div></>}
-            <div className="space-y-2"><Label htmlFor="groq-key">Groq API key</Label><Input id="groq-key" type="password" autoComplete="new-password" required value={credentialForm.apiKey} onChange={(event) => setCredentialForm((form) => ({ ...form, apiKey: event.target.value }))} className="border-gray-700 bg-gray-950 font-mono" /></div>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setCredentialDialog(null)} className="border-gray-700">Cancel</Button><Button type="submit" disabled={busy === 'credential-save'}>{busy === 'credential-save' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{credentialDialog?.mode === 'rotate' ? 'Verify and rotate' : 'Verify and add'}</Button></DialogFooter>
+            {credentialDialog?.mode === 'create' && <>
+              <div className="space-y-2">
+                <Label htmlFor="credential-label">Credential label</Label>
+                <Input id="credential-label" required value={credentialForm.label} onChange={(event) => { setCredentialError(''); setCredentialForm((form) => ({ ...form, label: event.target.value })); }} placeholder="Primary Groq key" className="border-gray-700 bg-gray-950" />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="quota-group">Quota group</Label>
+                  <Select value={credentialForm.quotaGroup} onValueChange={(quotaGroup) => { setCredentialError(''); setCredentialForm((form) => ({ ...form, quotaGroup })); }}>
+                    <SelectTrigger id="quota-group" className="border-gray-700 bg-gray-950"><SelectValue placeholder="Choose quota group" /></SelectTrigger>
+                    <SelectContent>{availableQuotaGroups.map((group) => <SelectItem key={group.id} value={group.id}>{group.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500">Choose the Groq organization whose limits this key shares.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="priority">Priority</Label>
+                  <Input id="priority" type="number" min="1" max="10000" required value={credentialForm.priority} onChange={(event) => { setCredentialError(''); setCredentialForm((form) => ({ ...form, priority: event.target.value })); }} className="border-gray-700 bg-gray-950" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="project-label">Project label <span className="text-gray-500">(optional)</span></Label>
+                <Input id="project-label" value={credentialForm.projectLabel} onChange={(event) => { setCredentialError(''); setCredentialForm((form) => ({ ...form, projectLabel: event.target.value })); }} placeholder="Production" className="border-gray-700 bg-gray-950" />
+              </div>
+            </>}
+            <div className="space-y-2">
+              <Label htmlFor="groq-key">Groq API key</Label>
+              <Input id="groq-key" type="password" autoComplete="new-password" required value={credentialForm.apiKey} onChange={(event) => { setCredentialError(''); setCredentialForm((form) => ({ ...form, apiKey: event.target.value })); }} className="border-gray-700 bg-gray-950 font-mono" />
+              <p className="text-xs text-gray-500">Stored encrypted; only its fingerprint and final four characters are returned.</p>
+            </div>
+            {credentialError && <div role="alert" aria-live="polite" className="flex items-start gap-2 rounded-md border border-red-900 bg-red-950/60 p-3 text-sm text-red-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{credentialError}</span></div>}
+            <DialogFooter><Button type="button" variant="outline" onClick={closeCredentialDialog} className="border-gray-700">Cancel</Button><Button type="submit" disabled={busy === 'credential-save' || (credentialDialog?.mode === 'create' && !availableQuotaGroups.length)}>{busy === 'credential-save' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{credentialDialog?.mode === 'rotate' ? 'Verify and rotate' : 'Verify and add'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={quotaDialog} onOpenChange={setQuotaDialog}>
+      <Dialog open={quotaDialog} onOpenChange={(open) => !open && closeQuotaDialog()}>
         <DialogContent className="border-gray-700 bg-gray-900 text-gray-100">
-          <DialogHeader><DialogTitle>Add independent quota group</DialogTitle><DialogDescription className="text-gray-400">Keys in one Groq organization normally share limits. Create a separate group only for a genuinely independent authorized quota scope.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>New independent quota group</DialogTitle><DialogDescription className="text-gray-400">Use this only for a separate authorized Groq organization. Existing groups are selected from the dropdown when adding a credential; never paste an API key here.</DialogDescription></DialogHeader>
           <form onSubmit={submitQuotaGroup} className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="quota-label">Label</Label><Input id="quota-label" required value={quotaForm.label} onChange={(event) => setQuotaForm((form) => ({ ...form, label: event.target.value }))} className="border-gray-700 bg-gray-950" /></div>
-            <div className="space-y-2"><Label htmlFor="quota-id">Identifier</Label><Input id="quota-id" value={quotaForm.id} onChange={(event) => setQuotaForm((form) => ({ ...form, id: event.target.value }))} placeholder="Generated from label" className="border-gray-700 bg-gray-950 font-mono" /></div>
-            <label className="flex items-start gap-3 rounded-md border border-gray-700 bg-gray-950 p-3 text-sm text-gray-300"><Switch checked={quotaForm.confirmed} onCheckedChange={(confirmed) => setQuotaForm((form) => ({ ...form, confirmed }))} /><span>I confirm this quota is independent and authorized by Groq.</span></label>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setQuotaDialog(false)} className="border-gray-700">Cancel</Button><Button type="submit" disabled={!quotaForm.confirmed || busy === 'quota-group'}>Add quota group</Button></DialogFooter>
+            <div className="space-y-2"><Label htmlFor="quota-label">Organization label</Label><Input id="quota-label" required value={quotaForm.label} onChange={(event) => { setQuotaError(''); setQuotaForm((form) => ({ ...form, label: event.target.value })); }} placeholder="EU backup organization" className="border-gray-700 bg-gray-950" /><p className="text-xs text-gray-500">The internal identifier is generated automatically.</p></div>
+            <label className="flex items-start gap-3 rounded-md border border-gray-700 bg-gray-950 p-3 text-sm text-gray-300"><Switch checked={quotaForm.confirmed} onCheckedChange={(confirmed) => { setQuotaError(''); setQuotaForm((form) => ({ ...form, confirmed })); }} /><span>I confirm this quota is independent and authorized by Groq.</span></label>
+            {quotaError && <div role="alert" aria-live="polite" className="flex items-start gap-2 rounded-md border border-red-900 bg-red-950/60 p-3 text-sm text-red-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{quotaError}</span></div>}
+            <DialogFooter><Button type="button" variant="outline" onClick={closeQuotaDialog} className="border-gray-700">Cancel</Button><Button type="submit" disabled={!quotaForm.confirmed || busy === 'quota-group'}>Create independent group</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
