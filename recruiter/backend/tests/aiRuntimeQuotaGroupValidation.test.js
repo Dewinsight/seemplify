@@ -58,6 +58,10 @@ test('legacy secret-shaped labels and audit values are redacted', () => {
   const secret = `gsk_${'x'.repeat(30)}`;
   assert.equal(containsGroqApiKey(secret), true);
   assert.equal(sanitizeQuotaGroup({ id: 'free', label: secret }).label, 'Quota group free');
+  const sanitizedGroup = sanitizeQuotaGroup({ id: secret, label: `Quota group ${secret}` });
+  assert.match(sanitizedGroup.id, /^recovered-quota-[a-f0-9]{12}$/);
+  assert.equal(sanitizedGroup.label, `Quota group ${sanitizedGroup.id}`);
+  assert.equal(JSON.stringify(sanitizedGroup).includes(secret), false);
   assert.deepEqual(
     redactGroqApiKeys({ message: `Created ${secret}`, metadata: { nested: secret } }),
     { message: 'Created [REDACTED_GROQ_KEY]', metadata: { nested: '[REDACTED_GROQ_KEY]' } }

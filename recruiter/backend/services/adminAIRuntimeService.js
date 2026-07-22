@@ -40,10 +40,24 @@ async function writeAudit(req, event) {
 }
 
 async function sanitizeStoredQuotaGroups(settings) {
-  const quotaGroups = (settings.quotaGroups || []).map(sanitizeQuotaGroup);
-  const changed = (settings.quotaGroups || []).some((group, index) => group.label !== quotaGroups[index]?.label);
+  const storedGroups = settings.quotaGroups || [];
+  const quotaGroups = storedGroups.map(sanitizeQuotaGroup);
+  const migrations = storedGroups.flatMap((group, index) => {
+    const sanitized = quotaGroups[index];
+    return group.id !== sanitized?.id ? [{ from: group.id, to: sanitized.id }] : [];
+  });
+  const changed = storedGroups.some((group, index) => (
+    group.id !== quotaGroups[index]?.id || group.label !== quotaGroups[index]?.label
+  ));
   if (!changed) return quotaGroups;
 
+  for (const migration of migrations) {
+    await AIProviderCredential.updateMany({ quotaGroup: migration.from }, { $set: { quotaGroup: migration.to } });
+    await AIUsageEvent.updateMany({ quotaGroup: migration.from }, { $set: { quotaGroup: migration.to } });
+    await AIUsageDailyRollup.updateMany({ quotaGroup: migration.from }, { $set: { quotaGroup: migration.to } });
+    await AIAuditEvent.updateMany({ quotaGroup: migration.from }, { $set: { quotaGroup: migration.to } });
+    await AIQuotaSnapshot.deleteMany({ quotaGroup: migration.from });
+  }
   await AIRuntimeSettings.updateOne({ key: 'global' }, {
     $set: { quotaGroups },
     $inc: { version: 1 }

@@ -35,6 +35,12 @@ test('runtime test endpoint requires system settings access', () => {
   assert.match(routeSource, /router\.post\('\/test', \.\.\.settingsAccess/);
 });
 
+test('credential management uses the explicit system settings permission', () => {
+  const routeSource = fs.readFileSync(path.join(__dirname, '..', 'routes', 'adminAIRuntime.js'), 'utf8');
+  assert.match(routeSource, /const secretAccess = \[adminAuth, requirePermission\('systemSettings'\)\]/);
+  assert.doesNotMatch(routeSource, /requireSuperAdmin/);
+});
+
 function mockUsageQuery(value) {
   return {
     select() { return this; },

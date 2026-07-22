@@ -2,6 +2,8 @@
 
 The recruiter backend owns text-generation routing for both Seemplify and the standalone AI Interview service. Groq credentials are encrypted in MongoDB and are never sent to the standalone service or returned by an API.
 
+Credential creation, testing, rotation, disabling, and removal require the explicit `systemSettings` admin permission. Secret values are accepted only by credential endpoints and are never valid quota-group metadata.
+
 ## Required deployment secrets
 
 - `AI_PROVIDER_ENCRYPTION_KEY`: a dedicated 32-byte base64 value or 64-character hexadecimal value.

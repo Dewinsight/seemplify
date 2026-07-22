@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const GROQ_API_KEY_PATTERN = /gsk_[a-z0-9_-]{12,}/gi;
 
 function containsGroqApiKey(value) {
@@ -84,9 +86,17 @@ function validateQuotaGroupInput(input = {}, existingGroups = []) {
 
 function sanitizeQuotaGroup(group) {
   if (!group || typeof group !== 'object') return group;
+  const unsafeId = containsGroqApiKey(group.id);
+  const unsafeLabel = containsGroqApiKey(group.label);
+  if (!unsafeId && !unsafeLabel) return { ...group };
+
+  const id = unsafeId
+    ? `recovered-quota-${crypto.createHash('sha256').update(`${group.id || ''}\0${group.label || ''}`).digest('hex').slice(0, 12)}`
+    : group.id;
   return {
     ...group,
-    label: containsGroqApiKey(group.label) ? `Quota group ${group.id}` : group.label
+    id,
+    label: unsafeLabel ? `Quota group ${id}` : group.label
   };
 }
 

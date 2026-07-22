@@ -281,10 +281,10 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function AIRuntimeAdminPage() {
-  const { checkPermission, isSuperAdmin } = useAdmin();
+  const { checkPermission } = useAdmin();
   const { toast } = useToast();
   const canConfigure = checkPermission('systemSettings');
-  const canManageSecrets = isSuperAdmin();
+  const canManageSecrets = canConfigure;
   const [tab, setTab] = useState<TabKey>('overview');
   const [range, setRange] = useState<RangeKey>('30d');
   const [overview, setOverview] = useState<RuntimeOverview | null>(null);
@@ -814,7 +814,7 @@ export default function AIRuntimeAdminPage() {
                   <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div><h2 className="text-sm font-semibold text-white">Groq credentials</h2><p className="mt-1 text-xs text-gray-500">Add, rotate, disable, test, or permanently remove runtime credentials.</p></div>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" onClick={() => openCredentialDialog('create')} disabled={!canManageSecrets} title={canManageSecrets ? 'Add Groq credential' : 'Super-admin access is required'}><Plus className="mr-2 h-4 w-4" />Add credential</Button>
+                      <Button size="sm" onClick={() => openCredentialDialog('create')} disabled={!canManageSecrets} title={canManageSecrets ? 'Add Groq credential' : 'AI runtime settings permission is required'}><Plus className="mr-2 h-4 w-4" />Add credential</Button>
                       {canConfigure && <Button variant="outline" size="sm" onClick={openQuotaDialog} className="border-gray-700"><Building2 className="mr-2 h-4 w-4" />New independent group</Button>}
                     </div>
                   </div>
@@ -826,7 +826,7 @@ export default function AIRuntimeAdminPage() {
                         {!availableQuotaGroups.length && <span className="text-xs text-amber-400">No quota groups configured</span>}
                       </div>
                     </div>
-                    {!canManageSecrets && <div role="note" className="mt-3 flex items-start gap-2 border-t border-gray-800 pt-3 text-xs text-amber-300"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>Your admin role can configure routing and quota groups, but only a super admin can add, rotate, or remove API keys.</span></div>}
+                    {!canManageSecrets && <div role="note" className="mt-3 flex items-start gap-2 border-t border-gray-800 pt-3 text-xs text-amber-300"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>AI runtime settings permission is required to add, rotate, or remove API keys.</span></div>}
                   </div>
                   <div className="overflow-x-auto">
                     <Table>
@@ -843,7 +843,7 @@ export default function AIRuntimeAdminPage() {
                                 variant="ghost"
                                 size="sm"
                                 disabled={!canManageSecrets || busy === `revoke:${credential._id}`}
-                                title={canManageSecrets ? 'Permanently remove credential' : 'Super-admin access is required'}
+                                title={canManageSecrets ? 'Permanently remove credential' : 'AI runtime settings permission is required'}
                                 onClick={() => setCredentialToRemove(credential)}
                                 className="text-red-400 hover:bg-red-950 hover:text-red-300"
                               >

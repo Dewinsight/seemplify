@@ -1,5 +1,5 @@
 const express = require('express');
-const { adminAuth, requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
+const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const {
   createCredential,
@@ -22,7 +22,7 @@ const {
 const router = express.Router();
 const analyticsAccess = [adminAuth, requirePermission('viewAnalytics')];
 const settingsAccess = [adminAuth, requirePermission('systemSettings')];
-const secretAccess = [adminAuth, requireSuperAdmin];
+const secretAccess = [adminAuth, requirePermission('systemSettings')];
 
 function handleError(res, error, fallback) {
   const knownRuntimeError = error?.name === 'AIRuntimeError' && String(error?.code || '').startsWith('AI_');
