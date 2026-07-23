@@ -29,12 +29,9 @@ const STRUCTURED_ACTIVITIES = new Set([
   'job.requirements',
   'job.normalize',
   'matching.analysis',
-  'matching.report',
   'assistant.tool_selection',
+  'assistant.memory',
   'assistant.job_extract',
-  'analytics.candidates',
-  'analytics.jobs',
-  'analytics.hiring',
   'interview.questions',
   'interview.bias',
   'interview.analysis',
@@ -341,7 +338,10 @@ class AIRuntimeService {
     if (payload.top_p !== undefined) payload.top_p = Math.max(0, Math.min(1, Number(payload.top_p) || 0));
     payload.model = route.model;
     payload.reasoning_effort = route.reasoningEffort || 'medium';
-    payload.reasoning_format = 'hidden';
+    // GPT-OSS exposes reasoning through include_reasoning; reasoning_format is
+    // unsupported for these models and causes Groq to reject the request.
+    delete payload.reasoning_format;
+    payload.include_reasoning = false;
     payload.stream = Boolean(stream || payload.stream);
     if (payload.stream) payload.stream_options = { ...(payload.stream_options || {}), include_usage: true };
     return payload;

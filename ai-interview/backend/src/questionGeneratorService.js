@@ -146,6 +146,12 @@ Do not generate generic questions when job details are available.
 Each question must use a realistic decision or scenario from the job context.
 Provide three or four distinct scoring criteria whose weights total 100, a useful follow-up, and at least two role-relevant tags.
 Hard questions must include ambiguity, scale, failure, risk, or competing trade-offs.
+Do not treat the role title alone as grounding; anchor each question in a named skill, deliverable, stakeholder, metric, system, or responsibility.
+Expected-answer guidance must be unique to the question and identify evidence, decisions, trade-offs, and measurable outcomes.
+Follow-ups must probe missing evidence rather than paraphrase the main question.
+Weak example: "Describe your approach to solving complex technical problems."
+Strong pattern: give a realistic job-specific situation with a concrete constraint, then ask for the decision process, evidence, trade-offs, and success measure.
+Silently self-check count, type, difficulty, distinct scenarios, protected-trait safety, criteria weights, and grounding before returning JSON.
 Return valid JSON only.`;
     let userMessage = prompt;
     let lastAssessment = null;
@@ -156,7 +162,7 @@ Return valid JSON only.`;
         { role: 'user', content: userMessage }
       ], {
         activity: 'ai_interview.question_generation',
-        promptVersion: 'ai-interview-questions-v2',
+        promptVersion: 'ai-interview-questions-v3',
         temperature: 0.6,
         maxTokens: 3600,
         response_format: { type: 'json_object' },
@@ -183,7 +189,7 @@ Return valid JSON only.`;
         aiGenerationMetadata: {
           model: result.model,
           generatedAt: new Date().toISOString(),
-          promptVersion: 'ai-interview-questions-v2',
+          promptVersion: 'ai-interview-questions-v3',
           requestId: result.requestId
         }
       };

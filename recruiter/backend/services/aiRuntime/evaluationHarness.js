@@ -1,5 +1,10 @@
 const { validateJsonSchema } = require('./jsonSchemaValidator');
 const { assessQuestionSet } = require('../interviewQuestionQualityService');
+const {
+  assessAcknowledgement,
+  assessClarification,
+  assessIntroduction
+} = require('../aiInterviewerResponseQuality');
 
 function percentile(values, target) {
   if (!values.length) return 0;
@@ -20,36 +25,137 @@ function findEmptyRequiredContent(value, path = '$') {
   return Object.entries(value).flatMap(([key, item]) => findEmptyRequiredContent(item, `${path}.${key}`));
 }
 
+function normalizedText(value) {
+  return typeof value === 'string' ? value.trim() : JSON.stringify(value || '');
+}
+
+function normalizedSearchText(value) {
+  return normalizedText(value).toLowerCase().replace(/[^a-z0-9%+.#]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function includesText(value, expected) {
+  return normalizedSearchText(value).includes(normalizedSearchText(expected));
+}
+
+function pushMissingKeywords(failures, value, keywords = [], label = 'Response') {
+  for (const keyword of keywords) {
+    if (!includesText(value, keyword)) failures.push(`${label} is not grounded in supplied ${keyword} evidence.`);
+  }
+}
+
 function evaluateDomainQuality(fixture, data) {
-  const failures = findEmptyRequiredContent(data);
+  const failures = fixture.qualityEvaluator ? [] : findEmptyRequiredContent(data);
   let score = failures.length ? Math.max(0, 1 - failures.length * 0.15) : 1;
+  if (fixture.qualityEvaluator === 'cv_extraction') {
+    pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'CV extraction');
+    for (const missingFact of fixture.qualityContext?.knownMissingFacts || []) {
+      const value = data?.[missingFact];
+      if (value && !['n/a', 'unknown', 'not provided'].includes(String(value).trim().toLowerCase())) {
+        failures.push(`CV extraction appears to invent the missing ${missingFact} field.`);
+      }
+    }
+    if (!Array.isArray(data?.skills) || !data.skills.length) failures.push('CV extraction has no grounded skills.');
+    if (!String(data?.summary || '').trim()) failures.push('CV extraction has no usable summary.');
+  }
+  if (fixture.qualityEvaluator === 'job_description') {
+    const expectedCounts = fixture.qualityContext?.expectedCounts || {};
+    for (const [field, count] of Object.entries(expectedCounts)) {
+      if (!Array.isArray(data?.[field]) || data[field].length !== count) {
+        failures.push(`Job description must contain exactly ${count} ${field}.`);
+      }
+    }
+    pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'Job description');
+  }
+  if (fixture.qualityEvaluator === 'job_requirements') {
+    if (!Array.isArray(data?.requiredQualifications) || data.requiredQualifications.length < 2) failures.push('Required qualifications are incomplete.');
+    if (!Array.isArray(data?.preferredQualifications) || !data.preferredQualifications.length) failures.push('Preferred qualifications are incomplete.');
+    pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'Job requirements');
+  }
+  if (fixture.qualityEvaluator === 'salary_normalization') {
+    if (!Number.isInteger(data?.min) || !Number.isInteger(data?.max) || data.min > data.max) failures.push('Salary bounds are invalid.');
+    if (!/^[A-Z]{3}$/.test(String(data?.currency || ''))) failures.push('Salary currency is not a three-letter code.');
+    if (!String(data?.period || '').trim()) failures.push('Salary period is missing.');
+  }
   if (fixture.qualityEvaluator === 'interview_questions') {
     const assessment = assessQuestionSet(data?.questions, fixture.qualityContext || {});
     score = assessment.score;
     failures.push(...assessment.issues);
   }
   if (fixture.qualityEvaluator === 'matching') {
-    if (!Array.isArray(data?.evidence) || !data.evidence.length) failures.push('Matching result has no grounded evidence.');
-    if (!Number.isFinite(data?.score)) failures.push('Matching result has no numeric score.');
+    const analyses = Array.isArray(data?.analysis) ? data.analysis : [];
+    if (!analyses.length) failures.push('Matching result has no candidate analysis.');
+    analyses.forEach((analysis, index) => {
+      if (!String(analysis?.candidate_id || '').trim()) failures.push(`Matching candidate ${index + 1} has no stable identifier.`);
+      if (!Number.isFinite(analysis?.skill_match_percentage)) failures.push(`Matching candidate ${index + 1} has no numeric skill score.`);
+      if (!Array.isArray(analysis?.technical_strengths) || !analysis.technical_strengths.length) failures.push(`Matching candidate ${index + 1} has no grounded technical strengths.`);
+      if (!Array.isArray(analysis?.interview_focus) || !analysis.interview_focus.length) failures.push(`Matching candidate ${index + 1} has no actionable interview focus.`);
+      if (String(analysis?.contextual_explanation || '').length < 35) failures.push(`Matching candidate ${index + 1} has a shallow explanation.`);
+      pushMissingKeywords(failures, analysis, fixture.qualityContext?.requiredFacts, `Matching candidate ${index + 1}`);
+    });
+  }
+  if (fixture.qualityEvaluator === 'tool_selection') {
+    const calls = Array.isArray(data?.toolCalls) ? data.toolCalls : [];
+    const expectedTool = fixture.qualityContext?.expectedTool;
+    if (!calls.length) failures.push('Tool selection returned no tool call.');
+    if (expectedTool && !calls.some((call) => call?.name === expectedTool)) failures.push(`Tool selection did not choose ${expectedTool}.`);
+    if (calls.some((call) => !call?.parameters || typeof call.parameters !== 'object')) failures.push('Tool selection returned invalid parameters.');
+    if (!String(data?.message || '').trim()) failures.push('Tool selection returned no user-facing message.');
+  }
+  if (fixture.qualityEvaluator === 'memory_classification') {
+    if (!['mixed', 'personality', 'chat'].includes(data?.type)) failures.push('Memory classification type is invalid.');
+    const insights = [...(data?.personalityInsights || []), ...(data?.chatInsights || [])];
+    if (!insights.length) failures.push('Memory classification returned no durable or chat insight.');
+    pushMissingKeywords(failures, insights, fixture.qualityContext?.requiredFacts, 'Memory classification');
+  }
+  if (fixture.qualityEvaluator === 'job_extraction') {
+    pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'Job extraction');
+    if (!String(data?.title || '').trim()) failures.push('Job extraction has no title.');
+  }
+  if (fixture.qualityEvaluator === 'evidence_analysis') {
+    pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'Analysis');
+    if (normalizedText(data).length < Number(fixture.qualityContext?.minimumLength || 80)) failures.push('Analysis is too shallow.');
   }
   if (fixture.qualityEvaluator === 'scoring') {
-    if (!Array.isArray(data?.evidence) || !data.evidence.length) failures.push('Scoring result has no supporting evidence.');
+    if (!Array.isArray(data?.questionScores) || !data.questionScores.length) failures.push('Scoring result has no per-question evidence.');
+    if (data?.questionScores?.some((item) => !String(item?.rationale || '').trim())) failures.push('Scoring result has a question without rationale.');
+    if (!Array.isArray(data?.strengths) || !data.strengths.length) failures.push('Scoring result has no grounded strengths.');
     if (String(data?.summary || '').length < 20) failures.push('Scoring summary is too shallow.');
+    pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'Scoring result');
   }
   if (fixture.qualityEvaluator === 'bias') {
-    if (!Number.isFinite(data?.overallBiasScore)) failures.push('Bias score is missing.');
-    if (String(data?.recommendation || '').length < 15) failures.push('Bias recommendation is not actionable.');
+    const analyses = Array.isArray(data?.analyses) ? data.analyses : [data];
+    if (!analyses.length) failures.push('Bias analyses are missing.');
+    analyses.forEach((analysis, index) => {
+      if (!Number.isFinite(analysis?.overallBiasScore)) failures.push(`Bias score ${index + 1} is missing.`);
+      if (String(analysis?.recommendation || '').length < 15) failures.push(`Bias recommendation ${index + 1} is not actionable.`);
+      if (analysis?.isBiased && !analysis?.detectedBiasFactors?.length) failures.push(`Bias analysis ${index + 1} identifies no factor.`);
+      if (!analysis?.isBiased && Number(analysis?.overallBiasScore) >= 0.5) failures.push(`Bias analysis ${index + 1} has an inconsistent decision.`);
+    });
+  }
+  if (fixture.qualityEvaluator === 'chat_introduction') {
+    failures.push(...assessIntroduction(data, fixture.qualityContext?.question).issues);
+  }
+  if (fixture.qualityEvaluator === 'chat_clarification') {
+    failures.push(...assessClarification(data, fixture.qualityContext || {}).issues);
+  }
+  if (fixture.qualityEvaluator === 'chat_acknowledgement') {
+    failures.push(...assessAcknowledgement(data).issues);
   }
   if (failures.length && fixture.qualityEvaluator !== 'interview_questions') score = Math.max(0, 1 - failures.length * 0.2);
   return { score: Math.max(0, Math.min(1, score)), failures: [...new Set(failures)] };
 }
 
 function evaluateOutput(fixture, result) {
-  const data = parseResultData(result);
-  const validation = data === null
-    ? { valid: false, errors: ['$: response is not valid JSON'] }
-    : validateJsonSchema(data, fixture.schema);
-  const searchable = JSON.stringify(data || '').toLowerCase();
+  const textMode = fixture.responseMode === 'text';
+  const data = textMode
+    ? String(result?.content ?? result?.data ?? '').trim()
+    : parseResultData(result);
+  const validation = textMode
+    ? { valid: Boolean(data), errors: data ? [] : ['$: response is empty'] }
+    : data === null
+      ? { valid: false, errors: ['$: response is not valid JSON'] }
+      : validateJsonSchema(data, fixture.schema);
+  const searchable = (textMode ? String(data) : JSON.stringify(data || '')).toLowerCase();
   const expected = fixture.expectedKeywords || [];
   const grounded = expected.filter((keyword) => searchable.includes(String(keyword).toLowerCase())).length;
   const keywordScore = expected.length ? grounded / expected.length : 1;

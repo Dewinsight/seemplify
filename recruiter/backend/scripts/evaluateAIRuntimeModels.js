@@ -19,12 +19,18 @@ async function createLiveCompletion() {
     const modelConfig = settings.models.find((item) => item.id === model);
     if (!modelConfig) throw new Error(`Model ${model} is not configured`);
     const route = { activity: fixture.activity, provider: 'groq', model, reasoningEffort: 'medium', routeVersion: 1, modelConfig };
-    const payload = runtime.normalizePayload({
+    const request = {
       messages: fixture.messages,
       temperature: 0.2,
-      max_tokens: 2500,
-      response_format: { type: 'json_schema', json_schema: { name: fixture.id.replace(/-/g, '_'), strict: true, schema: fixture.schema } }
-    }, route);
+      max_tokens: 2500
+    };
+    if (fixture.schema) {
+      request.response_format = {
+        type: 'json_schema',
+        json_schema: { name: fixture.id.replace(/-/g, '_'), strict: true, schema: fixture.schema }
+      };
+    }
+    const payload = runtime.normalizePayload(request, route);
     const startedAt = Date.now();
     const response = await runtime.providerRequest({ credential, payload, timeoutMs: 90000 });
     if (!response.ok) throw await runtime.parseErrorResponse(response);
@@ -43,7 +49,12 @@ async function main() {
   const live = process.env.RUN_LIVE_GROQ_EVAL === '1';
   const complete = live
     ? await createLiveCompletion()
-    : async ({ fixture }) => ({ data: fixture.expectedOutput, usage: { totalTokens: 20 }, latencyMs: 250, estimatedCostUsd: 0 });
+    : async ({ fixture }) => ({
+      ...(fixture.responseMode === 'text' ? { content: fixture.expectedOutput } : { data: fixture.expectedOutput }),
+      usage: { totalTokens: 20 },
+      latencyMs: 250,
+      estimatedCostUsd: 0
+    });
   const evaluation = await runGoldenEvaluations({ fixtures, models: [GROQ_20B, GROQ_120B], runs: 3, complete });
   console.log(JSON.stringify({ mode: live ? 'live' : 'synthetic-dry-run', summary: evaluation.summary, gates: evaluation.gates }, null, 2));
   if (!Object.values(evaluation.gates).every(Boolean)) process.exitCode = 1;

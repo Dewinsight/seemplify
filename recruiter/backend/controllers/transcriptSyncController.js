@@ -1,9 +1,10 @@
 const Interview = require('../models/Interview');
 const nylasV3Service = require('../services/nylasV3Service');
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
 
 // Helper function to update pipeline status - copied from interviewCompletionService
-async function updatePipelineStatusOnCompletion(interview) {
+async function updatePipelineStatusOnCompletion(interview, organizationId = interview.organizationId) {
   try {
     if (!interview.jobId || !interview.candidateId) {
       console.log('ℹ️ No job/candidate link for pipeline status update');
@@ -13,7 +14,9 @@ async function updatePipelineStatusOnCompletion(interview) {
     console.log(`🔄 [MANUAL-SYNC] Updating pipeline status for candidate ${interview.candidateId} in job ${interview.jobId}`);
     
     const Job = require('../models/Job');
-    const job = await Job.findById(interview.jobId);
+    const jobQuery = { _id: interview.jobId };
+    if (organizationId) jobQuery.organization = organizationId;
+    const job = await Job.findOne(jobQuery);
     
     if (job) {
       const applicantIndex = job.applicants.findIndex(
@@ -27,12 +30,16 @@ async function updatePipelineStatusOnCompletion(interview) {
         // Only update if current status is interviewing
         if (previousStatus === 'interviewing') {
           // Check if there are other incomplete interviews for this candidate
-          const otherInterviews = await Interview.find({
+          const otherInterviewQuery = {
             candidateId: interview.candidateId,
             jobId: interview.jobId,
             _id: { $ne: interview._id },
             status: { $in: ['scheduled', 'confirmed', 'in_progress'] }
-          });
+          };
+          const scopedOtherInterviewQuery = organizationId
+            ? await buildInterviewOrganizationQuery(organizationId, otherInterviewQuery)
+            : otherInterviewQuery;
+          const otherInterviews = await Interview.find(scopedOtherInterviewQuery);
           
           if (otherInterviews.length === 0) {
             // No other pending interviews, move to next stage
@@ -79,7 +86,11 @@ const manualTranscriptSync = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
+    const interviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { _id: interviewId }
+    );
+    const interview = await Interview.findOne(interviewQuery)
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -100,9 +111,11 @@ const manualTranscriptSync = async (req, res) => {
       console.log(`👥 [MANUAL-SYNC] Processing multi-candidate interview`);
       
       // Find the session holder (interview with notetaker ID)
-      const sessionInterviews = await Interview.find({
-        multiCandidateSessionId: interview.multiCandidateSessionId
-      }).sort({ multiCandidateOrder: 1 })
+      const sessionInterviewQuery = await buildInterviewOrganizationQuery(
+        req.user.currentOrganization,
+        { multiCandidateSessionId: interview.multiCandidateSessionId }
+      );
+      const sessionInterviews = await Interview.find(sessionInterviewQuery).sort({ multiCandidateOrder: 1 })
         .populate('interviewerId', 'nylasGrantId nylasAccountId');
       
       const sessionHolder = sessionInterviews.find(si => si.notetakerId) || sessionInterviews[0];
@@ -182,7 +195,8 @@ const manualTranscriptSync = async (req, res) => {
           try {
             const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(
               interviewId, 
-              true // include overflow
+              true, // include overflow
+              req.user.currentOrganization
             );
             
             if (!segmentedTranscript.transcript || !segmentedTranscript.transcript.content) {
@@ -356,7 +370,11 @@ const forceInterviewCompletion = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId);
+    const interviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { _id: interviewId }
+    );
+    const interview = await Interview.findOne(interviewQuery);
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
@@ -384,7 +402,7 @@ const forceInterviewCompletion = async (req, res) => {
     
     // Update pipeline status
     try {
-      await updatePipelineStatusOnCompletion(interview);
+      await updatePipelineStatusOnCompletion(interview, req.user.currentOrganization);
     } catch (pipelineError) {
       console.error('Error updating pipeline status:', pipelineError);
     }

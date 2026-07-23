@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BriefcaseBusiness,
@@ -23,6 +23,8 @@ import {
   Users
 } from "lucide-react";
 import { toast } from "sonner";
+import { AIVoiceAvatar, AIVoiceWave } from "@/components/ai-voice-avatar";
+import { getAIInterviewVoiceAvatar } from "@/lib/aiVoiceAvatars";
 import aiInterviewService, { type AIInterview, type AIInterviewSession } from "@/services/aiInterviewService";
 import { ADMIN_TOKEN_KEY, apiRequest, TOKEN_KEY } from "@/services/apiConfig";
 
@@ -117,6 +119,9 @@ export default function AIInterviewStandalonePage() {
   const [cvImporting, setCvImporting] = useState(false);
   const [bulkImporting, setBulkImporting] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  const voicePreviewRef = useRef<HTMLAudioElement | null>(null);
+  const voicePreviewUrlRef = useRef<string | null>(null);
   const [questionGeneration, setQuestionGeneration] = useState({
     questionCount: 5,
     difficulty: "medium",
@@ -278,15 +283,37 @@ export default function AIInterviewStandalonePage() {
 
   const playVoice = async (voiceId: string) => {
     try {
+      voicePreviewRef.current?.pause();
+      if (voicePreviewUrlRef.current) URL.revokeObjectURL(voicePreviewUrlRef.current);
+      setPreviewingVoiceId(voiceId);
       const blob = await aiInterviewService.previewVoice({ voiceId });
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
+      voicePreviewRef.current = audio;
+      voicePreviewUrlRef.current = url;
+      const finish = () => {
+        URL.revokeObjectURL(url);
+        if (voicePreviewUrlRef.current === url) voicePreviewUrlRef.current = null;
+        if (voicePreviewRef.current === audio) voicePreviewRef.current = null;
+        setPreviewingVoiceId((current) => current === voiceId ? null : current);
+      };
+      audio.onended = finish;
+      audio.onerror = finish;
       await audio.play();
     } catch (error: any) {
+      voicePreviewRef.current?.pause();
+      if (voicePreviewUrlRef.current) URL.revokeObjectURL(voicePreviewUrlRef.current);
+      voicePreviewRef.current = null;
+      voicePreviewUrlRef.current = null;
+      setPreviewingVoiceId(null);
       toast.error(error.message || "Voice preview is unavailable");
     }
   };
+
+  useEffect(() => () => {
+    voicePreviewRef.current?.pause();
+    if (voicePreviewUrlRef.current) URL.revokeObjectURL(voicePreviewUrlRef.current);
+  }, []);
 
   const createJob = async () => {
     try {
@@ -791,20 +818,32 @@ export default function AIInterviewStandalonePage() {
               <div className={`${panelClass} p-5`}>
                 <div className="flex items-center gap-2 text-lg font-semibold"><Mic2 className="h-5 w-5 text-blue-600" />Voice</div>
                 <div className="mt-4 grid gap-2">
-                  {options.voices.map((voice) => (
-                    <div key={voice.id} className={`rounded-2xl border p-3 ${form.voiceId === voice.id ? "border-blue-300 bg-blue-50" : "bg-white"}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setForm({ ...form, voiceId: voice.id })}>
-                          <div className="font-semibold">{voice.displayName}</div>
-                          <div className="text-xs text-slate-500">{voice.tierLabel} - included in wallet price</div>
-                          <div className="mt-2 text-xs leading-5 text-slate-600">{voice.description}</div>
-                        </button>
-                        <button type="button" onClick={() => void playVoice(voice.id)} className="rounded-full border bg-white p-2 shadow-sm" aria-label={`Preview ${voice.displayName}`}>
-                          <Play className="h-4 w-4" />
-                        </button>
+                  {options.voices.map((voice) => {
+                    const selected = form.voiceId === voice.id;
+                    const previewing = previewingVoiceId === voice.id;
+                    const avatar = getAIInterviewVoiceAvatar(voice);
+                    return (
+                      <div key={voice.id} className={`rounded-lg border p-3 ${selected ? "border-blue-300 bg-blue-50" : "bg-white"}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left" onClick={() => setForm({ ...form, voiceId: voice.id })} aria-pressed={selected}>
+                            <AIVoiceAvatar voice={voice} size="lg" active={previewing} decorative className="ring-1 ring-slate-200" />
+                            <div className="min-w-0">
+                              <div className="font-semibold">{voice.displayName}</div>
+                              <div className="text-xs text-slate-500">{voice.tierLabel} - included in wallet price</div>
+                              <div className="mt-2 text-xs leading-5 text-slate-600">{voice.description}</div>
+                              <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                                <AIVoiceWave active={previewing} compact level={previewing ? 72 : 18} tone={avatar.tone} />
+                                <span>{previewing ? "Playing sample" : avatar.label}</span>
+                              </div>
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => void playVoice(voice.id)} className="rounded-md border bg-white p-2" aria-label={`Preview ${voice.displayName}`} title={`Preview ${voice.displayName}`}>
+                            <Play className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

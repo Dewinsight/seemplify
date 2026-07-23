@@ -1,4 +1,11 @@
 const { chatCompletion, extractJsonObject } = require('./llmClient');
+const {
+  assessAcknowledgement,
+  assessClarification,
+  assessIntroduction,
+  repairInstruction
+} = require('./interviewerResponseQuality');
+const { assertInterviewScoreQuality } = require('./interviewScoreQuality');
 
 const INTERVIEW_SCORE_SCHEMA = {
   type: 'object',
@@ -71,10 +78,34 @@ class AIInterviewerService {
     ].join('\n');
   }
 
+  async completeWithQualityGate({ messages, options, assess, kind, operation }) {
+    let attemptMessages = messages;
+    let lastAssessment = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const result = await chatCompletion(attemptMessages, options);
+      const content = requireContent(result, operation);
+      const assessment = assess(content);
+      lastAssessment = assessment;
+      if (assessment.passed) return content;
+      if (attempt === 1) {
+        attemptMessages = [
+          ...messages,
+          { role: 'assistant', content: truncate(content, 1000) },
+          { role: 'user', content: repairInstruction(kind, assessment) }
+        ];
+      }
+    }
+    throw new AIModelUnavailableError(
+      operation,
+      Object.assign(new Error(lastAssessment?.issues?.join(' ') || 'semantic quality failure'), { code: 'AI_RESPONSE_QUALITY_FAILED' })
+    );
+  }
+
   async introduceQuestion({ interview, session, question, questionNumber }) {
     try {
       const context = this.buildBaseContext({ interview, session, question, questionNumber });
-      const result = await chatCompletion([
+      return await this.completeWithQualityGate({
+        messages: [
         {
           role: 'system',
           content: `You are a professional AI interviewer.
@@ -83,20 +114,25 @@ Keep the wording conversational but preserve the exact meaning of the selected q
 Do not answer for the candidate.
 Do not add extra assessment questions.
 Do not reveal scoring criteria or expected answers.
-End by telling the candidate they can ask for clarification or answer when ready.`
+End by telling the candidate they can ask for clarification or answer when ready.
+Good pattern: "Let's focus on a specific situation. [Current question] You can ask me to clarify anything, or answer when you are ready."`
         },
         {
           role: 'user',
           content: `${context}\n\nWrite the interviewer message for this question in 2-4 concise sentences.`
         }
-      ], {
-        activity: 'ai_interview.chat.introduction',
-        promptVersion: 'ai-interview-introduction-v1',
-        temperature: 0.45,
-        maxTokens: 260,
-        context: this.buildTelemetryContext({ interview, session })
+        ],
+        options: {
+          activity: 'ai_interview.chat.introduction',
+          promptVersion: 'ai-interview-introduction-v2',
+          temperature: 0.25,
+          maxTokens: 320,
+          context: this.buildTelemetryContext({ interview, session })
+        },
+        assess: (content) => assessIntroduction(content, question.question),
+        kind: 'question introduction',
+        operation: 'question introduction'
       });
-      return requireContent(result, 'question introduction');
     } catch {
       return `Let's continue with this question: ${question.question} You can ask for clarification or answer when you are ready.`;
     }
@@ -143,31 +179,39 @@ End by telling the candidate they can ask for clarification or answer when ready
   async clarifyQuestion({ interview, session, question, questionNumber, candidateMessage }) {
     try {
       const context = this.buildBaseContext({ interview, session, question, questionNumber });
-      const result = await chatCompletion([
+      return await this.completeWithQualityGate({
+        messages: [
         {
           role: 'system',
           content: `You are clarifying one interview question for a candidate.
 Answer the candidate's exact clarification request.
 If they ask what a term means, define that term in the context of the current question.
 If they ask to rephrase the question, rephrase the current question without changing what is being assessed.
+Start with the specific term or phrase they asked about when one is present.
+Avoid generic restatements unless the candidate asked for a broad rephrase.
 Use only the current question and the candidate-facing guidelines.
 Do not answer the question for the candidate.
 Do not add a new assessment question.
 Do not reveal expected answers, rubrics, or scoring criteria.
-Keep the clarification brief, practical, and specific to the candidate's question.`
+Keep the clarification brief, practical, and specific to the candidate's question.
+Good pattern for "What does rollback threshold mean?": "A rollback threshold is the measurable condition that tells a team to reverse a change. In this question, explain which signal you would choose and why, without trying to guess a preferred answer."`
         },
         {
           role: 'user',
           content: `${context}\n\nCandidate asks: ${truncate(candidateMessage, 800)}\n\nClarify only what the candidate asked in 2-4 sentences.`
         }
-      ], {
-        activity: 'ai_interview.chat.clarification',
-        promptVersion: 'ai-interview-clarification-v1',
-        temperature: 0.35,
-        maxTokens: 260,
-        context: this.buildTelemetryContext({ interview, session })
+        ],
+        options: {
+          activity: 'ai_interview.chat.clarification',
+          promptVersion: 'ai-interview-clarification-v2',
+          temperature: 0.2,
+          maxTokens: 320,
+          context: this.buildTelemetryContext({ interview, session })
+        },
+        assess: (content) => assessClarification(content, { question: question.question, candidateMessage }),
+        kind: 'clarification',
+        operation: 'question clarification'
       });
-      return requireContent(result, 'question clarification');
     } catch (error) {
       throw new AIModelUnavailableError('question clarification', error);
     }
@@ -175,26 +219,32 @@ Keep the clarification brief, practical, and specific to the candidate's questio
 
   async acknowledgeAnswer({ interview, session, question, candidateMessage }) {
     try {
-      const result = await chatCompletion([
+      return await this.completeWithQualityGate({
+        messages: [
         {
           role: 'system',
           content: `You are an AI interviewer acknowledging a candidate answer.
 Do not score the answer.
 Do not ask a follow-up assessment question.
-Tell the candidate to use the confirm button when ready to move on.`
+Tell the candidate to use the confirm button when ready to move on.
+Good response: "Thank you. I have recorded your response. Use the Confirm button when you are ready to move to the next question."`
         },
         {
           role: 'user',
           content: `Question: ${question.question}\nCandidate answer: ${truncate(candidateMessage, 1200)}\nInterview title: ${interview.title}\nCandidate: ${session.candidateSnapshot?.name || 'Candidate'}`
         }
-      ], {
-        activity: 'ai_interview.chat.acknowledgement',
-        promptVersion: 'ai-interview-acknowledgement-v1',
-        temperature: 0.35,
-        maxTokens: 180,
-        context: this.buildTelemetryContext({ interview, session })
+        ],
+        options: {
+          activity: 'ai_interview.chat.acknowledgement',
+          promptVersion: 'ai-interview-acknowledgement-v2',
+          temperature: 0.2,
+          maxTokens: 220,
+          context: this.buildTelemetryContext({ interview, session })
+        },
+        assess: assessAcknowledgement,
+        kind: 'acknowledgement',
+        operation: 'answer acknowledgement'
       });
-      return requireContent(result, 'answer acknowledgement');
     } catch {
       return 'Thank you. I have recorded your answer. Use the confirm button when you are ready to move on.';
     }
@@ -228,7 +278,11 @@ Return JSON only with this shape:
   "concerns": string[],
   "questionScores": [{"questionIndex": number, "score": number from 1 to 5, "rationale": string}]
 }
-Use the expected answer and scoring criteria only for scoring. Do not include hidden criteria verbatim in the summary. Penalize missing, skipped, or timed-out answers.`
+Use the expected answer and scoring criteria only for scoring. Do not include hidden criteria verbatim in the summary.
+Return exactly one questionScores entry for every supplied questionIndex, with no duplicates.
+Ground every rationale, strength, concern, and summary claim only in the candidate's supplied answer.
+Give skipped, timed-out, or empty answers a score of 1 and identify the missing evidence.
+Keep overallScore mathematically consistent with the per-question scores.`
         },
         {
           role: 'user',
@@ -241,7 +295,7 @@ Use the expected answer and scoring criteria only for scoring. Do not include hi
         }
       ], {
         activity: 'ai_interview.scoring',
-        promptVersion: 'ai-interview-scoring-v2',
+        promptVersion: 'ai-interview-scoring-v3',
         temperature: 0.2,
         maxTokens: 1200,
         response_format: { type: 'json_object' },
@@ -252,6 +306,7 @@ Use the expected answer and scoring criteria only for scoring. Do not include hi
 
       const parsed = extractJsonObject(result.content);
       if (!parsed) throw new Error('Invalid JSON model response');
+      assertInterviewScoreQuality(parsed, scoringQuestions);
 
       return {
         overallScore: Math.max(0, Math.min(100, Number(parsed.overallScore) || 0)),

@@ -78,7 +78,8 @@ test('normal completion routes to GPT-OSS and strips reasoning traces', async ()
   assert.equal(result.raw.choices[0].message.reasoning_content, undefined);
   assert.equal(runtime.providerCalls[0].payload.model, 'openai/gpt-oss-120b');
   assert.equal(runtime.providerCalls[0].payload.max_tokens, 4000);
-  assert.equal(runtime.providerCalls[0].payload.reasoning_format, 'hidden');
+  assert.equal(runtime.providerCalls[0].payload.reasoning_format, undefined);
+  assert.equal(runtime.providerCalls[0].payload.include_reasoning, false);
   assert.equal(runtime.providerCalls[0].payload.frequency_penalty, undefined);
   assert.equal(runtime.providerCalls[0].payload.presence_penalty, undefined);
   assert.equal(runtime.results[0].context.promptVersion, 'candidate-insights-v3');
@@ -109,6 +110,7 @@ test('Azure rollback adapter is explicit and removes Groq-only controls', async 
       model: 'openai/gpt-oss-120b',
       reasoning_effort: 'high',
       reasoning_format: 'hidden',
+      include_reasoning: false,
       messages: [{ role: 'user', content: 'Return data' }],
       response_format: {
         type: 'json_schema',
@@ -119,6 +121,8 @@ test('Azure rollback adapter is explicit and removes Groq-only controls', async 
   assert.match(captured.url, /deployments\/baseline\/chat\/completions/);
   assert.equal(captured.body.model, undefined);
   assert.equal(captured.body.reasoning_effort, undefined);
+  assert.equal(captured.body.reasoning_format, undefined);
+  assert.equal(captured.body.include_reasoning, undefined);
   assert.equal(captured.body.response_format.type, 'json_object');
   assert.match(captured.body.messages.at(-1).content, /"ok"/);
 });

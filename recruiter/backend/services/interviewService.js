@@ -372,6 +372,7 @@ class InterviewService {
 5. Tailor questions to the company culture and team structure when provided
 6. Focus on real challenges and success metrics mentioned in the job details
 7. DO NOT create generic questions - every question must relate to specific job details provided above
+8. Do not treat the role title alone as job grounding; anchor each question in a named skill, deliverable, stakeholder, metric, system, or responsibility
 
 Generate ${count} ${type} interview questions with ${difficulty} difficulty level.
 ${focusAreas.length > 0 ? `Focus on these areas: ${focusAreas.join(', ')}` : ''}
@@ -415,6 +416,9 @@ QUALITY STANDARDS:
 - Every question must mention or unmistakably apply at least one concrete skill, responsibility, outcome, or constraint from the job context
 - Hard questions must involve ambiguity, scale, failure, trade-offs, risk, or competing constraints
 - Make every question materially different from every other question
+- Expected-answer guidance must be unique to the question and identify evidence, decisions, trade-offs, and measurable outcomes
+- Follow-ups must probe missing evidence rather than paraphrase the main question
+- Silently self-check question count, type, difficulty, criteria weights, protected-trait safety, and grounding before returning JSON
 
 `;
 
@@ -609,7 +613,7 @@ ADDITIONAL CONTEXT:
             model: GROQ_120B,
             confidence: 0.9,
             questionType: type,
-            promptVersion: 'interview-questions-v3'
+            promptVersion: 'interview-questions-v4'
           },
           qualityMetrics: {
             analysisStatus: 'pending',
@@ -632,10 +636,15 @@ ADDITIONAL CONTEXT:
   async _validateAndEnhanceQuestions(questions, job, options) {
     const validQuestions = [];
     const maxBiasScore = options.maxBiasScore !== undefined ? options.maxBiasScore : 0.3;
+    const jobContextForAnalysis = this._prepareJobContext(job);
+    const biasChecks = await this._analyzeBiasBatch(
+      questions.map((question) => question.question),
+      jobContextForAnalysis
+    );
 
     console.log(`🔍 Validating questions with max bias tolerance: ${maxBiasScore}`);
 
-    for (const question of questions) {
+    for (const [questionIndex, question] of questions.entries()) {
       try {
         // Basic validation
         if (!question.question || question.question.trim().length < 10) {
@@ -643,10 +652,9 @@ ADDITIONAL CONTEXT:
           continue;
         }
 
-        // Calculate actual quality metrics
-        // Prepare job context for bias analysis
-        const jobContextForAnalysis = this._prepareJobContext(job);
-        const aiBiasCheckResult = await this._analyzeBias(question.question, jobContextForAnalysis);
+        const aiBiasCheckResult = biasChecks[questionIndex] || this._manualBiasReview(
+          'AI bias analysis did not return a result. Question requires manual review.'
+        );
         
         // Check if question meets bias tolerance based on AI analysis
         if (aiBiasCheckResult.analysisStatus === 'complete' && aiBiasCheckResult.biasScore > maxBiasScore) {
@@ -1255,49 +1263,47 @@ ADDITIONAL CONTEXT:
   /**
    * Analyze potential bias in question text
    */
-  async _analyzeBias(questionText, jobContext = null) {
+  _manualBiasReview(recommendation) {
+    return {
+      analysisStatus: 'manual_review',
+      hasBias: null,
+      biasScore: null,
+      detectedBiasFactors: [],
+      recommendation,
+      neutralityConfidence: null
+    };
+  }
+
+  _mapBiasAnalysis(analysis) {
+    return {
+      analysisStatus: 'complete',
+      hasBias: analysis.isBiased,
+      biasScore: analysis.overallBiasScore,
+      detectedBiasFactors: analysis.detectedBiasFactors || [],
+      recommendation: analysis.recommendation,
+      neutralityConfidence: analysis.neutralityConfidence
+    };
+  }
+
+  async _analyzeBiasBatch(questionTexts, jobContext = null) {
     try {
-      console.log(`🔬 Calling AI for bias analysis on: "${questionText.substring(0, 100)}..."`);
-      const aiAnalysisResult = await this.aiModelService.analyzeTextForBias(questionText, jobContext);
-
-      if (aiAnalysisResult.success && aiAnalysisResult.analysis) {
-        const analysis = aiAnalysisResult.analysis;
-        // Map AI response to the structure expected by _validateAndEnhanceQuestions
-        // The AI response has 'detectedBiasFactors' which is an array of objects like { type, score, keywordsFound, explanation }
-        // This is used directly by _validateAndEnhanceQuestions for populating qualityMetrics.biasAnalysis
-        // All code now consistently uses 'detectedBiasFactors' to match the AI response format.
-
-        return {
-          analysisStatus: 'complete',
-          hasBias: analysis.isBiased, // Map AI's 'isBiased' to 'hasBias' for consistency
-          biasScore: analysis.overallBiasScore, // Directly from AI
-          detectedBiasFactors: analysis.detectedBiasFactors || [], // Directly from AI (ensure it's an array)
-          recommendation: analysis.recommendation, // Directly from AI
-          neutralityConfidence: analysis.neutralityConfidence // Store this as well
-        };
-      } else {
-        console.error('❌ AI bias analysis failed or returned invalid data:', aiAnalysisResult.error || 'Unknown error');
-        // Fallback to a default "analysis failed" state
-        return {
-          analysisStatus: 'manual_review',
-          hasBias: null,
-          biasScore: null,
-          detectedBiasFactors: [],
-          recommendation: 'AI bias analysis failed. Question requires manual review.',
-          neutralityConfidence: null
-        };
-      }
+      console.log(`🔬 Calling AI bias analysis for ${questionTexts.length} question(s)`);
+      const result = await this.aiModelService.analyzeQuestionsForBias(questionTexts, jobContext);
+      if (result.error) console.warn('AI bias analysis completed with manual-review gaps:', result.error);
+      return questionTexts.map((_, index) => result.analyses?.[index]
+        ? this._mapBiasAnalysis(result.analyses[index])
+        : this._manualBiasReview('AI bias analysis failed. Question requires manual review.'));
     } catch (error) {
-      console.error('❌ Exception in _analyzeBias calling AI:', error);
-      return {
-        analysisStatus: 'manual_review',
-        hasBias: null,
-        biasScore: null,
-        detectedBiasFactors: [],
-        recommendation: 'Exception during AI bias analysis. Question requires manual review.',
-        neutralityConfidence: null
-      };
+      console.error('❌ Exception in batched AI bias analysis:', error);
+      return questionTexts.map(() => this._manualBiasReview(
+        'Exception during AI bias analysis. Question requires manual review.'
+      ));
     }
+  }
+
+  async _analyzeBias(questionText, jobContext = null) {
+    const [analysis] = await this._analyzeBiasBatch([questionText], jobContext);
+    return analysis;
   }
 
   /**

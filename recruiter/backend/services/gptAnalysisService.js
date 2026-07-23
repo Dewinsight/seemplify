@@ -64,7 +64,7 @@ class GPTAnalysisCache {
 
   hashSkills(skills) {
     if (!Array.isArray(skills)) return 'no-skills';
-    return crypto.createHash('md5').update(skills.sort().join(',')).digest('hex').substring(0, 8);
+    return crypto.createHash('md5').update([...skills].sort().join(',')).digest('hex').substring(0, 8);
   }
 
   // Track when candidates are added to ensure they're included in searches
@@ -190,12 +190,13 @@ class GPTAnalysisService {
   constructor() {
     this.modelName = GROQ_120B;
     
-    this.cache = new GPTAnalysisCache(`groq:${GROQ_120B}:route-v1:prompt-v2`);
+    this.cache = new GPTAnalysisCache(`groq:${GROQ_120B}:route-v1:prompt-v3`);
     const matchingToggle = process.env.ENABLE_LLM_MATCHING ?? process.env.ENABLE_GPT_MATCHING ?? 'false';
     this.isEnabled = matchingToggle === 'true';
     
     // Setup cleanup interval (run every 6 hours)
-    setInterval(() => this.cache.cleanup(), 6 * 60 * 60 * 1000);
+    this.cleanupTimer = setInterval(() => this.cache.cleanup(), 6 * 60 * 60 * 1000);
+    this.cleanupTimer.unref?.();
     
     console.log(`🚀 AI analysis service initialized - Enabled: ${this.isEnabled}, Model: ${this.modelName}`);
   }
@@ -205,7 +206,7 @@ class GPTAnalysisService {
     const route = settings.routes.find((item) => item.activity === 'matching.analysis');
     if (!route) return;
     this.modelName = route.model;
-    this.cache.namespace = `${route.provider}:${route.model}:route-v${route.routeVersion || 1}:prompt-v2`;
+    this.cache.namespace = `${route.provider}:${route.model}:route-v${route.routeVersion || 1}:prompt-v3`;
   }
 
   // Batch analyze candidates for a job with rich contextual insights
@@ -224,7 +225,7 @@ class GPTAnalysisService {
         const prompt = this.buildBatchAnalysisPrompt(job, candidates);
         
         const response = (await aiRuntimeService.structuredComplete('matching.analysis', {
-          promptVersion: 'matching-v2',
+          promptVersion: 'matching-v3',
           model: this.modelName,
           messages: [
             {
@@ -243,9 +244,7 @@ class GPTAnalysisService {
         })).raw;
 
         const analysis = JSON.parse(response.choices[0].message.content);
-        if (!Array.isArray(analysis.analysis) || analysis.analysis.length !== candidates.length) {
-          throw new Error('Matching analysis did not return exactly one result per candidate');
-        }
+        this.validateCandidateAlignment(analysis, candidates);
         const processingTime = Date.now() - startTime;
         
         console.log(`⚡ LLM batch analysis completed in ${processingTime}ms for ${candidates.length} candidates`);
@@ -283,6 +282,7 @@ ${candidates.map((candidate, index) => {
   const candidateSkills = this.normalizeSkills(candidate.skills);
   return `
 ${index + 1}. **${candidate.name}**
+   - Candidate ID: ${this.candidateIdentifier(candidate, index)}
    - Skills: ${candidateSkills.join(', ') || 'Not specified'}
    - Experience: ${candidate.experience || 'Not specified'} years
    - Location: ${candidate.location || 'Not specified'}
@@ -309,7 +309,7 @@ Return as JSON in this exact format:
 {
   "analysis": [
     {
-      "candidate_id": "candidate._id_here",
+      "candidate_id": "copy the exact Candidate ID supplied above",
       "candidate_name": "Name",
       "skill_match_percentage": 85,
       "experience_fit": 8,
@@ -330,12 +330,26 @@ Return as JSON in this exact format:
 }`;
   }
 
+  candidateIdentifier(candidate, index) {
+    return String(candidate?._id || candidate?.id || `candidate-${index + 1}`);
+  }
+
+  validateCandidateAlignment(gptAnalysis, candidates) {
+    if (!Array.isArray(gptAnalysis?.analysis) || gptAnalysis.analysis.length !== candidates.length) {
+      throw new Error('Matching analysis did not return exactly one result per candidate');
+    }
+    const expectedIds = candidates.map((candidate, index) => this.candidateIdentifier(candidate, index));
+    const returnedIds = gptAnalysis.analysis.map((item) => String(item?.candidate_id || ''));
+    if (new Set(returnedIds).size !== returnedIds.length || expectedIds.some((id) => !returnedIds.includes(id))) {
+      throw new Error('Matching analysis candidate IDs do not exactly match the supplied candidates');
+    }
+  }
+
   formatBatchAnalysisResponse(gptAnalysis, candidates) {
     const formatted = candidates.map((candidate, index) => {
-      const candidateId = String(candidate._id || candidate.id || '');
-      const analysis = gptAnalysis.analysis.find((item) => String(item.candidate_id || '') === candidateId)
-        || gptAnalysis.analysis.find((item) => item.candidate_name === candidate.name)
-        || gptAnalysis.analysis[index];
+      const candidateId = this.candidateIdentifier(candidate, index);
+      const analysis = gptAnalysis.analysis.find((item) => String(item.candidate_id || '') === candidateId);
+      if (!analysis) throw new Error(`Matching analysis is missing candidate ${candidateId}`);
       const vectorScore = Math.max(0, Math.min(1, Number(candidate.score ?? candidate.relevanceScore ?? 0)));
       
       return {
@@ -446,3 +460,5 @@ Return as JSON in this exact format:
 const gptAnalysisService = new GPTAnalysisService();
 
 module.exports = gptAnalysisService;
+module.exports.GPTAnalysisService = GPTAnalysisService;
+module.exports.GPTAnalysisCache = GPTAnalysisCache;

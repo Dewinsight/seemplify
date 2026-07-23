@@ -67,6 +67,80 @@ test('semantic quality gate rejects stock fallback questions and duplicate sets'
   assert.match(buildQualityRepairInstructions(assessment), /Discard the previous questions/);
 });
 
+test('semantic quality gate rejects protected-trait questions and generic scoring guidance', () => {
+  const assessment = assessQuestionSet([strongQuestion({
+    question: 'Do you have children, and would family plans prevent you from handling Kubernetes incidents?',
+    expectedAnswer: 'Look for technical depth.'
+  })], {
+    job,
+    expectedCount: 1,
+    expectedTypes: ['technical'],
+    difficulty: 'hard'
+  });
+  assert.equal(assessment.passed, false);
+  assert.equal(assessment.questions[0].protectedTraitRisk, true);
+  assert.equal(assessment.questions[0].genericExpectedAnswer, true);
+  assert.match(assessment.issues.join(' '), /protected-characteristic/i);
+});
+
+test('semantic quality gate does not mistake a software race condition for a protected trait', () => {
+  const assessment = assessQuestionSet([strongQuestion({
+    question: 'A Java race condition causes duplicate payments under production load. How would you isolate the concurrency failure, choose a safe mitigation, and validate recovery?',
+    expectedAnswer: 'Look for evidence from traces and concurrent request timing, isolation of the shared-state failure, a justified locking or idempotency mitigation, and measurable validation that duplicate payments stop without unacceptable throughput loss.',
+    followUpQuestions: [{ question: 'How would you prove the mitigation remains safe under concurrent retries?', condition: 'Ask after the candidate selects a mitigation.' }],
+    tags: ['Java', 'concurrency']
+  })], {
+    job: { title: 'Senior Java Engineer', skills: ['Java', 'concurrency'], responsibilities: 'Own production payment reliability.' },
+    expectedCount: 1,
+    expectedTypes: ['technical'],
+    difficulty: 'hard'
+  });
+  assert.equal(assessment.questions[0].protectedTraitRisk, false);
+});
+
+test('semantic quality gate does not accept a role title as the only job grounding', () => {
+  const assessment = assessQuestionSet([strongQuestion({
+    question: 'As a Product Manager, describe a difficult decision and explain how you measured whether it worked?',
+    type: 'behavioral',
+    difficulty: 'medium',
+    expectedAnswer: 'Look for a clear decision, evidence considered, trade-offs made, stakeholder communication, and a measurable result linked to the decision.',
+    tags: ['product management', 'decision making']
+  })], {
+    job: {
+      title: 'Product Manager',
+      skills: ['SQL', 'roadmap prioritization'],
+      responsibilities: 'Own activation experiments and align engineering and design stakeholders.'
+    },
+    expectedCount: 1,
+    expectedTypes: ['behavioral'],
+    difficulty: 'medium'
+  });
+  assert.equal(assessment.passed, false);
+  assert.match(assessment.issues.join(' '), /concrete skill|job context/i);
+});
+
+test('semantic quality gate rejects duplicated answer guidance and non-actionable criteria', () => {
+  const first = strongQuestion();
+  const second = strongQuestion({
+    question: 'A PostgreSQL migration is blocking production writes. How would you isolate the failure, choose a recovery path, and manage the reliability trade-offs?',
+    scoringCriteria: [
+      { criterion: 'Diagnosis', weight: 35, description: 'Short.' },
+      { criterion: 'Diagnosis approach', weight: 35, description: 'Also short.' },
+      { criterion: 'Validation', weight: 30, description: 'Brief.' }
+    ]
+  });
+  const assessment = assessQuestionSet([first, second], {
+    job,
+    expectedCount: 2,
+    expectedTypes: ['technical', 'technical'],
+    difficulty: 'hard'
+  });
+  assert.equal(assessment.passed, false);
+  assert.deepEqual(assessment.duplicateIndexes, [0, 1]);
+  assert.match(assessment.issues.join(' '), /reuse the same expected-answer guidance/i);
+  assert.match(assessment.issues.join(' '), /concrete description/i);
+});
+
 test('similarity detector distinguishes repeated wording from different scenarios', () => {
   assert.ok(jaccardSimilarity('How would you scale a Kubernetes service during a traffic spike?', 'How would you scale a Kubernetes service for a sudden traffic spike?') > 0.72);
   assert.ok(jaccardSimilarity('How would you scale Kubernetes?', 'Tell us about resolving a PostgreSQL data migration failure.') < 0.4);

@@ -1,6 +1,7 @@
 const Interview = require('../models/Interview');
 const nylasV3Service = require('./nylasV3Service');
 const NylasAccount = require('../models/NylasAccount');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
 
 async function getAccountCredentials(user) {
   if (!user?.nylasAccountId) return null;
@@ -17,7 +18,7 @@ async function getAccountCredentials(user) {
 }
 
 // Helper function to update pipeline status when interview is completed
-async function updatePipelineStatusOnCompletion(interview) {
+async function updatePipelineStatusOnCompletion(interview, organizationId = interview.organizationId) {
   try {
     if (!interview.jobId || !interview.candidateId) {
       console.log('ℹ️ No job/candidate link for pipeline status update');
@@ -27,7 +28,9 @@ async function updatePipelineStatusOnCompletion(interview) {
     console.log(`🔄 [AUTO-COMPLETE] Updating pipeline status for candidate ${interview.candidateId} in job ${interview.jobId}`);
     
     const Job = require('../models/Job');
-    const job = await Job.findById(interview.jobId);
+    const jobQuery = { _id: interview.jobId };
+    if (organizationId) jobQuery.organization = organizationId;
+    const job = await Job.findOne(jobQuery);
     
     if (job) {
       const applicantIndex = job.applicants.findIndex(
@@ -41,12 +44,16 @@ async function updatePipelineStatusOnCompletion(interview) {
         // Only update if current status is interviewing
         if (previousStatus === 'interviewing') {
           // Check if there are other incomplete interviews for this candidate
-          const otherInterviews = await Interview.find({
+          const otherInterviewQuery = {
             candidateId: interview.candidateId,
             jobId: interview.jobId,
             _id: { $ne: interview._id },
             status: { $in: ['scheduled', 'confirmed', 'in_progress'] }
-          });
+          };
+          const scopedOtherInterviewQuery = organizationId
+            ? await buildInterviewOrganizationQuery(organizationId, otherInterviewQuery)
+            : otherInterviewQuery;
+          const otherInterviews = await Interview.find(scopedOtherInterviewQuery);
           
           if (otherInterviews.length === 0) {
             // No other pending interviews, move to next stage
@@ -86,7 +93,7 @@ async function updatePipelineStatusOnCompletion(interview) {
 }
 
 // Check and complete interviews that should be marked as completed
-async function checkAndCompleteInterviews() {
+async function checkAndCompleteInterviews(organizationId = null) {
   try {
     console.log('🔍 [COMPLETION-CHECK] Starting periodic interview completion check...');
     
@@ -94,7 +101,7 @@ async function checkAndCompleteInterviews() {
     // Only check interviews from the last 3 days to avoid endless checking of old meetings
     const threeDaysAgo = new Date(Date.now() - (3 * 24 * 60 * 60 * 1000));
     
-    const candidateInterviews = await Interview.find({
+    const candidateInterviewQuery = {
       status: { $in: ['in_progress', 'scheduled', 'confirmed'] },
       notetakerEnabled: true,
       $or: [
@@ -107,7 +114,12 @@ async function checkAndCompleteInterviews() {
         $lt: new Date(), // Past interviews only
         $gte: threeDaysAgo // But not older than 3 days
       }
-    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
+    };
+    const scopedCandidateInterviewQuery = organizationId
+      ? await buildInterviewOrganizationQuery(organizationId, candidateInterviewQuery)
+      : candidateInterviewQuery;
+    const candidateInterviews = await Interview.find(scopedCandidateInterviewQuery)
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     console.log(`📋 [COMPLETION-CHECK] Found ${candidateInterviews.length} interviews to check`);
     
@@ -133,7 +145,7 @@ async function checkAndCompleteInterviews() {
           interview.status = 'completed';
           interview.notetakerError = `Notetaker failed: ${interview.notetakerStatus} - Interview completed without recording`;
           await interview.save();
-          await updatePipelineStatusOnCompletion(interview);
+          await updatePipelineStatusOnCompletion(interview, organizationId);
           completedCount++;
           continue;
         }
@@ -148,7 +160,11 @@ async function checkAndCompleteInterviews() {
           try {
             // Import here to avoid circular dependency
             const transcriptSegmentationService = require('./transcriptSegmentationService');
-            const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(interview._id, true);
+            const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(
+              interview._id,
+              true,
+              organizationId
+            );
             
             if (segmentedTranscript.transcript && segmentedTranscript.transcript.content) {
               hasTranscriptContent = true;
@@ -169,7 +185,7 @@ async function checkAndCompleteInterviews() {
           console.log(`✅ [COMPLETION-CHECK] Interview ${interview._id} has transcript content, completing...`);
           interview.status = 'completed';
           await interview.save();
-          await updatePipelineStatusOnCompletion(interview);
+          await updatePipelineStatusOnCompletion(interview, organizationId);
           completedCount++;
           continue;
         }
@@ -181,9 +197,13 @@ async function checkAndCompleteInterviews() {
         if (interview.isMultiCandidate && interview.multiCandidateSessionId && !notetakerIdToCheck) {
           console.log(`🔍 [COMPLETION-CHECK] Looking for session holder's notetaker ID for interview ${interview._id}`);
           try {
-            const sessionInterviews = await Interview.find({
-              multiCandidateSessionId: interview.multiCandidateSessionId
-            }).setOptions({ sanitizeFilter: false }).sort({ multiCandidateOrder: 1 });
+            const sessionInterviewQuery = { multiCandidateSessionId: interview.multiCandidateSessionId };
+            const scopedSessionInterviewQuery = organizationId
+              ? await buildInterviewOrganizationQuery(organizationId, sessionInterviewQuery)
+              : sessionInterviewQuery;
+            const sessionInterviews = await Interview.find(scopedSessionInterviewQuery)
+              .setOptions({ sanitizeFilter: false })
+              .sort({ multiCandidateOrder: 1 });
             
             const sessionHolder = sessionInterviews.find(si => si.notetakerId);
             if (sessionHolder) {
@@ -232,7 +252,11 @@ async function checkAndCompleteInterviews() {
                 // For multi-candidate interviews, check if transcript can be segmented
                 try {
                   const transcriptSegmentationService = require('./transcriptSegmentationService');
-                  const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(interview._id, true);
+                  const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(
+                    interview._id,
+                    true,
+                    organizationId
+                  );
                   transcriptAvailable = !!(segmentedTranscript.transcript && segmentedTranscript.transcript.content);
                   console.log(`📝 [AUTO-COMPLETE] Multi-candidate transcript available for ${interview._id}: ${transcriptAvailable}`);
                 } catch (segmentError) {
@@ -253,7 +277,7 @@ async function checkAndCompleteInterviews() {
                 console.log(`✅ [AUTO-COMPLETE] Completing interview ${interview._id} - transcript: ${transcriptAvailable}, time: ${timeBasedCompletion}`);
                 interview.status = 'completed';
                 await interview.save();
-                await updatePipelineStatusOnCompletion(interview);
+                await updatePipelineStatusOnCompletion(interview, organizationId);
                 completedCount++;
               } else {
                 console.log(`⏳ [AUTO-COMPLETE] Interview ${interview._id} not ready for completion - waiting for transcript or time`);
@@ -284,7 +308,7 @@ async function checkAndCompleteInterviews() {
                   interview.status = 'completed';
                   interview.notetakerError = 'Notetaker failed to join meeting - completed without transcript';
                   await interview.save();
-                  await updatePipelineStatusOnCompletion(interview);
+                  await updatePipelineStatusOnCompletion(interview, organizationId);
                   completedCount++;
                 }
               }
@@ -301,7 +325,7 @@ async function checkAndCompleteInterviews() {
             interview.status = 'completed';
             interview.notetakerError = 'Multi-candidate interview completed - transcript may be available in session holder';
             await interview.save();
-            await updatePipelineStatusOnCompletion(interview);
+            await updatePipelineStatusOnCompletion(interview, organizationId);
             completedCount++;
           }
         }
@@ -312,7 +336,7 @@ async function checkAndCompleteInterviews() {
     }
     
     // Clean up very old interviews that are stuck in pending states
-    await cleanupOldInterviews();
+    await cleanupOldInterviews(organizationId);
     
     console.log(`✅ [COMPLETION-CHECK] Completed ${completedCount} interviews`);
     return completedCount;
@@ -325,17 +349,22 @@ async function checkAndCompleteInterviews() {
 
 // Clean up interviews older than 7 days that are still in incomplete states
 // NOTE: This ONLY cleans up incomplete interviews, completed interviews are preserved
-async function cleanupOldInterviews() {
+async function cleanupOldInterviews(organizationId = null) {
   try {
     const sevenDaysAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000));
     
     console.log('🧹 [CLEANUP] Starting cleanup of old INCOMPLETE interviews with calendar verification...');
     
     // Find very old interviews that are still in incomplete states (NOT completed)
-    const oldInterviews = await Interview.find({
+    const oldInterviewQuery = {
       status: { $in: ['scheduled', 'confirmed', 'in_progress'] }, // Only incomplete interviews
       scheduledAt: { $lt: sevenDaysAgo }
-    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
+    };
+    const scopedOldInterviewQuery = organizationId
+      ? await buildInterviewOrganizationQuery(organizationId, oldInterviewQuery)
+      : oldInterviewQuery;
+    const oldInterviews = await Interview.find(scopedOldInterviewQuery)
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (oldInterviews.length > 0) {
       console.log(`🧹 [CLEANUP] Found ${oldInterviews.length} old incomplete interviews to verify`);
@@ -417,7 +446,7 @@ async function cleanupOldInterviews() {
         
           // Update pipeline status
           try {
-            await updatePipelineStatusOnCompletion(interview);
+            await updatePipelineStatusOnCompletion(interview, organizationId);
           } catch (pipelineError) {
             console.error(`❌ [CLEANUP] Error updating pipeline for interview ${interview._id}:`, pipelineError.message);
           }

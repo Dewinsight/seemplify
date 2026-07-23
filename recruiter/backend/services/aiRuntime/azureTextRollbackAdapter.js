@@ -27,6 +27,7 @@ class AzureTextRollbackAdapter {
     delete prepared.model;
     delete prepared.reasoning_effort;
     delete prepared.reasoning_format;
+    delete prepared.include_reasoning;
     delete prepared.stream_options;
 
     if (prepared.response_format?.type === 'json_schema') {

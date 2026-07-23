@@ -43,6 +43,8 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import { AIVoiceAvatar, AIVoiceWave } from "@/components/ai-voice-avatar";
+import { getAIInterviewVoiceAvatar } from "@/lib/aiVoiceAvatars";
 import aiInterviewService, { type AIInterviewProctoringEventType, type PublicAIInterviewState } from "@/services/aiInterviewService";
 
 function formatSeconds(seconds: number) {
@@ -522,6 +524,16 @@ function PublicAIInterviewExperience() {
     if (voicePhase === "error") return "error";
     return "neutral";
   })();
+  const selectedVoice = state?.voice?.selectedVoice || null;
+  const voiceAvatar = getAIInterviewVoiceAvatar(selectedVoice);
+  const interviewerIsSpeaking = voicePhase === "speaking" && assistantSpeech.active;
+  const interviewerWaveLevel = interviewerIsSpeaking
+    ? assistantSpeech.progress
+    : voicePhase === "processing"
+      ? 48
+      : voicePhase === "ready" || voicePhase === "listening"
+        ? 28
+        : 14;
   const layoutStyle = {
     "--interview-rail-width": sidebarCollapsed ? "76px" : `${sidebarWidth}px`
   } as CSSProperties;
@@ -1516,6 +1528,49 @@ function PublicAIInterviewExperience() {
     </div>
   );
 
+  const renderInterviewerPresence = (compact = false) => {
+    const statusText = interviewerIsSpeaking
+      ? "Speaking now"
+      : voicePhase === "listening"
+        ? "Listening while you answer"
+        : voicePhase === "processing"
+          ? "Reviewing your answer"
+          : voiceEnabled
+            ? "Ready as your AI interviewer"
+            : "Text interview";
+
+    return (
+      <div className={`rounded-lg border bg-white/95 ${compact ? "p-3" : "p-4"} shadow-sm`}>
+        <div className="flex items-center gap-3">
+          <AIVoiceAvatar
+            voice={selectedVoice}
+            size={compact ? "lg" : "2xl"}
+            active={interviewerIsSpeaking}
+            className="ring-1 ring-slate-200"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="truncate text-sm font-semibold text-slate-950">{voiceAvatar.label}</div>
+              <span className="shrink-0 rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                AI
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-slate-600">{statusText}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <AIVoiceWave
+                active={interviewerIsSpeaking || voicePhase === "listening"}
+                compact
+                level={interviewerWaveLevel}
+                tone={interviewerIsSpeaking ? voiceAvatar.tone : voicePhase === "listening" ? "blue" : voiceAvatar.tone}
+              />
+              <span className="min-w-0 truncate text-[11px] text-slate-500">{voiceStatus}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderProctoringModal = () => {
     if (!proctoringModal) return null;
 
@@ -1827,6 +1882,8 @@ function PublicAIInterviewExperience() {
               })}
             </div>
           </div>
+
+          {session.status === "in_progress" && renderInterviewerPresence(false)}
 
           {session.status === "in_progress" && (
             <div className="rounded-2xl border bg-white/95 p-4 shadow-lg shadow-slate-200/70">
@@ -2307,6 +2364,10 @@ function PublicAIInterviewExperience() {
                 )}
               </div>
 
+              <div className="border-b bg-white/95 p-2 sm:p-3 xl:hidden">
+                {renderInterviewerPresence(true)}
+              </div>
+
               <div className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.08),transparent_34%),linear-gradient(180deg,#f8fbff_0%,#eef4fb_100%)] p-2 sm:p-3 md:p-4">
                 <div className="mx-auto flex max-w-7xl flex-col gap-3">
                 {(session.messages || []).map((chat, index) => (
@@ -2315,9 +2376,13 @@ function PublicAIInterviewExperience() {
                     className={`flex items-end gap-2 ${chat.role === "candidate" ? "justify-end" : "justify-start"}`}
                   >
                     {chat.role === "ai" && (
-                      <span className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm sm:flex">
-                        <Volume2 className="h-3.5 w-3.5" />
-                      </span>
+                      <AIVoiceAvatar
+                        voice={selectedVoice}
+                        size="sm"
+                        active={assistantSpeech.active && normalizeTranscriptText(assistantSpeech.text) === normalizeTranscriptText(chat.content || "")}
+                        decorative
+                        className="mb-1 hidden sm:inline-flex"
+                      />
                     )}
                     <div
                       className={`max-w-[min(88%,960px)] rounded-[1.35rem] px-3.5 py-2.5 text-[15px] leading-6 shadow-sm sm:max-w-[min(90%,960px)] sm:px-4 sm:py-3 sm:text-sm ${

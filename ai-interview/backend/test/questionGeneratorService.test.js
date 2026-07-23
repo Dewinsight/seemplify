@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { QuestionGeneratorService } = require('../src/questionGeneratorService');
+const { assessGeneratedQuestions } = require('../src/questionQuality');
 
 const job = {
   title: 'Senior Platform Engineer',
@@ -18,9 +19,9 @@ function strongQuestion(question) {
     category: 'Reliability',
     expectedAnswer: 'Look for evidence-led diagnosis using metrics and traces, a justified Kubernetes mitigation, explicit reliability trade-offs, and measurable validation and rollback criteria.',
     scoringCriteria: [
-      { criterion: 'Diagnosis', weight: 35, description: 'Uses evidence.' },
-      { criterion: 'Decision', weight: 35, description: 'Explains trade-offs.' },
-      { criterion: 'Validation', weight: 30, description: 'Defines success metrics.' }
+      { criterion: 'Diagnosis', weight: 35, description: 'Uses telemetry evidence to isolate the failure.' },
+      { criterion: 'Decision', weight: 35, description: 'Explains the reliability and cost trade-offs.' },
+      { criterion: 'Validation', weight: 30, description: 'Defines measurable recovery and rollback criteria.' }
     ],
     followUpQuestions: [{ question: 'What would trigger rollback?', condition: 'After the proposed mitigation.' }],
     tags: ['kubernetes', 'reliability'],
@@ -57,4 +58,33 @@ test('standalone generator retries once and rejects repeated generic output', as
     (error) => error.code === 'AI_QUESTION_QUALITY_FAILED' && error.statusCode === 503
   );
   assert.equal(calls, 2);
+});
+
+test('standalone quality gate excludes title-only grounding and permits software race conditions', () => {
+  const titleOnly = strongQuestion('As a Product Manager, describe a difficult decision and explain how you measured whether it worked?');
+  titleOnly.type = 'behavioral';
+  titleOnly.difficulty = 'medium';
+  const titleAssessment = assessGeneratedQuestions([titleOnly], {
+    job: {
+      title: 'Product Manager',
+      skills: ['SQL', 'roadmap prioritization'],
+      responsibilities: 'Own activation experiments and align engineering and design stakeholders.'
+    },
+    expectedCount: 1,
+    typePlan: ['behavioral'],
+    difficulty: 'medium'
+  });
+  assert.equal(titleAssessment.passed, false);
+  assert.match(titleAssessment.issues.join(' '), /concrete job skill|responsibility/i);
+
+  const raceCondition = strongQuestion('A Java race condition causes duplicate payments under production load. How would you isolate the concurrency failure, choose a safe mitigation, and validate recovery?');
+  raceCondition.expectedAnswer = 'Look for evidence from traces and concurrent timing, isolation of shared-state mutation, a justified locking or idempotency strategy, reliability trade-offs, and measurable proof that duplicate payments stop under load.';
+  raceCondition.tags = ['Java', 'concurrency'];
+  const raceAssessment = assessGeneratedQuestions([raceCondition], {
+    job: { title: 'Senior Java Engineer', skills: ['Java', 'concurrency'], responsibilities: 'Own production payment reliability.' },
+    expectedCount: 1,
+    typePlan: ['technical'],
+    difficulty: 'hard'
+  });
+  assert.equal(raceAssessment.questions[0].issues.some((failure) => /protected characteristic/i.test(failure)), false);
 });

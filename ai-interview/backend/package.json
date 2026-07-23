@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/store.js && node --check src/interviewEngine.js && node --check src/auth.js && node --check src/brevoEmailService.js && node --check src/llmClient.js && node --check src/aiInterviewerService.js && node --check src/azureSpeechSttService.js && node --check src/questionGeneratorService.js && node --check src/cvParsingService.js && node --check src/platformFeatureService.js",
+    "check": "node --check src/server.js && node --check src/store.js && node --check src/interviewEngine.js && node --check src/auth.js && node --check src/brevoEmailService.js && node --check src/llmClient.js && node --check src/aiInterviewerService.js && node --check src/interviewerResponseQuality.js && node --check src/interviewScoreQuality.js && node --check src/azureSpeechSttService.js && node --check src/questionGeneratorService.js && node --check src/questionQuality.js && node --check src/cvParsingService.js && node --check src/platformFeatureService.js",
     "test": "node --test test/*.test.js",
     "test:platform-features": "node --test test/platformFeatureService.test.js"
   },

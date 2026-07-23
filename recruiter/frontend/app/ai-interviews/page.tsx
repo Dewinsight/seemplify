@@ -287,6 +287,8 @@ const CREATE_STEPS = [
 export default function AIInterviewsPage() {
   const searchParams = useSearchParams();
   const presetJobId = searchParams.get("jobId") || "";
+  const requestedTab = searchParams.get("tab");
+  const initialTab = requestedTab === "interviews" ? "interviews" : "create";
   const presetAppliedRef = useRef(false);
   const voicePreviewAudioRef = useRef<HTMLAudioElement | null>(null);
   const voicePreviewUrlRef = useRef<string | null>(null);
@@ -306,7 +308,7 @@ export default function AIInterviewsPage() {
   const [guestFullName, setGuestFullName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [questionSelectorKey, setQuestionSelectorKey] = useState(0);
-  const [activeTab, setActiveTab] = useState("create");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [createStep, setCreateStep] = useState<CreateStepId>("model");
   const [scheduleDialog, setScheduleDialog] = useState<ScheduleDialogState | null>(null);
   const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(null);
@@ -314,6 +316,10 @@ export default function AIInterviewsPage() {
   const [rankingListEntries, setRankingListEntries] = useState<any[]>([]);
   const [showRankingListDialog, setShowRankingListDialog] = useState(false);
   const [lastScheduledInterview, setLastScheduledInterview] = useState<ScheduledInterviewSummary | null>(null);
+
+  useEffect(() => {
+    setActiveTab(requestedTab === "interviews" ? "interviews" : "create");
+  }, [requestedTab]);
 
   const [form, setForm] = useState({
     title: "",
@@ -1111,6 +1117,12 @@ export default function AIInterviewsPage() {
                   </Link>
                 </Button>
               )}
+              <Button asChild variant="outline" className="justify-start">
+                <Link href="/jobs/new?returnTo=%2Fai-interviews">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Post job
+                </Link>
+              </Button>
               <Button variant="outline" onClick={loadData} disabled={loading} className="justify-start">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Refresh

@@ -4,7 +4,7 @@ const test = require('node:test');
 
 const { createInternalServiceAuth } = require('../middleware/internalServiceAuth');
 const { requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
-const { createDefaultRuntimeSettings } = require('../config/aiRuntimeCatalog');
+const { createDefaultRuntimeSettings, GROQ_120B, GROQ_20B } = require('../config/aiRuntimeCatalog');
 const AIAuditEvent = require('../models/AIAuditEvent');
 const { createBootstrapSettings, mergeCatalogSettings } = require('../scripts/seedAIRuntime');
 const { assessRouting } = require('../services/adminAIRuntimeService');
@@ -36,6 +36,22 @@ test('every seeded AI activity has one compatible explicit route', () => {
   assert.equal(health.configured, health.expected);
   assert.ok(requiredCapabilitiesForActivity('interview.questions').includes('json_schema'));
   assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
+});
+
+test('default routing reserves 20B for live conversation and 120B for substantive AI work', () => {
+  const settings = createDefaultRuntimeSettings();
+  const liveChatActivities = new Set([
+    'ai_interview.chat.introduction',
+    'ai_interview.chat.clarification',
+    'ai_interview.chat.acknowledgement'
+  ]);
+
+  for (const route of settings.routes) {
+    assert.equal(route.model, liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B, route.activity);
+  }
+  assert.equal(settings.routes.find((route) => route.activity === 'matching.analysis').reasoningEffort, 'high');
+  assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.scoring').reasoningEffort, 'high');
+  assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.chat.clarification').reasoningEffort, 'low');
 });
 
 test('runtime never falls back to the general route for a missing activity route', () => {

@@ -113,29 +113,59 @@ const INTERVIEW_QUESTIONS_SCHEMA = {
   }
 };
 
+const BIAS_ANALYSIS_REQUIRED_FIELDS = [
+  'overallBiasScore',
+  'isBiased',
+  'detectedBiasFactors',
+  'neutralityConfidence',
+  'recommendation'
+];
+
+const BIAS_ANALYSIS_PROPERTIES = {
+  overallBiasScore: { type: 'number', minimum: 0, maximum: 1 },
+  isBiased: { type: 'boolean' },
+  detectedBiasFactors: {
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['type', 'score', 'keywordsFound', 'explanation'],
+      properties: {
+        type: { type: 'string' },
+        score: { type: 'number', minimum: 0, maximum: 1 },
+        keywordsFound: { type: 'array', items: { type: 'string' } },
+        explanation: { type: 'string' }
+      }
+    }
+  },
+  neutralityConfidence: { type: 'number', minimum: 0, maximum: 1 },
+  recommendation: { type: 'string' }
+};
+
 const BIAS_ANALYSIS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['overallBiasScore', 'isBiased', 'detectedBiasFactors', 'neutralityConfidence', 'recommendation'],
+  required: BIAS_ANALYSIS_REQUIRED_FIELDS,
+  properties: BIAS_ANALYSIS_PROPERTIES
+};
+
+const BIAS_ANALYSIS_BATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['analyses'],
   properties: {
-    overallBiasScore: { type: 'number', minimum: 0, maximum: 1 },
-    isBiased: { type: 'boolean' },
-    detectedBiasFactors: {
+    analyses: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['type', 'score', 'keywordsFound', 'explanation'],
+        required: ['questionIndex', ...BIAS_ANALYSIS_REQUIRED_FIELDS],
         properties: {
-          type: { type: 'string' },
-          score: { type: 'number', minimum: 0, maximum: 1 },
-          keywordsFound: { type: 'array', items: { type: 'string' } },
-          explanation: { type: 'string' }
+          questionIndex: { type: 'integer', minimum: 0 },
+          ...BIAS_ANALYSIS_PROPERTIES
         }
       }
-    },
-    neutralityConfidence: { type: 'number', minimum: 0, maximum: 1 },
-    recommendation: { type: 'string' }
+    }
   }
 };
 
@@ -1439,7 +1469,15 @@ ENSURE:
 - Follow-up questions are objects with question and condition fields
 - Tags reflect relevant skills and competencies
 - Every question is grounded in a concrete skill, responsibility, outcome, or constraint from the supplied job context
+- A role title alone is not sufficient grounding; use a named skill, deliverable, metric, stakeholder, system, or responsibility
 - Questions are materially different from one another
+- Expected-answer guidance must name question-specific evidence, decisions, trade-offs, and measurable outcomes; never use stock phrases such as "look for technical depth"
+- Follow-ups must probe missing evidence and must not restate the main question
+- Before returning, silently verify question count, type, difficulty, distinct scenarios, protected-trait safety, criteria weights, and job grounding
+
+QUALITY CONTRAST:
+- Weak: "Describe your approach to solving complex technical problems."
+- Strong pattern: present a realistic job-specific situation, name a concrete constraint or competing priority, and ask for the candidate's decision process, evidence, trade-offs, and success measure
 - Always return the questions array wrapped in a questions object`
         },
         {
@@ -1450,7 +1488,7 @@ ENSURE:
 
       const response = await this.requestStructuredCompletion({
         activity: 'interview.questions',
-        promptVersion: 'interview-questions-v3',
+        promptVersion: 'interview-questions-v4',
         messages: messages,
         max_completion_tokens: 4000,
         temperature: 0.6,
@@ -1821,113 +1859,148 @@ Return only valid JSON.`
     }
   }
 
-  async analyzeTextForBias(textToAnalyze, jobContext = null) {
-    try {
-      console.log("Analyzing text for bias with the managed AI runtime.");
-      const systemPrompt = `You are an expert AI assistant specializing in identifying and quantifying bias in text. Your goal is to analyze the provided interview question for various forms of bias, considering the provided job context if available, and provide a structured assessment.
+  _normalizeBiasAnalysis(rawAnalysis) {
+    const analysis = rawAnalysis || {};
+    const detectedBiasFactors = Array.isArray(analysis.detectedBiasFactors)
+      ? analysis.detectedBiasFactors.map((factor) => ({
+          type: String(factor?.type || '').trim(),
+          score: Number(factor?.score),
+          keywordsFound: Array.isArray(factor?.keywordsFound)
+            ? factor.keywordsFound.map((keyword) => String(keyword || '').trim()).filter(Boolean).slice(0, 12)
+            : [],
+          explanation: String(factor?.explanation || '').trim()
+        }))
+      : [];
 
-Focus on detecting bias related to:
-- Age
-- Gender (including gendered language, stereotypes)
-- Race and Ethnicity
-- Nationality and Origin (including accent, native language)
-- Religion or Belief
-- Disability
-- Sexual Orientation
-- Socio-economic status
-- Marital or Family Status
-- Cultural assumptions or stereotypes
-
-CRITICAL JSON OUTPUT REQUIREMENTS:
-You MUST return a valid JSON object with the following EXACT structure:
-{
-  "overallBiasScore": 0.0, // A score from 0.0 (no bias) to 1.0 (high bias).
-  "isBiased": false, // True if any significant bias is detected, false otherwise.
-  "detectedBiasFactors": [ // An array of objects, one for each type of bias detected. Empty if no bias.
-    {
-      "type": "Age", // e.g., "Age", "Gender", "Nationality"
-      "score": 0.0, // A score from 0.0 to 1.0 for this specific factor.
-      "keywordsFound": ["example"], // Optional: specific keywords or phrases that triggered this.
-      "explanation": "Explanation for this factor."
+    if (!Number.isFinite(Number(analysis.overallBiasScore))
+      || !Number.isFinite(Number(analysis.neutralityConfidence))
+      || typeof analysis.isBiased !== 'boolean'
+      || !String(analysis.recommendation || '').trim()) {
+      throw new Error('Bias analysis is missing required assessment fields.');
     }
-  ],
-  "neutralityConfidence": 1.0, // Your confidence (0.0 to 1.0) that the question is truly neutral given the context.
-  "recommendation": "Question appears neutral."
-}
+    if (detectedBiasFactors.some((factor) => !factor.type || !factor.explanation || !Number.isFinite(factor.score))) {
+      throw new Error('Bias analysis contains an incomplete bias factor.');
+    }
+    if (analysis.isBiased && !detectedBiasFactors.length) {
+      throw new Error('Bias analysis marked the question as biased without identifying a factor.');
+    }
+    if (!analysis.isBiased && Number(analysis.overallBiasScore) >= 0.5) {
+      throw new Error('Bias analysis score conflicts with its bias decision.');
+    }
 
-SCORING GUIDELINES for overallBiasScore and factor scores:
-- 0.0 - 0.1: No discernible bias / Very Low
-- 0.2 - 0.4: Low potential bias, may warrant review
-- 0.5 - 0.7: Medium potential bias, review strongly recommended
-- 0.8 - 1.0: High potential bias, revision likely necessary
+    return {
+      overallBiasScore: Number(analysis.overallBiasScore),
+      isBiased: analysis.isBiased,
+      detectedBiasFactors,
+      neutralityConfidence: Number(analysis.neutralityConfidence),
+      recommendation: String(analysis.recommendation).trim()
+    };
+  }
 
-If JOB_CONTEXT is provided, use it to assess if any part of the question, while seemingly neutral in isolation, could become biased or inappropriate when considered for that specific job. For example, a question about physical prowess might be unbiased for a firefighter role but biased for an office role.
-Be objective and base your analysis solely on the provided text and context. Ensure the "detectedBiasFactors" array is empty if no bias is detected, and "isBiased" is false, with an "overallBiasScore" close to 0.0. If bias is detected, populate "detectedBiasFactors" accurately.`;
-
-      const userPrompt = `Please analyze the following interview question for any potential bias according to the detailed instructions and JSON output format provided in the system prompt.
-
-JOB_CONTEXT:
-${jobContext ? jobContext : "No specific job context provided. Analyze based on general professional hiring standards."}
-
-INTERVIEW_QUESTION_TEXT:
-"${textToAnalyze}"`;
-
-      const messages = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ];
-
-      const response = await this.requestStructuredCompletion({
-        activity: 'interview.bias',
-        promptVersion: 'interview-bias-v2',
-        messages: messages,
-        max_completion_tokens: 800, // Adjusted for potentially detailed analysis
-        temperature: 0.3, // Lower temperature for more deterministic bias analysis
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0,
-        model: this.modelName,
-        response_format: { type: "json_object" }
-      });
-
-      if (response?.error !== undefined && response.status !== "200") {
-        throw response.error;
-      }
-
-      const analysisContent = this.extractTextContent(response.choices?.[0]?.message?.content);
-      console.log("AI bias analysis received.");
-
-      try {
-        const parsedJson = this.extractJsonObject(analysisContent);
-        // Basic validation of the expected structure
-        if (typeof parsedJson.overallBiasScore !== 'number' || typeof parsedJson.isBiased !== 'boolean') {
-            throw new Error("AI response for bias analysis is missing critical fields.");
-        }
-        return { success: true, analysis: parsedJson };
-      } catch (jsonError) {
-        console.error("Error parsing AI bias analysis JSON:", jsonError.message);
-        return {
-          success: false,
-          error: "Failed to parse AI bias analysis response",
-          rawResponse: analysisContent
-        };
-      }
-
-    } catch (error) {
-      console.error("Error calling the AI runtime for bias analysis:", error.message);
+  async analyzeQuestionsForBias(questionTexts, jobContext = null) {
+    const suppliedQuestions = (Array.isArray(questionTexts) ? questionTexts : [questionTexts]).slice(0, 20);
+    const questions = suppliedQuestions
+      .map((question, questionIndex) => ({
+        questionIndex,
+        question: String(question || '').trim()
+      }))
+      .filter(({ question }) => Boolean(question));
+    if (!questions.length) {
       return {
         success: false,
-        error: error.message,
-        // Fallback structure in case of error, mirroring a "neutral" assessment but indicating failure
-        analysis: {
-          overallBiasScore: 0.0,
-          isBiased: false,
-          detectedBiasFactors: [],
-          neutralityConfidence: 0.0, // Low confidence due to error
-          recommendation: "Bias analysis failed; unable to assess question."
-        }
+        analyses: Array(suppliedQuestions.length).fill(null),
+        error: 'At least one interview question is required for bias analysis.'
       };
     }
+
+    const analyses = Array(suppliedQuestions.length).fill(null);
+    const errors = questions.length === suppliedQuestions.length
+      ? []
+      : ['One or more blank questions were skipped and require manual review.'];
+    const batchSize = 5;
+    const systemPrompt = `You are an employment-interview bias reviewer. Assess each supplied question independently and preserve its questionIndex.
+
+Review only job-related fairness and protected-characteristic risk: age, disability, family or marital status, gender, nationality or origin, race or ethnicity, religion or belief, sexual orientation, socio-economic assumptions, and cultural stereotypes.
+
+Decision policy:
+- Mark isBiased true when wording requests protected information, relies on a stereotype, or creates a job-irrelevant disadvantage.
+- A demanding or senior question is not biased merely because it is difficult.
+- Use the job context only to judge whether a requirement is genuinely relevant and proportionate.
+- keywordsFound must contain only exact triggering words or short phrases from the question. Use an empty array for conceptual bias without a direct phrase.
+- If neutral, use an empty detectedBiasFactors array and keep overallBiasScore below 0.2.
+- If isBiased is true, identify at least one factor and give a concrete rewrite recommendation.
+
+Calibration examples:
+- "Are you planning to have children?" is high family-status bias.
+- "Describe how you prioritized competing roadmap requests using evidence" is neutral for a product role.
+- "Will your accent make customers uncomfortable?" is high nationality or origin bias.
+
+Return concise evidence-based assessments. Never infer candidate characteristics and never expose hidden reasoning.`;
+    const boundedJobContext = String(jobContext || 'No specific job context supplied; use general professional hiring standards.').slice(0, 8000);
+
+    for (let start = 0; start < questions.length; start += batchSize) {
+      const batchQuestions = questions.slice(start, start + batchSize);
+      try {
+        const response = await this.structuredCompletion([
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              jobContext: boundedJobContext,
+              questions: batchQuestions
+            })
+          }
+        ], {
+          activity: 'interview.bias',
+          promptVersion: 'interview-bias-v3',
+          temperature: 0.1,
+          maxTokens: Math.min(3900, 1400 + (batchQuestions.length * 500)),
+          jsonSchema: BIAS_ANALYSIS_BATCH_SCHEMA,
+          schemaName: 'interview_bias_batch'
+        });
+        const batchAnalyses = response?.data?.analyses;
+        if (!Array.isArray(batchAnalyses) || batchAnalyses.length !== batchQuestions.length) {
+          throw new Error(`Bias analysis returned ${batchAnalyses?.length || 0} of ${batchQuestions.length} required results.`);
+        }
+        const expectedIndexes = new Set(batchQuestions.map(({ questionIndex }) => questionIndex));
+        const returnedIndexes = new Set(batchAnalyses.map(({ questionIndex }) => Number(questionIndex)));
+        if (returnedIndexes.size !== expectedIndexes.size
+          || [...expectedIndexes].some((questionIndex) => !returnedIndexes.has(questionIndex))) {
+          throw new Error('Bias analysis returned missing or duplicate question indexes.');
+        }
+        for (const rawAnalysis of batchAnalyses) {
+          const questionIndex = Number(rawAnalysis.questionIndex);
+          analyses[questionIndex] = this._normalizeBiasAnalysis(rawAnalysis);
+        }
+      } catch (error) {
+        errors.push(`Questions ${start + 1}-${start + batchQuestions.length}: ${error.message}`);
+        console.error('AI bias analysis batch failed:', error.message);
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      partial: errors.length > 0 && analyses.some(Boolean),
+      analyses,
+      error: errors.length ? errors.join(' ') : undefined
+    };
+  }
+
+  async analyzeTextForBias(textToAnalyze, jobContext = null) {
+    const result = await this.analyzeQuestionsForBias([textToAnalyze], jobContext);
+    const analysis = result.analyses[0];
+    if (!analysis) {
+      return {
+        success: false,
+        error: result.error || 'Bias analysis failed; unable to assess question.',
+        analysis: null
+      };
+    }
+    return {
+      success: true,
+      analysis,
+      warning: result.error
+    };
   }
 }
 

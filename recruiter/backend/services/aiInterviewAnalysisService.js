@@ -5,6 +5,7 @@ const AIModelService = require('./aiModelService');
 const { GROQ_120B } = require('../config/aiRuntimeCatalog');
 const embeddingService = require('./embeddingService');
 const transcriptSegmentationService = require('./transcriptSegmentationService');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
 
 class AIInterviewAnalysisService {
   constructor() {
@@ -14,11 +15,14 @@ class AIInterviewAnalysisService {
   /**
    * Analyze interview transcript
    */
-  async analyzeInterviewTranscript(interviewId) {
+  async analyzeInterviewTranscript(interviewId, organizationId = null) {
     try {
       console.log(`🤖 Starting AI analysis for interview ${interviewId}`);
       
-      const interview = await Interview.findById(interviewId)
+      const interviewQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, { _id: interviewId })
+        : { _id: interviewId };
+      const interview = await Interview.findOne(interviewQuery)
         .populate('stageId')
         .populate('jobId')
         .populate('candidateId');
@@ -32,13 +36,13 @@ class AIInterviewAnalysisService {
       }
       
       // Get stage context for analysis
-      const stageContext = await this._getStageContext(interview);
+      const stageContext = await this._getStageContext(interview, organizationId);
       
       // Perform comprehensive analysis
       const analysis = await this._performAnalysis(interview, stageContext);
       
       // Compare with other candidates
-      const comparativeAnalysis = await this._performComparativeAnalysis(interview, analysis);
+      const comparativeAnalysis = await this._performComparativeAnalysis(interview, analysis, organizationId);
       
       // Update interview with analysis results
       interview.aiAnalysis = {
@@ -52,7 +56,7 @@ class AIInterviewAnalysisService {
       await interview.save();
       
       // Update pipeline recommendations
-      await this._updatePipelineRecommendations(interview, analysis);
+      await this._updatePipelineRecommendations(interview, analysis, organizationId);
       
       // Generate embeddings for semantic search
       await this._generateAnalysisEmbeddings(interview, analysis);
@@ -184,15 +188,19 @@ Focus on:
   /**
    * Perform comparative analysis
    */
-  async _performComparativeAnalysis(interview, analysis) {
+  async _performComparativeAnalysis(interview, analysis, organizationId = null) {
     try {
       // Get other interviews for the same job and stage
-      const otherInterviews = await Interview.find({
+      const comparisonQuery = {
         jobId: interview.jobId,
         stageId: interview.stageId,
         _id: { $ne: interview._id },
         'aiAnalysis.analyzed': true
-      }).select('aiAnalysis candidateId');
+      };
+      const scopedComparisonQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, comparisonQuery)
+        : comparisonQuery;
+      const otherInterviews = await Interview.find(scopedComparisonQuery).select('aiAnalysis candidateId');
       
       if (otherInterviews.length === 0) {
         return {
@@ -302,9 +310,12 @@ Focus on:
   /**
    * Update pipeline recommendations
    */
-  async _updatePipelineRecommendations(interview, analysis) {
+  async _updatePipelineRecommendations(interview, analysis, organizationId = null) {
     try {
-      const job = await Job.findById(interview.jobId);
+      const jobQuery = { _id: interview.jobId };
+      if (organizationId) jobQuery.organization = organizationId;
+      const job = await Job.findOne(jobQuery);
+      if (!job) return;
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === interview.candidateId.toString()
       );
@@ -329,13 +340,17 @@ Focus on:
   /**
    * Get candidate insights across all interviews
    */
-  async getCandidateInsights(candidateId, jobId) {
+  async getCandidateInsights(candidateId, jobId, organizationId = null) {
     try {
-      const interviews = await Interview.find({
+      const insightsQuery = {
         candidateId,
         jobId,
         'aiAnalysis.analyzed': true
-      }).populate('stageId');
+      };
+      const scopedInsightsQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, insightsQuery)
+        : insightsQuery;
+      const interviews = await Interview.find(scopedInsightsQuery).populate('stageId');
       
       if (interviews.length === 0) {
         return {
@@ -372,7 +387,7 @@ Focus on:
   /**
    * Get comparative analysis for a job
    */
-  async getComparativeAnalysis(jobId, stageId = null) {
+  async getComparativeAnalysis(jobId, stageId = null, organizationId = null) {
     try {
       const query = {
         jobId,
@@ -383,7 +398,10 @@ Focus on:
         query.stageId = stageId;
       }
       
-      const interviews = await Interview.find(query)
+      const scopedQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, query)
+        : query;
+      const interviews = await Interview.find(scopedQuery)
         .populate('candidateId', 'firstName lastName')
         .populate('stageId', 'name type');
       
@@ -430,9 +448,12 @@ Focus on:
   /**
    * Get next step recommendations
    */
-  async getNextStepRecommendations(interviewId) {
+  async getNextStepRecommendations(interviewId, organizationId = null) {
     try {
-      const interview = await Interview.findById(interviewId)
+      const recommendationQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, { _id: interviewId })
+        : { _id: interviewId };
+      const interview = await Interview.findOne(recommendationQuery)
         .populate('stageId')
         .populate('jobId');
       
@@ -468,7 +489,7 @@ Focus on:
   /**
    * Bulk analyze interviews
    */
-  async bulkAnalyzeInterviews(jobId, stageId = null) {
+  async bulkAnalyzeInterviews(jobId, stageId = null, organizationId = null) {
     try {
       const query = {
         jobId,
@@ -480,7 +501,10 @@ Focus on:
         query.stageId = stageId;
       }
       
-      const interviews = await Interview.find(query);
+      const scopedQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, query)
+        : query;
+      const interviews = await Interview.find(scopedQuery);
       
       if (interviews.length === 0) {
         return {
@@ -496,7 +520,7 @@ Focus on:
       
       for (const interview of interviews) {
         try {
-          const analysis = await this.analyzeInterviewTranscript(interview._id);
+          const analysis = await this.analyzeInterviewTranscript(interview._id, organizationId);
           results.push({
             interviewId: interview._id,
             success: true,
@@ -683,11 +707,15 @@ Focus on:
     };
   }
 
-  async _getStageContext(interview) {
+  async _getStageContext(interview, organizationId = null) {
+    const stageCountQuery = { jobId: interview.jobId };
+    const scopedStageCountQuery = organizationId
+      ? await buildInterviewOrganizationQuery(organizationId, stageCountQuery)
+      : stageCountQuery;
     return {
       job: interview.jobId,
       stage: interview.stageId,
-      totalStages: await Interview.countDocuments({ jobId: interview.jobId })
+      totalStages: await Interview.countDocuments(scopedStageCountQuery)
     };
   }
 
@@ -913,14 +941,16 @@ Focus on:
    * @param {String} sessionId - Multi-candidate session ID
    * @returns {Object} Comparative analysis of all candidates
    */
-  async analyzeMultiCandidateSession(sessionId) {
+  async analyzeMultiCandidateSession(sessionId, organizationId = null) {
     try {
       console.log(`🤖 Starting multi-candidate session analysis for: ${sessionId}`);
       
       // Get all interviews in this session
-      const interviews = await Interview.find({ 
-        multiCandidateSessionId: sessionId 
-      })
+      const sessionQuery = { multiCandidateSessionId: sessionId };
+      const scopedSessionQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, sessionQuery)
+        : sessionQuery;
+      const interviews = await Interview.find(scopedSessionQuery)
       .populate('candidateId')
       .populate('jobId')
       .sort({ multiCandidateOrder: 1 });
@@ -939,7 +969,8 @@ Focus on:
       // Segment the transcript by candidates
       const segmentedData = await transcriptSegmentationService.segmentTranscriptBySession(
         sessionId,
-        transcriptHolder.transcript.content
+        transcriptHolder.transcript.content,
+        organizationId
       );
 
       // Analyze each candidate's segment
@@ -979,8 +1010,11 @@ Focus on:
 
       // Update each interview with its analysis
       for (const candidateAnalysis of candidateAnalyses) {
-        await Interview.findByIdAndUpdate(
-          candidateAnalysis.interviewId,
+        const updateQuery = organizationId
+          ? await buildInterviewOrganizationQuery(organizationId, { _id: candidateAnalysis.interviewId })
+          : { _id: candidateAnalysis.interviewId };
+        await Interview.findOneAndUpdate(
+          updateQuery,
           {
             'aiInterviewSummary': candidateAnalysis.analysis,
             'comparativeAnalysis': {

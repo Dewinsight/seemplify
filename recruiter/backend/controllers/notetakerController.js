@@ -8,6 +8,11 @@ const { updatePipelineStatusOnCompletion } = require('../services/interviewCompl
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
+
+async function organizationInterviewQuery(req, query) {
+  return buildInterviewOrganizationQuery(req.user?.currentOrganization, query);
+}
 
 // Helper function to get account credentials for a user
 async function getAccountCredentials(user) {
@@ -121,7 +126,7 @@ const handleNotetakerWebhook = async (req, res) => {
 
           try {
             const interviewWithInterviewer = failedInterview
-              ? await Interview.findById(failedInterview._id)
+              ? await Interview.findOne({ _id: failedInterview._id, notetakerId })
                   .populate('interviewerId', 'email name')
                   .populate('jobId', 'organization')
               : null;
@@ -353,7 +358,7 @@ const getTranscript = async (req, res) => {
     const { interviewId } = req.params;
     const { includeOverflow = true, viewFullSession = false } = req.query;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId')
       .populate('candidateId', 'firstName lastName email')
       .populate('jobId', 'title company');
@@ -367,14 +372,16 @@ const getTranscript = async (req, res) => {
       try {
         const transcriptData = await transcriptSegmentationService.getInterviewTranscript(
           interviewId,
-          includeOverflow === 'true' || includeOverflow === true
+          includeOverflow === 'true' || includeOverflow === true,
+          req.user.currentOrganization
         );
         
         // If user wants to view full session
         if (viewFullSession === 'true' || viewFullSession === true) {
           const sessionData = await transcriptSegmentationService.segmentTranscriptBySession(
             interview.multiCandidateSessionId,
-            transcriptData.transcript?.content || ''
+            transcriptData.transcript?.content || '',
+            req.user.currentOrganization
           );
           
           return res.json({
@@ -414,7 +421,11 @@ const getTranscript = async (req, res) => {
       // For multi-candidate interviews, try to get actual recorded duration
       if (interview.isMultiCandidate && interview.multiCandidateSessionId) {
         try {
-          const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(interviewId, false);
+          const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(
+            interviewId,
+            false,
+            req.user.currentOrganization
+          );
           if (segmentedTranscript.actualTime && segmentedTranscript.actualTime.duration) {
             actualDuration = Math.round(segmentedTranscript.actualTime.duration / 60); // Convert seconds to minutes
             console.log(`📊 Using actual recorded duration: ${actualDuration} minutes (from transcript timestamps)`);
@@ -558,7 +569,7 @@ const getTranscript = async (req, res) => {
         interview.status = 'completed';
         
         // Update pipeline status as well
-        await updatePipelineStatusOnCompletion(interview);
+        await updatePipelineStatusOnCompletion(interview, req.user.currentOrganization);
       }
       
       await interview.save();
@@ -608,7 +619,7 @@ const enableNotetaker = async (req, res) => {
       return res.status(400).json({ error: 'Meeting link is required' });
     }
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -676,7 +687,7 @@ const cancelNotetaker = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -761,7 +772,7 @@ const joinMeetingNow = async (req, res) => {
     const { interviewId } = req.params;
     const { meetingLink } = req.body;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -928,7 +939,7 @@ const getRealtimeTranscript = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -1125,7 +1136,7 @@ const getNotetakerStatus = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -1211,7 +1222,7 @@ async function syncNotetakerStatus(req, res) {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -1279,7 +1290,7 @@ const triggerCompletionCheck = async (req, res) => {
   try {
     console.log('🔧 [MANUAL-TRIGGER] Manual completion check triggered');
     const { checkAndCompleteInterviews } = require('../services/interviewCompletionService');
-    const completedCount = await checkAndCompleteInterviews();
+    const completedCount = await checkAndCompleteInterviews(req.user.currentOrganization);
     
     res.json({
       success: true,
@@ -1301,11 +1312,12 @@ const cleanupStaleNotetakers = async (req, res) => {
     console.log('🧹 Starting cleanup of stale notetakers...');
     
     // Find all interviews with notetakers
-    const interviews = await Interview.find({
+    const cleanupQuery = await organizationInterviewQuery(req, {
       notetakerEnabled: true,
       notetakerId: { $ne: null },
       notetakerStatus: { $nin: ['deleted', 'cancelled'] }
-    }).populate('interviewerId', 'nylasGrantId nylasAccountId');
+    });
+    const interviews = await Interview.find(cleanupQuery).populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     console.log(`Found ${interviews.length} interviews with notetakers to check`);
     
