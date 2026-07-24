@@ -103,6 +103,10 @@ test('activity audit filters every managed local provider and resets pagination 
 test('overview shows provider and model token composition and follows live snapshots', () => {
   assert.match(pageSource, /function providerUsageLabel/);
   assert.match(pageSource, /provider === 'local-codex'\) return 'Terra \(local-cloud\)'/);
+  assert.match(pageSource, /Earlier local-cloud records and direct benchmark runs cannot be reconstructed/);
+  assert.match(pageSource, /Usage unavailable/);
+  assert.match(pageSource, /providerUsageLabel\(provider\.id\)/);
+  assert.match(pageSource, /providerUsageLabel\(request\.provider\)/);
   assert.match(pageSource, /<TableHead>Token breakdown<\/TableHead>/);
   assert.match(pageSource, /row\.inputTokens/);
   assert.match(pageSource, /row\.cachedInputTokens/);

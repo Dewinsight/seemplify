@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
-const test = require('node:test');
+const { afterEach, mock, test } = require('node:test');
 
 const { createDefaultRuntimeSettings } = require('../config/aiRuntimeCatalog');
+const AIUsageDailyRollup = require('../models/AIUsageDailyRollup');
 const AIUsageEvent = require('../models/AIUsageEvent');
 const {
   AIRuntimeError,
@@ -14,6 +15,8 @@ const {
   stripReasoning
 } = require('../services/aiRuntime/aiRuntimeService');
 const { AzureTextRollbackAdapter } = require('../services/aiRuntime/azureTextRollbackAdapter');
+
+afterEach(() => mock.restoreAll());
 
 function successPayload(content = 'OK', extra = {}) {
   return {
@@ -183,6 +186,72 @@ test('eligible local request does not fail over for schema, authentication, or o
 test('usage audit schema persists local-to-Groq failover provenance', () => {
   assert.ok(AIUsageEvent.schema.path('failoverFrom'));
   assert.ok(AIUsageEvent.schema.path('failoverReason'));
+});
+
+test('Terra gateway usage is persisted to the request audit and daily model rollup', async () => {
+  let savedEvent;
+  let rollupFilter;
+  let rollupUpdate;
+  mock.method(AIUsageEvent, 'create', async (event) => {
+    savedEvent = event;
+    return { toObject: () => ({ ...event }) };
+  });
+  mock.method(AIUsageDailyRollup, 'findOneAndUpdate', (filter, update) => {
+    rollupFilter = filter;
+    rollupUpdate = update;
+    return { lean: async () => ({ ...filter }) };
+  });
+
+  const runtime = new AIRuntimeService({
+    fetchImpl: async () => { throw new Error('unexpected fetch'); }
+  });
+  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.localProviderRequest = async () => jsonResponse({
+    id: 'terra-request-1',
+    engine: 'codex',
+    model: 'gpt-5.6-terra',
+    content: '{"firstName":"Ada"}',
+    finishReason: 'stop',
+    usage: {
+      prompt_tokens: 12_858,
+      completion_tokens: 9,
+      total_tokens: 12_867,
+      prompt_tokens_details: { cached_tokens: 10_496 },
+      completion_tokens_details: { reasoning_tokens: 4 }
+    }
+  });
+
+  const result = await runtime.complete('candidate.cv_parse', {
+    context: {
+      organizationId: 'org-terra',
+      organizationName: 'Terra Test Ltd',
+      actorId: 'actor-terra',
+      actorName: 'Ada Recruiter'
+    },
+    messages: [{ role: 'user', content: 'Extract this synthetic CV.' }]
+  });
+
+  assert.deepEqual(result.usage, {
+    inputTokens: 12_858,
+    outputTokens: 9,
+    cachedInputTokens: 10_496,
+    reasoningTokens: 4,
+    totalTokens: 12_867
+  });
+  assert.equal(savedEvent.provider, 'local-codex');
+  assert.equal(savedEvent.model, 'gpt-5.6-terra');
+  assert.equal(savedEvent.inputTokens, 12_858);
+  assert.equal(savedEvent.cachedInputTokens, 10_496);
+  assert.equal(savedEvent.outputTokens, 9);
+  assert.equal(savedEvent.reasoningTokens, 4);
+  assert.equal(savedEvent.totalTokens, 12_867);
+  assert.equal(rollupFilter.provider, 'local-codex');
+  assert.equal(rollupFilter.model, 'gpt-5.6-terra');
+  assert.equal(rollupUpdate.$inc.inputTokens, 12_858);
+  assert.equal(rollupUpdate.$inc.cachedInputTokens, 10_496);
+  assert.equal(rollupUpdate.$inc.outputTokens, 9);
+  assert.equal(rollupUpdate.$inc.reasoningTokens, 4);
+  assert.equal(rollupUpdate.$inc.totalTokens, 12_867);
 });
 
 for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {

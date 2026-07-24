@@ -1252,7 +1252,12 @@ export default function AIRuntimeAdminPage() {
 
                     <div className="grid gap-5 xl:grid-cols-2">
                       <BreakdownTable title="Activity usage" rows={overview?.byActivity || []} label={(id) => definitions.get(id)?.label || id} />
-                      <BreakdownTable title="Model usage" rows={overview?.byModel || []} label={(id) => id || 'Unknown'} />
+                      <BreakdownTable
+                        title="Model usage"
+                        rows={overview?.byModel || []}
+                        label={(id) => id || 'Unknown'}
+                        note="Terra totals cover hosted requests made after token capture was enabled. Earlier local-cloud records and direct benchmark runs cannot be reconstructed and remain marked as unavailable."
+                      />
                       <BreakdownTable title="Provider usage" rows={overview?.byProvider || []} label={providerUsageLabel} />
                       <BreakdownTable title="Application usage" rows={overview?.bySource || []} label={(id) => id || 'Unknown'} />
                       <DrilldownTable title="Organizations" icon={Building2} rows={overview?.organizations || []} onSelect={inspectOrganization} />
@@ -1868,7 +1873,7 @@ function LiveOperationsPanel({
               <TableBody>
                 {(data?.providers || []).map((provider) => (
                   <TableRow key={provider.id} className="border-gray-800">
-                    <TableCell><div className="font-medium text-gray-200">{provider.id === 'local-ollama' ? 'Managed local' : provider.id}</div><div className="text-xs text-gray-500">{formatTime(provider.lastRequestAt)}</div></TableCell>
+                    <TableCell><div className="font-medium text-gray-200">{providerUsageLabel(provider.id)}</div><div className="text-xs text-gray-500">{formatTime(provider.lastRequestAt)}</div></TableCell>
                     <TableCell>{formatNumber(provider.calls)}</TableCell>
                     <TableCell className={provider.failures ? 'text-amber-300' : 'text-green-300'}>{formatNumber(provider.successRate, 1)}%</TableCell>
                     <TableCell>{formatNumber(provider.averageLatencyMs)} / {formatNumber(provider.maxLatencyMs)} ms</TableCell>
@@ -1887,7 +1892,7 @@ function LiveOperationsPanel({
               <button key={request._id} type="button" onClick={() => onInspect(request)} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-gray-800/70">
                 <div className="min-w-0">
                   <div className="truncate text-sm text-gray-200">{definitions.get(request.activity)?.label || request.activity}</div>
-                  <div className="truncate text-xs text-gray-500">{request.organizationName || 'No organization'} · {request.actorName || request.actorEmail || 'System'} · {request.provider}</div>
+                  <div className="truncate text-xs text-gray-500">{request.organizationName || 'No organization'} · {request.actorName || request.actorEmail || 'System'} · {providerUsageLabel(request.provider)}</div>
                 </div>
                 <div className="shrink-0 text-right">
                   <StatusBadge status={request.status} />
@@ -2054,10 +2059,13 @@ function RuntimeTestDatum({ label, value, mono = false }: { label: string; value
   return <div className="min-w-0 border-b border-gray-800 px-5 py-4 last:border-b-0 sm:border-b-0"><dt className="text-xs text-gray-500">{label}</dt><dd className={`mt-1 break-words text-sm text-gray-200 ${mono ? 'font-mono' : ''}`}>{value}</dd></div>;
 }
 
-function BreakdownTable({ title, rows, label }: { title: string; rows: UsageBreakdown[]; label: (id: string) => string }) {
+function BreakdownTable({ title, rows, label, note }: { title: string; rows: UsageBreakdown[]; label: (id: string) => string; note?: string }) {
   return (
     <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
-      <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">{title}</h2></div>
+      <div className="border-b border-gray-800 px-4 py-3">
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        {note && <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-500">{note}</p>}
+      </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -2082,7 +2090,7 @@ function BreakdownTable({ title, rows, label }: { title: string; rows: UsageBrea
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div>{formatRecordedTokens(row.totalTokens)}{row.totalTokens > 0 ? ' total' : ''}</div>
+                  <div>{row.totalTokens > 0 ? `${formatNumber(row.totalTokens)} total` : row._id === 'gpt-5.6-terra' ? 'Usage unavailable' : 'Not recorded'}</div>
                   {row.totalTokens > 0 && (
                     <div className="mt-1 whitespace-nowrap text-[11px] text-gray-500">
                       {formatNumber(row.inputTokens)} in · {formatNumber(row.cachedInputTokens)} cached · {formatNumber(row.outputTokens)} out · {formatNumber(row.reasoningTokens)} reasoning
