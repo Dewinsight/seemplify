@@ -45,7 +45,12 @@ function compactRun(run) {
 function addProfile(profiles, profile) {
   if (!profile.engine || !profile.model || !Array.isArray(profile.runs)) return;
   const runs = profile.runs.map(compactRun).sort((left, right) => left.concurrency - right.concurrency);
-  const approvedConcurrency = Math.max(0, Number(profile.approvedConcurrency ?? 0));
+  const candidateConcurrency = Math.max(0, Number(
+    profile.candidateConcurrency ?? profile.approvedConcurrency ?? 0
+  ));
+  const approvedConcurrency = profile.sustainedValidated === true
+    ? candidateConcurrency
+    : 1;
   const approvedRun = [...runs]
     .reverse()
     .find((run) => run.acceptable && run.concurrency <= approvedConcurrency) || null;
@@ -54,6 +59,8 @@ function addProfile(profiles, profile) {
     model: profile.model,
     generatedAt: profile.generatedAt || null,
     approvedConcurrency,
+    candidateConcurrency,
+    sustainedValidated: profile.sustainedValidated === true,
     firstUnacceptableConcurrency: profile.firstUnacceptableConcurrency == null
       ? null
       : Number(profile.firstUnacceptableConcurrency),
@@ -70,7 +77,9 @@ function loadProfiles() {
       engine: 'codex',
       model: model.model,
       generatedAt: codex.generatedAt,
-      approvedConcurrency: model.maxTestedStableConcurrency,
+      approvedConcurrency: model.approvedConcurrency,
+      candidateConcurrency: model.candidateConcurrency ?? model.maxTestedStableConcurrency,
+      sustainedValidated: model.sustainedValidated,
       firstUnacceptableConcurrency: model.firstUnacceptableConcurrency,
       runs: model.runs
     });
@@ -89,6 +98,8 @@ function loadProfiles() {
       model: report.model,
       generatedAt: report.generatedAt,
       approvedConcurrency: report.approvedConcurrency,
+      candidateConcurrency: report.candidateConcurrency ?? report.approvedConcurrency,
+      sustainedValidated: report.sustainedValidated,
       firstUnacceptableConcurrency: report.firstUnacceptableConcurrency,
       runs: report.runs
     });
@@ -98,7 +109,11 @@ function loadProfiles() {
 
 function recommend(profiles) {
   const candidates = profiles
-    .filter((profile) => profile.approvedRun?.acceptable && profile.approvedRun.qualityPassRate >= 0.95)
+    .filter((profile) => (
+      profile.sustainedValidated
+      && profile.approvedRun?.acceptable
+      && profile.approvedRun.qualityPassRate >= 0.95
+    ))
     .sort((left, right) => {
       const throughput = right.approvedRun.throughputPerMinute - left.approvedRun.throughputPerMinute;
       if (throughput) return throughput;

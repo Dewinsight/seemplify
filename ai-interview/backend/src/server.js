@@ -581,6 +581,7 @@ async function completeCvProcessingJob(processingJob, parsed) {
     currentJob.updatedAt = currentJob.completedAt;
     currentJob.result = result;
     delete currentJob.lastError;
+    cvProcessingQueue.appendTransition(currentJob);
     return result;
   });
 }

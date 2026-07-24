@@ -276,6 +276,31 @@ async function callLocal(text) {
   };
 }
 
+async function getRuntimeStatus() {
+  const secret = fs.readFileSync(secretFile, 'utf8').trim();
+  const body = JSON.stringify({ operation: 'status' });
+  const signed = signLocalRequest(secret, body);
+  const response = await fetch(`${gatewayUrl}/v1/status`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-seemplify-timestamp': signed.timestamp,
+      'x-seemplify-nonce': signed.nonce,
+      'x-seemplify-signature': signed.signature
+    },
+    body,
+    signal: AbortSignal.timeout(15_000)
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(`${payload.code || response.status}: local runtime status failed`);
+  }
+  if (!payload.engine || !payload.model) {
+    throw new Error('Local runtime status omitted the selected engine or model');
+  }
+  return payload;
+}
+
 async function callGroq(text) {
   const apiKey = String(process.env.GROQ_API_KEY || '').trim();
   if (!apiKey) return null;
@@ -351,7 +376,7 @@ async function main() {
   fs.mkdirSync(reportDir, { recursive: true });
   await createFixtures();
   const parser = new CVParsingService();
-  const runtimeStatus = await (await fetch(`${gatewayUrl}/control/status`)).json();
+  const runtimeStatus = await getRuntimeStatus();
   const report = {
     generatedAt: new Date().toISOString(),
     engine: runtimeStatus.engine,

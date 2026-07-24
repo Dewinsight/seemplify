@@ -6,11 +6,14 @@ const path = require('node:path');
 
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-ai-cv-queue-'));
 process.env.AI_INTERVIEW_CV_QUEUE_ENABLED = 'false';
+process.env.AI_INTERVIEW_CV_QUEUE_CONCURRENCY = '9';
+process.env.AI_INTERVIEW_CV_QUEUE_APPROVED_CONCURRENCY = '2';
 process.env.AI_INTERVIEW_STORE_PATH = path.join(testDirectory, 'store.json');
 const queueService = require('../src/cvProcessingQueueService');
 const { readStore } = require('../src/store');
 
-test.after(() => {
+test.after(async () => {
+  await queueService.closeForTests();
   fs.rmSync(testDirectory, { recursive: true, force: true });
 });
 
@@ -29,6 +32,10 @@ test('local runtime outages remain retryable and receive bounded exponential bac
   assert.equal(queueService.backoffDelay(1, { code: 'AI_LOCAL_UNAVAILABLE' }), 30_000);
   assert.equal(queueService.backoffDelay(2, { code: 'AI_LOCAL_UNAVAILABLE' }), 60_000);
   assert.equal(queueService.backoffDelay(20, { code: 'AI_LOCAL_UNAVAILABLE' }), 300_000);
+});
+
+test('standalone CV worker concurrency cannot exceed the approved local-runtime limit', async () => {
+  assert.equal((await queueService.telemetry()).concurrency, 2);
 });
 
 test('public CV job state never exposes extracted resume text or token hashes', () => {
@@ -89,4 +96,47 @@ test('offline submissions persist extracted text and status-token isolation befo
   assert.equal(duplicate.job.publicId, first.job.publicId);
   assert.equal(duplicate.statusToken, first.statusToken);
   assert.equal((await readStore()).cvProcessingJobs.length, 1);
+});
+
+test('standalone queue publishes privacy-safe signed lifecycle events to the recruiter history', async () => {
+  const originalFetch = global.fetch;
+  const originalSecret = process.env.AI_GATEWAY_HMAC_SECRET;
+  const originalGateway = process.env.SEEMPLIFY_AI_GATEWAY_URL;
+  const captured = [];
+  process.env.AI_GATEWAY_HMAC_SECRET = 'queue-event-test-secret';
+  process.env.SEEMPLIFY_AI_GATEWAY_URL = 'https://api.example.test';
+  global.fetch = async (url, init) => {
+    captured.push({ url: String(url), init });
+    return { ok: true, status: 200 };
+  };
+  try {
+    await queueService.submit({
+      file: {
+        buffer: Buffer.from('Grace Hopper\\ngrace@example.com\\nEngineering leader with extensive compiler and distributed systems experience.'),
+        originalname: 'grace.txt',
+        mimetype: 'text/plain',
+        size: 110
+      },
+      organizationId: 'settings',
+      actorId: 'user_recruiter',
+      jobId: 'job_engineering',
+      mode: 'import',
+      idempotencyKey: 'queue-event-upload-1'
+    });
+    await queueService.flushQueueEvents();
+    const published = captured.find((request) => request.url.endsWith('/api/internal/ai/v1/cv-queue/events'));
+    assert.ok(published);
+    const body = JSON.parse(published.init.body);
+    assert.match(body.job.publicId, /^aicv_/);
+    assert.equal(body.job.state, 'queued');
+    assert.equal('resumeText' in body.job, false);
+    assert.equal('originalName' in body.job, false);
+    assert.equal(typeof published.init.headers['x-seemplify-signature'], 'string');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalSecret === undefined) delete process.env.AI_GATEWAY_HMAC_SECRET;
+    else process.env.AI_GATEWAY_HMAC_SECRET = originalSecret;
+    if (originalGateway === undefined) delete process.env.SEEMPLIFY_AI_GATEWAY_URL;
+    else process.env.SEEMPLIFY_AI_GATEWAY_URL = originalGateway;
+  }
 });

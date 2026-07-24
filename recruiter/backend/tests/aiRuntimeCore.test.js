@@ -70,7 +70,7 @@ test('default routing uses local inference only for CV parsing and question gene
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.chat.clarification').reasoningEffort, 'low');
 });
 
-test('every activity, including CV parsing, can be reassigned between Groq and managed local inference', () => {
+test('non-CV activities are configurable while CV parsing is locked to managed local inference', () => {
   const settings = createDefaultRuntimeSettings();
   for (const route of settings.routes) {
     route.provider = LOCAL_PROVIDER;
@@ -81,7 +81,12 @@ test('every activity, including CV parsing, can be reassigned between Groq and m
   const cvRoute = settings.routes.find((route) => route.activity === 'candidate.cv_parse');
   cvRoute.provider = 'groq';
   cvRoute.model = GROQ_120B;
-  assert.equal(assessRouting(settings).valid, true);
+  const assessment = assessRouting(settings);
+  assert.equal(assessment.valid, false);
+  assert.ok(assessment.issues.some((issue) => (
+    issue.activity === 'candidate.cv_parse'
+    && issue.code === 'invalid_provider'
+  )));
 });
 
 test('local CV provider requests require local-only inference at the signed gateway', async () => {
@@ -462,7 +467,16 @@ test('runtime seed merges catalog updates without overwriting admin routing', ()
       available: true,
       pricing: { inputPerMillionUsd: 999 }
     }],
-    routes: [{ ...defaults.routes[0], model: 'openai/gpt-oss-20b', routeVersion: 7 }],
+    routes: [
+      { ...defaults.routes[0], model: 'openai/gpt-oss-20b', routeVersion: 7 },
+      {
+        ...defaults.routes.find((route) => route.activity === 'candidate.cv_parse'),
+        provider: 'groq',
+        model: GROQ_120B,
+        enabled: false,
+        routeVersion: 7
+      }
+    ],
     quotaGroups: [{ id: 'existing', label: 'Existing', enabled: true }],
     alerts: { recipients: ['ops@example.com'] },
     rollout: { groqPercent: 50, azureBaselineEnabled: true, samplingSalt: 'existing-salt' }
@@ -474,6 +488,12 @@ test('runtime seed merges catalog updates without overwriting admin routing', ()
   assert.equal(merged.models.length, defaults.models.length);
   assert.equal(merged.routes[0].model, 'openai/gpt-oss-20b');
   assert.equal(merged.routes[0].routeVersion, 7);
+  const mergedCvRoute = merged.routes.find((route) => route.activity === 'candidate.cv_parse');
+  assert.equal(mergedCvRoute.provider, LOCAL_PROVIDER);
+  assert.equal(mergedCvRoute.model, LOCAL_CV_MODEL);
+  assert.equal(mergedCvRoute.failoverPolicy, 'wait_local');
+  assert.equal(mergedCvRoute.enabled, false);
+  assert.equal(mergedCvRoute.routeVersion, 7);
   assert.equal(merged.routes.length, defaults.routes.length);
   assert.deepEqual(merged.alerts.recipients, ['ops@example.com']);
   assert.equal(merged.rollout.groqPercent, 50);

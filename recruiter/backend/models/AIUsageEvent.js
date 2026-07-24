@@ -28,6 +28,8 @@ const AIUsageEventSchema = new mongoose.Schema({
   errorMessage: String,
   attempts: { type: Number, default: 1 },
   failovers: { type: Number, default: 0 },
+  failoverFrom: String,
+  failoverReason: String,
   attemptErrors: { type: [mongoose.Schema.Types.Mixed], default: undefined },
   latencyMs: Number,
   promptBytes: Number,

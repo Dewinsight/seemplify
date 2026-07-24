@@ -82,9 +82,71 @@ test('AI Runtime exposes the synthetic route test workflow', () => {
   assert.match(pageSource, /TabsTrigger value="test"/);
   assert.match(pageSource, /<Select value=\{testActivity\}/);
   assert.match(pageSource, /adminJson<RuntimeTestResult>\('\/api\/admin\/ai-runtime\/test'/);
+  assert.match(pageSource, /Executed provider/);
   assert.match(pageSource, /Executed model/);
   assert.match(pageSource, /Request ID/);
+  assert.match(pageSource, /testResult\.execution\.usage\.inputTokens/);
+  assert.match(pageSource, /testResult\.execution\.usage\.cachedInputTokens/);
+  assert.match(pageSource, /testResult\.execution\.usage\.outputTokens/);
+  assert.match(pageSource, /testResult\.execution\.usage\.reasoningTokens/);
+  assert.match(pageSource, /testResult\.execution\.usage\.totalTokens/);
   assert.match(pageSource, /Output contract/);
+});
+
+test('activity audit filters every managed local provider and resets pagination with the range', () => {
+  assert.match(pageSource, /SelectItem value="local-codex">Terra \(local-cloud\)<\/SelectItem>/);
+  assert.match(pageSource, /SelectItem value="local-ollama">Ollama \(local GPU\)<\/SelectItem>/);
+  assert.match(pageSource, /SelectItem value="local-vllm">vLLM \(local GPU\)<\/SelectItem>/);
+  assert.match(pageSource, /setRange\(value as RangeKey\); setRequestPage\(1\);/);
+});
+
+test('overview shows provider and model token composition and follows live snapshots', () => {
+  assert.match(pageSource, /function providerUsageLabel/);
+  assert.match(pageSource, /provider === 'local-codex'\) return 'Terra \(local-cloud\)'/);
+  assert.match(pageSource, /<TableHead>Token breakdown<\/TableHead>/);
+  assert.match(pageSource, /row\.inputTokens/);
+  assert.match(pageSource, /row\.cachedInputTokens/);
+  assert.match(pageSource, /row\.outputTokens/);
+  assert.match(pageSource, /row\.reasoningTokens/);
+  assert.match(pageSource, /row\.averageLatencyMs/);
+  assert.match(pageSource, /liveSnapshotRevisionRef\.current \+= 1/);
+  assert.match(pageSource, /context\.tab === 'requests' && context\.requestPage === 1/);
+  assert.match(pageSource, /\}, 10_000\);/);
+});
+
+test('historical zero-token events are labelled as not recorded', () => {
+  assert.match(pageSource, /function formatRecordedTokens/);
+  assert.match(pageSource, /: 'Not recorded';/);
+  assert.match(pageSource, /formatRecordedTokens\(request\.totalTokens\)/);
+  assert.match(pageSource, /formatRecordedTokens\(data\.totalTokens, data\.inputTokens\)/);
+  assert.match(pageSource, /formatRecordedTokens\(data\.totalTokens\)/);
+});
+
+test('unreported local state does not claim an engine, routability, or a starting worker', () => {
+  assert.match(pageSource, /if \(!runtime\?\.reachable\) return 'Not reported';/);
+  assert.match(pageSource, /if \(!runtime\.reachable\) return 'Unavailable';/);
+  assert.match(pageSource, /\['Worker', localQueue\?\.worker\?\.running \? 'Running' : 'Stopped'\]/);
+  assert.doesNotMatch(pageSource, /: 'Ollama \(local GPU\)'\],/);
+  assert.doesNotMatch(pageSource, /\['Worker',[^\n]+: 'Starting'\]/);
+  assert.doesNotMatch(pageSource, /: 'Available to all activities'/);
+});
+
+test('runtime controls and interactive table rows expose keyboard semantics', () => {
+  assert.match(pageSource, /aria-label="Usage date range"/);
+  assert.match(pageSource, /aria-label="Refresh runtime data"/);
+  assert.match(pageSource, /aria-label="Filter AI activity by provider"/);
+  assert.match(pageSource, /aria-label="Filter AI activity by status"/);
+  assert.match(pageSource, /function activateTableRow/);
+  assert.match(pageSource, /role="button" tabIndex=\{0\} aria-haspopup="dialog"/);
+  assert.match(pageSource, /aria-label="Previous request page"/);
+  assert.match(pageSource, /aria-label="Next audit page"/);
+});
+
+test('request filters do not fan out into the full runtime refresh', () => {
+  assert.doesNotMatch(pageSource, /if \(tab === 'requests'\) await loadRequests\(\);/);
+  assert.match(pageSource, /if \(tab !== 'requests'\) return;/);
+  assert.doesNotMatch(pageSource, /StatusBadge status=\{liveConnection\}/);
+  assert.match(pageSource, /StatusBadge status=\{connection\}/);
 });
 
 test('requests and routing expose full operational health', () => {
@@ -106,7 +168,7 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
   assert.match(pageSource, /Local engines and models/);
   assert.match(pageSource, /Available in Control Center/);
   assert.match(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Managed local'/);
-  assert.match(pageSource, /Every \$\{localRuntime\?\.failover\?\.intervalMinutes \|\| 30\} minutes/);
+  assert.match(pageSource, /localRuntime\?\.failover\?\.intervalMinutes \? `Every \$\{localRuntime\.failover\.intervalMinutes\} minutes` : 'Not reported'/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/health-check/);
   assert.match(pageSource, /Check and route now/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/\$\{paused \? 'pause' : 'resume'\}/);

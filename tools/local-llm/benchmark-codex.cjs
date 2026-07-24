@@ -3,8 +3,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { recordApproval } = require('./approval-store.cjs');
+const { controlFetch } = require('./control-auth.cjs');
+const {
+  approvalFor,
+  assertConcurrencyApproved,
+  concurrencyDecision,
+  recordApproval
+} = require('./approval-store.cjs');
+const {
+  approvedConcurrency: decideApprovedConcurrency,
+  selectHeadroomConcurrency
+} = require('./benchmark-approval.cjs');
 const { cvText: threePageCvText, pageCount, scoreCvOutput } = require('./three-page-cv-fixture.cjs');
+const { CV_EXTRACTION_SCHEMA } = require('../../recruiter/backend/services/aiModelService');
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = path.resolve(__dirname, '..', '..');
@@ -20,70 +31,18 @@ const requestedModels = String(process.argv.find((value) => value.startsWith('--
 const requestedRounds = Math.max(0, Math.min(5, Number(
   process.argv.find((value) => value.startsWith('--rounds='))?.split('=')[1] || 0
 )));
+const sustainedRounds = Math.max(3, Math.min(20, Number(
+  process.argv.find((value) => value.startsWith('--sustained-rounds='))?.split('=')[1] || 3
+)));
+const minimumSustainedRequests = Math.max(12, Math.min(256, Number(
+  process.argv.find((value) => value.startsWith('--minimum-sustained-requests='))?.split('=')[1] || 12
+)));
+const minimumSustainedQualityPassRate = 0.98;
 const maxP95LatencyMs = Math.max(30_000, Number(
   process.argv.find((value) => value.startsWith('--max-p95-ms='))?.split('=')[1] || 180_000
 ));
 
-const schema = {
-  type: 'object',
-  additionalProperties: true,
-  required: [
-    'firstName', 'lastName', 'email', 'phone', 'location', 'position', 'experience',
-    'education', 'skills', 'summary', 'strengths', 'potentialFlags', 'workExperience',
-    'educationHistory', 'certifications', 'languages', 'awards', 'projects', 'publications',
-    'volunteerWork', 'professionalMemberships', 'portfolioLinks', 'additionalSections', 'fullCVData'
-  ],
-  properties: {
-    firstName: { type: 'string' },
-    lastName: { type: 'string' },
-    email: { type: 'string' },
-    phone: { type: 'string' },
-    location: { type: 'string' },
-    position: { type: 'string' },
-    experience: { type: 'string' },
-    education: { type: 'string' },
-    skills: { type: 'array', items: { type: 'string' } },
-    summary: { type: 'string' },
-    strengths: { type: 'array', items: { type: 'string' } },
-    potentialFlags: { type: 'array', items: { type: 'string' } },
-    workExperience: { type: 'object' },
-    educationHistory: { type: 'array', items: { type: 'object' } },
-    certifications: { type: 'array', items: { type: 'object' } },
-    languages: { type: 'array', items: { type: 'object' } },
-    awards: { type: 'array', items: { type: 'object' } },
-    projects: { type: 'array', items: { type: 'object' } },
-    publications: { type: 'array', items: { type: 'object' } },
-    volunteerWork: { type: 'array', items: { type: 'object' } },
-    professionalMemberships: { type: 'array', items: { type: 'object' } },
-    portfolioLinks: { type: 'object' },
-    additionalSections: { type: 'object' },
-    fullCVData: { type: 'object' }
-  }
-};
-
-const cvText = `ADA OKAFOR
-Senior Software Engineer
-London, United Kingdom | ada.okafor@example.test | +44 7700 900123
-
-SUMMARY
-Software engineer with eight years of experience building reliable recruitment and payments platforms.
-
-SKILLS
-TypeScript, Node.js, PostgreSQL, Redis, React, AWS
-
-EXPERIENCE
-Senior Software Engineer, Northstar Systems, January 2021 to Present
-- Led a five-person team and reduced API latency by 38 percent.
-- Built BullMQ processing workflows with idempotent retries.
-
-Software Engineer, Harbor Labs, June 2017 to December 2020
-- Developed Node.js services and React interfaces.
-
-EDUCATION
-BSc Computer Science, University of Bristol, 2017
-
-LANGUAGES
-English (fluent), Igbo (native)`;
+const schema = CV_EXTRACTION_SCHEMA;
 
 function sign(body) {
   const timestamp = String(Date.now());
@@ -109,13 +68,34 @@ async function manage(action, engine, model) {
   });
 }
 
-async function setConcurrency(concurrency) {
-  const response = await fetch(`${gatewayUrl}/control/state`, {
+async function setConcurrency(model, concurrency) {
+  assertConcurrencyApproved({ engine: 'codex', model, requested: concurrency });
+  const response = await controlFetch(`${gatewayUrl}/control/state`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ concurrency, enabled: true, paused: false })
   });
   if (!response.ok) throw new Error(`Could not set concurrency ${concurrency}`);
+}
+
+async function restoreControlState(original) {
+  const restoredConcurrency = concurrencyDecision({
+    engine: original.engine,
+    model: original.model,
+    requested: original.state?.requestedConcurrency ?? original.state?.concurrency
+  }).effectiveConcurrency;
+  const response = await controlFetch(`${gatewayUrl}/control/state`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      enabled: original.state?.enabled !== false,
+      ingressEnabled: original.state?.ingressEnabled !== false,
+      paused: original.state?.paused === true,
+      concurrency: restoredConcurrency,
+      selectionMode: original.state?.selectionMode === 'manual' ? 'manual' : 'automatic'
+    })
+  });
+  if (!response.ok) throw new Error('Could not restore the original gateway control state');
 }
 
 async function analyze(requestId) {
@@ -184,42 +164,63 @@ function percentile(values, ratio) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)];
 }
 
+async function benchmarkLevel(model, concurrency, rounds, phase) {
+  await setConcurrency(model, concurrency);
+  const startedAt = Date.now();
+  const results = [];
+  for (let round = 0; round < rounds; round += 1) {
+    results.push(...await Promise.all(
+      Array.from(
+        { length: concurrency },
+        (_, index) => analyze(`${model}-${phase}-${concurrency}-${round}-${index}`)
+      )
+    ));
+  }
+  const elapsedMs = Date.now() - startedAt;
+  const latencies = results.filter((result) => result.transportOk).map((result) => result.latencyMs);
+  const successful = results.filter((result) => result.ok).length;
+  const run = {
+    phase,
+    concurrency,
+    rounds,
+    requests: results.length,
+    successful,
+    failed: results.length - successful,
+    transportSuccessful: results.filter((result) => result.transportOk).length,
+    p50LatencyMs: percentile(latencies, 0.5),
+    p95LatencyMs: percentile(latencies, 0.95),
+    throughputPerMinute: Number((successful / (elapsedMs / 60_000)).toFixed(2)),
+    elapsedMs,
+    stable: results.every((result) => result.transportOk),
+    qualityPassed: results.every((result) => result.qualityOk),
+    timeouts: results.filter((result) => result.timeout).length,
+    rateLimited: results.filter((result) => result.rateLimited).length,
+    outOfMemory: results.filter((result) => /out.?of.?memory|oom/i.test(result.error || '')).length,
+    results
+  };
+  run.qualityPassRate = run.requests ? run.successful / run.requests : 0;
+  run.acceptable = run.stable
+    && run.qualityPassRate >= 0.95
+    && run.p95LatencyMs != null
+    && run.p95LatencyMs <= maxP95LatencyMs;
+  return run;
+}
+
 async function benchmarkModel(model) {
   await manage('select-engine', 'codex', model);
+  const activationCap = approvalFor('codex', model).concurrency;
+  const safeLevels = levels.filter((level) => level <= activationCap);
+  if (!safeLevels.length) {
+    throw new Error(
+      `None of the requested benchmark levels are within the sustained approval cap ${activationCap} `
+      + `for codex/${model}`
+    );
+  }
   const runs = [];
-  for (const concurrency of levels) {
-    await setConcurrency(concurrency);
+  for (const concurrency of safeLevels) {
     const rounds = requestedRounds || (concurrency <= 8 ? 2 : 1);
-    const startedAt = Date.now();
-    const results = [];
-    for (let round = 0; round < rounds; round += 1) {
-      results.push(...await Promise.all(
-        Array.from({ length: concurrency }, (_, index) => analyze(`${model}-${concurrency}-${round}-${index}`))
-      ));
-    }
-    const elapsedMs = Date.now() - startedAt;
-    const latencies = results.filter((result) => result.transportOk).map((result) => result.latencyMs);
-    runs.push({
-      concurrency,
-      rounds,
-      requests: results.length,
-      successful: results.filter((result) => result.ok).length,
-      failed: results.filter((result) => !result.ok).length,
-      transportSuccessful: results.filter((result) => result.transportOk).length,
-      p50LatencyMs: percentile(latencies, 0.5),
-      p95LatencyMs: percentile(latencies, 0.95),
-      throughputPerMinute: Number((results.filter((result) => result.ok).length / (elapsedMs / 60_000)).toFixed(2)),
-      elapsedMs,
-      stable: results.every((result) => result.transportOk),
-      qualityPassed: results.every((result) => result.qualityOk),
-      results
-    });
-    const run = runs.at(-1);
-    run.qualityPassRate = run.requests ? run.successful / run.requests : 0;
-    run.acceptable = run.stable
-      && run.qualityPassRate >= 0.95
-      && run.p95LatencyMs != null
-      && run.p95LatencyMs <= maxP95LatencyMs;
+    const run = await benchmarkLevel(model, concurrency, rounds, 'discovery');
+    runs.push(run);
     if (!run.acceptable) break;
   }
   let maxAcceptableConcurrency = 0;
@@ -227,18 +228,40 @@ async function benchmarkModel(model) {
     if (!run.acceptable) break;
     maxAcceptableConcurrency = run.concurrency;
   }
+  const candidateConcurrency = selectHeadroomConcurrency(runs);
+  const requiredRounds = candidateConcurrency
+    ? Math.max(sustainedRounds, Math.ceil(minimumSustainedRequests / candidateConcurrency))
+    : 0;
+  const sustainedRun = candidateConcurrency
+    ? await benchmarkLevel(model, candidateConcurrency, requiredRounds, 'sustained')
+    : null;
+  const approval = decideApprovedConcurrency({
+    discoveryRuns: runs,
+    sustainedRun,
+    acceptance: {
+      minimumRequests: minimumSustainedRequests,
+      minimumQualityPassRate: minimumSustainedQualityPassRate,
+      maxP95LatencyMs
+    }
+  });
   return {
     model,
+    activationCap,
+    skippedUnapprovedLevels: levels.filter((level) => level > activationCap),
     supportedInApi: Boolean(catalog.models.find((item) => item.id === model)?.supportedInApi),
-    passed: runs.every((run) => run.acceptable),
+    passed: approval.sustainedValidated,
+    sustainedValidated: approval.sustainedValidated,
+    approvedConcurrency: approval.concurrency,
+    candidateConcurrency: approval.candidateConcurrency,
     maxTestedStableConcurrency: maxAcceptableConcurrency,
     firstUnacceptableConcurrency: runs.find((run) => !run.acceptable)?.concurrency || null,
+    sustainedRun,
     runs
   };
 }
 
 async function main() {
-  const original = await (await fetch(`${gatewayUrl}/control/status`)).json();
+  const original = await (await controlFetch(`${gatewayUrl}/control/status`)).json();
   const catalogModels = catalog.models.map((model) => model.id);
   const models = requestedModels.length
     ? requestedModels.filter((model) => catalogModels.includes(model))
@@ -253,10 +276,14 @@ async function main() {
     acceptance: {
       transportSuccessRate: 1,
       qualityPassRate: 0.95,
+      sustainedQualityPassRate: minimumSustainedQualityPassRate,
+      minimumSustainedRequests,
+      headroom: 'one tested concurrency level below the highest acceptable discovery level',
       maxP95LatencyMs
     },
     models: []
   };
+  let primaryError = null;
   try {
     for (const model of models) {
       process.stdout.write(`Testing ${model} at concurrency ${levels.join(', ')}...\n`);
@@ -265,16 +292,24 @@ async function main() {
       process.stdout.write(`${JSON.stringify({
         model,
         passed: result.passed,
+        approvedConcurrency: result.approvedConcurrency,
+        sustainedValidated: result.sustainedValidated,
         maxTestedStableConcurrency: result.maxTestedStableConcurrency,
-        p95LatencyMs: result.runs.at(-1)?.p95LatencyMs
+        p95LatencyMs: result.sustainedRun?.p95LatencyMs
       })}\n`);
     }
+  } catch (error) {
+    primaryError = error;
   } finally {
-    await manage('select-engine', 'codex', 'gpt-5.6-terra');
-    if (original.engine !== 'codex') {
+    try {
       await manage('select-engine', original.engine, original.model);
+      await restoreControlState(original);
+    } catch (restoreError) {
+      if (!primaryError) throw restoreError;
+      primaryError.restoreError = restoreError.message;
     }
   }
+  if (primaryError) throw primaryError;
   report.passed = report.models.every((model) => model.passed);
   const reportFile = path.join(runtimeDir, 'codex-model-benchmark.json');
   fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
@@ -282,7 +317,9 @@ async function main() {
     recordApproval({
       engine: 'codex',
       model: model.model,
-      concurrency: model.maxTestedStableConcurrency || 1,
+      concurrency: model.approvedConcurrency,
+      candidateConcurrency: model.candidateConcurrency,
+      sustainedValidated: model.sustainedValidated,
       measuredAt: report.generatedAt,
       reportFile
     });

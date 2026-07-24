@@ -3,6 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { controlFetch } = require('./control-auth.cjs');
+const { concurrencyDecision } = require('./approval-store.cjs');
+const { CV_EXTRACTION_SCHEMA } = require('../../recruiter/backend/services/aiModelService');
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = path.resolve(__dirname, '..', '..');
@@ -34,19 +37,7 @@ const profiles = requestedProfileIds.size
   ? allProfiles.filter((profile) => requestedProfileIds.has(profile.id))
   : allProfiles;
 
-const cvSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['firstName', 'lastName', 'email', 'position', 'skills', 'summary'],
-  properties: {
-    firstName: { type: 'string' },
-    lastName: { type: 'string' },
-    email: { type: 'string' },
-    position: { type: 'string' },
-    skills: { type: 'array', items: { type: 'string' } },
-    summary: { type: 'string' }
-  }
-};
+const cvSchema = CV_EXTRACTION_SCHEMA;
 
 const questionSchema = {
   type: 'object',
@@ -107,7 +98,7 @@ async function manage(action, engine, model) {
 }
 
 async function status() {
-  const response = await fetch(`${gatewayUrl}/control/status`, {
+  const response = await controlFetch(`${gatewayUrl}/control/status`, {
     signal: AbortSignal.timeout(10_000)
   });
   if (!response.ok) throw new Error(`Gateway status returned ${response.status}`);
@@ -115,7 +106,7 @@ async function status() {
 }
 
 async function updateControlState(update) {
-  const response = await fetch(`${gatewayUrl}/control/state`, {
+  const response = await controlFetch(`${gatewayUrl}/control/state`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(update),
@@ -342,12 +333,17 @@ async function main() {
   } finally {
     process.stdout.write(`[restore] ${original.engine} / ${original.model}\n`);
     await manage('select-engine', original.engine, original.model);
+    const restoredConcurrency = concurrencyDecision({
+      engine: original.engine,
+      model: original.model,
+      requested: original.state?.requestedConcurrency ?? original.state?.concurrency
+    }).effectiveConcurrency;
     await updateControlState({
       enabled: original.state?.enabled !== false,
       ingressEnabled: original.state?.ingressEnabled !== false,
       paused: original.state?.paused === true,
       selectionMode: original.state?.selectionMode === 'manual' ? 'manual' : 'automatic',
-      concurrency: Math.max(1, Number(original.state?.concurrency || 1))
+      concurrency: restoredConcurrency
     });
     await waitForProfile({ id: 'original', engine: original.engine, model: original.model });
   }

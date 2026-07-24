@@ -59,6 +59,13 @@ async function main() {
   if (!addresses.length) throw new Error('Public DNS did not return a Cloudflare edge address.');
   const ip = addresses[0];
   const health = await request(ip, '/health');
+  const publicControlStatus = await request(ip, '/control/status');
+  const publicQueueHistory = await request(ip, '/control/queue-history?page=1&limit=10');
+  const publicControlMutation = await request(ip, '/control/state', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'content-length': 2 },
+    body: '{}'
+  });
   const schema = {
     type: 'object',
     additionalProperties: false,
@@ -103,6 +110,11 @@ async function main() {
     hostname,
     edgeVerified: true,
     healthStatus: health.status,
+    publicControlStatus: publicControlStatus.status,
+    publicQueueHistoryStatus: publicQueueHistory.status,
+    publicControlMutationStatus: publicControlMutation.status,
+    publicControlBlocked: [publicControlStatus, publicQueueHistory, publicControlMutation]
+      .every((result) => result.status === 403 || result.status === 404),
     unsignedStatus: unsigned.status,
     unsignedRejected: unsigned.status === 401,
     signedStatus: signed.status,
@@ -113,6 +125,8 @@ async function main() {
     executionMode: signed.data?.engine === 'codex' ? 'local-cloud' : 'local',
     signedLatencyMs: signed.latencyMs,
     passed: health.status === 200
+      && [publicControlStatus, publicQueueHistory, publicControlMutation]
+        .every((result) => result.status === 403 || result.status === 404)
       && unsigned.status === 401
       && signed.status === 200
       && managedEngines.has(signed.data?.engine)

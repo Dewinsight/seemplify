@@ -2,10 +2,13 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { createDefaultRuntimeSettings } = require('../config/aiRuntimeCatalog');
+const AIUsageEvent = require('../models/AIUsageEvent');
 const {
   AIRuntimeError,
   AIRuntimeService,
+  calculateFailovers,
   deterministicBucket,
+  isLocalRuntimeUnavailable,
   quotaSnapshotIsAvailable,
   shouldUseGroq,
   stripReasoning
@@ -84,6 +87,125 @@ test('normal completion routes to GPT-OSS and strips reasoning traces', async ()
   assert.equal(runtime.providerCalls[0].payload.presence_penalty, undefined);
   assert.equal(runtime.results[0].context.promptVersion, 'candidate-insights-v3');
 });
+
+test('eligible local request failure records the Terra attempt then succeeds on Groq', async () => {
+  const runtime = new TestRuntime([jsonResponse(successPayload('Recovered on Groq'))]);
+  runtime.localProviderRequest = async () => {
+    throw new AIRuntimeError('Terra is offline', {
+      code: 'AI_LOCAL_UNAVAILABLE',
+      statusCode: 503,
+      retryable: true
+    });
+  };
+
+  const result = await runtime.complete('interview.questions', {
+    messages: [{ role: 'user', content: 'Generate interview questions' }]
+  });
+
+  assert.equal(result.content, 'Recovered on Groq');
+  assert.equal(result.provider, 'groq');
+  assert.deepEqual(result.failover, {
+    from: 'local-ollama',
+    reason: 'AI_LOCAL_UNAVAILABLE'
+  });
+  assert.equal(runtime.providerCalls.length, 1);
+  assert.equal(runtime.results.length, 2);
+  assert.equal(runtime.results[0].status, 'failed');
+  assert.equal(runtime.results[0].route.provider, 'local-ollama');
+  assert.equal(runtime.results[1].status, 'success');
+  assert.equal(runtime.results[1].route.provider, 'groq');
+  assert.equal(runtime.results[1].route.failoverFrom, 'local-ollama');
+  assert.equal(runtime.results[1].route.failoverReason, 'AI_LOCAL_UNAVAILABLE');
+  assert.equal(runtime.results[0].requestId, runtime.results[1].requestId);
+  assert.equal(calculateFailovers(runtime.results[0].route, 1), 0);
+  assert.equal(calculateFailovers(runtime.results[1].route, 1), 1);
+  assert.equal(calculateFailovers(runtime.results[1].route, 2), 2);
+});
+
+test('eligible local request does not fail over when automatic failover is disabled', async () => {
+  const runtime = new TestRuntime([jsonResponse(successPayload('must not be used'))]);
+  const settings = createDefaultRuntimeSettings();
+  settings.localFailover.enabled = false;
+  runtime.getSettings = async () => settings;
+  runtime.localProviderRequest = async () => {
+    throw new AIRuntimeError('Terra is offline', {
+      code: 'AI_LOCAL_UNAVAILABLE',
+      statusCode: 503,
+      retryable: true
+    });
+  };
+
+  await assert.rejects(() => runtime.complete('interview.questions', {
+    messages: [{ role: 'user', content: 'Generate interview questions' }]
+  }), (error) => error.code === 'AI_LOCAL_UNAVAILABLE');
+  assert.equal(runtime.providerCalls.length, 0);
+  assert.equal(runtime.results.length, 1);
+});
+
+test('eligible local request does not fail over for schema, authentication, or other non-outage errors', async () => {
+  for (const error of [
+    new AIRuntimeError('Invalid schema', {
+      code: 'LOCAL_LLM_SCHEMA_INVALID',
+      statusCode: 503,
+      retryable: true
+    }),
+    new AIRuntimeError('Request rejected', {
+      code: 'ACTIVITY_NOT_ALLOWED',
+      statusCode: 403,
+      providerStatus: 403,
+      retryable: true
+    }),
+    new AIRuntimeError('Bad request', {
+      code: 'INVALID_AI_REQUEST',
+      statusCode: 400,
+      providerStatus: 400,
+      retryable: false
+    })
+  ]) {
+    const runtime = new TestRuntime([jsonResponse(successPayload('must not be used'))]);
+    runtime.localProviderRequest = async () => { throw error; };
+    await assert.rejects(() => runtime.complete('interview.questions', {
+      messages: [{ role: 'user', content: 'Generate interview questions' }]
+    }), (caught) => caught.code === error.code);
+    assert.equal(runtime.providerCalls.length, 0);
+    assert.equal(runtime.results.length, 1);
+  }
+  assert.equal(isLocalRuntimeUnavailable(new AIRuntimeError('offline', {
+    code: 'AI_LOCAL_UNAVAILABLE',
+    retryable: true
+  })), true);
+  assert.equal(isLocalRuntimeUnavailable(new AIRuntimeError('malformed', {
+    code: 'LOCAL_LLM_JSON_INVALID',
+    retryable: true
+  })), false);
+});
+
+test('usage audit schema persists local-to-Groq failover provenance', () => {
+  assert.ok(AIUsageEvent.schema.path('failoverFrom'));
+  assert.ok(AIUsageEvent.schema.path('failoverReason'));
+});
+
+for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {
+  test(`${activity} never silently falls back when local inference fails`, async () => {
+    const runtime = new TestRuntime([jsonResponse(successPayload('must not be used'))]);
+    runtime.localProviderRequest = async () => {
+      throw new AIRuntimeError('Terra is offline', {
+        code: 'AI_LOCAL_UNAVAILABLE',
+        statusCode: 503,
+        retryable: true
+      });
+    };
+
+    await assert.rejects(() => runtime.complete(activity, {
+      messages: [{ role: 'user', content: 'Extract this CV' }]
+    }), (error) => error.code === 'AI_LOCAL_UNAVAILABLE');
+    assert.equal(runtime.providerCalls.length, 0);
+    assert.equal(runtime.results.length, 1);
+    assert.equal(runtime.results[0].route.provider, 'local-ollama');
+    assert.equal(runtime.results[0].route.failoverPolicy, 'wait_local');
+    assert.equal(calculateFailovers(runtime.results[0].route, 1), 0);
+  });
+}
 
 test('deterministic canary selection is stable and Groq-only at 100 percent', () => {
   const context = { organizationId: 'org-stable' };

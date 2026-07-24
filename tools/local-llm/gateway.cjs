@@ -10,11 +10,18 @@ const {
   engineHealth,
   engineSettings
 } = require('./engine-adapters.cjs');
+const {
+  assertConcurrencyApproved,
+  concurrencyDecision,
+  normalizeConcurrency
+} = require('./approval-store.cjs');
+const { BoundedFixedWindowRateLimiter } = require('./bounded-rate-limit.cjs');
 const { ACTIVITY_DEFINITIONS } = require('../../recruiter/backend/config/aiRuntimeCatalog');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
 const secretFile = process.env.LOCAL_LLM_SECRET_FILE || path.join(runtimeDir, 'service-secret');
+const controlSecretFile = process.env.LOCAL_LLM_CONTROL_SECRET_FILE || path.join(runtimeDir, 'control-secret');
 const stateFile = process.env.LOCAL_LLM_STATE_FILE || path.join(runtimeDir, 'state.json');
 const logFile = process.env.LOCAL_LLM_LOG_FILE || path.join(runtimeDir, 'gateway.log');
 const host = process.env.LOCAL_LLM_GATEWAY_HOST || '127.0.0.1';
@@ -24,13 +31,17 @@ const signatureSkewMs = Number(process.env.LOCAL_LLM_SIGNATURE_SKEW_MS || 5 * 60
 const nonceTtlMs = Number(process.env.LOCAL_LLM_NONCE_TTL_MS || 10 * 60 * 1000);
 const rateLimitWindowMs = Number(process.env.LOCAL_LLM_RATE_LIMIT_WINDOW_MS || 60 * 1000);
 const rateLimitRequests = Number(process.env.LOCAL_LLM_RATE_LIMIT_REQUESTS || 120);
+const rateLimitMaxKeys = Number(process.env.LOCAL_LLM_RATE_LIMIT_MAX_KEYS || 10_000);
+const publicHealthRateLimitWindowMs = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_WINDOW_MS || 60 * 1000);
+const publicHealthRateLimitRequests = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_REQUESTS || 30);
+const publicHealthRateLimitMaxKeys = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_MAX_KEYS || 10_000);
 const maxWaitingRequests = Number(process.env.LOCAL_LLM_MAX_WAITING_REQUESTS || 1000);
 const recruiterBackendUrl = String(process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com').replace(/\/+$/, '');
 const allowedActivities = new Set(Object.keys(ACTIVITY_DEFINITIONS));
 const cvActivities = new Set(['candidate.cv_parse', 'ai_interview.cv_parse']);
 const requiredCvFields = ['firstName', 'lastName', 'email', 'skills', 'summary'];
 
-for (const file of [secretFile, stateFile, logFile]) {
+for (const file of [secretFile, controlSecretFile, stateFile, logFile]) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
 }
 
@@ -40,13 +51,13 @@ function atomicWrite(file, value) {
   fs.renameSync(temporary, file);
 }
 
-function ensureSecret() {
-  if (!fs.existsSync(secretFile)) atomicWrite(secretFile, `${crypto.randomBytes(48).toString('base64url')}\n`);
-  return fs.readFileSync(secretFile, 'utf8').trim();
+function ensureSecret(file) {
+  if (!fs.existsSync(file)) atomicWrite(file, `${crypto.randomBytes(48).toString('base64url')}\n`);
+  return fs.readFileSync(file, 'utf8').trim();
 }
 
-function readState() {
-  const defaults = {
+function defaultState() {
+  return {
     enabled: true,
     ingressEnabled: true,
     paused: false,
@@ -59,6 +70,31 @@ function readState() {
       { model: item.model, ...(item.baseUrl ? { baseUrl: item.baseUrl } : {}) }
     ]))
   };
+}
+
+function applyConcurrencyPolicy(state) {
+  const selectedEngine = ENGINE_IDS.includes(state.selectedEngine) ? state.selectedEngine : 'codex';
+  const selectedModel = String(
+    state.engines?.[selectedEngine]?.model
+    || ENGINE_DEFAULTS[selectedEngine]?.model
+    || ''
+  );
+  const decision = concurrencyDecision({
+    engine: selectedEngine,
+    model: selectedModel,
+    requested: state.concurrency
+  });
+  return {
+    ...state,
+    concurrency: decision.effectiveConcurrency,
+    requestedConcurrency: decision.requestedConcurrency,
+    approvedConcurrency: decision.approvedConcurrency,
+    concurrencySustainedValidated: decision.sustainedValidated
+  };
+}
+
+function readStoredState() {
+  const defaults = defaultState();
   try {
     const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
     return {
@@ -75,10 +111,32 @@ function readState() {
   }
 }
 
+function readState() {
+  return applyConcurrencyPolicy(readStoredState());
+}
+
 function writeState(update) {
-  const next = { ...readState(), ...update, updatedAt: new Date().toISOString() };
+  const {
+    requestedConcurrency: _requestedConcurrency,
+    approvedConcurrency: _approvedConcurrency,
+    concurrencySustainedValidated: _concurrencySustainedValidated,
+    ...stored
+  } = readStoredState();
+  const constrained = applyConcurrencyPolicy({ ...stored, ...update });
+  const {
+    requestedConcurrency,
+    approvedConcurrency,
+    concurrencySustainedValidated,
+    ...persisted
+  } = constrained;
+  const next = { ...persisted, updatedAt: new Date().toISOString() };
   atomicWrite(stateFile, JSON.stringify(next, null, 2));
-  return next;
+  return {
+    ...next,
+    requestedConcurrency,
+    approvedConcurrency,
+    concurrencySustainedValidated
+  };
 }
 
 function log(level, message, metadata = {}) {
@@ -87,9 +145,19 @@ function log(level, message, metadata = {}) {
   process.stdout.write(`${record}\n`);
 }
 
-const secret = ensureSecret();
+const secret = ensureSecret(secretFile);
+const controlSecret = ensureSecret(controlSecretFile);
 const seenNonces = new Map();
-const requestWindows = new Map();
+const requestLimiter = new BoundedFixedWindowRateLimiter({
+  windowMs: rateLimitWindowMs,
+  requests: rateLimitRequests,
+  maxKeys: rateLimitMaxKeys
+});
+const publicHealthLimiter = new BoundedFixedWindowRateLimiter({
+  windowMs: publicHealthRateLimitWindowMs,
+  requests: publicHealthRateLimitRequests,
+  maxKeys: publicHealthRateLimitMaxKeys
+});
 const waiting = [];
 let active = 0;
 let completed = 0;
@@ -127,7 +195,10 @@ function normalizeQueueTelemetry(input = {}) {
     ? input.recentJobs.slice(0, 20).map((job) => ({
         jobId: queueText(job?.jobId, 100),
         source: queueText(job?.source, 40),
+        producer: queueText(job?.producer, 40),
+        queue: queueText(job?.queue, 80),
         state: queueText(job?.state, 40),
+        phase: queueText(job?.phase || job?.state, 40),
         progress: Math.min(100, queueCount(job?.progress)),
         attempts: queueCount(job?.attempts),
         createdAt: queueTimestamp(job?.createdAt),
@@ -137,7 +208,17 @@ function normalizeQueueTelemetry(input = {}) {
         updatedAt: queueTimestamp(job?.updatedAt),
         waitMs: queueCount(job?.waitMs),
         processingMs: job?.processingMs == null ? null : queueCount(job.processingMs),
-        errorCode: job?.errorCode ? queueText(job.errorCode, 80) : null
+        errorCode: job?.errorCode ? queueText(job.errorCode, 80) : null,
+        transitions: Array.isArray(job?.transitions)
+          ? job.transitions.slice(-20).map((transition) => ({
+              phase: queueText(transition?.phase || transition?.state, 40),
+              state: queueText(transition?.state, 40),
+              progress: Math.min(100, queueCount(transition?.progress)),
+              attempts: queueCount(transition?.attempts),
+              at: queueTimestamp(transition?.at),
+              errorCode: transition?.errorCode ? queueText(transition.errorCode, 80) : null
+            }))
+          : []
       }))
     : [];
   return {
@@ -184,8 +265,22 @@ function normalizeQueueTelemetry(input = {}) {
       concurrency: Math.max(1, queueCount(input.worker?.concurrency ?? input.workerConcurrency) || 1),
       active: queueCount(input.worker?.active ?? input.active),
       availableSlots: queueCount(input.worker?.availableSlots),
-      utilizationPercent: Math.min(100, queueCount(input.worker?.utilizationPercent))
+      utilizationPercent: Math.min(100, queueCount(input.worker?.utilizationPercent)),
+      scope: queueText(input.worker?.scope, 80)
     },
+    queues: Array.isArray(input.queues)
+      ? input.queues.slice(0, 10).map((queue) => ({
+          name: queueText(queue?.name, 80),
+          producer: queueText(queue?.producer, 40),
+          durable: {
+            queued: queueCount(queue?.durable?.queued),
+            waitingForRuntime: queueCount(queue?.durable?.waiting_for_local_runtime ?? queue?.durable?.waitingForRuntime),
+            processing: queueCount(queue?.durable?.processing),
+            completed: queueCount(queue?.durable?.completed),
+            failed: queueCount(queue?.durable?.failed)
+          }
+        }))
+      : [],
     recentJobs,
     measuredAt: new Date().toISOString()
   };
@@ -219,7 +314,7 @@ function queueHistoryPath(inputUrl) {
   params.set('page', String(page));
   params.set('limit', String(limit));
   const state = String(inputUrl.searchParams.get('state') || '');
-  if (['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'].includes(state)) params.set('state', state);
+  if (['queued', 'waiting_for_local_runtime', 'processing', 'retrying', 'completed', 'failed'].includes(state)) params.set('state', state);
   const source = String(inputUrl.searchParams.get('source') || '');
   if (['private', 'public', 'bulk', 'ai-interview'].includes(source)) params.set('source', source);
   const search = queueText(inputUrl.searchParams.get('search'), 100);
@@ -265,28 +360,41 @@ function rateLimitKey(request) {
 }
 
 function withinRateLimit(request) {
-  const key = rateLimitKey(request);
-  const now = Date.now();
-  const window = requestWindows.get(key);
-  if (!window || now - window.startedAt >= rateLimitWindowMs) {
-    requestWindows.set(key, { startedAt: now, count: 1 });
-    return true;
-  }
-  window.count += 1;
-  return window.count <= rateLimitRequests;
+  return requestLimiter.consume(rateLimitKey(request));
 }
 
 function isLocalRequest(request) {
   return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress);
 }
 
-function sendJson(response, status, payload) {
+function hasForwardingHeaders(request) {
+  return Boolean(
+    request.headers['cf-connecting-ip']
+    || request.headers['cf-ray']
+    || request.headers['cf-visitor']
+    || request.headers['x-forwarded-for']
+    || request.headers['x-forwarded-host']
+  );
+}
+
+function isPublicRequest(request) {
+  return !isLocalRequest(request) || hasForwardingHeaders(request);
+}
+
+function isLocalControlRequest(request) {
+  if (!isLocalRequest(request)) return false;
+  if (hasForwardingHeaders(request)) return false;
+  return safeEqual(request.headers['x-seemplify-control-secret'], controlSecret);
+}
+
+function sendJson(response, status, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload);
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(body),
     'cache-control': 'no-store',
-    'x-content-type-options': 'nosniff'
+    'x-content-type-options': 'nosniff',
+    ...extraHeaders
   });
   response.end(body);
 }
@@ -478,7 +586,22 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || `${host}:${port}`}`);
   if (request.method === 'GET' && url.pathname === '/health') {
+    const publicRequest = isPublicRequest(request);
+    if (publicRequest && !publicHealthLimiter.consume(rateLimitKey(request))) {
+      return sendJson(
+        response,
+        429,
+        { ok: false, code: 'HEALTH_RATE_LIMITED' },
+        { 'retry-after': String(Math.max(1, Math.ceil(publicHealthRateLimitWindowMs / 1000))) }
+      );
+    }
     const health = await engineHealth(readState());
+    if (publicRequest) {
+      return sendJson(response, health.ok ? 200 : 503, {
+        ok: health.ok,
+        service: 'seemplify-local-cv-llm'
+      });
+    }
     return sendJson(response, health.ok ? 200 : 503, {
       ok: health.ok,
       service: 'seemplify-local-cv-llm',
@@ -486,11 +609,11 @@ const server = http.createServer(async (request, response) => {
     });
   }
   if (request.method === 'GET' && url.pathname === '/control/status') {
-    if (!isLocalRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
     return sendJson(response, 200, statusPayload());
   }
   if (request.method === 'GET' && url.pathname === '/control/queue-history') {
-    if (!isLocalRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
     try {
       const history = await fetchQueueHistory(url);
       return sendJson(response, history.status, history.payload);
@@ -499,7 +622,7 @@ const server = http.createServer(async (request, response) => {
     }
   }
   if (request.method === 'PUT' && url.pathname === '/control/state') {
-    if (!isLocalRequest(request)) {
+    if (!isLocalControlRequest(request)) {
       return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
     }
     try {
@@ -512,7 +635,16 @@ const server = http.createServer(async (request, response) => {
         if (!['automatic', 'manual'].includes(input.selectionMode)) throw new Error('Unsupported selection mode');
         allowed.selectionMode = input.selectionMode;
       }
-      if (input.concurrency !== undefined) allowed.concurrency = Math.max(1, Math.min(128, Number(input.concurrency) || 1));
+      let requestedConcurrency = null;
+      if (input.concurrency !== undefined) {
+        requestedConcurrency = Number(input.concurrency);
+        if (!Number.isInteger(requestedConcurrency) || requestedConcurrency < 1 || requestedConcurrency > 128) {
+          const error = new Error('Concurrency must be an integer from 1 to 128');
+          error.code = 'INVALID_CONCURRENCY';
+          error.status = 400;
+          throw error;
+        }
+      }
       if (input.selectedEngine !== undefined) {
         if (!ENGINE_IDS.includes(input.selectedEngine)) throw new Error(`Unsupported engine ${input.selectedEngine}`);
         allowed.selectedEngine = input.selectedEngine;
@@ -526,11 +658,27 @@ const server = http.createServer(async (request, response) => {
           allowed.engines[id] = { ...allowed.engines[id], model: modelValue };
         }
       }
+      if (requestedConcurrency !== null) {
+        const current = readStoredState();
+        const targetEngine = allowed.selectedEngine || current.selectedEngine;
+        const targetEngines = allowed.engines || current.engines;
+        const targetModel = targetEngines?.[targetEngine]?.model || ENGINE_DEFAULTS[targetEngine]?.model;
+        assertConcurrencyApproved({
+          engine: targetEngine,
+          model: targetModel,
+          requested: requestedConcurrency
+        });
+        allowed.concurrency = normalizeConcurrency(requestedConcurrency);
+      }
       const state = writeState(allowed);
       pumpQueue();
       return sendJson(response, 200, { ok: true, state });
     } catch (error) {
-      return sendJson(response, 400, { code: 'INVALID_STATE', message: error.message });
+      return sendJson(response, error.status || 400, {
+        code: error.code || 'INVALID_STATE',
+        message: error.message,
+        ...(error.details ? { concurrency: error.details } : {})
+      });
     }
   }
   if (request.method === 'POST' && url.pathname === '/v1/cv/analyze') {
@@ -549,6 +697,9 @@ const server = http.createServer(async (request, response) => {
   }
   if (request.method === 'POST' && url.pathname === '/v1/status') {
     try {
+      if (!withinRateLimit(request)) {
+        return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
+      }
       const rawBody = await readBody(request);
       const verified = verifySignature(request.headers, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
@@ -560,6 +711,9 @@ const server = http.createServer(async (request, response) => {
   }
   if (request.method === 'POST' && url.pathname === '/v1/queue-telemetry') {
     try {
+      if (!withinRateLimit(request)) {
+        return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
+      }
       const rawBody = await readBody(request);
       const verified = verifySignature(request.headers, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });

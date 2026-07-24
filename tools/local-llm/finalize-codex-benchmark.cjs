@@ -42,24 +42,36 @@ for (const model of report.models) {
     run.failed = run.results.length - qualityResults.length;
     run.qualityPassed = qualityResults.length === run.results.length;
   }
-  let safeConcurrency = 0;
+  let discoveryStableConcurrency = 0;
   for (const run of model.runs.sort((left, right) => left.concurrency - right.concurrency)) {
     if (!run.stable) break;
-    safeConcurrency = run.concurrency;
+    discoveryStableConcurrency = run.concurrency;
   }
-  model.maxTestedStableConcurrency = safeConcurrency;
-  model.passed = model.runs.every((run) => run.stable && run.qualityPassed);
+  model.maxTestedStableConcurrency = discoveryStableConcurrency;
+  // This legacy finalizer can repair quality fields in old discovery reports,
+  // but those reports did not include the separate sustained/headroom gate now
+  // required for production approval.
+  model.approvedConcurrency = 1;
+  model.sustainedValidated = false;
+  model.passed = false;
   recordApproval({
     engine: 'codex',
     model: model.model,
-    concurrency: model.maxTestedStableConcurrency || 1,
+    concurrency: 1,
+    candidateConcurrency: model.maxTestedStableConcurrency || 1,
+    sustainedValidated: false,
     measuredAt: report.generatedAt,
     reportFile
   });
 }
+report.passed = false;
 
 fs.writeFileSync(reportFile, JSON.stringify(report, null, 2), { encoding: 'utf8', mode: 0o600 });
 process.stdout.write(`${JSON.stringify({
   reportFile,
-  approvals: report.models.map((model) => ({ model: model.model, concurrency: model.maxTestedStableConcurrency || 1 }))
+  approvals: report.models.map((model) => ({
+    model: model.model,
+    concurrency: 1,
+    sustainedValidated: false
+  }))
 })}\n`);

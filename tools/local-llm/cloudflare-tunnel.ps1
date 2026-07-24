@@ -52,7 +52,9 @@ function Ensure-Configuration {
     $tunnel = Invoke-CloudflareApi Post "accounts/$AccountId/cfd_tunnel" ([ordered]@{ name=$TunnelName; config_src='cloudflare' })
   }
   $configuration = [ordered]@{ config=[ordered]@{ ingress=@(
-    [ordered]@{ hostname=$Hostname; service='http://localhost:11435'; originRequest=[ordered]@{ connectTimeout=10 } },
+    [ordered]@{ hostname=$Hostname; path='^/health$'; service='http://localhost:11435'; originRequest=[ordered]@{ connectTimeout=10 } },
+    [ordered]@{ hostname=$Hostname; path='^/v1/(cv/analyze|complete|status|queue-telemetry)$'; service='http://localhost:11435'; originRequest=[ordered]@{ connectTimeout=10 } },
+    [ordered]@{ hostname=$Hostname; service='http_status:404' },
     [ordered]@{ service='http_status:404' }
   ) } }
   Invoke-CloudflareApi Put "accounts/$AccountId/cfd_tunnel/$($tunnel.id)/configurations" $configuration | Out-Null

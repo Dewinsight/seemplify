@@ -38,17 +38,19 @@ async function waitFor(url, timeoutMs = 10_000) {
   throw new Error(`Timed out waiting for ${url}`);
 }
 
-test('CV extraction and question generation default to local but remain admin configurable', () => {
+test('CV extraction is locked local while local question generation has audited Groq failover', () => {
   const routes = new Map(DEFAULT_ROUTES.map((route) => [route.activity, route]));
   for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {
     assert.equal(routes.get(activity).provider, LOCAL_PROVIDER);
     assert.equal(routes.get(activity).model, LOCAL_CV_MODEL);
+    assert.equal(routes.get(activity).failoverPolicy, 'wait_local');
     assert.equal(ACTIVITY_DEFINITIONS[activity].defaultLocal, true);
-    assert.notEqual(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
+    assert.equal(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
   }
   for (const activity of ['interview.questions', 'ai_interview.question_generation']) {
     assert.equal(routes.get(activity).provider, LOCAL_PROVIDER);
     assert.equal(routes.get(activity).model, LOCAL_CV_MODEL);
+    assert.equal(routes.get(activity).failoverPolicy, 'groq_immediate');
     assert.equal(ACTIVITY_DEFINITIONS[activity].defaultLocal, true);
     assert.notEqual(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
   }
@@ -74,6 +76,22 @@ test('every recruiter CV upload entry point uses the durable local CV queue', ()
   assert.match(standaloneParser, /activity: 'ai_interview\.cv_parse'/);
 });
 
+test('the standalone AI Interview queue publishes signed events into the shared permanent history', () => {
+  const sourceRoot = path.resolve(__dirname, '..');
+  const internalRoute = fs.readFileSync(path.join(sourceRoot, 'routes', 'internalAI.js'), 'utf8');
+  const standaloneQueue = fs.readFileSync(
+    path.resolve(sourceRoot, '..', '..', 'ai-interview', 'backend', 'src', 'cvProcessingQueueService.js'),
+    'utf8'
+  );
+  assert.match(internalRoute, /\/v1\/cv-queue\/events/);
+  assert.match(internalRoute, /ingestExternalQueueEvent\(req\.internalService/);
+  assert.match(standaloneQueue, /QUEUE_EVENT_PATH = '\/api\/internal\/ai\/v1\/cv-queue\/events'/);
+  assert.match(standaloneQueue, /buildSignature/);
+  assert.match(standaloneQueue, /flushQueueEvents/);
+  assert.match(standaloneQueue, /Math\.min\(requestedConcurrency, approvedConcurrency\)/);
+  assert.doesNotMatch(standaloneQueue.match(/function operationalQueueEvent[\s\S]*?\n\}/)?.[0] || '', /resumeText|originalName/);
+});
+
 test('CV queue keeps a compact non-expiring operational history separate from CV contents', () => {
   const sourceRoot = path.resolve(__dirname, '..');
   const historyModel = fs.readFileSync(path.join(sourceRoot, 'models', 'CVProcessingAudit.js'), 'utf8');
@@ -82,9 +100,27 @@ test('CV queue keeps a compact non-expiring operational history separate from CV
   assert.doesNotMatch(historyModel, /resumeText|expireAfterSeconds|expiresAt/);
   assert.match(historyModel, /publicId/);
   assert.match(historyModel, /jobCreatedAt/);
+  assert.match(historyModel, /transitions/);
+  assert.match(historyModel, /'retrying'/);
   assert.match(queueService, /async function listHistory/);
   assert.match(queueService, /retainedIndefinitely: true/);
+  assert.match(queueService, /coverageStartedAt/);
+  assert.match(queueService, /HISTORY_REPAIR_INTERVAL_MS/);
+  assert.match(queueService, /\.limit\(HISTORY_REPAIR_BATCH_SIZE\)/);
+  assert.match(queueService, /lastUpdatedAt: \{ \$lt: document\.lastUpdatedAt \}/);
+  assert.match(queueService, /async function externalAdminJobs/);
+  assert.match(queueService, /producer === 'ai-interview'/);
   assert.match(historyRoute, /createLocalRuntimeHistoryAuth/);
+});
+
+test('CV queue publishes debounced telemetry on lifecycle changes as well as heartbeat recovery', () => {
+  const sourceRoot = path.resolve(__dirname, '..');
+  const queueService = fs.readFileSync(path.join(sourceRoot, 'services', 'cvAnalysisQueueService.js'), 'utf8');
+  assert.match(queueService, /function publishTelemetrySoon\(delayMs = 150\)/);
+  assert.match(queueService, /\['active', 'progress', 'completed', 'stalled'\]/);
+  assert.match(queueService, /worker\.on\('failed'/);
+  assert.match(queueService, /setInterval\(\(\) => \{\s*void publishTelemetry\(\)/);
+  assert.match(queueService, /CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY \|\| 1/);
 });
 
 test('Terra adapter records authoritative Codex token usage instead of zeroes', () => {
@@ -101,6 +137,18 @@ test('Terra adapter records authoritative Codex token usage instead of zeroes', 
     adapter,
     /engine:\s*'codex'[\s\S]{0,400}usage:\s*\{\s*prompt_tokens:\s*0,\s*completion_tokens:\s*0/
   );
+});
+
+test('CV quality harness reads engine metadata through the signed status endpoint', () => {
+  const harness = fs.readFileSync(
+    path.resolve(__dirname, '..', 'scripts', 'evaluateLocalCvRuntime.js'),
+    'utf8'
+  );
+  assert.match(harness, /async function getRuntimeStatus/);
+  assert.match(harness, /`\$\{gatewayUrl\}\/v1\/status`/);
+  assert.match(harness, /x-seemplify-signature/);
+  assert.doesNotMatch(harness, /fetch\(`\$\{gatewayUrl\}\/control\/status`/);
+  assert.match(harness, /Local runtime status omitted the selected engine or model/);
 });
 
 test('local signatures are deterministic for fixed request inputs', () => {
@@ -203,14 +251,18 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
 
   const isolatedRuntime = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-llm-test-'));
   const isolatedSecretFile = path.join(isolatedRuntime, 'service-secret');
+  const isolatedControlSecretFile = path.join(isolatedRuntime, 'control-secret');
   const isolatedStateFile = path.join(isolatedRuntime, 'state.json');
+  const isolatedApprovalFile = path.join(isolatedRuntime, 'approved-concurrency.json');
   const isolatedLogFile = path.join(isolatedRuntime, 'gateway.log');
   fs.writeFileSync(isolatedSecretFile, historySecret);
+  fs.writeFileSync(isolatedControlSecretFile, 'local-control-test-secret');
+  fs.writeFileSync(isolatedApprovalFile, JSON.stringify({ byEngineModel: {} }));
   fs.writeFileSync(isolatedStateFile, JSON.stringify({
     enabled: true,
     ingressEnabled: true,
     paused: false,
-    concurrency: 1,
+    concurrency: 128,
     autoStart: false,
     selectedEngine: 'ollama',
     engines: {
@@ -225,8 +277,11 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       LOCAL_LLM_MODEL: 'gemma4:26b-a4b-it-qat',
       LOCAL_LLM_GATEWAY_PORT: String(gatewayPort),
       LOCAL_LLM_SECRET_FILE: isolatedSecretFile,
+      LOCAL_LLM_CONTROL_SECRET_FILE: isolatedControlSecretFile,
       LOCAL_LLM_STATE_FILE: isolatedStateFile,
+      LOCAL_LLM_APPROVAL_FILE: isolatedApprovalFile,
       LOCAL_LLM_LOG_FILE: isolatedLogFile,
+      LOCAL_LLM_HEALTH_RATE_LIMIT_REQUESTS: '2',
       RECRUITER_BACKEND_URL: `http://127.0.0.1:${historyBackendPort}`
     },
     stdio: 'ignore',
@@ -243,13 +298,48 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   assert.equal(unsigned.status, 401);
 
   const secret = fs.readFileSync(isolatedSecretFile, 'utf8').trim();
-  const historyResponse = await fetch(`http://127.0.0.1:${gatewayPort}/control/queue-history?state=completed&page=2&limit=50&search=job_demo`);
+  const controlSecret = fs.readFileSync(isolatedControlSecretFile, 'utf8').trim();
+  const controlRequest = (requestPath, options = {}) => fetch(`http://127.0.0.1:${gatewayPort}${requestPath}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      'x-seemplify-control-secret': controlSecret
+    }
+  });
+  assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).status, 403);
+  assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/queue-history`)).status, 403);
+  assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: '{}'
+  })).status, 403);
+  assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/status`, {
+    headers: {
+      'x-seemplify-control-secret': controlSecret,
+      'cf-connecting-ip': '203.0.113.10'
+    }
+  })).status, 403);
+  for (let index = 0; index < 2; index += 1) {
+    const publicHealth = await fetch(`http://127.0.0.1:${gatewayPort}/health`, {
+      headers: { 'cf-connecting-ip': '203.0.113.20' }
+    });
+    assert.equal(publicHealth.status, 200);
+    const payload = await publicHealth.json();
+    assert.deepEqual(Object.keys(payload).sort(), ['ok', 'service']);
+  }
+  assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/health`, {
+    headers: { 'cf-connecting-ip': '203.0.113.20' }
+  })).status, 429);
+
+  const historyResponse = await controlRequest('/control/queue-history?state=completed&page=2&limit=50&search=job_demo');
   assert.equal(historyResponse.status, 200);
   const historyPayload = await historyResponse.json();
   assert.equal(historyPayload.total, 51);
   assert.equal(historyPayload.jobs[0].jobId, 'job_demo_123');
   assert.match(observedHistoryRequest.url, /state=completed/);
   assert.match(observedHistoryRequest.url, /search=job_demo/);
+  await controlRequest('/control/queue-history?state=retrying&page=1&limit=25');
+  assert.match(observedHistoryRequest.url, /state=retrying/);
   const forbiddenBody = JSON.stringify({
     activity: 'unknown.activity',
     messages: [{ role: 'user', content: 'hello' }],
@@ -268,12 +358,24 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   assert.equal(replay.status, 401);
   assert.equal((await replay.json()).code, 'NONCE_REJECTED');
 
-  const initialState = (await (await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).json()).state;
+  const initialState = (await (await controlRequest('/control/status')).json()).state;
+  assert.equal(initialState.requestedConcurrency, 128);
+  assert.equal(initialState.approvedConcurrency, 1);
+  assert.equal(initialState.concurrency, 1);
   try {
-    await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
+    for (const concurrency of [64, 128]) {
+      const unapproved = await controlRequest('/control/state', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ concurrency })
+      });
+      assert.equal(unapproved.status, 409);
+      assert.equal((await unapproved.json()).code, 'CONCURRENCY_NOT_APPROVED');
+    }
+    await controlRequest('/control/state', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ concurrency: 3, paused: true })
+      body: JSON.stringify({ paused: true })
     });
     const telemetryBody = JSON.stringify({
       schemaVersion: 2,
@@ -292,11 +394,18 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       durable: { queued: 5, waitingForRuntime: 2, processing: 1, completed: 4, failed: 0, retrying: 1 },
       rates: { completedLast5Minutes: 2, completedLastHour: 4, failedLastHour: 0, averageProcessingMs: 8_000, p95ProcessingMs: 12_000 },
       worker: { running: true, concurrency: 1, active: 1, availableSlots: 0, utilizationPercent: 100 },
+      queues: [
+        { name: 'cv-analysis-local', producer: 'recruiter', durable: { queued: 5, processing: 1, completed: 4 } },
+        { name: 'ai-interview-cv-analysis-local', producer: 'ai-interview', durable: { waitingForRuntime: 2 } }
+      ],
       oldestQueuedAt: '2026-07-24T09:59:58.500Z',
       recentJobs: [{
         jobId: 'job_demo_123',
         source: 'ai-interview',
+        producer: 'ai-interview',
+        queue: 'ai-interview-cv-analysis-local',
         state: 'waiting_for_local_runtime',
+        phase: 'retrying',
         progress: 20,
         attempts: 2,
         createdAt: '2026-07-24T09:59:58.500Z',
@@ -304,6 +413,10 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
         waitMs: 1_500,
         processingMs: null,
         errorCode: 'LOCAL_LLM_PAUSED',
+        transitions: [
+          { state: 'processing', phase: 'processing', progress: 30, attempts: 1, at: '2026-07-24T09:59:59.000Z' },
+          { state: 'waiting_for_local_runtime', phase: 'retrying', progress: 20, attempts: 2, at: '2026-07-24T10:00:00.000Z' }
+        ],
         originalName: 'must-not-cross-the-gateway.pdf'
       }]
     });
@@ -321,17 +434,20 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     assert.equal(telemetry.status, 200);
     assert.deepEqual(await telemetry.json(), {
       ok: true,
-      desiredConcurrency: 3,
+      desiredConcurrency: 1,
       desiredPaused: true
     });
-    const queueStatus = await (await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).json();
+    const queueStatus = await (await controlRequest('/control/status')).json();
     assert.equal(queueStatus.queue.schemaVersion, 2);
     assert.equal(queueStatus.queue.durable.waitingForRuntime, 2);
     assert.equal(queueStatus.queue.rates.p95ProcessingMs, 12_000);
     assert.equal(queueStatus.queue.worker.utilizationPercent, 100);
+    assert.equal(queueStatus.queue.queues.length, 2);
     assert.equal(queueStatus.queue.recentJobs[0].jobId, 'job_demo_123');
+    assert.equal(queueStatus.queue.recentJobs[0].phase, 'retrying');
+    assert.equal(queueStatus.queue.recentJobs[0].transitions.length, 2);
     assert.equal(Object.hasOwn(queueStatus.queue.recentJobs[0], 'originalName'), false);
-    await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
+    await controlRequest('/control/state', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ paused: false })
@@ -412,16 +528,16 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     });
     assert.equal((await signedRequest(missingModeBody)).status, 400);
 
-    await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
+    await controlRequest('/control/state', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ selectedEngine: 'codex', paused: false })
     });
-    const localCloudStatus = await (await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).json();
+    const localCloudStatus = await (await controlRequest('/control/status')).json();
     assert.equal(localCloudStatus.executionMode, 'local-cloud');
     assert.equal(localCloudStatus.cvLocalEligible, true);
   } finally {
-    await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
+    await controlRequest('/control/state', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(initialState)

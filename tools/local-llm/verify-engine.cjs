@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { controlFetch } = require('./control-auth.cjs');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(repositoryRoot, '.local-runtime', 'llm');
@@ -61,7 +62,7 @@ async function waitForHealth() {
 
 async function verify() {
   const health = await waitForHealth();
-  const status = await (await fetch(`${gatewayUrl}/control/status`)).json();
+  const status = await (await controlFetch(`${gatewayUrl}/control/status`)).json();
   const body = JSON.stringify({
     activity: 'candidate.cv_parse',
     model: 'selected-runtime-model',

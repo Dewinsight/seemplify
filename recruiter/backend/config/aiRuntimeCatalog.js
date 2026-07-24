@@ -59,7 +59,16 @@ const DEFAULT_MODELS = Object.freeze([
 
 const ACTIVITY_DEFINITIONS = Object.freeze({
   'recruiter.general': { label: 'Recruiter AI - general', group: 'Recruiter', model: GROQ_120B, reasoningEffort: 'medium' },
-  'candidate.cv_parse': { label: 'Candidate CV parsing', group: 'Candidates', model: LOCAL_CV_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
+  'candidate.cv_parse': {
+    label: 'Candidate CV parsing',
+    group: 'Candidates',
+    model: LOCAL_CV_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
   'candidate.insights': { label: 'Candidate insights', group: 'Candidates', model: GROQ_120B, reasoningEffort: 'medium' },
   'job.description': { label: 'Job description generation', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'medium' },
   'job.requirements': { label: 'Job requirements generation', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'medium' },
@@ -75,7 +84,15 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'analytics.jobs': { label: 'Job analytics', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
   'analytics.hiring': { label: 'Hiring analytics', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
   'report.analysis': { label: 'Report analysis', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
-  'interview.questions': { label: 'Interview question generation', group: 'Interviews', model: LOCAL_MANAGED_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
+  'interview.questions': {
+    label: 'Interview question generation',
+    group: 'Interviews',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    failoverPolicy: 'groq_immediate'
+  },
   'interview.bias': { label: 'Interview bias analysis', group: 'Interviews', model: GROQ_120B, reasoningEffort: 'medium' },
   'interview.analysis': { label: 'Interview analysis', group: 'Interviews', model: GROQ_120B, reasoningEffort: 'high' },
   'interview.summary': { label: 'Interview summary', group: 'Interviews', model: GROQ_120B, reasoningEffort: 'medium' },
@@ -83,8 +100,25 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'ai_interview.chat.introduction': { label: 'AI Interview introduction', group: 'AI Interview', model: GROQ_20B, reasoningEffort: 'low' },
   'ai_interview.chat.clarification': { label: 'AI Interview clarification', group: 'AI Interview', model: GROQ_20B, reasoningEffort: 'low' },
   'ai_interview.chat.acknowledgement': { label: 'AI Interview acknowledgement', group: 'AI Interview', model: GROQ_20B, reasoningEffort: 'low' },
-  'ai_interview.question_generation': { label: 'AI Interview question generation', group: 'AI Interview', model: LOCAL_MANAGED_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
-  'ai_interview.cv_parse': { label: 'AI Interview CV parsing', group: 'AI Interview', model: LOCAL_CV_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
+  'ai_interview.question_generation': {
+    label: 'AI Interview question generation',
+    group: 'AI Interview',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    failoverPolicy: 'groq_immediate'
+  },
+  'ai_interview.cv_parse': {
+    label: 'AI Interview CV parsing',
+    group: 'AI Interview',
+    model: LOCAL_CV_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
   'ai_interview.scoring': { label: 'AI Interview scoring', group: 'AI Interview', model: GROQ_120B, reasoningEffort: 'high' }
 });
 
@@ -93,6 +127,8 @@ const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([
   provider: definition.provider || GROQ_PROVIDER,
   model: definition.model,
   reasoningEffort: definition.reasoningEffort,
+  lockedProvider: definition.lockedProvider === true,
+  failoverPolicy: definition.failoverPolicy || 'none',
   enabled: true,
   routeVersion: 1
 })));

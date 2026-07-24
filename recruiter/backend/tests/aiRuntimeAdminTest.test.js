@@ -4,10 +4,12 @@ const { afterEach, mock } = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const AIAuditEvent = require('../models/AIAuditEvent');
+const AIQuotaSnapshot = require('../models/AIQuotaSnapshot');
+const AIUsageDailyRollup = require('../models/AIUsageDailyRollup');
 const AIUsageEvent = require('../models/AIUsageEvent');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const { AIRuntimeError } = require('../services/aiRuntime/aiRuntimeService');
-const { getLiveOperations, listRequests, runRuntimeTest } = require('../services/adminAIRuntimeService');
+const { getLiveOperations, getOverview, listRequests, runRuntimeTest } = require('../services/adminAIRuntimeService');
 
 const route = {
   activity: 'recruiter.general',
@@ -61,16 +63,23 @@ test('live operations and click-through audit endpoints require analytics access
 });
 
 test('live operations compares providers and recent attributable activity', async () => {
-  mock.method(AIUsageEvent, 'aggregate', async () => [{
-    hour: [{ calls: 8, successes: 7, failures: 1, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1 }],
-    fiveMinutes: [{ calls: 2, successes: 2, failures: 0, tokens: 900, averageLatencyMs: 500 }],
-    providers: [
-      { _id: 'groq', calls: 6, successes: 5, failures: 1, averageLatencyMs: 600, maxLatencyMs: 1200, lastRequestAt: new Date() },
-      { _id: 'local-ollama', calls: 2, successes: 2, failures: 0, averageLatencyMs: 1000, maxLatencyMs: 1900, lastRequestAt: new Date() }
-    ],
-    activities: [{ _id: 'candidate.cv_parse', calls: 2, successes: 2, failures: 0 }],
-    timeline: [{ _id: '2026-07-24T10:00:00Z', calls: 2, failures: 0 }]
-  }]);
+  let aggregateCall = 0;
+  mock.method(AIUsageEvent, 'aggregate', async () => {
+    aggregateCall += 1;
+    return aggregateCall === 1 ? [{
+      hour: [{ calls: 9, successes: 7, failures: 2, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1 }],
+      fiveMinutes: [{ calls: 3, successes: 2, failures: 1, tokens: 900, averageLatencyMs: 500 }],
+      providers: [
+        { _id: 'groq', calls: 6, successes: 5, failures: 1, averageLatencyMs: 600, maxLatencyMs: 1200, lastRequestAt: new Date() },
+        { _id: 'local-ollama', calls: 3, successes: 2, failures: 1, averageLatencyMs: 1000, maxLatencyMs: 1900, lastRequestAt: new Date() }
+      ]
+    }] : [{
+      hour: [{ calls: 8, successes: 7, failures: 1, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1 }],
+      fiveMinutes: [{ calls: 2, successes: 2, failures: 0, tokens: 900, averageLatencyMs: 500 }],
+      activities: [{ _id: 'candidate.cv_parse', calls: 2, successes: 2, failures: 0 }],
+      timeline: [{ _id: '2026-07-24T10:00:00Z', calls: 2, failures: 0 }]
+    }];
+  });
   mock.method(AIUsageEvent, 'find', () => ({
     select() { return this; },
     sort() { return this; },
@@ -90,15 +99,114 @@ test('live operations compares providers and recent attributable activity', asyn
 
   const result = await getLiveOperations();
   assert.equal(result.totals.hour.calls, 8);
+  assert.equal(result.totals.hour.attemptCalls, 9);
   assert.equal(result.totals.hour.successRate, 87.5);
   assert.equal(result.providers[1].id, 'local-ollama');
   assert.equal(result.recent[0].organizationName, 'Example Ltd');
   assert.equal(result.recent[0].actorName, 'Ada Recruiter');
 });
 
+test('overview exposes full token, success, and latency detail for local and hosted usage', async () => {
+  const aggregatePipelines = [];
+  const richRows = {
+    '$activity': 'candidate.cv_parse',
+    '$model': 'gpt-5.6-terra',
+    '$provider': 'local-codex'
+  };
+  mock.method(AIUsageDailyRollup, 'aggregate', async (pipeline) => {
+    aggregatePipelines.push(pipeline);
+    const groupId = pipeline[1]?.$group?._id;
+    if (groupId === null) {
+      return [{
+        calls: 4,
+        successes: 3,
+        failures: 1,
+        inputTokens: 40000,
+        cachedInputTokens: 32000,
+        outputTokens: 1200,
+        reasoningTokens: 600,
+        totalTokens: 41200,
+        estimatedCostUsd: 0.0123,
+        latencyTotalMs: 10000
+      }];
+    }
+    if (richRows[groupId]) {
+      return [{
+        _id: richRows[groupId],
+        calls: 4,
+        successes: 3,
+        failures: 1,
+        inputTokens: 40000,
+        cachedInputTokens: 32000,
+        outputTokens: 1200,
+        reasoningTokens: 600,
+        totalTokens: 41200,
+        estimatedCostUsd: 0.0123,
+        latencyTotalMs: 10000
+      }];
+    }
+    return [];
+  });
+  mock.method(AIQuotaSnapshot, 'find', () => ({
+    sort() { return this; },
+    async lean() { return []; }
+  }));
+  mock.method(AIUsageEvent, 'find', () => ({
+    select() { return this; },
+    sort() { return this; },
+    limit() { return this; },
+    async lean() { return [{ latencyMs: 1000 }, { latencyMs: 4000 }]; }
+  }));
+  mock.method(AIUsageEvent, 'aggregate', async (pipeline) => {
+    const requestGroup = pipeline.find((stage) => stage.$group?._id?.$ifNull);
+    assert.ok(requestGroup, 'overview must group failover attempts by logical request id');
+    return [{
+      calls: 3,
+      successes: 3,
+      failures: 0,
+      averageLatencyMs: 3333,
+      tokens: 41200
+    }];
+  });
+
+  const result = await getOverview({ range: '30d' });
+
+  assert.deepEqual(result.byModel[0], {
+    _id: 'gpt-5.6-terra',
+    calls: 4,
+    successes: 3,
+    failures: 1,
+    successRate: 75,
+    inputTokens: 40000,
+    cachedInputTokens: 32000,
+    outputTokens: 1200,
+    reasoningTokens: 600,
+    totalTokens: 41200,
+    tokens: 41200,
+    estimatedCostUsd: 0.0123,
+    cost: 0.0123,
+    averageLatencyMs: 2500
+  });
+  assert.equal(result.byActivity[0].totalTokens, 41200);
+  assert.equal(result.byProvider[0]._id, 'local-codex');
+  assert.equal(result.totals.calls, 3);
+  assert.equal(result.totals.attemptCalls, 4);
+  assert.equal(result.totals.successRate, 100);
+  for (const groupId of ['$activity', '$model', '$provider']) {
+    const pipeline = aggregatePipelines.find((item) => item[1]?.$group?._id === groupId);
+    const group = pipeline[1].$group;
+    assert.deepEqual(group.inputTokens, { $sum: '$inputTokens' });
+    assert.deepEqual(group.cachedInputTokens, { $sum: '$cachedInputTokens' });
+    assert.deepEqual(group.outputTokens, { $sum: '$outputTokens' });
+    assert.deepEqual(group.reasoningTokens, { $sum: '$reasoningTokens' });
+    assert.deepEqual(group.latencyTotalMs, { $sum: '$latencyTotalMs' });
+  }
+});
+
 function mockUsageQuery(value) {
   return {
     select() { return this; },
+    sort() { return this; },
     async lean() { return value; }
   };
 }

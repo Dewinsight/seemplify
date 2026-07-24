@@ -91,7 +91,8 @@
     "test:local-cv": "node --test tests/localCvRuntime.test.js",
     "test:local-cv-queue": "node --test tests/cvAnalysisQueue.integration.test.js",
     "evaluate:local-cv": "node scripts/evaluateLocalCvRuntime.js",
-    "evaluate:local-models": "node ../../tools/local-llm/evaluate-runtime-models.cjs"
+    "evaluate:local-models": "node ../../tools/local-llm/evaluate-runtime-models.cjs",
+    "evaluate:providers": "node ../../tools/local-llm/compare-runtime-providers.cjs"
   },
   "keywords": [],
   "author": "",

@@ -3,8 +3,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { recordApproval } = require('./approval-store.cjs');
+const {
+  approvalFor,
+  assertConcurrencyApproved,
+  recordApproval
+} = require('./approval-store.cjs');
 const { cvSchema, cvText, pageCount, scoreCvOutput } = require('./three-page-cv-fixture.cjs');
+const { controlFetch } = require('./control-auth.cjs');
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = path.resolve(__dirname, '..', '..');
@@ -31,7 +36,7 @@ function sign(body) {
 }
 
 async function status() {
-  return (await (await fetch(`${gatewayUrl}/control/status`)).json());
+  return (await (await controlFetch(`${gatewayUrl}/control/status`)).json());
 }
 
 async function manage(action, options = {}) {
@@ -50,12 +55,13 @@ async function manage(action, options = {}) {
   });
 }
 
-async function setConcurrency(engine, concurrency) {
+async function setConcurrency(engine, model, concurrency) {
+  assertConcurrencyApproved({ engine, model, requested: concurrency });
   if (engine === 'ollama' && !skipRuntimeConfig) {
     await manage('set-concurrency', { concurrency });
     return;
   }
-  const response = await fetch(`${gatewayUrl}/control/state`, {
+  const response = await controlFetch(`${gatewayUrl}/control/state`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ concurrency, enabled: true, paused: false })
@@ -134,9 +140,9 @@ function percentile(values, ratio) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)];
 }
 
-async function benchmarkLevel(engine, concurrency) {
+async function benchmarkLevel(engine, model, concurrency) {
   try {
-    await setConcurrency(engine, concurrency);
+    await setConcurrency(engine, model, concurrency);
   } catch (error) {
     return {
       concurrency,
@@ -211,6 +217,14 @@ async function main() {
   }
   const health = await fetch(`${gatewayUrl}/health`);
   if (!health.ok) throw new Error(`${runtime.engine} is not healthy.`);
+  const activationCap = approvalFor(runtime.engine, runtime.model).concurrency;
+  const safeLevels = levels.filter((level) => level <= activationCap);
+  if (!safeLevels.length) {
+    throw new Error(
+      `None of the requested benchmark levels are within the sustained approval cap ${activationCap} `
+      + `for ${runtime.engine}/${runtime.model}`
+    );
+  }
   const report = {
     generatedAt: new Date().toISOString(),
     engine: runtime.engine,
@@ -218,7 +232,10 @@ async function main() {
     fixture: 'three-page A4 synthetic Ada Okafor CV using the Seemplify CV contract',
     fixturePages: pageCount,
     fixtureCharacters: cvText.length,
-    levels,
+    requestedLevels: levels,
+    levels: safeLevels,
+    activationCap,
+    skippedUnapprovedLevels: levels.filter((level) => level > activationCap),
     acceptance: {
       transportSuccessRate: 1,
       qualityPassRate: 0.95,
@@ -227,9 +244,9 @@ async function main() {
     },
     runs: []
   };
-  for (const level of levels) {
+  for (const level of safeLevels) {
     process.stdout.write(`Testing ${report.engine}/${report.model} at concurrency ${level}...\n`);
-    const run = await benchmarkLevel(report.engine, level);
+    const run = await benchmarkLevel(report.engine, report.model, level);
     report.runs.push(run);
     process.stdout.write(`${JSON.stringify({
       concurrency: level,
@@ -276,7 +293,7 @@ async function main() {
     measuredAt: report.generatedAt,
     reportFile
   });
-  await setConcurrency(report.engine, report.approvedConcurrency);
+  await setConcurrency(report.engine, report.model, report.approvedConcurrency);
   process.stdout.write(`${JSON.stringify({
     engine: report.engine,
     model: report.model,

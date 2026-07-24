@@ -20,6 +20,7 @@ $ErrorActionPreference = 'Stop'
 $WorkspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $RuntimeDir = Join-Path $WorkspaceRoot '.local-runtime\llm'
 $StateFile = Join-Path $RuntimeDir 'state.json'
+$ControlSecretFile = Join-Path $RuntimeDir 'control-secret'
 $PidFile = Join-Path $RuntimeDir 'gateway.pid'
 $StdoutLog = Join-Path $RuntimeDir 'gateway.stdout.log'
 $StderrLog = Join-Path $RuntimeDir 'gateway.stderr.log'
@@ -41,7 +42,7 @@ $BenchmarkSummaryScript = Join-Path $PSScriptRoot 'benchmark-summary.cjs'
 $VllmContainer = 'seemplify-vllm'
 $VllmImage = if ($env:SEEMPLIFY_VLLM_IMAGE) { $env:SEEMPLIFY_VLLM_IMAGE } else { 'vllm/vllm-openai:latest' }
 $VllmCacheVolume = 'seemplify-vllm-huggingface'
-$VllmConfigVersion = '4'
+$VllmConfigVersion = '5'
 $DefaultModels = [ordered]@{
   ollama = if ($env:LOCAL_LLM_MODEL) { $env:LOCAL_LLM_MODEL } else { 'gemma4:26b-a4b-it-qat' }
   vllm = if ($env:SEEMPLIFY_VLLM_MODEL) { $env:SEEMPLIFY_VLLM_MODEL } else { 'Qwen/Qwen3-14B-AWQ' }
@@ -56,6 +57,34 @@ $OllamaExe = @(
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
+
+function Get-ControlHeaders {
+  if (-not (Test-Path -LiteralPath $ControlSecretFile)) {
+    throw 'Local LLM control secret is not available.'
+  }
+  $controlSecret = (Get-Content -LiteralPath $ControlSecretFile -Raw).Trim()
+  if (-not $controlSecret) { throw 'Local LLM control secret is empty.' }
+  return @{ 'X-Seemplify-Control-Secret' = $controlSecret }
+}
+
+function Invoke-GatewayControl(
+  [string]$Method = 'Get',
+  [string]$Path = '/control/status',
+  [string]$Body = '',
+  [int]$TimeoutSec = 10
+) {
+  $arguments = @{
+    Method = $Method
+    Uri = "http://127.0.0.1:11435$Path"
+    Headers = (Get-ControlHeaders)
+    TimeoutSec = $TimeoutSec
+  }
+  if ($Body) {
+    $arguments.ContentType = 'application/json'
+    $arguments.Body = $Body
+  }
+  return Invoke-RestMethod @arguments
+}
 
 function New-DefaultState {
   return [ordered]@{
@@ -89,6 +118,17 @@ function Get-SavedState {
       }
     } catch {}
   }
+  $selectedEngine = if ($defaults.selectedEngine -in @('ollama', 'vllm', 'codex')) {
+    [string]$defaults.selectedEngine
+  } else {
+    'codex'
+  }
+  $selectedModel = [string]$defaults.engines.$selectedEngine.model
+  $requestedConcurrency = [Math]::Max(1, [Math]::Min(128, [int]$defaults.concurrency))
+  $approvedConcurrency = Get-ApprovedConcurrency $selectedEngine $selectedModel
+  $defaults.concurrency = [Math]::Min($requestedConcurrency, $approvedConcurrency)
+  $defaults | Add-Member -NotePropertyName requestedConcurrency -NotePropertyValue $requestedConcurrency -Force
+  $defaults | Add-Member -NotePropertyName approvedConcurrency -NotePropertyValue $approvedConcurrency -Force
   return ($defaults | ConvertTo-Json -Depth 12 | ConvertFrom-Json)
 }
 
@@ -104,11 +144,22 @@ function Get-ApprovedConcurrency([string]$EngineId, [string]$ModelId) {
     try {
       $approvals = Get-Content -LiteralPath $ApprovedConcurrencyFile -Raw | ConvertFrom-Json
       $key = "${EngineId}:${ModelId}"
-      $approved = $approvals.byEngineModel.$key.concurrency
-      if ($approved) { return [Math]::Max(1, [Math]::Min(128, [int]$approved)) }
+      $profile = $approvals.byEngineModel.$key
+      $approved = $profile.concurrency
+      if ($profile.sustainedValidated -eq $true -and $approved) {
+        return [Math]::Max(1, [Math]::Min(128, [int]$approved))
+      }
     } catch {}
   }
   return 1
+}
+
+function Assert-ApprovedConcurrency([string]$EngineId, [string]$ModelId, [int]$Requested) {
+  $approved = Get-ApprovedConcurrency $EngineId $ModelId
+  if ($Requested -gt $approved) {
+    throw "Concurrency $Requested is not approved for $EngineId/$ModelId; sustained approval is $approved."
+  }
+  return $approved
 }
 
 function Set-ActiveApprovedProfile([string]$EngineId, [string]$ModelId) {
@@ -166,12 +217,29 @@ function Get-GatewayProcess {
 }
 
 function Set-GatewayState([hashtable]$State) {
+  $savedBefore = Get-SavedState
+  if ($State.ContainsKey('concurrency')) {
+    $targetEngine = if ($State.ContainsKey('selectedEngine')) {
+      [string]$State.selectedEngine
+    } else {
+      [string]$savedBefore.selectedEngine
+    }
+    $targetModel = if ($State.ContainsKey('engines') -and $State.engines.$targetEngine.model) {
+      [string]$State.engines.$targetEngine.model
+    } else {
+      [string]$savedBefore.engines.$targetEngine.model
+    }
+    Assert-ApprovedConcurrency $targetEngine $targetModel ([int]$State.concurrency) | Out-Null
+  }
   $body = $State | ConvertTo-Json -Depth 12 -Compress
   try {
-    return Invoke-RestMethod -Method Put -Uri 'http://127.0.0.1:11435/control/state' -ContentType 'application/json' -Body $body -TimeoutSec 10
+    return Invoke-GatewayControl -Method Put -Path '/control/state' -Body $body -TimeoutSec 10
   } catch {
-    $saved = Get-SavedState
+    if (Get-GatewayProcess) { throw }
+    $saved = $savedBefore
     foreach ($key in $State.Keys) { $saved.$key = $State[$key] }
+    $saved.PSObject.Properties.Remove('requestedConcurrency')
+    $saved.PSObject.Properties.Remove('approvedConcurrency')
     $saved | Add-Member -NotePropertyName updatedAt -NotePropertyValue (Get-Date).ToUniversalTime().ToString('o') -Force
     $saved | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $StateFile -Encoding utf8
     return [pscustomobject]@{ ok=$true; state=$saved }
@@ -208,7 +276,7 @@ function Start-Gateway {
   for ($attempt = 0; $attempt -lt 30; $attempt++) {
     Start-Sleep -Milliseconds 500
     try {
-      Invoke-RestMethod -Uri 'http://127.0.0.1:11435/control/status' -TimeoutSec 2 | Out-Null
+      Invoke-GatewayControl -Path '/control/status' -TimeoutSec 2 | Out-Null
       return
     } catch {}
   }
@@ -222,7 +290,7 @@ function Stop-Gateway([bool]$Force) {
     try { Set-GatewayState @{ paused=$true; ingressEnabled=$false } | Out-Null } catch {}
     for ($attempt = 0; $attempt -lt 600; $attempt++) {
       try {
-        $status = Invoke-RestMethod -Uri 'http://127.0.0.1:11435/control/status' -TimeoutSec 2
+        $status = Invoke-GatewayControl -Path '/control/status' -TimeoutSec 2
         if ([int]$status.active -eq 0) { break }
       } catch { break }
       Start-Sleep -Milliseconds 500
@@ -236,7 +304,7 @@ function Wait-GatewayIdle([int]$TimeoutSeconds = 300) {
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   while ((Get-Date) -lt $deadline) {
     try {
-      $status = Invoke-RestMethod -Uri 'http://127.0.0.1:11435/control/status' -TimeoutSec 2
+      $status = Invoke-GatewayControl -Path '/control/status' -TimeoutSec 2
       if ([int]$status.active -eq 0) { return }
     } catch { return }
     Start-Sleep -Milliseconds 500
@@ -324,6 +392,7 @@ function Install-Vllm {
 
 function Start-Vllm([string]$ModelId) {
   Assert-ModelIdentifier $ModelId
+  $approvedConcurrency = Get-ApprovedConcurrency 'vllm' $ModelId
   Stop-Ollama
   if (-not (Get-Command docker.exe -ErrorAction SilentlyContinue)) { throw 'Docker Desktop is not installed.' }
   $dockerInfo = Invoke-NativeCapture (Get-Command docker.exe).Source @('info')
@@ -331,7 +400,13 @@ function Start-Vllm([string]$ModelId) {
   $container = Get-VllmContainer
   $configuredModel = if ($container) { [string]$container.Config.Labels.'ai.seemplify.model' } else { '' }
   $configuredVersion = if ($container) { [string]$container.Config.Labels.'ai.seemplify.config-version' } else { '' }
-  if ($container -and ($configuredModel -ne $ModelId -or $configuredVersion -ne $VllmConfigVersion)) {
+  $configuredConcurrency = if ($container) { [string]$container.Config.Labels.'ai.seemplify.max-num-seqs' } else { '' }
+  $replaceContainer = $container -and (
+    $configuredModel -ne $ModelId -or
+    $configuredVersion -ne $VllmConfigVersion -or
+    $configuredConcurrency -ne [string]$approvedConcurrency
+  )
+  if ($replaceContainer) {
     if ($container.State.Running) { & docker.exe stop --time 30 $VllmContainer | Out-Null }
     & docker.exe rm $VllmContainer | Out-Null
     $container = $null
@@ -350,12 +425,13 @@ function Start-Vllm([string]$ModelId) {
     --volume "${VllmCacheVolume}:/root/.cache/huggingface" `
     --label "ai.seemplify.model=$ModelId" `
     --label "ai.seemplify.config-version=$VllmConfigVersion" `
+    --label "ai.seemplify.max-num-seqs=$approvedConcurrency" `
     $VllmImage `
     $ModelId `
     --served-model-name $ModelId `
     --max-model-len 32768 `
     --gpu-memory-utilization 0.82 `
-    --max-num-seqs 16 `
+    --max-num-seqs $approvedConcurrency `
     --max-num-batched-tokens 8192 `
     --enable-prefix-caching | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Could not create the Seemplify vLLM container.' }
@@ -451,6 +527,7 @@ function Get-BestAvailableProfile {
         $summary = $result.stdout | ConvertFrom-Json
         $candidates = @($summary.profiles |
           Where-Object {
+            $_.sustainedValidated -eq $true -and
             $_.approvedRun.acceptable -and
             [double]$_.approvedRun.qualityPassRate -ge 0.95 -and
             [int]$_.approvedConcurrency -gt 0
@@ -545,8 +622,10 @@ function Select-InferenceEngine([string]$EngineId, [string]$ModelId) {
   if (-not $ModelId) { $ModelId = [string]$state.engines.$EngineId.model }
   Assert-ModelIdentifier $ModelId
   $approvedConcurrency = Get-ApprovedConcurrency $EngineId $ModelId
-  Set-GatewayState @{ paused=$true; ingressEnabled=$false; concurrency=$approvedConcurrency } | Out-Null
+  Set-GatewayState @{ paused=$true; ingressEnabled=$false } | Out-Null
   Wait-GatewayIdle
+  Set-EngineState $EngineId $ModelId | Out-Null
+  Set-GatewayState @{ concurrency=$approvedConcurrency } | Out-Null
   if ($EngineId -eq 'ollama') {
     Stop-Vllm
     # Ollama can otherwise retain the previous model in VRAM while loading the
@@ -564,7 +643,6 @@ function Select-InferenceEngine([string]$EngineId, [string]$ModelId) {
     Install-CodexCli
     if (-not (Get-CodexStatus).authenticated) { throw 'Codex CLI authentication is required before selecting it.' }
   }
-  Set-EngineState $EngineId $ModelId | Out-Null
   Set-ActiveApprovedProfile $EngineId $ModelId
   Set-GatewayState @{ enabled=$true; paused=$false; ingressEnabled=$restoreIngress } | Out-Null
 }
@@ -577,7 +655,7 @@ function Verify-InferenceEngine([string]$EngineId, [string]$ModelId) {
 
 function Get-Status {
   $gateway = $null
-  try { $gateway = Invoke-RestMethod -Uri 'http://127.0.0.1:11435/control/status' -TimeoutSec 3 } catch {}
+  try { $gateway = Invoke-GatewayControl -Path '/control/status' -TimeoutSec 3 } catch {}
   $ollama = $null
   try { $ollama = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/ps' -TimeoutSec 3 } catch {}
   $ollamaTags = @()
@@ -691,6 +769,9 @@ switch ($Action) {
   'disable-auto-start' { Set-GatewayState @{ autoStart=$false } | Out-Null; Set-ManagedAutoStart $false }
   'set-concurrency' {
     $stateBefore = Get-SavedState
+    $selectedEngine = [string]$stateBefore.selectedEngine
+    $selectedModel = [string]$stateBefore.engines.$selectedEngine.model
+    Assert-ApprovedConcurrency $selectedEngine $selectedModel $Concurrency | Out-Null
     $restorePaused = [bool]$stateBefore.paused
     Set-GatewayState @{ concurrency=$Concurrency; paused=$true } | Out-Null
     if ($stateBefore.selectedEngine -eq 'ollama' -and (Get-Process ollama -ErrorAction SilentlyContinue)) {

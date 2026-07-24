@@ -3,7 +3,12 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { promisify } = require('node:util');
-const { recordApproval } = require('./approval-store.cjs');
+const {
+  approvalFor,
+  assertConcurrencyApproved,
+  recordApproval
+} = require('./approval-store.cjs');
+const { controlFetch } = require('./control-auth.cjs');
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = path.resolve(__dirname, '..', '..');
@@ -15,6 +20,7 @@ const levels = String(process.argv.find((value) => value.startsWith('--levels=')
   .split(',').map(Number).filter((value) => Number.isInteger(value) && value >= 1 && value <= 128);
 const requestsPerLevel = Math.max(2, Number(process.argv.find((value) => value.startsWith('--requests='))?.split('=')[1] || 3));
 let activeEngine = '';
+let activeModel = '';
 
 const schema = {
   type: 'object',
@@ -50,6 +56,11 @@ function sign(body) {
 }
 
 async function setConcurrency(concurrency) {
+  assertConcurrencyApproved({
+    engine: activeEngine,
+    model: activeModel,
+    requested: concurrency
+  });
   if (activeEngine === 'ollama') {
     await execFileAsync('powershell.exe', [
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', manageScript,
@@ -57,7 +68,7 @@ async function setConcurrency(concurrency) {
     ], { cwd: repositoryRoot, timeout: 15 * 60_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
     return;
   }
-  const response = await fetch(`${gatewayUrl}/control/state`, {
+  const response = await controlFetch(`${gatewayUrl}/control/state`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ concurrency, enabled: true, paused: false })
@@ -175,16 +186,28 @@ async function main() {
   fs.mkdirSync(runtimeDir, { recursive: true });
   const health = await fetch(`${gatewayUrl}/health`);
   if (!health.ok) throw new Error('The selected CV inference engine must be healthy before benchmarking.');
-  const runtimeStatus = await (await fetch(`${gatewayUrl}/control/status`)).json();
+  const runtimeStatus = await (await controlFetch(`${gatewayUrl}/control/status`)).json();
   activeEngine = runtimeStatus.engine;
+  activeModel = runtimeStatus.model;
+  const activationCap = approvalFor(activeEngine, activeModel).concurrency;
+  const safeLevels = levels.filter((level) => level <= activationCap);
+  if (!safeLevels.length) {
+    throw new Error(
+      `None of the requested benchmark levels are within the sustained approval cap ${activationCap} `
+      + `for ${activeEngine}/${activeModel}`
+    );
+  }
   const report = {
     generatedAt: new Date().toISOString(),
     engine: runtimeStatus.engine,
     model: runtimeStatus.model,
     requestsPerLevel,
+    requestedLevels: levels,
+    activationCap,
+    skippedUnapprovedLevels: levels.filter((level) => level > activationCap),
     levels: []
   };
-  for (const level of levels) {
+  for (const level of safeLevels) {
     process.stdout.write(`Benchmarking concurrency ${level}...\n`);
     const result = await benchmarkLevel(level);
     report.levels.push(result);

@@ -24,6 +24,20 @@ const { AzureTextRollbackAdapter } = require('./azureTextRollbackAdapter');
 
 const SETTINGS_CACHE_MS = 15_000;
 const MAX_PROVIDER_ATTEMPTS = 2;
+const LOCAL_FAILOVER_ERROR_CODES = new Set([
+  'AI_LOCAL_NOT_CONFIGURED',
+  'AI_LOCAL_UNAVAILABLE',
+  'RATE_LIMITED',
+  'LOCAL_LLM_DISABLED',
+  'LOCAL_LLM_PAUSED',
+  'LOCAL_ENGINE_REQUIRED',
+  'GATEWAY_QUEUE_FULL',
+  'LOCAL_LLM_UNAVAILABLE',
+  'CODEX_EXEC_FAILED',
+  'CODEX_EXEC_TIMEOUT',
+  'CODEX_NOT_INSTALLED',
+  'CODEX_TURN_FAILED'
+]);
 const STRUCTURED_ACTIVITIES = new Set([
   'candidate.cv_parse',
   'job.description',
@@ -190,6 +204,17 @@ function buildAttemptError({ attempt, credential, error, startedAt }) {
   };
 }
 
+function calculateFailovers(route = {}, attempts = 1) {
+  return (route.failoverFrom ? 1 : 0) + Math.max(0, Number(attempts || 1) - 1);
+}
+
+function isLocalRuntimeUnavailable(error) {
+  return Boolean(
+    error?.retryable
+    && LOCAL_FAILOVER_ERROR_CODES.has(String(error.code || ''))
+  );
+}
+
 class AIRuntimeService {
   constructor({
     fetchImpl = global.fetch,
@@ -237,9 +262,20 @@ class AIRuntimeService {
       const shouldApplyNewLocalDefault = definition?.defaultLocal
         && existing?.provider === 'groq'
         && Number(existing?.routeVersion || 1) === 1;
-      routesByActivity.set(route.activity, definition?.lockedProvider || shouldApplyNewLocalDefault
-        ? { ...(existing || {}), ...route }
-        : { ...route, ...(existing || {}) });
+      if (definition?.lockedProvider) {
+        routesByActivity.set(route.activity, {
+          ...route,
+          ...(existing || {}),
+          provider: route.provider,
+          model: route.model,
+          lockedProvider: true,
+          failoverPolicy: route.failoverPolicy
+        });
+      } else {
+        routesByActivity.set(route.activity, shouldApplyNewLocalDefault
+          ? { ...(existing || {}), ...route }
+          : { ...route, ...(existing || {}) });
+      }
     }
     settings = {
       ...defaults,
@@ -257,14 +293,27 @@ class AIRuntimeService {
   }
 
   resolveRoute(activity, settings) {
-    if (!ACTIVITY_DEFINITIONS[activity]) {
+    const definition = ACTIVITY_DEFINITIONS[activity];
+    if (!definition) {
       throw new AIRuntimeError(`Unknown AI activity ${activity}`, { code: 'AI_ACTIVITY_UNKNOWN', statusCode: 400 });
     }
     const normalized = activity;
-    const route = settings.routes.find((item) => item.activity === normalized);
-    if (!route) {
+    const storedRoute = settings.routes.find((item) => item.activity === normalized);
+    if (!storedRoute) {
       throw new AIRuntimeError(`No route is configured for ${normalized}`, { code: 'AI_ROUTE_NOT_CONFIGURED', statusCode: 503 });
     }
+    const route = definition.lockedProvider
+      ? {
+          ...storedRoute,
+          provider: definition.provider,
+          model: definition.model,
+          lockedProvider: true,
+          failoverPolicy: definition.failoverPolicy
+        }
+      : {
+          ...storedRoute,
+          failoverPolicy: storedRoute.failoverPolicy || definition.failoverPolicy || 'none'
+        };
     if (!route?.enabled || !settings.providerEnabled) {
       throw new AIRuntimeError(`AI activity ${normalized} is disabled`, { code: 'AI_ACTIVITY_DISABLED', statusCode: 503 });
     }
@@ -290,23 +339,12 @@ class AIRuntimeService {
   resolveExecutionRoute(route, settings, context) {
     if (route.provider === LOCAL_PROVIDER) {
       if (!settings.localFailover?.enabled || !settings.localFailover?.active) return route;
-      const fallbackModel = route.activity.startsWith('ai_interview.chat.') ? 'openai/gpt-oss-20b' : GROQ_120B;
-      const modelConfig = settings.models.find((item) => item.provider === 'groq' && item.id === fallbackModel && item.enabled !== false);
-      if (!modelConfig || modelConfig.available === false) {
-        throw new AIRuntimeError(`Local AI is unavailable and Groq fallback ${fallbackModel} is not available`, {
-          code: 'AI_FAILOVER_MODEL_UNAVAILABLE',
-          statusCode: 503,
-          retryable: true
-        });
-      }
-      return {
-        ...route,
-        provider: 'groq',
-        model: fallbackModel,
-        modelConfig,
-        failoverFrom: LOCAL_PROVIDER,
-        failoverReason: settings.localFailover.reason || 'local_runtime_unhealthy'
-      };
+      if (route.failoverPolicy !== 'groq_immediate') return route;
+      return this.createGroqFailoverRoute(
+        route,
+        settings,
+        settings.localFailover.reason || 'local_runtime_unhealthy'
+      );
     }
     if (shouldUseGroq(context, settings.rollout)) return route;
     return {
@@ -319,6 +357,36 @@ class AIRuntimeService {
         label: 'Azure text rollback baseline',
         pricing: {}
       }
+    };
+  }
+
+  createGroqFailoverRoute(route, settings, reason = 'local_runtime_unhealthy') {
+    if (
+      route.provider !== LOCAL_PROVIDER
+      || route.failoverPolicy !== 'groq_immediate'
+      || settings.localFailover?.enabled !== true
+    ) return null;
+    const fallbackModel = route.activity.startsWith('ai_interview.chat.') ? 'openai/gpt-oss-20b' : GROQ_120B;
+    const modelConfig = settings.models.find((item) => (
+      item.provider === 'groq'
+      && item.id === fallbackModel
+      && item.enabled !== false
+    ));
+    if (!modelConfig || modelConfig.available === false) {
+      throw new AIRuntimeError(`Local AI is unavailable and Groq fallback ${fallbackModel} is not available`, {
+        code: 'AI_FAILOVER_MODEL_UNAVAILABLE',
+        statusCode: 503,
+        retryable: true,
+        details: { failoverFrom: LOCAL_PROVIDER, failoverReason: sanitizeMessage(reason) }
+      });
+    }
+    return {
+      ...route,
+      provider: 'groq',
+      model: fallbackModel,
+      modelConfig,
+      failoverFrom: LOCAL_PROVIDER,
+      failoverReason: sanitizeMessage(reason || 'local_runtime_unhealthy')
     };
   }
 
@@ -618,7 +686,9 @@ class AIRuntimeService {
       errorCode: error?.code,
       errorMessage: error?.message,
       attempts,
-      failovers: Math.max(0, attempts - 1),
+      failovers: calculateFailovers(route, attempts),
+      failoverFrom: route.failoverFrom,
+      failoverReason: route.failoverReason,
       attemptErrors: (attemptErrors || []).slice(0, MAX_PROVIDER_ATTEMPTS).map((item) => ({
         ...item,
         message: sanitizeMessage(item.message)
@@ -683,6 +753,88 @@ class AIRuntimeService {
     }
   }
 
+  async completeGroq({ route, input, options, context, requestId, settings }) {
+    const payload = this.normalizePayload(input, route, { stream: false });
+    const startedAt = Date.now();
+    const excludeIds = [];
+    const excludeQuotaGroups = [];
+    let lastError;
+    let lastCredential;
+    let lastResponse;
+    const attemptErrors = [];
+
+    for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+      const credentials = await this.listEligibleCredentials({
+        model: route.model,
+        modelConfig: route.modelConfig,
+        excludeIds,
+        excludeQuotaGroups
+      });
+      const credential = credentials[0];
+      if (!credential) {
+        lastError = lastError || new AIRuntimeError('No healthy Groq credential is available', {
+          code: 'AI_CREDENTIALS_EXHAUSTED', statusCode: 503
+        });
+        break;
+      }
+      lastCredential = credential;
+      const attemptStartedAt = Date.now();
+      let response;
+      try {
+        response = await this.providerRequest({ credential, payload, timeoutMs: options.timeoutMs });
+        lastResponse = response;
+        if (!response.ok) throw await this.parseErrorResponse(response);
+        const data = stripReasoning(await response.json());
+        const content = data?.choices?.[0]?.message?.content;
+        const toolCalls = data?.choices?.[0]?.message?.tool_calls;
+        if (!String(content || '').trim() && !Array.isArray(toolCalls)) {
+          throw new AIRuntimeError('Groq returned an empty completion', { code: 'AI_EMPTY_RESPONSE', statusCode: 503 });
+        }
+        await this.markCredentialSuccess(credential, settings);
+        await this.recordResult({
+          requestId, context, route, credential, status: 'success', response, payload, data,
+          attempts: attempt, attemptErrors, startedAt
+        });
+        return {
+          requestId,
+          content: String(content || '').trim(),
+          toolCalls: toolCalls || [],
+          finishReason: data?.choices?.[0]?.finish_reason,
+          model: data?.model || route.model,
+          provider: 'groq',
+          failover: route.failoverFrom
+            ? { from: route.failoverFrom, reason: route.failoverReason }
+            : null,
+          usage: normalizeUsage(data?.usage || {}),
+          raw: data
+        };
+      } catch (error) {
+        lastError = error instanceof AIRuntimeError ? error : new AIRuntimeError(sanitizeMessage(error.message));
+        attemptErrors.push(buildAttemptError({ attempt, credential, error: lastError, startedAt: attemptStartedAt }));
+        await this.markCredentialFailure(credential, lastError, route.model, settings);
+        excludeIds.push(credential._id);
+        const providerStatus = Number(lastError.providerStatus || 0);
+        if (providerStatus === 429 || lastError.details?.blockedAccess) excludeQuotaGroups.push(credential.quotaGroup);
+        if (!lastError.retryable) break;
+      }
+    }
+
+    await this.recordResult({
+      requestId,
+      context,
+      route,
+      credential: lastCredential,
+      status: 'failed',
+      response: lastResponse,
+      payload,
+      error: lastError,
+      attempts: Math.max(1, excludeIds.length),
+      attemptErrors,
+      startedAt
+    });
+    throw lastError || new AIRuntimeError('Groq request failed');
+  }
+
   async complete(activity, input = {}, options = {}) {
     const settings = await this.getSettings();
     const configuredRoute = this.resolveRoute(activity, settings);
@@ -733,87 +885,30 @@ class AIRuntimeService {
           requestId, context, route, status: 'failed', response, payload,
           error: runtimeError, attempts: 1, startedAt
         });
+        const fallbackRoute = isLocalRuntimeUnavailable(runtimeError)
+          ? this.createGroqFailoverRoute(
+              route,
+              settings,
+              runtimeError.code || 'local_request_failed'
+            )
+          : null;
+        if (fallbackRoute) {
+          return this.completeGroq({
+            route: fallbackRoute,
+            input,
+            options,
+            context,
+            requestId,
+            settings
+          });
+        }
         throw runtimeError;
       }
     }
     if (route.provider === 'azure') {
       return this.completeAzureBaseline({ route, input, options, context, requestId });
     }
-    const payload = this.normalizePayload(input, route, { stream: false });
-    const startedAt = Date.now();
-    const excludeIds = [];
-    const excludeQuotaGroups = [];
-    let lastError;
-    let lastCredential;
-    let lastResponse;
-    const attemptErrors = [];
-
-    for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
-      const credentials = await this.listEligibleCredentials({
-        model: route.model,
-        modelConfig: route.modelConfig,
-        excludeIds,
-        excludeQuotaGroups
-      });
-      const credential = credentials[0];
-      if (!credential) {
-        lastError = lastError || new AIRuntimeError('No healthy Groq credential is available', {
-          code: 'AI_CREDENTIALS_EXHAUSTED', statusCode: 503
-        });
-        break;
-      }
-      lastCredential = credential;
-      const attemptStartedAt = Date.now();
-      let response;
-      try {
-        response = await this.providerRequest({ credential, payload, timeoutMs: options.timeoutMs });
-        lastResponse = response;
-        if (!response.ok) throw await this.parseErrorResponse(response);
-        const data = stripReasoning(await response.json());
-        const content = data?.choices?.[0]?.message?.content;
-        const toolCalls = data?.choices?.[0]?.message?.tool_calls;
-        if (!String(content || '').trim() && !Array.isArray(toolCalls)) {
-          throw new AIRuntimeError('Groq returned an empty completion', { code: 'AI_EMPTY_RESPONSE', statusCode: 503 });
-        }
-        await this.markCredentialSuccess(credential, settings);
-        await this.recordResult({
-          requestId, context, route, credential, status: 'success', response, payload, data,
-          attempts: attempt, attemptErrors, startedAt
-        });
-        return {
-          requestId,
-          content: String(content || '').trim(),
-          toolCalls: toolCalls || [],
-          finishReason: data?.choices?.[0]?.finish_reason,
-          model: data?.model || route.model,
-          usage: normalizeUsage(data?.usage || {}),
-          raw: data
-        };
-      } catch (error) {
-        lastError = error instanceof AIRuntimeError ? error : new AIRuntimeError(sanitizeMessage(error.message));
-        attemptErrors.push(buildAttemptError({ attempt, credential, error: lastError, startedAt: attemptStartedAt }));
-        await this.markCredentialFailure(credential, lastError, route.model, settings);
-        excludeIds.push(credential._id);
-        const providerStatus = Number(lastError.providerStatus || 0);
-        if (providerStatus === 429 || lastError.details?.blockedAccess) excludeQuotaGroups.push(credential.quotaGroup);
-        if (!lastError.retryable) break;
-      }
-    }
-
-    await this.recordResult({
-      requestId,
-      context,
-      route,
-      credential: lastCredential,
-      status: 'failed',
-      response: lastResponse,
-      payload,
-      error: lastError,
-      attempts: Math.max(1, excludeIds.length),
-      attemptErrors,
-      startedAt
-    });
-    throw lastError || new AIRuntimeError('Groq request failed');
+    return this.completeGroq({ route, input, options, context, requestId, settings });
   }
 
   async chatCompletion(messages, options = {}) {
@@ -1134,7 +1229,9 @@ const aiRuntimeService = new AIRuntimeService();
 module.exports = aiRuntimeService;
 module.exports.AIRuntimeError = AIRuntimeError;
 module.exports.AIRuntimeService = AIRuntimeService;
+module.exports.calculateFailovers = calculateFailovers;
 module.exports.deterministicBucket = deterministicBucket;
+module.exports.isLocalRuntimeUnavailable = isLocalRuntimeUnavailable;
 module.exports.quotaSnapshotIsAvailable = quotaSnapshotIsAvailable;
 module.exports.rateLimitCooldownUntil = rateLimitCooldownUntil;
 module.exports.requiredCapabilitiesForActivity = requiredCapabilitiesForActivity;

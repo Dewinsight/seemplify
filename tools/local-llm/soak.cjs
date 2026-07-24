@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { controlFetch } = require('./control-auth.cjs');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(repositoryRoot, '.local-runtime', 'llm');
@@ -89,9 +90,9 @@ function percentile(values, ratio) {
 }
 
 async function main() {
-  const runtime = await (await fetch(`${gatewayUrl}/control/status`)).json();
+  const runtime = await (await controlFetch(`${gatewayUrl}/control/status`)).json();
   const configuredConcurrency = Math.max(1, Number(runtime.state?.concurrency || 1));
-  const stateResponse = await fetch(`${gatewayUrl}/control/state`, {
+  const stateResponse = await controlFetch(`${gatewayUrl}/control/state`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ enabled: true, ingressEnabled: true, paused: false })
@@ -100,7 +101,7 @@ async function main() {
 
   const samples = [];
   const sampler = setInterval(() => {
-    void fetch(`${gatewayUrl}/control/status`)
+    void controlFetch(`${gatewayUrl}/control/status`)
       .then((response) => response.json())
       .then((status) => samples.push({
         at: new Date().toISOString(),

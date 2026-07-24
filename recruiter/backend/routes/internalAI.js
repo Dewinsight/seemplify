@@ -2,6 +2,7 @@ const express = require('express');
 const { ACTIVITY_DEFINITIONS } = require('../config/aiRuntimeCatalog');
 const { createInternalServiceAuth } = require('../middleware/internalServiceAuth');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
+const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
 const { runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
 
 const router = express.Router();
@@ -64,6 +65,17 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
     res.status(status).json({
       code: error.code || (status === 400 ? 'AI_GATEWAY_VALIDATION_ERROR' : 'AI_PROVIDER_UNAVAILABLE'),
       message: error.message || 'AI provider is unavailable'
+    });
+  }
+});
+
+router.post('/v1/cv-queue/events', internalAuth, async (req, res) => {
+  try {
+    res.json(await cvAnalysisQueue.ingestExternalQueueEvent(req.internalService, req.body));
+  } catch (error) {
+    res.status(error.statusCode || 503).json({
+      code: error.code || 'CV_QUEUE_EVENT_UNAVAILABLE',
+      message: error.message || 'CV queue event could not be recorded'
     });
   }
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -234,8 +234,17 @@ interface UsageBreakdown {
   _id: string;
   name?: string;
   calls: number;
+  successes: number;
   failures: number;
+  successRate: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
   tokens: number;
+  averageLatencyMs: number;
+  estimatedCostUsd?: number;
   cost?: number;
 }
 
@@ -256,6 +265,7 @@ interface QuotaSnapshot {
 interface RuntimeOverview {
   totals: {
     calls: number;
+    attemptCalls?: number;
     successes: number;
     failures: number;
     successRate: number;
@@ -280,6 +290,7 @@ interface RuntimeOverview {
 
 interface LiveMetric {
   calls: number;
+  attemptCalls?: number;
   successes: number;
   failures: number;
   successRate: number;
@@ -416,6 +427,12 @@ function formatNumber(value: number | undefined, digits = 0) {
   return new Intl.NumberFormat('en-GB', { maximumFractionDigits: digits }).format(Number(value || 0));
 }
 
+function formatRecordedTokens(totalTokens: unknown, value: unknown = totalTokens) {
+  return Number(totalTokens || 0) > 0
+    ? formatNumber(Number(value || 0))
+    : 'Not recorded';
+}
+
 function formatDate(value?: string) {
   if (!value) return 'Never';
   const date = new Date(value);
@@ -457,6 +474,49 @@ function queueStateClass(state: string) {
   if (state === 'waiting_for_local_runtime') return 'text-amber-300';
   if (state === 'processing') return 'text-gray-100';
   return 'text-gray-300';
+}
+
+function activateTableRow(event: KeyboardEvent<HTMLTableRowElement>, action: () => void) {
+  if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+  event.preventDefault();
+  action();
+}
+
+function localEngineLabel(runtime: LocalRuntimeStatus | null) {
+  if (!runtime?.reachable) return 'Not reported';
+  if (runtime.engine === 'codex') return 'Codex CLI (local-cloud)';
+  if (runtime.engine === 'vllm') return 'vLLM (local GPU)';
+  if (runtime.engine === 'ollama') return 'Ollama (local GPU)';
+  return 'Not reported';
+}
+
+function localRoutingLabel(runtime: LocalRuntimeStatus | null) {
+  if (!runtime) return 'Unknown';
+  if (!runtime.reachable) return 'Unavailable';
+  if (runtime.cvLocalEligible === false) return 'Blocked — local engine required';
+  if (runtime.cvLocalEligible === true) return 'Available to assigned activities';
+  return 'Unknown';
+}
+
+function localFailoverLabel(runtime: LocalRuntimeStatus | null) {
+  if (!runtime?.failover) return 'Unknown';
+  if (!runtime.failover.enabled || runtime.failover.status === 'disabled') return 'Disabled';
+  if (runtime.failover.active) return 'Groq active';
+  if (runtime.failover.status === 'healthy') return 'Local primary';
+  return 'Unknown';
+}
+
+function optionalNumber(value: number | undefined, suffix = '') {
+  return value == null ? 'Not reported' : `${formatNumber(value)}${suffix}`;
+}
+
+function providerUsageLabel(provider: string) {
+  if (provider === 'local-codex') return 'Terra (local-cloud)';
+  if (provider === 'local-ollama') return 'Ollama (local GPU)';
+  if (provider === 'local-vllm') return 'vLLM (local GPU)';
+  if (provider === 'groq') return 'Groq';
+  if (provider === 'azure-openai' || provider === 'azure') return 'Azure';
+  return provider || 'Unknown';
 }
 
 async function adminJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -534,6 +594,15 @@ export default function AIRuntimeAdminPage() {
   const [detailSelection, setDetailSelection] = useState<DetailSelection | null>(null);
   const [detailData, setDetailData] = useState<Record<string, unknown> | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const liveSnapshotRevisionRef = useRef(0);
+  const liveAggregateRevisionRef = useRef(0);
+  const liveAggregateRefreshInFlightRef = useRef(false);
+  const liveAggregateContextRef = useRef<{
+    loadOverview: () => Promise<void>;
+    loadRequests: () => Promise<void>;
+    tab: TabKey;
+    requestPage: number;
+  } | null>(null);
 
   const definitions = useMemo(() => new Map(
     (settings?.activityDefinitions || []).map((item) => [item.activity, item])
@@ -643,17 +712,59 @@ export default function AIRuntimeAdminPage() {
     setAuditPages(Math.max(1, data.pagination.pages));
   }, [auditPage]);
 
+  useEffect(() => {
+    liveAggregateContextRef.current = { loadOverview, loadRequests, tab, requestPage };
+  }, [loadOverview, loadRequests, requestPage, tab]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const context = liveAggregateContextRef.current;
+      const snapshotRevision = liveSnapshotRevisionRef.current;
+      if (
+        !context
+        || liveAggregateRefreshInFlightRef.current
+        || snapshotRevision === liveAggregateRevisionRef.current
+      ) return;
+
+      liveAggregateRefreshInFlightRef.current = true;
+      const refreshes = [context.loadOverview()];
+      if (context.tab === 'requests' && context.requestPage === 1) {
+        refreshes.push(context.loadRequests());
+      }
+      void Promise.all(refreshes)
+        .then(() => {
+          liveAggregateRevisionRef.current = snapshotRevision;
+        })
+        .catch(() => {
+          // The live panel remains usable; the next snapshot retries aggregate refresh.
+        })
+        .finally(() => {
+          liveAggregateRefreshInFlightRef.current = false;
+        });
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       await Promise.all([loadOverview(), loadLiveOperations(), loadSettings(), loadAudits(), loadLocalRuntime()]);
-      if (tab === 'requests') await loadRequests();
     } catch (error) {
       toast({ title: 'Unable to load AI runtime', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
-  }, [loadAudits, loadLiveOperations, loadLocalRuntime, loadOverview, loadRequests, loadSettings, tab, toast]);
+  }, [loadAudits, loadLiveOperations, loadLocalRuntime, loadOverview, loadSettings, toast]);
+
+  async function refreshVisibleData() {
+    await refresh();
+    if (tab !== 'requests') return;
+    try {
+      await loadRequests();
+    } catch (error) {
+      toast({ title: 'Unable to load requests', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
+    }
+  }
 
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
@@ -685,6 +796,7 @@ export default function AIRuntimeAdminPage() {
           for (const frame of parsed.frames) {
             if (frame.event === 'snapshot') {
               setLiveOperations(JSON.parse(frame.data) as LiveOperations);
+              liveSnapshotRevisionRef.current += 1;
               setLiveConnection('live');
               setLiveError('');
             } else if (frame.event === 'telemetry-error') {
@@ -1088,12 +1200,11 @@ export default function AIRuntimeAdminPage() {
                 <p className="mt-1 text-sm text-gray-400">Groq for general AI; signed managed local or local-cloud routing and a durable queue for CV extraction.</p>
               </div>
               <div className="flex items-center gap-2">
-                <StatusBadge status={liveConnection} />
-                <Select value={range} onValueChange={(value) => setRange(value as RangeKey)}>
-                  <SelectTrigger className="w-32 border-gray-700 bg-gray-900 text-gray-200"><SelectValue /></SelectTrigger>
+                <Select value={range} onValueChange={(value) => { setRange(value as RangeKey); setRequestPage(1); }}>
+                  <SelectTrigger aria-label="Usage date range" className="w-32 border-gray-700 bg-gray-900 text-gray-200"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="7d">7 days</SelectItem><SelectItem value="30d">30 days</SelectItem><SelectItem value="90d">90 days</SelectItem><SelectItem value="all">All time</SelectItem></SelectContent>
                 </Select>
-                <Button variant="outline" size="icon" onClick={refresh} disabled={loading} className="border-gray-700 bg-gray-900 text-gray-200" title="Refresh runtime data">
+                <Button variant="outline" size="icon" onClick={() => void refreshVisibleData()} disabled={loading} className="border-gray-700 bg-gray-900 text-gray-200" aria-label="Refresh runtime data" title="Refresh runtime data">
                   <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
@@ -1124,7 +1235,7 @@ export default function AIRuntimeAdminPage() {
                     />
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
                       {[
-                        { label: 'Calls', value: formatNumber(stats?.calls), icon: Activity },
+                        { label: 'Requests', value: formatNumber(stats?.calls), icon: Activity },
                         { label: 'Success rate', value: `${formatNumber(stats?.successRate, 1)}%`, icon: CheckCircle2 },
                         { label: 'Tokens', value: formatNumber(stats?.totalTokens), icon: Cpu },
                         { label: 'Est. cost', value: `$${formatNumber(stats?.estimatedCostUsd, 4)}`, icon: CircleDollarSign },
@@ -1142,7 +1253,7 @@ export default function AIRuntimeAdminPage() {
                     <div className="grid gap-5 xl:grid-cols-2">
                       <BreakdownTable title="Activity usage" rows={overview?.byActivity || []} label={(id) => definitions.get(id)?.label || id} />
                       <BreakdownTable title="Model usage" rows={overview?.byModel || []} label={(id) => id || 'Unknown'} />
-                      <BreakdownTable title="Provider usage" rows={overview?.byProvider || []} label={(id) => id || 'Unknown'} />
+                      <BreakdownTable title="Provider usage" rows={overview?.byProvider || []} label={providerUsageLabel} />
                       <BreakdownTable title="Application usage" rows={overview?.bySource || []} label={(id) => id || 'Unknown'} />
                       <DrilldownTable title="Organizations" icon={Building2} rows={overview?.organizations || []} onSelect={inspectOrganization} />
                       <DrilldownTable title="People" icon={UserRound} rows={overview?.actors || []} onSelect={inspectActor} />
@@ -1180,7 +1291,7 @@ export default function AIRuntimeAdminPage() {
                       <p className="mt-1 text-xs text-gray-500">CV parsing and question generation use the best available managed runtime. Other activities remain on Groq until changed in Routing.</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={localRuntime?.reachable && localRuntime?.health?.ok !== false && localRuntime?.cvLocalEligible !== false ? 'healthy' : 'unavailable'} />
+                      <StatusBadge status={!localRuntime ? 'unknown' : localRuntime.reachable && localRuntime.health?.ok === true && localRuntime.cvLocalEligible !== false ? 'healthy' : localRuntime.reachable ? 'unknown' : 'unavailable'} />
                       {canConfigure && <Button variant="outline" size="sm" disabled={busy === 'local-health'} onClick={runLocalHealthCheck} className="border-gray-700">Check and route now</Button>}
                       <Button variant="outline" size="sm" onClick={loadLocalRuntime} className="border-gray-700">
                         <RefreshCw className="mr-2 h-4 w-4" />Refresh
@@ -1189,19 +1300,19 @@ export default function AIRuntimeAdminPage() {
                   </div>
                   <div className="grid gap-px bg-gray-800 sm:grid-cols-2 xl:grid-cols-4">
                     {[
-                       ['Active engine', localRuntime?.engine === 'codex' ? 'Codex CLI (local-cloud)' : localRuntime?.engine === 'vllm' ? 'vLLM (local GPU)' : 'Ollama (local GPU)'],
-                       ['Active model', localRuntime?.model || 'Not reported'],
-                       ['Local routing', localRuntime?.cvLocalEligible === false ? 'Blocked — local engine required' : 'Available to all activities'],
-                       ['Automatic failover', localRuntime?.failover?.active ? 'Groq active' : 'Local primary'],
-                       ['Health schedule', `Every ${localRuntime?.failover?.intervalMinutes || 30} minutes`],
+                       ['Active engine', localEngineLabel(localRuntime)],
+                       ['Active model', localRuntime?.reachable ? localRuntime.model || 'Not reported' : 'Not reported'],
+                       ['Local routing', localRoutingLabel(localRuntime)],
+                       ['Automatic failover', localFailoverLabel(localRuntime)],
+                       ['Health schedule', localRuntime?.failover?.intervalMinutes ? `Every ${localRuntime.failover.intervalMinutes} minutes` : 'Not reported'],
                        ['Last health check', localRuntime?.failover?.checkedAt ? formatDate(localRuntime.failover.checkedAt) : 'Not checked'],
-                       ['Gateway', localRuntime?.reachable ? 'Reachable through tunnel' : 'Unavailable'],
-                      ['Engine health', localRuntime?.health?.ok === false ? 'Offline' : localRuntime?.reachable ? 'Online' : 'Unknown'],
-                      ['Ingress', localRuntime?.state?.ingressEnabled ? 'Enabled' : 'Disabled'],
-                      ['Active inference', String(localRuntime?.active ?? 0)],
-                      ['Gateway waiting', String(localRuntime?.waiting ?? 0)],
-                      ['Concurrency', String(localRuntime?.state?.concurrency ?? localQueue?.concurrency ?? 1)],
-                      ['Average latency', `${formatNumber(localRuntime?.averageLatencyMs)} ms`]
+                       ['Gateway', !localRuntime ? 'Unknown' : localRuntime.reachable ? 'Reachable through tunnel' : 'Unavailable'],
+                      ['Engine health', localRuntime?.health?.ok === true ? 'Online' : localRuntime?.health?.ok === false ? 'Offline' : 'Unknown'],
+                      ['Ingress', localRuntime?.state ? localRuntime.state.ingressEnabled ? 'Enabled' : 'Disabled' : 'Unknown'],
+                      ['Active inference', optionalNumber(localRuntime?.active)],
+                      ['Gateway waiting', optionalNumber(localRuntime?.waiting)],
+                      ['Concurrency', optionalNumber(localRuntime?.state?.concurrency ?? localQueue?.concurrency)],
+                      ['Average latency', optionalNumber(localRuntime?.averageLatencyMs, ' ms')]
                     ].map(([label, value]) => (
                       <div key={label} className="bg-gray-900 px-4 py-4">
                         <div className="text-xs text-gray-500">{label}</div>
@@ -1249,7 +1360,7 @@ export default function AIRuntimeAdminPage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-sm font-semibold text-white">Durable CV queue</h2>
-                        <StatusBadge status={!localQueue?.available ? 'unavailable' : localQueue?.paused ? 'paused' : 'healthy'} />
+                        <StatusBadge status={!localQueue ? 'unknown' : !localQueue.available ? 'unavailable' : localQueue.paused ? 'paused' : 'healthy'} />
                       </div>
                       <p className="mt-1 text-xs text-gray-500">Uploads remain stored while the runtime is offline. BullMQ dispatch and durable Mongo state are shown separately.</p>
                       <div aria-live="polite" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -1276,10 +1387,10 @@ export default function AIRuntimeAdminPage() {
                   </div>
                   <dl className="grid gap-px border-b border-gray-800 bg-gray-800 sm:grid-cols-2 lg:grid-cols-4">
                     {[
-                      ['Dispatch', localQueue?.paused ? 'Paused' : localQueue?.available ? 'Accepting work' : 'Redis unavailable'],
-                      ['Worker', localQueue?.worker?.running ? 'Running' : 'Starting'],
-                      ['Capacity', `${formatNumber(localQueue?.worker?.active)} / ${formatNumber(localQueue?.worker?.concurrency ?? localQueue?.concurrency)} active`],
-                      ['Available slots', formatNumber(localQueue?.worker?.availableSlots)],
+                      ['Dispatch', !localQueue ? 'Unknown' : localQueue.paused ? 'Paused' : localQueue.available ? 'Accepting work' : 'Redis unavailable'],
+                      ['Worker', localQueue?.worker?.running ? 'Running' : 'Stopped'],
+                      ['Capacity', localQueue?.worker ? `${formatNumber(localQueue.worker.active)} / ${formatNumber(localQueue.worker.concurrency)} active` : 'Not reported'],
+                      ['Available slots', optionalNumber(localQueue?.worker?.availableSlots)],
                       ['Oldest wait', formatDuration(localQueue?.oldestWaitMs)],
                       ['Completed · 5 min', formatNumber(localQueue?.rates?.completedLast5Minutes)],
                       ['Completed · 1 hour', formatNumber(localQueue?.rates?.completedLastHour)],
@@ -1354,8 +1465,13 @@ export default function AIRuntimeAdminPage() {
                         {(localQueue?.recentJobs || []).map((job) => (
                           <TableRow
                             key={job.jobId}
-                            className="cursor-pointer border-gray-800 hover:bg-gray-800/70"
+                            role="button"
+                            tabIndex={0}
+                            aria-haspopup="dialog"
+                            aria-label={`Inspect CV queue job ${job.jobId}`}
+                            className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
                             onClick={() => void openOperationalDetail('queue', job.jobId, `CV queue job ${job.jobId}`)}
+                            onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('queue', job.jobId, `CV queue job ${job.jobId}`))}
                           >
                             <TableCell className="font-mono text-xs text-gray-300" title={job.jobId}>{job.jobId.slice(0, 15)}</TableCell>
                             <TableCell>
@@ -1399,7 +1515,7 @@ export default function AIRuntimeAdminPage() {
                     <div className="space-y-2">
                       <Label htmlFor="runtime-test-activity">AI activity</Label>
                       <Select value={testActivity} onValueChange={(activity) => { setTestActivity(activity); setTestResult(null); setTestError(''); }}>
-                        <SelectTrigger id="runtime-test-activity" className="border-gray-700 bg-gray-950"><SelectValue placeholder="Choose activity" /></SelectTrigger>
+                        <SelectTrigger id="runtime-test-activity" aria-label="AI activity to test" className="border-gray-700 bg-gray-950"><SelectValue placeholder="Choose activity" /></SelectTrigger>
                         <SelectContent>{enabledTestRoutes.map((route) => <SelectItem key={route.activity} value={route.activity}>{definitions.get(route.activity)?.group} / {definitions.get(route.activity)?.label || route.activity}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
@@ -1422,6 +1538,10 @@ export default function AIRuntimeAdminPage() {
                     <RuntimeTestDatum label="Executed provider" value={testResult.execution.provider} />
                     <RuntimeTestDatum label="Executed model" value={testResult.execution.model} mono />
                     <RuntimeTestDatum label="Latency" value={`${formatNumber(testResult.execution.latencyMs)} ms`} />
+                    <RuntimeTestDatum label="Input tokens" value={formatNumber(testResult.execution.usage.inputTokens)} />
+                    <RuntimeTestDatum label="Cached input" value={formatNumber(testResult.execution.usage.cachedInputTokens)} />
+                    <RuntimeTestDatum label="Output tokens" value={formatNumber(testResult.execution.usage.outputTokens)} />
+                    <RuntimeTestDatum label="Reasoning tokens" value={formatNumber(testResult.execution.usage.reasoningTokens)} />
                     <RuntimeTestDatum label="Total tokens" value={formatNumber(testResult.execution.usage.totalTokens)} />
                     <RuntimeTestDatum label="Estimated cost" value={`$${formatNumber(testResult.execution.usage.estimatedCostUsd, 6)}`} />
                     <RuntimeTestDatum label="Attempts" value={formatNumber(testResult.execution.attempts)} />
@@ -1439,7 +1559,7 @@ export default function AIRuntimeAdminPage() {
                     <div><div className="flex items-center gap-2"><h2 className="text-sm font-semibold text-white">Activity routing</h2>{settings?.routingHealth && <StatusBadge status={settings.routingHealth.valid ? 'healthy' : 'failed'} />}</div><p className="mt-1 text-xs text-gray-500">{settings?.routingHealth ? `${settings.routingHealth.configured} of ${settings.routingHealth.expected} activities configured; ${settings.routingHealth.enabled} enabled.` : 'Checking route coverage.'}</p></div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Select value={String(settings?.rollout.groqPercent || 100)} onValueChange={(value) => setSettings((current) => current ? { ...current, rollout: { ...current.rollout, groqPercent: Number(value) as 10 | 50 | 100 } } : current)}>
-                        <SelectTrigger className="w-44 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger>
+                        <SelectTrigger aria-label="Groq rollout percentage" className="w-44 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger>
                         <SelectContent><SelectItem value="10">Groq canary 10%</SelectItem><SelectItem value="50">Groq canary 50%</SelectItem><SelectItem value="100">Groq only 100%</SelectItem></SelectContent>
                       </Select>
                       <Button size="sm" onClick={saveRollout} disabled={busy === 'rollout'}><Save className="mr-2 h-4 w-4" />Save rollout</Button>
@@ -1455,8 +1575,8 @@ export default function AIRuntimeAdminPage() {
                           <TableRow key={route.activity} className="border-gray-800">
                             <TableCell><div className="font-medium text-gray-200">{definitions.get(route.activity)?.label || route.activity}</div><div className="text-xs text-gray-500">{definitions.get(route.activity)?.group} / v{route.routeVersion}{definitions.get(route.activity)?.lockedProvider ? ' / local provider locked' : ''}</div></TableCell>
                             <TableCell className={route.provider === 'groq' ? 'text-gray-300' : 'text-green-300'}>{route.provider === 'groq' ? 'Groq' : 'Managed local'}</TableCell>
-                            <TableCell><Select disabled={definitions.get(route.activity)?.lockedProvider} value={route.model} onValueChange={(model) => editRoute(route.activity, { model })}><SelectTrigger className="w-56 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent>{settings?.models.filter((model) => model.enabled && model.available !== false && (!definitions.get(route.activity)?.lockedProvider || model.provider === route.provider)).map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent></Select></TableCell>
-                            <TableCell><Select value={route.reasoningEffort} onValueChange={(reasoningEffort) => editRoute(route.activity, { reasoningEffort: reasoningEffort as ActivityRoute['reasoningEffort'] })}><SelectTrigger className="w-28 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></TableCell>
+                            <TableCell><Select disabled={definitions.get(route.activity)?.lockedProvider} value={route.model} onValueChange={(model) => editRoute(route.activity, { model })}><SelectTrigger aria-label={`${definitions.get(route.activity)?.label || route.activity} model`} className="w-56 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent>{settings?.models.filter((model) => model.enabled && model.available !== false && (!definitions.get(route.activity)?.lockedProvider || model.provider === route.provider)).map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent></Select></TableCell>
+                            <TableCell><Select value={route.reasoningEffort} onValueChange={(reasoningEffort) => editRoute(route.activity, { reasoningEffort: reasoningEffort as ActivityRoute['reasoningEffort'] })}><SelectTrigger aria-label={`${definitions.get(route.activity)?.label || route.activity} reasoning effort`} className="w-28 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <Switch aria-label={`${definitions.get(route.activity)?.label || route.activity} route`} checked={route.enabled} onCheckedChange={(enabled) => editRoute(route.activity, { enabled })} />
@@ -1501,7 +1621,7 @@ export default function AIRuntimeAdminPage() {
                             <TableCell>{credential.quotaGroup}<div className="text-xs text-gray-500">{credential.projectLabel || 'No project label'}</div></TableCell>
                             <TableCell>{credential.priority}</TableCell><TableCell><StatusBadge status={credential.status} /></TableCell><TableCell className="text-gray-400">{formatDate(credential.lastSuccessAt)}</TableCell>
                             <TableCell><div className="flex justify-end gap-1">
-                              {canManageSecrets && <><Button variant="ghost" size="icon" title="Test credential" onClick={() => credentialAction(credential._id, 'test')}><Play className="h-4 w-4" /></Button><Button variant="ghost" size="icon" title="Rotate credential" onClick={() => openCredentialDialog('rotate', credential._id, credential)}><RotateCw className="h-4 w-4" /></Button><Switch className="mx-2 mt-2" checked={credential.enabled} onCheckedChange={(enabled) => credentialAction(credential._id, 'toggle', enabled)} /></>}
+                              {canManageSecrets && <><Button variant="ghost" size="icon" aria-label={`Test ${credential.label} credential`} title="Test credential" onClick={() => credentialAction(credential._id, 'test')}><Play className="h-4 w-4" /></Button><Button variant="ghost" size="icon" aria-label={`Rotate ${credential.label} credential`} title="Rotate credential" onClick={() => openCredentialDialog('rotate', credential._id, credential)}><RotateCw className="h-4 w-4" /></Button><Switch aria-label={`${credential.enabled ? 'Disable' : 'Enable'} ${credential.label} credential`} className="mx-2 mt-2" checked={credential.enabled} onCheckedChange={(enabled) => credentialAction(credential._id, 'toggle', enabled)} /></>}
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1534,11 +1654,11 @@ export default function AIRuntimeAdminPage() {
                       className="w-full border-gray-700 bg-gray-900 sm:w-72"
                     />
                     <Select value={requestProvider} onValueChange={(value) => { setRequestProvider(value); setRequestPage(1); }}>
-                      <SelectTrigger className="w-40 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="all">All providers</SelectItem><SelectItem value="groq">Groq</SelectItem><SelectItem value="local-ollama">Managed local</SelectItem><SelectItem value="azure-openai">Azure</SelectItem></SelectContent>
+                      <SelectTrigger aria-label="Filter AI activity by provider" className="w-44 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="all">All providers</SelectItem><SelectItem value="groq">Groq</SelectItem><SelectItem value="local-codex">Terra (local-cloud)</SelectItem><SelectItem value="local-ollama">Ollama (local GPU)</SelectItem><SelectItem value="local-vllm">vLLM (local GPU)</SelectItem><SelectItem value="azure-openai">Azure</SelectItem></SelectContent>
                     </Select>
                     <Select value={requestStatus} onValueChange={(value) => { setRequestStatus(value); setRequestPage(1); }}>
-                      <SelectTrigger className="w-36 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-label="Filter AI activity by status" className="w-36 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="success">Success</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent>
                     </Select>
                     {organizationFilter && <Button variant="outline" onClick={() => setOrganizationFilter('')} className="border-gray-700">Clear organization</Button>}
@@ -1556,17 +1676,17 @@ export default function AIRuntimeAdminPage() {
                 </section>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="overflow-x-auto"><Table>
                   <TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Activity</TableHead><TableHead>Application</TableHead><TableHead>Organization / person</TableHead><TableHead>Model</TableHead><TableHead>Tokens</TableHead><TableHead>Est. cost</TableHead><TableHead>Attempts</TableHead><TableHead>Latency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>{requests.map((request) => <TableRow key={request._id} className="cursor-pointer border-gray-800 hover:bg-gray-800/70" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{request.provider}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell>{formatNumber(request.totalTokens)}</TableCell><TableCell>${formatNumber(request.estimatedCostUsd, 6)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>{requests.map((request) => <TableRow key={request._id} role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Inspect AI request ${request.requestId}`} className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)} onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`))}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{request.provider}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell>{formatRecordedTokens(request.totalTokens)}</TableCell><TableCell>${formatNumber(request.estimatedCostUsd, 6)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
                 </Table></div>{!requests.length && <div className="py-16 text-center text-sm text-gray-500">No requests match these filters.</div>}</section>
-                <div className="flex items-center justify-end gap-2"><Button variant="outline" size="icon" disabled={requestPage <= 1} onClick={() => setRequestPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{requestPage} of {requestPages}</span><Button variant="outline" size="icon" disabled={requestPage >= requestPages} onClick={() => setRequestPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div>
+                <div className="flex items-center justify-end gap-2"><Button variant="outline" size="icon" aria-label="Previous request page" title="Previous request page" disabled={requestPage <= 1} onClick={() => setRequestPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{requestPage} of {requestPages}</span><Button variant="outline" size="icon" aria-label="Next request page" title="Next request page" disabled={requestPage >= requestPages} onClick={() => setRequestPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div>
               </TabsContent>
 
               <TabsContent value="alerts" className="mt-5 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
                 {canConfigure ? <form onSubmit={saveAlerts} className="h-fit rounded-md border border-gray-800 bg-gray-900 p-5">
-                  <div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="text-sm font-semibold text-white">Notifications</h2><p className="mt-1 text-xs text-gray-500">Daily quota, monthly estimate, credential health, and recovery emails.</p></div><Switch checked={alertForm.enabled} onCheckedChange={(enabled) => setAlertForm((form) => ({ ...form, enabled }))} /></div>
+                  <div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="text-sm font-semibold text-white">Notifications</h2><p className="mt-1 text-xs text-gray-500">Daily quota, monthly estimate, credential health, and recovery emails.</p></div><Switch aria-label="Enable AI runtime notifications" checked={alertForm.enabled} onCheckedChange={(enabled) => setAlertForm((form) => ({ ...form, enabled }))} /></div>
                   <div className="space-y-4"><div className="space-y-2"><Label htmlFor="alert-recipients">Additional recipients</Label><Input id="alert-recipients" value={alertForm.recipients} onChange={(event) => setAlertForm((form) => ({ ...form, recipients: event.target.value }))} placeholder="ops@example.com, finance@example.com" className="border-gray-700 bg-gray-950" /><p className="text-xs text-gray-500">Active super admins are always included.</p></div><div className="space-y-2"><Label htmlFor="monthly-budget">Monthly estimated budget (USD)</Label><Input id="monthly-budget" type="number" min="0" step="0.01" value={alertForm.monthlyBudgetUsd} onChange={(event) => setAlertForm((form) => ({ ...form, monthlyBudgetUsd: event.target.value }))} placeholder="No budget limit" className="border-gray-700 bg-gray-950" /></div><Button type="submit" disabled={busy === 'alerts'} className="w-full"><Save className="mr-2 h-4 w-4" />Save alert settings</Button></div>
                 </form> : <div className="h-fit rounded-md border border-gray-800 bg-gray-900 p-5"><ShieldAlert className="h-5 w-5 text-amber-400" /><p className="mt-3 text-sm text-gray-300">System settings permission is required to change alert rules.</p></div>}
-                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Alert and configuration audit</h2><p className="mt-1 text-xs text-gray-500">Select any record to inspect its actor, target, status and redacted metadata.</p></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Category</TableHead><TableHead>Event</TableHead><TableHead>Target</TableHead><TableHead>Status</TableHead><TableHead>Admin</TableHead></TableRow></TableHeader><TableBody>{audits.map((event) => <TableRow key={event._id} className="cursor-pointer border-gray-800 hover:bg-gray-800/70" onClick={() => void openOperationalDetail('audit', event._id, `Audit event ${event.action}`)}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(event.createdAt)}</TableCell><TableCell>{event.category}</TableCell><TableCell><div>{event.message}</div><div className="text-xs text-gray-500">{event.action}</div></TableCell><TableCell><div>{event.targetType || 'Runtime'}</div><div className="max-w-56 truncate font-mono text-xs text-gray-500">{event.targetId || 'global'}</div></TableCell><TableCell><StatusBadge status={event.status} /></TableCell><TableCell className="text-gray-400">{event.actorEmail || 'System'}</TableCell></TableRow>)}</TableBody></Table></div>{!audits.length && <div className="py-16 text-center text-sm text-gray-500">No alert or configuration events yet.</div>}<div className="flex items-center justify-end gap-2 border-t border-gray-800 px-4 py-3"><Button variant="outline" size="icon" disabled={auditPage <= 1} onClick={() => setAuditPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{auditPage} of {auditPages}</span><Button variant="outline" size="icon" disabled={auditPage >= auditPages} onClick={() => setAuditPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div></section>
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Alert and configuration audit</h2><p className="mt-1 text-xs text-gray-500">Select any record to inspect its actor, target, status and redacted metadata.</p></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Category</TableHead><TableHead>Event</TableHead><TableHead>Target</TableHead><TableHead>Status</TableHead><TableHead>Admin</TableHead></TableRow></TableHeader><TableBody>{audits.map((event) => <TableRow key={event._id} role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Inspect audit event ${event.action}`} className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset" onClick={() => void openOperationalDetail('audit', event._id, `Audit event ${event.action}`)} onKeyDown={(keyboardEvent) => activateTableRow(keyboardEvent, () => void openOperationalDetail('audit', event._id, `Audit event ${event.action}`))}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(event.createdAt)}</TableCell><TableCell>{event.category}</TableCell><TableCell><div>{event.message}</div><div className="text-xs text-gray-500">{event.action}</div></TableCell><TableCell><div>{event.targetType || 'Runtime'}</div><div className="max-w-56 truncate font-mono text-xs text-gray-500">{event.targetId || 'global'}</div></TableCell><TableCell><StatusBadge status={event.status} /></TableCell><TableCell className="text-gray-400">{event.actorEmail || 'System'}</TableCell></TableRow>)}</TableBody></Table></div>{!audits.length && <div className="py-16 text-center text-sm text-gray-500">No alert or configuration events yet.</div>}<div className="flex items-center justify-end gap-2 border-t border-gray-800 px-4 py-3"><Button variant="outline" size="icon" aria-label="Previous audit page" title="Previous audit page" disabled={auditPage <= 1} onClick={() => setAuditPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{auditPage} of {auditPages}</span><Button variant="outline" size="icon" aria-label="Next audit page" title="Next audit page" disabled={auditPage >= auditPages} onClick={() => setAuditPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div></section>
               </TabsContent>
             </Tabs>
           </div>
@@ -1610,7 +1730,7 @@ export default function AIRuntimeAdminPage() {
                 <div className="space-y-2">
                   <Label htmlFor="quota-group">Quota group</Label>
                   <Select value={credentialForm.quotaGroup} onValueChange={(quotaGroup) => { setCredentialError(''); setCredentialForm((form) => ({ ...form, quotaGroup })); }}>
-                    <SelectTrigger id="quota-group" className="border-gray-700 bg-gray-950"><SelectValue placeholder="Choose quota group" /></SelectTrigger>
+                    <SelectTrigger id="quota-group" aria-label="Groq quota group" className="border-gray-700 bg-gray-950"><SelectValue placeholder="Choose quota group" /></SelectTrigger>
                     <SelectContent>{availableQuotaGroups.map((group) => <SelectItem key={group.id} value={group.id}>{group.label}</SelectItem>)}</SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500">Choose the Groq organization whose limits this key shares.</p>
@@ -1663,7 +1783,7 @@ export default function AIRuntimeAdminPage() {
           <DialogHeader><DialogTitle>New independent quota group</DialogTitle><DialogDescription className="text-gray-400">Use this only for a separate authorized Groq organization. Existing groups are selected from the dropdown when adding a credential; never paste an API key here.</DialogDescription></DialogHeader>
           <form onSubmit={submitQuotaGroup} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="quota-label">Organization label</Label><Input id="quota-label" required value={quotaForm.label} onChange={(event) => { setQuotaError(''); setQuotaForm((form) => ({ ...form, label: event.target.value })); }} placeholder="EU backup organization" className="border-gray-700 bg-gray-950" /><p className="text-xs text-gray-500">The internal identifier is generated automatically.</p></div>
-            <label className="flex items-start gap-3 rounded-md border border-gray-700 bg-gray-950 p-3 text-sm text-gray-300"><Switch checked={quotaForm.confirmed} onCheckedChange={(confirmed) => { setQuotaError(''); setQuotaForm((form) => ({ ...form, confirmed })); }} /><span>I confirm this quota is independent and authorized by Groq.</span></label>
+            <label className="flex items-start gap-3 rounded-md border border-gray-700 bg-gray-950 p-3 text-sm text-gray-300"><Switch aria-label="Confirm independent Groq quota" checked={quotaForm.confirmed} onCheckedChange={(confirmed) => { setQuotaError(''); setQuotaForm((form) => ({ ...form, confirmed })); }} /><span>I confirm this quota is independent and authorized by Groq.</span></label>
             {quotaError && <div role="alert" aria-live="polite" className="flex items-start gap-2 rounded-md border border-red-900 bg-red-950/60 p-3 text-sm text-red-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{quotaError}</span></div>}
             <DialogFooter><Button type="button" variant="outline" onClick={closeQuotaDialog} className="border-gray-700">Cancel</Button><Button type="submit" disabled={!quotaForm.confirmed || busy === 'quota-group'}>Create independent group</Button></DialogFooter>
           </form>
@@ -1704,9 +1824,9 @@ function LiveOperationsPanel({
       </div>
       <dl className="grid gap-px border-b border-gray-800 bg-gray-800 sm:grid-cols-3 xl:grid-cols-6">
         {[
-          ['Calls · 5 min', formatNumber(five?.calls)],
+          ['Requests · 5 min', formatNumber(five?.calls)],
           ['Failures · 5 min', formatNumber(five?.failures)],
-          ['Calls · 1 hour', formatNumber(hour?.calls)],
+          ['Requests · 1 hour', formatNumber(hour?.calls)],
           ['Success · 1 hour', `${formatNumber(hour?.successRate, 1)}%`],
           ['Average latency', `${formatNumber(hour?.averageLatencyMs)} ms`],
           ['Tokens · 1 hour', formatNumber(hour?.tokens)]
@@ -1744,7 +1864,7 @@ function LiveOperationsPanel({
           <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-medium text-white">Provider health · 1 hour</h3></div>
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader><TableRow className="border-gray-800"><TableHead>Provider</TableHead><TableHead>Calls</TableHead><TableHead>Success</TableHead><TableHead>Avg / max</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow className="border-gray-800"><TableHead>Provider</TableHead><TableHead>Attempts</TableHead><TableHead>Success</TableHead><TableHead>Avg / max</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
               <TableBody>
                 {(data?.providers || []).map((provider) => (
                   <TableRow key={provider.id} className="border-gray-800">
@@ -1888,11 +2008,11 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
           <DetailDatum label="Latency" value={`${formatNumber(Number(data.latencyMs || 0))} ms`} />
           <DetailDatum label="Attempts" value={data.attempts} />
           <DetailDatum label="Failovers" value={data.failovers} />
-          <DetailDatum label="Input tokens" value={formatNumber(Number(data.inputTokens || 0))} />
-          <DetailDatum label="Cached input" value={formatNumber(Number(data.cachedInputTokens || 0))} />
-          <DetailDatum label="Output tokens" value={formatNumber(Number(data.outputTokens || 0))} />
-          <DetailDatum label="Reasoning tokens" value={formatNumber(Number(data.reasoningTokens || 0))} />
-          <DetailDatum label="Total tokens" value={formatNumber(Number(data.totalTokens || 0))} />
+          <DetailDatum label="Input tokens" value={formatRecordedTokens(data.totalTokens, data.inputTokens)} />
+          <DetailDatum label="Cached input" value={formatRecordedTokens(data.totalTokens, data.cachedInputTokens)} />
+          <DetailDatum label="Output tokens" value={formatRecordedTokens(data.totalTokens, data.outputTokens)} />
+          <DetailDatum label="Reasoning tokens" value={formatRecordedTokens(data.totalTokens, data.reasoningTokens)} />
+          <DetailDatum label="Total tokens" value={formatRecordedTokens(data.totalTokens)} />
           <DetailDatum label="Estimated cost" value={`$${formatNumber(Number(data.estimatedCostUsd || 0), 6)}`} />
           <DetailDatum label="Prompt bytes" value={formatNumber(Number(data.promptBytes || 0))} />
           <DetailDatum label="Response bytes" value={formatNumber(Number(data.responseBytes || 0))} />
@@ -1935,9 +2055,52 @@ function RuntimeTestDatum({ label, value, mono = false }: { label: string; value
 }
 
 function BreakdownTable({ title, rows, label }: { title: string; rows: UsageBreakdown[]; label: (id: string) => string }) {
-  return <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">{title}</h2></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Name</TableHead><TableHead>Calls</TableHead><TableHead>Failures</TableHead><TableHead>Tokens</TableHead><TableHead>Est. cost</TableHead></TableRow></TableHeader><TableBody>{rows.slice(0, 12).map((row) => <TableRow key={row._id} className="border-gray-800"><TableCell className="max-w-56 truncate" title={label(row._id)}>{label(row._id)}</TableCell><TableCell>{formatNumber(row.calls)}</TableCell><TableCell>{formatNumber(row.failures)}</TableCell><TableCell>{formatNumber(row.tokens)}</TableCell><TableCell>${formatNumber(row.cost, 4)}</TableCell></TableRow>)}</TableBody></Table></div>{!rows.length && <div className="py-12 text-center text-sm text-gray-500">No usage in this range.</div>}</section>;
+  return (
+    <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+      <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">{title}</h2></div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-gray-800">
+              <TableHead>Name</TableHead>
+              <TableHead>Calls</TableHead>
+              <TableHead>Success</TableHead>
+              <TableHead>Token breakdown</TableHead>
+              <TableHead>Average</TableHead>
+              <TableHead>Est. cost</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.slice(0, 12).map((row) => (
+              <TableRow key={row._id} className="border-gray-800">
+                <TableCell className="max-w-56 truncate" title={label(row._id)}>{label(row._id)}</TableCell>
+                <TableCell>{formatNumber(row.calls)}</TableCell>
+                <TableCell>
+                  <div>{formatNumber(row.successRate, 1)}%</div>
+                  <div className="mt-1 whitespace-nowrap text-[11px] text-gray-500">
+                    {formatNumber(row.successes)} passed · {formatNumber(row.failures)} failed
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div>{formatRecordedTokens(row.totalTokens)}{row.totalTokens > 0 ? ' total' : ''}</div>
+                  {row.totalTokens > 0 && (
+                    <div className="mt-1 whitespace-nowrap text-[11px] text-gray-500">
+                      {formatNumber(row.inputTokens)} in · {formatNumber(row.cachedInputTokens)} cached · {formatNumber(row.outputTokens)} out · {formatNumber(row.reasoningTokens)} reasoning
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">{formatNumber(row.averageLatencyMs)} ms</TableCell>
+                <TableCell className="whitespace-nowrap">${formatNumber(row.estimatedCostUsd ?? row.cost, 6)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      {!rows.length && <div className="py-12 text-center text-sm text-gray-500">No usage in this range.</div>}
+    </section>
+  );
 }
 
 function DrilldownTable({ title, icon: Icon, rows, onSelect }: { title: string; icon: typeof Building2; rows: UsageBreakdown[]; onSelect?: (id: string) => void }) {
-  return <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="flex items-center gap-2 border-b border-gray-800 px-4 py-3"><Icon className="h-4 w-4 text-gray-500" /><h2 className="text-sm font-semibold text-white">{title}</h2></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Name</TableHead><TableHead>Calls</TableHead><TableHead>Failures</TableHead><TableHead>Tokens</TableHead></TableRow></TableHeader><TableBody>{rows.slice(0, 12).map((row) => <TableRow key={row._id} className={`border-gray-800 ${onSelect ? 'cursor-pointer hover:bg-gray-800/70' : ''}`} onClick={() => onSelect?.(row._id)}><TableCell className="font-medium">{row.name || row._id}</TableCell><TableCell>{formatNumber(row.calls)}</TableCell><TableCell>{formatNumber(row.failures)}</TableCell><TableCell>{formatNumber(row.tokens)}</TableCell></TableRow>)}</TableBody></Table></div>{!rows.length && <div className="py-12 text-center text-sm text-gray-500">No attributed usage in this range.</div>}</section>;
+  return <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="flex items-center gap-2 border-b border-gray-800 px-4 py-3"><Icon className="h-4 w-4 text-gray-500" /><h2 className="text-sm font-semibold text-white">{title}</h2></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Name</TableHead><TableHead>Calls</TableHead><TableHead>Failures</TableHead><TableHead>Tokens</TableHead></TableRow></TableHeader><TableBody>{rows.slice(0, 12).map((row) => <TableRow key={row._id} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `Filter AI activity by ${row.name || row._id}` : undefined} className={`border-gray-800 ${onSelect ? 'cursor-pointer hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset' : ''}`} onClick={() => onSelect?.(row._id)} onKeyDown={(event) => onSelect && activateTableRow(event, () => onSelect(row._id))}><TableCell className="font-medium">{row.name || row._id}</TableCell><TableCell>{formatNumber(row.calls)}</TableCell><TableCell>{formatNumber(row.failures)}</TableCell><TableCell>{formatNumber(row.tokens)}</TableCell></TableRow>)}</TableBody></Table></div>{!rows.length && <div className="py-12 text-center text-sm text-gray-500">No attributed usage in this range.</div>}</section>;
 }

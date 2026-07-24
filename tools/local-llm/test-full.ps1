@@ -13,14 +13,23 @@ $AIInterviewBackendRoot = Join-Path $RepositoryRoot 'ai-interview\backend'
 $AIInterviewFrontendRoot = Join-Path $RepositoryRoot 'ai-interview\frontend'
 $ControlCenterRoot = Join-Path (Split-Path -Parent $RepositoryRoot) 'crm\Xplorer-crm'
 $RuntimeDir = Join-Path $RepositoryRoot '.local-runtime\llm'
+$ControlSecretFile = Join-Path $RuntimeDir 'control-secret'
 $ManageScript = Join-Path $PSScriptRoot 'manage.ps1'
 $TunnelScript = Join-Path $PSScriptRoot 'cloudflare-tunnel.ps1'
-$RedisContainer = 'seemplify-cv-test-redis'
+$RedisContainer = "seemplify-cv-test-redis-$([guid]::NewGuid().ToString('N').Substring(0, 12))"
+$script:RedisPort = 0
 $ReportFile = Join-Path $RuntimeDir 'full-system-test.json'
 $steps = [System.Collections.Generic.List[object]]::new()
 $script:redisCreated = $false
 
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
+
+function Invoke-GatewayStatus {
+  $controlSecret = (Get-Content -LiteralPath $ControlSecretFile -Raw).Trim()
+  if (-not $controlSecret) { throw 'Local LLM control secret is unavailable.' }
+  return Invoke-RestMethod -Uri 'http://127.0.0.1:11435/control/status' `
+    -Headers @{ 'X-Seemplify-Control-Secret' = $controlSecret } -TimeoutSec 10
+}
 
 function Invoke-TestStep {
   param(
@@ -83,6 +92,19 @@ function Test-LocalTcpListener {
   }
 }
 
+function Get-FreeLocalTcpPort {
+  $listener = [System.Net.Sockets.TcpListener]::new(
+    [System.Net.IPAddress]::Loopback,
+    0
+  )
+  try {
+    $listener.Start()
+    return [int]$listener.LocalEndpoint.Port
+  } finally {
+    $listener.Stop()
+  }
+}
+
 function Wait-RuntimeHealthy {
   param([int]$TimeoutSeconds = 300)
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -125,8 +147,8 @@ function Restore-OnlineRuntime {
 }
 
 try {
-  Invoke-TestStep 'Select best available approved runtime profile' {
-    Invoke-ControlScript $ManageScript @('-Action', 'select-best')
+  Invoke-TestStep 'Start the selected approved runtime profile' {
+    Invoke-ControlScript $ManageScript @('-Action', 'start')
     $health = Wait-RuntimeHealthy
   }
 
@@ -135,9 +157,10 @@ try {
   }
 
   Invoke-TestStep 'Start disposable Redis' {
+    $script:RedisPort = Get-FreeLocalTcpPort
     $existing = & docker.exe ps -a --filter "name=^/$RedisContainer$" --format '{{.Names}}'
-    if ($existing) { & docker.exe rm -f $RedisContainer | Out-Null }
-    & docker.exe run -d --name $RedisContainer -p '127.0.0.1:46379:6379' 'redis:7-alpine' | Out-Null
+    if ($existing) { throw "Refusing to overwrite pre-existing test container $RedisContainer." }
+    & docker.exe run -d --name $RedisContainer -p "127.0.0.1:$($script:RedisPort):6379" 'redis:7-alpine' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Could not start disposable Redis.' }
     $script:redisCreated = $true
     $ping = & docker.exe exec $RedisContainer redis-cli ping
@@ -145,7 +168,13 @@ try {
   }
 
   Invoke-TestStep 'All recruiter backend tests' {
-    Invoke-InDirectory $BackendRoot { Invoke-Checked node.exe --test 'tests/*.test.js' }
+    $previousPort = $env:CV_TEST_REDIS_PORT
+    try {
+      $env:CV_TEST_REDIS_PORT = [string]$script:RedisPort
+      Invoke-InDirectory $BackendRoot { Invoke-Checked node.exe --test 'tests/*.test.js' }
+    } finally {
+      $env:CV_TEST_REDIS_PORT = $previousPort
+    }
   }
 
   Invoke-TestStep 'AI Interview backend and durable queue tests' {
@@ -156,7 +185,7 @@ try {
       try {
         $env:AI_INTERVIEW_CV_QUEUE_INTEGRATION = 'true'
         $env:AI_INTERVIEW_REDIS_HOST = '127.0.0.1'
-        $env:AI_INTERVIEW_REDIS_PORT = '46379'
+        $env:AI_INTERVIEW_REDIS_PORT = [string]$script:RedisPort
         Invoke-Checked npm.cmd run check
         Invoke-Checked npm.cmd test
       } finally {
@@ -168,7 +197,7 @@ try {
   }
 
   Invoke-TestStep 'Restore approved selected-engine profile after isolation tests' {
-    $runtime = Invoke-RestMethod -Uri 'http://127.0.0.1:11435/control/status' -TimeoutSec 10
+    $runtime = Invoke-GatewayStatus
     Invoke-ControlScript $ManageScript @(
       '-Action', 'select-engine',
       '-Engine', [string]$runtime.engine,
@@ -257,6 +286,7 @@ try {
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
     passed = @($steps | Where-Object { -not $_.passed }).Count -eq 0
     soakRequests = $SoakRequests
+    disposableRedisPort = $script:RedisPort
     steps = $steps
   }
   $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ReportFile -Encoding utf8

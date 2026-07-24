@@ -53,7 +53,17 @@ function mergeCatalogSettings(current, defaults) {
     const shouldApplyNewLocalDefault = definition?.defaultLocal
       && existing?.provider === 'groq'
       && Number(existing?.routeVersion || 1) === 1;
-    return definition?.lockedProvider || shouldApplyNewLocalDefault
+    if (definition?.lockedProvider) {
+      return {
+        ...route,
+        ...(existing || {}),
+        provider: route.provider,
+        model: route.model,
+        lockedProvider: true,
+        failoverPolicy: route.failoverPolicy
+      };
+    }
+    return shouldApplyNewLocalDefault
       ? { ...(existing || {}), ...route }
       : { ...route, ...(existing || {}) };
   });

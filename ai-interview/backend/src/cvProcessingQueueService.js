@@ -2,9 +2,11 @@ const crypto = require('crypto');
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const cvParsingService = require('./cvParsingService');
+const { buildSignature } = require('./llmClient');
 const { id, iso, mutateStore, readStore } = require('./store');
 
 const QUEUE_NAME = 'ai-interview-cv-analysis-local';
+const QUEUE_EVENT_PATH = '/api/internal/ai/v1/cv-queue/events';
 const redisHost = process.env.AI_INTERVIEW_REDIS_HOST
   || process.env.REDIS_HOST
   || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
@@ -12,7 +14,13 @@ const redisPort = Number(process.env.AI_INTERVIEW_REDIS_PORT || process.env.REDI
 const redisEnabled = process.env.AI_INTERVIEW_CV_QUEUE_ENABLED
   ? process.env.AI_INTERVIEW_CV_QUEUE_ENABLED !== 'false'
   : process.env.NODE_ENV === 'production' || Boolean(process.env.AI_INTERVIEW_REDIS_HOST || process.env.REDIS_HOST);
-const defaultConcurrency = Math.max(1, Number(process.env.AI_INTERVIEW_CV_QUEUE_CONCURRENCY || 1));
+const requestedConcurrency = Math.max(1, Number(process.env.AI_INTERVIEW_CV_QUEUE_CONCURRENCY || 1));
+const approvedConcurrency = Math.max(1, Number(
+  process.env.AI_INTERVIEW_CV_QUEUE_APPROVED_CONCURRENCY
+  || process.env.CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY
+  || 1
+));
+const defaultConcurrency = Math.min(requestedConcurrency, approvedConcurrency);
 const connection = redisEnabled ? new IORedis(redisPort, redisHost, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
@@ -25,6 +33,10 @@ let completionHandler;
 let analyzeResume = (resumeText, context) => cvParsingService.analyzeResumeText(resumeText, context);
 let maintenanceTimer;
 let retryTimer;
+let eventDebounceTimer;
+let eventHeartbeatTimer;
+let eventFlushPromise;
+const pendingQueueEvents = new Map();
 
 function tokenHash(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -80,6 +92,152 @@ function publicState(job) {
     error: job.state === 'failed' ? job.lastError : undefined,
     ...(job.state === 'completed' && job.result ? job.result : {})
   };
+}
+
+function appendTransition(job) {
+  if (!job) return;
+  job.transitions = Array.isArray(job.transitions) ? job.transitions : [];
+  const nextSequence = job.transitions.reduce((maximum, item, index) => {
+    const sequence = Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : index;
+    return Math.max(maximum, sequence);
+  }, -1) + 1;
+  const at = job.updatedAt || job.createdAt || iso(new Date());
+  const transition = {
+    eventKey: [
+      job.state,
+      Number(job.progress || 0),
+      Number(job.attempts || 0),
+      at
+    ].join(':'),
+    state: job.state,
+    progress: Number(job.progress || 0),
+    attempts: Number(job.attempts || 0),
+    at,
+    sequence: nextSequence,
+    errorCode: job.lastError?.code || null
+  };
+  if (!job.transitions.some((item) => item.eventKey === transition.eventKey)) {
+    job.transitions.push(transition);
+    if (job.transitions.length > 100) job.transitions.splice(0, job.transitions.length - 100);
+  }
+}
+
+function queueEventUrl() {
+  const configured = String(
+    process.env.SEEMPLIFY_AI_GATEWAY_URL
+      || process.env.SEEMPLIFY_PLATFORM_API_URL
+      || 'https://api.seemplifyai.com'
+  ).trim().replace(/\/+$/, '');
+  const completionPath = '/api/internal/ai/v1/complete';
+  const baseUrl = configured.endsWith(completionPath)
+    ? configured.slice(0, -completionPath.length)
+    : configured;
+  return `${baseUrl}${QUEUE_EVENT_PATH}`;
+}
+
+function operationalQueueEvent(job, transition = null, sequence = null) {
+  const state = transition?.state || job.state;
+  const updatedAt = transition?.at || job.updatedAt || job.createdAt;
+  return {
+    publicId: String(job.publicId || ''),
+    state: String(state || 'queued'),
+    progress: Math.min(100, Math.max(0, Number(transition?.progress ?? job.progress ?? 0))),
+    attempts: Math.max(0, Number(transition?.attempts ?? job.attempts ?? 0)),
+    organizationId: String(job.organizationId || '').slice(0, 200),
+    actorId: String(job.actorId || '').slice(0, 200),
+    jobId: String(job.jobId || '').slice(0, 200),
+    createdAt: job.createdAt,
+    startedAt: state === 'queued' ? null : job.startedAt || null,
+    completedAt: state === 'completed' ? job.completedAt || updatedAt : null,
+    failedAt: state === 'failed' ? job.failedAt || updatedAt : null,
+    updatedAt,
+    sequence: Math.max(0, Number(transition?.sequence ?? sequence ?? 0)),
+    errorCode: transition ? transition.errorCode || null : job.lastError?.code || null
+  };
+}
+
+function queueEventKey(job) {
+  return [
+    job.publicId,
+    Number(job.sequence || 0),
+    job.state,
+    Number(job.progress || 0),
+    Number(job.attempts || 0),
+    job.updatedAt || job.createdAt
+  ].join(':');
+}
+
+function scheduleQueueEventFlush(delayMs = 25) {
+  if (eventDebounceTimer) return;
+  eventDebounceTimer = setTimeout(() => {
+    eventDebounceTimer = null;
+    void flushQueueEvents().catch(() => {});
+  }, Math.max(0, Number(delayMs) || 0));
+  eventDebounceTimer.unref?.();
+}
+
+function retainQueueEvent(job) {
+  if (!job?.publicId) return;
+  const transitions = Array.isArray(job.transitions) && job.transitions.length
+    ? job.transitions
+    : [null];
+  for (const [index, transition] of transitions.entries()) {
+    const event = operationalQueueEvent(job, transition, index);
+    pendingQueueEvents.set(queueEventKey(event), event);
+  }
+  scheduleQueueEventFlush();
+}
+
+async function retainStoredQueueEvent(publicId) {
+  const store = await readStore();
+  const job = (store.cvProcessingJobs || []).find((item) => item.publicId === publicId);
+  if (job) retainQueueEvent(job);
+}
+
+async function flushQueueEvents() {
+  if (eventFlushPromise) return eventFlushPromise;
+  eventFlushPromise = (async () => {
+    const secret = String(process.env.AI_GATEWAY_HMAC_SECRET || '');
+    if (!secret || typeof fetch !== 'function' || !pendingQueueEvents.size) return false;
+    const url = queueEventUrl();
+    const serviceId = String(process.env.AI_GATEWAY_SERVICE_ID || 'ai-interview');
+    for (const [eventKey, event] of [...pendingQueueEvents.entries()].slice(0, 100)) {
+      const body = JSON.stringify({ job: event });
+      const timestamp = String(Date.now());
+      const signature = buildSignature({
+        timestamp,
+        serviceId,
+        path: new URL(url).pathname,
+        body,
+        secret
+      });
+      let response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-seemplify-service': serviceId,
+            'x-seemplify-timestamp': timestamp,
+            'x-seemplify-signature': signature
+          },
+          body,
+          signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(8_000) : undefined
+        });
+      } catch {
+        return false;
+      }
+      if (!response.ok) return false;
+      pendingQueueEvents.delete(eventKey);
+    }
+    if (pendingQueueEvents.size) scheduleQueueEventFlush(0);
+    return true;
+  })();
+  try {
+    return await eventFlushPromise;
+  } finally {
+    eventFlushPromise = null;
+  }
 }
 
 async function ensureConnection() {
@@ -166,6 +324,7 @@ async function submit({ file, organizationId, actorId, jobId, candidateId, mode,
       updatedAt: now,
       expiresAt: iso(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
     };
+    appendTransition(created);
     store.cvProcessingJobs.push(created);
     return created;
   });
@@ -183,10 +342,12 @@ async function submit({ file, organizationId, actorId, jobId, candidateId, mode,
             at: iso(new Date())
           };
           current.updatedAt = iso(new Date());
+          appendTransition(current);
         }
       });
     }
   }
+  await retainStoredQueueEvent(processingJob.publicId);
 
   return {
     job: processingJob,
@@ -205,10 +366,12 @@ async function processJob(bullJob) {
     processingJob.startedAt = processingJob.startedAt || iso(new Date());
     processingJob.updatedAt = iso(new Date());
     processingJob.attempts = Number(processingJob.attempts || 0) + 1;
+    appendTransition(processingJob);
   });
   if (!processingJob || processingJob.state === 'completed') {
     return { skipped: true };
   }
+  retainQueueEvent(processingJob);
   if (typeof completionHandler !== 'function') {
     const error = new Error('AI Interview CV queue completion handler is not configured');
     error.code = 'CV_QUEUE_NOT_CONFIGURED';
@@ -226,6 +389,7 @@ async function processJob(bullJob) {
     await bullJob.updateProgress(75);
     const result = await completionHandler(processingJob, parsed);
     await bullJob.updateProgress(100);
+    await retainStoredQueueEvent(processingJob.publicId);
     return {
       jobId: processingJob.publicId,
       candidateId: result?.candidate?._id || processingJob.candidateId || null
@@ -245,7 +409,9 @@ async function processJob(bullJob) {
         at: iso(new Date())
       };
       if (terminal) current.failedAt = iso(new Date());
+      appendTransition(current);
     });
+    await retainStoredQueueEvent(processingJob.publicId);
     if (terminal) bullJob.discard();
     throw error;
   }
@@ -344,6 +510,14 @@ async function init({ onCompleted, analyze } = {}) {
   }
   if (retryTimer) clearInterval(retryTimer);
   retryTimer = null;
+  const store = await readStore();
+  for (const job of store.cvProcessingJobs || []) retainQueueEvent(job);
+  if (!eventHeartbeatTimer) {
+    eventHeartbeatTimer = setInterval(() => {
+      void flushQueueEvents().catch(() => {});
+    }, 5_000);
+    eventHeartbeatTimer.unref?.();
+  }
   worker = new Worker(QUEUE_NAME, processJob, {
     connection,
     concurrency: defaultConcurrency,
@@ -374,6 +548,12 @@ async function closeForTests() {
   maintenanceTimer = null;
   if (retryTimer) clearInterval(retryTimer);
   retryTimer = null;
+  if (eventDebounceTimer) clearTimeout(eventDebounceTimer);
+  eventDebounceTimer = null;
+  if (eventHeartbeatTimer) clearInterval(eventHeartbeatTimer);
+  eventHeartbeatTimer = null;
+  eventFlushPromise = null;
+  pendingQueueEvents.clear();
   if (worker) await worker.close();
   worker = null;
   if (queue) await queue.close();
@@ -386,6 +566,8 @@ module.exports = {
   backoffDelay,
   closeForTests,
   deterministicStatusToken,
+  appendTransition,
+  flushQueueEvents,
   getStatus,
   init,
   isOfflineError,

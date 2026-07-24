@@ -78,7 +78,7 @@ test('30-minute monitor activates Groq failover and restores local routing after
   assert.equal(updates.length, 2);
 });
 
-test('effective routes use Groq only while local failover is active', () => {
+test('health failover uses Groq for eligible work but keeps every CV route local', () => {
   const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
   const settings = createDefaultRuntimeSettings();
   const configured = runtime.resolveRoute('interview.questions', settings);
@@ -92,7 +92,28 @@ test('effective routes use Groq only while local failover is active', () => {
   assert.equal(failedOver.provider, 'groq');
   assert.equal(failedOver.model, GROQ_120B);
   assert.equal(failedOver.failoverFrom, LOCAL_PROVIDER);
+  assert.equal(failedOver.failoverReason, 'local_gateway_unreachable');
+
+  for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {
+    const cvRoute = runtime.resolveExecutionRoute(runtime.resolveRoute(activity, settings), settings, {});
+    assert.equal(cvRoute.provider, LOCAL_PROVIDER);
+    assert.equal(cvRoute.failoverPolicy, 'wait_local');
+    assert.equal(cvRoute.failoverFrom, undefined);
+  }
 
   settings.localFailover.active = false;
   assert.equal(runtime.resolveExecutionRoute(configured, settings, {}).provider, LOCAL_PROVIDER);
+});
+
+test('runtime enforces the CV provider lock even when stored settings are stale', () => {
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
+  const settings = createDefaultRuntimeSettings();
+  const stored = settings.routes.find((route) => route.activity === 'candidate.cv_parse');
+  stored.provider = 'groq';
+  stored.model = GROQ_120B;
+  stored.failoverPolicy = 'groq_immediate';
+
+  const resolved = runtime.resolveRoute('candidate.cv_parse', settings);
+  assert.equal(resolved.provider, LOCAL_PROVIDER);
+  assert.equal(resolved.failoverPolicy, 'wait_local');
 });

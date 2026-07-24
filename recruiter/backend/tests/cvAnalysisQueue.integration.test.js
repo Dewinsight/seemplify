@@ -7,12 +7,14 @@ process.env.REDIS_HOST = process.env.CV_TEST_REDIS_HOST || '127.0.0.1';
 process.env.REDIS_PORT = process.env.CV_TEST_REDIS_PORT || '46379';
 process.env.REDIS_ENABLED = 'true';
 process.env.CV_ANALYSIS_QUEUE_CONCURRENCY = '1';
+process.env.CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY = '2';
 
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { Queue } = require('bullmq');
 const IORedis = require('ioredis');
 const embeddingService = require('../services/embeddingService');
+const { controlFetch } = require('../../../tools/local-llm/control-auth.cjs');
 
 embeddingService.createCandidateEmbedding = async () => ({ skipped: true });
 
@@ -62,7 +64,7 @@ function createJob(overrides = {}) {
 }
 
 async function setGatewayIngress(enabled) {
-  const response = await fetch('http://127.0.0.1:11435/control/state', {
+  const response = await controlFetch('http://127.0.0.1:11435/control/state', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ enabled: true, ingressEnabled: enabled, paused: false })
@@ -71,7 +73,7 @@ async function setGatewayIngress(enabled) {
 }
 
 async function setGatewayControl(control) {
-  const response = await fetch('http://127.0.0.1:11435/control/state', {
+  const response = await controlFetch('http://127.0.0.1:11435/control/state', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(control)
@@ -91,7 +93,7 @@ async function waitForJobState(publicId, expected, timeoutMs = 120_000) {
 }
 
 test.before(async () => {
-  const gatewayStatus = await fetch('http://127.0.0.1:11435/control/status').then((response) => response.json());
+  const gatewayStatus = await controlFetch('http://127.0.0.1:11435/control/status').then((response) => response.json());
   initialGatewayControl = {
     enabled: gatewayStatus.state.enabled !== false,
     ingressEnabled: gatewayStatus.state.ingressEnabled !== false,
@@ -202,20 +204,104 @@ test('telemetry reports durable states, worker capacity, throughput, and privacy
   assert.equal(snapshot.worker.concurrency >= 1, true);
   assert.equal(snapshot.worker.availableSlots >= 0, true);
   assert.equal(snapshot.recentJobs.length, 4);
+  assert.ok(['queued', 'waiting_for_local_runtime', 'processing'].includes(snapshot.recentJobs[0].state));
+  assert.ok(['queued', 'waiting_for_local_runtime', 'processing'].includes(snapshot.recentJobs[1].state));
   assert.equal(Object.hasOwn(snapshot.recentJobs[0], 'originalName'), false);
   assert.equal(Object.hasOwn(snapshot.recentJobs[0], 'errorCode'), true);
 });
 
-test('history backfills retained jobs and supports state pagination without CV contents', async () => {
+test('history backfills retained jobs with lifecycle data and supports retry pagination without CV contents', async () => {
   const now = Date.now();
   await createJob({ publicId: 'cv_history_completed', state: 'completed', progress: 100, completedAt: new Date(now - 1_000) });
   await createJob({ publicId: 'cv_history_failed', state: 'failed', failedAt: new Date(now - 500) });
+  await createJob({ publicId: 'cv_history_retrying', state: 'queued', progress: 20, attempts: 2 });
   const history = await cvQueue.listHistory({ state: 'completed', page: 1, limit: 10 });
   assert.equal(history.total, 1);
   assert.equal(history.retainedIndefinitely, true);
+  assert.ok(history.coverageStartedAt);
   assert.equal(history.jobs[0].jobId, 'cv_history_completed');
   assert.equal(history.jobs[0].state, 'completed');
+  assert.equal(history.jobs[0].phase, 'completed');
+  assert.equal(history.jobs[0].transitions.length, 1);
+  assert.equal(history.jobs[0].transitions[0].phase, 'completed');
   assert.equal(Object.hasOwn(history.jobs[0], 'resumeText'), false);
+
+  const retrying = await cvQueue.listHistory({ state: 'retrying', search: 'cv_history_retrying', page: 1, limit: 10 });
+  assert.equal(retrying.total, 1);
+  assert.equal(retrying.jobs[0].phase, 'retrying');
+});
+
+test('signed AI Interview queue events join permanent history and aggregate telemetry', async () => {
+  const publicId = 'aicv_external_history_12345678';
+  const base = {
+    publicId,
+    organizationId: 'settings_external',
+    actorId: 'user_external',
+    jobId: 'job_external',
+    createdAt: new Date(Date.now() - 5_000).toISOString()
+  };
+  await cvQueue.ingestExternalQueueEvent('ai-interview', {
+    job: { ...base, state: 'queued', progress: 10, attempts: 0, sequence: 0, updatedAt: base.createdAt }
+  });
+  await cvQueue.ingestExternalQueueEvent('ai-interview', {
+    job: {
+      ...base,
+      state: 'processing',
+      progress: 30,
+      attempts: 1,
+      sequence: 1,
+      startedAt: new Date(Date.now() - 3_000).toISOString(),
+      updatedAt: new Date(Date.now() - 3_000).toISOString()
+    }
+  });
+  await cvQueue.ingestExternalQueueEvent('ai-interview', {
+    job: {
+      ...base,
+      state: 'completed',
+      progress: 100,
+      attempts: 1,
+      sequence: 2,
+      startedAt: new Date(Date.now() - 3_000).toISOString(),
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  });
+  await cvQueue.ingestExternalQueueEvent('ai-interview', {
+    job: {
+      ...base,
+      state: 'queued',
+      progress: 10,
+      attempts: 0,
+      sequence: 0,
+      updatedAt: new Date(Date.now() + 10_000).toISOString()
+    }
+  });
+
+  const history = await cvQueue.listHistory({ source: 'ai-interview', search: publicId, page: 1, limit: 10 });
+  assert.equal(history.total, 1);
+  assert.equal(history.jobs[0].state, 'completed');
+  assert.equal(history.jobs[0].producer, 'ai-interview');
+  assert.equal(history.jobs[0].queue, 'ai-interview-cv-analysis-local');
+  assert.deepEqual(
+    history.jobs[0].transitions.map((transition) => transition.phase),
+    ['queued', 'processing', 'completed']
+  );
+  const snapshot = await cvQueue.telemetry();
+  assert.equal(snapshot.durable.completed, 1);
+  assert.equal(snapshot.recentJobs[0].jobId, publicId);
+  assert.equal(snapshot.recentJobs[0].producer, 'ai-interview');
+  assert.equal(snapshot.queues.some((queue) => queue.name === 'ai-interview-cv-analysis-local'), true);
+  const adminSnapshot = await cvQueue.adminTelemetry();
+  assert.equal(adminSnapshot.recentJobs.some((job) => job.jobId === publicId && job.producer === 'ai-interview'), true);
+  const adminDetail = await cvQueue.getAdminJobDetail(publicId);
+  assert.equal(adminDetail.jobId, publicId);
+  assert.equal(adminDetail.queue, 'ai-interview-cv-analysis-local');
+  assert.deepEqual(adminDetail.transitions.map((transition) => transition.sequence), [0, 1, 2]);
+
+  await assert.rejects(
+    () => cvQueue.ingestExternalQueueEvent('unknown-service', { job: { ...base, state: 'queued' } }),
+    { code: 'CV_QUEUE_PRODUCER_FORBIDDEN' }
+  );
 });
 
 test('stale Mongo jobs are recovered after a queue restart', async () => {
@@ -230,14 +316,14 @@ test('stale Mongo jobs are recovered after a queue restart', async () => {
   assert.equal(await cvQueue.recoverStaleJobs(), 0);
 });
 
-test('signed telemetry applies Control Center pause and concurrency to BullMQ', async () => {
+test('signed telemetry applies Control Center pause and approved concurrency to BullMQ', async () => {
   await inspectionQueue.resume();
   await cvQueue.initWorker();
   try {
-    await setGatewayControl({ concurrency: 2, paused: true });
+    await setGatewayControl({ concurrency: 1, paused: true });
     assert.equal(await cvQueue.publishTelemetry(), true);
     const paused = await cvQueue.telemetry();
-    assert.equal(paused.concurrency, 2);
+    assert.equal(paused.concurrency, 1);
     assert.equal(paused.paused, true);
   } finally {
     await setGatewayControl({ concurrency: 1, paused: false });
@@ -272,4 +358,12 @@ test('local runtime outages wait durably and resume without duplicate candidates
   assert.equal(await Candidate.countDocuments({
     'processingMetadata.cvProcessingJobId': job.publicId
   }), 1);
+
+  const history = await cvQueue.listHistory({ search: job.publicId, page: 1, limit: 10 });
+  assert.equal(history.total, 1);
+  const phases = history.jobs[0].transitions.map((transition) => transition.phase);
+  assert.ok(phases.includes('processing'));
+  assert.ok(phases.includes('waiting_for_local_runtime'));
+  assert.ok(phases.includes('retrying'));
+  assert.equal(phases.at(-1), 'completed');
 });
