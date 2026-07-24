@@ -26,6 +26,26 @@ test('text-mode fixtures reject empty responses without applying a JSON schema',
   assert.match(result.validation.errors[0], /response is empty/i);
 });
 
+test('grounded text fixtures reject unsupported benchmark citations and precise claims', () => {
+  const fixture = fixtures.find((item) => item.id === 'recruiter-general');
+  const safe = evaluateOutput(fixture, { content: fixture.expectedOutput });
+  assert.equal(safe.qualityScore, 10);
+  assert.deepEqual(safe.qualityFailures, []);
+  const paraphrased = evaluateOutput(fixture, {
+    content: 'Tighten the recruiter-to-manager feedback loop and standardize interviews. Use deadlines, consistent questions, and shared scorecards to reduce back-and-forth and avoid rework.'
+  });
+  assert.equal(paraphrased.qualityScore, 10);
+  assert.deepEqual(paraphrased.qualityFailures, []);
+
+  const invented = evaluateOutput(fixture, {
+    content: 'Measure the bottleneck and use structured interviews. A 2022 SHRM survey found this cuts hiring time by 22-30% (SHRM, 2022).'
+  });
+  assert.ok(invented.qualityScore < 7);
+  assert.ok(invented.qualityFailures.some((failure) => /external evidence/i.test(failure)));
+  assert.ok(invented.qualityFailures.some((failure) => /unsupported dated citation/i.test(failure)));
+  assert.ok(invented.qualityFailures.some((failure) => /precise outcome/i.test(failure)));
+});
+
 test('golden fixtures cover every configured AI route and no unknown routes', () => {
   const fixtureActivities = [...new Set(fixtures.map((fixture) => fixture.activity))].sort();
   const configuredActivities = Object.keys(ACTIVITY_DEFINITIONS).sort();

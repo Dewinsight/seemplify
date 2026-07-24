@@ -39,13 +39,41 @@ function includesText(value, expected) {
 
 function pushMissingKeywords(failures, value, keywords = [], label = 'Response') {
   for (const keyword of keywords) {
-    if (!includesText(value, keyword)) failures.push(`${label} is not grounded in supplied ${keyword} evidence.`);
+    const alternatives = Array.isArray(keyword) ? keyword : [keyword];
+    if (!alternatives.some((alternative) => includesText(value, alternative))) {
+      failures.push(`${label} is not grounded in supplied ${alternatives[0]} evidence.`);
+    }
   }
+}
+
+function findUnsupportedEvidenceClaims(value) {
+  const text = String(value || '');
+  const failures = [];
+  if (/\b(?:according to|survey|study|report|research|data (?:show|shows|suggest)|companies (?:using|that|maintaining)|organizations (?:with|that)|firms (?:using|that))\b/i.test(text)) {
+    failures.push('Response presents external evidence that was not supplied in the benchmark prompt.');
+  }
+  if (/\([^)]*(?:19|20)\d{2}[^)]*\)/i.test(text)) {
+    failures.push('Response includes an unsupported dated citation or attribution.');
+  }
+  if (/\b(?:cut|cuts|reduce(?:d|s)?|lower(?:ed|s)?|improve(?:d|s)?|faster|shave(?:d|s)?|trim(?:med|s)?)\b[^.!?\n]{0,80}\b\d+(?:\.\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?)?\s*(?:%|days?|weeks?)(?![a-z0-9_])/i.test(text)) {
+    failures.push('Response invents a precise outcome that was not supplied in the benchmark prompt.');
+  }
+  return failures;
 }
 
 function evaluateDomainQuality(fixture, data) {
   const failures = fixture.qualityEvaluator ? [] : findEmptyRequiredContent(data);
   let score = failures.length ? Math.max(0, 1 - failures.length * 0.15) : 1;
+  if (fixture.qualityEvaluator === 'grounded_text') {
+    pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'Response');
+    const wordCount = String(data || '').trim().split(/\s+/).filter(Boolean).length;
+    if (fixture.qualityContext?.maxWords && wordCount > fixture.qualityContext.maxWords) {
+      failures.push(`Response exceeds the ${fixture.qualityContext.maxWords}-word limit.`);
+    }
+    if (fixture.qualityContext?.rejectUnsupportedEvidence) {
+      failures.push(...findUnsupportedEvidenceClaims(data));
+    }
+  }
   if (fixture.qualityEvaluator === 'cv_extraction') {
     pushMissingKeywords(failures, data, fixture.qualityContext?.requiredFacts, 'CV extraction');
     for (const missingFact of fixture.qualityContext?.knownMissingFacts || []) {
@@ -157,7 +185,10 @@ function evaluateOutput(fixture, result) {
       : validateJsonSchema(data, fixture.schema);
   const searchable = (textMode ? String(data) : JSON.stringify(data || '')).toLowerCase();
   const expected = fixture.expectedKeywords || [];
-  const grounded = expected.filter((keyword) => searchable.includes(String(keyword).toLowerCase())).length;
+  const grounded = expected.filter((keyword) => {
+    const alternatives = Array.isArray(keyword) ? keyword : [keyword];
+    return alternatives.some((alternative) => searchable.includes(String(alternative).toLowerCase()));
+  }).length;
   const keywordScore = expected.length ? grounded / expected.length : 1;
   const domainQuality = evaluateDomainQuality(fixture, data);
   const qualityScore = ((keywordScore * 0.45) + (domainQuality.score * 0.55)) * 10;

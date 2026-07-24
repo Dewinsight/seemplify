@@ -63,6 +63,11 @@ errors, Groq quota headers, and estimated cost. Prompt and schema hashes prove
 that both providers received the same fixture contract without duplicating raw
 prompts in the summary.
 
+Grounded text fixtures accept explicit paraphrase alternatives, enforce activity
+word limits, and reject external studies, dated citations, or precise outcome
+claims that were not supplied in the synthetic prompt. This prevents a fast,
+fluent answer with invented evidence from passing as a perfect result.
+
 Quality gates are applied before latency. A provider must have at least 95%
 successful requests, 100% schema validity for successful responses, 100%
 grounding, and zero hallucination or policy failures. Fewer than three samples

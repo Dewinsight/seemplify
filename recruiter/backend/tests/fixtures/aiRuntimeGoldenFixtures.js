@@ -254,7 +254,27 @@ fixtures.push(
 
 const genericResultSchema = strictObject({ result: { type: 'string' }, evidence: stringArray });
 const genericSpecs = [
-  ['recruiter-general', 'recruiter.general', 'Give a concise evidence-based answer about reducing hiring cycle time.', 'Prioritize bottleneck measurement and structured interviews.', ['bottleneck', 'structured interviews']],
+  [
+    'recruiter-general',
+    'recruiter.general',
+    'Use only these supplied findings: recruiter-to-manager feedback is the hiring bottleneck, and structured interviews reduce avoidable rework. Give a concise answer about reducing hiring cycle time. Do not invent figures, studies, surveys, or citations.',
+    'Prioritize bottleneck measurement and structured interviews.',
+    [
+      ['bottleneck', 'recruiter-to-manager feedback', 'feedback loop', 'recruiter input'],
+      ['structured interviews', 'standardizing interviews', 'standardize interviews']
+    ],
+    {
+      qualityEvaluator: 'grounded_text',
+      qualityContext: {
+        requiredFacts: [
+          ['bottleneck', 'recruiter-to-manager feedback', 'feedback loop', 'recruiter input'],
+          ['structured interviews', 'standardizing interviews', 'standardize interviews']
+        ],
+        maxWords: 80,
+        rejectUnsupportedEvidence: true
+      }
+    }
+  ],
   ['candidate-insights', 'candidate.insights', 'Summarize strengths in this synthetic profile: TypeScript platform engineer who reduced incidents by 35%.', 'Strong TypeScript platform experience with measured reliability impact.', ['TypeScript', '35%']],
   ['job-normalize-text', 'job.normalize', 'Normalize this title: Sr. Platform Eng.', 'Senior Platform Engineer', ['Senior Platform Engineer']],
   ['matching-report', 'matching.report', 'Explain a grounded match between Kubernetes experience and a platform reliability role.', 'The supplied Kubernetes evidence aligns with platform reliability work.', ['Kubernetes', 'reliability']],
@@ -283,7 +303,7 @@ const textActivities = new Set([
   'ai_interview.chat.acknowledgement'
 ]);
 
-fixtures.push(...genericSpecs.map(([id, activity, prompt, result, keywords]) => {
+fixtures.push(...genericSpecs.map(([id, activity, prompt, result, keywords, quality = {}]) => {
   const responseMode = textActivities.has(activity) ? 'text' : 'structured';
   const fixture = {
     id,
@@ -293,7 +313,8 @@ fixtures.push(...genericSpecs.map(([id, activity, prompt, result, keywords]) => 
     responseMode,
     schema: responseMode === 'structured' ? genericResultSchema : undefined,
     expectedKeywords: keywords,
-    expectedOutput: responseMode === 'text' ? result : { result, evidence: keywords }
+    expectedOutput: responseMode === 'text' ? result : { result, evidence: keywords },
+    ...quality
   };
   if (activity === 'ai_interview.chat.introduction') {
     fixture.qualityEvaluator = 'chat_introduction';
