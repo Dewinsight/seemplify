@@ -10,6 +10,7 @@ const {
   GROQ_20B,
   createDefaultRuntimeSettings
 } = require('../config/aiRuntimeCatalog');
+const { CV_EXTRACTION_SCHEMA } = require('./aiModelService');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
 const { encryptSecret, fingerprintSecret, maskSecret } = require('./aiRuntime/secretCrypto');
 const {
@@ -275,8 +276,22 @@ async function runRuntimeTest(activityInput, req) {
       }
     };
     const requiresStructuredOutput = aiRuntimeService.requiredCapabilitiesForActivity(activity).includes('json_schema');
-    const result = requiresStructuredOutput
-      ? await aiRuntimeService.structuredComplete(activity, {
+    const isCvExtraction = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(activity);
+    const structuredTestInput = isCvExtraction
+      ? {
+          ...completionInput,
+          messages: [
+            completionInput.messages[0],
+            {
+              role: 'user',
+              content: 'Extract only this synthetic CV: Test Candidate, test.candidate@example.invalid, platform engineer with Node.js experience. Use empty values for facts not present.'
+            }
+          ],
+          jsonSchema: CV_EXTRACTION_SCHEMA,
+          schemaName: 'admin_runtime_test_cv',
+          schemaStrict: false
+        }
+      : {
           ...completionInput,
           messages: [
             completionInput.messages[0],
@@ -294,7 +309,9 @@ async function runRuntimeTest(activityInput, req) {
           },
           schemaName: 'admin_runtime_test',
           schemaStrict: true
-        }, { timeoutMs: 30_000 })
+        };
+    const result = requiresStructuredOutput
+      ? await aiRuntimeService.structuredComplete(activity, structuredTestInput, { timeoutMs: 30_000 })
       : await aiRuntimeService.complete(activity, completionInput, { timeoutMs: 30_000 });
     const usageEvent = await AIUsageEvent.findOne({ requestId: result.requestId })
       .select('provider model reasoningEffort routeVersion quotaGroup latencyMs attempts failovers inputTokens cachedInputTokens outputTokens reasoningTokens totalTokens estimatedCostUsd')

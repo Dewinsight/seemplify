@@ -177,6 +177,45 @@ test('admin runtime test exercises strict structured transport for structured ac
   assert.match(result.execution.response, /Structured route passed/);
 });
 
+test('admin CV runtime test uses the production CV schema accepted by the local gateway', async () => {
+  const cvRoute = { ...route, activity: 'candidate.cv_parse', provider: 'local-ollama', model: 'managed-local-gpu' };
+  let structuredInput;
+  mock.method(aiRuntimeService, 'getSettings', async () => ({ routes: [cvRoute] }));
+  mock.method(aiRuntimeService, 'structuredComplete', async (activity, input) => {
+    assert.equal(activity, cvRoute.activity);
+    structuredInput = input;
+    return {
+      requestId: 'runtime-cv-1',
+      content: JSON.stringify({ firstName: 'Test', lastName: 'Candidate' }),
+      data: { firstName: 'Test', lastName: 'Candidate' },
+      finishReason: 'stop',
+      model: 'gpt-5.6-terra',
+      usage: { totalTokens: 12871 }
+    };
+  });
+  mock.method(AIUsageEvent, 'findOne', () => mockUsageQuery({
+    provider: 'local-codex',
+    model: 'gpt-5.6-terra',
+    totalTokens: 12871
+  }));
+  mock.method(AIAuditEvent, 'create', async (event) => event);
+
+  const result = await runRuntimeTest(cvRoute.activity, request);
+  const requiredFields = [
+    'firstName', 'lastName', 'email', 'phone', 'location', 'position', 'experience',
+    'education', 'skills', 'summary', 'strengths', 'potentialFlags', 'workExperience',
+    'educationHistory', 'certifications', 'languages', 'awards', 'projects', 'publications',
+    'volunteerWork', 'professionalMemberships', 'portfolioLinks', 'additionalSections', 'fullCVData'
+  ];
+  assert.equal(structuredInput.schemaName, 'admin_runtime_test_cv');
+  assert.equal(structuredInput.schemaStrict, false);
+  assert.ok(requiredFields.every((field) => structuredInput.jsonSchema.required.includes(field)));
+  assert.match(structuredInput.messages[1].content, /synthetic CV/);
+  assert.equal(result.execution.provider, 'local-codex');
+  assert.equal(result.execution.model, 'gpt-5.6-terra');
+  assert.equal(result.execution.usage.totalTokens, 12871);
+});
+
 test('admin runtime test rejects unknown and disabled activities before provider use', async () => {
   const complete = mock.method(aiRuntimeService, 'complete', async () => { throw new Error('should not run'); });
   mock.method(aiRuntimeService, 'getSettings', async () => ({ routes: [{ ...route, enabled: false }] }));
