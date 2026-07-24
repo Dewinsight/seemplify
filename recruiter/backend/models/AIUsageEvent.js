@@ -34,6 +34,11 @@ const AIUsageEventSchema = new mongoose.Schema({
   latencyMs: Number,
   promptBytes: Number,
   responseBytes: Number,
+  // Keep this tri-state for backwards compatibility. Historical events created
+  // before provider metering capture have no value; new unmetered events are
+  // explicitly false and metered events are true.
+  usageReported: { type: Boolean, index: true },
+  usageSource: String,
   inputTokens: { type: Number, default: 0 },
   cachedInputTokens: { type: Number, default: 0 },
   outputTokens: { type: Number, default: 0 },

@@ -182,10 +182,16 @@ function stripReasoning(data) {
   return sanitized;
 }
 
-function signLocalRequest(secret, body, now = Date.now(), nonce = crypto.randomBytes(24).toString('base64url')) {
-  const timestamp = String(now);
+function signLocalRequest(secret, body, options = {}) {
+  const normalized = options && typeof options === 'object'
+    ? options
+    : { now: options, nonce: arguments[3] };
+  const timestamp = String(normalized.now ?? Date.now());
+  const nonce = normalized.nonce || crypto.randomBytes(24).toString('base64url');
+  const method = String(normalized.method || 'POST').toUpperCase();
+  const requestPath = String(normalized.path || '/v1/cv/analyze');
   const signature = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\n${body}`)
+    .update(`${timestamp}\n${nonce}\n${method}\n${requestPath}\n${body}`)
     .digest('base64url');
   return { timestamp, nonce, signature };
 }
@@ -585,6 +591,7 @@ class AIRuntimeService {
       messages: input.messages,
       jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
       schemaName: input.schemaName,
+      requestSource: String(input.context?.sourceApp || 'recruiter').slice(0, 64),
       temperature: input.temperature,
       topP: input.topP ?? input.top_p,
       maxTokens: input.maxTokens ?? input.max_tokens ?? input.max_completion_tokens,
@@ -593,10 +600,10 @@ class AIRuntimeService {
       toolChoice: input.toolChoice ?? input.tool_choice,
       timeoutMs
     });
-    const signed = signLocalRequest(secret, body);
     const endpoint = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(route.activity)
       ? '/v1/cv/analyze'
       : '/v1/complete';
+    const signed = signLocalRequest(secret, body, { method: 'POST', path: endpoint });
     try {
       return await this.fetch(`${baseUrl}${endpoint}`, {
         method: 'POST',
@@ -621,7 +628,7 @@ class AIRuntimeService {
     const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
     if (!secret) return { configured: false, reachable: false, error: 'Local CV runtime secret is not configured' };
     const body = JSON.stringify({ operation: 'status' });
-    const signed = signLocalRequest(secret, body);
+    const signed = signLocalRequest(secret, body, { method: 'POST', path: '/v1/status' });
     try {
       const response = await this.fetch(`${baseUrl}/v1/status`, {
         method: 'POST',
@@ -658,7 +665,20 @@ class AIRuntimeService {
 
   async recordResult({ requestId, context, route, credential, status, response, payload, data, error, attempts, attemptErrors, startedAt }) {
     const rateLimit = parseRateLimitHeaders(response?.headers);
-    const usage = normalizeUsage(data?.usage || {});
+    const rawUsage = data?.usage;
+    const usageReported = typeof data?.usageReported === 'boolean'
+      ? data.usageReported
+      : Boolean(rawUsage && typeof rawUsage === 'object' && [
+        'prompt_tokens',
+        'input_tokens',
+        'inputTokens',
+        'completion_tokens',
+        'output_tokens',
+        'outputTokens',
+        'total_tokens',
+        'totalTokens'
+      ].some((field) => Object.hasOwn(rawUsage, field)));
+    const usage = normalizeUsage(rawUsage || {});
     const event = {
       requestId,
       providerRequestId: rateLimit.providerRequestId || data?.id,
@@ -696,6 +716,12 @@ class AIRuntimeService {
       latencyMs: Date.now() - startedAt,
       promptBytes: Buffer.byteLength(JSON.stringify(payload?.messages || [])),
       responseBytes: Buffer.byteLength(JSON.stringify(data || {})),
+      usageReported,
+      usageSource: usageReported
+        ? String(data?.usageSource || (
+          String(data?.provider || route.provider).startsWith('local-') ? 'local-gateway' : 'provider-response'
+        )).slice(0, 100)
+        : 'unreported',
       usage,
       estimatedCostUsd: calculateEstimatedCost(usage, route.modelConfig?.pricing),
       rateLimit
@@ -860,7 +886,9 @@ class AIRuntimeService {
             },
             finish_reason: localData.finishReason || (localData.toolCalls?.length ? 'tool_calls' : 'stop')
           }],
-          usage: localData.usage || {}
+          usage: localData.usage || {},
+          usageReported: localData.usageReported,
+          usageSource: localData.usageSource
         };
         await this.recordResult({
           requestId, context, route, status: 'success', response, payload, data, attempts: 1, startedAt
