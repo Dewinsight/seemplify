@@ -563,6 +563,53 @@ function codexPrompt(input) {
   ].join('\n');
 }
 
+function parseCodexJsonl(output) {
+  const events = String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        const error = new Error('Codex CLI returned malformed JSONL output');
+        error.code = 'CODEX_JSONL_INVALID';
+        throw error;
+      }
+    });
+  const failure = events.find((event) => event?.type === 'turn.failed');
+  if (failure) {
+    const error = new Error(String(failure.error?.message || failure.message || 'Codex turn failed'));
+    error.code = String(failure.error?.code || 'CODEX_TURN_FAILED');
+    throw error;
+  }
+  const messages = events
+    .filter((event) => event?.type === 'item.completed' && event.item?.type === 'agent_message')
+    .map((event) => String(event.item?.text || '').trim())
+    .filter(Boolean);
+  const completed = [...events].reverse().find((event) => event?.type === 'turn.completed');
+  const rawUsage = completed?.usage || {};
+  const inputTokens = Number(rawUsage.input_tokens || 0);
+  const cachedInputTokens = Math.min(inputTokens, Number(rawUsage.cached_input_tokens || 0));
+  const outputTokens = Number(rawUsage.output_tokens || 0);
+  const reasoningTokens = Math.min(outputTokens, Number(rawUsage.reasoning_output_tokens || 0));
+  return {
+    content: messages.at(-1) || '',
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+      prompt_tokens_details: {
+        cached_tokens: cachedInputTokens,
+        cache_write_tokens: Number(rawUsage.cache_write_input_tokens || 0)
+      },
+      completion_tokens_details: {
+        reasoning_tokens: reasoningTokens
+      }
+    }
+  };
+}
+
 async function runCodex(input, state) {
   const engine = engineSettings({ ...state, selectedEngine: 'codex' });
   if (!fs.existsSync(codexScript)) {
@@ -587,6 +634,7 @@ async function runCodex(input, state) {
       '--model', engine.model,
       '--color', 'never',
       '--cd', requestDir,
+      '--json',
       '-'
     ], {
       input: codexPrompt(effectiveInput),
@@ -597,16 +645,17 @@ async function runCodex(input, state) {
         CODEX_NON_INTERACTIVE: '1'
       }
     });
+    const codexResult = parseCodexJsonl(result.stdout);
     const parsed = effectiveInput.jsonSchema
-      ? parseStructuredContent(result.stdout, 'Codex CLI')
-      : { content: stripThinkingText(result.stdout), data: undefined };
+      ? parseStructuredContent(codexResult.content, 'Codex CLI')
+      : { content: stripThinkingText(codexResult.content), data: undefined };
     if (!parsed.content) throw new Error('Codex CLI returned an empty response');
     return {
       id: crypto.randomUUID(),
       engine: 'codex',
       model: engine.model,
       ...finalizeOutput(parsed, effectiveInput),
-      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      usage: codexResult.usage,
       metrics: { latencyMs: Date.now() - startedAt }
     };
   } finally {
@@ -668,6 +717,7 @@ module.exports = {
   hasOpenObjectSchema,
   normalizeToolCalls,
   ollamaMessages,
+  parseCodexJsonl,
   parseStructuredContent,
   prepareInferenceInput,
   runCodex,

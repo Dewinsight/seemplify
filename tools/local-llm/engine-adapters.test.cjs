@@ -7,6 +7,7 @@ const {
   finiteCvSchema,
   hasOpenObjectSchema,
   ollamaMessages,
+  parseCodexJsonl,
   parseStructuredContent,
   prepareInferenceInput,
   shouldEnvelopeOllamaText,
@@ -188,4 +189,50 @@ test('builds Codex prompts for both ordinary text and structured local-cloud act
   }));
   assert.match(structuredPrompt, /required_json_schema/);
   assert.match(structuredPrompt, /find_candidates/);
+});
+
+test('extracts Terra content and authoritative token details from Codex JSONL', () => {
+  const result = parseCodexJsonl([
+    JSON.stringify({ type: 'thread.started', thread_id: 'thread-1' }),
+    JSON.stringify({ type: 'turn.started' }),
+    JSON.stringify({
+      type: 'item.completed',
+      item: { id: 'item-1', type: 'agent_message', text: '{"ok":true}' }
+    }),
+    JSON.stringify({
+      type: 'turn.completed',
+      usage: {
+        input_tokens: 12740,
+        cached_input_tokens: 10496,
+        cache_write_input_tokens: 64,
+        output_tokens: 25,
+        reasoning_output_tokens: 20
+      }
+    })
+  ].join('\n'));
+
+  assert.equal(result.content, '{"ok":true}');
+  assert.deepEqual(result.usage, {
+    prompt_tokens: 12740,
+    completion_tokens: 25,
+    total_tokens: 12765,
+    prompt_tokens_details: {
+      cached_tokens: 10496,
+      cache_write_tokens: 64
+    },
+    completion_tokens_details: {
+      reasoning_tokens: 20
+    }
+  });
+});
+
+test('rejects failed and malformed Codex JSONL turns', () => {
+  assert.throws(
+    () => parseCodexJsonl(JSON.stringify({
+      type: 'turn.failed',
+      error: { code: 'model_error', message: 'Terra failed' }
+    })),
+    /Terra failed/
+  );
+  assert.throws(() => parseCodexJsonl('not json'), /malformed JSONL/);
 });

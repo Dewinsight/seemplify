@@ -87,6 +87,22 @@ test('CV queue keeps a compact non-expiring operational history separate from CV
   assert.match(historyRoute, /createLocalRuntimeHistoryAuth/);
 });
 
+test('Terra adapter records authoritative Codex token usage instead of zeroes', () => {
+  const adapter = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm', 'engine-adapters.cjs'),
+    'utf8'
+  );
+  assert.match(adapter, /'--json'/);
+  assert.match(adapter, /rawUsage\.input_tokens/);
+  assert.match(adapter, /rawUsage\.cached_input_tokens/);
+  assert.match(adapter, /rawUsage\.output_tokens/);
+  assert.match(adapter, /rawUsage\.reasoning_output_tokens/);
+  assert.doesNotMatch(
+    adapter,
+    /engine:\s*'codex'[\s\S]{0,400}usage:\s*\{\s*prompt_tokens:\s*0,\s*completion_tokens:\s*0/
+  );
+});
+
 test('local signatures are deterministic for fixed request inputs', () => {
   const signed = signLocalRequest('secret', '{"activity":"candidate.cv_parse"}', 1234, 'abcdefghijklmnop');
   const expected = crypto.createHmac('sha256', 'secret')
