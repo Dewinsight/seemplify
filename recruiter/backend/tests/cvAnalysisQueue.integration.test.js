@@ -23,6 +23,7 @@ const cvQueue = require('../services/cvAnalysisQueueService');
 let mongo;
 let inspectionConnection;
 let inspectionQueue;
+let initialGatewayControl;
 
 const resumeText = [
   'Ada Lovelace',
@@ -89,6 +90,14 @@ async function waitForJobState(publicId, expected, timeoutMs = 120_000) {
 }
 
 test.before(async () => {
+  const gatewayStatus = await fetch('http://127.0.0.1:11435/control/status').then((response) => response.json());
+  initialGatewayControl = {
+    enabled: gatewayStatus.state.enabled !== false,
+    ingressEnabled: gatewayStatus.state.ingressEnabled !== false,
+    paused: gatewayStatus.state.paused === true,
+    concurrency: Math.max(1, Number(gatewayStatus.state.concurrency || 1)),
+    selectionMode: gatewayStatus.state.selectionMode === 'manual' ? 'manual' : 'automatic'
+  };
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
   inspectionConnection = new IORedis(Number(process.env.REDIS_PORT), process.env.REDIS_HOST, {
@@ -109,7 +118,7 @@ test('retry backoff grows exponentially and caps local-runtime outages', () => {
 });
 
 test.after(async () => {
-  await setGatewayIngress(true).catch(() => {});
+  if (initialGatewayControl) await setGatewayControl(initialGatewayControl).catch(() => {});
   await cvQueue.closeForTests();
   if (inspectionQueue) await inspectionQueue.close();
   if (inspectionConnection) await inspectionConnection.quit();
