@@ -4,7 +4,13 @@ const test = require('node:test');
 
 const { createInternalServiceAuth } = require('../middleware/internalServiceAuth');
 const { requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
-const { createDefaultRuntimeSettings, GROQ_120B, GROQ_20B } = require('../config/aiRuntimeCatalog');
+const {
+  createDefaultRuntimeSettings,
+  GROQ_120B,
+  GROQ_20B,
+  LOCAL_CV_MODEL,
+  LOCAL_PROVIDER
+} = require('../config/aiRuntimeCatalog');
 const AIAuditEvent = require('../models/AIAuditEvent');
 const { createBootstrapSettings, mergeCatalogSettings } = require('../scripts/seedAIRuntime');
 const { assessRouting } = require('../services/adminAIRuntimeService');
@@ -38,20 +44,159 @@ test('every seeded AI activity has one compatible explicit route', () => {
   assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
 });
 
-test('default routing reserves 20B for live conversation and 120B for substantive AI work', () => {
+test('default routing uses local inference only for CV parsing and question generation', () => {
   const settings = createDefaultRuntimeSettings();
   const liveChatActivities = new Set([
     'ai_interview.chat.introduction',
     'ai_interview.chat.clarification',
     'ai_interview.chat.acknowledgement'
   ]);
+  const localActivities = new Set([
+    'candidate.cv_parse',
+    'interview.questions',
+    'ai_interview.question_generation',
+    'ai_interview.cv_parse'
+  ]);
 
   for (const route of settings.routes) {
-    assert.equal(route.model, liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B, route.activity);
+    const expectedModel = localActivities.has(route.activity)
+      ? LOCAL_CV_MODEL
+      : liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B;
+    assert.equal(route.model, expectedModel, route.activity);
+    assert.equal(route.provider, localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq', route.activity);
   }
   assert.equal(settings.routes.find((route) => route.activity === 'matching.analysis').reasoningEffort, 'high');
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.scoring').reasoningEffort, 'high');
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.chat.clarification').reasoningEffort, 'low');
+});
+
+test('every activity, including CV parsing, can be reassigned between Groq and managed local inference', () => {
+  const settings = createDefaultRuntimeSettings();
+  for (const route of settings.routes) {
+    route.provider = LOCAL_PROVIDER;
+    route.model = LOCAL_CV_MODEL;
+  }
+  assert.equal(assessRouting(settings).valid, true);
+
+  const cvRoute = settings.routes.find((route) => route.activity === 'candidate.cv_parse');
+  cvRoute.provider = 'groq';
+  cvRoute.model = GROQ_120B;
+  assert.equal(assessRouting(settings).valid, true);
+});
+
+test('local CV provider requests require local-only inference at the signed gateway', async () => {
+  const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
+  const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
+  process.env.LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11435';
+  process.env.LOCAL_LLM_SHARED_SECRET = 'test-local-runtime-secret';
+  let request;
+  const runtime = new AIRuntimeService({
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true };
+    },
+    settingsModel: {},
+    credentialModel: {},
+    quotaModel: {}
+  });
+  try {
+    await runtime.localProviderRequest({
+      route: { activity: 'candidate.cv_parse', model: LOCAL_CV_MODEL },
+      input: {
+        messages: [{ role: 'user', content: 'Synthetic CV' }],
+        jsonSchema: { type: 'object' },
+        schemaName: 'candidate_cv'
+      }
+    });
+  } finally {
+    if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
+    else process.env.LOCAL_LLM_BASE_URL = previousBaseUrl;
+    if (previousSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET;
+    else process.env.LOCAL_LLM_SHARED_SECRET = previousSecret;
+  }
+
+  assert.equal(request.url, 'http://127.0.0.1:11435/v1/cv/analyze');
+  assert.equal(JSON.parse(request.options.body).executionMode, 'local-only');
+  assert.ok(request.options.headers['x-seemplify-signature']);
+});
+
+test('non-CV local activities use the signed general completion endpoint', async () => {
+  const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
+  const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
+  process.env.LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11435';
+  process.env.LOCAL_LLM_SHARED_SECRET = 'test-local-runtime-secret';
+  let request;
+  const runtime = new AIRuntimeService({
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true };
+    },
+    settingsModel: {},
+    credentialModel: {},
+    quotaModel: {}
+  });
+  try {
+    await runtime.localProviderRequest({
+      route: { activity: 'interview.questions', model: LOCAL_CV_MODEL },
+      input: {
+        messages: [{ role: 'user', content: 'Create interview questions' }],
+        jsonSchema: { type: 'object' },
+        schemaName: 'interview_questions'
+      }
+    });
+  } finally {
+    if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
+    else process.env.LOCAL_LLM_BASE_URL = previousBaseUrl;
+    if (previousSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET;
+    else process.env.LOCAL_LLM_SHARED_SECRET = previousSecret;
+  }
+  assert.equal(request.url, 'http://127.0.0.1:11435/v1/complete');
+  assert.equal(JSON.parse(request.options.body).executionMode, 'local-only');
+});
+
+test('local activities expose an OpenAI-compatible buffered SSE stream', async () => {
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
+  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.complete = async () => ({
+    requestId: 'local-stream-request',
+    content: 'Local streamed answer',
+    toolCalls: [],
+    finishReason: 'stop',
+    model: LOCAL_CV_MODEL,
+    usage: { inputTokens: 4, outputTokens: 3, totalTokens: 7 }
+  });
+
+  const response = await runtime.streamResponse('interview.questions', {
+    messages: [{ role: 'user', content: 'Create one question.' }]
+  });
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/event-stream/);
+  assert.match(body, /Local streamed answer/);
+  assert.match(body, /"finish_reason":"stop"/);
+  assert.match(body, /data: \[DONE\]/);
+});
+
+test('structured completion invokes a budget hook for every schema repair attempt', async () => {
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
+  let completions = 0;
+  let reservations = 0;
+  runtime.complete = async () => ({
+    content: completions++ === 0 ? '{"answer":1}' : '{"answer":"corrected"}'
+  });
+  const result = await runtime.structuredComplete('interview.questions', {
+    messages: [{ role: 'user', content: 'Return an answer.' }],
+    jsonSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['answer'],
+      properties: { answer: { type: 'string' } }
+    }
+  }, {
+    beforeAttempt: async () => { reservations += 1; }
+  });
+  assert.equal(result.data.answer, 'corrected');
+  assert.equal(reservations, 2);
 });
 
 test('runtime never falls back to the general route for a missing activity route', () => {
@@ -77,6 +222,39 @@ test('routing rejects models that lack an activity capability', () => {
     () => runtime.resolveRoute('interview.questions', settings),
     (error) => error.code === 'AI_MODEL_CAPABILITY_MISMATCH'
   );
+});
+
+test('Groq model synchronization never marks the managed local model unavailable', async () => {
+  const previousKey = process.env.AI_PROVIDER_ENCRYPTION_KEY;
+  const previousVersion = process.env.AI_PROVIDER_ENCRYPTION_KEY_VERSION;
+  process.env.AI_PROVIDER_ENCRYPTION_KEY = TEST_ENV.AI_PROVIDER_ENCRYPTION_KEY;
+  process.env.AI_PROVIDER_ENCRYPTION_KEY_VERSION = TEST_ENV.AI_PROVIDER_ENCRYPTION_KEY_VERSION;
+  let persistedModels;
+  const runtime = new AIRuntimeService({
+    fetchImpl: async () => new Response(JSON.stringify({
+      data: [{ id: GROQ_20B }, { id: GROQ_120B }]
+    }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    settingsModel: {
+      async updateOne(_filter, update) { persistedModels = update.$set.models; }
+    },
+    credentialModel: {},
+    quotaModel: {}
+  });
+  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.getCredential = async () => ({
+    encryptedSecret: encryptSecret(`gsk_${'z'.repeat(36)}`, { env: TEST_ENV })
+  });
+  try {
+    await runtime.syncModels('credential-id');
+  } finally {
+    if (previousKey === undefined) delete process.env.AI_PROVIDER_ENCRYPTION_KEY;
+    else process.env.AI_PROVIDER_ENCRYPTION_KEY = previousKey;
+    if (previousVersion === undefined) delete process.env.AI_PROVIDER_ENCRYPTION_KEY_VERSION;
+    else process.env.AI_PROVIDER_ENCRYPTION_KEY_VERSION = previousVersion;
+  }
+  const local = persistedModels.find((model) => model.provider === LOCAL_PROVIDER);
+  assert.equal(local.available, true);
+  assert.equal(persistedModels.filter((model) => model.provider === 'groq').every((model) => model.available), true);
 });
 
 test('AES-GCM credentials round-trip, mask, and reject the wrong key', () => {
@@ -243,12 +421,20 @@ test('admin permission boundaries keep secrets super-admin only', () => {
   assert.equal(allowed, true);
 });
 
-test('default catalog covers all declared activities with Groq routes', () => {
+test('default catalog keeps only CV parsing and question generation local', () => {
   const settings = createDefaultRuntimeSettings();
   assert.ok(settings.routes.length >= 25);
-  assert.equal(settings.routes.every((route) => route.provider === 'groq'), true);
+  const localRoutes = settings.routes.filter((route) => route.provider === LOCAL_PROVIDER);
+  assert.deepEqual(localRoutes.map((route) => route.activity).sort(), [
+    'ai_interview.cv_parse',
+    'ai_interview.question_generation',
+    'candidate.cv_parse',
+    'interview.questions'
+  ]);
+  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-120b'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-20b'), true);
+  assert.equal(settings.models.some((model) => model.id === LOCAL_CV_MODEL), true);
   assert.deepEqual(settings.rollout, {
     groqPercent: 100,
     azureBaselineEnabled: false,

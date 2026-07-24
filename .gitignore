@@ -27,6 +27,8 @@ logs/
 
 # Local test and automation artifacts
 .codex-temp/
+.local-runtime/
+**/eng.traineddata
 output/
 test-results/
 playwright-report/

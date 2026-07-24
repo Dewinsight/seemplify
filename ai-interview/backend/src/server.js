@@ -3,7 +3,7 @@ require('dotenv').config();
 const cors = require('cors');
 const express = require('express');
 const multer = require('multer');
-const xlsx = require('xlsx');
+const { readCandidateRows } = require('./tabularCandidateParser');
 const {
   id,
   iso,
@@ -24,7 +24,7 @@ const azureSpeechTtsService = require('./azureSpeechTtsService');
 const azureSpeechSttService = require('./azureSpeechSttService');
 const brevoEmailService = require('./brevoEmailService');
 const questionGeneratorService = require('./questionGeneratorService');
-const cvParsingService = require('./cvParsingService');
+const cvProcessingQueue = require('./cvProcessingQueueService');
 const {
   platformFeatureClient,
   requirePlatformFeature
@@ -355,19 +355,8 @@ function buildCandidateHistory(store, candidate, user) {
     .sort((a, b) => String(b.session.createdAt || '').localeCompare(String(a.session.createdAt || '')));
 }
 
-function parseTabularCandidates(file) {
-  if (!file?.buffer?.length) throw new Error('Upload a CSV or XLSX file.');
-  const name = String(file.originalname || '').toLowerCase();
-  const workbook = name.endsWith('.csv')
-    ? xlsx.read(file.buffer.toString('utf8'), { type: 'string' })
-    : xlsx.read(file.buffer, { type: 'buffer' });
-  const firstSheet = workbook.SheetNames[0];
-  if (!firstSheet) throw new Error('The uploaded file has no sheets.');
-  return xlsx.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: '' }).map((row) => {
-    const normalized = Object.entries(row).reduce((acc, [key, value]) => {
-      acc[String(key).trim().toLowerCase().replace(/[\s_-]+/g, '')] = value;
-      return acc;
-    }, {});
+async function parseTabularCandidates(file) {
+  return (await readCandidateRows(file)).map((normalized) => {
     const nameValue = normalizeText(
       normalized.name ||
       normalized.fullname ||
@@ -528,6 +517,71 @@ async function processDueInvites() {
       if (interview.status === 'scheduled') interview.status = 'active';
       syncStats(store, interview._id);
     }
+  });
+}
+
+async function completeCvProcessingJob(processingJob, parsed) {
+  return mutateStore((store) => {
+    store.cvProcessingJobs = store.cvProcessingJobs || [];
+    const currentJob = store.cvProcessingJobs.find((item) => item.publicId === processingJob.publicId);
+    if (!currentJob) throw new Error('AI Interview CV processing job was not found.');
+    if (currentJob.state === 'completed' && currentJob.result) return currentJob.result;
+
+    const profile = parsed.profile;
+    let candidate;
+    if (processingJob.mode === 'enrich') {
+      candidate = store.candidates.find((item) => (
+        item._id === processingJob.candidateId
+        && (!item.createdBy || item.createdBy === processingJob.actorId)
+      ));
+      if (!candidate) throw new Error('Candidate not found.');
+    } else {
+      const email = normalizeEmail(profile.email);
+      if (!email) {
+        throw new Error('The CV was parsed, but no email address was found. Add the candidate manually or upload a clearer CV.');
+      }
+      candidate = store.candidates.find((item) => (
+        normalizeEmail(item.email) === email
+        && item.jobId === processingJob.jobId
+        && (!item.createdBy || item.createdBy === processingJob.actorId)
+      ));
+      if (!candidate) {
+        const now = iso(new Date());
+        candidate = {
+          _id: id('cand'),
+          jobId: processingJob.jobId,
+          status: 'active',
+          createdBy: processingJob.actorId,
+          createdAt: now,
+          updatedAt: now
+        };
+        store.candidates.push(candidate);
+      }
+    }
+
+    mergeCandidateProfile(candidate, profile, {
+      source: processingJob.mode === 'enrich' ? 'cv_enrichment' : 'cv_import',
+      fileName: processingJob.originalName,
+      mimeType: processingJob.mimeType,
+      textLength: parsed.resumeText?.length || 0,
+      resumeText: parsed.resumeText,
+      ai: parsed.ai
+    });
+    candidate.updatedAt = iso(new Date());
+    const actor = { _id: processingJob.actorId, role: 'recruiter' };
+    const result = {
+      candidate: { ...candidate },
+      profile: parsed.profile,
+      history: buildCandidateHistory(store, candidate, actor)
+    };
+    currentJob.state = 'completed';
+    currentJob.progress = 100;
+    currentJob.candidateId = candidate._id;
+    currentJob.completedAt = iso(new Date());
+    currentJob.updatedAt = currentJob.completedAt;
+    currentJob.result = result;
+    delete currentJob.lastError;
+    return result;
   });
 }
 
@@ -830,54 +884,32 @@ app.post('/api/candidates', authenticate, asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/candidates/import-cv', authenticate, upload.single('cv'), asyncHandler(async (req, res) => {
-  const result = await mutateStore(async (store) => {
-    const job = getOwnedRecord(store, 'jobs', req.body?.jobId, req.user);
-    if (!job) throw new Error('A valid job is required before importing a CV.');
-    if (!req.file) throw new Error('Upload a CV file.');
-    const parsed = await cvParsingService.parseAndAnalyze(req.file, {
-      organizationId: store.settings.organizationId || store.settings._id,
-      organizationName: store.settings.organizationName,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
-      jobId: job._id
-    });
-    const profile = parsed.profile;
-    const email = normalizeEmail(profile.email);
-    if (!email) throw new Error('The CV was parsed, but no email address was found. Add the candidate manually or upload a clearer CV.');
-    let candidate = findCandidateByEmailAndJob(store, email, job._id, req.user);
-    const now = iso(new Date());
-    if (!candidate) {
-      candidate = {
-        _id: id('cand'),
-        jobId: job._id,
-        status: 'active',
-        createdBy: req.user._id,
-        createdAt: now,
-        updatedAt: now
-      };
-      store.candidates.push(candidate);
-    }
-    mergeCandidateProfile(candidate, profile, {
-      source: 'cv_import',
-      fileName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      textLength: parsed.resumeText?.length || 0,
-      resumeText: parsed.resumeText,
-      ai: parsed.ai
-    });
-    candidate.updatedAt = now;
-    return { candidate, profile: parsed.profile, history: buildCandidateHistory(store, candidate, req.user) };
+  const store = await readStore();
+  const job = getOwnedRecord(store, 'jobs', req.body?.jobId, req.user);
+  if (!job) throw new Error('A valid job is required before importing a CV.');
+  if (!req.file) throw new Error('Upload a CV file.');
+  const queued = await cvProcessingQueue.submit({
+    file: req.file,
+    organizationId: store.settings.organizationId || store.settings._id,
+    actorId: req.user._id,
+    jobId: job._id,
+    mode: 'import',
+    idempotencyKey: req.get('Idempotency-Key')
   });
-  res.status(201).json(result);
+  res.status(202).json({
+    ...cvProcessingQueue.publicState(queued.job),
+    statusToken: queued.statusToken,
+    statusUrl: `/api/cv-processing/jobs/${queued.job.publicId}`,
+    duplicate: queued.duplicate
+  });
 }));
 
 app.post('/api/candidates/import-table', authenticate, upload.single('file'), asyncHandler(async (req, res) => {
-  const result = await mutateStore((store) => {
+  const result = await mutateStore(async (store) => {
     const job = getOwnedRecord(store, 'jobs', req.body?.jobId, req.user);
     if (!job) throw new Error('A valid job is required before importing candidates.');
     if (!req.file) throw new Error('Upload a CSV or XLSX file.');
-    const rows = parseTabularCandidates(req.file);
+    const rows = await parseTabularCandidates(req.file);
     const imported = [];
     const updated = [];
     const skipped = [];
@@ -927,31 +959,32 @@ app.get('/api/candidates/:id/profile', authenticate, asyncHandler(async (req, re
 }));
 
 app.post('/api/candidates/:id/cv', authenticate, upload.single('cv'), asyncHandler(async (req, res) => {
-  const result = await mutateStore(async (store) => {
-    const candidate = getOwnedRecord(store, 'candidates', req.params.id, req.user);
-    if (!candidate) throw new Error('Candidate not found.');
-    if (!req.file) throw new Error('Upload a CV file.');
-    const parsed = await cvParsingService.parseAndAnalyze(req.file, {
-      organizationId: store.settings.organizationId || store.settings._id,
-      organizationName: store.settings.organizationName,
-      actorId: req.user._id,
-      actorName: req.user.name,
-      actorEmail: req.user.email,
-      jobId: candidate.jobId,
-      candidateId: candidate._id
-    });
-    mergeCandidateProfile(candidate, parsed.profile, {
-      source: 'cv_enrichment',
-      fileName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      textLength: parsed.resumeText?.length || 0,
-      resumeText: parsed.resumeText,
-      ai: parsed.ai
-    });
-    candidate.updatedAt = iso(new Date());
-    return { candidate, profile: parsed.profile, history: buildCandidateHistory(store, candidate, req.user) };
+  const store = await readStore();
+  const candidate = getOwnedRecord(store, 'candidates', req.params.id, req.user);
+  if (!candidate) throw new Error('Candidate not found.');
+  if (!req.file) throw new Error('Upload a CV file.');
+  const queued = await cvProcessingQueue.submit({
+    file: req.file,
+    organizationId: store.settings.organizationId || store.settings._id,
+    actorId: req.user._id,
+    jobId: candidate.jobId,
+    candidateId: candidate._id,
+    mode: 'enrich',
+    idempotencyKey: req.get('Idempotency-Key')
   });
-  res.json(result);
+  res.status(202).json({
+    ...cvProcessingQueue.publicState(queued.job),
+    statusToken: queued.statusToken,
+    statusUrl: `/api/cv-processing/jobs/${queued.job.publicId}`,
+    duplicate: queued.duplicate
+  });
+}));
+
+app.get('/api/cv-processing/jobs/:jobId', authenticate, asyncHandler(async (req, res) => {
+  const statusToken = req.get('X-CV-Status-Token') || req.query.token;
+  const status = await cvProcessingQueue.getStatus(req.params.jobId, statusToken, req.user._id);
+  if (!status) return sendError(res, 404, 'CV_JOB_NOT_FOUND', 'CV processing job was not found.');
+  res.json(status);
 }));
 
 app.patch('/api/candidates/:id', authenticate, asyncHandler(async (req, res) => {
@@ -1511,6 +1544,8 @@ app.use((error, _req, res, _next) => {
 
 readStore()
   .then(() => {
+    void cvProcessingQueue.init({ onCompleted: completeCvProcessingJob })
+      .catch((error) => console.error('AI Interview CV queue is waiting for Redis:', error.message));
     app.listen(port, () => {
       console.log(`AI Interview standalone backend running on http://localhost:${port}`);
       console.log(`Database: ${shouldUseMongo() ? getMongoDbName() : 'json-dev-store'}`);

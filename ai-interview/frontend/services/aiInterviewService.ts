@@ -294,6 +294,33 @@ export interface AIInterviewCandidate {
   profileUpdatedAt?: string;
 }
 
+export type CVProcessingState =
+  | 'queued'
+  | 'waiting_for_local_runtime'
+  | 'processing'
+  | 'completed'
+  | 'failed';
+
+export interface CVProcessingJobResponse {
+  jobId: string;
+  statusToken?: string;
+  statusUrl?: string;
+  state: CVProcessingState;
+  progress: number;
+  position: number | null;
+  queueAvailable?: boolean;
+  duplicate?: boolean;
+  createdAt?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+  candidateId?: string | null;
+  candidate?: AIInterviewCandidate;
+  profile?: any;
+  history?: any[];
+  error?: { code?: string; message?: string };
+}
+
 export interface AIInterviewQuestion {
   _id: string;
   jobId?: string;
@@ -489,27 +516,38 @@ class AIInterviewService {
     return data.candidate;
   }
 
-  async importCandidateCv(input: { jobId: string; file: File }): Promise<{ candidate: AIInterviewCandidate; profile: any; history: any[] }> {
+  async importCandidateCv(input: { jobId: string; file: File }): Promise<CVProcessingJobResponse> {
     const body = new FormData();
     body.set('jobId', input.jobId);
     body.set('cv', input.file);
     const response = await apiRequest('/api/candidates/import-cv', {
       method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
       body
     });
     if (!response.ok) throw await parseError(response);
     return response.json();
   }
 
-  async enrichCandidateCv(input: { candidateId: string; file: File }): Promise<{ candidate: AIInterviewCandidate; profile: any; history: any[] }> {
+  async enrichCandidateCv(input: { candidateId: string; file: File }): Promise<CVProcessingJobResponse> {
     const body = new FormData();
     body.set('cv', input.file);
     const response = await apiRequest(`/api/candidates/${input.candidateId}/cv`, {
       method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
       body
     });
     if (!response.ok) throw await parseError(response);
     return response.json();
+  }
+
+  async getCvProcessingJob(job: Pick<CVProcessingJobResponse, 'jobId' | 'statusToken' | 'statusUrl'>): Promise<CVProcessingJobResponse> {
+    if (!job.statusToken) throw new Error('CV status token is missing.');
+    const response = await apiRequest(job.statusUrl || `/api/cv-processing/jobs/${job.jobId}`, {
+      headers: { 'X-CV-Status-Token': job.statusToken }
+    });
+    if (!response.ok) throw await parseError(response);
+    return { ...await response.json(), statusToken: job.statusToken, statusUrl: job.statusUrl };
   }
 
   async importCandidatesTable(input: { jobId: string; file: File }): Promise<{

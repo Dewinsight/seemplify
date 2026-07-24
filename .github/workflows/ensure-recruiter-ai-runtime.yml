@@ -20,3 +20,7 @@ jobs:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
           RECRUITER_BACKEND_APP_ID: ${{ secrets.RECRUITER_BACKEND_APP_ID }}
+          LOCAL_LLM_BASE_URL: https://cv-llm.aiinnigeria.com
+          LOCAL_LLM_SHARED_SECRET: ${{ secrets.LOCAL_LLM_SHARED_SECRET }}
+          CV_STATUS_TOKEN_SECRET: ${{ secrets.CV_STATUS_TOKEN_SECRET }}
+          CV_ANALYSIS_QUEUE_CONCURRENCY: "1"

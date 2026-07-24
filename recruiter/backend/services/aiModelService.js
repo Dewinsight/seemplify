@@ -1,5 +1,15 @@
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
 const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+const {
+  GroqTokenBudget,
+  estimateRequestTokens,
+  mergeCvExtractions,
+  splitCvText
+} = require('./aiRuntime/groqCvChunkingService');
+
+const groqCvTokenBudget = new GroqTokenBudget({
+  tokensPerMinute: Number(process.env.GROQ_CV_TPM_SAFETY_BUDGET || 7_200)
+});
 
 const FLEXIBLE_OBJECT_SCHEMA = {
   type: 'object',
@@ -171,6 +181,7 @@ const BIAS_ANALYSIS_BATCH_SCHEMA = {
 
 const STRUCTURED_CONTRACTS = {
   'candidate.cv_parse': { schema: CV_EXTRACTION_SCHEMA, schemaName: 'candidate_cv', schemaStrict: false },
+  'ai_interview.cv_parse': { schema: CV_EXTRACTION_SCHEMA, schemaName: 'ai_interview_cv', schemaStrict: false },
   'interview.analysis': { schema: FLEXIBLE_OBJECT_SCHEMA, schemaName: 'interview_analysis', schemaStrict: false },
   'interview.questions': { schema: INTERVIEW_QUESTIONS_SCHEMA, schemaName: 'interview_questions', schemaStrict: true },
   'interview.summary': { schema: FLEXIBLE_OBJECT_SCHEMA, schemaName: 'interview_summary', schemaStrict: false },
@@ -196,6 +207,7 @@ class AIModelService {
     this.deployment = GROQ_120B;
     this.endpoint = 'managed-by-ai-runtime';
     this.apiVersion = 'groq-openai-v1';
+    this.groqCvTokenBudget = groqCvTokenBudget;
   }
 
   async requestCompletion(request = {}) {
@@ -209,12 +221,13 @@ class AIModelService {
     const activity = request.activity || 'recruiter.general';
     const contract = contractOverride || STRUCTURED_CONTRACTS[activity];
     if (!contract) throw new Error(`No structured output contract is configured for ${activity}`);
+    const { beforeAttempt, ...runtimeRequest } = request;
     const result = await aiRuntimeService.structuredComplete(activity, {
-      ...request,
+      ...runtimeRequest,
       jsonSchema: contract.schema,
       schemaName: contract.schemaName,
       schemaStrict: contract.schemaStrict
-    });
+    }, { beforeAttempt });
     return result.raw;
   }
 
@@ -521,7 +534,7 @@ class AIModelService {
           { role: "user", content: "Say hello world in JSON format with a message field." }
         ],
         max_completion_tokens: 100,
-        temperature: 0.7,
+        temperature: 0,
         top_p: 1,
         frequency_penalty: 0,
         presence_penalty: 0,
@@ -543,9 +556,67 @@ class AIModelService {
     }
   }
 
-  async analyzeCV(cvText) {
+  async analyzeCVWithGroqChunks(cvText, activity) {
+    const chunks = splitCvText(cvText);
+    const extractions = [];
+    const maxOutputTokens = 1_800;
+    for (let index = 0; index < chunks.length; index += 1) {
+      const messages = [
+        {
+          role: 'system',
+          content: [
+            'Extract only facts explicitly present in this CV chunk.',
+            'Return the complete requested JSON shape, using empty strings, arrays, objects, or null for absent facts.',
+            'Preserve names, dates, metrics, roles, education, skills, qualifications, links, projects, and achievements exactly.',
+            'Never infer or invent facts. Do not duplicate facts caused by chunk overlap.'
+          ].join(' ')
+        },
+        {
+          role: 'user',
+          content: `CV chunk ${index + 1} of ${chunks.length}:\n\n${chunks[index]}`
+        }
+      ];
+      const estimatedTokens = estimateRequestTokens({
+        messages,
+        schema: CV_EXTRACTION_SCHEMA,
+        maxOutputTokens
+      });
+      const response = await this.requestStructuredCompletion({
+        activity,
+        promptVersion: 'candidate-cv-groq-chunk-v1',
+        messages,
+        max_completion_tokens: maxOutputTokens,
+        temperature: 0,
+        top_p: 1,
+        beforeAttempt: () => this.groqCvTokenBudget.reserve(estimatedTokens)
+      });
+      if (response?.error !== undefined && response.status !== '200') throw response.error;
+      const content = this.extractTextContent(response.choices?.[0]?.message?.content);
+      extractions.push(this.extractJsonObject(content));
+    }
+    const merged = mergeCvExtractions(extractions);
+    return {
+      success: true,
+      summary: merged.summary || 'N/A',
+      strengths: merged.strengths || [],
+      potentialFlags: merged.potentialFlags || [],
+      extractedFields: merged,
+      processing: {
+        provider: 'groq',
+        strategy: 'chunked-map-merge',
+        chunks: chunks.length,
+        tokenBudgetPerMinute: this.groqCvTokenBudget.tokensPerMinute
+      }
+    };
+  }
+
+  async analyzeCV(cvText, activity = 'candidate.cv_parse') {
     try {
       console.log("Analyzing CV with the managed AI runtime.");
+      const executionRoute = await aiRuntimeService.getExecutionRoute(activity);
+      if (executionRoute.provider === 'groq' && String(cvText || '').length > 6_500) {
+        return await this.analyzeCVWithGroqChunks(cvText, activity);
+      }
 
       const messages = [
         {
@@ -753,11 +824,11 @@ ${cvText}`
       ];
 
       const response = await this.requestStructuredCompletion({
-        activity: 'candidate.cv_parse',
+        activity,
         promptVersion: 'candidate-cv-v2',
         messages: messages,
-        max_completion_tokens: 8000, // Increased to handle comprehensive extraction
-        temperature: 0.7,
+        max_completion_tokens: executionRoute.provider === 'groq' ? 3_000 : 8_000,
+        temperature: 0,
         top_p: 1,
         frequency_penalty: 0,
         presence_penalty: 0,
@@ -2005,3 +2076,4 @@ Return concise evidence-based assessments. Never infer candidate characteristics
 }
 
 module.exports = AIModelService;
+module.exports.CV_EXTRACTION_SCHEMA = CV_EXTRACTION_SCHEMA;

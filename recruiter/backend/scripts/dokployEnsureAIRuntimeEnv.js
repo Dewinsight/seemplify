@@ -22,7 +22,7 @@ function serializeEnv({ values, passthrough }) {
   ].join('\n');
 }
 
-function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes) {
+function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes, localRuntime = {}) {
   const parsed = parseEnv(envText);
   const added = [];
   const ensure = (key, createValue) => {
@@ -35,6 +35,12 @@ function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes) {
   ensure('AI_PROVIDER_ENCRYPTION_KEY_VERSION', () => 'v1');
   ensure('AI_GATEWAY_HMAC_SECRET', () => randomBytes(48).toString('base64'));
   ensure('AI_GATEWAY_ALLOWED_SERVICES', () => 'ai-interview');
+  if (String(localRuntime.sharedSecret || '').trim()) {
+    ensure('LOCAL_LLM_SHARED_SECRET', () => String(localRuntime.sharedSecret).trim());
+    ensure('LOCAL_LLM_BASE_URL', () => String(localRuntime.baseUrl || 'https://cv-llm.aiinnigeria.com').trim());
+    ensure('CV_STATUS_TOKEN_SECRET', () => String(localRuntime.statusTokenSecret || localRuntime.sharedSecret).trim());
+    ensure('CV_ANALYSIS_QUEUE_CONCURRENCY', () => String(localRuntime.concurrency || 1));
+  }
 
   return { env: serializeEnv(parsed), added };
 }
@@ -63,12 +69,21 @@ async function dokployRequest(url, token, options = {}) {
 async function main() {
   const token = String(process.env.DOKPLOY_TOKEN || '');
   const applicationId = String(process.env.RECRUITER_BACKEND_APP_ID || '');
+  const localSharedSecret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+  const cvStatusTokenSecret = String(process.env.CV_STATUS_TOKEN_SECRET || '').trim();
   if (!token) throw new Error('DOKPLOY_TOKEN is required');
   if (!applicationId) throw new Error('RECRUITER_BACKEND_APP_ID is required');
+  if (!localSharedSecret) throw new Error('LOCAL_LLM_SHARED_SECRET is required');
+  if (!cvStatusTokenSecret) throw new Error('CV_STATUS_TOKEN_SECRET is required');
 
   const base = apiBase(process.env.DOKPLOY_URL);
   const app = await dokployRequest(`${base}/application.one?applicationId=${encodeURIComponent(applicationId)}`, token);
-  const result = ensureAIRuntimeEnv(app.env);
+  const result = ensureAIRuntimeEnv(app.env, crypto.randomBytes, {
+    sharedSecret: localSharedSecret,
+    baseUrl: process.env.LOCAL_LLM_BASE_URL || 'https://cv-llm.aiinnigeria.com',
+    statusTokenSecret: cvStatusTokenSecret,
+    concurrency: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '1'
+  });
   if (!result.added.length) {
     console.log('AI Runtime security environment is already configured; no values changed.');
     return;

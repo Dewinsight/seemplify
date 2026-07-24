@@ -25,7 +25,11 @@ import {
 import { toast } from "sonner";
 import { AIVoiceAvatar, AIVoiceWave } from "@/components/ai-voice-avatar";
 import { getAIInterviewVoiceAvatar } from "@/lib/aiVoiceAvatars";
-import aiInterviewService, { type AIInterview, type AIInterviewSession } from "@/services/aiInterviewService";
+import aiInterviewService, {
+  type AIInterview,
+  type AIInterviewSession,
+  type CVProcessingJobResponse
+} from "@/services/aiInterviewService";
 import { ADMIN_TOKEN_KEY, apiRequest, TOKEN_KEY } from "@/services/apiConfig";
 
 type OptionsState = {
@@ -117,6 +121,8 @@ export default function AIInterviewStandalonePage() {
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
   const [cvImporting, setCvImporting] = useState(false);
+  const [cvProcessingJob, setCvProcessingJob] = useState<CVProcessingJobResponse | null>(null);
+  const cvPollGeneration = useRef(0);
   const [bulkImporting, setBulkImporting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
@@ -311,9 +317,35 @@ export default function AIInterviewStandalonePage() {
   };
 
   useEffect(() => () => {
+    cvPollGeneration.current += 1;
     voicePreviewRef.current?.pause();
     if (voicePreviewUrlRef.current) URL.revokeObjectURL(voicePreviewUrlRef.current);
   }, []);
+
+  const waitForCvProcessing = async (initial: CVProcessingJobResponse) => {
+    const generation = ++cvPollGeneration.current;
+    let current = initial;
+    setCvProcessingJob(current);
+    while (generation === cvPollGeneration.current) {
+      if (current.state === "completed") return current;
+      if (current.state === "failed") {
+        throw new Error(current.error?.message || "CV processing failed.");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, current.state === "processing" ? 1200 : 2200));
+      try {
+        current = await aiInterviewService.getCvProcessingJob({
+          jobId: initial.jobId,
+          statusToken: initial.statusToken,
+          statusUrl: initial.statusUrl
+        });
+        setCvProcessingJob(current);
+      } catch {
+        // The job is durable; transient polling failures should not turn into a failed upload.
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      }
+    }
+    throw new Error("CV status polling stopped.");
+  };
 
   const createJob = async () => {
     try {
@@ -382,12 +414,16 @@ export default function AIInterviewStandalonePage() {
     }
     setCvImporting(true);
     try {
-      const result = await aiInterviewService.importCandidateCv({ jobId: form.jobId, file });
-      toast.success(`${result.candidate.name} imported from CV.`);
+      const queued = await aiInterviewService.importCandidateCv({ jobId: form.jobId, file });
+      toast.success("CV queued for local analysis.");
+      const result = await waitForCvProcessing(queued);
+      if (!result.candidate) throw new Error("CV processing completed without a candidate.");
+      const candidate = result.candidate;
+      toast.success(`${candidate.name} imported from CV.`);
       await load();
-      setForm((current) => ({ ...current, candidateIds: Array.from(new Set([...current.candidateIds, result.candidate._id])) }));
-      setCandidateProfile({ candidate: result.candidate, history: result.history || [] });
-      setSelectedCandidateId(result.candidate._id);
+      setForm((current) => ({ ...current, candidateIds: Array.from(new Set([...current.candidateIds, candidate._id])) }));
+      setCandidateProfile({ candidate, history: result.history || [] });
+      setSelectedCandidateId(candidate._id);
     } catch (error: any) {
       toast.error(error.message || "Could not import CV");
     } finally {
@@ -399,7 +435,10 @@ export default function AIInterviewStandalonePage() {
     if (!file || !selectedCandidateId) return;
     setCvImporting(true);
     try {
-      const result = await aiInterviewService.enrichCandidateCv({ candidateId: selectedCandidateId, file });
+      const queued = await aiInterviewService.enrichCandidateCv({ candidateId: selectedCandidateId, file });
+      toast.success("CV queued for local analysis.");
+      const result = await waitForCvProcessing(queued);
+      if (!result.candidate) throw new Error("CV processing completed without a candidate.");
       toast.success(`${result.candidate.name} updated from CV.`);
       await load();
       setCandidateProfile({ candidate: result.candidate, history: result.history || [] });
@@ -655,6 +694,30 @@ export default function AIInterviewStandalonePage() {
                 <div className="flex items-center gap-2 text-lg font-semibold"><Upload className="h-5 w-5 text-emerald-600" />Import candidates</div>
                 <div className="mt-2 text-xs leading-5 text-slate-500">Import one CV for AI parsing, or bulk import CSV/XLSX rows with name, email, phone, title, and skills columns.</div>
                 <div className="mt-4 grid gap-3">
+                  {cvProcessingJob && !["completed", "failed"].includes(cvProcessingJob.state) && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-blue-950">
+                        <span>
+                          {cvProcessingJob.state === "waiting_for_local_runtime"
+                            ? "Waiting for local runtime"
+                            : cvProcessingJob.state === "processing"
+                              ? "Analysing CV locally"
+                              : "Queued for local analysis"}
+                        </span>
+                        <span>{Math.max(0, Math.min(100, Number(cvProcessingJob.progress || 0)))}%</span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
+                        <div
+                          className="h-full rounded-full bg-blue-600 transition-[width] duration-500"
+                          style={{ width: `${Math.max(4, Math.min(100, Number(cvProcessingJob.progress || 0)))}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 text-[11px] text-blue-800">
+                        {cvProcessingJob.position ? `Queue position ${cvProcessingJob.position}. ` : ""}
+                        Your upload is saved and will keep waiting if the runtime is offline.
+                      </div>
+                    </div>
+                  )}
                   <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border bg-white p-3 text-sm font-semibold hover:bg-slate-50">
                     <span className="flex items-center gap-2"><FileText className="h-4 w-4 text-blue-600" />Import one CV</span>
                     <span className="text-xs text-slate-500">{cvImporting ? "Working..." : "PDF/DOCX/TXT"}</span>

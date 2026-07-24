@@ -2,6 +2,21 @@ const GROQ_PROVIDER = 'groq';
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const GROQ_120B = 'openai/gpt-oss-120b';
 const GROQ_20B = 'openai/gpt-oss-20b';
+const LOCAL_PROVIDER = 'local-ollama';
+const LOCAL_MANAGED_MODEL = 'managed-local-gpu';
+const LOCAL_CV_MODEL = LOCAL_MANAGED_MODEL;
+const DEFAULT_LOCAL_FAILOVER = Object.freeze({
+  enabled: true,
+  intervalMinutes: 30,
+  active: false,
+  status: 'unknown',
+  checkedAt: null,
+  failedAt: null,
+  recoveredAt: null,
+  reason: null,
+  engine: null,
+  model: null
+});
 
 const DEFAULT_MODELS = Object.freeze([
   {
@@ -25,12 +40,26 @@ const DEFAULT_MODELS = Object.freeze([
     contextWindow: 131072,
     maxOutputTokens: 65536,
     enabled: true
+  },
+  {
+    id: LOCAL_CV_MODEL,
+    provider: LOCAL_PROVIDER,
+    label: 'Managed local GPU',
+    capabilities: ['text', 'reasoning', 'json_object', 'json_schema', 'tools', 'streaming'],
+    pricing: { inputPerMillionUsd: 0, cachedInputPerMillionUsd: 0, outputPerMillionUsd: 0 },
+    documentedLimits: { concurrency: 8 },
+    contextWindow: 32768,
+    maxOutputTokens: 12288,
+    available: true,
+    enabled: true,
+    localOnly: true,
+    managed: true
   }
 ]);
 
 const ACTIVITY_DEFINITIONS = Object.freeze({
   'recruiter.general': { label: 'Recruiter AI - general', group: 'Recruiter', model: GROQ_120B, reasoningEffort: 'medium' },
-  'candidate.cv_parse': { label: 'Candidate CV parsing', group: 'Candidates', model: GROQ_120B, reasoningEffort: 'medium' },
+  'candidate.cv_parse': { label: 'Candidate CV parsing', group: 'Candidates', model: LOCAL_CV_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
   'candidate.insights': { label: 'Candidate insights', group: 'Candidates', model: GROQ_120B, reasoningEffort: 'medium' },
   'job.description': { label: 'Job description generation', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'medium' },
   'job.requirements': { label: 'Job requirements generation', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'medium' },
@@ -46,7 +75,7 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'analytics.jobs': { label: 'Job analytics', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
   'analytics.hiring': { label: 'Hiring analytics', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
   'report.analysis': { label: 'Report analysis', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
-  'interview.questions': { label: 'Interview question generation', group: 'Interviews', model: GROQ_120B, reasoningEffort: 'medium' },
+  'interview.questions': { label: 'Interview question generation', group: 'Interviews', model: LOCAL_MANAGED_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
   'interview.bias': { label: 'Interview bias analysis', group: 'Interviews', model: GROQ_120B, reasoningEffort: 'medium' },
   'interview.analysis': { label: 'Interview analysis', group: 'Interviews', model: GROQ_120B, reasoningEffort: 'high' },
   'interview.summary': { label: 'Interview summary', group: 'Interviews', model: GROQ_120B, reasoningEffort: 'medium' },
@@ -54,14 +83,14 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'ai_interview.chat.introduction': { label: 'AI Interview introduction', group: 'AI Interview', model: GROQ_20B, reasoningEffort: 'low' },
   'ai_interview.chat.clarification': { label: 'AI Interview clarification', group: 'AI Interview', model: GROQ_20B, reasoningEffort: 'low' },
   'ai_interview.chat.acknowledgement': { label: 'AI Interview acknowledgement', group: 'AI Interview', model: GROQ_20B, reasoningEffort: 'low' },
-  'ai_interview.question_generation': { label: 'AI Interview question generation', group: 'AI Interview', model: GROQ_120B, reasoningEffort: 'medium' },
-  'ai_interview.cv_parse': { label: 'AI Interview CV parsing', group: 'AI Interview', model: GROQ_120B, reasoningEffort: 'medium' },
+  'ai_interview.question_generation': { label: 'AI Interview question generation', group: 'AI Interview', model: LOCAL_MANAGED_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
+  'ai_interview.cv_parse': { label: 'AI Interview CV parsing', group: 'AI Interview', model: LOCAL_CV_MODEL, provider: LOCAL_PROVIDER, reasoningEffort: 'medium', defaultLocal: true },
   'ai_interview.scoring': { label: 'AI Interview scoring', group: 'AI Interview', model: GROQ_120B, reasoningEffort: 'high' }
 });
 
 const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
   activity,
-  provider: GROQ_PROVIDER,
+  provider: definition.provider || GROQ_PROVIDER,
   model: definition.model,
   reasoningEffort: definition.reasoningEffort,
   enabled: true,
@@ -92,6 +121,7 @@ function createDefaultRuntimeSettings() {
     routes: DEFAULT_ROUTES.map((route) => ({ ...route })),
     quotaGroups: [{ id: 'groq-primary', label: 'Groq primary organization', enabled: true }],
     alerts: { ...DEFAULT_ALERT_SETTINGS },
+    localFailover: { ...DEFAULT_LOCAL_FAILOVER },
     rollout: { ...DEFAULT_ROLLOUT_SETTINGS },
     version: 1
   };
@@ -100,6 +130,7 @@ function createDefaultRuntimeSettings() {
 module.exports = {
   ACTIVITY_DEFINITIONS,
   DEFAULT_ALERT_SETTINGS,
+  DEFAULT_LOCAL_FAILOVER,
   DEFAULT_ROLLOUT_SETTINGS,
   DEFAULT_MODELS,
   DEFAULT_ROUTES,
@@ -107,5 +138,8 @@ module.exports = {
   GROQ_120B,
   GROQ_BASE_URL,
   GROQ_PROVIDER,
+  LOCAL_CV_MODEL,
+  LOCAL_MANAGED_MODEL,
+  LOCAL_PROVIDER,
   createDefaultRuntimeSettings
 };

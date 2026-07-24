@@ -206,9 +206,9 @@ test('structured completion stops after one failed repair', async () => {
   assert.equal(runtime.providerCalls.length, 2);
 });
 
-test('flexible structured tasks use best-effort provider mode and local validation', async () => {
+test('flexible Groq structured tasks use best-effort provider mode and local validation', async () => {
   const runtime = new TestRuntime([jsonResponse(successPayload('{"dynamic_section":{"value":"kept"}}'))]);
-  const result = await runtime.structuredComplete('candidate.cv_parse', {
+  const result = await runtime.structuredComplete('matching.analysis', {
     messages: [{ role: 'user', content: 'Extract flexible sections' }],
     jsonSchema: { type: 'object', additionalProperties: true },
     schemaName: 'flexible_cv',

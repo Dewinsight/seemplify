@@ -1,6 +1,8 @@
 const express = require('express');
 const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
+const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+const localAIRuntimeHealthService = require('../services/localAIRuntimeHealthService');
 const {
   createCredential,
   createQuotaGroup,
@@ -66,6 +68,46 @@ router.get('/settings', ...settingsAccess, async (_req, res) => {
     res.json(await getRuntimeSettings());
   } catch (error) {
     handleError(res, error, 'Failed to load AI runtime settings');
+  }
+});
+
+router.get('/local/status', ...analyticsAccess, async (_req, res) => {
+  try {
+    const [runtime, settings] = await Promise.all([
+      aiRuntimeService.getLocalRuntimeStatus(),
+      aiRuntimeService.getSettings()
+    ]);
+    res.json({ ...runtime, failover: settings.localFailover });
+  } catch (error) {
+    handleError(res, error, 'Failed to load local CV runtime status');
+  }
+});
+
+router.post('/local/health-check', ...settingsAccess, async (_req, res) => {
+  try {
+    res.json({ success: true, ...(await localAIRuntimeHealthService.checkNow()) });
+  } catch (error) {
+    handleError(res, error, 'Failed to run local AI health check');
+  }
+});
+
+router.get('/local/queue', ...analyticsAccess, async (_req, res) => {
+  try {
+    res.json(await cvAnalysisQueue.telemetry());
+  } catch (error) {
+    handleError(res, error, 'Failed to load local CV queue status');
+  }
+});
+
+router.post('/local/queue/:action', ...settingsAccess, async (req, res) => {
+  try {
+    if (!['pause', 'resume'].includes(req.params.action)) {
+      return res.status(400).json({ code: 'INVALID_QUEUE_ACTION', msg: 'Action must be pause or resume' });
+    }
+    const queue = await cvAnalysisQueue.setPaused(req.params.action === 'pause');
+    res.json({ success: true, queue });
+  } catch (error) {
+    handleError(res, error, 'Failed to update local CV queue');
   }
 });
 

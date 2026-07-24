@@ -36,6 +36,20 @@ test('Dokploy AI Runtime setup never rotates existing secrets implicitly', () =>
   assert.deepEqual(result.added, []);
 });
 
+test('Dokploy setup adds the externally supplied local CV runtime values without generating them', () => {
+  const result = ensureAIRuntimeEnv('', deterministicBytes, {
+    sharedSecret: 'local-shared-secret',
+    baseUrl: 'https://cv-llm.aiinnigeria.com',
+    statusTokenSecret: 'opaque-status-secret',
+    concurrency: 1
+  });
+  const parsed = parseEnv(result.env).values;
+  assert.equal(parsed.get('LOCAL_LLM_BASE_URL'), 'https://cv-llm.aiinnigeria.com');
+  assert.equal(parsed.get('LOCAL_LLM_SHARED_SECRET'), 'local-shared-secret');
+  assert.equal(parsed.get('CV_STATUS_TOKEN_SECRET'), 'opaque-status-secret');
+  assert.equal(parsed.get('CV_ANALYSIS_QUEUE_CONCURRENCY'), '1');
+});
+
 test('Dokploy URL normalization accepts root and API URLs', () => {
   assert.equal(apiBase('https://dokploy.example'), 'https://dokploy.example/api');
   assert.equal(apiBase('https://dokploy.example/api/'), 'https://dokploy.example/api');

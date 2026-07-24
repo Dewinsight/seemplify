@@ -87,7 +87,11 @@
     "seed:onboarding-templates:akwa-ibom:dry-run": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom --dry-run",
     "seed:ai-runtime": "node scripts/seedAIRuntime.js",
     "seed:ai-runtime:apply": "node scripts/seedAIRuntime.js --apply",
-    "test:ai-runtime": "node --test tests/aiRuntime*.test.js tests/interviewQuestionQuality.test.js"
+    "test:ai-runtime": "node --test tests/aiRuntime*.test.js tests/interviewQuestionQuality.test.js tests/localCvRuntime.test.js",
+    "test:local-cv": "node --test tests/localCvRuntime.test.js",
+    "test:local-cv-queue": "node --test tests/cvAnalysisQueue.integration.test.js",
+    "evaluate:local-cv": "node scripts/evaluateLocalCvRuntime.js",
+    "evaluate:local-models": "node ../../tools/local-llm/evaluate-runtime-models.cjs"
   },
   "keywords": [],
   "author": "",

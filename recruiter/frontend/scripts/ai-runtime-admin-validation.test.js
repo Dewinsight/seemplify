@@ -91,6 +91,20 @@ test('requests and routing expose full operational health', () => {
   assert.match(pageSource, /routingHealth\.issues\.map/);
 });
 
+test('AI Runtime exposes managed local inference, model inventory, and its durable CV queue', () => {
+  assert.match(pageSource, /TabsTrigger value="local"/);
+  assert.match(pageSource, /CV parsing and question generation use the local GPU now/);
+  assert.match(pageSource, /localRuntime\?\.cvLocalEligible/);
+  assert.match(pageSource, /Blocked — local engine required/);
+  assert.match(pageSource, /Local engines and models/);
+  assert.match(pageSource, /Available in Control Center/);
+  assert.match(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Local GPU'/);
+  assert.match(pageSource, /Every \$\{localRuntime\?\.failover\?\.intervalMinutes \|\| 30\} minutes/);
+  assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/health-check/);
+  assert.match(pageSource, /Check and route now/);
+  assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/\$\{paused \? 'pause' : 'resume'\}/);
+});
+
 test('credential removal is explicit, confirmed, and permission-aware', () => {
   assert.match(pageSource, /const canManageSecrets = canConfigure;/);
   assert.match(pageSource, /\n\s+Remove\n\s+<\/Button>/);

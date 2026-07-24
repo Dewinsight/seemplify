@@ -10,6 +10,7 @@ const AIRuntimeSettingsSchema = new mongoose.Schema({
   routes: { type: [mongoose.Schema.Types.Mixed], default: () => defaults.routes },
   quotaGroups: { type: [mongoose.Schema.Types.Mixed], default: () => defaults.quotaGroups },
   alerts: { type: mongoose.Schema.Types.Mixed, default: () => defaults.alerts },
+  localFailover: { type: mongoose.Schema.Types.Mixed, default: () => defaults.localFailover },
   rollout: { type: mongoose.Schema.Types.Mixed, default: () => defaults.rollout },
   version: { type: Number, default: 1 },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }

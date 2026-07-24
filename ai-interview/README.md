@@ -16,7 +16,7 @@ AI_INTERVIEW_MONGO_URI=mongodb://127.0.0.1:27017
 AI_INTERVIEW_MONGO_DB=ai_recruiter
 ```
 
-Collections are `jobs`, `candidates`, `questions`, `interviews`, `sessions`, `emailLog`, `walletLedger`, `users`, and singleton `settings`.
+Collections are `jobs`, `candidates`, `questions`, `interviews`, `sessions`, `emailLog`, `walletLedger`, `users`, `cvProcessingJobs`, and singleton `settings`.
 
 ## Required Services
 
@@ -27,10 +27,11 @@ Configure these in `backend/.env`:
 - `AI_INTERVIEW_RECRUITER_EMAIL` / `AI_INTERVIEW_RECRUITER_PASSWORD`
 - `SEEMPLIFY_PLATFORM_API_URL` for the central Seemplify feature switch (production defaults to `https://api.seemplifyai.com`)
 - `SEEMPLIFY_AI_GATEWAY_URL`, `AI_GATEWAY_SERVICE_ID`, and `AI_GATEWAY_HMAC_SECRET` for signed central AI runtime calls
+- `AI_INTERVIEW_REDIS_HOST`, `AI_INTERVIEW_REDIS_PORT`, and `AI_INTERVIEW_CV_STATUS_TOKEN_SECRET` for durable asynchronous CV parsing
 - `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`
 - `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`
 
-The standalone app never receives a Groq key or chooses a provider credential. The recruiter backend signs and routes every request. Azure remains configured only for interview speech.
+The standalone app never receives a Groq key or chooses a provider credential. The recruiter backend signs and routes every request. CV parsing returns `202`, persists the extracted text before dispatch, and waits in BullMQ while the local runtime is unavailable. Azure remains configured only for interview speech.
 
 ## Local Run
 

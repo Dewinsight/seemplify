@@ -80,12 +80,70 @@ function hasMeaningfulValue(value) {
   return false;
 }
 
+function normalizeStringValue(value) {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const values = value.map((item) => normalizeStringValue(item)).filter(Boolean);
+    return values.length ? values.join(', ') : undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmedValue = value.trim();
+    return isPlaceholderString(trimmedValue) ? undefined : trimmedValue;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+function normalizeStringArray(value) {
+  const source = Array.isArray(value) ? value : [value];
+  return source.map((item) => normalizeStringValue(item)).filter(Boolean);
+}
+
+function normalizeStructuredArray(value, stringFields, arrayFields = []) {
+  const source = Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : [];
+  return source
+    .filter((item) => item && !Array.isArray(item) && typeof item === 'object')
+    .map((item) => {
+      const normalized = { ...item };
+      for (const field of stringFields) {
+        const fieldValue = normalizeStringValue(item[field]);
+        if (fieldValue === undefined) delete normalized[field];
+        else normalized[field] = fieldValue;
+      }
+      for (const field of arrayFields) {
+        normalized[field] = normalizeStringArray(item[field]);
+      }
+      return normalized;
+    })
+    .filter((item) => hasMeaningfulValue(item));
+}
+
 function normalizeWorkExperience(workExperience) {
   if (!workExperience || Array.isArray(workExperience) || typeof workExperience !== 'object') {
     return undefined;
   }
 
   const normalizedWorkExperience = { ...workExperience };
+  for (const field of ['experienceSummary', 'careerProgression', 'leadershipExperience', 'technicalDepth']) {
+    const fieldValue = normalizeStringValue(workExperience[field]);
+    if (fieldValue === undefined) delete normalizedWorkExperience[field];
+    else normalizedWorkExperience[field] = fieldValue;
+  }
+  normalizedWorkExperience.jobHistory = normalizeStructuredArray(
+    workExperience.jobHistory,
+    ['company', 'position', 'duration', 'responsibilities', 'impact'],
+    ['technologies']
+  );
+  normalizedWorkExperience.keyAchievements = normalizeStringArray(workExperience.keyAchievements);
+  normalizedWorkExperience.industryExperience = normalizeStringArray(workExperience.industryExperience);
   const totalYearsExperience = normalizeNumericValue(workExperience.totalYearsExperience);
 
   if (totalYearsExperience === undefined) {
@@ -103,6 +161,14 @@ function normalizeCvExtractedFields(extractedFields) {
   }
 
   const normalizedFields = { ...extractedFields };
+  for (const field of ['firstName', 'lastName', 'email', 'phone', 'location', 'position', 'experience', 'education', 'summary']) {
+    const fieldValue = normalizeStringValue(extractedFields[field]);
+    if (fieldValue === undefined) delete normalizedFields[field];
+    else normalizedFields[field] = fieldValue;
+  }
+  for (const field of ['skills', 'strengths', 'potentialFlags']) {
+    normalizedFields[field] = normalizeStringArray(extractedFields[field]);
+  }
   const normalizedWorkExperience = normalizeWorkExperience(extractedFields.workExperience);
 
   if (normalizedWorkExperience) {
@@ -110,12 +176,60 @@ function normalizeCvExtractedFields(extractedFields) {
   } else {
     delete normalizedFields.workExperience;
   }
+  normalizedFields.educationHistory = normalizeStructuredArray(
+    extractedFields.educationHistory,
+    ['institution', 'degree', 'fieldOfStudy', 'graduationYear', 'gpa', 'honors', 'location', 'description']
+  );
+  normalizedFields.certifications = normalizeStructuredArray(
+    extractedFields.certifications,
+    ['name', 'issuingOrganization', 'issueDate', 'expiryDate', 'credentialId', 'credentialUrl', 'description']
+  );
+  normalizedFields.languages = normalizeStructuredArray(
+    extractedFields.languages,
+    ['language', 'proficiency', 'certifications']
+  );
+  normalizedFields.awards = normalizeStructuredArray(
+    extractedFields.awards,
+    ['title', 'issuer', 'date', 'description']
+  );
+  normalizedFields.projects = normalizeStructuredArray(
+    extractedFields.projects,
+    ['title', 'description', 'role', 'startDate', 'endDate', 'url'],
+    ['technologies', 'highlights']
+  );
+  normalizedFields.publications = normalizeStructuredArray(
+    extractedFields.publications,
+    ['title', 'publication', 'publishDate', 'url', 'description'],
+    ['authors']
+  );
+  normalizedFields.volunteerWork = normalizeStructuredArray(
+    extractedFields.volunteerWork,
+    ['organization', 'role', 'startDate', 'endDate', 'description', 'impact']
+  );
+  normalizedFields.professionalMemberships = normalizeStructuredArray(
+    extractedFields.professionalMemberships,
+    ['organization', 'role', 'startDate', 'endDate', 'description']
+  );
+  if (extractedFields.portfolioLinks && !Array.isArray(extractedFields.portfolioLinks) && typeof extractedFields.portfolioLinks === 'object') {
+    normalizedFields.portfolioLinks = { ...extractedFields.portfolioLinks };
+    for (const field of ['github', 'linkedin', 'personalWebsite', 'portfolio', 'stackoverflow', 'medium']) {
+      const fieldValue = normalizeStringValue(extractedFields.portfolioLinks[field]);
+      if (fieldValue === undefined) delete normalizedFields.portfolioLinks[field];
+      else normalizedFields.portfolioLinks[field] = fieldValue;
+    }
+    normalizedFields.portfolioLinks.other = normalizeStringArray(extractedFields.portfolioLinks.other);
+  } else {
+    normalizedFields.portfolioLinks = {};
+  }
 
   return normalizedFields;
 }
 
 module.exports = {
   normalizeNumericValue,
+  normalizeStringValue,
+  normalizeStringArray,
+  normalizeStructuredArray,
   normalizeWorkExperience,
   normalizeCvExtractedFields,
 };

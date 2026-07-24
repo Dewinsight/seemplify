@@ -251,7 +251,7 @@ export default function BulkUploadPage() {
       {(pageState === "processing" || pageState === "completed") && status && (
         <div className="space-y-4">
           {/* Stats bar */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <Card className="p-4 text-center">
               <div className="text-2xl font-bold">{status.totalFiles}</div>
               <div className="text-xs text-muted-foreground">Total CVs</div>
@@ -266,7 +266,11 @@ export default function BulkUploadPage() {
             </Card>
             <Card className="p-4 text-center">
               <div className="text-2xl font-bold text-blue-600">{status.processing}</div>
-              <div className="text-xs text-muted-foreground">In Queue</div>
+              <div className="text-xs text-muted-foreground">Processing</div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-2xl font-bold">{status.queued}</div>
+              <div className="text-xs text-muted-foreground">Waiting</div>
             </Card>
             <Card className="p-4 text-center">
               <div className="text-2xl font-bold">{formatTime(elapsedSeconds)}</div>
@@ -274,13 +278,19 @@ export default function BulkUploadPage() {
             </Card>
           </div>
 
+          {status.state === "waiting_for_local_runtime" && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Local CV analysis is offline. All {status.queued} waiting CVs are saved and will resume automatically.
+            </div>
+          )}
+
           {/* Progress */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   {pageState === "processing" ? (
-                    <><Loader2 className="h-5 w-5 animate-spin text-blue-500" /> Processing CVs...</>
+                    <><Loader2 className="h-5 w-5 animate-spin text-blue-500" /> {status.state === "waiting_for_local_runtime" ? "Waiting for local CV analysis" : "Processing CVs..."}</>
                   ) : (
                     <><CheckCircle className="h-5 w-5 text-green-500" /> Processing Complete</>
                   )}

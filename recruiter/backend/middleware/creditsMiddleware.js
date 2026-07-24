@@ -227,6 +227,11 @@ const deductCredits = (req, res, next) => {
     });
     
     if (req.creditsAction && statusCode >= 200 && statusCode < 300) {
+      if (data?.idempotentReplay === true) {
+        console.log(`Skipping credit deduction for idempotent replay of ${req.creditsAction.action}`);
+        return originalJson(data);
+      }
+
       // aiMatching: `fromCache` only means vector similarity was served from cache.
       // findMatchingCandidatesWithExplanation still runs GPT on those matches — that must be charged.
       // Skip only when we did not run the explanation/GPT pass (vector-only response).

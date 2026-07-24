@@ -103,6 +103,58 @@ class CVParsingService {
    * @param {string} fileType - MIME type of the file
    * @returns {Promise<Object>} - Combined parsing and AI analysis result
    */
+  async analyzeText(resumeText, activity = 'candidate.cv_parse') {
+    try {
+      if (!resumeText || resumeText.trim().length < 50) {
+        return {
+          success: false,
+          error: 'IMAGE_BASED_CV: Could not extract enough readable text from this CV.',
+          resumeText: resumeText || '',
+          aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+          extractedFields: {},
+          parseSuccess: false,
+          aiSuccess: false
+        };
+      }
+      const aiAnalysisResult = await this.aiModelService.analyzeCV(resumeText, activity);
+      if (!aiAnalysisResult.success) {
+        return {
+          success: false,
+          error: aiAnalysisResult.error || 'AI CV analysis is temporarily unavailable.',
+          resumeText,
+          aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+          extractedFields: {},
+          parseSuccess: true,
+          aiSuccess: false
+        };
+      }
+      const extractedFields = normalizeCvExtractedFields(aiAnalysisResult.extractedFields || {});
+      return {
+        success: true,
+        resumeText,
+        aiAnalysis: {
+          summary: aiAnalysisResult.summary || 'N/A',
+          strengths: aiAnalysisResult.strengths || [],
+          potentialFlags: aiAnalysisResult.potentialFlags || []
+        },
+        workExperience: extractedFields.workExperience || null,
+        extractedFields,
+        parseSuccess: true,
+        aiSuccess: true
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || 'AI CV analysis is temporarily unavailable.',
+        resumeText: resumeText || '',
+        aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+        extractedFields: {},
+        parseSuccess: Boolean(resumeText),
+        aiSuccess: false
+      };
+    }
+  }
+
   async parseAndAnalyze(filePath, fileType) {
     try {
       console.log('🔍 Starting CV parsing and AI analysis...');

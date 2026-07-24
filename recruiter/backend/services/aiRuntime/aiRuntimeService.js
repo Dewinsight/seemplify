@@ -6,6 +6,7 @@ const {
   ACTIVITY_DEFINITIONS,
   GROQ_120B,
   GROQ_BASE_URL,
+  LOCAL_PROVIDER,
   createDefaultRuntimeSettings
 } = require('../../config/aiRuntimeCatalog');
 const { decryptSecret } = require('./secretCrypto');
@@ -137,9 +138,10 @@ function responseJson(data, status = 200, headers = {}) {
 function errorDetails(payload, status, provider = 'groq') {
   const body = payload?.error || payload || {};
   const code = String(body.code || body.type || (status === 429 ? 'rate_limit_exceeded' : `${provider}_http_${status}`));
+  const providerLabel = provider === 'groq' ? 'Groq' : provider === 'local-ollama' ? 'Local CV runtime' : 'Azure';
   return {
     code,
-    message: sanitizeMessage(body.message || `${provider === 'groq' ? 'Groq' : 'Azure'} request failed with status ${status}`),
+    message: sanitizeMessage(body.message || `${providerLabel} request failed with status ${status}`),
     blockedAccess: provider === 'groq'
       && (code === 'blocked_api_access' || /spend|billing|blocked api access/i.test(String(body.message || '')))
   };
@@ -164,6 +166,14 @@ function stripReasoning(data) {
     });
   }
   return sanitized;
+}
+
+function signLocalRequest(secret, body, now = Date.now(), nonce = crypto.randomBytes(24).toString('base64url')) {
+  const timestamp = String(now);
+  const signature = crypto.createHmac('sha256', secret)
+    .update(`${timestamp}\n${nonce}\n${body}`)
+    .digest('base64url');
+  return { timestamp, nonce, signature };
 }
 
 function buildAttemptError({ attempt, credential, error, startedAt }) {
@@ -213,13 +223,32 @@ class AIRuntimeService {
         { upsert: true, new: true }
       ).lean();
     }
+    const storedModels = Array.isArray(settings?.models) ? settings.models : [];
+    const storedRoutes = Array.isArray(settings?.routes) ? settings.routes : [];
+    const modelsByKey = new Map(storedModels.map((model) => [`${model.provider}:${model.id}`, model]));
+    for (const model of defaults.models) {
+      const key = `${model.provider}:${model.id}`;
+      modelsByKey.set(key, { ...model, ...(modelsByKey.get(key) || {}) });
+    }
+    const routesByActivity = new Map(storedRoutes.map((route) => [route.activity, route]));
+    for (const route of defaults.routes) {
+      const definition = ACTIVITY_DEFINITIONS[route.activity];
+      const existing = routesByActivity.get(route.activity);
+      const shouldApplyNewLocalDefault = definition?.defaultLocal
+        && existing?.provider === 'groq'
+        && Number(existing?.routeVersion || 1) === 1;
+      routesByActivity.set(route.activity, definition?.lockedProvider || shouldApplyNewLocalDefault
+        ? { ...(existing || {}), ...route }
+        : { ...route, ...(existing || {}) });
+    }
     settings = {
       ...defaults,
       ...settings,
-      models: Array.isArray(settings?.models) && settings.models.length ? settings.models : defaults.models,
-      routes: Array.isArray(settings?.routes) && settings.routes.length ? settings.routes : defaults.routes,
+      models: [...modelsByKey.values()],
+      routes: [...routesByActivity.values()],
       quotaGroups: Array.isArray(settings?.quotaGroups) && settings.quotaGroups.length ? settings.quotaGroups : defaults.quotaGroups,
       alerts: { ...defaults.alerts, ...(settings?.alerts || {}) },
+      localFailover: { ...defaults.localFailover, ...(settings?.localFailover || {}) },
       rollout: { ...defaults.rollout, ...(settings?.rollout || {}) }
     };
     this.settingsCache = settings;
@@ -259,6 +288,26 @@ class AIRuntimeService {
   }
 
   resolveExecutionRoute(route, settings, context) {
+    if (route.provider === LOCAL_PROVIDER) {
+      if (!settings.localFailover?.enabled || !settings.localFailover?.active) return route;
+      const fallbackModel = route.activity.startsWith('ai_interview.chat.') ? 'openai/gpt-oss-20b' : GROQ_120B;
+      const modelConfig = settings.models.find((item) => item.provider === 'groq' && item.id === fallbackModel && item.enabled !== false);
+      if (!modelConfig || modelConfig.available === false) {
+        throw new AIRuntimeError(`Local AI is unavailable and Groq fallback ${fallbackModel} is not available`, {
+          code: 'AI_FAILOVER_MODEL_UNAVAILABLE',
+          statusCode: 503,
+          retryable: true
+        });
+      }
+      return {
+        ...route,
+        provider: 'groq',
+        model: fallbackModel,
+        modelConfig,
+        failoverFrom: LOCAL_PROVIDER,
+        failoverReason: settings.localFailover.reason || 'local_runtime_unhealthy'
+      };
+    }
     if (shouldUseGroq(context, settings.rollout)) return route;
     return {
       ...route,
@@ -453,6 +502,77 @@ class AIRuntimeService {
     return response;
   }
 
+  async localProviderRequest({ route, input, timeoutMs = 240_000 }) {
+    const baseUrl = String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
+    const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+    if (!secret) {
+      throw new AIRuntimeError('Local CV runtime is not configured', {
+        code: 'AI_LOCAL_NOT_CONFIGURED', statusCode: 503, retryable: true
+      });
+    }
+    const body = JSON.stringify({
+      activity: route.activity,
+      model: route.model,
+      executionMode: 'local-only',
+      messages: input.messages,
+      jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
+      schemaName: input.schemaName,
+      temperature: input.temperature,
+      topP: input.topP ?? input.top_p,
+      maxTokens: input.maxTokens ?? input.max_tokens ?? input.max_completion_tokens,
+      reasoningEffort: route.reasoningEffort || 'medium',
+      tools: input.tools,
+      toolChoice: input.toolChoice ?? input.tool_choice,
+      timeoutMs
+    });
+    const signed = signLocalRequest(secret, body);
+    const endpoint = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(route.activity)
+      ? '/v1/cv/analyze'
+      : '/v1/complete';
+    try {
+      return await this.fetch(`${baseUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-seemplify-timestamp': signed.timestamp,
+          'x-seemplify-nonce': signed.nonce,
+          'x-seemplify-signature': signed.signature
+        },
+        body,
+        signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+      });
+    } catch (error) {
+      throw new AIRuntimeError('Local CV runtime could not be reached', {
+        code: 'AI_LOCAL_UNAVAILABLE', statusCode: 503, retryable: true, details: sanitizeMessage(error.message)
+      });
+    }
+  }
+
+  async getLocalRuntimeStatus() {
+    const baseUrl = String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
+    const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+    if (!secret) return { configured: false, reachable: false, error: 'Local CV runtime secret is not configured' };
+    const body = JSON.stringify({ operation: 'status' });
+    const signed = signLocalRequest(secret, body);
+    try {
+      const response = await this.fetch(`${baseUrl}/v1/status`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-seemplify-timestamp': signed.timestamp,
+          'x-seemplify-nonce': signed.nonce,
+          'x-seemplify-signature': signed.signature
+        },
+        body,
+        signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(8_000) : undefined
+      });
+      const data = await response.json();
+      return { configured: true, reachable: response.ok, ...data };
+    } catch (error) {
+      return { configured: true, reachable: false, error: sanitizeMessage(error.message) };
+    }
+  }
+
   async parseErrorResponse(response, provider = 'groq') {
     let payload = null;
     const text = await response.text();
@@ -476,7 +596,7 @@ class AIRuntimeService {
       providerRequestId: rateLimit.providerRequestId || data?.id,
       sourceApp: context.sourceApp || 'recruiter',
       activity: route.activity,
-      provider: route.provider,
+      provider: data?.provider || route.provider,
       model: data?.model || route.model,
       reasoningEffort: route.reasoningEffort,
       routeVersion: route.routeVersion || 1,
@@ -569,6 +689,53 @@ class AIRuntimeService {
     const context = getAIRequestContext({ ...(input.context || {}), ...(options.context || {}), promptVersion: input.promptVersion });
     const requestId = context.requestId || crypto.randomUUID();
     const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
+    if (route.provider === LOCAL_PROVIDER) {
+      const startedAt = Date.now();
+      const payload = this.normalizePayload(input, route, { stream: false });
+      let response;
+      try {
+        response = await this.localProviderRequest({ route, input, timeoutMs: options.timeoutMs || 240_000 });
+        if (!response.ok) throw await this.parseErrorResponse(response, 'local-ollama');
+        const localData = await response.json();
+        const data = {
+          id: localData.id,
+          provider: localData.engine ? `local-${localData.engine}` : route.provider,
+          model: localData.model || route.model,
+          choices: [{
+            message: {
+              content: localData.content,
+              ...(localData.toolCalls?.length ? { tool_calls: localData.toolCalls } : {})
+            },
+            finish_reason: localData.finishReason || (localData.toolCalls?.length ? 'tool_calls' : 'stop')
+          }],
+          usage: localData.usage || {}
+        };
+        await this.recordResult({
+          requestId, context, route, status: 'success', response, payload, data, attempts: 1, startedAt
+        });
+        return {
+          requestId,
+          content: String(localData.content || '').trim(),
+          toolCalls: localData.toolCalls || [],
+          finishReason: data.choices[0].finish_reason,
+          model: data.model,
+          provider: data.provider,
+          engine: localData.engine,
+          usage: normalizeUsage(data.usage),
+          raw: { ...data, localEngine: localData.engine, localMetrics: localData.metrics }
+        };
+      } catch (error) {
+        const runtimeError = error instanceof AIRuntimeError ? error : new AIRuntimeError(
+          sanitizeMessage(error.message),
+          { code: error.code || 'AI_LOCAL_UNAVAILABLE', statusCode: 503, retryable: true }
+        );
+        await this.recordResult({
+          requestId, context, route, status: 'failed', response, payload,
+          error: runtimeError, attempts: 1, startedAt
+        });
+        throw runtimeError;
+      }
+    }
     if (route.provider === 'azure') {
       return this.completeAzureBaseline({ route, input, options, context, requestId });
     }
@@ -653,6 +820,12 @@ class AIRuntimeService {
     return this.complete(options.activity || 'recruiter.general', { ...options, messages });
   }
 
+  async getExecutionRoute(activity, context = {}) {
+    const settings = await this.getSettings();
+    const configured = this.resolveRoute(activity, settings);
+    return this.resolveExecutionRoute(configured, settings, context);
+  }
+
   async structuredComplete(activity, input = {}, options = {}) {
     const schema = input.jsonSchema;
     if (!schema || typeof schema !== 'object' || schema.type !== 'object') {
@@ -666,6 +839,9 @@ class AIRuntimeService {
     let messages = baseMessages;
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (typeof options.beforeAttempt === 'function') {
+        await options.beforeAttempt({ attempt: attempt + 1, activity });
+      }
       const result = await this.complete(activity, {
         ...input,
         context: { ...(input.context || {}), requestId: structuredRequestId },
@@ -781,6 +957,56 @@ class AIRuntimeService {
     });
     const requestId = context.requestId || crypto.randomUUID();
     const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
+    if (route.provider === LOCAL_PROVIDER) {
+      const result = await this.complete(activity, {
+        ...input,
+        stream: false,
+        context: { ...(input.context || {}), requestId }
+      }, options);
+      const chunks = [];
+      const base = {
+        id: result.requestId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: result.model
+      };
+      chunks.push({
+        ...base,
+        choices: [{
+          index: 0,
+          delta: {
+            role: 'assistant',
+            ...(result.content ? { content: result.content } : {}),
+            ...(result.toolCalls.length ? { tool_calls: result.toolCalls } : {})
+          },
+          finish_reason: null
+        }]
+      });
+      chunks.push({
+        ...base,
+        choices: [{ index: 0, delta: {}, finish_reason: result.finishReason || 'stop' }],
+        usage: {
+          prompt_tokens: result.usage.inputTokens,
+          completion_tokens: result.usage.outputTokens,
+          total_tokens: result.usage.totalTokens
+        }
+      });
+      const encoded = new TextEncoder().encode(`${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`);
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoded);
+          controller.close();
+        }
+      }), {
+        status: 200,
+        headers: {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+          'x-request-id': result.requestId
+        }
+      });
+    }
     if (route.provider === 'azure') {
       return this.streamAzureBaseline({ route, input, options, context, requestId });
     }
@@ -893,7 +1119,10 @@ class AIRuntimeService {
     const payload = await response.json();
     const availableIds = new Set((payload.data || []).map((item) => item.id).filter(Boolean));
     const settings = await this.getSettings({ force: true });
-    const models = settings.models.map((model) => ({ ...model, available: availableIds.has(model.id), lastSyncedAt: new Date() }));
+    const syncedAt = new Date();
+    const models = settings.models.map((model) => model.provider === 'groq'
+      ? { ...model, available: availableIds.has(model.id), lastSyncedAt: syncedAt }
+      : model);
     await this.Settings.updateOne({ key: 'global' }, { $set: { models }, $inc: { version: 1 } });
     this.invalidateSettingsCache();
     return { models, availableCount: availableIds.size };
@@ -911,3 +1140,4 @@ module.exports.rateLimitCooldownUntil = rateLimitCooldownUntil;
 module.exports.requiredCapabilitiesForActivity = requiredCapabilitiesForActivity;
 module.exports.shouldUseGroq = shouldUseGroq;
 module.exports.stripReasoning = stripReasoning;
+module.exports.signLocalRequest = signLocalRequest;

@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
-import { uploadCV, createCandidateManually, CandidateData } from "@/services/candidateService" // Import the service
+import { uploadCV, createCandidateManually, CandidateData, type CVProcessingStatus } from "@/services/candidateService" // Import the service
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
 
@@ -83,6 +83,7 @@ export default function UploadCVPage() {
   const [processingComplete, setProcessingComplete] = useState(false)
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null)
   const [processingResults, setProcessingResults] = useState<any>(null)
+  const [queueStatus, setQueueStatus] = useState<CVProcessingStatus | null>(null)
 
   const form = useForm<CandidateFormValues>({
     resolver: zodResolver(candidateFormSchema),
@@ -200,7 +201,11 @@ export default function UploadCVPage() {
     }, 100)
 
     try {
-      const result = await uploadCV(formData);
+      const result = await uploadCV(formData, (status) => {
+        setQueueStatus(status)
+        setIsUploading(false)
+        setIsProcessing(true)
+      });
 
       clearInterval(progressInterval);
       setUploadProgress(100);
@@ -212,6 +217,7 @@ export default function UploadCVPage() {
         const candidate: CandidateData = result.candidate;
         setCreatedCandidateId(candidate._id);
         setProcessingResults(result.processingResults);
+        setQueueStatus(null);
 
         // Auto-fill form with extracted data
         form.setValue("firstName", candidate.firstName || "");
@@ -356,9 +362,18 @@ export default function UploadCVPage() {
                         )}
 
                         {isProcessing && (
-                          <div className="mt-4 flex items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                            <p className="text-sm">Processing CV and extracting information...</p>
+                          <div className="mt-4 border-t pt-4">
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              <p className="text-sm">
+                                {queueStatus?.state === "waiting_for_local_runtime"
+                                  ? "Local CV analysis is offline. Your CV is safely queued."
+                                  : queueStatus?.state === "queued"
+                                    ? `Queued for analysis${queueStatus.position ? ` · position ${queueStatus.position}` : ""}`
+                                    : "Processing CV and extracting information..."}
+                              </p>
+                            </div>
+                            {queueStatus && <Progress value={queueStatus.progress} className="mt-3 h-2" />}
                           </div>
                         )}
 

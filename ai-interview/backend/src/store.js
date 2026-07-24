@@ -10,9 +10,11 @@ const {
 } = require('./aiInterviewVoiceOptions');
 const { seedUsers } = require('./auth');
 
-const STORE_PATH = path.join(__dirname, 'data', 'store.json');
+const STORE_PATH = process.env.AI_INTERVIEW_STORE_PATH
+  ? path.resolve(process.env.AI_INTERVIEW_STORE_PATH)
+  : path.join(__dirname, 'data', 'store.json');
 const DEMO_TOKEN = 'demo-token';
-const COLLECTIONS = ['jobs', 'candidates', 'questions', 'interviews', 'sessions', 'emailLog', 'walletLedger', 'users'];
+const COLLECTIONS = ['jobs', 'candidates', 'questions', 'interviews', 'sessions', 'emailLog', 'walletLedger', 'users', 'cvProcessingJobs'];
 
 let mongoConnected = false;
 
@@ -233,6 +235,7 @@ function seedStore() {
         createdBy: 'user_recruiter'
       }
     ],
+    cvProcessingJobs: [],
     users: seedUsers(nowText),
     generatedAt: nowText
   };

@@ -239,6 +239,7 @@ const CandidateSchema = new mongoose.Schema({
     fileSize: Number,
     originalName: String,
     processedAt: Date,
+    cvProcessingJobId: { type: String, index: true },
   },
   // Fields for tracking application process
   applicationDate: {

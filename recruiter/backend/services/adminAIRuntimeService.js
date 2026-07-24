@@ -86,7 +86,10 @@ function assessRouting(settings) {
       issues.push({ activity, code: 'missing_route', message: 'No route is configured.' });
       continue;
     }
-    if (route.provider !== 'groq') issues.push({ activity, code: 'invalid_provider', message: 'Configured provider must be Groq.' });
+    const definition = ACTIVITY_DEFINITIONS[activity];
+    if (definition.lockedProvider && route.provider !== definition.provider) {
+      issues.push({ activity, code: 'invalid_provider', message: `Configured provider must be ${definition.provider}.` });
+    }
     const model = models.find((item) => item.id === route.model && item.provider === route.provider && item.enabled !== false);
     if (!model) {
       issues.push({ activity, code: 'missing_model', message: `Model ${route.model || 'unknown'} is not enabled.` });
@@ -465,7 +468,11 @@ async function updateRoute(activity, input, req) {
   const settings = await aiRuntimeService.getSettings({ force: true });
   const model = settings.models.find((item) => item.id === input.model && item.enabled !== false);
   if (!model) throw new TypeError('Selected model is not enabled');
-  if (model.available !== true) throw new TypeError('Sync Groq models and verify access before assigning this model');
+  const definition = ACTIVITY_DEFINITIONS[activity];
+  if (definition.lockedProvider && model.provider !== definition.provider) {
+    throw new TypeError(`${activity} is locked to ${definition.provider}`);
+  }
+  if (model.provider === 'groq' && model.available !== true) throw new TypeError('Sync Groq models and verify access before assigning this model');
   const missingCapabilities = aiRuntimeService.requiredCapabilitiesForActivity(activity)
     .filter((capability) => !model.capabilities?.includes(capability));
   if (missingCapabilities.length) {
@@ -475,7 +482,7 @@ async function updateRoute(activity, input, req) {
   if (!['low', 'medium', 'high'].includes(effort)) throw new TypeError('Reasoning effort must be low, medium, or high');
   const routes = settings.routes.map((route) => route.activity === activity ? {
     ...route,
-    provider: 'groq',
+    provider: model.provider,
     model: model.id,
     reasoningEffort: effort,
     enabled: input.enabled !== false,

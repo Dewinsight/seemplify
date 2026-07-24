@@ -75,11 +75,12 @@ import {
 } from '@/lib/aiRuntimeAdminValidation';
 
 type RangeKey = '7d' | '30d' | '90d' | 'all';
-type TabKey = 'overview' | 'test' | 'routing' | 'credentials' | 'requests' | 'alerts';
+type TabKey = 'overview' | 'local' | 'test' | 'routing' | 'credentials' | 'requests' | 'alerts';
 
 interface RuntimeModel {
   id: string;
   label: string;
+  provider?: string;
   available?: boolean;
   enabled: boolean;
 }
@@ -97,6 +98,63 @@ interface ActivityDefinition {
   activity: string;
   label: string;
   group: string;
+  provider?: string;
+  lockedProvider?: boolean;
+}
+
+interface LocalRuntimeStatus {
+  configured: boolean;
+  reachable: boolean;
+  service?: string;
+  engine?: 'ollama' | 'vllm' | 'codex';
+  model?: string;
+  executionMode?: 'local' | 'cloud';
+  cvLocalEligible?: boolean;
+  state?: {
+    enabled: boolean;
+    ingressEnabled: boolean;
+    paused: boolean;
+    concurrency: number;
+    selectedEngine?: 'ollama' | 'vllm' | 'codex';
+  };
+  engines?: Array<{ id: string; label: string; model: string; selected: boolean }>;
+  active?: number;
+  waiting?: number;
+  completed?: number;
+  failed?: number;
+  averageLatencyMs?: number;
+  lastRequestAt?: string;
+  health?: { ok?: boolean; engine?: string; model?: string; modelInstalled?: boolean; error?: string };
+  queue?: {
+    waiting: number;
+    active: number;
+    delayed: number;
+    completed: number;
+    failed: number;
+    oldestWaitMs: number;
+    paused: boolean;
+    workerConcurrency: number;
+    measuredAt: string;
+  };
+  failover?: {
+    enabled: boolean;
+    intervalMinutes: number;
+    active: boolean;
+    status: 'unknown' | 'healthy' | 'groq_failover' | 'disabled';
+    checkedAt?: string | null;
+    failedAt?: string | null;
+    recoveredAt?: string | null;
+    reason?: string | null;
+  };
+  error?: string;
+}
+
+interface LocalQueueStatus {
+  queue: string;
+  concurrency: number;
+  counts: Record<string, number>;
+  oldestQueuedAt: string | null;
+  paused: boolean;
 }
 
 interface AlertSettings {
@@ -321,6 +379,8 @@ export default function AIRuntimeAdminPage() {
   const [range, setRange] = useState<RangeKey>('30d');
   const [overview, setOverview] = useState<RuntimeOverview | null>(null);
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
+  const [localRuntime, setLocalRuntime] = useState<LocalRuntimeStatus | null>(null);
+  const [localQueue, setLocalQueue] = useState<LocalQueueStatus | null>(null);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [requests, setRequests] = useState<UsageRequest[]>([]);
   const [requestSummary, setRequestSummary] = useState<RequestSummary | null>(null);
@@ -418,6 +478,15 @@ export default function AIRuntimeAdminPage() {
     });
   }, [canConfigure]);
 
+  const loadLocalRuntime = useCallback(async () => {
+    const [runtime, queueStatus] = await Promise.all([
+      adminJson<LocalRuntimeStatus>('/api/admin/ai-runtime/local/status'),
+      adminJson<LocalQueueStatus>('/api/admin/ai-runtime/local/queue')
+    ]);
+    setLocalRuntime(runtime);
+    setLocalQueue(queueStatus);
+  }, []);
+
   const loadRequests = useCallback(async () => {
     const params = new URLSearchParams({ range, page: String(requestPage), limit: '25' });
     if (requestStatus !== 'all') params.set('status', requestStatus);
@@ -438,20 +507,27 @@ export default function AIRuntimeAdminPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      await Promise.all([loadOverview(), loadSettings(), loadAudits()]);
+      await Promise.all([loadOverview(), loadSettings(), loadAudits(), loadLocalRuntime()]);
       if (tab === 'requests') await loadRequests();
     } catch (error) {
       toast({ title: 'Unable to load AI runtime', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
-  }, [loadAudits, loadOverview, loadRequests, loadSettings, tab, toast]);
+  }, [loadAudits, loadLocalRuntime, loadOverview, loadRequests, loadSettings, tab, toast]);
 
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
     if (tab !== 'requests') return;
     loadRequests().catch((error) => toast({ title: 'Unable to load requests', description: error.message, variant: 'destructive' }));
   }, [loadRequests, tab, toast]);
+  useEffect(() => {
+    if (tab !== 'local') return;
+    const timer = window.setInterval(() => {
+      loadLocalRuntime().catch(() => {});
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [loadLocalRuntime, tab]);
   useEffect(() => {
     if (!enabledTestRoutes.length) {
       if (testActivity) setTestActivity('');
@@ -509,8 +585,51 @@ export default function AIRuntimeAdminPage() {
   function editRoute(activity: string, patch: Partial<ActivityRoute>) {
     setSettings((current) => current ? {
       ...current,
-      routes: current.routes.map((route) => route.activity === activity ? { ...route, ...patch } : route)
+      routes: current.routes.map((route) => {
+        if (route.activity !== activity) return route;
+        const selectedProvider = patch.model
+          ? current.models.find((model) => model.id === patch.model)?.provider
+          : undefined;
+        return { ...route, ...patch, ...(selectedProvider ? { provider: selectedProvider } : {}) };
+      })
     } : current);
+  }
+
+  async function setLocalQueuePaused(paused: boolean) {
+    setBusy('local-queue');
+    try {
+      await adminJson(`/api/admin/ai-runtime/local/queue/${paused ? 'pause' : 'resume'}`, {
+        method: 'POST',
+        body: '{}'
+      });
+      await loadLocalRuntime();
+      toast({ title: paused ? 'CV queue paused' : 'CV queue resumed' });
+    } catch (error) {
+      toast({
+        title: 'Queue control failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive'
+      });
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function runLocalHealthCheck() {
+    setBusy('local-health');
+    try {
+      await adminJson('/api/admin/ai-runtime/local/health-check', { method: 'POST', body: '{}' });
+      await Promise.all([loadLocalRuntime(), loadSettings()]);
+      toast({ title: 'Local AI health checked', description: 'Effective routing now reflects the latest local runtime state.' });
+    } catch (error) {
+      toast({
+        title: 'Health check failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive'
+      });
+    } finally {
+      setBusy('');
+    }
   }
 
   async function submitCredential(event: FormEvent) {
@@ -690,7 +809,7 @@ export default function AIRuntimeAdminPage() {
                   <Cpu className="h-5 w-5 text-blue-400" />
                   <h1 className="text-2xl font-semibold text-white">AI Runtime</h1>
                 </div>
-                <p className="mt-1 text-sm text-gray-400">Groq routing, credentials, quota health, and request telemetry.</p>
+                <p className="mt-1 text-sm text-gray-400">Groq for general AI; signed local GPU routing and a durable queue for CV extraction.</p>
               </div>
               <div className="flex items-center gap-2">
                 <Select value={range} onValueChange={(value) => setRange(value as RangeKey)}>
@@ -707,6 +826,7 @@ export default function AIRuntimeAdminPage() {
               <div className="overflow-x-auto border-b border-gray-800">
                 <TabsList className="h-11 min-w-max justify-start rounded-none bg-transparent p-0">
                   <TabsTrigger value="overview" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Overview</TabsTrigger>
+                  <TabsTrigger value="local" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Local AI</TabsTrigger>
                   {canConfigure && <TabsTrigger value="test" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Test</TabsTrigger>}
                   {canConfigure && <TabsTrigger value="routing" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Routing</TabsTrigger>}
                   {canConfigure && <TabsTrigger value="credentials" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Credentials</TabsTrigger>}
@@ -766,6 +886,110 @@ export default function AIRuntimeAdminPage() {
                     </section>
                   </>
                 )}
+              </TabsContent>
+
+              <TabsContent value="local" className="mt-5 space-y-5">
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+                  <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-sm font-semibold text-white">Managed local runtime</h2>
+                      <p className="mt-1 text-xs text-gray-500">CV parsing and question generation use the local GPU now. Other activities remain on Groq until changed in Routing.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={localRuntime?.reachable && localRuntime?.health?.ok !== false && localRuntime?.cvLocalEligible !== false ? 'healthy' : 'unavailable'} />
+                      {canConfigure && <Button variant="outline" size="sm" disabled={busy === 'local-health'} onClick={runLocalHealthCheck} className="border-gray-700">Check and route now</Button>}
+                      <Button variant="outline" size="sm" onClick={loadLocalRuntime} className="border-gray-700">
+                        <RefreshCw className="mr-2 h-4 w-4" />Refresh
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-px bg-gray-800 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                       ['Active engine', localRuntime?.engine === 'codex' ? 'Codex CLI (OpenAI cloud)' : localRuntime?.engine === 'vllm' ? 'vLLM (local GPU)' : 'Ollama (local GPU)'],
+                       ['Active model', localRuntime?.model || 'gemma4:26b-a4b-it-qat'],
+                       ['Local routing', localRuntime?.cvLocalEligible === false ? 'Blocked — local engine required' : 'Available to all activities'],
+                       ['Automatic failover', localRuntime?.failover?.active ? 'Groq active' : 'Local primary'],
+                       ['Health schedule', `Every ${localRuntime?.failover?.intervalMinutes || 30} minutes`],
+                       ['Last health check', localRuntime?.failover?.checkedAt ? formatDate(localRuntime.failover.checkedAt) : 'Not checked'],
+                       ['Gateway', localRuntime?.reachable ? 'Reachable through tunnel' : 'Unavailable'],
+                      ['Engine health', localRuntime?.health?.ok === false ? 'Offline' : localRuntime?.reachable ? 'Online' : 'Unknown'],
+                      ['Ingress', localRuntime?.state?.ingressEnabled ? 'Enabled' : 'Disabled'],
+                      ['Active inference', String(localRuntime?.active ?? 0)],
+                      ['Gateway waiting', String(localRuntime?.waiting ?? 0)],
+                      ['Concurrency', String(localRuntime?.state?.concurrency ?? localQueue?.concurrency ?? 1)],
+                      ['Average latency', `${formatNumber(localRuntime?.averageLatencyMs)} ms`]
+                    ].map(([label, value]) => (
+                      <div key={label} className="bg-gray-900 px-4 py-4">
+                        <div className="text-xs text-gray-500">{label}</div>
+                        <div className="mt-1 text-sm font-medium text-gray-100">{value}</div>
+                      </div>
+                    ))}
+                   </div>
+                   {localRuntime?.reachable && localRuntime?.cvLocalEligible === false && (
+                     <div className="border-t border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+                       Local dispatch is blocked because Codex CLI is cloud inference. Select Ollama or vLLM in Local Control Center; CV uploads will remain queued.
+                     </div>
+                   )}
+                   {localRuntime?.failover?.active && (
+                     <div className="border-t border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+                       Local-primary routes are temporarily executing on Groq because the local runtime failed its health check. CV work will return to local inference automatically after a healthy check.
+                     </div>
+                   )}
+                   {localRuntime?.error && <div className="border-t border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-200">{localRuntime.error}</div>}
+                </section>
+
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+                  <div className="border-b border-gray-800 px-4 py-3">
+                    <h2 className="text-sm font-semibold text-white">Local engines and models</h2>
+                    <p className="mt-1 text-xs text-gray-500">The selected Control Center model serves every route assigned to Managed local GPU.</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader><TableRow className="border-gray-800"><TableHead>Engine</TableHead><TableHead>Model</TableHead><TableHead>Routing state</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {(localRuntime?.engines || []).map((engine) => (
+                          <TableRow key={engine.id} className="border-gray-800">
+                            <TableCell>{engine.label}</TableCell>
+                            <TableCell className="font-mono text-xs">{engine.model}</TableCell>
+                            <TableCell className={engine.selected ? 'text-green-300' : 'text-gray-500'}>{engine.selected ? 'Selected' : 'Available in Control Center'}</TableCell>
+                          </TableRow>
+                        ))}
+                        {!localRuntime?.engines?.length && <TableRow><TableCell colSpan={3} className="h-20 text-center text-gray-500">Engine inventory is unavailable.</TableCell></TableRow>}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+                  <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-sm font-semibold text-white">Durable CV queue</h2>
+                      <p className="mt-1 text-xs text-gray-500">Uploads remain stored while the local runtime is offline and resume automatically.</p>
+                    </div>
+                    {canConfigure && (
+                      <Button variant="outline" size="sm" disabled={busy === 'local-queue'} onClick={() => setLocalQueuePaused(!localQueue?.paused)} className="border-gray-700">
+                        {localQueue?.paused ? <Play className="mr-2 h-4 w-4" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
+                        {localQueue?.paused ? 'Resume queue' : 'Pause queue'}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader><TableRow className="border-gray-800"><TableHead>State</TableHead><TableHead>Waiting</TableHead><TableHead>Delayed offline</TableHead><TableHead>Processing</TableHead><TableHead>Completed</TableHead><TableHead>Failed</TableHead><TableHead>Oldest wait</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        <TableRow className="border-gray-800">
+                          <TableCell><StatusBadge status={localQueue?.paused ? 'paused' : 'healthy'} /></TableCell>
+                          <TableCell>{formatNumber(localQueue?.counts?.waiting)}</TableCell>
+                          <TableCell>{formatNumber(localQueue?.counts?.delayed)}</TableCell>
+                          <TableCell>{formatNumber(localQueue?.counts?.active)}</TableCell>
+                          <TableCell>{formatNumber(localQueue?.counts?.completed)}</TableCell>
+                          <TableCell>{formatNumber(localQueue?.counts?.failed)}</TableCell>
+                          <TableCell>{localQueue?.oldestQueuedAt ? formatDate(localQueue.oldestQueuedAt) : 'None'}</TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
               </TabsContent>
 
               <TabsContent value="test" className="mt-5 space-y-4">
@@ -828,14 +1052,20 @@ export default function AIRuntimeAdminPage() {
                   {settings?.routingHealth && !settings.routingHealth.valid && <div role="alert" className="border-b border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">{settings.routingHealth.issues.map((issue) => <p key={`${issue.activity}:${issue.code}`}><span className="font-mono">{issue.activity}</span>: {issue.message}</p>)}</div>}
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader><TableRow className="border-gray-800"><TableHead>Activity</TableHead><TableHead>Model</TableHead><TableHead>Reasoning</TableHead><TableHead>Enabled</TableHead><TableHead className="text-right">Save</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow className="border-gray-800"><TableHead>Activity</TableHead><TableHead>Provider</TableHead><TableHead>Model</TableHead><TableHead>Reasoning</TableHead><TableHead>Enabled</TableHead><TableHead className="text-right">Save</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {(settings?.routes || []).map((route) => (
                           <TableRow key={route.activity} className="border-gray-800">
-                            <TableCell><div className="font-medium text-gray-200">{definitions.get(route.activity)?.label || route.activity}</div><div className="text-xs text-gray-500">{definitions.get(route.activity)?.group} / v{route.routeVersion}</div></TableCell>
-                            <TableCell><Select value={route.model} onValueChange={(model) => editRoute(route.activity, { model })}><SelectTrigger className="w-56 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent>{settings?.models.filter((model) => model.enabled && model.available !== false).map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent></Select></TableCell>
+                            <TableCell><div className="font-medium text-gray-200">{definitions.get(route.activity)?.label || route.activity}</div><div className="text-xs text-gray-500">{definitions.get(route.activity)?.group} / v{route.routeVersion}{definitions.get(route.activity)?.lockedProvider ? ' / local provider locked' : ''}</div></TableCell>
+                            <TableCell className={route.provider === 'groq' ? 'text-gray-300' : 'text-green-300'}>{route.provider === 'groq' ? 'Groq' : 'Local GPU'}</TableCell>
+                            <TableCell><Select disabled={definitions.get(route.activity)?.lockedProvider} value={route.model} onValueChange={(model) => editRoute(route.activity, { model })}><SelectTrigger className="w-56 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent>{settings?.models.filter((model) => model.enabled && model.available !== false && (!definitions.get(route.activity)?.lockedProvider || model.provider === route.provider)).map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent></Select></TableCell>
                             <TableCell><Select value={route.reasoningEffort} onValueChange={(reasoningEffort) => editRoute(route.activity, { reasoningEffort: reasoningEffort as ActivityRoute['reasoningEffort'] })}><SelectTrigger className="w-28 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></TableCell>
-                            <TableCell><Switch checked={route.enabled} onCheckedChange={(enabled) => editRoute(route.activity, { enabled })} /></TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Switch aria-label={`${definitions.get(route.activity)?.label || route.activity} route`} checked={route.enabled} onCheckedChange={(enabled) => editRoute(route.activity, { enabled })} />
+                                <span className={route.enabled ? 'text-xs text-green-300' : 'text-xs text-gray-500'}>{route.enabled ? 'Enabled' : 'Off'}</span>
+                              </div>
+                            </TableCell>
                             <TableCell className="text-right"><Button size="sm" onClick={() => saveRoute(route)} disabled={busy === `route:${route.activity}`}><Save className="mr-2 h-4 w-4" />Save</Button></TableCell>
                           </TableRow>
                         ))}

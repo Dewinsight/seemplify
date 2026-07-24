@@ -70,6 +70,7 @@ export function PublicJobApplicationForm({
   const [showParsedData, setShowParsedData] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
+  const [cvQueueStatus, setCvQueueStatus] = useState<{ state: string; position?: number | null; progress?: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const form = useForm<ApplicationFormValues>({
@@ -89,6 +90,7 @@ export function PublicJobApplicationForm({
 
     // Clear any previous errors
     setUploadError(null)
+    setCvQueueStatus(null)
 
     // Validate file type
     const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
@@ -148,8 +150,21 @@ export function PublicJobApplicationForm({
         throw new Error(errorMsg)
       }
 
-      const result = await response.json()
+      let result = await response.json()
+      if (response.status === 202) {
+        setCvQueueStatus(result)
+        while (!['completed', 'failed'].includes(result.state)) {
+          setUploadProgress(result.state === 'processing' ? 75 : 45)
+          await new Promise((resolve) => setTimeout(resolve, 2000))
+          const statusResponse = await apiRequest(`${result.statusUrl}?token=${encodeURIComponent(result.statusToken)}`)
+          if (!statusResponse.ok) throw new Error('Could not read CV processing status')
+          result = await statusResponse.json()
+          setCvQueueStatus(result)
+        }
+        if (result.state === 'failed') throw new Error(result.error?.message || 'CV processing failed')
+      }
       const candidate = result.candidate
+      if (!candidate?._id) throw new Error('CV processing completed without a candidate record')
       
       setUploadedFile(file)
       setCandidateId(candidate._id)
@@ -408,7 +423,13 @@ export function PublicJobApplicationForm({
                 <Progress value={uploadProgress} className="h-2" />
                 {uploadProgress > 30 && (
                   <p className="text-xs text-gray-500">
-                    CV processing can take several minutes. Please wait...
+                    {cvQueueStatus?.state === 'waiting_for_local_runtime'
+                      ? 'Local CV analysis is offline. Your application is saved and will resume automatically.'
+                      : cvQueueStatus?.state === 'queued'
+                        ? `CV queued${cvQueueStatus.position ? ` at position ${cvQueueStatus.position}` : ''}. You can keep this page open while it waits.`
+                        : cvQueueStatus?.state === 'processing'
+                          ? 'The local CV model is extracting your details now.'
+                          : 'CV processing can take several minutes. Please wait...'}
                   </p>
                 )}
               </div>

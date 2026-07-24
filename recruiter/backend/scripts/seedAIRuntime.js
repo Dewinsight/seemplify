@@ -4,7 +4,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const AIProviderCredential = require('../models/AIProviderCredential');
 const AIRuntimeSettings = require('../models/AIRuntimeSettings');
-const { createDefaultRuntimeSettings, GROQ_120B, GROQ_20B } = require('../config/aiRuntimeCatalog');
+const { ACTIVITY_DEFINITIONS, createDefaultRuntimeSettings, GROQ_120B, GROQ_20B } = require('../config/aiRuntimeCatalog');
 const { encryptSecret, fingerprintSecret, maskSecret, resolveKeyRing } = require('../services/aiRuntime/secretCrypto');
 const { AzureTextRollbackAdapter } = require('../services/aiRuntime/azureTextRollbackAdapter');
 
@@ -47,7 +47,16 @@ function mergeCatalogSettings(current, defaults) {
 
   const existingRoutes = new Map((current.routes || []).map((route) => [route.activity, route]));
   const defaultActivities = new Set(defaults.routes.map((route) => route.activity));
-  const routes = defaults.routes.map((route) => ({ ...route, ...(existingRoutes.get(route.activity) || {}) }));
+  const routes = defaults.routes.map((route) => {
+    const existing = existingRoutes.get(route.activity);
+    const definition = ACTIVITY_DEFINITIONS[route.activity];
+    const shouldApplyNewLocalDefault = definition?.defaultLocal
+      && existing?.provider === 'groq'
+      && Number(existing?.routeVersion || 1) === 1;
+    return definition?.lockedProvider || shouldApplyNewLocalDefault
+      ? { ...(existing || {}), ...route }
+      : { ...route, ...(existing || {}) };
+  });
   routes.push(...(current.routes || []).filter((route) => !defaultActivities.has(route.activity)));
 
   const currentRollout = current.rollout || {};
@@ -63,6 +72,7 @@ function mergeCatalogSettings(current, defaults) {
     routes,
     quotaGroups: current.quotaGroups?.length ? current.quotaGroups : defaults.quotaGroups,
     alerts: { ...defaults.alerts, ...(current.alerts || {}) },
+    localFailover: { ...defaults.localFailover, ...(current.localFailover || {}) },
     rollout: unmanagedGroqOnlyDefault
       ? { ...defaults.rollout }
       : { ...defaults.rollout, ...currentRollout }

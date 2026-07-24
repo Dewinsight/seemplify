@@ -1,0 +1,208 @@
+const path = require('path');
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+process.env.REDIS_HOST = process.env.CV_TEST_REDIS_HOST || '127.0.0.1';
+process.env.REDIS_PORT = process.env.CV_TEST_REDIS_PORT || '46379';
+process.env.REDIS_ENABLED = 'true';
+process.env.CV_ANALYSIS_QUEUE_CONCURRENCY = '1';
+
+const mongoose = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const { Queue } = require('bullmq');
+const IORedis = require('ioredis');
+const embeddingService = require('../services/embeddingService');
+
+embeddingService.createCandidateEmbedding = async () => ({ skipped: true });
+
+const Candidate = require('../models/Candidate');
+const CVProcessingJob = require('../models/CVProcessingJob');
+const cvQueue = require('../services/cvAnalysisQueueService');
+
+let mongo;
+let inspectionConnection;
+let inspectionQueue;
+
+const resumeText = [
+  'Ada Lovelace',
+  'Email: ada.lovelace@example.com',
+  'Phone: +44 7700 900123',
+  'Location: London, United Kingdom',
+  'Senior Software Engineer with 8 years of experience.',
+  'Skills: JavaScript, TypeScript, Node.js, MongoDB, Redis, Docker.',
+  'Education: BSc Computer Science, University of London.',
+  'Experience: Senior Engineer at Analytical Engines Ltd from 2019 to 2026.'
+].join('\n');
+
+function createJob(overrides = {}) {
+  const publicId = overrides.publicId || `cv_test_${new mongoose.Types.ObjectId()}`;
+  const statusToken = overrides.statusToken || `token-${publicId}`;
+  return CVProcessingJob.create({
+    publicId,
+    statusTokenHash: cvQueue.tokenHash(statusToken),
+    state: 'queued',
+    progress: 10,
+    organization: overrides.organization || new mongoose.Types.ObjectId(),
+    source: overrides.source || 'private',
+    originalName: 'ada-lovelace.pdf',
+    fileType: 'application/pdf',
+    fileSize: 1024,
+    resumeText,
+    cloudinary: {
+      resumeUrl: 'https://example.invalid/ada-lovelace.pdf',
+      publicId: `cv-test/${publicId}`,
+      resourceType: 'raw'
+    },
+    formData: {},
+    ...overrides
+  }).then((job) => ({ job, statusToken }));
+}
+
+async function setGatewayIngress(enabled) {
+  const response = await fetch('http://127.0.0.1:11435/control/state', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: true, ingressEnabled: enabled, paused: false })
+  });
+  assert.equal(response.ok, true, `Gateway control returned ${response.status}`);
+}
+
+async function setGatewayControl(control) {
+  const response = await fetch('http://127.0.0.1:11435/control/state', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(control)
+  });
+  assert.equal(response.ok, true, `Gateway control returned ${response.status}`);
+}
+
+async function waitForJobState(publicId, expected, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const job = await CVProcessingJob.findOne({ publicId });
+    if (job && expected.includes(job.state)) return job;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const latest = await CVProcessingJob.findOne({ publicId });
+  assert.fail(`Timed out waiting for ${publicId}; last state was ${latest?.state || 'missing'}`);
+}
+
+test.before(async () => {
+  mongo = await MongoMemoryServer.create();
+  await mongoose.connect(mongo.getUri());
+  inspectionConnection = new IORedis(Number(process.env.REDIS_PORT), process.env.REDIS_HOST, {
+    maxRetriesPerRequest: null
+  });
+  inspectionQueue = new Queue('cv-analysis-local', { connection: inspectionConnection });
+  await inspectionQueue.obliterate({ force: true });
+});
+
+test('retry backoff grows exponentially and caps local-runtime outages', () => {
+  const offline = Object.assign(new Error('local CV runtime could not be reached'), { code: 'LOCAL_LLM_UNAVAILABLE' });
+  assert.deepEqual(
+    [1, 2, 3, 4, 5, 9].map((attempt) => cvQueue.cvBackoffDelay(attempt, offline)),
+    [30_000, 60_000, 120_000, 240_000, 300_000, 300_000]
+  );
+  assert.equal(cvQueue.isOfflineError(offline), true);
+  assert.equal(cvQueue.isOfflineError(new Error('schema mismatch')), false);
+});
+
+test.after(async () => {
+  await setGatewayIngress(true).catch(() => {});
+  await cvQueue.closeForTests();
+  if (inspectionQueue) await inspectionQueue.close();
+  if (inspectionConnection) await inspectionConnection.quit();
+  await mongoose.disconnect();
+  if (mongo) await mongo.stop();
+});
+
+test.beforeEach(async () => {
+  await inspectionQueue.obliterate({ force: true });
+  await inspectionQueue.pause();
+  await CVProcessingJob.deleteMany({});
+  await Candidate.deleteMany({});
+});
+
+test('status tokens are isolated and compared without exposing the stored hash', async () => {
+  const { job, statusToken } = await createJob();
+  assert.equal(await cvQueue.getStatus(job.publicId, 'wrong-token'), null);
+  const status = await cvQueue.getStatus(job.publicId, statusToken);
+  assert.equal(status.jobId, job.publicId);
+  assert.equal(status.state, 'queued');
+  assert.equal(Object.hasOwn(status, 'statusTokenHash'), false);
+});
+
+test('priority preserves FIFO inside an organisation and interleaves organisations', async () => {
+  const organizationA = new mongoose.Types.ObjectId();
+  const organizationB = new mongoose.Types.ObjectId();
+  const firstA = await createJob({ organization: organizationA });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const secondA = await createJob({ organization: organizationA });
+  const firstB = await createJob({ organization: organizationB });
+
+  const queuedFirstA = await cvQueue.enqueueExistingJob(firstA.job._id);
+  const queuedSecondA = await cvQueue.enqueueExistingJob(secondA.job._id);
+  const queuedFirstB = await cvQueue.enqueueExistingJob(firstB.job._id);
+
+  assert.equal(queuedFirstA.opts.priority, 1);
+  assert.equal(queuedSecondA.opts.priority, 2);
+  assert.equal(queuedFirstB.opts.priority, 1);
+  assert.equal((await cvQueue.telemetry()).paused, true);
+});
+
+test('stale Mongo jobs are recovered after a queue restart', async () => {
+  const { job } = await createJob();
+  await CVProcessingJob.collection.updateOne(
+    { _id: job._id },
+    { $set: { updatedAt: new Date(Date.now() - 120_000) } }
+  );
+
+  assert.equal(await cvQueue.recoverStaleJobs(), 1);
+  assert.ok(await inspectionQueue.getJob(job.publicId));
+  assert.equal(await cvQueue.recoverStaleJobs(), 0);
+});
+
+test('signed telemetry applies Control Center pause and concurrency to BullMQ', async () => {
+  await inspectionQueue.resume();
+  await cvQueue.initWorker();
+  try {
+    await setGatewayControl({ concurrency: 2, paused: true });
+    assert.equal(await cvQueue.publishTelemetry(), true);
+    const paused = await cvQueue.telemetry();
+    assert.equal(paused.concurrency, 2);
+    assert.equal(paused.paused, true);
+  } finally {
+    await setGatewayControl({ concurrency: 1, paused: false });
+    await cvQueue.publishTelemetry();
+    await cvQueue.publishTelemetry();
+  }
+  const resumed = await cvQueue.telemetry();
+  assert.equal(resumed.concurrency, 1);
+  assert.equal(resumed.paused, false);
+});
+
+test('local runtime outages wait durably and resume without duplicate candidates', { timeout: 180_000 }, async () => {
+  await setGatewayIngress(false);
+  await inspectionQueue.resume();
+  await cvQueue.initWorker();
+  const { job } = await createJob();
+  const bullJob = await cvQueue.enqueueExistingJob(job._id);
+
+  await waitForJobState(job.publicId, ['waiting_for_local_runtime'], 60_000);
+  assert.equal(await Candidate.countDocuments({}), 0);
+
+  await setGatewayIngress(true);
+  await bullJob.promote();
+  const completed = await waitForJobState(job.publicId, ['completed'], 120_000);
+  assert.ok(completed.candidate);
+  assert.equal(await Candidate.countDocuments({
+    'processingMetadata.cvProcessingJobId': job.publicId
+  }), 1);
+
+  await cvQueue.enqueueExistingJob(job._id);
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  assert.equal(await Candidate.countDocuments({
+    'processingMetadata.cvProcessingJobId': job.publicId
+  }), 1);
+});

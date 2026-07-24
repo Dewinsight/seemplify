@@ -16,6 +16,7 @@ const backgroundServiceManager = require('./services/backgroundServiceManager');
 const multiCandidateRetryService = require('./services/multiCandidateRetryService');
 const interviewBotJoinService = require('./services/interviewBotJoinService');
 const aiInterviewEmailService = require('./services/aiInterviewEmailService');
+const localAIRuntimeHealthService = require('./services/localAIRuntimeHealthService');
 const { requestValidation } = require('./middleware/requestValidation');
 const { requireFeature } = require('./middleware/featureFlagMiddleware');
 const { aiRequestContextMiddleware } = require('./services/aiRuntime/requestContext');
@@ -392,6 +393,7 @@ backgroundServiceManager.register('interviewBotJoin', interviewBotJoinService);
 backgroundServiceManager.register('grantVerification', grantVerificationScheduler);
 backgroundServiceManager.register('multiCandidateRetry', multiCandidateRetryService);
 backgroundServiceManager.register('aiInterviewScoringRetry', aiInterviewScoringRetryService);
+backgroundServiceManager.register('localAIRuntimeHealth', localAIRuntimeHealthService);
 
 // Start all background services
 backgroundServiceManager.startAll();
@@ -415,6 +417,13 @@ server.listen(PORT, async () => {
     console.log('📦 BullMQ bulk upload queue initialized');
   } catch (err) {
     console.warn('⚠️ BullMQ init failed (non-fatal, bulk upload will init on first use):', err.message);
+  }
+  try {
+    const cvAnalysisQueue = require('./services/cvAnalysisQueueService');
+    await cvAnalysisQueue.initWorker();
+    console.log('Local CV analysis queue initialized');
+  } catch (err) {
+    console.warn('Local CV analysis queue init deferred:', err.message);
   }
 
   // Initialize BullMQ worker for enrichment ranking

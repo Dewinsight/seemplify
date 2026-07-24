@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
-const bulkUploadService = require('../services/bulkUploadService');
+const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -54,14 +54,11 @@ router.post(
         return res.status(400).json({ msg: 'No files uploaded.' });
       }
 
+      const status = await cvAnalysisQueue.submitBatch(req);
       const organizationId = req.user.currentOrganization?.toString();
-      const userId = req.user.id;
-      const batchId = `batch-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const batchId = status.batchId;
 
       console.log(`📦 Bulk upload started: ${files.length} files, batch ${batchId}, org ${organizationId}`);
-
-      bulkUploadService.initBatchStatus(batchId, files.length, organizationId, userId);
-      await bulkUploadService.addBulkUploadJobs(batchId, files, organizationId, userId);
 
       res.status(202).json({
         msg: `${files.length} CVs queued for processing`,
@@ -93,8 +90,8 @@ router.post(
 );
 
 // GET /api/bulk-upload/status/:batchId — Poll batch progress
-router.get('/status/:batchId', authMiddleware, async (req, res) => {
-  const status = bulkUploadService.getBatchStatus(req.params.batchId);
+router.get('/status/:batchId', authMiddleware, requireOrganization, async (req, res) => {
+  const status = await cvAnalysisQueue.getBatchStatus(req.params.batchId, req.user.currentOrganization?.toString());
   if (!status) {
     return res.status(404).json({ msg: 'Batch not found' });
   }
