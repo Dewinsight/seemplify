@@ -15,6 +15,7 @@ const {
   LOCAL_PROVIDER
 } = require('../config/aiRuntimeCatalog');
 const { signLocalRequest } = require('../services/aiRuntime/aiRuntimeService');
+const { createLocalRuntimeHistoryAuth, signLocalHistoryRequest } = require('../middleware/localRuntimeHistoryAuth');
 
 const gatewayScript = path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm', 'gateway.cjs');
 
@@ -73,6 +74,19 @@ test('every recruiter CV upload entry point uses the durable local CV queue', ()
   assert.match(standaloneParser, /activity: 'ai_interview\.cv_parse'/);
 });
 
+test('CV queue keeps a compact non-expiring operational history separate from CV contents', () => {
+  const sourceRoot = path.resolve(__dirname, '..');
+  const historyModel = fs.readFileSync(path.join(sourceRoot, 'models', 'CVProcessingAudit.js'), 'utf8');
+  const queueService = fs.readFileSync(path.join(sourceRoot, 'services', 'cvAnalysisQueueService.js'), 'utf8');
+  const historyRoute = fs.readFileSync(path.join(sourceRoot, 'routes', 'internalLocalCvQueue.js'), 'utf8');
+  assert.doesNotMatch(historyModel, /resumeText|expireAfterSeconds|expiresAt/);
+  assert.match(historyModel, /publicId/);
+  assert.match(historyModel, /jobCreatedAt/);
+  assert.match(queueService, /async function listHistory/);
+  assert.match(queueService, /retainedIndefinitely: true/);
+  assert.match(historyRoute, /createLocalRuntimeHistoryAuth/);
+});
+
 test('local signatures are deterministic for fixed request inputs', () => {
   const signed = signLocalRequest('secret', '{"activity":"candidate.cv_parse"}', 1234, 'abcdefghijklmnop');
   const expected = crypto.createHmac('sha256', 'secret')
@@ -81,9 +95,42 @@ test('local signatures are deterministic for fixed request inputs', () => {
   assert.deepEqual(signed, { timestamp: '1234', nonce: 'abcdefghijklmnop', signature: expected });
 });
 
+test('local queue history signatures cover the method, path, query, timestamp and nonce', () => {
+  const timestamp = '1234';
+  const nonce = 'history_nonce_1234567890';
+  const requestPath = '/api/internal/local-cv-queue/history?page=2&limit=50';
+  const signature = signLocalHistoryRequest('secret', 'GET', requestPath, timestamp, nonce);
+  const expected = crypto.createHmac('sha256', 'secret')
+    .update(`${timestamp}\n${nonce}\nGET\n${requestPath}`)
+    .digest('base64url');
+  assert.equal(signature, expected);
+  let accepted = false;
+  createLocalRuntimeHistoryAuth({
+    env: { LOCAL_LLM_SHARED_SECRET: 'secret' },
+    now: () => 1234
+  })({
+    method: 'GET',
+    originalUrl: requestPath,
+    get(name) {
+      return {
+        'x-seemplify-timestamp': timestamp,
+        'x-seemplify-nonce': nonce,
+        'x-seemplify-signature': signature
+      }[name];
+    }
+  }, {
+    status() { return this; },
+    json() { throw new Error('valid history signature was rejected'); }
+  }, () => { accepted = true; });
+  assert.equal(accepted, true);
+});
+
 test('gateway rejects unsigned and replayed requests and enforces the CV activity allowlist', async (context) => {
   const ollamaPort = 11544;
   const gatewayPort = 11545;
+  const historyBackendPort = 11546;
+  const historySecret = 'local-cv-runtime-test-secret';
+  let observedHistoryRequest = null;
   const fakeOllama = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -107,12 +154,42 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   });
   await listen(fakeOllama, ollamaPort);
   context.after(() => new Promise((resolve) => fakeOllama.close(resolve)));
+  const fakeHistoryBackend = http.createServer((request, response) => {
+    observedHistoryRequest = {
+      url: request.url,
+      timestamp: String(request.headers['x-seemplify-timestamp'] || ''),
+      nonce: String(request.headers['x-seemplify-nonce'] || ''),
+      signature: String(request.headers['x-seemplify-signature'] || '')
+    };
+    const expected = signLocalHistoryRequest(
+      historySecret,
+      request.method,
+      request.url,
+      observedHistoryRequest.timestamp,
+      observedHistoryRequest.nonce
+    );
+    response.setHeader('content-type', 'application/json');
+    if (expected !== observedHistoryRequest.signature) {
+      response.statusCode = 401;
+      return response.end(JSON.stringify({ code: 'INVALID_SIGNATURE' }));
+    }
+    return response.end(JSON.stringify({
+      page: 2,
+      limit: 50,
+      total: 51,
+      pages: 2,
+      retainedIndefinitely: true,
+      jobs: [{ jobId: 'job_demo_123', state: 'completed', source: 'bulk' }]
+    }));
+  });
+  await listen(fakeHistoryBackend, historyBackendPort);
+  context.after(() => new Promise((resolve) => fakeHistoryBackend.close(resolve)));
 
   const isolatedRuntime = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-llm-test-'));
   const isolatedSecretFile = path.join(isolatedRuntime, 'service-secret');
   const isolatedStateFile = path.join(isolatedRuntime, 'state.json');
   const isolatedLogFile = path.join(isolatedRuntime, 'gateway.log');
-  fs.writeFileSync(isolatedSecretFile, 'local-cv-runtime-test-secret');
+  fs.writeFileSync(isolatedSecretFile, historySecret);
   fs.writeFileSync(isolatedStateFile, JSON.stringify({
     enabled: true,
     ingressEnabled: true,
@@ -133,7 +210,8 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       LOCAL_LLM_GATEWAY_PORT: String(gatewayPort),
       LOCAL_LLM_SECRET_FILE: isolatedSecretFile,
       LOCAL_LLM_STATE_FILE: isolatedStateFile,
-      LOCAL_LLM_LOG_FILE: isolatedLogFile
+      LOCAL_LLM_LOG_FILE: isolatedLogFile,
+      RECRUITER_BACKEND_URL: `http://127.0.0.1:${historyBackendPort}`
     },
     stdio: 'ignore',
     windowsHide: true
@@ -149,6 +227,13 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   assert.equal(unsigned.status, 401);
 
   const secret = fs.readFileSync(isolatedSecretFile, 'utf8').trim();
+  const historyResponse = await fetch(`http://127.0.0.1:${gatewayPort}/control/queue-history?state=completed&page=2&limit=50&search=job_demo`);
+  assert.equal(historyResponse.status, 200);
+  const historyPayload = await historyResponse.json();
+  assert.equal(historyPayload.total, 51);
+  assert.equal(historyPayload.jobs[0].jobId, 'job_demo_123');
+  assert.match(observedHistoryRequest.url, /state=completed/);
+  assert.match(observedHistoryRequest.url, /search=job_demo/);
   const forbiddenBody = JSON.stringify({
     activity: 'unknown.activity',
     messages: [{ role: 'user', content: 'hello' }],

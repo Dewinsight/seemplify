@@ -345,6 +345,7 @@ app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management
 app.use('/api/internal/ai', require('./routes/internalAI')); // Signed service-to-service AI gateway
+app.use('/api/internal/local-cv-queue', require('./routes/internalLocalCvQueue')); // Signed local Control Center history
 
 // Serve static files from the "uploads" directory (if needed for direct access, though Cloudinary is primary)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

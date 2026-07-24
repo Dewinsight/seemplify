@@ -4,6 +4,7 @@ const { promisify } = require('util');
 const { Queue, Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const Candidate = require('../models/Candidate');
+const CVProcessingAudit = require('../models/CVProcessingAudit');
 const CVProcessingJob = require('../models/CVProcessingJob');
 const CVProcessingBatch = require('../models/CVProcessingBatch');
 const Job = require('../models/Job');
@@ -35,6 +36,7 @@ let worker;
 let maintenanceTimer;
 let telemetryTimer;
 let initRetryTimer;
+let historyBackfillPromise;
 
 function workerConcurrency() {
   return Math.max(1, Number(worker?.concurrency || concurrency));
@@ -69,6 +71,140 @@ function operationalJob(job, sampledAt) {
     waitMs: elapsedMs(job.createdAt, job.startedAt || terminalAt),
     processingMs: job.startedAt ? elapsedMs(job.startedAt, terminalAt) : null,
     errorCode: job.lastError?.code || null
+  };
+}
+
+function auditDocument(job) {
+  const sampledAt = new Date(job.updatedAt || Date.now());
+  const operational = operationalJob(job, sampledAt);
+  return {
+    publicId: job.publicId,
+    source: job.source,
+    state: job.state,
+    progress: operational.progress,
+    attempts: operational.attempts,
+    organization: job.organization,
+    actor: job.actor || undefined,
+    jobAppliedFor: job.jobAppliedFor || undefined,
+    candidate: job.candidate || undefined,
+    originalName: job.originalName || '',
+    fileType: job.fileType || '',
+    fileSize: Number(job.fileSize || 0),
+    jobCreatedAt: job.createdAt,
+    startedAt: job.startedAt || undefined,
+    completedAt: job.completedAt || undefined,
+    failedAt: job.failedAt || undefined,
+    lastUpdatedAt: job.updatedAt || sampledAt,
+    waitMs: operational.waitMs,
+    processingMs: operational.processingMs,
+    errorCode: operational.errorCode || undefined
+  };
+}
+
+function auditOperationalJob(job) {
+  return operationalJob({
+    publicId: job.publicId,
+    source: job.source,
+    state: job.state,
+    progress: job.progress,
+    attempts: job.attempts,
+    createdAt: job.jobCreatedAt,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
+    failedAt: job.failedAt,
+    updatedAt: job.lastUpdatedAt,
+    lastError: job.errorCode ? { code: job.errorCode } : null
+  }, new Date(job.lastUpdatedAt || Date.now()));
+}
+
+async function syncHistory(processingJobId) {
+  const job = processingJobId && typeof processingJobId === 'object' && processingJobId.publicId
+    ? processingJobId
+    : await CVProcessingJob.findById(processingJobId)
+      .select('publicId source state progress attempts organization actor jobAppliedFor candidate originalName fileType fileSize createdAt startedAt completedAt failedAt updatedAt lastError.code')
+      .lean();
+  if (!job) return false;
+  await CVProcessingAudit.updateOne(
+    { publicId: job.publicId },
+    { $set: auditDocument(job) },
+    { upsert: true }
+  );
+  return true;
+}
+
+async function syncHistorySafely(processingJobId) {
+  try {
+    return await syncHistory(processingJobId);
+  } catch (error) {
+    console.error('CV processing history sync failed:', error.message);
+    return false;
+  }
+}
+
+async function backfillHistory() {
+  if (historyBackfillPromise) return historyBackfillPromise;
+  historyBackfillPromise = (async () => {
+    const rows = await CVProcessingJob.find({})
+      .select('publicId source state progress attempts organization actor jobAppliedFor candidate originalName fileType fileSize createdAt startedAt completedAt failedAt updatedAt lastError.code')
+      .sort({ createdAt: 1 })
+      .lean();
+    for (let index = 0; index < rows.length; index += 500) {
+      const batch = rows.slice(index, index + 500);
+      if (!batch.length) continue;
+      await CVProcessingAudit.bulkWrite(batch.map((job) => ({
+        updateOne: {
+          filter: { publicId: job.publicId },
+          update: { $set: auditDocument(job) },
+          upsert: true
+        }
+      })), { ordered: false });
+    }
+    return rows.length;
+  })().catch((error) => {
+    historyBackfillPromise = null;
+    throw error;
+  });
+  return historyBackfillPromise;
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function listHistory(input = {}) {
+  await backfillHistory();
+  const page = Math.max(1, Math.min(100_000, Number(input.page) || 1));
+  const limit = Math.max(10, Math.min(100, Number(input.limit) || 25));
+  const filter = {};
+  const allowedStates = new Set(['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed']);
+  const allowedSources = new Set(['private', 'public', 'bulk', 'ai-interview']);
+  if (allowedStates.has(String(input.state || ''))) filter.state = String(input.state);
+  if (allowedSources.has(String(input.source || ''))) filter.source = String(input.source);
+  const search = String(input.search || '').trim().slice(0, 100);
+  if (search) filter.publicId = { $regex: escapeRegex(search), $options: 'i' };
+  const from = input.from ? new Date(input.from) : null;
+  const to = input.to ? new Date(input.to) : null;
+  if ((from && Number.isFinite(from.getTime())) || (to && Number.isFinite(to.getTime()))) {
+    filter.jobCreatedAt = {};
+    if (from && Number.isFinite(from.getTime())) filter.jobCreatedAt.$gte = from;
+    if (to && Number.isFinite(to.getTime())) filter.jobCreatedAt.$lte = to;
+  }
+  const [total, rows] = await Promise.all([
+    CVProcessingAudit.countDocuments(filter),
+    CVProcessingAudit.find(filter)
+      .sort({ jobCreatedAt: -1, publicId: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean()
+  ]);
+  return {
+    page,
+    limit,
+    total,
+    pages: Math.max(1, Math.ceil(total / limit)),
+    jobs: rows.map(auditOperationalJob),
+    retainedIndefinitely: true,
+    measuredAt: new Date().toISOString()
   };
 }
 
@@ -259,6 +395,7 @@ async function submitUpload(req, source = 'private') {
       cloudinary: { resumeUrl, publicId: upload.publicId, resourceType: upload.resourceType },
       formData: safeFormData(req.body)
     });
+    await syncHistorySafely(job);
   } catch (error) {
     if (error?.code !== 11000 || !idempotencyKey) throw error;
     const existing = await CVProcessingJob.findOne({ organization: organizationId, idempotencyKey });
@@ -284,6 +421,7 @@ async function submitUpload(req, source = 'private') {
         }
       }
     });
+    await syncHistorySafely(job._id);
   }
   return { job, statusToken, duplicate: false, enqueueDeferred };
 }
@@ -345,6 +483,7 @@ async function processJob(bullJob) {
     $set: { state: 'processing', progress: 30, startedAt: processingJob.startedAt || new Date() },
     $inc: { attempts: 1 }
   });
+  await syncHistorySafely(processingJob._id);
   await bullJob.updateProgress(30);
   try {
     const [organization, actor] = await Promise.all([
@@ -381,6 +520,7 @@ async function processJob(bullJob) {
       $set: { state: 'completed', progress: 100, candidate: candidate._id, completedAt: new Date() },
       $unset: { lastError: 1 }
     });
+    await syncHistorySafely(processingJob._id);
     await bullJob.updateProgress(100);
     void embeddingService.createCandidateEmbedding(candidate)
       .then(() => Candidate.updateOne({ _id: candidate._id }, { $set: { isEmbedded: true, embeddingCreatedAt: new Date() } }))
@@ -402,6 +542,7 @@ async function processJob(bullJob) {
         lastError: { code: error.code || 'CV_ANALYSIS_ERROR', message: String(error.message).slice(0, 1000), at: new Date() }
       }
     });
+    await syncHistorySafely(processingJob._id);
     if (terminal) bullJob.discard();
     throw error;
   }
@@ -530,6 +671,11 @@ async function initWorker() {
         lastError: { code: error.code || 'CV_ANALYSIS_FAILED', message: String(error.message).slice(0, 1000), at: new Date() }
       }
     });
+    const processingJob = await CVProcessingJob.findOne({ publicId: job.id }).select('_id').lean();
+    if (processingJob) await syncHistorySafely(processingJob._id);
+  });
+  await backfillHistory().catch((error) => {
+    console.error('CV processing history backfill failed:', error.message);
   });
   await recoverStaleJobs();
   if (!maintenanceTimer) {
@@ -731,6 +877,7 @@ async function closeForTests() {
   telemetryTimer = null;
   if (initRetryTimer) clearInterval(initRetryTimer);
   initRetryTimer = null;
+  historyBackfillPromise = null;
   if (worker) await worker.close();
   worker = null;
   if (queue) await queue.close();
@@ -819,6 +966,7 @@ module.exports = {
   getAdminJobDetail,
   getStatus,
   initWorker,
+  listHistory,
   publishTelemetry,
   cvBackoffDelay,
   isOfflineError,

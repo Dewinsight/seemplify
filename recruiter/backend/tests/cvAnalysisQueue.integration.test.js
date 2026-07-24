@@ -17,6 +17,7 @@ const embeddingService = require('../services/embeddingService');
 embeddingService.createCandidateEmbedding = async () => ({ skipped: true });
 
 const Candidate = require('../models/Candidate');
+const CVProcessingAudit = require('../models/CVProcessingAudit');
 const CVProcessingJob = require('../models/CVProcessingJob');
 const cvQueue = require('../services/cvAnalysisQueueService');
 
@@ -130,6 +131,7 @@ test.beforeEach(async () => {
   await inspectionQueue.obliterate({ force: true });
   await inspectionQueue.pause();
   await CVProcessingJob.deleteMany({});
+  await CVProcessingAudit.deleteMany({});
   await Candidate.deleteMany({});
 });
 
@@ -202,6 +204,18 @@ test('telemetry reports durable states, worker capacity, throughput, and privacy
   assert.equal(snapshot.recentJobs.length, 4);
   assert.equal(Object.hasOwn(snapshot.recentJobs[0], 'originalName'), false);
   assert.equal(Object.hasOwn(snapshot.recentJobs[0], 'errorCode'), true);
+});
+
+test('history backfills retained jobs and supports state pagination without CV contents', async () => {
+  const now = Date.now();
+  await createJob({ publicId: 'cv_history_completed', state: 'completed', progress: 100, completedAt: new Date(now - 1_000) });
+  await createJob({ publicId: 'cv_history_failed', state: 'failed', failedAt: new Date(now - 500) });
+  const history = await cvQueue.listHistory({ state: 'completed', page: 1, limit: 10 });
+  assert.equal(history.total, 1);
+  assert.equal(history.retainedIndefinitely, true);
+  assert.equal(history.jobs[0].jobId, 'cv_history_completed');
+  assert.equal(history.jobs[0].state, 'completed');
+  assert.equal(Object.hasOwn(history.jobs[0], 'resumeText'), false);
 });
 
 test('stale Mongo jobs are recovered after a queue restart', async () => {

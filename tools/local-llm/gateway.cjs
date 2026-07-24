@@ -25,6 +25,7 @@ const nonceTtlMs = Number(process.env.LOCAL_LLM_NONCE_TTL_MS || 10 * 60 * 1000);
 const rateLimitWindowMs = Number(process.env.LOCAL_LLM_RATE_LIMIT_WINDOW_MS || 60 * 1000);
 const rateLimitRequests = Number(process.env.LOCAL_LLM_RATE_LIMIT_REQUESTS || 120);
 const maxWaitingRequests = Number(process.env.LOCAL_LLM_MAX_WAITING_REQUESTS || 1000);
+const recruiterBackendUrl = String(process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com').replace(/\/+$/, '');
 const allowedActivities = new Set(Object.keys(ACTIVITY_DEFINITIONS));
 const cvActivities = new Set(['candidate.cv_parse', 'ai_interview.cv_parse']);
 const requiredCvFields = ['firstName', 'lastName', 'email', 'skills', 'summary'];
@@ -209,6 +210,54 @@ function verifySignature(headers, rawBody) {
   if (!safeEqual(expected, signature)) return { ok: false, code: 'SIGNATURE_INVALID' };
   seenNonces.set(nonce, now + nonceTtlMs);
   return { ok: true };
+}
+
+function queueHistoryPath(inputUrl) {
+  const params = new URLSearchParams();
+  const page = Math.max(1, Math.min(100_000, Number(inputUrl.searchParams.get('page')) || 1));
+  const limit = Math.max(10, Math.min(100, Number(inputUrl.searchParams.get('limit')) || 25));
+  params.set('page', String(page));
+  params.set('limit', String(limit));
+  const state = String(inputUrl.searchParams.get('state') || '');
+  if (['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'].includes(state)) params.set('state', state);
+  const source = String(inputUrl.searchParams.get('source') || '');
+  if (['private', 'public', 'bulk', 'ai-interview'].includes(source)) params.set('source', source);
+  const search = queueText(inputUrl.searchParams.get('search'), 100);
+  if (search) params.set('search', search);
+  for (const name of ['from', 'to']) {
+    const value = inputUrl.searchParams.get(name);
+    const parsed = value ? new Date(value) : null;
+    if (parsed && Number.isFinite(parsed.getTime())) params.set(name, parsed.toISOString());
+  }
+  return `/api/internal/local-cv-queue/history?${params.toString()}`;
+}
+
+function signQueueHistoryPath(requestPath) {
+  const timestamp = String(Date.now());
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  const signature = crypto.createHmac('sha256', secret)
+    .update(`${timestamp}\n${nonce}\nGET\n${requestPath}`)
+    .digest('base64url');
+  return { timestamp, nonce, signature };
+}
+
+async function fetchQueueHistory(inputUrl) {
+  const requestPath = queueHistoryPath(inputUrl);
+  const signed = signQueueHistoryPath(requestPath);
+  const upstream = await fetch(`${recruiterBackendUrl}${requestPath}`, {
+    headers: {
+      accept: 'application/json',
+      'x-seemplify-timestamp': signed.timestamp,
+      'x-seemplify-nonce': signed.nonce,
+      'x-seemplify-signature': signed.signature
+    },
+    signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(8_000) : undefined
+  });
+  const payload = await upstream.json().catch(() => ({
+    code: 'CV_HISTORY_INVALID_RESPONSE',
+    message: 'The recruiter backend returned an invalid history response'
+  }));
+  return { status: upstream.status, payload };
 }
 
 function rateLimitKey(request) {
@@ -439,6 +488,15 @@ const server = http.createServer(async (request, response) => {
   if (request.method === 'GET' && url.pathname === '/control/status') {
     if (!isLocalRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
     return sendJson(response, 200, statusPayload());
+  }
+  if (request.method === 'GET' && url.pathname === '/control/queue-history') {
+    if (!isLocalRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const history = await fetchQueueHistory(url);
+      return sendJson(response, history.status, history.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'CV_HISTORY_UNAVAILABLE', message: error.message });
+    }
   }
   if (request.method === 'PUT' && url.pathname === '/control/state') {
     if (!isLocalRequest(request)) {
