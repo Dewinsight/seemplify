@@ -6,7 +6,10 @@ const localAIRuntimeHealthService = require('../services/localAIRuntimeHealthSer
 const {
   createCredential,
   createQuotaGroup,
+  getAuditDetail,
+  getLiveOperations,
   getOverview,
+  getRequestDetail,
   getRuntimeSettings,
   listAuditEvents,
   listCredentials,
@@ -47,6 +50,51 @@ router.get('/overview', ...analyticsAccess, async (req, res) => {
   }
 });
 
+router.get('/live', ...analyticsAccess, async (_req, res) => {
+  try {
+    res.json(await getLiveOperations());
+  } catch (error) {
+    handleError(res, error, 'Failed to load live AI runtime operations');
+  }
+});
+
+router.get('/live/stream', ...analyticsAccess, async (req, res) => {
+  res.status(200);
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  res.flushHeaders?.();
+  let closed = false;
+  let sending = false;
+  const sendSnapshot = async () => {
+    if (closed || sending) return;
+    sending = true;
+    try {
+      const snapshot = await getLiveOperations();
+      if (!closed) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    } catch {
+      if (!closed) res.write('event: telemetry-error\ndata: {"message":"Live AI telemetry is temporarily unavailable"}\n\n');
+    } finally {
+      sending = false;
+    }
+  };
+  const snapshotTimer = setInterval(() => void sendSnapshot(), 3_000);
+  const heartbeatTimer = setInterval(() => {
+    if (!closed) res.write(': keep-alive\n\n');
+  }, 15_000);
+  snapshotTimer.unref?.();
+  heartbeatTimer.unref?.();
+  req.on('close', () => {
+    closed = true;
+    clearInterval(snapshotTimer);
+    clearInterval(heartbeatTimer);
+  });
+  await sendSnapshot();
+});
+
 router.get('/requests', ...analyticsAccess, async (req, res) => {
   try {
     res.json(await listRequests(req.query));
@@ -55,11 +103,27 @@ router.get('/requests', ...analyticsAccess, async (req, res) => {
   }
 });
 
+router.get('/requests/:id', ...analyticsAccess, async (req, res) => {
+  try {
+    res.json(await getRequestDetail(req.params.id));
+  } catch (error) {
+    handleError(res, error, 'Failed to load AI request detail');
+  }
+});
+
 router.get('/audit', ...analyticsAccess, async (req, res) => {
   try {
     res.json(await listAuditEvents(req.query));
   } catch (error) {
     handleError(res, error, 'Failed to load AI runtime audit events');
+  }
+});
+
+router.get('/audit/:id', ...analyticsAccess, async (req, res) => {
+  try {
+    res.json(await getAuditDetail(req.params.id));
+  } catch (error) {
+    handleError(res, error, 'Failed to load AI audit detail');
   }
 });
 
@@ -93,7 +157,7 @@ router.post('/local/health-check', ...settingsAccess, async (_req, res) => {
 
 router.get('/local/queue', ...analyticsAccess, async (_req, res) => {
   try {
-    res.json(await cvAnalysisQueue.telemetry());
+    res.json(await cvAnalysisQueue.adminTelemetry());
   } catch (error) {
     handleError(res, error, 'Failed to load local CV queue status');
   }
@@ -124,7 +188,7 @@ router.get('/local/queue/stream', ...analyticsAccess, async (req, res) => {
     if (closed || sending) return;
     sending = true;
     try {
-      const snapshot = await cvAnalysisQueue.telemetry();
+      const snapshot = await cvAnalysisQueue.adminTelemetry();
       if (!closed) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
     } catch {
       if (!closed) res.write(`event: telemetry-error\ndata: {"message":"Queue telemetry is temporarily unavailable"}\n\n`);
@@ -141,6 +205,16 @@ router.get('/local/queue/stream', ...analyticsAccess, async (req, res) => {
   }, 15_000);
   snapshotTimer.unref?.();
   heartbeatTimer.unref?.();
+});
+
+router.get('/local/queue/jobs/:jobId', ...analyticsAccess, async (req, res) => {
+  try {
+    const job = await cvAnalysisQueue.getAdminJobDetail(req.params.jobId);
+    if (!job) return res.status(404).json({ code: 'CV_JOB_NOT_FOUND', msg: 'CV processing job was not found' });
+    res.json(job);
+  } catch (error) {
+    handleError(res, error, 'Failed to load CV processing job');
+  }
 });
 
 router.post('/local/queue/:action', ...settingsAccess, async (req, res) => {

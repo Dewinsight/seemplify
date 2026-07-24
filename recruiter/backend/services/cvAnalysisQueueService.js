@@ -7,6 +7,8 @@ const Candidate = require('../models/Candidate');
 const CVProcessingJob = require('../models/CVProcessingJob');
 const CVProcessingBatch = require('../models/CVProcessingBatch');
 const Job = require('../models/Job');
+const Organization = require('../models/Organization');
+const User = require('../models/User');
 const CVParsingService = require('./cvParsingService');
 const CloudinaryUploadService = require('./cloudinaryUploadService');
 const embeddingService = require('./embeddingService');
@@ -31,6 +33,7 @@ const cloudinary = new CloudinaryUploadService();
 let queue;
 let worker;
 let maintenanceTimer;
+let telemetryTimer;
 let initRetryTimer;
 
 function workerConcurrency() {
@@ -66,6 +69,52 @@ function operationalJob(job, sampledAt) {
     waitMs: elapsedMs(job.createdAt, job.startedAt || terminalAt),
     processingMs: job.startedAt ? elapsedMs(job.startedAt, terminalAt) : null,
     errorCode: job.lastError?.code || null
+  };
+}
+
+function personName(person) {
+  if (!person) return '';
+  return person.profile?.displayName
+    || [person.profile?.firstName, person.profile?.lastName].filter(Boolean).join(' ')
+    || person.email
+    || '';
+}
+
+function adminOperationalJob(job, sampledAt) {
+  const operational = operationalJob(job, sampledAt);
+  const actor = job.actor && typeof job.actor === 'object' ? job.actor : null;
+  const organization = job.organization && typeof job.organization === 'object' ? job.organization : null;
+  const appliedJob = job.jobAppliedFor && typeof job.jobAppliedFor === 'object' ? job.jobAppliedFor : null;
+  const candidate = job.candidate && typeof job.candidate === 'object' ? job.candidate : null;
+  const applicantName = [job.formData?.firstName, job.formData?.lastName].filter(Boolean).join(' ');
+  return {
+    ...operational,
+    organization: {
+      id: String(organization?._id || job.organization || ''),
+      name: organization?.name || 'Unknown organization'
+    },
+    uploader: actor ? {
+      id: String(actor._id),
+      name: personName(actor),
+      email: actor.email || '',
+      type: 'member'
+    } : {
+      id: '',
+      name: applicantName || 'Public applicant',
+      email: job.formData?.email || '',
+      type: 'public'
+    },
+    application: appliedJob ? { id: String(appliedJob._id), title: appliedJob.title || 'Untitled job' } : null,
+    candidate: candidate ? {
+      id: String(candidate._id),
+      name: [candidate.firstName, candidate.lastName].filter(Boolean).join(' ') || candidate.email || 'Candidate',
+      email: candidate.email || ''
+    } : null,
+    file: {
+      name: job.originalName || '',
+      type: job.fileType || '',
+      size: Number(job.fileSize || 0)
+    }
   };
 }
 
@@ -298,10 +347,22 @@ async function processJob(bullJob) {
   });
   await bullJob.updateProgress(30);
   try {
+    const [organization, actor] = await Promise.all([
+      Organization.findById(processingJob.organization).select('name').lean(),
+      processingJob.actor
+        ? User.findById(processingJob.actor).select('email profile.firstName profile.lastName profile.displayName').lean()
+        : Promise.resolve(null)
+    ]);
     const analysis = await runWithAIRequestContext({
       sourceApp: 'recruiter-cv-worker',
       organizationId: String(processingJob.organization),
+      organizationName: organization?.name,
       actorId: processingJob.actor ? String(processingJob.actor) : undefined,
+      actorName: personName(actor)
+        || [processingJob.formData?.firstName, processingJob.formData?.lastName].filter(Boolean).join(' ')
+        || (processingJob.source === 'public' ? 'Public applicant' : undefined),
+      actorEmail: actor?.email || processingJob.formData?.email,
+      jobId: processingJob.publicId,
       requestId: `cv-queue:${processingJob.publicId}`,
       promptVersion: 'candidate-cv-local-v1'
     }, () => cvParser.analyzeText(
@@ -392,6 +453,7 @@ async function publishTelemetry() {
   if (!secret || !baseUrl) return false;
   const snapshot = await telemetry();
   const body = JSON.stringify({
+    schemaVersion: 2,
     waiting: Number(snapshot.counts.waiting || 0) + Number(snapshot.counts.prioritized || 0),
     active: snapshot.counts.active,
     delayed: snapshot.counts.delayed,
@@ -399,7 +461,16 @@ async function publishTelemetry() {
     failed: snapshot.counts.failed,
     oldestWaitMs: snapshot.oldestQueuedAt ? Date.now() - new Date(snapshot.oldestQueuedAt).getTime() : 0,
     paused: snapshot.paused,
-    workerConcurrency: workerConcurrency()
+    workerConcurrency: workerConcurrency(),
+    available: snapshot.available,
+    queue: snapshot.queue,
+    sampledAt: snapshot.sampledAt,
+    counts: snapshot.counts,
+    durable: snapshot.durable,
+    rates: snapshot.rates,
+    worker: snapshot.worker,
+    oldestQueuedAt: snapshot.oldestQueuedAt,
+    recentJobs: snapshot.recentJobs
   });
   const signed = signLocalRequest(secret, body);
   const response = await fetch(`${baseUrl}/v1/queue-telemetry`, {
@@ -463,9 +534,15 @@ async function initWorker() {
   await recoverStaleJobs();
   if (!maintenanceTimer) {
     maintenanceTimer = setInterval(() => {
-      void Promise.allSettled([recoverStaleJobs(), publishTelemetry()]);
+      void recoverStaleJobs().catch(() => {});
     }, 30_000);
     maintenanceTimer.unref?.();
+  }
+  if (!telemetryTimer) {
+    telemetryTimer = setInterval(() => {
+      void publishTelemetry().catch(() => {});
+    }, 5_000);
+    telemetryTimer.unref?.();
   }
   void publishTelemetry().catch(() => {});
   return worker;
@@ -610,6 +687,37 @@ async function telemetry() {
   }
 }
 
+function adminJobQuery(filter, limit) {
+  let query = CVProcessingJob.find(filter)
+    .sort({ updatedAt: -1 });
+  if (limit) query = query.limit(limit);
+  return query
+    .select('publicId source state progress attempts createdAt startedAt completedAt failedAt updatedAt lastError originalName fileType fileSize organization actor jobAppliedFor candidate formData.firstName formData.lastName formData.email formData.position formData.location')
+    .populate('organization', 'name')
+    .populate('actor', 'email profile.firstName profile.lastName profile.displayName')
+    .populate('jobAppliedFor', 'title')
+    .populate('candidate', 'firstName lastName email')
+    .lean();
+}
+
+async function adminTelemetry() {
+  const [snapshot, jobs] = await Promise.all([
+    telemetry(),
+    adminJobQuery({}, 25)
+  ]);
+  const sampledAt = new Date(snapshot.sampledAt || Date.now());
+  return {
+    ...snapshot,
+    recentJobs: jobs.map((job) => adminOperationalJob(job, sampledAt))
+  };
+}
+
+async function getAdminJobDetail(publicId) {
+  const jobs = await adminJobQuery({ publicId: String(publicId || '') }, 1);
+  if (!jobs[0]) return null;
+  return adminOperationalJob(jobs[0], new Date());
+}
+
 async function setPaused(paused) {
   const q = await getQueue();
   if (paused) await q.pause(); else await q.resume();
@@ -619,6 +727,8 @@ async function setPaused(paused) {
 async function closeForTests() {
   if (maintenanceTimer) clearInterval(maintenanceTimer);
   maintenanceTimer = null;
+  if (telemetryTimer) clearInterval(telemetryTimer);
+  telemetryTimer = null;
   if (initRetryTimer) clearInterval(initRetryTimer);
   initRetryTimer = null;
   if (worker) await worker.close();
@@ -702,9 +812,11 @@ async function getBatchStatus(publicId, organizationId) {
 }
 
 module.exports = {
+  adminTelemetry,
   closeForTests,
   enqueueExistingJob,
   getBatchStatus,
+  getAdminJobDetail,
   getStatus,
   initWorker,
   publishTelemetry,

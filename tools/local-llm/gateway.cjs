@@ -108,6 +108,88 @@ function safeEqual(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function queueCount(value) {
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function queueTimestamp(value) {
+  const parsed = value ? new Date(value) : null;
+  return parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function queueText(value, maximumLength = 80) {
+  return String(value || '').replace(/[^\w.:/-]/g, '').slice(0, maximumLength);
+}
+
+function normalizeQueueTelemetry(input = {}) {
+  const recentJobs = Array.isArray(input.recentJobs)
+    ? input.recentJobs.slice(0, 20).map((job) => ({
+        jobId: queueText(job?.jobId, 100),
+        source: queueText(job?.source, 40),
+        state: queueText(job?.state, 40),
+        progress: Math.min(100, queueCount(job?.progress)),
+        attempts: queueCount(job?.attempts),
+        createdAt: queueTimestamp(job?.createdAt),
+        startedAt: queueTimestamp(job?.startedAt),
+        completedAt: queueTimestamp(job?.completedAt),
+        failedAt: queueTimestamp(job?.failedAt),
+        updatedAt: queueTimestamp(job?.updatedAt),
+        waitMs: queueCount(job?.waitMs),
+        processingMs: job?.processingMs == null ? null : queueCount(job.processingMs),
+        errorCode: job?.errorCode ? queueText(job.errorCode, 80) : null
+      }))
+    : [];
+  return {
+    schemaVersion: Number(input.schemaVersion) >= 2 ? 2 : 1,
+    waiting: queueCount(input.waiting),
+    active: queueCount(input.active),
+    delayed: queueCount(input.delayed),
+    completed: queueCount(input.completed),
+    failed: queueCount(input.failed),
+    oldestWaitMs: queueCount(input.oldestWaitMs),
+    paused: Boolean(input.paused),
+    workerConcurrency: Math.max(1, queueCount(input.workerConcurrency) || 1),
+    available: input.available !== false,
+    queue: queueText(input.queue, 80) || 'cv-analysis-local',
+    sampledAt: queueTimestamp(input.sampledAt),
+    oldestQueuedAt: queueTimestamp(input.oldestQueuedAt),
+    counts: {
+      prioritized: queueCount(input.counts?.prioritized),
+      waiting: queueCount(input.counts?.waiting),
+      waitingTotal: queueCount(input.counts?.waitingTotal ?? input.waiting),
+      active: queueCount(input.counts?.active ?? input.active),
+      delayed: queueCount(input.counts?.delayed ?? input.delayed),
+      completed: queueCount(input.counts?.completed ?? input.completed),
+      failed: queueCount(input.counts?.failed ?? input.failed),
+      paused: queueCount(input.counts?.paused)
+    },
+    durable: {
+      queued: queueCount(input.durable?.queued),
+      waitingForRuntime: queueCount(input.durable?.waitingForRuntime),
+      processing: queueCount(input.durable?.processing),
+      completed: queueCount(input.durable?.completed),
+      failed: queueCount(input.durable?.failed),
+      retrying: queueCount(input.durable?.retrying)
+    },
+    rates: {
+      completedLast5Minutes: queueCount(input.rates?.completedLast5Minutes),
+      completedLastHour: queueCount(input.rates?.completedLastHour),
+      failedLastHour: queueCount(input.rates?.failedLastHour),
+      averageProcessingMs: queueCount(input.rates?.averageProcessingMs),
+      p95ProcessingMs: queueCount(input.rates?.p95ProcessingMs)
+    },
+    worker: {
+      running: Boolean(input.worker?.running),
+      concurrency: Math.max(1, queueCount(input.worker?.concurrency ?? input.workerConcurrency) || 1),
+      active: queueCount(input.worker?.active ?? input.active),
+      availableSlots: queueCount(input.worker?.availableSlots),
+      utilizationPercent: Math.min(100, queueCount(input.worker?.utilizationPercent))
+    },
+    recentJobs,
+    measuredAt: new Date().toISOString()
+  };
+}
+
 function verifySignature(headers, rawBody) {
   const timestamp = String(headers['x-seemplify-timestamp'] || '');
   const nonce = String(headers['x-seemplify-nonce'] || '');
@@ -424,17 +506,7 @@ const server = http.createServer(async (request, response) => {
       const verified = verifySignature(request.headers, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const input = JSON.parse(rawBody);
-      queueTelemetry = {
-        waiting: Math.max(0, Number(input.waiting || 0)),
-        active: Math.max(0, Number(input.active || 0)),
-        delayed: Math.max(0, Number(input.delayed || 0)),
-        completed: Math.max(0, Number(input.completed || 0)),
-        failed: Math.max(0, Number(input.failed || 0)),
-        oldestWaitMs: Math.max(0, Number(input.oldestWaitMs || 0)),
-        paused: Boolean(input.paused),
-        workerConcurrency: Math.max(1, Number(input.workerConcurrency || 1)),
-        measuredAt: new Date().toISOString()
-      };
+      queueTelemetry = normalizeQueueTelemetry(input);
       const controlState = readState();
       return sendJson(response, 200, {
         ok: true,

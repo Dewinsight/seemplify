@@ -7,7 +7,7 @@ const AIAuditEvent = require('../models/AIAuditEvent');
 const AIUsageEvent = require('../models/AIUsageEvent');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const { AIRuntimeError } = require('../services/aiRuntime/aiRuntimeService');
-const { listRequests, runRuntimeTest } = require('../services/adminAIRuntimeService');
+const { getLiveOperations, listRequests, runRuntimeTest } = require('../services/adminAIRuntimeService');
 
 const route = {
   activity: 'recruiter.general',
@@ -49,6 +49,51 @@ test('queue telemetry stream is authenticated, unbuffered, and cleans up timers'
   assert.match(routeSource, /setInterval\(\(\) => void sendSnapshot\(\), 2_000\)/);
   assert.match(routeSource, /req\.on\('close', close\)/);
   assert.match(routeSource, /clearInterval\(snapshotTimer\)/);
+});
+
+test('live operations and click-through audit endpoints require analytics access', () => {
+  const routeSource = fs.readFileSync(path.join(__dirname, '..', 'routes', 'adminAIRuntime.js'), 'utf8');
+  assert.match(routeSource, /router\.get\('\/live\/stream', \.\.\.analyticsAccess/);
+  assert.match(routeSource, /router\.get\('\/requests\/:id', \.\.\.analyticsAccess/);
+  assert.match(routeSource, /router\.get\('\/audit\/:id', \.\.\.analyticsAccess/);
+  assert.match(routeSource, /router\.get\('\/local\/queue\/jobs\/:jobId', \.\.\.analyticsAccess/);
+  assert.match(routeSource, /cvAnalysisQueue\.adminTelemetry\(\)/);
+});
+
+test('live operations compares providers and recent attributable activity', async () => {
+  mock.method(AIUsageEvent, 'aggregate', async () => [{
+    hour: [{ calls: 8, successes: 7, failures: 1, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1 }],
+    fiveMinutes: [{ calls: 2, successes: 2, failures: 0, tokens: 900, averageLatencyMs: 500 }],
+    providers: [
+      { _id: 'groq', calls: 6, successes: 5, failures: 1, averageLatencyMs: 600, maxLatencyMs: 1200, lastRequestAt: new Date() },
+      { _id: 'local-ollama', calls: 2, successes: 2, failures: 0, averageLatencyMs: 1000, maxLatencyMs: 1900, lastRequestAt: new Date() }
+    ],
+    activities: [{ _id: 'candidate.cv_parse', calls: 2, successes: 2, failures: 0 }],
+    timeline: [{ _id: '2026-07-24T10:00:00Z', calls: 2, failures: 0 }]
+  }]);
+  mock.method(AIUsageEvent, 'find', () => ({
+    select() { return this; },
+    sort() { return this; },
+    limit() { return this; },
+    async lean() {
+      return [{
+        _id: 'usage-1',
+        requestId: 'request-1',
+        provider: 'local-ollama',
+        activity: 'candidate.cv_parse',
+        organizationName: 'Example Ltd',
+        actorName: 'Ada Recruiter',
+        status: 'success'
+      }];
+    }
+  }));
+
+  const result = await getLiveOperations();
+  assert.equal(result.totals.hour.calls, 8);
+  assert.equal(result.totals.hour.successRate, 87.5);
+  assert.equal(result.providers[1].id, 'local-ollama');
+  assert.equal(result.recent[0].organizationName, 'Example Ltd');
+  assert.equal(result.recent[0].actorName, 'Ada Recruiter');
 });
 
 function mockUsageQuery(value) {

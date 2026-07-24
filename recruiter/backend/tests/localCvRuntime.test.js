@@ -175,6 +175,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       body: JSON.stringify({ concurrency: 3, paused: true })
     });
     const telemetryBody = JSON.stringify({
+      schemaVersion: 2,
       waiting: 7,
       active: 1,
       delayed: 2,
@@ -182,7 +183,28 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       failed: 0,
       oldestWaitMs: 1_500,
       paused: false,
-      workerConcurrency: 1
+      workerConcurrency: 1,
+      available: true,
+      queue: 'cv-analysis-local',
+      sampledAt: '2026-07-24T10:00:00.000Z',
+      counts: { waiting: 7, waitingTotal: 7, active: 1, delayed: 2, completed: 4, failed: 0 },
+      durable: { queued: 5, waitingForRuntime: 2, processing: 1, completed: 4, failed: 0, retrying: 1 },
+      rates: { completedLast5Minutes: 2, completedLastHour: 4, failedLastHour: 0, averageProcessingMs: 8_000, p95ProcessingMs: 12_000 },
+      worker: { running: true, concurrency: 1, active: 1, availableSlots: 0, utilizationPercent: 100 },
+      oldestQueuedAt: '2026-07-24T09:59:58.500Z',
+      recentJobs: [{
+        jobId: 'job_demo_123',
+        source: 'ai-interview',
+        state: 'waiting_for_local_runtime',
+        progress: 20,
+        attempts: 2,
+        createdAt: '2026-07-24T09:59:58.500Z',
+        updatedAt: '2026-07-24T10:00:00.000Z',
+        waitMs: 1_500,
+        processingMs: null,
+        errorCode: 'LOCAL_LLM_PAUSED',
+        originalName: 'must-not-cross-the-gateway.pdf'
+      }]
     });
     const telemetrySignature = signLocalRequest(secret, telemetryBody);
     const telemetry = await fetch(`http://127.0.0.1:${gatewayPort}/v1/queue-telemetry`, {
@@ -201,6 +223,13 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       desiredConcurrency: 3,
       desiredPaused: true
     });
+    const queueStatus = await (await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).json();
+    assert.equal(queueStatus.queue.schemaVersion, 2);
+    assert.equal(queueStatus.queue.durable.waitingForRuntime, 2);
+    assert.equal(queueStatus.queue.rates.p95ProcessingMs, 12_000);
+    assert.equal(queueStatus.queue.worker.utilizationPercent, 100);
+    assert.equal(queueStatus.queue.recentJobs[0].jobId, 'job_demo_123');
+    assert.equal(Object.hasOwn(queueStatus.queue.recentJobs[0], 'originalName'), false);
     await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },

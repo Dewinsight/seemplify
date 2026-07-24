@@ -19,6 +19,8 @@ const {
   validateQuotaGroupInput
 } = require('./aiRuntime/quotaGroupValidation');
 
+let liveOperationsCache = { expiresAt: 0, value: null, promise: null };
+
 function serializeCredential(credential) {
   const raw = typeof credential?.toObject === 'function' ? credential.toObject() : credential;
   if (!raw) return null;
@@ -575,6 +577,111 @@ function percentile(sorted, value) {
   return sorted[Math.max(0, index)];
 }
 
+function regexEscape(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function notFound(message) {
+  const error = new Error(message);
+  error.statusCode = 404;
+  return error;
+}
+
+function liveSummary(row = {}) {
+  const calls = Number(row.calls || 0);
+  const failures = Number(row.failures || 0);
+  return {
+    calls,
+    successes: Number(row.successes || 0),
+    failures,
+    successRate: calls ? Number((((calls - failures) / calls) * 100).toFixed(1)) : 0,
+    tokens: Number(row.tokens || 0),
+    estimatedCostUsd: Number(Number(row.cost || 0).toFixed(6)),
+    averageLatencyMs: Math.round(Number(row.averageLatencyMs || 0)),
+    maxLatencyMs: Number(row.maxLatencyMs || 0),
+    failovers: Number(row.failovers || 0)
+  };
+}
+
+async function queryLiveOperations() {
+  const sampledAt = new Date();
+  const oneHourAgo = new Date(sampledAt.getTime() - 60 * 60_000);
+  const fiveMinutesAgo = new Date(sampledAt.getTime() - 5 * 60_000);
+  const groupedMetrics = {
+    calls: { $sum: 1 },
+    successes: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
+    failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+    tokens: { $sum: '$totalTokens' },
+    cost: { $sum: '$estimatedCostUsd' },
+    averageLatencyMs: { $avg: '$latencyMs' },
+    maxLatencyMs: { $max: '$latencyMs' },
+    failovers: { $sum: '$failovers' }
+  };
+  const [facets, recent] = await Promise.all([
+    AIUsageEvent.aggregate([
+      { $match: { createdAt: { $gte: oneHourAgo } } },
+      { $facet: {
+        hour: [{ $group: { _id: null, ...groupedMetrics } }],
+        fiveMinutes: [
+          { $match: { createdAt: { $gte: fiveMinutesAgo } } },
+          { $group: { _id: null, ...groupedMetrics } }
+        ],
+        providers: [
+          { $group: { _id: '$provider', ...groupedMetrics, lastRequestAt: { $max: '$createdAt' } } },
+          { $sort: { calls: -1 } }
+        ],
+        activities: [
+          { $group: { _id: '$activity', ...groupedMetrics, lastRequestAt: { $max: '$createdAt' } } },
+          { $sort: { calls: -1 } },
+          { $limit: 12 }
+        ],
+        timeline: [
+          { $group: {
+            _id: { $dateToString: { date: '$createdAt', format: '%Y-%m-%dT%H:%M:00Z', timezone: 'UTC' } },
+            calls: { $sum: 1 },
+            failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } }
+          } },
+          { $sort: { _id: 1 } }
+        ]
+      } }
+    ]),
+    AIUsageEvent.find({ createdAt: { $gte: oneHourAgo } })
+      .select('requestId sourceApp activity provider model status organizationId organizationName actorId actorName actorEmail latencyMs totalTokens estimatedCostUsd failovers errorCode createdAt')
+      .sort({ createdAt: -1 })
+      .limit(12)
+      .lean()
+  ]);
+  const data = facets[0] || {};
+  return {
+    sampledAt: sampledAt.toISOString(),
+    windowMinutes: 60,
+    totals: {
+      fiveMinutes: liveSummary(data.fiveMinutes?.[0]),
+      hour: liveSummary(data.hour?.[0])
+    },
+    providers: (data.providers || []).map((row) => ({ id: row._id || 'unknown', ...liveSummary(row), lastRequestAt: row.lastRequestAt })),
+    activities: (data.activities || []).map((row) => ({ id: row._id || 'unknown', ...liveSummary(row), lastRequestAt: row.lastRequestAt })),
+    timeline: (data.timeline || []).map((row) => ({ minute: row._id, calls: Number(row.calls || 0), failures: Number(row.failures || 0) })),
+    recent
+  };
+}
+
+async function getLiveOperations() {
+  const now = Date.now();
+  if (liveOperationsCache.value && liveOperationsCache.expiresAt > now) return liveOperationsCache.value;
+  if (liveOperationsCache.promise) return liveOperationsCache.promise;
+  liveOperationsCache.promise = queryLiveOperations()
+    .then((value) => {
+      liveOperationsCache = { value, expiresAt: Date.now() + 2_000, promise: null };
+      return value;
+    })
+    .catch((error) => {
+      liveOperationsCache.promise = null;
+      throw error;
+    });
+  return liveOperationsCache.promise;
+}
+
 async function getOverview({ range = '30d' } = {}) {
   const start = rangeStart(range);
   const detailStart = start || rangeStart('90d');
@@ -626,6 +733,19 @@ async function listRequests(query = {}) {
   if (query.sourceApp) filter.sourceApp = query.sourceApp;
   if (query.organizationId) filter.organizationId = query.organizationId;
   if (query.actorId) filter.actorId = query.actorId;
+  if (query.provider) filter.provider = query.provider;
+  if (query.search) {
+    const search = new RegExp(regexEscape(query.search).slice(0, 200), 'i');
+    filter.$or = [
+      { requestId: search },
+      { activity: search },
+      { model: search },
+      { organizationName: search },
+      { actorName: search },
+      { actorEmail: search },
+      { errorCode: search }
+    ];
+  }
   const requestedRange = query.range || '30d';
   const start = rangeStart(requestedRange === 'all' ? '90d' : requestedRange);
   if (start) filter.createdAt = { $gte: start };
@@ -669,11 +789,24 @@ async function listRequests(query = {}) {
   };
 }
 
+async function getRequestDetail(id) {
+  if (!/^[a-f\d]{24}$/i.test(String(id || ''))) throw notFound('AI request was not found');
+  const item = await AIUsageEvent.findById(id).select('-rateLimit.providerPayload').lean();
+  if (!item) throw notFound('AI request was not found');
+  return redactGroqApiKeys(item);
+}
+
 async function listAuditEvents(query = {}) {
   const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
   const limit = Math.min(100, Math.max(10, Number.parseInt(query.limit, 10) || 50));
   const filter = {};
   if (query.category) filter.category = query.category;
+  if (query.status) filter.status = query.status;
+  if (query.action) filter.action = query.action;
+  if (query.search) {
+    const search = new RegExp(regexEscape(query.search).slice(0, 200), 'i');
+    filter.$or = [{ action: search }, { message: search }, { actorEmail: search }, { targetId: search }];
+  }
   const [items, total] = await Promise.all([
     AIAuditEvent.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     AIAuditEvent.countDocuments(filter)
@@ -684,11 +817,21 @@ async function listAuditEvents(query = {}) {
   };
 }
 
+async function getAuditDetail(id) {
+  if (!/^[a-f\d]{24}$/i.test(String(id || ''))) throw notFound('AI audit event was not found');
+  const item = await AIAuditEvent.findById(id).lean();
+  if (!item) throw notFound('AI audit event was not found');
+  return redactGroqApiKeys(item);
+}
+
 module.exports = {
   assessRouting,
   createCredential,
   createQuotaGroup,
+  getAuditDetail,
+  getLiveOperations,
   getOverview,
+  getRequestDetail,
   getRuntimeSettings,
   listAuditEvents,
   listCredentials,

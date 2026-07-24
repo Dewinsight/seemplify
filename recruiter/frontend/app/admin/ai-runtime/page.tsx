@@ -77,6 +77,7 @@ import { parseServerSentEventBuffer } from '@/lib/queueTelemetryStream';
 
 type RangeKey = '7d' | '30d' | '90d' | 'all';
 type TabKey = 'overview' | 'local' | 'test' | 'routing' | 'credentials' | 'requests' | 'alerts';
+type DetailKind = 'request' | 'queue' | 'audit';
 
 interface RuntimeModel {
   id: string;
@@ -196,6 +197,11 @@ interface LocalQueueStatus {
     waitMs: number | null;
     processingMs: number | null;
     errorCode: string | null;
+    organization: { id: string; name: string };
+    uploader: { id: string; name: string; email: string; type: 'member' | 'public' };
+    application: { id: string; title: string } | null;
+    candidate: { id: string; name: string; email: string } | null;
+    file: { name: string; type: string; size: number };
   }>;
 }
 
@@ -270,6 +276,28 @@ interface RuntimeOverview {
   organizations: UsageBreakdown[];
   actors: UsageBreakdown[];
   quotas: QuotaSnapshot[];
+}
+
+interface LiveMetric {
+  calls: number;
+  successes: number;
+  failures: number;
+  successRate: number;
+  tokens: number;
+  estimatedCostUsd: number;
+  averageLatencyMs: number;
+  maxLatencyMs: number;
+  failovers: number;
+}
+
+interface LiveOperations {
+  sampledAt: string;
+  windowMinutes: number;
+  totals: { fiveMinutes: LiveMetric; hour: LiveMetric };
+  providers: Array<LiveMetric & { id: string; lastRequestAt?: string }>;
+  activities: Array<LiveMetric & { id: string; lastRequestAt?: string }>;
+  timeline: Array<{ minute: string; calls: number; failures: number }>;
+  recent: UsageRequest[];
 }
 
 interface RuntimeTestResult {
@@ -369,6 +397,19 @@ interface AuditEvent {
   status: string;
   message: string;
   actorEmail?: string;
+  targetType?: string;
+  targetId?: string;
+  model?: string;
+  quotaGroup?: string;
+  metadata?: Record<string, unknown>;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+interface DetailSelection {
+  kind: DetailKind;
+  id: string;
+  title: string;
 }
 
 function formatNumber(value: number | undefined, digits = 0) {
@@ -402,6 +443,14 @@ function formatDuration(value?: number | null) {
   return `${hours}h ${minutes % 60}m`;
 }
 
+function formatFileSize(value?: number | null) {
+  const bytes = Number(value || 0);
+  if (!bytes) return '0 B';
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
 function queueStateClass(state: string) {
   if (state === 'completed') return 'text-green-300';
   if (state === 'failed') return 'text-red-300';
@@ -426,8 +475,8 @@ async function adminJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const healthy = ['healthy', 'success', 'sent'].includes(status);
-  const warning = ['unknown', 'degraded', 'suppressed', 'paused'].includes(status);
+  const healthy = ['healthy', 'success', 'sent', 'live'].includes(status);
+  const warning = ['unknown', 'degraded', 'suppressed', 'paused', 'connecting', 'reconnecting'].includes(status);
   return (
     <Badge className={healthy
       ? 'border-green-700 bg-green-950 text-green-300'
@@ -447,6 +496,9 @@ export default function AIRuntimeAdminPage() {
   const [tab, setTab] = useState<TabKey>('overview');
   const [range, setRange] = useState<RangeKey>('30d');
   const [overview, setOverview] = useState<RuntimeOverview | null>(null);
+  const [liveOperations, setLiveOperations] = useState<LiveOperations | null>(null);
+  const [liveConnection, setLiveConnection] = useState<'connecting' | 'live' | 'reconnecting'>('connecting');
+  const [liveError, setLiveError] = useState('');
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
   const [localRuntime, setLocalRuntime] = useState<LocalRuntimeStatus | null>(null);
   const [localQueue, setLocalQueue] = useState<LocalQueueStatus | null>(null);
@@ -461,6 +513,8 @@ export default function AIRuntimeAdminPage() {
   const [auditPage, setAuditPage] = useState(1);
   const [auditPages, setAuditPages] = useState(1);
   const [requestStatus, setRequestStatus] = useState('all');
+  const [requestProvider, setRequestProvider] = useState('all');
+  const [requestSearch, setRequestSearch] = useState('');
   const [organizationFilter, setOrganizationFilter] = useState('');
   const [actorFilter, setActorFilter] = useState('');
   const [loading, setLoading] = useState(true);
@@ -477,6 +531,9 @@ export default function AIRuntimeAdminPage() {
   const [testResult, setTestResult] = useState<RuntimeTestResult | null>(null);
   const [testError, setTestError] = useState('');
   const [alertForm, setAlertForm] = useState({ enabled: true, recipients: '', monthlyBudgetUsd: '' });
+  const [detailSelection, setDetailSelection] = useState<DetailSelection | null>(null);
+  const [detailData, setDetailData] = useState<Record<string, unknown> | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const definitions = useMemo(() => new Map(
     (settings?.activityDefinitions || []).map((item) => [item.activity, item])
@@ -534,6 +591,10 @@ export default function AIRuntimeAdminPage() {
     setOverview(data);
   }, [range]);
 
+  const loadLiveOperations = useCallback(async () => {
+    setLiveOperations(await adminJson<LiveOperations>('/api/admin/ai-runtime/live'));
+  }, []);
+
   const loadSettings = useCallback(async () => {
     if (!canConfigure) return;
     const [runtime, credentialData] = await Promise.all([
@@ -566,13 +627,15 @@ export default function AIRuntimeAdminPage() {
   const loadRequests = useCallback(async () => {
     const params = new URLSearchParams({ range, page: String(requestPage), limit: '25' });
     if (requestStatus !== 'all') params.set('status', requestStatus);
+    if (requestProvider !== 'all') params.set('provider', requestProvider);
+    if (requestSearch.trim()) params.set('search', requestSearch.trim());
     if (organizationFilter) params.set('organizationId', organizationFilter);
     if (actorFilter) params.set('actorId', actorFilter);
     const data = await adminJson<{ items: UsageRequest[]; summary: RequestSummary; pagination: { pages: number } }>(`/api/admin/ai-runtime/requests?${params}`);
     setRequests(data.items);
     setRequestSummary(data.summary);
     setRequestPages(Math.max(1, data.pagination.pages));
-  }, [actorFilter, organizationFilter, range, requestPage, requestStatus]);
+  }, [actorFilter, organizationFilter, range, requestPage, requestProvider, requestSearch, requestStatus]);
 
   const loadAudits = useCallback(async () => {
     const data = await adminJson<{ items: AuditEvent[]; pagination: { pages: number } }>(`/api/admin/ai-runtime/audit?page=${auditPage}&limit=25`);
@@ -583,19 +646,72 @@ export default function AIRuntimeAdminPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      await Promise.all([loadOverview(), loadSettings(), loadAudits(), loadLocalRuntime()]);
+      await Promise.all([loadOverview(), loadLiveOperations(), loadSettings(), loadAudits(), loadLocalRuntime()]);
       if (tab === 'requests') await loadRequests();
     } catch (error) {
       toast({ title: 'Unable to load AI runtime', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
-  }, [loadAudits, loadLocalRuntime, loadOverview, loadRequests, loadSettings, tab, toast]);
+  }, [loadAudits, loadLiveOperations, loadLocalRuntime, loadOverview, loadRequests, loadSettings, tab, toast]);
 
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
+    let stopped = false;
+    let reconnectTimer: number | undefined;
+    let activeController: AbortController | null = null;
+    const connect = async () => {
+      if (stopped) return;
+      setLiveConnection((current) => current === 'live' ? 'reconnecting' : 'connecting');
+      activeController = new AbortController();
+      try {
+        const token = localStorage.getItem('adminToken') || '';
+        const response = await apiRequest('/api/admin/ai-runtime/live/stream', {
+          headers: { Accept: 'text/event-stream', 'x-admin-auth-token': token },
+          signal: activeController.signal
+        });
+        if (!response.ok || !response.body) throw new Error(`Live operations stream returned HTTP ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        setLiveConnection('live');
+        setLiveError('');
+        while (!stopped) {
+          const { done, value } = await reader.read();
+          if (done) throw new Error('Live operations stream ended');
+          buffer += decoder.decode(value, { stream: true });
+          const parsed = parseServerSentEventBuffer(buffer);
+          buffer = parsed.remainder;
+          for (const frame of parsed.frames) {
+            if (frame.event === 'snapshot') {
+              setLiveOperations(JSON.parse(frame.data) as LiveOperations);
+              setLiveConnection('live');
+              setLiveError('');
+            } else if (frame.event === 'telemetry-error') {
+              setLiveError(JSON.parse(frame.data)?.message || 'Live AI telemetry is temporarily unavailable');
+            }
+          }
+        }
+      } catch (error) {
+        if (stopped || (error instanceof DOMException && error.name === 'AbortError')) return;
+        setLiveConnection('reconnecting');
+        setLiveError(error instanceof Error ? error.message : 'Live operations connection failed');
+        reconnectTimer = window.setTimeout(() => void connect(), 3_000);
+      }
+    };
+    void connect();
+    return () => {
+      stopped = true;
+      activeController?.abort();
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+    };
+  }, []);
+  useEffect(() => {
     if (tab !== 'requests') return;
-    loadRequests().catch((error) => toast({ title: 'Unable to load requests', description: error.message, variant: 'destructive' }));
+    const timer = window.setTimeout(() => {
+      loadRequests().catch((error) => toast({ title: 'Unable to load requests', description: error.message, variant: 'destructive' }));
+    }, 250);
+    return () => window.clearTimeout(timer);
   }, [loadRequests, tab, toast]);
   useEffect(() => {
     if (tab !== 'local') return;
@@ -913,6 +1029,29 @@ export default function AIRuntimeAdminPage() {
     setTab('requests');
   }
 
+  async function openOperationalDetail(kind: DetailKind, id: string, title: string) {
+    setDetailSelection({ kind, id, title });
+    setDetailData(null);
+    setDetailLoading(true);
+    const path = kind === 'request'
+      ? `/api/admin/ai-runtime/requests/${encodeURIComponent(id)}`
+      : kind === 'queue'
+        ? `/api/admin/ai-runtime/local/queue/jobs/${encodeURIComponent(id)}`
+        : `/api/admin/ai-runtime/audit/${encodeURIComponent(id)}`;
+    try {
+      setDetailData(await adminJson<Record<string, unknown>>(path));
+    } catch (error) {
+      toast({
+        title: 'Unable to load audit detail',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive'
+      });
+      setDetailSelection(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   const stats = overview?.totals;
 
   return (
@@ -949,6 +1088,7 @@ export default function AIRuntimeAdminPage() {
                 <p className="mt-1 text-sm text-gray-400">Groq for general AI; signed managed local or local-cloud routing and a durable queue for CV extraction.</p>
               </div>
               <div className="flex items-center gap-2">
+                <StatusBadge status={liveConnection} />
                 <Select value={range} onValueChange={(value) => setRange(value as RangeKey)}>
                   <SelectTrigger className="w-32 border-gray-700 bg-gray-900 text-gray-200"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="7d">7 days</SelectItem><SelectItem value="30d">30 days</SelectItem><SelectItem value="90d">90 days</SelectItem><SelectItem value="all">All time</SelectItem></SelectContent>
@@ -967,7 +1107,7 @@ export default function AIRuntimeAdminPage() {
                   {canConfigure && <TabsTrigger value="test" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Test</TabsTrigger>}
                   {canConfigure && <TabsTrigger value="routing" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Routing</TabsTrigger>}
                   {canConfigure && <TabsTrigger value="credentials" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Credentials</TabsTrigger>}
-                  <TabsTrigger value="requests" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Requests</TabsTrigger>
+                  <TabsTrigger value="requests" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Activity audit</TabsTrigger>
                   <TabsTrigger value="alerts" className="h-11 rounded-none border-b-2 border-transparent bg-transparent text-gray-400 data-[state=active]:border-blue-500 data-[state=active]:bg-transparent data-[state=active]:text-white">Alerts</TabsTrigger>
                 </TabsList>
               </div>
@@ -975,6 +1115,13 @@ export default function AIRuntimeAdminPage() {
               <TabsContent value="overview" className="mt-5 space-y-5">
                 {loading && !overview ? <div className="flex h-48 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-400" /></div> : (
                   <>
+                    <LiveOperationsPanel
+                      data={liveOperations}
+                      connection={liveConnection}
+                      error={liveError}
+                      definitions={definitions}
+                      onInspect={(request) => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)}
+                    />
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
                       {[
                         { label: 'Calls', value: formatNumber(stats?.calls), icon: Activity },
@@ -1185,13 +1332,15 @@ export default function AIRuntimeAdminPage() {
                   </div>
                   <div className="px-4 py-3">
                     <h3 className="text-sm font-medium text-white">Recent jobs</h3>
-                    <p className="mt-1 text-xs text-gray-500">Operational IDs only; candidate names and CV filenames are not exposed here.</p>
+                    <p className="mt-1 text-xs text-gray-500">Admin-only attribution for operational investigation. Select a row to inspect the complete processing audit.</p>
                   </div>
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow className="border-gray-800">
                           <TableHead>Job</TableHead>
+                          <TableHead>Organization / uploader</TableHead>
+                          <TableHead>CV</TableHead>
                           <TableHead>Source</TableHead>
                           <TableHead>State</TableHead>
                           <TableHead>Progress</TableHead>
@@ -1203,8 +1352,20 @@ export default function AIRuntimeAdminPage() {
                       </TableHeader>
                       <TableBody>
                         {(localQueue?.recentJobs || []).map((job) => (
-                          <TableRow key={job.jobId} className="border-gray-800">
+                          <TableRow
+                            key={job.jobId}
+                            className="cursor-pointer border-gray-800 hover:bg-gray-800/70"
+                            onClick={() => void openOperationalDetail('queue', job.jobId, `CV queue job ${job.jobId}`)}
+                          >
                             <TableCell className="font-mono text-xs text-gray-300" title={job.jobId}>{job.jobId.slice(0, 15)}</TableCell>
+                            <TableCell>
+                              <div className="font-medium text-gray-200">{job.organization?.name || 'Unknown organization'}</div>
+                              <div className="text-xs text-gray-500">{job.uploader?.name || 'Unknown uploader'}{job.uploader?.email ? ` · ${job.uploader.email}` : ''}</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="max-w-56 truncate text-sm text-gray-300" title={job.file?.name}>{job.file?.name || 'Not reported'}</div>
+                              <div className="text-xs text-gray-500">{job.application?.title || job.candidate?.name || 'No job linked'}</div>
+                            </TableCell>
                             <TableCell>{job.source.replace('-', ' ')}</TableCell>
                             <TableCell>
                               <div className={`font-medium ${queueStateClass(job.state)}`}>{job.state.replace(/_/g, ' ')}</div>
@@ -1219,7 +1380,7 @@ export default function AIRuntimeAdminPage() {
                         ))}
                         {!localQueue?.recentJobs?.length && (
                           <TableRow>
-                            <TableCell colSpan={8} className="h-20 text-center text-gray-500">No CV processing jobs have been recorded.</TableCell>
+                            <TableCell colSpan={10} className="h-20 text-center text-gray-500">No CV processing jobs have been recorded.</TableCell>
                           </TableRow>
                         )}
                       </TableBody>
@@ -1364,7 +1525,25 @@ export default function AIRuntimeAdminPage() {
 
               <TabsContent value="requests" className="mt-5 space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex flex-wrap gap-2"><Select value={requestStatus} onValueChange={(value) => { setRequestStatus(value); setRequestPage(1); }}><SelectTrigger className="w-36 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="success">Success</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent></Select>{organizationFilter && <Button variant="outline" onClick={() => setOrganizationFilter('')} className="border-gray-700">Clear organization</Button>}{actorFilter && <Button variant="outline" onClick={() => setActorFilter('')} className="border-gray-700">Clear person</Button>}</div>
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      value={requestSearch}
+                      onChange={(event) => { setRequestSearch(event.target.value); setRequestPage(1); }}
+                      placeholder="Search person, company, activity or request"
+                      aria-label="Search AI activity audit"
+                      className="w-full border-gray-700 bg-gray-900 sm:w-72"
+                    />
+                    <Select value={requestProvider} onValueChange={(value) => { setRequestProvider(value); setRequestPage(1); }}>
+                      <SelectTrigger className="w-40 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="all">All providers</SelectItem><SelectItem value="groq">Groq</SelectItem><SelectItem value="local-ollama">Managed local</SelectItem><SelectItem value="azure-openai">Azure</SelectItem></SelectContent>
+                    </Select>
+                    <Select value={requestStatus} onValueChange={(value) => { setRequestStatus(value); setRequestPage(1); }}>
+                      <SelectTrigger className="w-36 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="success">Success</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent>
+                    </Select>
+                    {organizationFilter && <Button variant="outline" onClick={() => setOrganizationFilter('')} className="border-gray-700">Clear organization</Button>}
+                    {actorFilter && <Button variant="outline" onClick={() => setActorFilter('')} className="border-gray-700">Clear person</Button>}
+                  </div>
                   <span className="text-xs text-gray-500">Detailed events are retained for 90 days.</span>
                 </div>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
@@ -1377,7 +1556,7 @@ export default function AIRuntimeAdminPage() {
                 </section>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="overflow-x-auto"><Table>
                   <TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Activity</TableHead><TableHead>Application</TableHead><TableHead>Organization / person</TableHead><TableHead>Model</TableHead><TableHead>Tokens</TableHead><TableHead>Est. cost</TableHead><TableHead>Attempts</TableHead><TableHead>Latency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>{requests.map((request) => <TableRow key={request._id} className="border-gray-800"><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{request.provider}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell>{formatNumber(request.totalTokens)}</TableCell><TableCell>${formatNumber(request.estimatedCostUsd, 6)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>{requests.map((request) => <TableRow key={request._id} className="cursor-pointer border-gray-800 hover:bg-gray-800/70" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{request.provider}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell>{formatNumber(request.totalTokens)}</TableCell><TableCell>${formatNumber(request.estimatedCostUsd, 6)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
                 </Table></div>{!requests.length && <div className="py-16 text-center text-sm text-gray-500">No requests match these filters.</div>}</section>
                 <div className="flex items-center justify-end gap-2"><Button variant="outline" size="icon" disabled={requestPage <= 1} onClick={() => setRequestPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{requestPage} of {requestPages}</span><Button variant="outline" size="icon" disabled={requestPage >= requestPages} onClick={() => setRequestPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div>
               </TabsContent>
@@ -1387,12 +1566,33 @@ export default function AIRuntimeAdminPage() {
                   <div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="text-sm font-semibold text-white">Notifications</h2><p className="mt-1 text-xs text-gray-500">Daily quota, monthly estimate, credential health, and recovery emails.</p></div><Switch checked={alertForm.enabled} onCheckedChange={(enabled) => setAlertForm((form) => ({ ...form, enabled }))} /></div>
                   <div className="space-y-4"><div className="space-y-2"><Label htmlFor="alert-recipients">Additional recipients</Label><Input id="alert-recipients" value={alertForm.recipients} onChange={(event) => setAlertForm((form) => ({ ...form, recipients: event.target.value }))} placeholder="ops@example.com, finance@example.com" className="border-gray-700 bg-gray-950" /><p className="text-xs text-gray-500">Active super admins are always included.</p></div><div className="space-y-2"><Label htmlFor="monthly-budget">Monthly estimated budget (USD)</Label><Input id="monthly-budget" type="number" min="0" step="0.01" value={alertForm.monthlyBudgetUsd} onChange={(event) => setAlertForm((form) => ({ ...form, monthlyBudgetUsd: event.target.value }))} placeholder="No budget limit" className="border-gray-700 bg-gray-950" /></div><Button type="submit" disabled={busy === 'alerts'} className="w-full"><Save className="mr-2 h-4 w-4" />Save alert settings</Button></div>
                 </form> : <div className="h-fit rounded-md border border-gray-800 bg-gray-900 p-5"><ShieldAlert className="h-5 w-5 text-amber-400" /><p className="mt-3 text-sm text-gray-300">System settings permission is required to change alert rules.</p></div>}
-                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Alert and audit history</h2></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Category</TableHead><TableHead>Event</TableHead><TableHead>Status</TableHead><TableHead>Admin</TableHead></TableRow></TableHeader><TableBody>{audits.map((event) => <TableRow key={event._id} className="border-gray-800"><TableCell className="whitespace-nowrap text-gray-400">{formatDate(event.createdAt)}</TableCell><TableCell>{event.category}</TableCell><TableCell><div>{event.message}</div><div className="text-xs text-gray-500">{event.action}</div></TableCell><TableCell><StatusBadge status={event.status} /></TableCell><TableCell className="text-gray-400">{event.actorEmail || 'System'}</TableCell></TableRow>)}</TableBody></Table></div>{!audits.length && <div className="py-16 text-center text-sm text-gray-500">No alert or configuration events yet.</div>}<div className="flex items-center justify-end gap-2 border-t border-gray-800 px-4 py-3"><Button variant="outline" size="icon" disabled={auditPage <= 1} onClick={() => setAuditPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{auditPage} of {auditPages}</span><Button variant="outline" size="icon" disabled={auditPage >= auditPages} onClick={() => setAuditPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div></section>
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Alert and configuration audit</h2><p className="mt-1 text-xs text-gray-500">Select any record to inspect its actor, target, status and redacted metadata.</p></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Category</TableHead><TableHead>Event</TableHead><TableHead>Target</TableHead><TableHead>Status</TableHead><TableHead>Admin</TableHead></TableRow></TableHeader><TableBody>{audits.map((event) => <TableRow key={event._id} className="cursor-pointer border-gray-800 hover:bg-gray-800/70" onClick={() => void openOperationalDetail('audit', event._id, `Audit event ${event.action}`)}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(event.createdAt)}</TableCell><TableCell>{event.category}</TableCell><TableCell><div>{event.message}</div><div className="text-xs text-gray-500">{event.action}</div></TableCell><TableCell><div>{event.targetType || 'Runtime'}</div><div className="max-w-56 truncate font-mono text-xs text-gray-500">{event.targetId || 'global'}</div></TableCell><TableCell><StatusBadge status={event.status} /></TableCell><TableCell className="text-gray-400">{event.actorEmail || 'System'}</TableCell></TableRow>)}</TableBody></Table></div>{!audits.length && <div className="py-16 text-center text-sm text-gray-500">No alert or configuration events yet.</div>}<div className="flex items-center justify-end gap-2 border-t border-gray-800 px-4 py-3"><Button variant="outline" size="icon" disabled={auditPage <= 1} onClick={() => setAuditPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{auditPage} of {auditPages}</span><Button variant="outline" size="icon" disabled={auditPage >= auditPages} onClick={() => setAuditPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div></section>
               </TabsContent>
             </Tabs>
           </div>
         </main>
       </div>
+
+      <Dialog open={Boolean(detailSelection)} onOpenChange={(open) => {
+        if (!open) {
+          setDetailSelection(null);
+          setDetailData(null);
+        }
+      }}>
+        <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto border-gray-700 bg-gray-900 text-gray-100">
+          <DialogHeader>
+            <DialogTitle>{detailSelection?.title || 'Operational audit detail'}</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Admin-only runtime metadata. Prompts, CV contents and provider credentials are not included.
+            </DialogDescription>
+          </DialogHeader>
+          {detailLoading
+            ? <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-blue-400" /></div>
+            : detailSelection && detailData
+              ? <OperationalDetail kind={detailSelection.kind} data={detailData} />
+              : <div className="py-12 text-center text-sm text-gray-500">No detail is available.</div>}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(credentialDialog)} onOpenChange={(open) => !open && closeCredentialDialog()}>
         <DialogContent className="border-gray-700 bg-gray-900 text-gray-100">
@@ -1469,6 +1669,243 @@ export default function AIRuntimeAdminPage() {
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function LiveOperationsPanel({
+  data,
+  connection,
+  error,
+  definitions,
+  onInspect
+}: {
+  data: LiveOperations | null;
+  connection: 'connecting' | 'live' | 'reconnecting';
+  error: string;
+  definitions: Map<string, ActivityDefinition>;
+  onInspect: (request: UsageRequest) => void;
+}) {
+  const five = data?.totals.fiveMinutes;
+  const hour = data?.totals.hour;
+  const timeline = (data?.timeline || []).slice(-30);
+  const peak = Math.max(1, ...timeline.map((point) => point.calls));
+  return (
+    <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+      <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-white">Live operations</h2>
+            <StatusBadge status={connection} />
+          </div>
+          <p className="mt-1 text-xs text-gray-500">All Groq and managed-local AI activity, refreshed every three seconds.</p>
+        </div>
+        <div className="text-xs text-gray-500">{error || `Sampled ${formatTime(data?.sampledAt)}`}</div>
+      </div>
+      <dl className="grid gap-px border-b border-gray-800 bg-gray-800 sm:grid-cols-3 xl:grid-cols-6">
+        {[
+          ['Calls · 5 min', formatNumber(five?.calls)],
+          ['Failures · 5 min', formatNumber(five?.failures)],
+          ['Calls · 1 hour', formatNumber(hour?.calls)],
+          ['Success · 1 hour', `${formatNumber(hour?.successRate, 1)}%`],
+          ['Average latency', `${formatNumber(hour?.averageLatencyMs)} ms`],
+          ['Tokens · 1 hour', formatNumber(hour?.tokens)]
+        ].map(([label, value]) => (
+          <div key={label} className="bg-gray-900 px-4 py-3">
+            <dt className="text-xs text-gray-500">{label}</dt>
+            <dd className="mt-1 text-base font-semibold text-gray-100">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="border-b border-gray-800 px-4 py-3">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-medium text-white">Request volume · last 30 minutes</h3>
+            <p className="mt-1 text-xs text-gray-500">Red segments are failed calls.</p>
+          </div>
+          <span className="text-xs text-gray-500">Peak {formatNumber(peak)} / min</span>
+        </div>
+        <div className="mt-3 flex h-20 items-end gap-1" aria-label="AI requests by minute">
+          {timeline.map((point) => {
+            const totalHeight = Math.max(4, Math.round((point.calls / peak) * 72));
+            const failureHeight = point.calls ? Math.round((point.failures / point.calls) * totalHeight) : 0;
+            return (
+              <div key={point.minute} className="group relative flex min-w-0 flex-1 flex-col justify-end" style={{ height: `${totalHeight}px` }} title={`${formatTime(point.minute)}: ${point.calls} calls, ${point.failures} failed`}>
+                <div className="w-full bg-blue-500/70" style={{ height: `${Math.max(0, totalHeight - failureHeight)}px` }} />
+                {failureHeight > 0 && <div className="w-full bg-red-500/80" style={{ height: `${failureHeight}px` }} />}
+              </div>
+            );
+          })}
+          {!timeline.length && <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">No AI activity in the last hour.</div>}
+        </div>
+      </div>
+      <div className="grid xl:grid-cols-2">
+        <div className="border-b border-gray-800 xl:border-b-0 xl:border-r">
+          <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-medium text-white">Provider health · 1 hour</h3></div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow className="border-gray-800"><TableHead>Provider</TableHead><TableHead>Calls</TableHead><TableHead>Success</TableHead><TableHead>Avg / max</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {(data?.providers || []).map((provider) => (
+                  <TableRow key={provider.id} className="border-gray-800">
+                    <TableCell><div className="font-medium text-gray-200">{provider.id === 'local-ollama' ? 'Managed local' : provider.id}</div><div className="text-xs text-gray-500">{formatTime(provider.lastRequestAt)}</div></TableCell>
+                    <TableCell>{formatNumber(provider.calls)}</TableCell>
+                    <TableCell className={provider.failures ? 'text-amber-300' : 'text-green-300'}>{formatNumber(provider.successRate, 1)}%</TableCell>
+                    <TableCell>{formatNumber(provider.averageLatencyMs)} / {formatNumber(provider.maxLatencyMs)} ms</TableCell>
+                    <TableCell>${formatNumber(provider.estimatedCostUsd, 6)}</TableCell>
+                  </TableRow>
+                ))}
+                {!data?.providers.length && <TableRow><TableCell colSpan={5} className="h-20 text-center text-gray-500">No provider calls in the last hour.</TableCell></TableRow>}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+        <div>
+          <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-medium text-white">Latest AI activity</h3></div>
+          <div className="divide-y divide-gray-800">
+            {(data?.recent || []).slice(0, 8).map((request) => (
+              <button key={request._id} type="button" onClick={() => onInspect(request)} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-gray-800/70">
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-gray-200">{definitions.get(request.activity)?.label || request.activity}</div>
+                  <div className="truncate text-xs text-gray-500">{request.organizationName || 'No organization'} · {request.actorName || request.actorEmail || 'System'} · {request.provider}</div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <StatusBadge status={request.status} />
+                  <div className="mt-1 text-xs text-gray-500">{formatTime(request.createdAt)}</div>
+                </div>
+              </button>
+            ))}
+            {!data?.recent.length && <div className="py-12 text-center text-sm text-gray-500">No recent AI requests.</div>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function textValue(value: unknown, fallback = 'Not reported') {
+  if (value === undefined || value === null || value === '') return fallback;
+  return String(value);
+}
+
+function DetailDatum({ label, value, mono = false }: { label: string; value: unknown; mono?: boolean }) {
+  return (
+    <div className="min-w-0 border-b border-gray-800 px-4 py-3">
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className={`mt-1 break-words text-sm text-gray-200 ${mono ? 'font-mono' : ''}`}>{textValue(value)}</dd>
+    </div>
+  );
+}
+
+function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<string, unknown> }) {
+  if (kind === 'queue') {
+    const organization = recordValue(data.organization);
+    const uploader = recordValue(data.uploader);
+    const file = recordValue(data.file);
+    const application = recordValue(data.application);
+    const candidate = recordValue(data.candidate);
+    return (
+      <div className="space-y-5">
+        <section className="overflow-hidden rounded-md border border-gray-800">
+          <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-semibold text-white">Uploader and company</h3></div>
+          <dl className="grid sm:grid-cols-2">
+            <DetailDatum label="Organization" value={organization.name} />
+            <DetailDatum label="Organization ID" value={organization.id} mono />
+            <DetailDatum label="Uploader" value={uploader.name} />
+            <DetailDatum label="Uploader email" value={uploader.email || uploader.type} />
+            <DetailDatum label="Job applied for" value={application.title} />
+            <DetailDatum label="Candidate created" value={candidate.name || 'Not yet'} />
+          </dl>
+        </section>
+        <section className="overflow-hidden rounded-md border border-gray-800">
+          <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-semibold text-white">Queue execution</h3></div>
+          <dl className="grid sm:grid-cols-2">
+            <DetailDatum label="Job ID" value={data.jobId} mono />
+            <DetailDatum label="State" value={textValue(data.state).replace(/_/g, ' ')} />
+            <DetailDatum label="Source" value={data.source} />
+            <DetailDatum label="Progress" value={`${textValue(data.progress, '0')}%`} />
+            <DetailDatum label="Attempts" value={data.attempts} />
+            <DetailDatum label="Queue wait" value={formatDuration(Number(data.waitMs || 0))} />
+            <DetailDatum label="Processing time" value={formatDuration(data.processingMs == null ? null : Number(data.processingMs))} />
+            <DetailDatum label="Last updated" value={formatDate(textValue(data.updatedAt, ''))} />
+            <DetailDatum label="CV file" value={file.name} />
+            <DetailDatum label="File size / type" value={`${formatFileSize(Number(file.size || 0))} · ${textValue(file.type)}`} />
+            <DetailDatum label="Error code" value={data.errorCode} mono />
+          </dl>
+        </section>
+      </div>
+    );
+  }
+  if (kind === 'audit') {
+    return (
+      <div className="space-y-5">
+        <section className="overflow-hidden rounded-md border border-gray-800">
+          <dl className="grid sm:grid-cols-2">
+            <DetailDatum label="Created" value={formatDate(textValue(data.createdAt, ''))} />
+            <DetailDatum label="Status" value={data.status} />
+            <DetailDatum label="Category" value={data.category} />
+            <DetailDatum label="Action" value={data.action} mono />
+            <DetailDatum label="Admin" value={data.actorEmail || 'System'} />
+            <DetailDatum label="Target" value={`${textValue(data.targetType, 'Runtime')} · ${textValue(data.targetId, 'global')}`} />
+            <DetailDatum label="Model" value={data.model} mono />
+            <DetailDatum label="Quota group" value={data.quotaGroup} mono />
+            <DetailDatum label="IP address" value={data.ipAddress} mono />
+            <DetailDatum label="User agent" value={data.userAgent} />
+          </dl>
+        </section>
+        <section className="rounded-md border border-gray-800 p-4">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">Message</h3>
+          <p className="mt-2 text-sm leading-6 text-gray-200">{textValue(data.message)}</p>
+          {data.metadata != null && <pre className="mt-4 max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-gray-800 pt-4 font-mono text-xs text-gray-400">{JSON.stringify(data.metadata, null, 2)}</pre>}
+        </section>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-5">
+      <section className="overflow-hidden rounded-md border border-gray-800">
+        <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-semibold text-white">Identity and routing</h3></div>
+        <dl className="grid sm:grid-cols-2">
+          <DetailDatum label="Organization" value={data.organizationName || data.organizationId} />
+          <DetailDatum label="Person" value={data.actorName || data.actorEmail || 'System'} />
+          <DetailDatum label="Activity" value={data.activity} mono />
+          <DetailDatum label="Application" value={data.sourceApp} />
+          <DetailDatum label="Provider" value={data.provider} />
+          <DetailDatum label="Model" value={data.model} mono />
+          <DetailDatum label="Request ID" value={data.requestId} mono />
+          <DetailDatum label="Provider request ID" value={data.providerRequestId} mono />
+          <DetailDatum label="Created" value={formatDate(textValue(data.createdAt, ''))} />
+          <DetailDatum label="Status" value={data.status} />
+        </dl>
+      </section>
+      <section className="overflow-hidden rounded-md border border-gray-800">
+        <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-semibold text-white">Execution metrics</h3></div>
+        <dl className="grid sm:grid-cols-2 lg:grid-cols-3">
+          <DetailDatum label="Latency" value={`${formatNumber(Number(data.latencyMs || 0))} ms`} />
+          <DetailDatum label="Attempts" value={data.attempts} />
+          <DetailDatum label="Failovers" value={data.failovers} />
+          <DetailDatum label="Input tokens" value={formatNumber(Number(data.inputTokens || 0))} />
+          <DetailDatum label="Cached input" value={formatNumber(Number(data.cachedInputTokens || 0))} />
+          <DetailDatum label="Output tokens" value={formatNumber(Number(data.outputTokens || 0))} />
+          <DetailDatum label="Reasoning tokens" value={formatNumber(Number(data.reasoningTokens || 0))} />
+          <DetailDatum label="Total tokens" value={formatNumber(Number(data.totalTokens || 0))} />
+          <DetailDatum label="Estimated cost" value={`$${formatNumber(Number(data.estimatedCostUsd || 0), 6)}`} />
+          <DetailDatum label="Prompt bytes" value={formatNumber(Number(data.promptBytes || 0))} />
+          <DetailDatum label="Response bytes" value={formatNumber(Number(data.responseBytes || 0))} />
+          <DetailDatum label="Quota group" value={data.quotaGroup} mono />
+        </dl>
+      </section>
+      {Boolean(data.errorCode || data.errorMessage || data.attemptErrors) && (
+        <section className="rounded-md border border-red-900 bg-red-950/20 p-4">
+          <h3 className="text-sm font-semibold text-red-200">{textValue(data.errorCode, 'Request failure')}</h3>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm text-red-300">{textValue(data.errorMessage)}</p>
+          {data.attemptErrors != null && <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words border-t border-red-900 pt-3 font-mono text-xs text-red-300">{JSON.stringify(data.attemptErrors, null, 2)}</pre>}
+        </section>
+      )}
     </div>
   );
 }

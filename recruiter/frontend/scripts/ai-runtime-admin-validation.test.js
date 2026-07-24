@@ -117,6 +117,19 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
   assert.match(pageSource, /Recent jobs/);
 });
 
+test('AI Runtime exposes live cross-provider operations and clickable attributable audits', () => {
+  assert.match(pageSource, /\/api\/admin\/ai-runtime\/live\/stream/);
+  assert.match(pageSource, /All Groq and managed-local AI activity/);
+  assert.match(pageSource, /Provider health Â· 1 hour|Provider health · 1 hour/);
+  assert.match(pageSource, /Activity audit/);
+  assert.match(pageSource, /Search person, company, activity or request/);
+  assert.match(pageSource, /openOperationalDetail\('request'/);
+  assert.match(pageSource, /openOperationalDetail\('queue'/);
+  assert.match(pageSource, /openOperationalDetail\('audit'/);
+  assert.match(pageSource, /Uploader and company/);
+  assert.match(pageSource, /Prompts, CV contents and provider credentials are not included/);
+});
+
 test('live queue parser handles snapshots, heartbeats, and partial frames', () => {
   const first = parseServerSentEventBuffer([
     ': keep-alive',
