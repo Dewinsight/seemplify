@@ -51,7 +51,8 @@ function readState() {
     paused: false,
     concurrency: 1,
     autoStart: true,
-    selectedEngine: 'ollama',
+    selectionMode: 'automatic',
+    selectedEngine: 'codex',
     engines: Object.fromEntries(Object.entries(ENGINE_DEFAULTS).map(([id, item]) => [
       id,
       { model: item.model, ...(item.baseUrl ? { baseUrl: item.baseUrl } : {}) }
@@ -227,13 +228,13 @@ function pumpQueue() {
 function statusPayload() {
   const state = readState();
   const selected = engineSettings(state);
-  const cvLocalEligible = selected.id === 'ollama' || selected.id === 'vllm';
+  const cvLocalEligible = ENGINE_IDS.includes(selected.id);
   return {
     service: 'seemplify-local-cv-llm',
     state,
     engine: selected.id,
     model: selected.model,
-    executionMode: cvLocalEligible ? 'local' : 'cloud',
+    executionMode: selected.id === 'codex' ? 'local-cloud' : 'local',
     cvLocalEligible,
     engines: Object.entries(state.engines || {}).map(([id, value]) => ({
       id,
@@ -290,11 +291,11 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     return sendJson(response, 400, { code: 'LOCAL_ONLY_MODE_REQUIRED' });
   }
   const selected = engineSettings(state);
-  if (input.executionMode === 'local-only' && !['ollama', 'vllm'].includes(selected.id)) {
+  if (input.executionMode === 'local-only' && !ENGINE_IDS.includes(selected.id)) {
     return sendJson(response, 503, {
       code: 'LOCAL_ENGINE_REQUIRED',
       retryable: true,
-      message: `Local inference requires Ollama or vLLM; ${selected.id} is not a local inference engine`
+      message: `Local inference requires a managed local or local-cloud engine; ${selected.id} is unavailable`
     });
   }
   if (waiting.length >= maxWaitingRequests) {
@@ -366,6 +367,10 @@ const server = http.createServer(async (request, response) => {
       const allowed = {};
       for (const key of ['enabled', 'ingressEnabled', 'paused', 'autoStart']) {
         if (typeof input[key] === 'boolean') allowed[key] = input[key];
+      }
+      if (input.selectionMode !== undefined) {
+        if (!['automatic', 'manual'].includes(input.selectionMode)) throw new Error('Unsupported selection mode');
+        allowed.selectionMode = input.selectionMode;
       }
       if (input.concurrency !== undefined) allowed.concurrency = Math.max(1, Math.min(128, Number(input.concurrency) || 1));
       if (input.selectedEngine !== undefined) {

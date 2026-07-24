@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  codexPrompt,
   finalizeOutput,
   finiteCvSchema,
   hasOpenObjectSchema,
@@ -163,4 +164,28 @@ test('uses a structured transport envelope only for plain Qwen Ollama text', () 
     messages: [{ role: 'user', content: 'Hello' }],
     toolEmulation: false
   }), false);
+});
+
+test('builds Codex prompts for both ordinary text and structured local-cloud activities', () => {
+  const textPrompt = codexPrompt({
+    activity: 'recruiter.general',
+    messages: [{ role: 'user', content: 'Summarize this role.' }]
+  });
+  assert.match(textPrompt, /managed Seemplify local-cloud inference engine/i);
+  assert.match(textPrompt, /complete user-visible answer/i);
+  assert.doesNotMatch(textPrompt, /required_json_schema/);
+
+  const structuredPrompt = codexPrompt(prepareInferenceInput({
+    activity: 'assistant.tool_selection',
+    messages: [{ role: 'user', content: 'Find Node.js candidates.' }],
+    tools: [{
+      type: 'function',
+      function: {
+        name: 'find_candidates',
+        parameters: { type: 'object', properties: {} }
+      }
+    }]
+  }));
+  assert.match(structuredPrompt, /required_json_schema/);
+  assert.match(structuredPrompt, /find_candidates/);
 });

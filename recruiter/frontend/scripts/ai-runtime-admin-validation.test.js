@@ -93,12 +93,12 @@ test('requests and routing expose full operational health', () => {
 
 test('AI Runtime exposes managed local inference, model inventory, and its durable CV queue', () => {
   assert.match(pageSource, /TabsTrigger value="local"/);
-  assert.match(pageSource, /CV parsing and question generation use the local GPU now/);
+  assert.match(pageSource, /CV parsing and question generation use the best available managed runtime/);
   assert.match(pageSource, /localRuntime\?\.cvLocalEligible/);
-  assert.match(pageSource, /Blocked — local engine required/);
+  assert.match(pageSource, /Codex CLI \(local-cloud\)/);
   assert.match(pageSource, /Local engines and models/);
   assert.match(pageSource, /Available in Control Center/);
-  assert.match(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Local GPU'/);
+  assert.match(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Managed local'/);
   assert.match(pageSource, /Every \$\{localRuntime\?\.failover\?\.intervalMinutes \|\| 30\} minutes/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/health-check/);
   assert.match(pageSource, /Check and route now/);

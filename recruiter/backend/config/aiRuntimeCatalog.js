@@ -44,10 +44,10 @@ const DEFAULT_MODELS = Object.freeze([
   {
     id: LOCAL_CV_MODEL,
     provider: LOCAL_PROVIDER,
-    label: 'Managed local GPU',
+    label: 'Managed local / local-cloud',
     capabilities: ['text', 'reasoning', 'json_object', 'json_schema', 'tools', 'streaming'],
     pricing: { inputPerMillionUsd: 0, cachedInputPerMillionUsd: 0, outputPerMillionUsd: 0 },
-    documentedLimits: { concurrency: 8 },
+    documentedLimits: { concurrency: 128 },
     contextWindow: 32768,
     maxOutputTokens: 12288,
     available: true,

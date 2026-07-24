@@ -287,37 +287,9 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ selectedEngine: 'codex', paused: false })
     });
-    const cloudStatus = await (await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).json();
-    assert.equal(cloudStatus.executionMode, 'cloud');
-    assert.equal(cloudStatus.cvLocalEligible, false);
-
-    const localOnlyBody = JSON.stringify({
-      activity: 'candidate.cv_parse',
-      executionMode: 'local-only',
-      messages: [{ role: 'user', content: 'Ada Lovelace' }],
-      jsonSchema: {
-        type: 'object',
-        required: ['firstName', 'lastName', 'email', 'skills', 'summary'],
-        properties: {}
-      }
-    });
-    const localOnlySignature = signLocalRequest(secret, localOnlyBody);
-    const localOnlyResponse = await fetch(`http://127.0.0.1:${gatewayPort}/v1/cv/analyze`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-seemplify-timestamp': localOnlySignature.timestamp,
-        'x-seemplify-nonce': localOnlySignature.nonce,
-        'x-seemplify-signature': localOnlySignature.signature
-      },
-      body: localOnlyBody
-    });
-    assert.equal(localOnlyResponse.status, 503);
-    assert.deepEqual(await localOnlyResponse.json(), {
-      code: 'LOCAL_ENGINE_REQUIRED',
-      retryable: true,
-      message: 'Local inference requires Ollama or vLLM; codex is not a local inference engine'
-    });
+    const localCloudStatus = await (await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).json();
+    assert.equal(localCloudStatus.executionMode, 'local-cloud');
+    assert.equal(localCloudStatus.cvLocalEligible, true);
   } finally {
     await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
       method: 'PUT',

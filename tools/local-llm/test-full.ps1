@@ -125,6 +125,11 @@ function Restore-OnlineRuntime {
 }
 
 try {
+  Invoke-TestStep 'Select best available approved runtime profile' {
+    Invoke-ControlScript $ManageScript @('-Action', 'select-best')
+    $health = Wait-RuntimeHealthy
+  }
+
   Invoke-TestStep 'Preflight runtime health' {
     $health = Wait-RuntimeHealthy
   }

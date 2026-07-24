@@ -7,7 +7,7 @@ const path = require('node:path');
 const repositoryRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(repositoryRoot, '.local-runtime', 'llm');
 const hostname = 'cv-llm.aiinnigeria.com';
-const localModel = String(process.env.LOCAL_LLM_MODEL || 'gemma4:26b-a4b-it-qat').trim();
+const managedEngines = new Set(['ollama', 'vllm', 'codex']);
 const secret = fs.readFileSync(path.join(runtimeDir, 'service-secret'), 'utf8').trim();
 
 function request(ip, requestPath, { method = 'GET', headers = {}, body = '' } = {}) {
@@ -78,7 +78,7 @@ async function main() {
   };
   const body = JSON.stringify({
     activity: 'candidate.cv_parse',
-    model: localModel,
+    model: 'selected-runtime-model',
     executionMode: 'local-only',
     messages: [
       { role: 'system', content: 'Extract only facts explicitly present in this CV.' },
@@ -109,12 +109,13 @@ async function main() {
     signedAccepted: signed.status === 200 && Boolean(signed.data?.data),
     executedEngine: signed.data?.engine || null,
     executedModel: signed.data?.model || null,
-    localExecutionVerified: ['ollama', 'vllm'].includes(signed.data?.engine),
+    localExecutionVerified: managedEngines.has(signed.data?.engine),
+    executionMode: signed.data?.engine === 'codex' ? 'local-cloud' : 'local',
     signedLatencyMs: signed.latencyMs,
     passed: health.status === 200
       && unsigned.status === 401
       && signed.status === 200
-      && ['ollama', 'vllm'].includes(signed.data?.engine)
+      && managedEngines.has(signed.data?.engine)
       && Boolean(signed.data?.data)
   };
   fs.writeFileSync(path.join(runtimeDir, 'external-smoke.json'), JSON.stringify(report, null, 2));

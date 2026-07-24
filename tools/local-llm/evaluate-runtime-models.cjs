@@ -25,6 +25,7 @@ const requestedProfileIds = new Set(
 );
 
 const allProfiles = [
+  { id: 'terra-codex', engine: 'codex', model: 'gpt-5.6-terra' },
   { id: 'gemma-ollama', engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' },
   { id: 'qwen30-ollama', engine: 'ollama', model: 'qwen3:30b' },
   { id: 'qwen14-vllm', engine: 'vllm', model: 'Qwen/Qwen3-14B-AWQ' }
@@ -345,6 +346,7 @@ async function main() {
       enabled: original.state?.enabled !== false,
       ingressEnabled: original.state?.ingressEnabled !== false,
       paused: original.state?.paused === true,
+      selectionMode: original.state?.selectionMode === 'manual' ? 'manual' : 'automatic',
       concurrency: Math.max(1, Number(original.state?.concurrency || 1))
     });
     await waitForProfile({ id: 'original', engine: original.engine, model: original.model });

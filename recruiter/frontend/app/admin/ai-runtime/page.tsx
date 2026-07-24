@@ -108,7 +108,7 @@ interface LocalRuntimeStatus {
   service?: string;
   engine?: 'ollama' | 'vllm' | 'codex';
   model?: string;
-  executionMode?: 'local' | 'cloud';
+  executionMode?: 'local' | 'local-cloud';
   cvLocalEligible?: boolean;
   state?: {
     enabled: boolean;
@@ -809,7 +809,7 @@ export default function AIRuntimeAdminPage() {
                   <Cpu className="h-5 w-5 text-blue-400" />
                   <h1 className="text-2xl font-semibold text-white">AI Runtime</h1>
                 </div>
-                <p className="mt-1 text-sm text-gray-400">Groq for general AI; signed local GPU routing and a durable queue for CV extraction.</p>
+                <p className="mt-1 text-sm text-gray-400">Groq for general AI; signed managed local or local-cloud routing and a durable queue for CV extraction.</p>
               </div>
               <div className="flex items-center gap-2">
                 <Select value={range} onValueChange={(value) => setRange(value as RangeKey)}>
@@ -893,7 +893,7 @@ export default function AIRuntimeAdminPage() {
                   <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h2 className="text-sm font-semibold text-white">Managed local runtime</h2>
-                      <p className="mt-1 text-xs text-gray-500">CV parsing and question generation use the local GPU now. Other activities remain on Groq until changed in Routing.</p>
+                      <p className="mt-1 text-xs text-gray-500">CV parsing and question generation use the best available managed runtime. Other activities remain on Groq until changed in Routing.</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={localRuntime?.reachable && localRuntime?.health?.ok !== false && localRuntime?.cvLocalEligible !== false ? 'healthy' : 'unavailable'} />
@@ -905,8 +905,8 @@ export default function AIRuntimeAdminPage() {
                   </div>
                   <div className="grid gap-px bg-gray-800 sm:grid-cols-2 xl:grid-cols-4">
                     {[
-                       ['Active engine', localRuntime?.engine === 'codex' ? 'Codex CLI (OpenAI cloud)' : localRuntime?.engine === 'vllm' ? 'vLLM (local GPU)' : 'Ollama (local GPU)'],
-                       ['Active model', localRuntime?.model || 'gemma4:26b-a4b-it-qat'],
+                       ['Active engine', localRuntime?.engine === 'codex' ? 'Codex CLI (local-cloud)' : localRuntime?.engine === 'vllm' ? 'vLLM (local GPU)' : 'Ollama (local GPU)'],
+                       ['Active model', localRuntime?.model || 'Not reported'],
                        ['Local routing', localRuntime?.cvLocalEligible === false ? 'Blocked — local engine required' : 'Available to all activities'],
                        ['Automatic failover', localRuntime?.failover?.active ? 'Groq active' : 'Local primary'],
                        ['Health schedule', `Every ${localRuntime?.failover?.intervalMinutes || 30} minutes`],
@@ -927,7 +927,7 @@ export default function AIRuntimeAdminPage() {
                    </div>
                    {localRuntime?.reachable && localRuntime?.cvLocalEligible === false && (
                      <div className="border-t border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
-                       Local dispatch is blocked because Codex CLI is cloud inference. Select Ollama or vLLM in Local Control Center; CV uploads will remain queued.
+                       Local dispatch is blocked because no verified managed local or local-cloud engine is selected. CV uploads will remain queued.
                      </div>
                    )}
                    {localRuntime?.failover?.active && (
@@ -941,7 +941,7 @@ export default function AIRuntimeAdminPage() {
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
                   <div className="border-b border-gray-800 px-4 py-3">
                     <h2 className="text-sm font-semibold text-white">Local engines and models</h2>
-                    <p className="mt-1 text-xs text-gray-500">The selected Control Center model serves every route assigned to Managed local GPU.</p>
+                    <p className="mt-1 text-xs text-gray-500">The selected Control Center profile serves every route assigned to Managed local / local-cloud.</p>
                   </div>
                   <div className="overflow-x-auto">
                     <Table>
@@ -1057,7 +1057,7 @@ export default function AIRuntimeAdminPage() {
                         {(settings?.routes || []).map((route) => (
                           <TableRow key={route.activity} className="border-gray-800">
                             <TableCell><div className="font-medium text-gray-200">{definitions.get(route.activity)?.label || route.activity}</div><div className="text-xs text-gray-500">{definitions.get(route.activity)?.group} / v{route.routeVersion}{definitions.get(route.activity)?.lockedProvider ? ' / local provider locked' : ''}</div></TableCell>
-                            <TableCell className={route.provider === 'groq' ? 'text-gray-300' : 'text-green-300'}>{route.provider === 'groq' ? 'Groq' : 'Local GPU'}</TableCell>
+                            <TableCell className={route.provider === 'groq' ? 'text-gray-300' : 'text-green-300'}>{route.provider === 'groq' ? 'Groq' : 'Managed local'}</TableCell>
                             <TableCell><Select disabled={definitions.get(route.activity)?.lockedProvider} value={route.model} onValueChange={(model) => editRoute(route.activity, { model })}><SelectTrigger className="w-56 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent>{settings?.models.filter((model) => model.enabled && model.available !== false && (!definitions.get(route.activity)?.lockedProvider || model.provider === route.provider)).map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent></Select></TableCell>
                             <TableCell><Select value={route.reasoningEffort} onValueChange={(reasoningEffort) => editRoute(route.activity, { reasoningEffort: reasoningEffort as ActivityRoute['reasoningEffort'] })}><SelectTrigger className="w-28 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></TableCell>
                             <TableCell>

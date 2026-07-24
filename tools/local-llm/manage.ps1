@@ -3,7 +3,7 @@ param(
     'start', 'stop', 'force-stop', 'restart', 'status', 'load', 'unload',
     'pause', 'resume', 'enable-ingress', 'disable-ingress',
     'enable-auto-start', 'disable-auto-start', 'set-concurrency',
-    'select-engine', 'set-model', 'verify-engine', 'install-codex', 'login-codex', 'sync-codex-models',
+    'select-engine', 'select-best', 'set-model', 'verify-engine', 'install-codex', 'login-codex', 'sync-codex-models',
     'install-vllm', 'vllm-start', 'vllm-stop'
   )]
   [string]$Action = 'status',
@@ -64,7 +64,8 @@ function New-DefaultState {
     paused = $false
     concurrency = 1
     autoStart = $true
-    selectedEngine = 'ollama'
+    selectionMode = 'automatic'
+    selectedEngine = 'codex'
     engines = [ordered]@{
       ollama = [ordered]@{ model=$DefaultModels.ollama; baseUrl='http://127.0.0.1:11434' }
       vllm = [ordered]@{ model=$DefaultModels.vllm; baseUrl='http://127.0.0.1:8000' }
@@ -78,7 +79,7 @@ function Get-SavedState {
   if (Test-Path $StateFile) {
     try {
       $saved = Get-Content -LiteralPath $StateFile -Raw | ConvertFrom-Json
-      foreach ($property in @('enabled', 'ingressEnabled', 'paused', 'concurrency', 'autoStart', 'selectedEngine')) {
+      foreach ($property in @('enabled', 'ingressEnabled', 'paused', 'concurrency', 'autoStart', 'selectionMode', 'selectedEngine')) {
         if ($null -ne $saved.$property) { $defaults[$property] = $saved.$property }
       }
       foreach ($engineId in @('ollama', 'vllm', 'codex')) {
@@ -421,6 +422,85 @@ function Get-CodexStatus {
   }
 }
 
+function Test-EngineProfileAvailable([string]$EngineId, [string]$ModelId) {
+  if ($EngineId -eq 'codex') {
+    $status = Get-CodexStatus
+    if (-not $status.installed -or -not $status.authenticated) { return $false }
+    $catalogIds = @($status.models | ForEach-Object { [string]$_.id })
+    return $catalogIds.Count -eq 0 -or $catalogIds -contains $ModelId
+  }
+  if ($EngineId -eq 'ollama') {
+    if (-not $OllamaExe) { return $false }
+    $result = Invoke-NativeCapture $OllamaExe @('list')
+    return $result.exitCode -eq 0 -and $result.stdout -match "(?m)^$([regex]::Escape($ModelId))\s"
+  }
+  if ($EngineId -eq 'vllm') {
+    if (-not (Get-Command docker.exe -ErrorAction SilentlyContinue)) { return $false }
+    $result = Invoke-NativeCapture (Get-Command docker.exe).Source @('image', 'inspect', $VllmImage)
+    return $result.exitCode -eq 0
+  }
+  return $false
+}
+
+function Get-BestAvailableProfile {
+  $candidates = @()
+  if (Test-Path $BenchmarkSummaryScript) {
+    try {
+      $result = Invoke-NativeCapture (Get-Command node.exe).Source @($BenchmarkSummaryScript)
+      if ($result.exitCode -eq 0 -and $result.stdout) {
+        $summary = $result.stdout | ConvertFrom-Json
+        $candidates = @($summary.profiles |
+          Where-Object {
+            $_.approvedRun.acceptable -and
+            [double]$_.approvedRun.qualityPassRate -ge 0.95 -and
+            [int]$_.approvedConcurrency -gt 0
+          } |
+          Sort-Object `
+            @{ Expression={ [double]$_.approvedRun.throughputPerMinute }; Descending=$true }, `
+            @{ Expression={ if ($null -eq $_.approvedRun.p95LatencyMs) { [double]::PositiveInfinity } else { [double]$_.approvedRun.p95LatencyMs } }; Descending=$false })
+      }
+    } catch {}
+  }
+  foreach ($candidate in $candidates) {
+    if (Test-EngineProfileAvailable ([string]$candidate.engine) ([string]$candidate.model)) {
+      return [pscustomobject]@{
+        engine = [string]$candidate.engine
+        model = [string]$candidate.model
+        concurrency = [int]$candidate.approvedConcurrency
+        throughputPerMinute = [double]$candidate.approvedRun.throughputPerMinute
+        p95LatencyMs = $candidate.approvedRun.p95LatencyMs
+        qualityPassRate = [double]$candidate.approvedRun.qualityPassRate
+      }
+    }
+  }
+  foreach ($fallback in @(
+    [pscustomobject]@{ engine='codex'; model=$DefaultModels.codex },
+    [pscustomobject]@{ engine='ollama'; model=$DefaultModels.ollama },
+    [pscustomobject]@{ engine='vllm'; model=$DefaultModels.vllm }
+  )) {
+    if (Test-EngineProfileAvailable $fallback.engine $fallback.model) {
+      return [pscustomobject]@{
+        engine = $fallback.engine
+        model = $fallback.model
+        concurrency = Get-ApprovedConcurrency $fallback.engine $fallback.model
+        throughputPerMinute = $null
+        p95LatencyMs = $null
+        qualityPassRate = $null
+      }
+    }
+  }
+  throw 'No verified local or local-cloud inference profile is currently available.'
+}
+
+function Select-BestAvailableEngine {
+  $best = Get-BestAvailableProfile
+  Select-InferenceEngine $best.engine $best.model
+  $approvedConcurrency = Get-ApprovedConcurrency $best.engine $best.model
+  $best.concurrency = $approvedConcurrency
+  Set-GatewayState @{ selectionMode='automatic'; concurrency=$approvedConcurrency } | Out-Null
+  return $best
+}
+
 function Set-ManagedAutoStart([bool]$Enabled) {
   if ($Enabled) {
     if (Test-Path $OllamaStartupShortcut) {
@@ -531,7 +611,7 @@ function Get-Status {
   } catch {}
   $state = Get-SavedState
   if ($gateway.state) {
-    foreach ($property in @('enabled', 'ingressEnabled', 'paused', 'concurrency', 'autoStart', 'selectedEngine')) {
+    foreach ($property in @('enabled', 'ingressEnabled', 'paused', 'concurrency', 'autoStart', 'selectionMode', 'selectedEngine')) {
       if ($null -ne $gateway.state.$property) { $state.$property = $gateway.state.$property }
     }
     if ($gateway.state.engines) { $state.engines = $gateway.state.engines }
@@ -569,6 +649,7 @@ function Get-Status {
 
 switch ($Action) {
   'start' {
+    if ((Get-SavedState).selectionMode -ne 'manual') { Select-BestAvailableEngine | Out-Null }
     Start-SelectedEngine
     Start-Gateway
     Set-GatewayState @{ enabled=$true; paused=$false } | Out-Null
@@ -587,6 +668,7 @@ switch ($Action) {
   'restart' {
     $restoreIngress = [bool](Get-SavedState).ingressEnabled
     Stop-Gateway $false
+    if ((Get-SavedState).selectionMode -ne 'manual') { Select-BestAvailableEngine | Out-Null }
     Start-SelectedEngine
     Start-Gateway
     Set-GatewayState @{ enabled=$true; paused=$false; ingressEnabled=$restoreIngress } | Out-Null
@@ -622,10 +704,15 @@ switch ($Action) {
   'select-engine' {
     $selectedModel = if ($Model) { $Model } else { Get-EngineModel $Engine }
     Select-InferenceEngine $Engine $selectedModel
+    Set-GatewayState @{ selectionMode='manual' } | Out-Null
+  }
+  'select-best' {
+    Select-BestAvailableEngine | Out-Null
   }
   'set-model' {
     if (-not $Model) { throw '-Model is required for set-model.' }
     Select-InferenceEngine $Engine $Model
+    Set-GatewayState @{ selectionMode='manual' } | Out-Null
   }
   'verify-engine' {
     $verificationModel = if ($Model) { $Model } else { Get-EngineModel $Engine }
