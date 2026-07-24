@@ -73,6 +73,7 @@ import {
   validateCredentialDraft,
   validateQuotaGroupDraft
 } from '@/lib/aiRuntimeAdminValidation';
+import { parseServerSentEventBuffer } from '@/lib/queueTelemetryStream';
 
 type RangeKey = '7d' | '30d' | '90d' | 'all';
 type TabKey = 'overview' | 'local' | 'test' | 'routing' | 'credentials' | 'requests' | 'alerts';
@@ -152,9 +153,50 @@ interface LocalRuntimeStatus {
 interface LocalQueueStatus {
   queue: string;
   concurrency: number;
+  sampledAt: string;
+  available: boolean;
   counts: Record<string, number>;
   oldestQueuedAt: string | null;
+  oldestWaitMs: number;
   paused: boolean;
+  error?: string;
+  worker: {
+    running: boolean;
+    concurrency: number;
+    active: number;
+    availableSlots: number;
+    utilizationPercent: number;
+  };
+  durable: {
+    queued: number;
+    waitingForRuntime: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    retrying: number;
+  };
+  rates: {
+    completedLast5Minutes: number;
+    completedLastHour: number;
+    failedLastHour: number;
+    averageProcessingMs: number;
+    p95ProcessingMs: number;
+  };
+  recentJobs: Array<{
+    jobId: string;
+    source: 'private' | 'public' | 'bulk' | 'ai-interview';
+    state: 'queued' | 'waiting_for_local_runtime' | 'processing' | 'completed' | 'failed';
+    progress: number;
+    attempts: number;
+    createdAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    failedAt: string | null;
+    updatedAt: string;
+    waitMs: number | null;
+    processingMs: number | null;
+    errorCode: string | null;
+  }>;
 }
 
 interface AlertSettings {
@@ -341,6 +383,33 @@ function formatDate(value?: string) {
   }).format(date);
 }
 
+function formatTime(value?: string) {
+  if (!value) return 'Never';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unknown' : new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).format(date);
+}
+
+function formatDuration(value?: number | null) {
+  if (value == null) return '—';
+  if (value < 1_000) return value > 0 ? '<1 sec' : '0 sec';
+  const seconds = Math.round(value / 1_000);
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function queueStateClass(state: string) {
+  if (state === 'completed') return 'text-green-300';
+  if (state === 'failed') return 'text-red-300';
+  if (state === 'waiting_for_local_runtime') return 'text-amber-300';
+  if (state === 'processing') return 'text-gray-100';
+  return 'text-gray-300';
+}
+
 async function adminJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('adminToken') || '';
   const response = await apiRequest(path, {
@@ -358,7 +427,7 @@ async function adminJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 function StatusBadge({ status }: { status: string }) {
   const healthy = ['healthy', 'success', 'sent'].includes(status);
-  const warning = ['unknown', 'degraded', 'suppressed'].includes(status);
+  const warning = ['unknown', 'degraded', 'suppressed', 'paused'].includes(status);
   return (
     <Badge className={healthy
       ? 'border-green-700 bg-green-950 text-green-300'
@@ -381,6 +450,8 @@ export default function AIRuntimeAdminPage() {
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
   const [localRuntime, setLocalRuntime] = useState<LocalRuntimeStatus | null>(null);
   const [localQueue, setLocalQueue] = useState<LocalQueueStatus | null>(null);
+  const [queueConnection, setQueueConnection] = useState<'idle' | 'connecting' | 'live' | 'reconnecting'>('idle');
+  const [queueStreamError, setQueueStreamError] = useState('');
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [requests, setRequests] = useState<UsageRequest[]>([]);
   const [requestSummary, setRequestSummary] = useState<RequestSummary | null>(null);
@@ -478,14 +549,19 @@ export default function AIRuntimeAdminPage() {
     });
   }, [canConfigure]);
 
-  const loadLocalRuntime = useCallback(async () => {
-    const [runtime, queueStatus] = await Promise.all([
-      adminJson<LocalRuntimeStatus>('/api/admin/ai-runtime/local/status'),
-      adminJson<LocalQueueStatus>('/api/admin/ai-runtime/local/queue')
-    ]);
+  const loadLocalGateway = useCallback(async () => {
+    const runtime = await adminJson<LocalRuntimeStatus>('/api/admin/ai-runtime/local/status');
     setLocalRuntime(runtime);
+  }, []);
+
+  const loadLocalQueue = useCallback(async () => {
+    const queueStatus = await adminJson<LocalQueueStatus>('/api/admin/ai-runtime/local/queue');
     setLocalQueue(queueStatus);
   }, []);
+
+  const loadLocalRuntime = useCallback(async () => {
+    await Promise.all([loadLocalGateway(), loadLocalQueue()]);
+  }, [loadLocalGateway, loadLocalQueue]);
 
   const loadRequests = useCallback(async () => {
     const params = new URLSearchParams({ range, page: String(requestPage), limit: '25' });
@@ -524,10 +600,71 @@ export default function AIRuntimeAdminPage() {
   useEffect(() => {
     if (tab !== 'local') return;
     const timer = window.setInterval(() => {
-      loadLocalRuntime().catch(() => {});
-    }, 5000);
+      loadLocalGateway().catch(() => {});
+    }, 10_000);
     return () => window.clearInterval(timer);
-  }, [loadLocalRuntime, tab]);
+  }, [loadLocalGateway, tab]);
+  useEffect(() => {
+    if (tab !== 'local') {
+      setQueueConnection('idle');
+      return;
+    }
+    let stopped = false;
+    let reconnectTimer: number | undefined;
+    let activeController: AbortController | null = null;
+
+    const connect = async () => {
+      if (stopped) return;
+      setQueueConnection((current) => current === 'live' ? 'reconnecting' : 'connecting');
+      activeController = new AbortController();
+      try {
+        const token = localStorage.getItem('adminToken') || '';
+        const response = await apiRequest('/api/admin/ai-runtime/local/queue/stream', {
+          headers: {
+            Accept: 'text/event-stream',
+            'x-admin-auth-token': token
+          },
+          signal: activeController.signal
+        });
+        if (!response.ok || !response.body) throw new Error(`Live queue stream returned HTTP ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        setQueueConnection('live');
+        setQueueStreamError('');
+
+        while (!stopped) {
+          const { done, value } = await reader.read();
+          if (done) throw new Error('Live queue stream ended');
+          buffer += decoder.decode(value, { stream: true });
+          const parsed = parseServerSentEventBuffer(buffer);
+          buffer = parsed.remainder;
+          for (const frame of parsed.frames) {
+            if (frame.event === 'snapshot') {
+              setLocalQueue(JSON.parse(frame.data) as LocalQueueStatus);
+              setQueueConnection('live');
+              setQueueStreamError('');
+            } else if (frame.event === 'telemetry-error') {
+              const message = JSON.parse(frame.data)?.message;
+              setQueueStreamError(message || 'Queue telemetry is temporarily unavailable');
+            }
+          }
+        }
+      } catch (error) {
+        if (stopped || (error instanceof DOMException && error.name === 'AbortError')) return;
+        setQueueConnection('reconnecting');
+        setQueueStreamError(error instanceof Error ? error.message : 'Live queue connection failed');
+        reconnectTimer = window.setTimeout(() => void connect(), 3_000);
+      }
+    };
+
+    void connect();
+    return () => {
+      stopped = true;
+      activeController?.abort();
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+    };
+  }, [tab]);
   useEffect(() => {
     if (!enabledTestRoutes.length) {
       if (testActivity) setTestActivity('');
@@ -963,29 +1100,128 @@ export default function AIRuntimeAdminPage() {
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
                   <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h2 className="text-sm font-semibold text-white">Durable CV queue</h2>
-                      <p className="mt-1 text-xs text-gray-500">Uploads remain stored while the local runtime is offline and resume automatically.</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-sm font-semibold text-white">Durable CV queue</h2>
+                        <StatusBadge status={!localQueue?.available ? 'unavailable' : localQueue?.paused ? 'paused' : 'healthy'} />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">Uploads remain stored while the runtime is offline. BullMQ dispatch and durable Mongo state are shown separately.</p>
+                      <div aria-live="polite" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span className={queueConnection === 'live' ? 'flex items-center gap-1.5 text-green-300' : 'flex items-center gap-1.5 text-amber-300'}>
+                          <Activity className="h-3.5 w-3.5" />
+                          {queueConnection === 'live' ? 'Live updates' : queueConnection === 'reconnecting' ? 'Reconnecting' : 'Connecting'}
+                        </span>
+                        <span className="text-gray-500">Every 2 seconds</span>
+                        <span className="text-gray-500">Updated {formatTime(localQueue?.sampledAt)}</span>
+                        {queueStreamError && <span className="text-amber-300">{queueStreamError}</span>}
+                      </div>
                     </div>
-                    {canConfigure && (
-                      <Button variant="outline" size="sm" disabled={busy === 'local-queue'} onClick={() => setLocalQueuePaused(!localQueue?.paused)} className="border-gray-700">
-                        {localQueue?.paused ? <Play className="mr-2 h-4 w-4" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
-                        {localQueue?.paused ? 'Resume queue' : 'Pause queue'}
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={loadLocalQueue} className="border-gray-700">
+                        <RefreshCw className="mr-2 h-4 w-4" />Refresh
                       </Button>
-                    )}
+                      {canConfigure && (
+                        <Button variant="outline" size="sm" disabled={busy === 'local-queue'} onClick={() => setLocalQueuePaused(!localQueue?.paused)} className="border-gray-700">
+                          {localQueue?.paused ? <Play className="mr-2 h-4 w-4" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
+                          {localQueue?.paused ? 'Resume queue' : 'Pause queue'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <dl className="grid gap-px border-b border-gray-800 bg-gray-800 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      ['Dispatch', localQueue?.paused ? 'Paused' : localQueue?.available ? 'Accepting work' : 'Redis unavailable'],
+                      ['Worker', localQueue?.worker?.running ? 'Running' : 'Starting'],
+                      ['Capacity', `${formatNumber(localQueue?.worker?.active)} / ${formatNumber(localQueue?.worker?.concurrency ?? localQueue?.concurrency)} active`],
+                      ['Available slots', formatNumber(localQueue?.worker?.availableSlots)],
+                      ['Oldest wait', formatDuration(localQueue?.oldestWaitMs)],
+                      ['Completed · 5 min', formatNumber(localQueue?.rates?.completedLast5Minutes)],
+                      ['Completed · 1 hour', formatNumber(localQueue?.rates?.completedLastHour)],
+                      ['Failed · 1 hour', formatNumber(localQueue?.rates?.failedLastHour)],
+                      ['Average processing', formatDuration(localQueue?.rates?.averageProcessingMs)],
+                      ['P95 processing', formatDuration(localQueue?.rates?.p95ProcessingMs)],
+                      ['Worker utilisation', `${formatNumber(localQueue?.worker?.utilizationPercent)}%`],
+                      ['Queue name', localQueue?.queue || 'Not reported']
+                    ].map(([label, value]) => (
+                      <div key={label} className="bg-gray-900 px-4 py-3">
+                        <dt className="text-xs text-gray-500">{label}</dt>
+                        <dd className="mt-1 text-sm font-medium text-gray-100">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div className="border-b border-gray-800">
+                    <div className="px-4 py-3">
+                      <h3 className="text-sm font-medium text-white">Queue state</h3>
+                      <p className="mt-1 text-xs text-gray-500">BullMQ counts are dispatch records; durable counts are the 30-day processing ledger.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-gray-800">
+                            <TableHead>State</TableHead>
+                            <TableHead>BullMQ</TableHead>
+                            <TableHead>Durable</TableHead>
+                            <TableHead>Meaning</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {[
+                            ['Waiting', localQueue?.counts?.waitingTotal, localQueue?.durable?.queued, 'Ready for dispatch'],
+                            ['Waiting for runtime', localQueue?.counts?.delayed, localQueue?.durable?.waitingForRuntime, 'Held during local outages'],
+                            ['Processing', localQueue?.counts?.active, localQueue?.durable?.processing, 'Currently executing'],
+                            ['Completed', localQueue?.counts?.completed, localQueue?.durable?.completed, 'Retained successful jobs'],
+                            ['Failed', localQueue?.counts?.failed, localQueue?.durable?.failed, 'Terminal failures'],
+                            ['Retrying', undefined, localQueue?.durable?.retrying, 'Non-terminal jobs after another attempt']
+                          ].map(([label, bullCount, durableCount, meaning]) => (
+                            <TableRow key={String(label)} className="border-gray-800">
+                              <TableCell className="font-medium text-gray-200">{label}</TableCell>
+                              <TableCell>{bullCount == null ? '—' : formatNumber(Number(bullCount))}</TableCell>
+                              <TableCell>{formatNumber(Number(durableCount || 0))}</TableCell>
+                              <TableCell className="text-gray-500">{meaning}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3">
+                    <h3 className="text-sm font-medium text-white">Recent jobs</h3>
+                    <p className="mt-1 text-xs text-gray-500">Operational IDs only; candidate names and CV filenames are not exposed here.</p>
                   </div>
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader><TableRow className="border-gray-800"><TableHead>State</TableHead><TableHead>Waiting</TableHead><TableHead>Delayed offline</TableHead><TableHead>Processing</TableHead><TableHead>Completed</TableHead><TableHead>Failed</TableHead><TableHead>Oldest wait</TableHead></TableRow></TableHeader>
-                      <TableBody>
+                      <TableHeader>
                         <TableRow className="border-gray-800">
-                          <TableCell><StatusBadge status={localQueue?.paused ? 'paused' : 'healthy'} /></TableCell>
-                          <TableCell>{formatNumber(localQueue?.counts?.waiting)}</TableCell>
-                          <TableCell>{formatNumber(localQueue?.counts?.delayed)}</TableCell>
-                          <TableCell>{formatNumber(localQueue?.counts?.active)}</TableCell>
-                          <TableCell>{formatNumber(localQueue?.counts?.completed)}</TableCell>
-                          <TableCell>{formatNumber(localQueue?.counts?.failed)}</TableCell>
-                          <TableCell>{localQueue?.oldestQueuedAt ? formatDate(localQueue.oldestQueuedAt) : 'None'}</TableCell>
+                          <TableHead>Job</TableHead>
+                          <TableHead>Source</TableHead>
+                          <TableHead>State</TableHead>
+                          <TableHead>Progress</TableHead>
+                          <TableHead>Attempts</TableHead>
+                          <TableHead>Queue wait</TableHead>
+                          <TableHead>Processing</TableHead>
+                          <TableHead>Updated</TableHead>
                         </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(localQueue?.recentJobs || []).map((job) => (
+                          <TableRow key={job.jobId} className="border-gray-800">
+                            <TableCell className="font-mono text-xs text-gray-300" title={job.jobId}>{job.jobId.slice(0, 15)}</TableCell>
+                            <TableCell>{job.source.replace('-', ' ')}</TableCell>
+                            <TableCell>
+                              <div className={`font-medium ${queueStateClass(job.state)}`}>{job.state.replace(/_/g, ' ')}</div>
+                              {job.errorCode && <div className="mt-1 font-mono text-xs text-red-300">{job.errorCode}</div>}
+                            </TableCell>
+                            <TableCell>{formatNumber(job.progress)}%</TableCell>
+                            <TableCell>{formatNumber(job.attempts)}</TableCell>
+                            <TableCell>{formatDuration(job.waitMs)}</TableCell>
+                            <TableCell>{formatDuration(job.processingMs)}</TableCell>
+                            <TableCell>{formatTime(job.updatedAt)}</TableCell>
+                          </TableRow>
+                        ))}
+                        {!localQueue?.recentJobs?.length && (
+                          <TableRow>
+                            <TableCell colSpan={8} className="h-20 text-center text-gray-500">No CV processing jobs have been recorded.</TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>

@@ -160,6 +160,50 @@ test('priority preserves FIFO inside an organisation and interleaves organisatio
   assert.equal((await cvQueue.telemetry()).paused, true);
 });
 
+test('telemetry reports durable states, worker capacity, throughput, and privacy-safe recent jobs', async () => {
+  const now = Date.now();
+  await createJob({ createdAt: new Date(now - 90_000) });
+  await createJob({
+    state: 'waiting_for_local_runtime',
+    progress: 20,
+    attempts: 2,
+    createdAt: new Date(now - 60_000)
+  });
+  await createJob({
+    state: 'completed',
+    progress: 100,
+    attempts: 1,
+    startedAt: new Date(now - 5_000),
+    completedAt: new Date(now - 2_000)
+  });
+  await createJob({
+    state: 'failed',
+    attempts: 5,
+    failedAt: new Date(now - 1_000),
+    lastError: { code: 'CV_SCHEMA_INVALID', message: 'Synthetic failure', at: new Date(now - 1_000) }
+  });
+
+  const snapshot = await cvQueue.telemetry();
+  assert.equal(snapshot.available, true);
+  assert.equal(snapshot.paused, true);
+  assert.equal(snapshot.durable.queued, 1);
+  assert.equal(snapshot.durable.waitingForRuntime, 1);
+  assert.equal(snapshot.durable.completed, 1);
+  assert.equal(snapshot.durable.failed, 1);
+  assert.equal(snapshot.durable.retrying, 1);
+  assert.equal(snapshot.rates.completedLast5Minutes, 1);
+  assert.equal(snapshot.rates.completedLastHour, 1);
+  assert.equal(snapshot.rates.failedLastHour, 1);
+  assert.equal(snapshot.rates.averageProcessingMs, 3_000);
+  assert.equal(snapshot.rates.p95ProcessingMs, 3_000);
+  assert.ok(snapshot.oldestWaitMs >= 60_000);
+  assert.equal(snapshot.worker.concurrency >= 1, true);
+  assert.equal(snapshot.worker.availableSlots >= 0, true);
+  assert.equal(snapshot.recentJobs.length, 4);
+  assert.equal(Object.hasOwn(snapshot.recentJobs[0], 'originalName'), false);
+  assert.equal(Object.hasOwn(snapshot.recentJobs[0], 'errorCode'), true);
+});
+
 test('stale Mongo jobs are recovered after a queue restart', async () => {
   const { job } = await createJob();
   await CVProcessingJob.collection.updateOne(

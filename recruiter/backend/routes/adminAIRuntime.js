@@ -99,6 +99,50 @@ router.get('/local/queue', ...analyticsAccess, async (_req, res) => {
   }
 });
 
+router.get('/local/queue/stream', ...analyticsAccess, async (req, res) => {
+  res.status(200);
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  res.flushHeaders?.();
+
+  let closed = false;
+  let sending = false;
+  let snapshotTimer;
+  let heartbeatTimer;
+  const close = () => {
+    closed = true;
+    if (snapshotTimer) clearInterval(snapshotTimer);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+  };
+  req.on('close', close);
+
+  const sendSnapshot = async () => {
+    if (closed || sending) return;
+    sending = true;
+    try {
+      const snapshot = await cvAnalysisQueue.telemetry();
+      if (!closed) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    } catch {
+      if (!closed) res.write(`event: telemetry-error\ndata: {"message":"Queue telemetry is temporarily unavailable"}\n\n`);
+    } finally {
+      sending = false;
+    }
+  };
+
+  await sendSnapshot();
+  if (closed) return;
+  snapshotTimer = setInterval(() => void sendSnapshot(), 2_000);
+  heartbeatTimer = setInterval(() => {
+    if (!closed) res.write(': keep-alive\n\n');
+  }, 15_000);
+  snapshotTimer.unref?.();
+  heartbeatTimer.unref?.();
+});
+
 router.post('/local/queue/:action', ...settingsAccess, async (req, res) => {
   try {
     if (!['pause', 'resume'].includes(req.params.action)) {

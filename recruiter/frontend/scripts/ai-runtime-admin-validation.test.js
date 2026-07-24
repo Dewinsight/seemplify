@@ -6,12 +6,18 @@ const ts = require('typescript');
 
 const sourcePath = path.join(__dirname, '..', 'lib', 'aiRuntimeAdminValidation.ts');
 const source = fs.readFileSync(sourcePath, 'utf8');
+const streamSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'queueTelemetryStream.ts'), 'utf8');
 const pageSource = fs.readFileSync(path.join(__dirname, '..', 'app', 'admin', 'ai-runtime', 'page.tsx'), 'utf8');
 const transpiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 });
+const streamTranspiled = ts.transpileModule(streamSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+});
 const loadedModule = { exports: {} };
 new Function('exports', 'module', transpiled.outputText)(loadedModule.exports, loadedModule);
+const loadedStreamModule = { exports: {} };
+new Function('exports', 'module', streamTranspiled.outputText)(loadedStreamModule.exports, loadedStreamModule);
 
 const {
   containsGroqApiKey,
@@ -19,6 +25,7 @@ const {
   validateCredentialDraft,
   validateQuotaGroupDraft
 } = loadedModule.exports;
+const { parseServerSentEventBuffer } = loadedStreamModule.exports;
 
 const groups = [{ id: 'groq-primary', label: 'Groq primary organization', enabled: true }];
 
@@ -103,6 +110,29 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/health-check/);
   assert.match(pageSource, /Check and route now/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/\$\{paused \? 'pause' : 'resume'\}/);
+  assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/stream/);
+  assert.match(pageSource, /Live updates/);
+  assert.match(pageSource, /Every 2 seconds/);
+  assert.match(pageSource, /BullMQ counts are dispatch records/);
+  assert.match(pageSource, /Recent jobs/);
+});
+
+test('live queue parser handles snapshots, heartbeats, and partial frames', () => {
+  const first = parseServerSentEventBuffer([
+    ': keep-alive',
+    '',
+    'event: snapshot',
+    'data: {"waiting":2}',
+    '',
+    'event: snapshot',
+    'data: {"waiting":'
+  ].join('\n'));
+  assert.deepEqual(first.frames, [{ event: 'snapshot', data: '{"waiting":2}' }]);
+  assert.equal(first.remainder, 'event: snapshot\ndata: {"waiting":');
+
+  const second = parseServerSentEventBuffer(`${first.remainder}3}\n\n`);
+  assert.deepEqual(second.frames, [{ event: 'snapshot', data: '{"waiting":3}' }]);
+  assert.equal(second.remainder, '');
 });
 
 test('credential removal is explicit, confirmed, and permission-aware', () => {

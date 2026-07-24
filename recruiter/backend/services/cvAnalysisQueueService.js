@@ -37,6 +37,38 @@ function workerConcurrency() {
   return Math.max(1, Number(worker?.concurrency || concurrency));
 }
 
+function elapsedMs(start, end = Date.now()) {
+  const startedAt = start ? new Date(start).getTime() : NaN;
+  const endedAt = end instanceof Date ? end.getTime() : new Date(end).getTime();
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) return null;
+  return Math.max(0, endedAt - startedAt);
+}
+
+function percentile(values, ratio) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)];
+}
+
+function operationalJob(job, sampledAt) {
+  const terminalAt = job.completedAt || job.failedAt || sampledAt;
+  return {
+    jobId: job.publicId,
+    source: job.source,
+    state: job.state,
+    progress: Number(job.progress || 0),
+    attempts: Number(job.attempts || 0),
+    createdAt: job.createdAt,
+    startedAt: job.startedAt || null,
+    completedAt: job.completedAt || null,
+    failedAt: job.failedAt || null,
+    updatedAt: job.updatedAt,
+    waitMs: elapsedMs(job.createdAt, job.startedAt || terminalAt),
+    processingMs: job.startedAt ? elapsedMs(job.startedAt, terminalAt) : null,
+    errorCode: job.lastError?.code || null
+  };
+}
+
 function isOfflineError(error) {
   return ['AI_LOCAL_UNAVAILABLE', 'AI_LOCAL_NOT_CONFIGURED'].includes(error?.code)
     || String(error?.code || '').startsWith('LOCAL_LLM_')
@@ -460,34 +492,120 @@ async function getStatus(publicId, statusToken) {
 }
 
 async function telemetry() {
-  const oldest = await CVProcessingJob.findOne({ state: { $in: ['queued', 'waiting_for_local_runtime'] } }).sort({ createdAt: 1 }).select('createdAt');
+  const sampledAt = new Date();
+  const oneHourAgo = new Date(sampledAt.getTime() - 60 * 60_000);
+  const fiveMinutesAgo = new Date(sampledAt.getTime() - 5 * 60_000);
+  const [
+    oldest,
+    stateRows,
+    recentRows,
+    recentCompletedRows,
+    completedLast5Minutes,
+    completedLastHour,
+    failedLastHour,
+    retrying
+  ] = await Promise.all([
+    CVProcessingJob.findOne({ state: { $in: ['queued', 'waiting_for_local_runtime'] } })
+      .sort({ createdAt: 1 })
+      .select('createdAt')
+      .lean(),
+    CVProcessingJob.aggregate([
+      { $group: { _id: '$state', count: { $sum: 1 } } }
+    ]),
+    CVProcessingJob.find({})
+      .sort({ updatedAt: -1 })
+      .limit(12)
+      .select('publicId source state progress attempts createdAt startedAt completedAt failedAt updatedAt lastError.code')
+      .lean(),
+    CVProcessingJob.find({ state: 'completed', completedAt: { $gte: oneHourAgo }, startedAt: { $ne: null } })
+      .sort({ completedAt: -1 })
+      .limit(500)
+      .select('startedAt completedAt')
+      .lean(),
+    CVProcessingJob.countDocuments({ state: 'completed', completedAt: { $gte: fiveMinutesAgo } }),
+    CVProcessingJob.countDocuments({ state: 'completed', completedAt: { $gte: oneHourAgo } }),
+    CVProcessingJob.countDocuments({ state: 'failed', failedAt: { $gte: oneHourAgo } }),
+    CVProcessingJob.countDocuments({
+      state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] },
+      attempts: { $gt: 1 }
+    })
+  ]);
+  const durable = Object.fromEntries(stateRows.map((row) => [String(row._id), Number(row.count || 0)]));
+  const durations = recentCompletedRows
+    .map((job) => elapsedMs(job.startedAt, job.completedAt))
+    .filter((value) => Number.isFinite(value));
+  const operational = {
+    sampledAt: sampledAt.toISOString(),
+    durable: {
+      queued: Number(durable.queued || 0),
+      waitingForRuntime: Number(durable.waiting_for_local_runtime || 0),
+      processing: Number(durable.processing || 0),
+      completed: Number(durable.completed || 0),
+      failed: Number(durable.failed || 0),
+      retrying
+    },
+    rates: {
+      completedLast5Minutes,
+      completedLastHour,
+      failedLastHour,
+      averageProcessingMs: durations.length
+        ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+        : 0,
+      p95ProcessingMs: percentile(durations, 0.95)
+    },
+    oldestQueuedAt: oldest?.createdAt || null,
+    oldestWaitMs: oldest?.createdAt ? elapsedMs(oldest.createdAt, sampledAt) : 0,
+    recentJobs: recentRows.map((job) => operationalJob(job, sampledAt))
+  };
   try {
     const q = await getQueue();
     const counts = await q.getJobCounts('prioritized', 'waiting', 'active', 'delayed', 'completed', 'failed', 'paused');
     counts.waitingTotal = Number(counts.waiting || 0) + Number(counts.prioritized || 0);
+    const active = Number(counts.active || 0);
+    const configuredConcurrency = workerConcurrency();
     return {
       queue: queueName,
-      concurrency: workerConcurrency(),
+      concurrency: configuredConcurrency,
       available: true,
       counts,
-      oldestQueuedAt: oldest?.createdAt || null,
-      paused: await q.isPaused()
+      paused: await q.isPaused(),
+      worker: {
+        running: Boolean(worker),
+        concurrency: configuredConcurrency,
+        active,
+        availableSlots: Math.max(0, configuredConcurrency - active),
+        utilizationPercent: Math.min(100, Math.round((active / configuredConcurrency) * 100))
+      },
+      ...operational
     };
   } catch (error) {
-    const [waiting, active, completed, failed] = await Promise.all([
-      CVProcessingJob.countDocuments({ state: { $in: ['queued', 'waiting_for_local_runtime'] } }),
-      CVProcessingJob.countDocuments({ state: 'processing' }),
-      CVProcessingJob.countDocuments({ state: 'completed' }),
-      CVProcessingJob.countDocuments({ state: 'failed' })
-    ]);
+    const waiting = operational.durable.queued + operational.durable.waitingForRuntime;
+    const active = operational.durable.processing;
+    const configuredConcurrency = workerConcurrency();
     return {
       queue: queueName,
-      concurrency: workerConcurrency(),
+      concurrency: configuredConcurrency,
       available: false,
-      counts: { prioritized: 0, waiting, waitingTotal: waiting, active, delayed: 0, completed, failed, paused: 0 },
-      oldestQueuedAt: oldest?.createdAt || null,
+      counts: {
+        prioritized: 0,
+        waiting,
+        waitingTotal: waiting,
+        active,
+        delayed: operational.durable.waitingForRuntime,
+        completed: operational.durable.completed,
+        failed: operational.durable.failed,
+        paused: 0
+      },
       paused: false,
-      error: error.message
+      worker: {
+        running: Boolean(worker),
+        concurrency: configuredConcurrency,
+        active,
+        availableSlots: Math.max(0, configuredConcurrency - active),
+        utilizationPercent: Math.min(100, Math.round((active / configuredConcurrency) * 100))
+      },
+      error: error.message,
+      ...operational
     };
   }
 }

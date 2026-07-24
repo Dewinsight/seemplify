@@ -41,6 +41,16 @@ test('credential management uses the explicit system settings permission', () =>
   assert.doesNotMatch(routeSource, /requireSuperAdmin/);
 });
 
+test('queue telemetry stream is authenticated, unbuffered, and cleans up timers', () => {
+  const routeSource = fs.readFileSync(path.join(__dirname, '..', 'routes', 'adminAIRuntime.js'), 'utf8');
+  assert.match(routeSource, /router\.get\('\/local\/queue\/stream', \.\.\.analyticsAccess/);
+  assert.match(routeSource, /'Content-Type': 'text\/event-stream'/);
+  assert.match(routeSource, /'X-Accel-Buffering': 'no'/);
+  assert.match(routeSource, /setInterval\(\(\) => void sendSnapshot\(\), 2_000\)/);
+  assert.match(routeSource, /req\.on\('close', close\)/);
+  assert.match(routeSource, /clearInterval\(snapshotTimer\)/);
+});
+
 function mockUsageQuery(value) {
   return {
     select() { return this; },

@@ -42,6 +42,10 @@ CVProcessingJobSchema.index(
   { organization: 1, idempotencyKey: 1 },
   { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
 );
+CVProcessingJobSchema.index({ state: 1, createdAt: 1 });
+CVProcessingJobSchema.index({ completedAt: -1 });
+CVProcessingJobSchema.index({ failedAt: -1 });
+CVProcessingJobSchema.index({ updatedAt: -1 });
 CVProcessingJobSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('CVProcessingJob', CVProcessingJobSchema);
