@@ -112,6 +112,26 @@ interface ActivityDefinition {
   lockedProvider?: boolean;
 }
 
+interface LocalActivityQueue {
+  activity: string;
+  active: number;
+  waiting: number;
+  concurrency: number;
+  approvedConcurrency: number;
+  candidateConcurrency: number;
+  sustainedValidated: boolean;
+  durable: boolean;
+  oldestWaitMs: number;
+  completed: number;
+  failed: number;
+  averageWaitMs: number;
+  p95WaitMs: number;
+  averageRunMs: number;
+  p95RunMs: number;
+  lastStartedAt?: string | null;
+  lastCompletedAt?: string | null;
+}
+
 interface LocalRuntimeStatus {
   configured: boolean;
   reachable: boolean;
@@ -130,6 +150,7 @@ interface LocalRuntimeStatus {
   engines?: Array<{ id: string; label: string; model: string; selected: boolean }>;
   active?: number;
   waiting?: number;
+  activityQueues?: LocalActivityQueue[];
   completed?: number;
   failed?: number;
   averageLatencyMs?: number;
@@ -1114,7 +1135,7 @@ export default function AIRuntimeAdminPage() {
     if (tab !== 'local') return;
     const timer = window.setInterval(() => {
       loadLocalGateway().catch(() => {});
-    }, 10_000);
+    }, 2_000);
     return () => window.clearInterval(timer);
   }, [loadLocalGateway, tab]);
   useEffect(() => {
@@ -1705,6 +1726,71 @@ export default function AIRuntimeAdminPage() {
                           </TableRow>
                         ))}
                         {!localRuntime?.engines?.length && <TableRow><TableCell colSpan={3} className="h-20 text-center text-gray-500">Engine inventory is unavailable.</TableCell></TableRow>}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+
+                <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
+                  <div className="flex flex-col gap-2 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-sm font-semibold text-white">Inference activity queues</h2>
+                      <p className="mt-1 text-xs text-gray-500">Each activity waits in its own FIFO lane. The shared runtime ceiling still limits total Terra work across all lanes.</p>
+                    </div>
+                    <div className="text-xs text-gray-500">Updates every 2 seconds</div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-gray-800">
+                          <TableHead>Activity</TableHead>
+                          <TableHead>Routing</TableHead>
+                          <TableHead>Active</TableHead>
+                          <TableHead>Waiting</TableHead>
+                          <TableHead>Limit</TableHead>
+                          <TableHead>Approval</TableHead>
+                          <TableHead>Oldest wait</TableHead>
+                          <TableHead>P95 run</TableHead>
+                          <TableHead>Completed / failed</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(localRuntime?.activityQueues || []).map((lane) => {
+                          const route = settings?.routes.find((item) => item.activity === lane.activity);
+                          const localAssigned = route?.enabled && route.provider === 'local-ollama';
+                          return (
+                            <TableRow key={lane.activity} className="border-gray-800">
+                              <TableCell>
+                                <div className="font-medium text-gray-200">{definitions.get(lane.activity)?.label || lane.activity}</div>
+                                <div className="font-mono text-xs text-gray-500">{lane.activity}</div>
+                              </TableCell>
+                              <TableCell className={localAssigned ? 'text-green-300' : 'text-gray-500'}>
+                                {localAssigned ? 'Assigned local' : 'Not assigned'}
+                              </TableCell>
+                              <TableCell>{formatNumber(lane.active)}</TableCell>
+                              <TableCell className={lane.waiting > 0 ? 'text-amber-300' : undefined}>{formatNumber(lane.waiting)}</TableCell>
+                              <TableCell>
+                                <div>{formatNumber(lane.concurrency)}</div>
+                                {lane.candidateConcurrency !== lane.concurrency && (
+                                  <div className="text-xs text-gray-500">candidate {formatNumber(lane.candidateConcurrency)}</div>
+                                )}
+                              </TableCell>
+                              <TableCell className={lane.sustainedValidated ? 'text-green-300' : 'text-amber-300'}>
+                                {lane.sustainedValidated ? 'Sustained' : 'Safe fallback'}
+                              </TableCell>
+                              <TableCell>{formatDuration(lane.oldestWaitMs)}</TableCell>
+                              <TableCell>{formatDuration(lane.p95RunMs)}</TableCell>
+                              <TableCell>{formatNumber(lane.completed)} / {formatNumber(lane.failed)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {!localRuntime?.activityQueues?.length && (
+                          <TableRow>
+                            <TableCell colSpan={9} className="h-20 text-center text-gray-500">
+                              Activity queue telemetry is unavailable.
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>

@@ -8,6 +8,7 @@ const runtimeDir = path.join(repositoryRoot, '.local-runtime', 'llm');
 const gatewayUrl = String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
 const secret = fs.readFileSync(path.join(runtimeDir, 'service-secret'), 'utf8').trim();
 const requestCount = Math.max(4, Number(process.argv.find((value) => value.startsWith('--requests='))?.split('=')[1] || 40));
+const burst = process.argv.includes('--burst');
 
 const schema = {
   type: 'object',
@@ -78,7 +79,7 @@ async function analyze(index, enqueuedAt) {
     return {
       ok: Boolean(valid),
       status: response.status,
-      queueWaitMs: startedAt - enqueuedAt,
+      queueWaitMs: Number(payload.metrics?.queueWaitMs || 0),
       latencyMs: Date.now() - startedAt,
       endToEndLatencyMs: Date.now() - enqueuedAt,
       error: valid ? undefined : payload.code || payload.message || 'invalid response'
@@ -92,6 +93,16 @@ async function analyze(index, enqueuedAt) {
       error: error.message
     };
   }
+}
+
+async function dispatchBurst(count) {
+  const enqueuedAt = Date.now();
+  return {
+    results: await Promise.all(
+      Array.from({ length: count }, (_, index) => analyze(index + 1, enqueuedAt))
+    ),
+    maxHarnessWaiting: 0
+  };
 }
 
 async function dispatchWithinApprovedCapacity(count, concurrency) {
@@ -143,7 +154,9 @@ async function main() {
   const startedAt = Date.now();
   let dispatch;
   try {
-    dispatch = await dispatchWithinApprovedCapacity(requestCount, configuredConcurrency);
+    dispatch = burst
+      ? await dispatchBurst(requestCount)
+      : await dispatchWithinApprovedCapacity(requestCount, configuredConcurrency);
   } finally {
     clearInterval(sampler);
   }
@@ -155,6 +168,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     engine: runtime.engine,
     model: runtime.model,
+    dispatchMode: burst ? 'gateway-queue-burst' : 'harness-limited',
     configuredConcurrency,
     requestCount,
     successful: successful.length,
@@ -171,7 +185,9 @@ async function main() {
     results,
     passed: successful.length === requestCount
       && Math.max(0, ...samples.map((sample) => sample.active)) <= configuredConcurrency
-      && maxHarnessWaiting === Math.max(0, requestCount - configuredConcurrency)
+      && (burst
+        ? Math.max(0, ...samples.map((sample) => sample.waiting)) >= Math.max(0, requestCount - configuredConcurrency)
+        : maxHarnessWaiting === Math.max(0, requestCount - configuredConcurrency))
   };
   const modelSlug = `${runtime.engine}-${runtime.model}`.replace(/[^a-z0-9_-]+/gi, '-');
   fs.writeFileSync(path.join(runtimeDir, `soak-${modelSlug}-${report.generatedAt.replaceAll(':', '-')}.json`), JSON.stringify(report, null, 2));

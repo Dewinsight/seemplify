@@ -9,9 +9,12 @@ const {
   selectHeadroomConcurrency
 } = require('../../../tools/local-llm/benchmark-approval.cjs');
 const {
+  activityApprovalFor,
+  activityConcurrencyDecision,
   assertConcurrencyApproved,
   concurrencyDecision,
   readApprovals,
+  recordActivityApproval,
   recordApproval
 } = require('../../../tools/local-llm/approval-store.cjs');
 const { BoundedFixedWindowRateLimiter } = require('../../../tools/local-llm/bounded-rate-limit.cjs');
@@ -150,6 +153,110 @@ test('an unvalidated benchmark cannot silently overwrite a sustained approval', 
   }
 });
 
+test('activity approvals are independently capped by the sustained global profile', () => {
+  const approvals = {
+    byEngineModel: {
+      'codex:gpt-5.6-terra': {
+        engine: 'codex',
+        model: 'gpt-5.6-terra',
+        concurrency: 32,
+        sustainedValidated: true
+      }
+    },
+    byEngineModelActivity: {
+      'codex:gpt-5.6-terra:candidate.cv_parse': {
+        engine: 'codex',
+        model: 'gpt-5.6-terra',
+        activity: 'candidate.cv_parse',
+        concurrency: 8,
+        candidateConcurrency: 16,
+        sustainedValidated: true
+      },
+      'codex:gpt-5.6-terra:interview.questions': {
+        engine: 'codex',
+        model: 'gpt-5.6-terra',
+        activity: 'interview.questions',
+        concurrency: 64,
+        candidateConcurrency: 64,
+        sustainedValidated: true
+      }
+    }
+  };
+  assert.equal(
+    activityApprovalFor('codex', 'gpt-5.6-terra', 'candidate.cv_parse', approvals).concurrency,
+    8
+  );
+  assert.equal(
+    activityApprovalFor('codex', 'gpt-5.6-terra', 'interview.questions', approvals).concurrency,
+    32
+  );
+  assert.equal(
+    activityApprovalFor('codex', 'gpt-5.6-terra', 'assistant.chat', approvals).concurrency,
+    1
+  );
+  assert.deepEqual(
+    activityConcurrencyDecision({
+      engine: 'codex',
+      model: 'gpt-5.6-terra',
+      activity: 'candidate.cv_parse',
+      requested: 64,
+      approvals
+    }),
+    {
+      engine: 'codex',
+      model: 'gpt-5.6-terra',
+      activity: 'candidate.cv_parse',
+      requestedConcurrency: 64,
+      approvedConcurrency: 8,
+      candidateConcurrency: 16,
+      effectiveConcurrency: 8,
+      allowed: false,
+      sustainedValidated: true,
+      globalApprovedConcurrency: 32,
+      globalSustainedValidated: true
+    }
+  );
+});
+
+test('activity approval persistence requires and preserves sustained evidence', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-activity-approval-test-'));
+  const approvalPath = path.join(directory, 'approved-concurrency.json');
+  try {
+    recordApproval({
+      engine: 'codex',
+      model: 'gpt-5.6-terra',
+      concurrency: 32,
+      candidateConcurrency: 32,
+      sustainedValidated: true,
+      approvalPath
+    });
+    recordActivityApproval({
+      engine: 'codex',
+      model: 'gpt-5.6-terra',
+      activity: 'candidate.cv_parse',
+      concurrency: 16,
+      candidateConcurrency: 16,
+      sustainedValidated: true,
+      approvalPath
+    });
+    recordActivityApproval({
+      engine: 'codex',
+      model: 'gpt-5.6-terra',
+      activity: 'candidate.cv_parse',
+      concurrency: 1,
+      candidateConcurrency: 64,
+      sustainedValidated: false,
+      approvalPath
+    });
+    const saved = readApprovals(approvalPath);
+    const profile = saved.byEngineModelActivity['codex:gpt-5.6-terra:candidate.cv_parse'];
+    assert.equal(profile.concurrency, 16);
+    assert.equal(profile.sustainedValidated, true);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('fixed-window rate limiter caps unique keys and frees expired entries', () => {
   const limiter = new BoundedFixedWindowRateLimiter({
     windowMs: 100,
@@ -183,4 +290,16 @@ test('benchmark, restore and engine launch paths all enforce the persisted cap',
   assert.match(manager, /OLLAMA_NUM_PARALLEL = '\$parallel'/);
   assert.match(manager, /--max-num-seqs \$approvedConcurrency/);
   assert.match(manager, /\$defaults\.concurrency = \[Math\]::Min\(\$requestedConcurrency, \$approvedConcurrency\)/);
+});
+
+test('activity benchmark isolates ingress and requires mixed sustained evidence before approval', () => {
+  const toolRoot = path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm');
+  const source = fs.readFileSync(path.join(toolRoot, 'benchmark-activities.cjs'), 'utf8');
+  assert.match(source, /analyzeWithEngine/);
+  assert.match(source, /ingressEnabled: false/);
+  assert.match(source, /paused: true/);
+  assert.match(source, /await restoreGateway\(original\)/);
+  assert.match(source, /report\.mixed\.sustainedValidated/);
+  assert.match(source, /recordActivityApproval/);
+  assert.match(source, /activity-concurrency-benchmark\.lock/);
 });

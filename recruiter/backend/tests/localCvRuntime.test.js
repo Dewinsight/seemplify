@@ -41,7 +41,7 @@ async function waitFor(url, timeoutMs = 10_000) {
 async function waitForCondition(predicate, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (predicate()) return true;
+    if (await predicate()) return true;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return false;
@@ -619,6 +619,10 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     assert.deepEqual(await telemetry.json(), {
       ok: true,
       desiredConcurrency: 1,
+      desiredConcurrencyByActivity: {
+        'ai_interview.cv_parse': 1,
+        'candidate.cv_parse': 1
+      },
       desiredPaused: true
     });
     const queueStatus = await (await controlRequest('/control/status')).json();
@@ -735,15 +739,30 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     const busyBody = JSON.stringify({
       activity: 'recruiter.general',
       executionMode: 'local-only',
-      messages: [{ role: 'user', content: 'second request must stay durable' }]
+      messages: [{ role: 'user', content: 'second request must wait in its activity lane' }]
     });
-    const busyCompletion = await signedRequest(busyBody);
-    assert.equal(busyCompletion.status, 503);
-    assert.equal((await busyCompletion.json()).code, 'LOCAL_LLM_BUSY');
-    assert.equal(busyCompletion.headers.get('retry-after'), '1');
+    const waitingCompletion = signedRequest(busyBody);
+    let queuedStatus = null;
+    const observedWaiting = await waitForCondition(async () => {
+      queuedStatus = await (await controlRequest('/control/status')).json();
+      return queuedStatus.waiting === 1
+        && queuedStatus.activityQueues.some((lane) => (
+          lane.activity === 'recruiter.general' && lane.waiting === 1
+        ));
+    });
+    assert.equal(observedWaiting, true);
     assert.equal((await heldCompletion).status, 200);
-    const noVolatileWaiters = await (await controlRequest('/control/status')).json();
-    assert.equal(noVolatileWaiters.waiting, 0);
+    const waitingResponse = await waitingCompletion;
+    assert.equal(waitingResponse.status, 200);
+    const waitingPayload = await waitingResponse.json();
+    assert.equal(waitingPayload.content, 'Local text completion');
+    assert.equal(waitingPayload.metrics.queueWaitMs > 0, true);
+    const drainedActivityQueue = await (await controlRequest('/control/status')).json();
+    assert.equal(drainedActivityQueue.waiting, 0);
+    assert.equal(
+      drainedActivityQueue.activityQueues.find((lane) => lane.activity === 'recruiter.general').completed,
+      3
+    );
 
     for (const activity of Object.keys(ACTIVITY_DEFINITIONS).filter((item) => !['candidate.cv_parse', 'ai_interview.cv_parse'].includes(item))) {
       const activityBody = JSON.stringify({

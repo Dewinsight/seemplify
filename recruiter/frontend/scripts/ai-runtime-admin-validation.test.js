@@ -198,6 +198,12 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
   assert.match(pageSource, /Codex CLI \(local-cloud\)/);
   assert.match(pageSource, /Local engines and models/);
   assert.match(pageSource, /Available in Control Center/);
+  assert.match(pageSource, /Inference activity queues/);
+  assert.match(pageSource, /Each activity waits in its own FIFO lane/);
+  assert.match(pageSource, /localRuntime\?\.activityQueues/);
+  assert.match(pageSource, /lane\.sustainedValidated \? 'Sustained' : 'Safe fallback'/);
+  assert.match(pageSource, /lane\.oldestWaitMs/);
+  assert.match(pageSource, /lane\.p95RunMs/);
   assert.match(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Managed local'/);
   assert.match(pageSource, /localRuntime\?\.failover\?\.intervalMinutes \? `Every \$\{localRuntime\.failover\.intervalMinutes\} minutes` : 'Not reported'/);
   assert.match(pageSource, /Gateway metering/);

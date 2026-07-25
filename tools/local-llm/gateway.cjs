@@ -11,10 +11,14 @@ const {
   engineSettings
 } = require('./engine-adapters.cjs');
 const {
+  activityConcurrencyDecision,
   assertConcurrencyApproved,
   concurrencyDecision,
   normalizeConcurrency
 } = require('./approval-store.cjs');
+const {
+  ActivityQueueScheduler
+} = require('./activity-queue.cjs');
 const { BoundedFixedWindowRateLimiter } = require('./bounded-rate-limit.cjs');
 const { LocalUsageMeteringOutbox } = require('./usage-metering-outbox.cjs');
 const {
@@ -243,7 +247,6 @@ const publicHealthLimiter = new BoundedFixedWindowRateLimiter({
   maxKeys: publicHealthRateLimitMaxKeys
 });
 const activeControllers = new Set();
-let active = 0;
 let completed = 0;
 let failed = 0;
 let totalLatencyMs = 0;
@@ -251,6 +254,38 @@ let lastRequestAt = null;
 let shuttingDown = false;
 let queueTelemetry = null;
 let lastNoncePruneAt = 0;
+
+function activitySchedulerLimits(activity) {
+  const state = readState();
+  const selected = engineSettings(state);
+  const available = !shuttingDown && state.enabled && !state.paused;
+  const decision = activityConcurrencyDecision({
+    engine: selected.id,
+    model: selected.model,
+    activity,
+    requested: 128
+  });
+  return {
+    globalLimit: available ? Math.max(1, Number(state.concurrency || 1)) : 0,
+    activityLimit: available
+      ? Math.min(
+          Math.max(1, Number(state.concurrency || 1)),
+          Math.max(1, Number(decision.approvedConcurrency || 1))
+        )
+      : 0,
+    approvedConcurrency: decision.approvedConcurrency,
+    candidateConcurrency: decision.candidateConcurrency,
+    sustainedValidated: decision.sustainedValidated,
+    globalApprovedConcurrency: decision.globalApprovedConcurrency,
+    globalSustainedValidated: decision.globalSustainedValidated
+  };
+}
+
+const inferenceScheduler = new ActivityQueueScheduler({
+  getLimits: activitySchedulerLimits,
+  maxQueuePerActivity: Number(process.env.LOCAL_LLM_MAX_QUEUE_PER_ACTIVITY || 1_000),
+  maxWaitMs: Number(process.env.LOCAL_LLM_ACTIVITY_QUEUE_MAX_WAIT_MS || 0)
+});
 
 async function pruneNonces(now = Date.now()) {
   for (const [nonce, expiresAt] of seenNonces) if (expiresAt <= now) seenNonces.delete(nonce);
@@ -638,23 +673,28 @@ async function readBody(request) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function tryAcquireSlot() {
-  const state = readState();
-  if (shuttingDown || !state.enabled || state.paused) return null;
-  if (active >= Math.max(1, Number(state.concurrency || 1))) return null;
-  active += 1;
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    active = Math.max(0, active - 1);
-  };
+function cvDesiredConcurrency(state = readState()) {
+  const selected = engineSettings(state);
+  const limits = [...cvActivities].map((activity) => activityConcurrencyDecision({
+    engine: selected.id,
+    model: selected.model,
+    activity,
+    requested: 128
+  }).approvedConcurrency);
+  return Math.max(
+    1,
+    Math.min(
+      Math.max(1, Number(state.concurrency || 1)),
+      Math.max(...limits, 1)
+    )
+  );
 }
 
 function statusPayload() {
   const state = readState();
   const selected = engineSettings(state);
   const cvLocalEligible = ENGINE_IDS.includes(selected.id);
+  const scheduler = inferenceScheduler.snapshot(allowedActivities);
   return {
     service: 'seemplify-local-cv-llm',
     state,
@@ -670,8 +710,9 @@ function statusPayload() {
       model: value.model,
       selected: id === selected.id
     })),
-    active,
-    waiting: 0,
+    active: scheduler.active,
+    waiting: scheduler.waiting,
+    activityQueues: scheduler.activityQueues,
     completed,
     failed,
     averageLatencyMs: completed ? Math.round(totalLatencyMs / completed) : 0,
@@ -855,16 +896,6 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       message: `Local inference requires a managed local or local-cloud engine; ${selected.id} is unavailable`
     });
   }
-  const release = tryAcquireSlot();
-  if (!release) {
-    return sendJson(response, 503, {
-      code: 'LOCAL_LLM_BUSY',
-      message: 'Inference capacity is occupied; keep this work in the durable queue and retry',
-      retryable: true,
-      retryAfterMs: 1_000
-    }, { 'retry-after': '1' });
-  }
-
   const controller = new AbortController();
   activeControllers.add(controller);
   const abortIfDisconnected = () => controller.abort(new Error('Inference caller disconnected'));
@@ -875,7 +906,21 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   response.once('close', () => {
     if (!response.writableEnded) abortIfDisconnected();
   });
+  let permit;
+  try {
+    permit = await inferenceScheduler.acquire(input.activity, { signal: controller.signal });
+  } catch (error) {
+    activeControllers.delete(controller);
+    request.removeListener('aborted', abortIfDisconnected);
+    return sendJson(response, error.status || 503, {
+      code: error.code || 'ACTIVITY_QUEUE_UNAVAILABLE',
+      message: error.message,
+      retryable: error.retryable !== false,
+      retryAfterMs: 1_000
+    }, { 'retry-after': '1' });
+  }
   const startedAt = Date.now();
+  let executionStatus = 'failed';
   lastRequestAt = new Date().toISOString();
   try {
     const data = await analyzeWithEngine({ ...input, signal: controller.signal }, readState());
@@ -931,10 +976,12 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     }
     completed += 1;
     totalLatencyMs += latencyMs;
+    executionStatus = 'completed';
     log('info', 'Local AI completion finished', {
       activity: input.activity,
       requestSource,
       endpoint: cvOnly ? 'cv' : 'general',
+      queueWaitMs: permit.waitMs,
       latencyMs,
       engine: data.engine,
       model: data.model,
@@ -961,6 +1008,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
       metrics: {
         ...(data.metrics || {}),
+        queueWaitMs: permit.waitMs,
         latencyMs
       }
     });
@@ -1026,7 +1074,10 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   } finally {
     activeControllers.delete(controller);
     request.removeListener('aborted', abortIfDisconnected);
-    release();
+    permit.release({
+      status: executionStatus,
+      latencyMs: Date.now() - startedAt
+    });
   }
 }
 
@@ -1128,6 +1179,7 @@ const server = http.createServer(async (request, response) => {
       }
       const before = readState();
       const state = writeState(allowed);
+      inferenceScheduler.notifyLimitsChanged();
       await log('info', 'Local AI control state changed', {
         action: 'control_state_updated',
         changes: controlStateChanges(before, state, allowed)
@@ -1185,9 +1237,22 @@ const server = http.createServer(async (request, response) => {
       const input = JSON.parse(rawBody);
       queueTelemetry = normalizeQueueTelemetry(input);
       const controlState = readState();
+      const selected = engineSettings(controlState);
+      const desiredConcurrencyByActivity = Object.fromEntries(
+        [...cvActivities].map((activity) => [
+          activity,
+          activityConcurrencyDecision({
+            engine: selected.id,
+            model: selected.model,
+            activity,
+            requested: 128
+          }).approvedConcurrency
+        ])
+      );
       return sendJson(response, 200, {
         ok: true,
-        desiredConcurrency: controlState.concurrency,
+        desiredConcurrency: cvDesiredConcurrency(controlState),
+        desiredConcurrencyByActivity,
         desiredPaused: controlState.paused
       });
     } catch (error) {
@@ -1207,6 +1272,7 @@ function shutdown(signal) {
   shuttingDown = true;
   usageMeteringOutbox.stop();
   writeState({ paused: true });
+  inferenceScheduler.stop();
   for (const controller of activeControllers) {
     controller.abort(new Error(`Gateway shutdown requested by ${signal}`));
   }
