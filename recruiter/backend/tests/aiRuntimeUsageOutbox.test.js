@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 const {
@@ -48,6 +50,16 @@ class FakeWorker {
 
   async close() {}
 }
+
+test('health endpoint is registered before the catch-all 404 handler', () => {
+  const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const healthRoute = serverSource.indexOf("app.get('/api/health'");
+  const notFoundHandler = serverSource.indexOf('app.use(notFoundHandler)');
+
+  assert.notEqual(healthRoute, -1);
+  assert.notEqual(notFoundHandler, -1);
+  assert.ok(healthRoute < notFoundHandler);
+});
 
 function envelope(fingerprint = 'fingerprint-1') {
   return {

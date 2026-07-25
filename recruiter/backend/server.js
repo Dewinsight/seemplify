@@ -294,6 +294,22 @@ app.get('/', (req, res) => {
   res.json({ message: "SmartHR Backend API Running" });
 });
 
+// Health must be registered before the catch-all 404 middleware.
+app.get('/api/health', (req, res) => {
+  const health = backgroundServiceManager.getHealthCheck();
+  const meteringOutbox = usageMeteringOutbox.status();
+  const projectionRepair = usageProjectionRepairHealth();
+  const healthy = health.healthy
+    && usageMeteringOutboxReady(meteringOutbox)
+    && projectionRepair.healthy;
+  res.status(healthy ? 200 : 503).json({
+    ...health,
+    healthy,
+    aiUsageMeteringOutbox: meteringOutbox,
+    aiUsageProjectionRepair: projectionRepair
+  });
+});
+
 // Error handling middleware (must be after all routes)
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
@@ -334,22 +350,6 @@ backgroundServiceManager.register('multiCandidateRetry', multiCandidateRetryServ
 backgroundServiceManager.register('aiInterviewScoringRetry', aiInterviewScoringRetryService);
 backgroundServiceManager.register('localAIRuntimeHealth', localAIRuntimeHealthService);
 backgroundServiceManager.register('memoryManager', memoryManager);
-
-// Add health check endpoint
-app.get('/api/health', (req, res) => {
-  const health = backgroundServiceManager.getHealthCheck();
-  const meteringOutbox = usageMeteringOutbox.status();
-  const projectionRepair = usageProjectionRepairHealth();
-  const healthy = health.healthy
-    && usageMeteringOutboxReady(meteringOutbox)
-    && projectionRepair.healthy;
-  res.status(healthy ? 200 : 503).json({
-    ...health,
-    healthy,
-    aiUsageMeteringOutbox: meteringOutbox,
-    aiUsageProjectionRepair: projectionRepair
-  });
-});
 
 async function startServer() {
   await databaseReady;
