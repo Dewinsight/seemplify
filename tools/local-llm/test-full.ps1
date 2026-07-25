@@ -147,8 +147,8 @@ function Restore-OnlineRuntime {
 }
 
 try {
-  Invoke-TestStep 'Start the selected approved runtime profile' {
-    Invoke-ControlScript $ManageScript @('-Action', 'start')
+  Invoke-TestStep 'Restart the selected approved runtime profile' {
+    Invoke-ControlScript $ManageScript @('-Action', 'restart')
     $health = Wait-RuntimeHealthy
   }
 
@@ -169,11 +169,20 @@ try {
 
   Invoke-TestStep 'All recruiter backend tests' {
     $previousPort = $env:CV_TEST_REDIS_PORT
+    $previousDispatchRedisUrl = $env:CV_GLOBAL_DISPATCH_REDIS_URL
+    $previousDispatchKeyPrefix = $env:CV_GLOBAL_DISPATCH_KEY_PREFIX
+    $previousDispatchApprovedLimit = $env:CV_GLOBAL_DISPATCH_APPROVED_LIMIT
     try {
       $env:CV_TEST_REDIS_PORT = [string]$script:RedisPort
+      $env:CV_GLOBAL_DISPATCH_REDIS_URL = "redis://127.0.0.1:$($script:RedisPort)/0"
+      $env:CV_GLOBAL_DISPATCH_KEY_PREFIX = "seemplify:cv:test-dispatch:$RedisContainer"
+      $env:CV_GLOBAL_DISPATCH_APPROVED_LIMIT = '1'
       Invoke-InDirectory $BackendRoot { Invoke-Checked node.exe --test 'tests/*.test.js' }
     } finally {
       $env:CV_TEST_REDIS_PORT = $previousPort
+      $env:CV_GLOBAL_DISPATCH_REDIS_URL = $previousDispatchRedisUrl
+      $env:CV_GLOBAL_DISPATCH_KEY_PREFIX = $previousDispatchKeyPrefix
+      $env:CV_GLOBAL_DISPATCH_APPROVED_LIMIT = $previousDispatchApprovedLimit
     }
   }
 
@@ -182,16 +191,25 @@ try {
       $previousEnabled = $env:AI_INTERVIEW_CV_QUEUE_INTEGRATION
       $previousHost = $env:AI_INTERVIEW_REDIS_HOST
       $previousPort = $env:AI_INTERVIEW_REDIS_PORT
+      $previousDispatchRedisUrl = $env:CV_GLOBAL_DISPATCH_REDIS_URL
+      $previousDispatchKeyPrefix = $env:CV_GLOBAL_DISPATCH_KEY_PREFIX
+      $previousDispatchApprovedLimit = $env:CV_GLOBAL_DISPATCH_APPROVED_LIMIT
       try {
         $env:AI_INTERVIEW_CV_QUEUE_INTEGRATION = 'true'
         $env:AI_INTERVIEW_REDIS_HOST = '127.0.0.1'
         $env:AI_INTERVIEW_REDIS_PORT = [string]$script:RedisPort
+        $env:CV_GLOBAL_DISPATCH_REDIS_URL = "redis://127.0.0.1:$($script:RedisPort)/0"
+        $env:CV_GLOBAL_DISPATCH_KEY_PREFIX = "seemplify:cv:test-dispatch:$RedisContainer"
+        $env:CV_GLOBAL_DISPATCH_APPROVED_LIMIT = '1'
         Invoke-Checked npm.cmd run check
         Invoke-Checked npm.cmd test
       } finally {
         $env:AI_INTERVIEW_CV_QUEUE_INTEGRATION = $previousEnabled
         $env:AI_INTERVIEW_REDIS_HOST = $previousHost
         $env:AI_INTERVIEW_REDIS_PORT = $previousPort
+        $env:CV_GLOBAL_DISPATCH_REDIS_URL = $previousDispatchRedisUrl
+        $env:CV_GLOBAL_DISPATCH_KEY_PREFIX = $previousDispatchKeyPrefix
+        $env:CV_GLOBAL_DISPATCH_APPROVED_LIMIT = $previousDispatchApprovedLimit
       }
     }
   }
@@ -237,7 +255,7 @@ try {
     }
   }
 
-  Invoke-TestStep 'Sustained gateway concurrency soak' {
+  Invoke-TestStep 'Sustained approved-slot inference soak' {
     Invoke-InDirectory $RepositoryRoot { Invoke-Checked node.exe 'tools/local-llm/soak.cjs' "--requests=$SoakRequests" }
   }
 

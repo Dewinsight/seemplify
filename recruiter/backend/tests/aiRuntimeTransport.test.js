@@ -4,10 +4,13 @@ const { afterEach, mock, test } = require('node:test');
 const { createDefaultRuntimeSettings } = require('../config/aiRuntimeCatalog');
 const AIUsageDailyRollup = require('../models/AIUsageDailyRollup');
 const AIUsageEvent = require('../models/AIUsageEvent');
+const AIUsageLogicalRequest = require('../models/AIUsageLogicalRequest');
+const AIUsageProjectionState = require('../models/AIUsageProjectionState');
 const {
   AIRuntimeError,
   AIRuntimeService,
   calculateFailovers,
+  deriveRuntimeUsageEventId,
   deterministicBucket,
   isLocalRuntimeUnavailable,
   quotaSnapshotIsAvailable,
@@ -17,6 +20,38 @@ const {
 const { AzureTextRollbackAdapter } = require('../services/aiRuntime/azureTextRollbackAdapter');
 
 afterEach(() => mock.restoreAll());
+
+function mockUsageProjectionDependencies(getEvent) {
+  mock.method(AIUsageProjectionState, 'findOneAndUpdate', () => ({
+    lean: async () => ({ value: 1 })
+  }));
+  mock.method(AIUsageEvent, 'aggregate', async () => {
+    const event = getEvent();
+    return [{
+      calls: 1,
+      successes: event.status === 'success' ? 1 : 0,
+      failures: event.status === 'failed' ? 1 : 0,
+      inputTokens: event.inputTokens || 0,
+      cachedInputTokens: event.cachedInputTokens || 0,
+      outputTokens: event.outputTokens || 0,
+      reasoningTokens: event.reasoningTokens || 0,
+      totalTokens: event.totalTokens || 0,
+      estimatedCostUsd: event.estimatedCostUsd || 0,
+      latencyTotalMs: event.latencyMs || 0,
+      latencyMaxMs: event.latencyMs || 0,
+      projectionWatermark: 1
+    }];
+  });
+  mock.method(AIUsageEvent, 'findOne', () => ({
+    sort() { return this; },
+    select() { return this; },
+    lean: async () => getEvent()
+  }));
+  mock.method(AIUsageEvent, 'updateMany', async () => ({ modifiedCount: 1 }));
+  mock.method(AIUsageLogicalRequest, 'findOneAndUpdate', (filter) => ({
+    lean: async () => ({ ...filter })
+  }));
+}
 
 function successPayload(content = 'OK', extra = {}) {
   return {
@@ -125,6 +160,36 @@ test('eligible local request failure records the Terra attempt then succeeds on 
   assert.equal(calculateFailovers(runtime.results[1].route, 2), 2);
 });
 
+test('usage event identity separates executions and local-to-Groq outcomes from one request', () => {
+  const localRoute = { provider: 'local-ollama', model: 'gpt-5.6-terra' };
+  const groqRoute = {
+    provider: 'groq',
+    model: 'openai/gpt-oss-120b',
+    failoverFrom: 'local-ollama'
+  };
+  const first = {
+    usageExecutionId: 'cv-queue:job-1:attempt:1',
+    structuredCompletionOrdinal: 1
+  };
+  const second = {
+    usageExecutionId: 'cv-queue:job-1:attempt:2',
+    structuredCompletionOrdinal: 1
+  };
+
+  assert.equal(
+    deriveRuntimeUsageEventId({ context: first, route: localRoute }),
+    deriveRuntimeUsageEventId({ context: first, route: localRoute })
+  );
+  assert.notEqual(
+    deriveRuntimeUsageEventId({ context: first, route: localRoute }),
+    deriveRuntimeUsageEventId({ context: first, route: groqRoute })
+  );
+  assert.notEqual(
+    deriveRuntimeUsageEventId({ context: first, route: localRoute }),
+    deriveRuntimeUsageEventId({ context: second, route: localRoute })
+  );
+});
+
 test('eligible local request does not fail over when automatic failover is disabled', async () => {
   const runtime = new TestRuntime([jsonResponse(successPayload('must not be used'))]);
   const settings = createDefaultRuntimeSettings();
@@ -186,6 +251,11 @@ test('eligible local request does not fail over for schema, authentication, or o
 test('usage audit schema persists local-to-Groq failover provenance', () => {
   assert.ok(AIUsageEvent.schema.path('failoverFrom'));
   assert.ok(AIUsageEvent.schema.path('failoverReason'));
+  assert.ok(AIUsageEvent.schema.path('usageReported'));
+  assert.ok(AIUsageEvent.schema.path('usageSource'));
+  assert.ok(AIUsageEvent.schema.path('gatewayExecutionId'));
+  assert.ok(AIUsageEvent.schema.path('meteringOrigin'));
+  assert.ok(AIUsageEvent.schema.path('atSourceOnly'));
 });
 
 test('Terra gateway usage is persisted to the request audit and daily model rollup', async () => {
@@ -196,6 +266,7 @@ test('Terra gateway usage is persisted to the request audit and daily model roll
     savedEvent = event;
     return { toObject: () => ({ ...event }) };
   });
+  mockUsageProjectionDependencies(() => savedEvent);
   mock.method(AIUsageDailyRollup, 'findOneAndUpdate', (filter, update) => {
     rollupFilter = filter;
     rollupUpdate = update;
@@ -208,6 +279,7 @@ test('Terra gateway usage is persisted to the request audit and daily model roll
   runtime.getSettings = async () => createDefaultRuntimeSettings();
   runtime.localProviderRequest = async () => jsonResponse({
     id: 'terra-request-1',
+    gatewayExecutionId: `localexec_${'d'.repeat(48)}`,
     engine: 'codex',
     model: 'gpt-5.6-terra',
     content: '{"firstName":"Ada"}',
@@ -240,18 +312,143 @@ test('Terra gateway usage is persisted to the request audit and daily model roll
   });
   assert.equal(savedEvent.provider, 'local-codex');
   assert.equal(savedEvent.model, 'gpt-5.6-terra');
+  assert.equal(savedEvent.gatewayExecutionId, `localexec_${'d'.repeat(48)}`);
+  assert.equal(savedEvent.meteringOrigin, 'backend-response');
+  assert.equal(savedEvent.usageReported, true);
+  assert.equal(savedEvent.usageSource, 'local-gateway');
   assert.equal(savedEvent.inputTokens, 12_858);
   assert.equal(savedEvent.cachedInputTokens, 10_496);
   assert.equal(savedEvent.outputTokens, 9);
   assert.equal(savedEvent.reasoningTokens, 4);
   assert.equal(savedEvent.totalTokens, 12_867);
+  assert.match(savedEvent.eventId, /^usage_[a-f0-9]{48}$/);
   assert.equal(rollupFilter.provider, 'local-codex');
   assert.equal(rollupFilter.model, 'gpt-5.6-terra');
-  assert.equal(rollupUpdate.$inc.inputTokens, 12_858);
-  assert.equal(rollupUpdate.$inc.cachedInputTokens, 10_496);
-  assert.equal(rollupUpdate.$inc.outputTokens, 9);
-  assert.equal(rollupUpdate.$inc.reasoningTokens, 4);
-  assert.equal(rollupUpdate.$inc.totalTokens, 12_867);
+  assert.equal(rollupUpdate.$set.inputTokens, 12_858);
+  assert.equal(rollupUpdate.$set.cachedInputTokens, 10_496);
+  assert.equal(rollupUpdate.$set.outputTokens, 9);
+  assert.equal(rollupUpdate.$set.reasoningTokens, 4);
+  assert.equal(rollupUpdate.$set.totalTokens, 12_867);
+});
+
+test('post-generation gateway failures persist authoritative Terra token usage', async () => {
+  let savedEvent;
+  mock.method(AIUsageEvent, 'create', async (event) => {
+    savedEvent = event;
+    return { toObject: () => ({ ...event }) };
+  });
+  mockUsageProjectionDependencies(() => savedEvent);
+  mock.method(AIUsageDailyRollup, 'findOneAndUpdate', (filter) => ({
+    lean: async () => ({ ...filter })
+  }));
+
+  const runtime = new AIRuntimeService({
+    fetchImpl: async () => { throw new Error('unexpected fetch'); }
+  });
+  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.localProviderRequest = async () => jsonResponse({
+    error: {
+      code: 'LOCAL_LLM_SCHEMA_INVALID',
+      message: 'Generated JSON did not satisfy the requested schema'
+    },
+    id: 'terra-failed-generation-1',
+    engine: 'codex',
+    model: 'gpt-5.6-terra',
+    usageReported: true,
+    usageSource: 'local-codex-jsonl',
+    usage: {
+      prompt_tokens: 1200,
+      completion_tokens: 75,
+      total_tokens: 1275
+    }
+  }, 502);
+
+  await assert.rejects(
+    () => runtime.complete('interview.questions', {
+      messages: [{ role: 'user', content: 'Generate structured questions.' }]
+    }),
+    (error) => error.code === 'LOCAL_LLM_SCHEMA_INVALID'
+  );
+  assert.equal(savedEvent.status, 'failed');
+  assert.equal(savedEvent.provider, 'local-codex');
+  assert.equal(savedEvent.model, 'gpt-5.6-terra');
+  assert.equal(savedEvent.usageReported, true);
+  assert.equal(savedEvent.usageSource, 'local-codex-jsonl');
+  assert.equal(savedEvent.inputTokens, 1200);
+  assert.equal(savedEvent.outputTokens, 75);
+  assert.equal(savedEvent.totalTokens, 1275);
+});
+
+test('a successful local response without usage is audited as unreported rather than measured zero', async () => {
+  let savedEvent;
+  mock.method(AIUsageEvent, 'create', async (event) => {
+    savedEvent = event;
+    return { toObject: () => ({ ...event }) };
+  });
+  mockUsageProjectionDependencies(() => savedEvent);
+  mock.method(AIUsageDailyRollup, 'findOneAndUpdate', (filter) => ({
+    lean: async () => ({ ...filter })
+  }));
+
+  const runtime = new AIRuntimeService({
+    fetchImpl: async () => { throw new Error('unexpected fetch'); }
+  });
+  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.localProviderRequest = async () => jsonResponse({
+    id: 'terra-unmetered-1',
+    engine: 'codex',
+    model: 'gpt-5.6-terra',
+    content: '{"firstName":"Ada"}',
+    finishReason: 'stop'
+  });
+
+  await runtime.complete('candidate.cv_parse', {
+    messages: [{ role: 'user', content: 'Extract this synthetic CV.' }]
+  });
+
+  assert.equal(savedEvent.status, 'success');
+  assert.equal(savedEvent.usageReported, false);
+  assert.equal(savedEvent.usageSource, 'unreported');
+  assert.equal(savedEvent.totalTokens, 0);
+});
+
+test('an adapter zero envelope with usageReported=false remains explicitly unmetered', async () => {
+  let savedEvent;
+  mock.method(AIUsageEvent, 'create', async (event) => {
+    savedEvent = event;
+    return { toObject: () => ({ ...event }) };
+  });
+  mockUsageProjectionDependencies(() => savedEvent);
+  mock.method(AIUsageDailyRollup, 'findOneAndUpdate', (filter) => ({
+    lean: async () => ({ ...filter })
+  }));
+
+  const runtime = new AIRuntimeService({
+    fetchImpl: async () => { throw new Error('unexpected fetch'); }
+  });
+  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.localProviderRequest = async () => jsonResponse({
+    id: 'terra-explicit-unmetered-1',
+    engine: 'codex',
+    model: 'gpt-5.6-terra',
+    content: '{"firstName":"Ada"}',
+    finishReason: 'stop',
+    usageReported: false,
+    usageSource: 'unreported',
+    usage: {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0
+    }
+  });
+
+  await runtime.complete('candidate.cv_parse', {
+    messages: [{ role: 'user', content: 'Extract this synthetic CV.' }]
+  });
+
+  assert.equal(savedEvent.usageReported, false);
+  assert.equal(savedEvent.usageSource, 'unreported');
+  assert.equal(savedEvent.totalTokens, 0);
 });
 
 for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {

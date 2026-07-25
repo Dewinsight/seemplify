@@ -3,7 +3,6 @@ const Department = require('../models/Department');
 const Notification = require('../models/Notification');
 const Candidate = require('../models/Candidate');
 const Organization = require('../models/Organization');
-const Plan = require('../models/Plan');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
 const fs = require('fs');
@@ -13,69 +12,12 @@ const InterviewService = require('../services/interviewService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
 const pipelineReportExportService = require('../services/pipelineReportExportService');
+const publicJobCreditService = require('../services/publicJobCreditService');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const interviewController = require('./interviewController');
 
 const unlinkAsync = util.promisify(fs.unlink);
 const interviewService = new InterviewService();
-
-/**
- * Helper: Get upload candidate cost from organization's plan
- */
-async function getUploadCandidateCost(organizationId) {
-  try {
-    const organization = await Organization.findById(organizationId);
-    if (!organization) throw new Error('Organization not found');
-    
-    const plan = await Plan.findOne({ code: organization.subscription?.plan });
-    const uploadCost = plan?.credits?.creditCosts?.uploadCandidate || 3; // Default to 3 if not found
-    
-    return uploadCost;
-  } catch (error) {
-    console.error('Error getting upload candidate cost:', error);
-    return 3; // Fallback default
-  }
-}
-
-/**
- * Helper: Reserve credits for public job
- */
-async function reserveCreditsForJob(organizationId, jobId, creditsToReserve) {
-  const organization = await Organization.findById(organizationId);
-  if (!organization) throw new Error('Organization not found');
-  
-  const creditUsage = organization.subscription?.creditUsage || {};
-  const remainingCredits = creditUsage.remainingCredits || 0;
-  
-  if (remainingCredits < creditsToReserve) {
-    throw new Error(`Insufficient credits. Need ${creditsToReserve} credits, but only ${remainingCredits} available.`);
-  }
-  
-  // Deduct from organization's main credit pool
-  creditUsage.usedCredits = (creditUsage.usedCredits || 0) + creditsToReserve;
-  creditUsage.remainingCredits = remainingCredits - creditsToReserve;
-  
-  // Record transaction
-  if (!creditUsage.transactions) creditUsage.transactions = [];
-  creditUsage.transactions.push({
-    action: 'creditPurchase', // Using existing enum value for reservation
-    credits: creditsToReserve,
-    entityId: jobId,
-    entityType: 'job',
-    timestamp: new Date(),
-    balanceAfter: remainingCredits - creditsToReserve,
-    metadata: {
-      type: 'reservation',
-      description: `Reserved ${creditsToReserve} credits for public job`
-    }
-  });
-  
-  organization.subscription.creditUsage = creditUsage;
-  await organization.save();
-  
-  console.log(`💳 Reserved ${creditsToReserve} credits for public job ${jobId}`);
-  return creditsToReserve;
-}
 
 /**
  * Helper: Refund unused reserved credits back to organization
@@ -158,9 +100,17 @@ exports.createJob = async (req, res) => {
     if (req.body.applicationDeadline) jobData.applicationDeadline = new Date(req.body.applicationDeadline);
     if (req.body.startDate) jobData.startDate = new Date(req.body.startDate);
     if (!jobData.createdBy) delete jobData.createdBy;
+    delete jobData.reservedCredits;
+    delete jobData.publicApplicationCount;
+    delete jobData.publicApplicationReservations;
+    delete jobData.publicApplicationCreditUnitCost;
 
-    const job = new Job(jobData);
-    await job.save();
+    const job = jobData.isPublic
+      ? await publicJobCreditService.createJob({
+        jobData,
+        actorId: req.user?.id
+      })
+      : await new Job(jobData).save();
     console.log(`✅ Job created successfully: ${job.title}`);
 
     // Create activity notification for all organization members
@@ -185,7 +135,10 @@ exports.createJob = async (req, res) => {
     res.status(201).json({ msg: 'Job created successfully', job });
   } catch (error) {
     console.error('❌ Error creating job:', error);
-    res.status(500).json({ msg: 'Server error creating job', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error creating job',
+      error: error.code || error.message
+    });
   }
 };
 
@@ -250,79 +203,51 @@ exports.updateJob = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const decodedBody = decodeObjectHtmlEntities(req.body);
-    const { isPublic, candidateApplyLimit, ...otherUpdateData } = decodedBody;
+    const {
+      isPublic,
+      candidateApplyLimit,
+      // These fields are server-owned financial state.
+      reservedCredits: ignoredReservedCredits,
+      publicApplicationCount: ignoredApplicationCount,
+      publicApplicationReservations: ignoredReservations,
+      publicApplicationCreditUnitCost: ignoredUnitCost,
+      ...otherUpdateData
+    } = decodedBody;
+    void ignoredReservedCredits;
+    void ignoredApplicationCount;
+    void ignoredReservations;
+    void ignoredUnitCost;
 
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
-    if (!job) {
-      return res.status(404).json({ msg: 'Job not found' });
-    }
-
-    const wasPublic = job.isPublic;
-    const willBePublic = isPublic !== undefined ? isPublic : wasPublic;
-
-    // Handle public status change and credit management first
-    if (willBePublic !== wasPublic || (willBePublic && candidateApplyLimit !== job.candidateApplyLimit)) {
-      if (willBePublic) {
-        const applyLimit = candidateApplyLimit || 0;
-        if (applyLimit <= 0) {
-          return res.status(400).json({
-            msg: 'Candidate apply limit must be greater than 0 for public jobs',
-            error: 'INVALID_APPLY_LIMIT'
-          });
-        }
-
-        const uploadCost = await getUploadCandidateCost(organizationId);
-        const requiredCredits = applyLimit * uploadCost;
-        const currentReserved = job.reservedCredits || 0;
-        const creditDifference = requiredCredits - currentReserved;
-
-        if (creditDifference > 0) {
-          try {
-            await reserveCreditsForJob(organizationId, job._id, creditDifference);
-          } catch (creditError) {
-            return res.status(400).json({
-              msg: creditError.message,
-              error: 'INSUFFICIENT_CREDITS',
-              requiredCredits: creditDifference
-            });
-          }
-        } else if (creditDifference < 0) {
-          await refundReservedCredits(organizationId, job._id, Math.abs(creditDifference), `Apply limit reduced`);
-        }
-        
-        job.isPublic = true;
-        job.candidateApplyLimit = applyLimit;
-        job.reservedCredits = requiredCredits;
-        if (!wasPublic) {
-          job.publicApplicationCount = 0; // Reset on making public
-        }
-      } else { // Making private
-        const uploadCost = await getUploadCandidateCost(organizationId);
-        const usedCredits = (job.publicApplicationCount || 0) * uploadCost;
-        const unusedCredits = (job.reservedCredits || 0) - usedCredits;
-
-        if (unusedCredits > 0) {
-          await refundReservedCredits(organizationId, job._id, unusedCredits, 'Job set to private');
-        }
-        
-        job.isPublic = false;
-        job.reservedCredits = 0;
-        job.candidateApplyLimit = undefined;
+    const mutateJob = (jobToUpdate) => {
+      Object.assign(jobToUpdate, otherUpdateData);
+      jobToUpdate.updatedBy = req.user?.id || null;
+      jobToUpdate.updatedAt = new Date();
+      if (otherUpdateData.applicationDeadline) {
+        jobToUpdate.applicationDeadline = new Date(otherUpdateData.applicationDeadline);
       }
-    }
+      if (otherUpdateData.startDate) {
+        jobToUpdate.startDate = new Date(otherUpdateData.startDate);
+      }
+    };
 
-    // Update other job data
-    Object.assign(job, otherUpdateData);
-    job.updatedBy = req.user?.id || null;
-    job.updatedAt = new Date();
-    if (otherUpdateData.applicationDeadline) {
-      job.applicationDeadline = new Date(otherUpdateData.applicationDeadline);
+    let job;
+    if (isPublic !== undefined || candidateApplyLimit !== undefined) {
+      job = await publicJobCreditService.updatePublicSettings({
+        jobId: req.params.id,
+        organizationId,
+        isPublic,
+        candidateApplyLimit,
+        actorId: req.user?.id,
+        mutateJob
+      });
+    } else {
+      job = await Job.findOne({ _id: req.params.id, organization: organizationId });
+      if (!job) {
+        return res.status(404).json({ msg: 'Job not found' });
+      }
+      mutateJob(job);
+      await job.save();
     }
-    if (otherUpdateData.startDate) {
-      job.startDate = new Date(otherUpdateData.startDate);
-    }
-
-    await job.save();
 
     // Invalidate AI match cache if relevant fields changed
     const cacheInvalidatingFields = ['description', 'requirements', 'skills', 'experience', 'education', 'level'];
@@ -337,41 +262,37 @@ exports.updateJob = async (req, res) => {
     res.json({ msg: 'Job updated successfully', job });
   } catch (error) {
     console.error('❌ Error updating job:', error);
-    res.status(500).json({ msg: 'Server error updating job', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error updating job',
+      error: error.code || error.message
+    });
   }
 };
 
 exports.deleteJob = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
-    if (!job) return res.status(404).json({ msg: 'Job not found' });
+    const job = await publicJobCreditService.deleteJob({
+      jobId: req.params.id,
+      organizationId,
+      actorId: req.user?.id
+    });
     console.log(`🗑️ Deleting job: ${job.title} (${req.params.id})`);
-    
-    // Refund reserved credits if job was public
-    if (job.isPublic && job.reservedCredits > 0) {
-      const uploadCost = await getUploadCandidateCost(organizationId);
-      const usedCredits = job.publicApplicationCount * uploadCost;
-      const unusedCredits = job.reservedCredits - usedCredits;
-      
-      if (unusedCredits > 0) {
-        await refundReservedCredits(organizationId, job._id, unusedCredits, 'Job deleted');
-        console.log(`💰 Refunded ${unusedCredits} unused credits from deleted public job "${job.title}"`);
-      }
-    }
-    
+
     try {
       await embeddingService.deleteEmbedding(req.params.id, embeddingService.jobIndexName);
       console.log(`✅ Job embedding deleted from vector store for job: ${req.params.id}`);
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete job embedding for ${req.params.id}:`, embeddingError.message);
     }
-    await Job.findByIdAndDelete(req.params.id);
     console.log(`✅ Job and embedding successfully deleted: ${job.title}`);
     res.json({ msg: 'Job deleted successfully', deletedJob: { id: job._id, title: job.title, embeddingDeleted: true } });
   } catch (error) {
     console.error('❌ Error deleting job:', error);
-    res.status(500).json({ msg: 'Server error deleting job', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error deleting job',
+      error: error.code || error.message
+    });
   }
 };
 
@@ -390,11 +311,11 @@ exports.bulkDeleteJobs = async (req, res) => {
 
     for (const id of jobIds) {
       try {
-        const job = await Job.findOne({ _id: id, organization: organizationId });
-        if (!job) {
-          failures.push({ id, error: 'Job not found or access denied' });
-          continue;
-        }
+        const job = await publicJobCreditService.deleteJob({
+          jobId: id,
+          organizationId,
+          actorId: req.user?.id
+        });
 
         try {
           await embeddingService.deleteEmbedding(id, embeddingService.jobIndexName);
@@ -402,7 +323,6 @@ exports.bulkDeleteJobs = async (req, res) => {
           console.warn(`⚠️ Failed to delete job embedding for ${id}:`, embeddingError.message);
         }
 
-        await Job.findByIdAndDelete(id);
         results.push({ id, title: job.title, success: true });
       } catch (err) {
         failures.push({ id, error: err.message });

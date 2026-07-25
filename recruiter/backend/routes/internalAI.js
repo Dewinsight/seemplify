@@ -2,7 +2,10 @@ const express = require('express');
 const { ACTIVITY_DEFINITIONS } = require('../config/aiRuntimeCatalog');
 const { createInternalServiceAuth } = require('../middleware/internalServiceAuth');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
-const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+const {
+  ingestLocalUsageEnvelope,
+  verifyLocalUsageSignature
+} = require('../services/aiRuntime/localUsageIngestionService');
 const { runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
 
 const router = express.Router();
@@ -23,7 +26,52 @@ function validateMessages(messages) {
   });
 }
 
+router.post('/v1/local-usage/events', async (req, res) => {
+  const rawBody = Buffer.isBuffer(req.rawBody)
+    ? req.rawBody.toString('utf8')
+    : JSON.stringify(req.body || {});
+  const verified = verifyLocalUsageSignature({
+    headers: req.headers,
+    method: req.method,
+    requestPath: req.originalUrl.split('?')[0],
+    rawBody
+  });
+  if (!verified.ok) {
+    return res.status(verified.statusCode).json({
+      code: verified.code,
+      message: verified.message
+    });
+  }
+  try {
+    const result = await ingestLocalUsageEnvelope(req.body);
+    return res.status(202).json(result);
+  } catch (error) {
+    const status = error.code === 'AI_USAGE_IDENTITY_CONFLICT'
+      ? 409
+      : error instanceof TypeError
+        ? 400
+        : error.statusCode || 503;
+    return res.status(status).json({
+      code: error.code || 'LOCAL_USAGE_INGESTION_FAILED',
+      message: error.message || 'Local usage event could not be recorded'
+    });
+  }
+});
+
 router.post('/v1/complete', internalAuth, async (req, res) => {
+  const controller = new AbortController();
+  const abortForDisconnect = () => {
+    if (controller.signal.aborted) return;
+    const error = new Error('The internal AI client disconnected before inference completed');
+    error.code = 'AI_CLIENT_DISCONNECTED';
+    error.statusCode = 499;
+    controller.abort(error);
+  };
+  const abortForPrematureClose = () => {
+    if (!res.writableEnded) abortForDisconnect();
+  };
+  req.once('aborted', abortForDisconnect);
+  res.once('close', abortForPrematureClose);
   try {
     const activity = String(req.body?.activity || '');
     if (!ACTIVITY_DEFINITIONS[activity]) throw new TypeError('Unknown AI activity');
@@ -48,8 +96,8 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
           ...completionInput,
           jsonSchema: req.body.jsonSchema,
           schemaName: req.body.schemaName
-        })
-        : aiRuntimeService.complete(activity, completionInput)
+        }, { signal: controller.signal })
+        : aiRuntimeService.complete(activity, completionInput, { signal: controller.signal })
     ));
     res.json({
       requestId: result.requestId,
@@ -61,16 +109,21 @@ router.post('/v1/complete', internalAuth, async (req, res) => {
       finishReason: result.finishReason
     });
   } catch (error) {
+    if (res.destroyed || res.writableEnded) return;
     const status = error instanceof TypeError ? 400 : error.statusCode || 503;
     res.status(status).json({
       code: error.code || (status === 400 ? 'AI_GATEWAY_VALIDATION_ERROR' : 'AI_PROVIDER_UNAVAILABLE'),
       message: error.message || 'AI provider is unavailable'
     });
+  } finally {
+    req.removeListener('aborted', abortForDisconnect);
+    res.removeListener('close', abortForPrematureClose);
   }
 });
 
 router.post('/v1/cv-queue/events', internalAuth, async (req, res) => {
   try {
+    const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
     res.json(await cvAnalysisQueue.ingestExternalQueueEvent(req.internalService, req.body));
   } catch (error) {
     res.status(error.statusCode || 503).json({

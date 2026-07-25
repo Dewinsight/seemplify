@@ -1,20 +1,123 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   codexPrompt,
+  codexChildEnv,
+  codexExecArgs,
   finalizeOutput,
   finiteCvSchema,
   hasOpenObjectSchema,
   ollamaMessages,
   parseCodexJsonl,
+  recoverCodexUsage,
   parseStructuredContent,
   prepareInferenceInput,
+  removeCodexRequestDir,
+  runOllama,
+  runVllm,
   shouldEnvelopeOllamaText,
+  spawnCapture,
   stripThinkingText,
   vllmMessages
 } = require('./engine-adapters.cjs');
+
+test('Codex child environment keeps runtime/auth settings and excludes unrelated service secrets', () => {
+  const env = codexChildEnv({
+    PATH: 'C:\\Windows\\System32',
+    SystemRoot: 'C:\\Windows',
+    USERPROFILE: 'C:\\Users\\runtime',
+    OPENAI_API_KEY: 'codex-auth-key',
+    HTTPS_PROXY: 'http://proxy.internal',
+    RECRUITER_DATABASE_PASSWORD: 'sentinel-must-not-leak',
+    REDIS_URL: 'redis://sentinel-must-not-leak',
+    LOCAL_LLM_SHARED_SECRET: 'sentinel-must-not-leak'
+  });
+
+  assert.equal(env.PATH, 'C:\\Windows\\System32');
+  assert.equal(env.SystemRoot, 'C:\\Windows');
+  assert.equal(env.USERPROFILE, 'C:\\Users\\runtime');
+  assert.equal(env.OPENAI_API_KEY, 'codex-auth-key');
+  assert.equal(env.HTTPS_PROXY, 'http://proxy.internal');
+  assert.equal(env.CODEX_NON_INTERACTIVE, '1');
+  assert.equal(env.RECRUITER_DATABASE_PASSWORD, undefined);
+  assert.equal(env.REDIS_URL, undefined);
+  assert.equal(env.LOCAL_LLM_SHARED_SECRET, undefined);
+  assert.doesNotMatch(JSON.stringify(env), /sentinel-must-not-leak/);
+});
+
+test('Codex execution disables untrusted-resume tool surfaces with strict configuration', () => {
+  const args = codexExecArgs({ model: 'gpt-5.6-terra' }, 'C:\\isolated-request');
+  assert.deepEqual(args.slice(1, 14), [
+    '--strict-config',
+    '--disable', 'shell_tool',
+    '--disable', 'apps',
+    '--disable', 'goals',
+    '--disable', 'hooks',
+    '--disable', 'multi_agent',
+    '--disable', 'remote_plugin'
+  ]);
+  assert.ok(args.includes('web_search="disabled"'));
+  assert.ok(args.includes('shell_environment_policy.inherit="none"'));
+  assert.ok(args.includes('--ignore-user-config'));
+  assert.ok(args.includes('--ignore-rules'));
+  assert.deepEqual(args.slice(args.indexOf('--sandbox'), args.indexOf('--sandbox') + 2), [
+    '--sandbox', 'read-only'
+  ]);
+});
+
+test('Codex request cleanup retries transient Windows locks without replacing inference success', async () => {
+  let removalOptions;
+  const cleaned = await removeCodexRequestDir('C:\\isolated-request', {
+    remove: async (_requestDir, options) => {
+      removalOptions = options;
+    }
+  });
+
+  assert.equal(cleaned, true);
+  assert.deepEqual(removalOptions, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100
+  });
+
+  const warnings = [];
+  const retained = await removeCodexRequestDir('C:\\isolated-request', {
+    remove: async () => {
+      const error = new Error('resource busy or locked');
+      error.code = 'EBUSY';
+      throw error;
+    },
+    warn: (message) => warnings.push(message)
+  });
+
+  assert.equal(retained, false);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /resource busy or locked/);
+});
 const { cvSchema } = require('./three-page-cv-fixture.cjs');
+
+async function waitUntil(predicate, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
+}
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 test('detects the extensible objects in the public CV contract', () => {
   assert.equal(hasOpenObjectSchema(cvSchema), true);
@@ -61,6 +164,57 @@ test('accepts JSON with harmless fences and rejects truncated output', () => {
     /malformed JSON/
   );
 });
+
+for (const [engine, run, payload] of [
+  ['ollama', runOllama, {
+    model: 'test-ollama',
+    message: { content: '{"answer":' },
+    prompt_eval_count: 40,
+    eval_count: 7,
+    done_reason: 'length'
+  }],
+  ['vllm', runVllm, {
+    id: 'vllm-failed-output',
+    model: 'test-vllm',
+    choices: [{
+      message: { content: '{"answer":' },
+      finish_reason: 'length'
+    }],
+    usage: { prompt_tokens: 40, completion_tokens: 7, total_tokens: 47 }
+  }]
+]) {
+  test(`${engine} preserves authoritative usage when generated structured output is invalid`, async (context) => {
+    context.mock.method(global, 'fetch', async () => new Response(
+      JSON.stringify(payload),
+      { status: 200, headers: { 'content-type': 'application/json' } }
+    ));
+    await assert.rejects(
+      () => run({
+        activity: 'interview.questions',
+        messages: [{ role: 'user', content: 'Return structured data.' }],
+        jsonSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['answer'],
+          properties: { answer: { type: 'string' } }
+        }
+      }, {
+        selectedEngine: engine,
+        engines: {
+          [engine]: { model: `test-${engine}`, baseUrl: 'http://runtime.test' }
+        }
+      }),
+      (error) => {
+        assert.equal(error.code, 'LOCAL_LLM_OUTPUT_TRUNCATED');
+        assert.equal(error.usageEnvelope.usage.prompt_tokens, 40);
+        assert.equal(error.usageEnvelope.usage.completion_tokens, 7);
+        assert.equal(error.usageEnvelope.usage.total_tokens, 47);
+        assert.equal(error.usageEnvelope.usageReported, true);
+        return true;
+      }
+    );
+  });
+}
 
 test('passes ordinary text and structured requests through without tool emulation', () => {
   const textInput = {
@@ -212,6 +366,7 @@ test('extracts Terra content and authoritative token details from Codex JSONL', 
   ].join('\n'));
 
   assert.equal(result.content, '{"ok":true}');
+  assert.equal(result.usageReported, true);
   assert.deepEqual(result.usage, {
     prompt_tokens: 12740,
     completion_tokens: 25,
@@ -226,13 +381,175 @@ test('extracts Terra content and authoritative token details from Codex JSONL', 
   });
 });
 
+test('does not claim Codex usage was reported when the completed turn omitted metering', () => {
+  const result = parseCodexJsonl([
+    JSON.stringify({
+      type: 'item.completed',
+      item: { id: 'item-1', type: 'agent_message', text: 'done' }
+    }),
+    JSON.stringify({ type: 'turn.completed' })
+  ].join('\n'));
+
+  assert.equal(result.usageReported, false);
+  assert.equal(result.usage.total_tokens, 0);
+});
+
 test('rejects failed and malformed Codex JSONL turns', () => {
   assert.throws(
     () => parseCodexJsonl(JSON.stringify({
       type: 'turn.failed',
-      error: { code: 'model_error', message: 'Terra failed' }
+      error: { code: 'model_error', message: 'Terra failed' },
+      usage: {
+        input_tokens: 100,
+        cached_input_tokens: 40,
+        output_tokens: 12,
+        reasoning_output_tokens: 8,
+        total_tokens: 112
+      }
     })),
-    /Terra failed/
+    (error) => {
+      assert.match(error.message, /Terra failed/);
+      assert.equal(error.code, 'model_error');
+      assert.equal(error.usageReported, true);
+      assert.deepEqual(error.codexUsage, {
+        prompt_tokens: 100,
+        completion_tokens: 12,
+        total_tokens: 112,
+        prompt_tokens_details: {
+          cached_tokens: 40,
+          cache_write_tokens: 0
+        },
+        completion_tokens_details: {
+          reasoning_tokens: 8
+        }
+      });
+      return true;
+    }
   );
   assert.throws(() => parseCodexJsonl('not json'), /malformed JSONL/);
+});
+
+test('non-zero Codex capture retains stdout privately for usage recovery', async () => {
+  const event = JSON.stringify({
+    type: 'turn.failed',
+    error: { message: 'fixture failure' },
+    usage: { input_tokens: 9, output_tokens: 3, total_tokens: 12 }
+  });
+  await assert.rejects(
+    () => spawnCapture(process.execPath, [
+      '-e',
+      `process.stdout.write(${JSON.stringify(event)}); process.exit(7)`
+    ]),
+    (error) => {
+      assert.equal(error.code, 'CODEX_EXEC_FAILED');
+      assert.equal(error.capturedStdout, event);
+      assert.equal(Object.keys(error).includes('capturedStdout'), false);
+      assert.doesNotMatch(JSON.stringify(error), /fixture failure/);
+      return true;
+    }
+  );
+});
+
+test('timed-out Codex capture preserves only privately recoverable usage', async () => {
+  const usageEvent = JSON.stringify({
+    type: 'turn.completed',
+    usage: {
+      input_tokens: 41,
+      cached_input_tokens: 17,
+      cache_write_input_tokens: 2,
+      output_tokens: 11,
+      reasoning_output_tokens: 7,
+      total_tokens: 52
+    }
+  });
+  const privateOutput = 'private-model-output-must-not-leak';
+  const messageEvent = JSON.stringify({
+    type: 'item.completed',
+    item: { type: 'agent_message', text: privateOutput }
+  });
+  let capturedError;
+
+  await assert.rejects(
+    () => spawnCapture(process.execPath, [
+      '-e',
+      `process.stdout.write(${JSON.stringify(`${messageEvent}\n${usageEvent}\n`)}); setInterval(() => {}, 1000)`
+    ], { timeoutMs: 150 }),
+    (error) => {
+      capturedError = error;
+      assert.equal(error.code, 'CODEX_EXEC_TIMEOUT');
+      assert.equal(Object.keys(error).includes('capturedStdout'), false);
+      assert.doesNotMatch(JSON.stringify(error), new RegExp(privateOutput));
+      return true;
+    }
+  );
+
+  assert.deepEqual(recoverCodexUsage(capturedError.capturedStdout), {
+    usage: {
+      prompt_tokens: 41,
+      completion_tokens: 11,
+      total_tokens: 52,
+      prompt_tokens_details: {
+        cached_tokens: 17,
+        cache_write_tokens: 2
+      },
+      completion_tokens_details: {
+        reasoning_tokens: 7
+      }
+    },
+    usageReported: true
+  });
+});
+
+test('aborted Codex capture waits until the child process tree is gone', async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-cancel-test-'));
+  const pidFile = path.join(directory, 'pids.json');
+  let pids = [];
+  context.after(() => {
+    for (const pid of pids) {
+      try { process.kill(pid, 'SIGKILL'); } catch {}
+    }
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  const script = [
+    "const fs = require('node:fs');",
+    "const { spawn } = require('node:child_process');",
+    "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true });",
+    "fs.writeFileSync(process.argv[1], JSON.stringify([process.pid, child.pid]));",
+    `process.stdout.write(${JSON.stringify(`${JSON.stringify({
+      type: 'turn.failed',
+      usage: { input_tokens: 23, output_tokens: 5, total_tokens: 28 }
+    })}\n`)});`,
+    "setInterval(() => {}, 1000);"
+  ].join('');
+  const controller = new AbortController();
+  const pending = spawnCapture(process.execPath, ['-e', script, pidFile], {
+    signal: controller.signal,
+    timeoutMs: 30_000
+  });
+  assert.equal(await waitUntil(() => fs.existsSync(pidFile)), true);
+  pids = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+
+  controller.abort();
+  let capturedError;
+  await assert.rejects(pending, (error) => {
+    capturedError = error;
+    return error?.code === 'CODEX_EXEC_ABORTED';
+  });
+  assert.deepEqual(recoverCodexUsage(capturedError.capturedStdout), {
+    usage: {
+      prompt_tokens: 23,
+      completion_tokens: 5,
+      total_tokens: 28,
+      prompt_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 0
+      },
+      completion_tokens_details: {
+        reasoning_tokens: 0
+      }
+    },
+    usageReported: true
+  });
+  assert.equal(await waitUntil(() => pids.every((pid) => !processExists(pid))), true);
 });

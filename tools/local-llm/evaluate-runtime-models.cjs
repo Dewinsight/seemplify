@@ -66,14 +66,14 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
 }
 
-function sign(secret, body) {
+function sign(secret, body, requestPath = '/v1/cv/analyze') {
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(24).toString('base64url');
   return {
     timestamp,
     nonce,
     signature: crypto.createHmac('sha256', secret)
-      .update(`${timestamp}\n${nonce}\n${body}`)
+      .update(`${timestamp}\n${nonce}\nPOST\n${requestPath}\n${body}`)
       .digest('base64url')
   };
 }
@@ -143,8 +143,13 @@ async function waitForProfile(profile) {
 }
 
 async function signedRequest(secret, endpoint, input) {
-  const body = JSON.stringify({ ...input, executionMode: 'local-only' });
-  const signed = sign(secret, body);
+  const body = JSON.stringify({
+    ...input,
+    executionMode: 'local-only',
+    requestSource: 'runtime-model-evaluation',
+    metering: { record: false, exclusion: 'harness' }
+  });
+  const signed = sign(secret, body, endpoint);
   const startedAt = Date.now();
   const response = await fetch(`${gatewayUrl}${endpoint}`, {
     method: 'POST',

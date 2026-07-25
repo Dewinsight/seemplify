@@ -21,6 +21,10 @@ const CVProcessingAuditSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  stage: {
+    type: String,
+    enum: ['ingesting', 'uploading', 'extracting', 'analyzing', 'finalizing', 'completed', 'failed']
+  },
   progress: { type: Number, default: 0, min: 0, max: 100 },
   attempts: { type: Number, default: 0 },
   organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', index: true },
@@ -49,6 +53,10 @@ const CVProcessingAuditSchema = new mongoose.Schema({
       enum: ['queued', 'waiting_for_local_runtime', 'processing', 'retrying', 'completed', 'failed'],
       required: true
     },
+    stage: {
+      type: String,
+      enum: ['ingesting', 'uploading', 'extracting', 'analyzing', 'finalizing', 'completed', 'failed']
+    },
     state: {
       type: String,
       enum: ['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'],
@@ -65,5 +73,29 @@ const CVProcessingAuditSchema = new mongoose.Schema({
 CVProcessingAuditSchema.index({ state: 1, jobCreatedAt: -1 });
 CVProcessingAuditSchema.index({ source: 1, jobCreatedAt: -1 });
 CVProcessingAuditSchema.index({ organization: 1, jobCreatedAt: -1 });
+CVProcessingAuditSchema.index(
+  { producer: 1, state: 1, lastUpdatedAt: -1, publicId: -1 },
+  { name: 'cv_audit_producer_active_recent' }
+);
+CVProcessingAuditSchema.index(
+  { producer: 1, lastUpdatedAt: -1, publicId: -1 },
+  { name: 'cv_audit_producer_recent' }
+);
+CVProcessingAuditSchema.index(
+  { producer: 1, state: 1, completedAt: -1 },
+  { name: 'cv_audit_producer_completed_rates' }
+);
+CVProcessingAuditSchema.index(
+  { producer: 1, state: 1, failedAt: -1 },
+  { name: 'cv_audit_producer_failed_rates' }
+);
+CVProcessingAuditSchema.index(
+  { producer: 1, state: 1, attempts: 1 },
+  { name: 'cv_audit_producer_retries' }
+);
+CVProcessingAuditSchema.index(
+  { producer: 1, state: 1, jobCreatedAt: 1 },
+  { name: 'cv_audit_producer_oldest' }
+);
 
 module.exports = mongoose.model('CVProcessingAudit', CVProcessingAuditSchema);

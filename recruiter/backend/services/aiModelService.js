@@ -211,8 +211,10 @@ class AIModelService {
   }
 
   async requestCompletion(request = {}) {
-    const result = await aiRuntimeService.complete(request.activity || 'recruiter.general', request, {
-      context: request.context
+    const { signal, ...runtimeRequest } = request;
+    const result = await aiRuntimeService.complete(runtimeRequest.activity || 'recruiter.general', runtimeRequest, {
+      context: request.context,
+      signal
     });
     return result.raw;
   }
@@ -221,13 +223,13 @@ class AIModelService {
     const activity = request.activity || 'recruiter.general';
     const contract = contractOverride || STRUCTURED_CONTRACTS[activity];
     if (!contract) throw new Error(`No structured output contract is configured for ${activity}`);
-    const { beforeAttempt, ...runtimeRequest } = request;
+    const { beforeAttempt, signal, ...runtimeRequest } = request;
     const result = await aiRuntimeService.structuredComplete(activity, {
       ...runtimeRequest,
       jsonSchema: contract.schema,
       schemaName: contract.schemaName,
       schemaStrict: contract.schemaStrict
-    }, { beforeAttempt });
+    }, { beforeAttempt, signal });
     return result.raw;
   }
 
@@ -556,7 +558,7 @@ class AIModelService {
     }
   }
 
-  async analyzeCVWithGroqChunks(cvText, activity) {
+  async analyzeCVWithGroqChunks(cvText, activity, options = {}) {
     const chunks = splitCvText(cvText);
     const extractions = [];
     const maxOutputTokens = 1_800;
@@ -588,7 +590,8 @@ class AIModelService {
         max_completion_tokens: maxOutputTokens,
         temperature: 0,
         top_p: 1,
-        beforeAttempt: () => this.groqCvTokenBudget.reserve(estimatedTokens)
+        beforeAttempt: () => this.groqCvTokenBudget.reserve(estimatedTokens),
+        signal: options.signal
       });
       if (response?.error !== undefined && response.status !== '200') throw response.error;
       const content = this.extractTextContent(response.choices?.[0]?.message?.content);
@@ -610,12 +613,12 @@ class AIModelService {
     };
   }
 
-  async analyzeCV(cvText, activity = 'candidate.cv_parse') {
+  async analyzeCV(cvText, activity = 'candidate.cv_parse', options = {}) {
     try {
       console.log("Analyzing CV with the managed AI runtime.");
       const executionRoute = await aiRuntimeService.getExecutionRoute(activity);
       if (executionRoute.provider === 'groq' && String(cvText || '').length > 6_500) {
-        return await this.analyzeCVWithGroqChunks(cvText, activity);
+        return await this.analyzeCVWithGroqChunks(cvText, activity, options);
       }
 
       const messages = [
@@ -833,7 +836,8 @@ ${cvText}`
         frequency_penalty: 0,
         presence_penalty: 0,
         model: this.modelName,
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        signal: options.signal
       });
 
       if (response?.error !== undefined && response.status !== "200") {
@@ -864,7 +868,9 @@ ${cvText}`
       console.error("Error calling the AI runtime for CV analysis:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
+        code: error.code,
+        retryable: error.retryable === true
       };
     }
   }

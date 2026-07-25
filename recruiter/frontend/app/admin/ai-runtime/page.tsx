@@ -78,6 +78,13 @@ import { parseServerSentEventBuffer } from '@/lib/queueTelemetryStream';
 type RangeKey = '7d' | '30d' | '90d' | 'all';
 type TabKey = 'overview' | 'local' | 'test' | 'routing' | 'credentials' | 'requests' | 'alerts';
 type DetailKind = 'request' | 'queue' | 'audit';
+type MeteringStatus = 'metered' | 'unmetered' | 'legacy-unknown';
+
+interface MeteringCounts {
+  meteredExecutions: number;
+  unmeteredExecutions: number;
+  unknownMeteringExecutions: number;
+}
 
 interface RuntimeModel {
   id: string;
@@ -147,6 +154,18 @@ interface LocalRuntimeStatus {
     failedAt?: string | null;
     recoveredAt?: string | null;
     reason?: string | null;
+  };
+  usageMetering?: {
+    configured: boolean;
+    running: boolean;
+    delivering: boolean;
+    health: 'healthy' | 'retrying' | 'degraded';
+    pending: number;
+    dead: number;
+    lastAttemptAt?: string | null;
+    lastDeliveryAt?: string | null;
+    lastErrorAt?: string | null;
+    lastError?: string | null;
   };
   error?: string;
 }
@@ -230,7 +249,7 @@ interface RuntimeSettings {
   };
 }
 
-interface UsageBreakdown {
+interface UsageBreakdown extends MeteringCounts {
   _id: string;
   name?: string;
   calls: number;
@@ -263,7 +282,7 @@ interface QuotaSnapshot {
 }
 
 interface RuntimeOverview {
-  totals: {
+  totals: MeteringCounts & {
     calls: number;
     attemptCalls?: number;
     successes: number;
@@ -278,6 +297,14 @@ interface RuntimeOverview {
     averageLatencyMs: number;
     p50LatencyMs: number;
     p95LatencyMs: number;
+    latencyWindow?: string;
+    logicalCoverage: {
+      complete: boolean;
+      start: string | null;
+      legacyAttemptCalls: number;
+      meteringComplete: boolean;
+      legacyMeteringLogicalRequests: number;
+    };
   };
   byActivity: UsageBreakdown[];
   byModel: UsageBreakdown[];
@@ -288,17 +315,46 @@ interface RuntimeOverview {
   quotas: QuotaSnapshot[];
 }
 
-interface LiveMetric {
+interface LiveMetric extends MeteringCounts {
   calls: number;
   attemptCalls?: number;
   successes: number;
   failures: number;
   successRate: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
   tokens: number;
   estimatedCostUsd: number;
   averageLatencyMs: number;
   maxLatencyMs: number;
   failovers: number;
+}
+
+interface AccountingHealth {
+  healthy: boolean;
+  meteringOutbox: {
+    configured: boolean;
+    started: boolean;
+    healthy: boolean;
+    required: boolean;
+    ready: boolean;
+    deadLetterCount: number;
+    lastError?: { message?: string; at?: string } | null;
+    lastTerminalFailure?: { reasonCode?: string; at?: string } | null;
+  };
+  projectionRepair: {
+    status: string;
+    processed: number;
+    remaining: number;
+    lastError?: string | null;
+    updatedAt?: string | null;
+    scheduled: boolean;
+    inFlight: boolean;
+    healthy: boolean;
+  };
 }
 
 interface LiveOperations {
@@ -309,6 +365,7 @@ interface LiveOperations {
   activities: Array<LiveMetric & { id: string; lastRequestAt?: string }>;
   timeline: Array<{ minute: string; calls: number; failures: number }>;
   recent: UsageRequest[];
+  accountingHealth: AccountingHealth;
 }
 
 interface RuntimeTestResult {
@@ -333,6 +390,8 @@ interface RuntimeTestResult {
     attempts: number;
     failovers: number;
     quotaGroup: string;
+    usageReported: boolean;
+    usageSource: string;
     usage: {
       inputTokens: number;
       cachedInputTokens: number;
@@ -373,6 +432,13 @@ interface UsageRequest {
   actorId?: string;
   actorName?: string;
   actorEmail?: string;
+  usageReported?: boolean | null;
+  usageSource?: string;
+  meteringStatus?: MeteringStatus;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
   totalTokens: number;
   estimatedCostUsd: number;
   latencyMs: number;
@@ -382,8 +448,9 @@ interface UsageRequest {
   attemptErrors?: Array<{ code?: string; message?: string; providerStatus?: number; credentialLabel?: string }>;
 }
 
-interface RequestSummary {
+interface RequestSummary extends MeteringCounts {
   calls: number;
+  attemptCalls?: number;
   successes: number;
   failures: number;
   successRate: number;
@@ -427,10 +494,60 @@ function formatNumber(value: number | undefined, digits = 0) {
   return new Intl.NumberFormat('en-GB', { maximumFractionDigits: digits }).format(Number(value || 0));
 }
 
-function formatRecordedTokens(totalTokens: unknown, value: unknown = totalTokens) {
-  return Number(totalTokens || 0) > 0
-    ? formatNumber(Number(value || 0))
-    : 'Not recorded';
+function resolvedMeteringStatus(status: unknown, totalTokens: unknown): MeteringStatus {
+  if (status === 'metered' || Number(totalTokens || 0) > 0) return 'metered';
+  if (status === 'unmetered') return 'unmetered';
+  return 'legacy-unknown';
+}
+
+function meteringStatusLabel(status: unknown, totalTokens: unknown) {
+  const resolved = resolvedMeteringStatus(status, totalTokens);
+  if (resolved === 'metered') return 'Metered';
+  return resolved === 'unmetered' ? 'Unmetered' : 'Unknown (legacy)';
+}
+
+function formatRecordedTokens(status: unknown, totalTokens: unknown, value: unknown = totalTokens) {
+  const resolved = resolvedMeteringStatus(status, totalTokens);
+  if (resolved === 'metered') return formatNumber(Number(value || 0));
+  return resolved === 'unmetered' ? 'Not reported' : 'Unknown (legacy)';
+}
+
+function formatRecordedCost(status: unknown, totalTokens: unknown, value: unknown) {
+  return resolvedMeteringStatus(status, totalTokens) === 'metered'
+    ? `$${formatNumber(Number(value || 0), 6)}`
+    : resolvedMeteringStatus(status, totalTokens) === 'unmetered'
+      ? 'Not reported'
+      : 'Unknown (legacy)';
+}
+
+function hasMeteredExecutions(value: (Partial<MeteringCounts> & { totalTokens?: number }) | null | undefined) {
+  return Number(value?.meteredExecutions || 0) > 0 || Number(value?.totalTokens || 0) > 0;
+}
+
+function formatAggregateTokens(
+  value: (Partial<MeteringCounts> & { calls?: number; totalTokens?: number }) | null | undefined,
+  tokens: number | undefined = value?.totalTokens
+) {
+  if (hasMeteredExecutions(value)) return formatNumber(tokens);
+  return Number(value?.calls || 0) > 0 ? 'Not recorded' : '—';
+}
+
+function formatAggregateCost(
+  value: (Partial<MeteringCounts> & { calls?: number; totalTokens?: number }) | null | undefined,
+  cost: number | undefined
+) {
+  if (hasMeteredExecutions(value)) return `$${formatNumber(cost, 6)}`;
+  return Number(value?.calls || 0) > 0 ? 'Not recorded' : '—';
+}
+
+function meteringCoverageLabel(value: (Partial<MeteringCounts> & { calls?: number }) | null | undefined) {
+  const metered = Number(value?.meteredExecutions || 0);
+  const unmetered = Number(value?.unmeteredExecutions || 0);
+  let unknown = Number(value?.unknownMeteringExecutions || 0);
+  const classified = metered + unmetered + unknown;
+  const calls = Number(value?.calls || 0);
+  if (calls > classified) unknown += calls - classified;
+  return `${formatNumber(metered)} metered · ${formatNumber(unmetered)} unmetered · ${formatNumber(unknown)} legacy unknown`;
 }
 
 function formatDate(value?: string) {
@@ -501,7 +618,7 @@ function localRoutingLabel(runtime: LocalRuntimeStatus | null) {
 function localFailoverLabel(runtime: LocalRuntimeStatus | null) {
   if (!runtime?.failover) return 'Unknown';
   if (!runtime.failover.enabled || runtime.failover.status === 'disabled') return 'Disabled';
-  if (runtime.failover.active) return 'Groq active';
+  if (runtime.failover.active) return 'Groq for eligible non-CV routes';
   if (runtime.failover.status === 'healthy') return 'Local primary';
   return 'Unknown';
 }
@@ -510,10 +627,19 @@ function optionalNumber(value: number | undefined, suffix = '') {
   return value == null ? 'Not reported' : `${formatNumber(value)}${suffix}`;
 }
 
-function providerUsageLabel(provider: string) {
-  if (provider === 'local-codex') return 'Terra (local-cloud)';
-  if (provider === 'local-ollama') return 'Ollama (local GPU)';
-  if (provider === 'local-vllm') return 'vLLM (local GPU)';
+function providerUsageLabel(provider: string, model?: string) {
+  if (provider === 'local-codex') {
+    if (model === 'gpt-5.6-terra') return 'Terra (Codex local-cloud)';
+    return model ? `Codex local-cloud · ${model}` : 'Codex local-cloud';
+  }
+  if (provider === 'local-ollama') {
+    if (model === 'managed-local-gpu') return 'Managed local runtime';
+    return model ? `Ollama (local GPU) · ${model}` : 'Ollama (local GPU)';
+  }
+  if (provider === 'local-vllm') {
+    if (model === 'managed-local-gpu') return 'Managed local runtime';
+    return model ? `vLLM (local GPU) · ${model}` : 'vLLM (local GPU)';
+  }
   if (provider === 'groq') return 'Groq';
   if (provider === 'azure-openai' || provider === 'azure') return 'Azure';
   return provider || 'Unknown';
@@ -535,8 +661,8 @@ async function adminJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const healthy = ['healthy', 'success', 'sent', 'live'].includes(status);
-  const warning = ['unknown', 'degraded', 'suppressed', 'paused', 'connecting', 'reconnecting'].includes(status);
+  const healthy = ['healthy', 'success', 'sent', 'live', 'complete'].includes(status);
+  const warning = ['unknown', 'degraded', 'disabled', 'idle', 'running', 'retrying', 'suppressed', 'paused', 'connecting', 'reconnecting'].includes(status);
   return (
     <Badge className={healthy
       ? 'border-green-700 bg-green-950 text-green-300'
@@ -595,6 +721,10 @@ export default function AIRuntimeAdminPage() {
   const [detailData, setDetailData] = useState<Record<string, unknown> | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const liveSnapshotRevisionRef = useRef(0);
+  const liveEventIdRef = useRef('');
+  const liveSampledAtRef = useRef(0);
+  const queueEventIdRef = useRef('');
+  const queueSampledAtRef = useRef(0);
   const liveAggregateRevisionRef = useRef(0);
   const liveAggregateRefreshInFlightRef = useRef(false);
   const liveAggregateContextRef = useRef<{
@@ -777,8 +907,13 @@ export default function AIRuntimeAdminPage() {
       activeController = new AbortController();
       try {
         const token = localStorage.getItem('adminToken') || '';
+        const headers: Record<string, string> = {
+          Accept: 'text/event-stream',
+          'x-admin-auth-token': token
+        };
+        if (liveEventIdRef.current) headers['Last-Event-ID'] = liveEventIdRef.current;
         const response = await apiRequest('/api/admin/ai-runtime/live/stream', {
-          headers: { Accept: 'text/event-stream', 'x-admin-auth-token': token },
+          headers,
           signal: activeController.signal
         });
         if (!response.ok || !response.body) throw new Error(`Live operations stream returned HTTP ${response.status}`);
@@ -795,7 +930,13 @@ export default function AIRuntimeAdminPage() {
           buffer = parsed.remainder;
           for (const frame of parsed.frames) {
             if (frame.event === 'snapshot') {
-              setLiveOperations(JSON.parse(frame.data) as LiveOperations);
+              if (frame.id && frame.id === liveEventIdRef.current) continue;
+              const snapshot = JSON.parse(frame.data) as LiveOperations;
+              const sampledAt = Date.parse(snapshot.sampledAt || '');
+              if (Number.isFinite(sampledAt) && sampledAt < liveSampledAtRef.current) continue;
+              if (frame.id) liveEventIdRef.current = frame.id;
+              if (Number.isFinite(sampledAt)) liveSampledAtRef.current = sampledAt;
+              setLiveOperations(snapshot);
               liveSnapshotRevisionRef.current += 1;
               setLiveConnection('live');
               setLiveError('');
@@ -847,11 +988,13 @@ export default function AIRuntimeAdminPage() {
       activeController = new AbortController();
       try {
         const token = localStorage.getItem('adminToken') || '';
+        const headers: Record<string, string> = {
+          Accept: 'text/event-stream',
+          'x-admin-auth-token': token
+        };
+        if (queueEventIdRef.current) headers['Last-Event-ID'] = queueEventIdRef.current;
         const response = await apiRequest('/api/admin/ai-runtime/local/queue/stream', {
-          headers: {
-            Accept: 'text/event-stream',
-            'x-admin-auth-token': token
-          },
+          headers,
           signal: activeController.signal
         });
         if (!response.ok || !response.body) throw new Error(`Live queue stream returned HTTP ${response.status}`);
@@ -869,7 +1012,13 @@ export default function AIRuntimeAdminPage() {
           buffer = parsed.remainder;
           for (const frame of parsed.frames) {
             if (frame.event === 'snapshot') {
-              setLocalQueue(JSON.parse(frame.data) as LocalQueueStatus);
+              if (frame.id && frame.id === queueEventIdRef.current) continue;
+              const snapshot = JSON.parse(frame.data) as LocalQueueStatus;
+              const sampledAt = Date.parse(snapshot.sampledAt || '');
+              if (Number.isFinite(sampledAt) && sampledAt < queueSampledAtRef.current) continue;
+              if (frame.id) queueEventIdRef.current = frame.id;
+              if (Number.isFinite(sampledAt)) queueSampledAtRef.current = sampledAt;
+              setLocalQueue(snapshot);
               setQueueConnection('live');
               setQueueStreamError('');
             } else if (frame.event === 'telemetry-error') {
@@ -1197,7 +1346,7 @@ export default function AIRuntimeAdminPage() {
                   <Cpu className="h-5 w-5 text-blue-400" />
                   <h1 className="text-2xl font-semibold text-white">AI Runtime</h1>
                 </div>
-                <p className="mt-1 text-sm text-gray-400">Groq for general AI; signed managed local or local-cloud routing and a durable queue for CV extraction.</p>
+                <p className="mt-1 text-sm text-gray-400">Groq and managed local / local-cloud routing, with durable local-only CV extraction.</p>
               </div>
               <div className="flex items-center gap-2">
                 <Select value={range} onValueChange={(value) => { setRange(value as RangeKey); setRequestPage(1); }}>
@@ -1233,12 +1382,21 @@ export default function AIRuntimeAdminPage() {
                       definitions={definitions}
                       onInspect={(request) => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)}
                     />
-                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
                       {[
-                        { label: 'Requests', value: formatNumber(stats?.calls), icon: Activity },
+                        {
+                          label: 'Logical requests',
+                          value: formatNumber(stats?.calls),
+                          icon: Activity
+                        },
+                        {
+                          label: 'Execution events',
+                          value: formatNumber(stats?.attemptCalls),
+                          icon: RotateCw
+                        },
                         { label: 'Success rate', value: `${formatNumber(stats?.successRate, 1)}%`, icon: CheckCircle2 },
-                        { label: 'Tokens', value: formatNumber(stats?.totalTokens), icon: Cpu },
-                        { label: 'Est. cost', value: `$${formatNumber(stats?.estimatedCostUsd, 4)}`, icon: CircleDollarSign },
+                        { label: 'Recorded tokens', value: formatAggregateTokens(stats), icon: Cpu },
+                        { label: 'Recorded est. cost', value: formatAggregateCost(stats, stats?.estimatedCostUsd), icon: CircleDollarSign },
                         { label: 'Average', value: `${formatNumber(stats?.averageLatencyMs)} ms`, icon: Clock3 },
                         { label: 'P50', value: `${formatNumber(stats?.p50LatencyMs)} ms`, icon: Clock3 },
                         { label: 'P95', value: `${formatNumber(stats?.p95LatencyMs)} ms`, icon: AlertTriangle }
@@ -1249,6 +1407,17 @@ export default function AIRuntimeAdminPage() {
                         </div>
                       ))}
                     </div>
+                    <ExecutionMeteringSummary title={`Execution metering · ${range}`} value={stats} />
+                    {range === 'all' && stats?.logicalCoverage?.complete === false && (
+                      <div className="border border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+                        Exact logical-request history starts {stats.logicalCoverage.start ? formatDate(stats.logicalCoverage.start) : 'with projection v3 data'}. Earlier execution events remain in token and execution totals, but are not inferred as logical requests.
+                      </div>
+                    )}
+                    {range === 'all' && stats?.logicalCoverage?.meteringComplete === false && (
+                      <div className="border border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+                        {formatNumber(stats.logicalCoverage.legacyMeteringLogicalRequests)} permanent logical requests predate per-request metering coverage. Their old zero token fields remain unknown, not measured zero.
+                      </div>
+                    )}
 
                     <div className="grid gap-5 xl:grid-cols-2">
                       <BreakdownTable title="Activity usage" rows={overview?.byActivity || []} label={(id) => definitions.get(id)?.label || id} />
@@ -1256,7 +1425,7 @@ export default function AIRuntimeAdminPage() {
                         title="Model usage"
                         rows={overview?.byModel || []}
                         label={(id) => id || 'Unknown'}
-                        note="Terra totals cover hosted requests made after token capture was enabled. Earlier local-cloud records and direct benchmark runs cannot be reconstructed and remain marked as unavailable."
+                        note="Terra totals cover hosted requests made after token capture was enabled. Earlier local-cloud records and direct benchmark runs cannot be reconstructed and remain legacy-unknown rather than zero."
                       />
                       <BreakdownTable title="Provider usage" rows={overview?.byProvider || []} label={providerUsageLabel} />
                       <BreakdownTable title="Application usage" rows={overview?.bySource || []} label={(id) => id || 'Unknown'} />
@@ -1293,7 +1462,7 @@ export default function AIRuntimeAdminPage() {
                   <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h2 className="text-sm font-semibold text-white">Managed local runtime</h2>
-                      <p className="mt-1 text-xs text-gray-500">CV parsing and question generation use the best available managed runtime. Other activities remain on Groq until changed in Routing.</p>
+                      <p className="mt-1 text-xs text-gray-500">CV parsing is locked to the selected managed runtime. Other assigned activities may fall back to Groq when local inference is unavailable.</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={!localRuntime ? 'unknown' : localRuntime.reachable && localRuntime.health?.ok === true && localRuntime.cvLocalEligible !== false ? 'healthy' : localRuntime.reachable ? 'unknown' : 'unavailable'} />
@@ -1317,7 +1486,10 @@ export default function AIRuntimeAdminPage() {
                       ['Active inference', optionalNumber(localRuntime?.active)],
                       ['Gateway waiting', optionalNumber(localRuntime?.waiting)],
                       ['Concurrency', optionalNumber(localRuntime?.state?.concurrency ?? localQueue?.concurrency)],
-                      ['Average latency', optionalNumber(localRuntime?.averageLatencyMs, ' ms')]
+                      ['Average latency', optionalNumber(localRuntime?.averageLatencyMs, ' ms')],
+                      ['Gateway metering', localRuntime?.usageMetering ? `${localRuntime.usageMetering.health} · ${localRuntime.usageMetering.running ? 'worker running' : 'worker stopped'}` : 'Not reported'],
+                      ['Metering backlog', localRuntime?.usageMetering ? `${formatNumber(localRuntime.usageMetering.pending)} pending · ${formatNumber(localRuntime.usageMetering.dead)} dead` : 'Not reported'],
+                      ['Last meter delivery', localRuntime?.usageMetering?.lastDeliveryAt ? formatDate(localRuntime.usageMetering.lastDeliveryAt) : 'Not reported']
                     ].map(([label, value]) => (
                       <div key={label} className="bg-gray-900 px-4 py-4">
                         <div className="text-xs text-gray-500">{label}</div>
@@ -1332,7 +1504,12 @@ export default function AIRuntimeAdminPage() {
                    )}
                    {localRuntime?.failover?.active && (
                      <div className="border-t border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
-                       Local-primary routes are temporarily executing on Groq because the local runtime failed its health check. CV work will return to local inference automatically after a healthy check.
+                       Eligible non-CV local-primary routes are temporarily using Groq because the local runtime failed its health check. CV jobs never fall back to Groq; they remain durable and resume locally after recovery.
+                     </div>
+                   )}
+                   {Boolean(localRuntime?.usageMetering && (localRuntime.usageMetering.dead > 0 || localRuntime.usageMetering.lastError)) && (
+                     <div className="border-t border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+                       Local usage delivery is {localRuntime?.usageMetering?.health || 'degraded'}: {localRuntime?.usageMetering?.lastError || `${formatNumber(localRuntime?.usageMetering?.dead)} metering event(s) need operator review`}.
                      </div>
                    )}
                    {localRuntime?.error && <div className="border-t border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-200">{localRuntime.error}</div>}
@@ -1543,12 +1720,14 @@ export default function AIRuntimeAdminPage() {
                     <RuntimeTestDatum label="Executed provider" value={testResult.execution.provider} />
                     <RuntimeTestDatum label="Executed model" value={testResult.execution.model} mono />
                     <RuntimeTestDatum label="Latency" value={`${formatNumber(testResult.execution.latencyMs)} ms`} />
-                    <RuntimeTestDatum label="Input tokens" value={formatNumber(testResult.execution.usage.inputTokens)} />
-                    <RuntimeTestDatum label="Cached input" value={formatNumber(testResult.execution.usage.cachedInputTokens)} />
-                    <RuntimeTestDatum label="Output tokens" value={formatNumber(testResult.execution.usage.outputTokens)} />
-                    <RuntimeTestDatum label="Reasoning tokens" value={formatNumber(testResult.execution.usage.reasoningTokens)} />
-                    <RuntimeTestDatum label="Total tokens" value={formatNumber(testResult.execution.usage.totalTokens)} />
-                    <RuntimeTestDatum label="Estimated cost" value={`$${formatNumber(testResult.execution.usage.estimatedCostUsd, 6)}`} />
+                    <RuntimeTestDatum label="Token metering" value={testResult.execution.usageSource === 'aggregated-request-events-partial' ? 'Partially reported' : testResult.execution.usageReported ? 'Reported' : 'Not reported'} />
+                    <RuntimeTestDatum label="Usage source" value={testResult.execution.usageSource || 'Unknown'} />
+                    <RuntimeTestDatum label="Input tokens" value={formatRecordedTokens(testResult.execution.usageReported ? 'metered' : 'unmetered', testResult.execution.usage.totalTokens, testResult.execution.usage.inputTokens)} />
+                    <RuntimeTestDatum label="Cached input" value={formatRecordedTokens(testResult.execution.usageReported ? 'metered' : 'unmetered', testResult.execution.usage.totalTokens, testResult.execution.usage.cachedInputTokens)} />
+                    <RuntimeTestDatum label="Output tokens" value={formatRecordedTokens(testResult.execution.usageReported ? 'metered' : 'unmetered', testResult.execution.usage.totalTokens, testResult.execution.usage.outputTokens)} />
+                    <RuntimeTestDatum label="Reasoning tokens" value={formatRecordedTokens(testResult.execution.usageReported ? 'metered' : 'unmetered', testResult.execution.usage.totalTokens, testResult.execution.usage.reasoningTokens)} />
+                    <RuntimeTestDatum label="Total tokens" value={formatRecordedTokens(testResult.execution.usageReported ? 'metered' : 'unmetered', testResult.execution.usage.totalTokens)} />
+                    <RuntimeTestDatum label="Estimated cost" value={formatRecordedCost(testResult.execution.usageReported ? 'metered' : 'unmetered', testResult.execution.usage.totalTokens, testResult.execution.usage.estimatedCostUsd)} />
                     <RuntimeTestDatum label="Attempts" value={formatNumber(testResult.execution.attempts)} />
                     <RuntimeTestDatum label="Failovers" value={formatNumber(testResult.execution.failovers)} />
                     <RuntimeTestDatum label="Quota group" value={testResult.execution.quotaGroup || 'Not reported'} mono />
@@ -1660,7 +1839,7 @@ export default function AIRuntimeAdminPage() {
                     />
                     <Select value={requestProvider} onValueChange={(value) => { setRequestProvider(value); setRequestPage(1); }}>
                       <SelectTrigger aria-label="Filter AI activity by provider" className="w-44 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="all">All providers</SelectItem><SelectItem value="groq">Groq</SelectItem><SelectItem value="local-codex">Terra (local-cloud)</SelectItem><SelectItem value="local-ollama">Ollama (local GPU)</SelectItem><SelectItem value="local-vllm">vLLM (local GPU)</SelectItem><SelectItem value="azure-openai">Azure</SelectItem></SelectContent>
+                      <SelectContent><SelectItem value="all">All providers</SelectItem><SelectItem value="groq">Groq</SelectItem><SelectItem value="local-codex">Codex local-cloud</SelectItem><SelectItem value="local-ollama">Ollama (local GPU)</SelectItem><SelectItem value="local-vllm">vLLM (local GPU)</SelectItem><SelectItem value="azure-openai">Azure</SelectItem></SelectContent>
                     </Select>
                     <Select value={requestStatus} onValueChange={(value) => { setRequestStatus(value); setRequestPage(1); }}>
                       <SelectTrigger aria-label="Filter AI activity by status" className="w-36 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
@@ -1672,16 +1851,17 @@ export default function AIRuntimeAdminPage() {
                   <span className="text-xs text-gray-500">Detailed events are retained for 90 days.</span>
                 </div>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
-                  <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Overall AI totals</h2><p className="mt-1 text-xs text-gray-500">Complete totals for the selected date range. All time is calculated from permanent daily rollups.</p></div>
-                  <RequestTotals totals={stats} />
+                  <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Overall AI totals</h2><p className="mt-1 text-xs text-gray-500">{range === 'all' ? 'All-time logical requests come from the permanent per-request projection. Execution events and token totals come from daily attempt rollups; detailed event IDs are retained for 90 days.' : 'Logical requests count each request ID once. Execution events and token totals include separately recorded retries and failovers.'}</p></div>
+                  {range === 'all' && stats?.logicalCoverage?.complete === false && <p className="border-b border-amber-900 bg-amber-950/30 px-4 py-3 text-xs text-amber-200">Exact logical-request coverage starts {stats.logicalCoverage.start ? formatDate(stats.logicalCoverage.start) : 'with projection v3 data'}. The {formatNumber(stats.logicalCoverage.legacyAttemptCalls)} earlier execution events are kept separate and are not guessed as requests.</p>}
+                  <RequestTotals totals={stats} kind="logical" />
                 </section>
                   <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
-                    <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Filtered request totals</h2><p className="mt-1 text-xs text-gray-500">{requestSummary?.detailWindow === 'retained-90d' ? 'Filtered request details cover the retained 90-day window; the overall totals above remain all-time.' : 'Totals for the status, organization, and person filters applied below.'}</p></div>
-                  <RequestTotals totals={requestSummary} includeFailovers />
+                    <div className="border-b border-gray-800 px-4 py-3"><h2 className="text-sm font-semibold text-white">Filtered execution events</h2><p className="mt-1 text-xs text-gray-500">{requestSummary?.detailWindow === 'retained-90d' ? 'Filtered execution events cover the retained 90-day window; the overall totals above remain all-time.' : 'Execution events for the status, organization, and person filters applied below. Separately recorded retries and failovers appear as distinct events.'}</p></div>
+                  <RequestTotals totals={requestSummary} kind="events" includeFailovers />
                 </section>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="overflow-x-auto"><Table>
                   <TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Activity</TableHead><TableHead>Application</TableHead><TableHead>Organization / person</TableHead><TableHead>Model</TableHead><TableHead>Tokens</TableHead><TableHead>Est. cost</TableHead><TableHead>Attempts</TableHead><TableHead>Latency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>{requests.map((request) => <TableRow key={request._id} role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Inspect AI request ${request.requestId}`} className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)} onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`))}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{request.provider}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell>{formatRecordedTokens(request.totalTokens)}</TableCell><TableCell>${formatNumber(request.estimatedCostUsd, 6)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>{requests.map((request) => <TableRow key={request._id} role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Inspect AI request ${request.requestId}`} className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)} onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`))}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{providerUsageLabel(request.provider, request.model)}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell><div>{formatRecordedTokens(request.meteringStatus, request.totalTokens)}</div><div className="mt-1 text-[11px] text-gray-500">{request.meteringStatus?.replace('-', ' ') || 'legacy unknown'}</div></TableCell><TableCell>{formatRecordedCost(request.meteringStatus, request.totalTokens, request.estimatedCostUsd)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
                 </Table></div>{!requests.length && <div className="py-16 text-center text-sm text-gray-500">No requests match these filters.</div>}</section>
                 <div className="flex items-center justify-end gap-2"><Button variant="outline" size="icon" aria-label="Previous request page" title="Previous request page" disabled={requestPage <= 1} onClick={() => setRequestPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{requestPage} of {requestPages}</span><Button variant="outline" size="icon" aria-label="Next request page" title="Next request page" disabled={requestPage >= requestPages} onClick={() => setRequestPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div>
               </TabsContent>
@@ -1815,6 +1995,16 @@ function LiveOperationsPanel({
   const hour = data?.totals.hour;
   const timeline = (data?.timeline || []).slice(-30);
   const peak = Math.max(1, ...timeline.map((point) => point.calls));
+  const meteringOutbox = data?.accountingHealth?.meteringOutbox;
+  const projectionRepair = data?.accountingHealth?.projectionRepair;
+  const outboxStatus = !meteringOutbox
+    ? 'unknown'
+    : !meteringOutbox.configured
+      ? meteringOutbox.required ? 'unavailable' : 'disabled'
+      : meteringOutbox.ready ? 'healthy' : 'degraded';
+  const repairStatus = !projectionRepair
+    ? 'unknown'
+    : projectionRepair.healthy ? 'complete' : projectionRepair.status;
   return (
     <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
       <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1827,14 +2017,37 @@ function LiveOperationsPanel({
         </div>
         <div className="text-xs text-gray-500">{error || `Sampled ${formatTime(data?.sampledAt)}`}</div>
       </div>
-      <dl className="grid gap-px border-b border-gray-800 bg-gray-800 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid border-b border-gray-800 md:grid-cols-2">
+        <div className="border-b border-gray-800 px-4 py-3 md:border-b-0 md:border-r">
+          <div className="flex items-center gap-2"><h3 className="text-xs font-medium text-gray-300">Hosted Redis metering outbox</h3><StatusBadge status={outboxStatus} /></div>
+          <p className="mt-2 text-xs text-gray-500">
+            {!meteringOutbox
+              ? 'Status not reported.'
+              : `${meteringOutbox.required ? 'Required' : 'Optional'} · ${meteringOutbox.started ? 'worker started' : 'worker stopped'} · ${formatNumber(meteringOutbox.deadLetterCount)} dead letters`}
+          </p>
+          {meteringOutbox?.lastError?.message && <p className="mt-1 break-words text-xs text-red-300">{meteringOutbox.lastError.message}</p>}
+          {meteringOutbox?.lastTerminalFailure?.reasonCode && <p className="mt-1 break-words text-xs text-red-300">{meteringOutbox.lastTerminalFailure.reasonCode}</p>}
+        </div>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2"><h3 className="text-xs font-medium text-gray-300">Usage projection repair</h3><StatusBadge status={repairStatus} /></div>
+          <p className="mt-2 text-xs text-gray-500">
+            {projectionRepair
+              ? `${formatNumber(projectionRepair.remaining)} pending · ${formatNumber(projectionRepair.processed)} processed · ${projectionRepair.inFlight ? 'repairing now' : projectionRepair.scheduled ? 'repair scheduled' : 'idle'}`
+              : 'Status not reported.'}
+          </p>
+          {projectionRepair?.lastError && <p className="mt-1 break-words text-xs text-red-300">{projectionRepair.lastError}</p>}
+        </div>
+      </div>
+      <dl className="grid gap-px border-b border-gray-800 bg-gray-800 sm:grid-cols-4 xl:grid-cols-8">
         {[
-          ['Requests · 5 min', formatNumber(five?.calls)],
+          ['Logical requests · 5 min', formatNumber(five?.calls)],
+          ['Execution events · 5 min', formatNumber(five?.attemptCalls)],
           ['Failures · 5 min', formatNumber(five?.failures)],
-          ['Requests · 1 hour', formatNumber(hour?.calls)],
+          ['Logical requests · 1 hour', formatNumber(hour?.calls)],
+          ['Execution events · 1 hour', formatNumber(hour?.attemptCalls)],
           ['Success · 1 hour', `${formatNumber(hour?.successRate, 1)}%`],
           ['Average latency', `${formatNumber(hour?.averageLatencyMs)} ms`],
-          ['Tokens · 1 hour', formatNumber(hour?.tokens)]
+          ['Recorded tokens · 1 hour', formatAggregateTokens(hour)]
         ].map(([label, value]) => (
           <div key={label} className="bg-gray-900 px-4 py-3">
             <dt className="text-xs text-gray-500">{label}</dt>
@@ -1842,11 +2055,12 @@ function LiveOperationsPanel({
           </div>
         ))}
       </dl>
+      <ExecutionMeteringSummary title="Execution metering · 1 hour" value={hour} />
       <div className="border-b border-gray-800 px-4 py-3">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h3 className="text-sm font-medium text-white">Request volume · last 30 minutes</h3>
-            <p className="mt-1 text-xs text-gray-500">Red segments are failed calls.</p>
+            <h3 className="text-sm font-medium text-white">Logical request volume · last 30 minutes</h3>
+            <p className="mt-1 text-xs text-gray-500">Each request ID is counted once; red segments are failed requests.</p>
           </div>
           <span className="text-xs text-gray-500">Peak {formatNumber(peak)} / min</span>
         </div>
@@ -1869,18 +2083,20 @@ function LiveOperationsPanel({
           <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-medium text-white">Provider health · 1 hour</h3></div>
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader><TableRow className="border-gray-800"><TableHead>Provider</TableHead><TableHead>Attempts</TableHead><TableHead>Success</TableHead><TableHead>Avg / max</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow className="border-gray-800"><TableHead>Provider</TableHead><TableHead>Attempts</TableHead><TableHead>Success</TableHead><TableHead>Metering</TableHead><TableHead>Recorded tokens</TableHead><TableHead>Avg / max</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
               <TableBody>
                 {(data?.providers || []).map((provider) => (
                   <TableRow key={provider.id} className="border-gray-800">
                     <TableCell><div className="font-medium text-gray-200">{providerUsageLabel(provider.id)}</div><div className="text-xs text-gray-500">{formatTime(provider.lastRequestAt)}</div></TableCell>
                     <TableCell>{formatNumber(provider.calls)}</TableCell>
                     <TableCell className={provider.failures ? 'text-amber-300' : 'text-green-300'}>{formatNumber(provider.successRate, 1)}%</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{meteringCoverageLabel(provider)}</TableCell>
+                    <TableCell><div>{formatAggregateTokens(provider, provider.totalTokens)}{hasMeteredExecutions(provider) ? provider.unmeteredExecutions + provider.unknownMeteringExecutions > 0 ? ' recorded' : ' total' : ''}</div>{hasMeteredExecutions(provider) && <div className="mt-1 whitespace-nowrap text-[11px] text-gray-500">{formatAggregateTokens(provider, provider.inputTokens)} in · {formatAggregateTokens(provider, provider.cachedInputTokens)} cached · {formatAggregateTokens(provider, provider.outputTokens)} out · {formatAggregateTokens(provider, provider.reasoningTokens)} reasoning</div>}</TableCell>
                     <TableCell>{formatNumber(provider.averageLatencyMs)} / {formatNumber(provider.maxLatencyMs)} ms</TableCell>
-                    <TableCell>${formatNumber(provider.estimatedCostUsd, 6)}</TableCell>
+                    <TableCell>{formatAggregateCost(provider, provider.estimatedCostUsd)}</TableCell>
                   </TableRow>
                 ))}
-                {!data?.providers.length && <TableRow><TableCell colSpan={5} className="h-20 text-center text-gray-500">No provider calls in the last hour.</TableCell></TableRow>}
+                {!data?.providers.length && <TableRow><TableCell colSpan={7} className="h-20 text-center text-gray-500">No provider calls in the last hour.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </div>
@@ -1892,7 +2108,7 @@ function LiveOperationsPanel({
               <button key={request._id} type="button" onClick={() => onInspect(request)} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-gray-800/70">
                 <div className="min-w-0">
                   <div className="truncate text-sm text-gray-200">{definitions.get(request.activity)?.label || request.activity}</div>
-                  <div className="truncate text-xs text-gray-500">{request.organizationName || 'No organization'} · {request.actorName || request.actorEmail || 'System'} · {providerUsageLabel(request.provider)}</div>
+                  <div className="truncate text-xs text-gray-500">{request.organizationName || 'No organization'} · {request.actorName || request.actorEmail || 'System'} · {providerUsageLabel(request.provider, request.model)} · {request.model}</div>
                 </div>
                 <div className="shrink-0 text-right">
                   <StatusBadge status={request.status} />
@@ -1999,7 +2215,7 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
           <DetailDatum label="Person" value={data.actorName || data.actorEmail || 'System'} />
           <DetailDatum label="Activity" value={data.activity} mono />
           <DetailDatum label="Application" value={data.sourceApp} />
-          <DetailDatum label="Provider" value={data.provider} />
+          <DetailDatum label="Provider" value={providerUsageLabel(textValue(data.provider, ''), textValue(data.model, ''))} />
           <DetailDatum label="Model" value={data.model} mono />
           <DetailDatum label="Request ID" value={data.requestId} mono />
           <DetailDatum label="Provider request ID" value={data.providerRequestId} mono />
@@ -2013,12 +2229,14 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
           <DetailDatum label="Latency" value={`${formatNumber(Number(data.latencyMs || 0))} ms`} />
           <DetailDatum label="Attempts" value={data.attempts} />
           <DetailDatum label="Failovers" value={data.failovers} />
-          <DetailDatum label="Input tokens" value={formatRecordedTokens(data.totalTokens, data.inputTokens)} />
-          <DetailDatum label="Cached input" value={formatRecordedTokens(data.totalTokens, data.cachedInputTokens)} />
-          <DetailDatum label="Output tokens" value={formatRecordedTokens(data.totalTokens, data.outputTokens)} />
-          <DetailDatum label="Reasoning tokens" value={formatRecordedTokens(data.totalTokens, data.reasoningTokens)} />
-          <DetailDatum label="Total tokens" value={formatRecordedTokens(data.totalTokens)} />
-          <DetailDatum label="Estimated cost" value={`$${formatNumber(Number(data.estimatedCostUsd || 0), 6)}`} />
+          <DetailDatum label="Token metering" value={meteringStatusLabel(data.meteringStatus, data.totalTokens)} />
+          <DetailDatum label="Usage source" value={data.usageSource} />
+          <DetailDatum label="Input tokens" value={formatRecordedTokens(data.meteringStatus, data.totalTokens, data.inputTokens)} />
+          <DetailDatum label="Cached input" value={formatRecordedTokens(data.meteringStatus, data.totalTokens, data.cachedInputTokens)} />
+          <DetailDatum label="Output tokens" value={formatRecordedTokens(data.meteringStatus, data.totalTokens, data.outputTokens)} />
+          <DetailDatum label="Reasoning tokens" value={formatRecordedTokens(data.meteringStatus, data.totalTokens, data.reasoningTokens)} />
+          <DetailDatum label="Total tokens" value={formatRecordedTokens(data.meteringStatus, data.totalTokens)} />
+          <DetailDatum label="Estimated cost" value={formatRecordedCost(data.meteringStatus, data.totalTokens, data.estimatedCostUsd)} />
           <DetailDatum label="Prompt bytes" value={formatNumber(Number(data.promptBytes || 0))} />
           <DetailDatum label="Response bytes" value={formatNumber(Number(data.responseBytes || 0))} />
           <DetailDatum label="Quota group" value={data.quotaGroup} mono />
@@ -2035,22 +2253,61 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
   );
 }
 
-function RequestTotals({ totals, includeFailovers = false }: { totals: Partial<RequestSummary> | null | undefined; includeFailovers?: boolean }) {
+function ExecutionMeteringSummary({
+  title,
+  value
+}: {
+  title: string;
+  value: (Partial<MeteringCounts> & { calls?: number }) | null | undefined;
+}) {
+  const rows = [
+    ['Metered', formatNumber(value?.meteredExecutions)],
+    ['Unmetered', formatNumber(value?.unmeteredExecutions)],
+    ['Legacy unknown', formatNumber(value?.unknownMeteringExecutions)]
+  ];
+  return (
+    <div className="border border-gray-800 bg-gray-900">
+      <div className="border-b border-gray-800 px-4 py-2 text-xs font-medium text-gray-300">{title}</div>
+      <dl className="grid grid-cols-3">
+        {rows.map(([label, count]) => (
+          <div key={label} className="border-r border-gray-800 px-4 py-3 last:border-r-0">
+            <dt className="text-xs text-gray-500">{label}</dt>
+            <dd className="mt-1 text-sm font-semibold text-gray-100">{count}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function RequestTotals({
+  totals,
+  kind,
+  includeFailovers = false
+}: {
+  totals: Partial<RequestSummary> | null | undefined;
+  kind: 'logical' | 'events';
+  includeFailovers?: boolean;
+}) {
   const values = [
-    ['Calls', formatNumber(totals?.calls)],
+    [kind === 'logical' ? 'Logical requests' : 'Execution events', formatNumber(totals?.calls)],
+    ['Metered executions', formatNumber(totals?.meteredExecutions)],
+    ['Unmetered executions', formatNumber(totals?.unmeteredExecutions)],
+    ['Legacy unknown', formatNumber(totals?.unknownMeteringExecutions)],
     ['Successful', formatNumber(totals?.successes)],
     ['Failed', formatNumber(totals?.failures)],
     ['Success rate', `${formatNumber(totals?.successRate, 1)}%`],
-    ['Input tokens', formatNumber(totals?.inputTokens)],
-    ['Cached input', formatNumber(totals?.cachedInputTokens)],
-    ['Output tokens', formatNumber(totals?.outputTokens)],
-    ['Reasoning tokens', formatNumber(totals?.reasoningTokens)],
-    ['All tokens', formatNumber(totals?.totalTokens)],
-    ['Estimated cost', `$${formatNumber(totals?.estimatedCostUsd, 6)}`],
+    ['Recorded input', formatAggregateTokens(totals, totals?.inputTokens)],
+    ['Recorded cached input', formatAggregateTokens(totals, totals?.cachedInputTokens)],
+    ['Recorded output', formatAggregateTokens(totals, totals?.outputTokens)],
+    ['Recorded reasoning', formatAggregateTokens(totals, totals?.reasoningTokens)],
+    ['Recorded tokens', formatAggregateTokens(totals)],
+    ['Recorded est. cost', formatAggregateCost(totals, totals?.estimatedCostUsd)],
     ['Average latency', `${formatNumber(totals?.averageLatencyMs)} ms`],
     ['P50 latency', `${formatNumber(totals?.p50LatencyMs)} ms`],
     ['P95 latency', `${formatNumber(totals?.p95LatencyMs)} ms`]
   ];
+  if (kind === 'logical') values.splice(1, 0, ['Execution events', formatNumber(totals?.attemptCalls)]);
   if (includeFailovers) values.push(['Failovers', formatNumber(totals?.failovers)]);
   return <dl className="grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">{values.map(([label, value]) => <RuntimeTestDatum key={label} label={label} value={value} />)}</dl>;
 }
@@ -2071,8 +2328,9 @@ function BreakdownTable({ title, rows, label, note }: { title: string; rows: Usa
           <TableHeader>
             <TableRow className="border-gray-800">
               <TableHead>Name</TableHead>
-              <TableHead>Calls</TableHead>
+              <TableHead>Execution events</TableHead>
               <TableHead>Success</TableHead>
+              <TableHead>Metering</TableHead>
               <TableHead>Token breakdown</TableHead>
               <TableHead>Average</TableHead>
               <TableHead>Est. cost</TableHead>
@@ -2089,16 +2347,17 @@ function BreakdownTable({ title, rows, label, note }: { title: string; rows: Usa
                     {formatNumber(row.successes)} passed · {formatNumber(row.failures)} failed
                   </div>
                 </TableCell>
+                <TableCell className="whitespace-nowrap text-xs">{meteringCoverageLabel(row)}</TableCell>
                 <TableCell>
-                  <div>{row.totalTokens > 0 ? `${formatNumber(row.totalTokens)} total` : row._id === 'gpt-5.6-terra' ? 'Usage unavailable' : 'Not recorded'}</div>
-                  {row.totalTokens > 0 && (
+                  <div>{formatAggregateTokens(row, row.totalTokens)}{hasMeteredExecutions(row) ? row.unmeteredExecutions + row.unknownMeteringExecutions > 0 ? ' recorded' : ' total' : ''}</div>
+                  {hasMeteredExecutions(row) && (
                     <div className="mt-1 whitespace-nowrap text-[11px] text-gray-500">
-                      {formatNumber(row.inputTokens)} in · {formatNumber(row.cachedInputTokens)} cached · {formatNumber(row.outputTokens)} out · {formatNumber(row.reasoningTokens)} reasoning
+                      {formatAggregateTokens(row, row.inputTokens)} in · {formatAggregateTokens(row, row.cachedInputTokens)} cached · {formatAggregateTokens(row, row.outputTokens)} out · {formatAggregateTokens(row, row.reasoningTokens)} reasoning
                     </div>
                   )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">{formatNumber(row.averageLatencyMs)} ms</TableCell>
-                <TableCell className="whitespace-nowrap">${formatNumber(row.estimatedCostUsd ?? row.cost, 6)}</TableCell>
+                <TableCell className="whitespace-nowrap">{formatAggregateCost(row, row.estimatedCostUsd ?? row.cost)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -2110,5 +2369,5 @@ function BreakdownTable({ title, rows, label, note }: { title: string; rows: Usa
 }
 
 function DrilldownTable({ title, icon: Icon, rows, onSelect }: { title: string; icon: typeof Building2; rows: UsageBreakdown[]; onSelect?: (id: string) => void }) {
-  return <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="flex items-center gap-2 border-b border-gray-800 px-4 py-3"><Icon className="h-4 w-4 text-gray-500" /><h2 className="text-sm font-semibold text-white">{title}</h2></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Name</TableHead><TableHead>Calls</TableHead><TableHead>Failures</TableHead><TableHead>Tokens</TableHead></TableRow></TableHeader><TableBody>{rows.slice(0, 12).map((row) => <TableRow key={row._id} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `Filter AI activity by ${row.name || row._id}` : undefined} className={`border-gray-800 ${onSelect ? 'cursor-pointer hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset' : ''}`} onClick={() => onSelect?.(row._id)} onKeyDown={(event) => onSelect && activateTableRow(event, () => onSelect(row._id))}><TableCell className="font-medium">{row.name || row._id}</TableCell><TableCell>{formatNumber(row.calls)}</TableCell><TableCell>{formatNumber(row.failures)}</TableCell><TableCell>{formatNumber(row.tokens)}</TableCell></TableRow>)}</TableBody></Table></div>{!rows.length && <div className="py-12 text-center text-sm text-gray-500">No attributed usage in this range.</div>}</section>;
+  return <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="flex items-center gap-2 border-b border-gray-800 px-4 py-3"><Icon className="h-4 w-4 text-gray-500" /><h2 className="text-sm font-semibold text-white">{title}</h2></div><div className="overflow-x-auto"><Table><TableHeader><TableRow className="border-gray-800"><TableHead>Name</TableHead><TableHead>Execution events</TableHead><TableHead>Failures</TableHead><TableHead>Metering</TableHead><TableHead>Tokens</TableHead></TableRow></TableHeader><TableBody>{rows.slice(0, 12).map((row) => <TableRow key={row._id} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `Filter AI activity by ${row.name || row._id}` : undefined} className={`border-gray-800 ${onSelect ? 'cursor-pointer hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset' : ''}`} onClick={() => onSelect?.(row._id)} onKeyDown={(event) => onSelect && activateTableRow(event, () => onSelect(row._id))}><TableCell className="font-medium">{row.name || row._id}</TableCell><TableCell>{formatNumber(row.calls)}</TableCell><TableCell>{formatNumber(row.failures)}</TableCell><TableCell className="whitespace-nowrap text-xs">{meteringCoverageLabel(row)}</TableCell><TableCell>{formatAggregateTokens(row, row.tokens)}</TableCell></TableRow>)}</TableBody></Table></div>{!rows.length && <div className="py-12 text-center text-sm text-gray-500">No attributed usage in this range.</div>}</section>;
 }

@@ -1,46 +1,69 @@
-const { Queue, Worker, QueueEvents } = require('bullmq');
-const IORedis = require('ioredis');
-const mongoose = require('mongoose');
-const path = require('path');
 const fs = require('fs');
-const { promisify } = require('util');
-const unlinkAsync = promisify(fs.unlink);
-const CloudinaryUploadService = require('./cloudinaryUploadService');
-const cloudinaryUploadService = new CloudinaryUploadService();
-const CVParsingService = require('./cvParsingService');
-const cvParsingService = new CVParsingService();
+const path = require('path');
+const { Queue, QueueEvents, Worker } = require('bullmq');
+const {
+  createGlobalDispatchConnection,
+  resolveGlobalDispatchConfig,
+} = require('./cvGlobalDispatch');
 
 const REDIS_ENABLED = process.env.REDIS_ENABLED
   ? process.env.REDIS_ENABLED !== 'false'
   : process.env.NODE_ENV === 'production' || Boolean(process.env.REDIS_HOST);
-const REDIS_HOST = process.env.REDIS_HOST || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
-const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
-
-const connection = REDIS_ENABLED ? new IORedis(REDIS_PORT, REDIS_HOST, {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  lazyConnect: true,
-}) : null;
+const REDIS_HOST = process.env.REDIS_HOST
+  || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
+const REDIS_PORT = Number(process.env.REDIS_PORT || 6379);
+const APPROVED_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY || 1)
+);
+const globalDispatchConfig = resolveGlobalDispatchConfig({
+  enabled: REDIS_ENABLED,
+  serviceId: 'recruiter',
+  defaultApprovedLimit: APPROVED_CONCURRENCY,
+  legacyRedis: {
+    host: REDIS_HOST,
+    port: REDIS_PORT,
+  },
+});
+const connection = REDIS_ENABLED
+  ? createGlobalDispatchConnection(globalDispatchConfig, {
+    connectionName: 'legacy-bulk-cv-migration:recruiter',
+    enableReadyCheck: false,
+  })
+  : null;
 
 if (connection) {
-  connection.on('error', (err) => {
-    console.error('❌ BullMQ Redis connection error:', err.message);
-  });
-
-  connection.on('connect', () => {
-    console.log('✅ BullMQ Redis connected');
+  connection.on('error', (error) => {
+    console.error('Legacy bulk migration Redis connection error:', error.message);
   });
 }
 
 const QUEUE_NAME = 'bulk-cv-upload';
-/** Concurrency only; do not use BullMQ limiter here — it unnecessarily caps throughput vs Azure limits */
-const CONCURRENCY = parseInt(process.env.BULK_UPLOAD_CONCURRENCY || '8', 10);
+const MIGRATION_CONCURRENCY = Math.max(
+  1,
+  Math.min(4, Number(process.env.LEGACY_BULK_MIGRATION_CONCURRENCY || 1))
+);
+const STATUS_POLL_MS = Math.max(
+  250,
+  Number(process.env.LEGACY_BULK_STATUS_POLL_MS || 2_000)
+);
 
 let queue = null;
 let worker = null;
 let queueEvents = null;
+let shuttingDown = false;
 
 const batchStatus = new Map();
+const batchCompletions = new Map();
+
+const defaultSubmitDurableUpload = (req) => (
+  require('./cvAnalysisQueueService').submitUpload(req, 'bulk')
+);
+const defaultReadDurableStatus = (publicId, statusToken) => (
+  require('./cvAnalysisQueueService').getStatus(publicId, statusToken)
+);
+let submitDurableUpload = defaultSubmitDurableUpload;
+let readDurableStatus = defaultReadDurableStatus;
 
 function getBatchStatus(batchId) {
   return batchStatus.get(batchId) || null;
@@ -55,7 +78,7 @@ function initBatchStatus(batchId, totalFiles, organizationId, userId) {
     completed: 0,
     successful: 0,
     failed: 0,
-    processing: 0,
+    processing: totalFiles,
     results: [],
     errors: [],
     startedAt: new Date().toISOString(),
@@ -63,212 +86,192 @@ function initBatchStatus(batchId, totalFiles, organizationId, userId) {
     state: 'processing',
   };
   batchStatus.set(batchId, status);
+  batchCompletions.set(batchId, new Set());
   return status;
 }
 
-function updateBatchFile(batchId, fileResult) {
+function updateBatchFile(batchId, legacyJobId, fileResult) {
   const status = batchStatus.get(batchId);
-  if (!status) return;
+  if (!status) return null;
+  const completedJobs = batchCompletions.get(batchId) || new Set();
+  const completionKey = String(legacyJobId || fileResult.fileName || status.completed);
+  if (completedJobs.has(completionKey)) return status;
+  completedJobs.add(completionKey);
+  batchCompletions.set(batchId, completedJobs);
 
-  status.completed++;
+  status.completed += 1;
   if (fileResult.success) {
-    status.successful++;
+    status.successful += 1;
     status.results.push({
       fileName: fileResult.fileName,
       candidateId: fileResult.candidateId,
       candidateName: fileResult.candidateName,
+      durableJobId: fileResult.durableJobId,
       success: true,
     });
   } else {
-    status.failed++;
+    status.failed += 1;
     status.errors.push({
       fileName: fileResult.fileName,
       error: fileResult.error,
+      durableJobId: fileResult.durableJobId,
       success: false,
     });
   }
 
-  status.processing = status.totalFiles - status.completed;
-
+  status.processing = Math.max(0, status.totalFiles - status.completed);
   if (status.completed >= status.totalFiles) {
     status.state = 'completed';
     status.completedAt = new Date().toISOString();
   }
-
-  batchStatus.set(batchId, status);
   return status;
+}
+
+function migrationRequest(job) {
+  const data = job.data || {};
+  const idempotencyKey = `legacy-bulk:${job.id}`;
+  return {
+    file: {
+      path: data.filePath,
+      mimetype: data.fileType || 'application/octet-stream',
+      originalname: data.originalName || path.basename(String(data.filePath || 'cv-upload')),
+      size: Number(data.fileSize || 0),
+    },
+    body: {},
+    user: {
+      id: data.userId || undefined,
+      currentOrganization: data.organizationId,
+    },
+    get(name) {
+      return String(name || '').toLowerCase() === 'idempotency-key'
+        ? idempotencyKey
+        : undefined;
+    },
+  };
+}
+
+async function waitForDurableCompletion(publicId, statusToken, job) {
+  let lastProgress = -1;
+  while (!shuttingDown) {
+    const status = await readDurableStatus(publicId, statusToken);
+    if (!status) {
+      const error = new Error('The migrated durable CV job could not be read');
+      error.code = 'DURABLE_CV_JOB_NOT_FOUND';
+      throw error;
+    }
+    if (status.state === 'completed') return status;
+    if (status.state === 'failed') {
+      const error = new Error(status.error?.message || 'The durable CV job failed');
+      error.code = status.error?.code || 'DURABLE_CV_JOB_FAILED';
+      error.durableTerminal = true;
+      throw error;
+    }
+    const progress = Math.min(99, Math.max(10, Number(status.progress || 10)));
+    if (progress !== lastProgress) {
+      await job.updateProgress(progress);
+      lastProgress = progress;
+    }
+    await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_MS));
+  }
+  const error = new Error('Legacy migration stopped before the durable CV job completed');
+  error.code = 'LEGACY_MIGRATION_SHUTDOWN';
+  throw error;
+}
+
+async function migrateLegacyJob(job) {
+  const data = job.data || {};
+  if (!data.filePath || !data.organizationId) {
+    const error = new Error('Legacy bulk job is missing its file path or organization');
+    error.code = 'LEGACY_BULK_JOB_INVALID';
+    throw error;
+  }
+  if (!Number(data.fileSize || 0)) {
+    data.fileSize = await fs.promises.stat(data.filePath)
+      .then((stat) => stat.size)
+      .catch(() => 0);
+  }
+
+  const submitted = await submitDurableUpload(migrationRequest(job));
+  const durableJobId = submitted.job.publicId;
+  await job.updateProgress(10);
+  const status = await waitForDurableCompletion(
+    durableJobId,
+    submitted.statusToken,
+    job
+  );
+  await job.updateProgress(100);
+  return {
+    success: true,
+    fileName: data.originalName || path.basename(data.filePath),
+    candidateId: status.candidateId || null,
+    candidateName: status.candidate
+      ? [status.candidate.firstName, status.candidate.lastName].filter(Boolean).join(' ')
+      : '',
+    durableJobId,
+  };
 }
 
 async function initQueue() {
   if (queue) return { queue, worker, queueEvents };
-
   if (!REDIS_ENABLED) {
-    throw new Error('Bulk upload Redis queue is disabled. Set REDIS_ENABLED=true and REDIS_HOST/REDIS_PORT to enable it locally.');
+    throw new Error(
+      'Legacy bulk migration requires Redis. New uploads must use cvAnalysisQueueService.submitBatch().'
+    );
   }
 
-  try {
-    await connection.connect();
-  } catch (e) {
-    if (!e.message.includes('already')) throw e;
-  }
-
+  shuttingDown = false;
+  if (connection.status === 'wait') await connection.connect();
   queue = new Queue(QUEUE_NAME, { connection });
   queueEvents = new QueueEvents(QUEUE_NAME, { connection });
-
   worker = new Worker(QUEUE_NAME, async (job) => {
-    const { filePath, fileType, originalName, batchId, organizationId, userId } = job.data;
-    const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
-
+    const data = job.data || {};
     try {
-      await job.updateProgress(10);
-
-      const RetryHelper = require('../utils/retryHelper');
-      const Candidate = require('../models/Candidate');
-      const embeddingService = require('./embeddingService');
-
-      const [cloudinaryResult, cvParsingResult] = await Promise.all([
-        RetryHelper.withRetry(
-          () => cloudinaryUploadService.uploadFile(filePath, fileType),
-          { maxRetries: 3, delay: 1000, operation: `Cloudinary upload ${originalName}` }
-        ),
-        RetryHelper.withRetry(
-          () => runWithAIRequestContext({
-            sourceApp: 'recruiter-worker',
-            organizationId,
-            actorId: userId,
-            requestId: `bulk-cv:${job.id}`,
-            promptVersion: 'candidate-cv-v1'
-          }, () => cvParsingService.parseAndAnalyze(filePath, fileType)),
-          { maxRetries: 3, delay: 1000, operation: `CV parse ${originalName}` }
-        ),
-      ]);
-
-      await job.updateProgress(50);
-
-      if (!cloudinaryResult.success) {
-        throw new Error(`Upload failed: ${cloudinaryResult.error}`);
-      }
-      if (!cvParsingResult.success || !cvParsingResult.resumeText || cvParsingResult.resumeText.length < 50) {
-        throw new Error('Could not extract readable text from CV. Use a text-based PDF or DOCX.');
-      }
-
-      let resumeUrl = cloudinaryResult.resumeUrl;
-      if (fileType === 'application/pdf') {
-        try {
-          resumeUrl = cloudinaryUploadService.getAccessiblePdfUrl(cloudinaryResult.publicId);
-        } catch (_) { /* keep original */ }
-      }
-
-      const extractedFields = cvParsingResult.extractedFields || {};
-      const aiAnalysis = cvParsingResult.aiAnalysis || { summary: 'AI analysis unavailable', strengths: [], potentialFlags: [] };
-
-      const candidateData = {
-        firstName: extractedFields.firstName || 'PARSING_FAILED',
-        lastName: extractedFields.lastName || 'REVIEW_REQUIRED',
-        email: extractedFields.email || `bulk-${Date.now()}-${Math.random().toString(36).slice(2,8)}@placeholder.com`,
-        phone: extractedFields.phone || '',
-        location: extractedFields.location || '',
-        position: extractedFields.position || 'Position TBD',
-        experience: extractedFields.experience || '',
-        education: extractedFields.education || '',
-        skills: Array.isArray(extractedFields.skills) ? extractedFields.skills.join(', ') : (extractedFields.skills || ''),
-        resumeUrl,
-        resumeText: cvParsingResult.resumeText || '',
-        status: 'New',
-        source: 'Bulk Upload',
-        organization: organizationId,
-        createdBy: userId || null,
-        cloudinaryPublicId: cloudinaryResult.publicId,
-        cloudinaryResourceType: cloudinaryResult.resourceType,
-        parsedData: extractedFields,
-        aiAnalysis,
-        ...(cvParsingResult.workExperience ? { workExperience: cvParsingResult.workExperience } : {}),
-        educationHistory: extractedFields.educationHistory || [],
-        certifications: extractedFields.certifications || [],
-        languages: extractedFields.languages || [],
-        awards: extractedFields.awards || [],
-        projects: extractedFields.projects || [],
-        publications: extractedFields.publications || [],
-        volunteerWork: extractedFields.volunteerWork || [],
-        professionalMemberships: extractedFields.professionalMemberships || [],
-        portfolioLinks: extractedFields.portfolioLinks || {},
-        additionalSections: extractedFields.additionalSections || {},
-        fullCVData: extractedFields.fullCVData || extractedFields || {},
-        processingMetadata: {
-          uploadSuccess: true,
-          parseSuccess: cvParsingResult.parseSuccess || false,
-          aiSuccess: cvParsingResult.aiSuccess || false,
-          fileSize: 0,
-          originalName,
-          processedAt: new Date(),
-          bulkBatchId: batchId,
-        },
-      };
-
-      await job.updateProgress(70);
-
-      const candidate = new Candidate(candidateData);
-      await candidate.save();
-
-      await job.updateProgress(85);
-
-      try {
-        await embeddingService.createCandidateEmbedding(candidate);
-        candidate.isEmbedded = true;
-        candidate.embeddingCreatedAt = new Date();
-        await candidate.save();
-      } catch (embErr) {
-        console.error(`⚠️ Embedding failed for ${originalName}: ${embErr.message}`);
-      }
-
-      await job.updateProgress(100);
-
-      const result = {
-        success: true,
-        fileName: originalName,
-        candidateId: candidate._id.toString(),
-        candidateName: `${candidate.firstName} ${candidate.lastName}`,
-      };
-
-      updateBatchFile(batchId, result);
+      const result = await migrateLegacyJob(job);
+      updateBatchFile(data.batchId, job.id, result);
       return result;
-
     } catch (error) {
-      const failResult = {
-        success: false,
-        fileName: originalName,
-        error: error.message,
-      };
-      updateBatchFile(batchId, failResult);
+      const finalAttempt = Number(job.attemptsMade || 0) + 1
+        >= Math.max(1, Number(job.opts?.attempts || 1));
+      if (
+        error.code !== 'LEGACY_MIGRATION_SHUTDOWN'
+        && (error.durableTerminal === true || finalAttempt)
+      ) {
+        updateBatchFile(data.batchId, job.id, {
+          success: false,
+          fileName: data.originalName || path.basename(String(data.filePath || 'cv-upload')),
+          error: error.message,
+        });
+      }
       throw error;
-    } finally {
-      try { await unlinkAsync(filePath); } catch (_) {}
     }
   }, {
     connection,
-    concurrency: CONCURRENCY,
+    concurrency: MIGRATION_CONCURRENCY,
   });
 
   worker.on('completed', (job, result) => {
-    console.log(`✅ Bulk CV job ${job.id} completed: ${result?.candidateName || result?.fileName}`);
+    console.log(
+      `Legacy bulk job ${job.id} completed through durable CV job ${result?.durableJobId || 'unknown'}`
+    );
+  });
+  worker.on('failed', (job, error) => {
+    console.error(`Legacy bulk migration job ${job?.id || 'unknown'} failed: ${error.message}`);
   });
 
-  worker.on('failed', (job, err) => {
-    console.error(`❌ Bulk CV job ${job?.id} failed: ${err.message}`);
-  });
-
-  console.log(`🚀 BullMQ bulk upload worker started (concurrency: ${CONCURRENCY})`);
+  console.log(
+    `Legacy bulk queue migration worker started (ingestion concurrency: ${MIGRATION_CONCURRENCY}); inference remains in cv-analysis-local`
+  );
   return { queue, worker, queueEvents };
 }
 
 async function addBulkUploadJobs(batchId, files, organizationId, userId) {
-  const { queue: q } = await initQueue();
-
+  const { queue: legacyQueue } = await initQueue();
   const jobs = files.map((file, index) => ({
     name: `cv-${batchId}-${index}`,
     data: {
       filePath: file.path,
       fileType: file.mimetype,
+      fileSize: Number(file.size || 0),
       originalName: file.originalname,
       batchId,
       organizationId,
@@ -276,17 +279,30 @@ async function addBulkUploadJobs(batchId, files, organizationId, userId) {
     },
     opts: {
       attempts: 2,
-      backoff: { type: 'exponential', delay: 3000 },
-      removeOnComplete: { age: 3600 },
-      removeOnFail: { age: 7200 },
+      backoff: { type: 'exponential', delay: 3_000 },
+      removeOnComplete: { age: 3_600 },
+      removeOnFail: { age: 7_200 },
     },
   }));
+  await legacyQueue.addBulk(jobs);
+  console.log(
+    `Accepted ${jobs.length} legacy bulk jobs for migration into the durable CV queue (${batchId})`
+  );
+}
 
-  await q.addBulk(jobs);
-  console.log(`📦 Queued ${jobs.length} CV processing jobs for batch ${batchId}`);
+function setDependenciesForTests(overrides = {}) {
+  if (overrides.submitDurableUpload) submitDurableUpload = overrides.submitDurableUpload;
+  if (overrides.readDurableStatus) readDurableStatus = overrides.readDurableStatus;
+}
+
+function resetDependenciesForTests() {
+  submitDurableUpload = defaultSubmitDurableUpload;
+  readDurableStatus = defaultReadDurableStatus;
+  shuttingDown = false;
 }
 
 async function shutdownQueue() {
+  shuttingDown = true;
   try {
     if (worker) {
       await worker.close();
@@ -300,21 +316,24 @@ async function shutdownQueue() {
       await queue.close();
       queue = null;
     }
-    if (connection) {
-      try {
-        await connection.quit();
-      } catch (_) { /* already closed */ }
+    if (connection && connection.status !== 'end') {
+      await connection.quit().catch(() => {});
     }
-  } catch (e) {
-    console.warn('⚠️ bulkUploadService shutdownQueue:', e.message);
+  } catch (error) {
+    console.warn('bulkUploadService shutdownQueue:', error.message);
+  } finally {
+    resetDependenciesForTests();
   }
 }
 
 module.exports = {
-  initQueue,
+  _migrateLegacyJobForTests: migrateLegacyJob,
+  _resetDependenciesForTests: resetDependenciesForTests,
+  _setDependenciesForTests: setDependenciesForTests,
   addBulkUploadJobs,
-  initBatchStatus,
   getBatchStatus,
+  initBatchStatus,
+  initQueue,
   shutdownQueue,
   QUEUE_NAME,
 };

@@ -7,9 +7,16 @@ const AIAuditEvent = require('../models/AIAuditEvent');
 const AIQuotaSnapshot = require('../models/AIQuotaSnapshot');
 const AIUsageDailyRollup = require('../models/AIUsageDailyRollup');
 const AIUsageEvent = require('../models/AIUsageEvent');
+const AIUsageLogicalRequest = require('../models/AIUsageLogicalRequest');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const { AIRuntimeError } = require('../services/aiRuntime/aiRuntimeService');
-const { getLiveOperations, getOverview, listRequests, runRuntimeTest } = require('../services/adminAIRuntimeService');
+const {
+  getLiveOperations,
+  getOverview,
+  listRequests,
+  runRuntimeTest,
+  serializeUsageEvent
+} = require('../services/adminAIRuntimeService');
 
 const route = {
   activity: 'recruiter.general',
@@ -32,6 +39,37 @@ const request = {
 
 afterEach(() => mock.restoreAll());
 
+test('historical token-bearing events are serialized as metered even before the flag backfill', () => {
+  const serialized = serializeUsageEvent({
+    requestId: 'historical-terra',
+    provider: 'local-codex',
+    usageReported: false,
+    inputTokens: 100,
+    outputTokens: 5,
+    totalTokens: 105
+  });
+  assert.equal(serialized.usageReported, true);
+  assert.equal(serialized.meteringStatus, 'metered');
+  assert.equal(serialized.usageSource, 'historical-token-backfill');
+
+  const unknown = serializeUsageEvent({
+    requestId: 'historical-unknown',
+    totalTokens: 0
+  });
+  assert.equal(unknown.usageReported, null);
+  assert.equal(unknown.meteringStatus, 'legacy-unknown');
+  assert.equal(unknown.usageSource, 'legacy-unknown');
+
+  const unmetered = serializeUsageEvent({
+    requestId: 'explicitly-unmetered',
+    usageReported: false,
+    totalTokens: 0
+  });
+  assert.equal(unmetered.usageReported, false);
+  assert.equal(unmetered.meteringStatus, 'unmetered');
+  assert.equal(unmetered.usageSource, 'unreported');
+});
+
 test('runtime test endpoint requires system settings access', () => {
   const routeSource = fs.readFileSync(path.join(__dirname, '..', 'routes', 'adminAIRuntime.js'), 'utf8');
   assert.match(routeSource, /router\.post\('\/test', \.\.\.settingsAccess/);
@@ -46,11 +84,9 @@ test('credential management uses the explicit system settings permission', () =>
 test('queue telemetry stream is authenticated, unbuffered, and cleans up timers', () => {
   const routeSource = fs.readFileSync(path.join(__dirname, '..', 'routes', 'adminAIRuntime.js'), 'utf8');
   assert.match(routeSource, /router\.get\('\/local\/queue\/stream', \.\.\.analyticsAccess/);
-  assert.match(routeSource, /'Content-Type': 'text\/event-stream'/);
-  assert.match(routeSource, /'X-Accel-Buffering': 'no'/);
-  assert.match(routeSource, /setInterval\(\(\) => void sendSnapshot\(\), 2_000\)/);
-  assert.match(routeSource, /req\.on\('close', close\)/);
-  assert.match(routeSource, /clearInterval\(snapshotTimer\)/);
+  assert.match(routeSource, /const queueTelemetryStream = new LiveSnapshotBroadcaster/);
+  assert.match(routeSource, /intervalMs: 2_000/);
+  assert.match(routeSource, /queueTelemetryStream\.subscribe\(req, res\)/);
 });
 
 test('live operations and click-through audit endpoints require analytics access', () => {
@@ -60,22 +96,74 @@ test('live operations and click-through audit endpoints require analytics access
   assert.match(routeSource, /router\.get\('\/audit\/:id', \.\.\.analyticsAccess/);
   assert.match(routeSource, /router\.get\('\/local\/queue\/jobs\/:jobId', \.\.\.analyticsAccess/);
   assert.match(routeSource, /cvAnalysisQueue\.adminTelemetry\(\)/);
+  assert.match(routeSource, /const liveOperationsStream = new LiveSnapshotBroadcaster/);
 });
 
-test('live operations compares providers and recent attributable activity', async () => {
+test('live operations compares providers, preserves token composition, and groups requests by application', async () => {
   let aggregateCall = 0;
-  mock.method(AIUsageEvent, 'aggregate', async () => {
+  mock.method(AIUsageEvent, 'aggregate', async (pipeline) => {
     aggregateCall += 1;
+    if (aggregateCall === 1) {
+      const providerGroup = pipeline.find((stage) => stage.$facet)?.$facet?.providers?.[0]?.$group;
+      assert.deepEqual(providerGroup.inputTokens, { $sum: '$inputTokens' });
+      assert.deepEqual(providerGroup.cachedInputTokens, { $sum: '$cachedInputTokens' });
+      assert.deepEqual(providerGroup.outputTokens, { $sum: '$outputTokens' });
+      assert.deepEqual(providerGroup.reasoningTokens, { $sum: '$reasoningTokens' });
+      assert.deepEqual(providerGroup.totalTokens, { $sum: '$totalTokens' });
+      assert.ok(providerGroup.meteredExecutions);
+      assert.ok(providerGroup.unmeteredExecutions);
+      assert.ok(providerGroup.unknownMeteringExecutions);
+    }
+    if (aggregateCall === 2) {
+      const requestGroup = pipeline.find((stage) => stage.$group?._id?.requestId?.$ifNull);
+      assert.ok(requestGroup, 'live metrics must group failover events into logical requests');
+      assert.deepEqual(requestGroup.$group._id.sourceApp, { $ifNull: ['$sourceApp', 'recruiter'] });
+      assert.deepEqual(requestGroup.$group._id.requestId, {
+        $ifNull: ['$requestId', { $toString: '$_id' }]
+      });
+    }
     return aggregateCall === 1 ? [{
-      hour: [{ calls: 9, successes: 7, failures: 2, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1 }],
-      fiveMinutes: [{ calls: 3, successes: 2, failures: 1, tokens: 900, averageLatencyMs: 500 }],
+      hour: [{ calls: 9, successes: 7, failures: 2, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1, meteredExecutions: 7, unmeteredExecutions: 1, unknownMeteringExecutions: 1 }],
+      fiveMinutes: [{ calls: 3, successes: 2, failures: 1, tokens: 900, averageLatencyMs: 500, meteredExecutions: 2, unmeteredExecutions: 1, unknownMeteringExecutions: 0 }],
       providers: [
-        { _id: 'groq', calls: 6, successes: 5, failures: 1, averageLatencyMs: 600, maxLatencyMs: 1200, lastRequestAt: new Date() },
-        { _id: 'local-ollama', calls: 3, successes: 2, failures: 1, averageLatencyMs: 1000, maxLatencyMs: 1900, lastRequestAt: new Date() }
+        {
+          _id: 'groq',
+          calls: 6,
+          successes: 5,
+          failures: 1,
+          inputTokens: 2400,
+          cachedInputTokens: 1200,
+          outputTokens: 300,
+          reasoningTokens: 90,
+          totalTokens: 2700,
+          meteredExecutions: 5,
+          unmeteredExecutions: 1,
+          unknownMeteringExecutions: 0,
+          averageLatencyMs: 600,
+          maxLatencyMs: 1200,
+          lastRequestAt: new Date()
+        },
+        {
+          _id: 'local-ollama',
+          calls: 3,
+          successes: 2,
+          failures: 1,
+          inputTokens: 1100,
+          cachedInputTokens: 500,
+          outputTokens: 200,
+          reasoningTokens: 75,
+          totalTokens: 1300,
+          meteredExecutions: 2,
+          unmeteredExecutions: 0,
+          unknownMeteringExecutions: 1,
+          averageLatencyMs: 1000,
+          maxLatencyMs: 1900,
+          lastRequestAt: new Date()
+        }
       ]
     }] : [{
-      hour: [{ calls: 8, successes: 7, failures: 1, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1 }],
-      fiveMinutes: [{ calls: 2, successes: 2, failures: 0, tokens: 900, averageLatencyMs: 500 }],
+      hour: [{ calls: 8, successes: 7, failures: 1, totalTokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1, meteredExecutions: 7, unmeteredExecutions: 0, unknownMeteringExecutions: 1 }],
+      fiveMinutes: [{ calls: 2, successes: 2, failures: 0, totalTokens: 900, averageLatencyMs: 500, meteredExecutions: 2, unmeteredExecutions: 0, unknownMeteringExecutions: 0 }],
       activities: [{ _id: 'candidate.cv_parse', calls: 2, successes: 2, failures: 0 }],
       timeline: [{ _id: '2026-07-24T10:00:00Z', calls: 2, failures: 0 }]
     }];
@@ -102,8 +190,19 @@ test('live operations compares providers and recent attributable activity', asyn
   assert.equal(result.totals.hour.attemptCalls, 9);
   assert.equal(result.totals.hour.successRate, 87.5);
   assert.equal(result.providers[1].id, 'local-ollama');
+  assert.equal(result.providers[0].inputTokens, 2400);
+  assert.equal(result.providers[0].cachedInputTokens, 1200);
+  assert.equal(result.providers[0].outputTokens, 300);
+  assert.equal(result.providers[0].reasoningTokens, 90);
+  assert.equal(result.providers[0].totalTokens, 2700);
+  assert.equal(result.providers[0].tokens, 2700);
+  assert.equal(result.providers[0].meteredExecutions, 5);
+  assert.equal(result.providers[1].unknownMeteringExecutions, 1);
   assert.equal(result.recent[0].organizationName, 'Example Ltd');
   assert.equal(result.recent[0].actorName, 'Ada Recruiter');
+  assert.equal(result.recent[0].meteringStatus, 'legacy-unknown');
+  assert.equal(typeof result.accountingHealth.meteringOutbox.ready, 'boolean');
+  assert.equal(typeof result.accountingHealth.projectionRepair.healthy, 'boolean');
 });
 
 test('overview exposes full token, success, and latency detail for local and hosted usage', async () => {
@@ -127,7 +226,10 @@ test('overview exposes full token, success, and latency detail for local and hos
         reasoningTokens: 600,
         totalTokens: 41200,
         estimatedCostUsd: 0.0123,
-        latencyTotalMs: 10000
+        latencyTotalMs: 10000,
+        meteredExecutions: 3,
+        unmeteredExecutions: 1,
+        unknownMeteringExecutions: 0
       }];
     }
     if (richRows[groupId]) {
@@ -142,7 +244,10 @@ test('overview exposes full token, success, and latency detail for local and hos
         reasoningTokens: 600,
         totalTokens: 41200,
         estimatedCostUsd: 0.0123,
-        latencyTotalMs: 10000
+        latencyTotalMs: 10000,
+        meteredExecutions: 3,
+        unmeteredExecutions: 1,
+        unknownMeteringExecutions: 0
       }];
     }
     return [];
@@ -158,8 +263,9 @@ test('overview exposes full token, success, and latency detail for local and hos
     async lean() { return [{ latencyMs: 1000 }, { latencyMs: 4000 }]; }
   }));
   mock.method(AIUsageEvent, 'aggregate', async (pipeline) => {
-    const requestGroup = pipeline.find((stage) => stage.$group?._id?.$ifNull);
+    const requestGroup = pipeline.find((stage) => stage.$group?._id?.requestId?.$ifNull);
     assert.ok(requestGroup, 'overview must group failover attempts by logical request id');
+    assert.deepEqual(requestGroup.$group._id.sourceApp, { $ifNull: ['$sourceApp', 'recruiter'] });
     return [{
       calls: 3,
       successes: 3,
@@ -185,13 +291,18 @@ test('overview exposes full token, success, and latency detail for local and hos
     tokens: 41200,
     estimatedCostUsd: 0.0123,
     cost: 0.0123,
-    averageLatencyMs: 2500
+    averageLatencyMs: 2500,
+    meteredExecutions: 3,
+    unmeteredExecutions: 1,
+    unknownMeteringExecutions: 0
   });
   assert.equal(result.byActivity[0].totalTokens, 41200);
   assert.equal(result.byProvider[0]._id, 'local-codex');
   assert.equal(result.totals.calls, 3);
   assert.equal(result.totals.attemptCalls, 4);
   assert.equal(result.totals.successRate, 100);
+  assert.equal(result.totals.meteredExecutions, 3);
+  assert.equal(result.totals.unmeteredExecutions, 1);
   for (const groupId of ['$activity', '$model', '$provider']) {
     const pipeline = aggregatePipelines.find((item) => item[1]?.$group?._id === groupId);
     const group = pipeline[1].$group;
@@ -200,7 +311,74 @@ test('overview exposes full token, success, and latency detail for local and hos
     assert.deepEqual(group.outputTokens, { $sum: '$outputTokens' });
     assert.deepEqual(group.reasoningTokens, { $sum: '$reasoningTokens' });
     assert.deepEqual(group.latencyTotalMs, { $sum: '$latencyTotalMs' });
+    assert.equal(
+      group.unknownMeteringExecutions.$sum.$cond[2].$ifNull[0],
+      '$calls',
+      'pre-v4 rollup calls must remain legacy-unknown rather than measured zero'
+    );
   }
+});
+
+test('all-time overview uses permanent logical requests and exposes unrecoverable legacy coverage', async () => {
+  mock.method(AIUsageDailyRollup, 'aggregate', async (pipeline) => {
+    if (pipeline[1]?.$group?._id !== null) return [];
+    return [{
+      calls: 12,
+      successes: 10,
+      failures: 2,
+      totalTokens: 900,
+      latencyTotalMs: 1200,
+      legacyAttemptCalls: 4,
+      meteredExecutions: 6,
+      unmeteredExecutions: 2,
+      unknownMeteringExecutions: 4
+    }];
+  });
+  mock.method(AIUsageLogicalRequest, 'aggregate', async (pipeline) => {
+    const group = pipeline[0].$group;
+    assert.ok(group.meteredExecutions);
+    assert.ok(group.unmeteredExecutions);
+    assert.ok(group.unknownMeteringExecutions);
+    assert.ok(group.legacyMeteringLogicalRequests);
+    return [{
+      calls: 7,
+      successes: 6,
+      failures: 1,
+      averageLatencyMs: 300,
+      legacyMeteringLogicalRequests: 3,
+      coverageStart: new Date('2026-05-01T00:00:00.000Z')
+    }];
+  });
+  mock.method(AIQuotaSnapshot, 'find', () => ({
+    sort() { return this; },
+    async lean() { return []; }
+  }));
+  mock.method(AIUsageEvent, 'find', () => ({
+    select() { return this; },
+    sort() { return this; },
+    limit() { return this; },
+    async lean() { return []; }
+  }));
+  mock.method(AIUsageEvent, 'aggregate', async () => {
+    assert.fail('all-time logical totals must not depend on the expiring raw event ledger');
+  });
+
+  const result = await getOverview({ range: 'all' });
+  assert.equal(result.totals.calls, 7);
+  assert.equal(result.totals.successes, 6);
+  assert.equal(result.totals.failures, 1);
+  assert.equal(result.totals.attemptCalls, 12);
+  assert.equal(result.totals.meteredExecutions, 6);
+  assert.equal(result.totals.unmeteredExecutions, 2);
+  assert.equal(result.totals.unknownMeteringExecutions, 4);
+  assert.equal(result.totals.logicalCoverage.complete, false);
+  assert.equal(result.totals.logicalCoverage.legacyAttemptCalls, 4);
+  assert.equal(result.totals.logicalCoverage.meteringComplete, false);
+  assert.equal(result.totals.logicalCoverage.legacyMeteringLogicalRequests, 3);
+  assert.equal(
+    result.totals.logicalCoverage.start.toISOString(),
+    '2026-05-01T00:00:00.000Z'
+  );
 });
 
 function mockUsageQuery(value) {
@@ -213,6 +391,7 @@ function mockUsageQuery(value) {
 
 test('admin runtime test uses production routing with a fixed synthetic prompt', async () => {
   let completionInput;
+  let usageFilter;
   mock.method(aiRuntimeService, 'getSettings', async () => ({ routes: [route] }));
   mock.method(aiRuntimeService, 'complete', async (activity, input) => {
     assert.equal(activity, route.activity);
@@ -225,22 +404,48 @@ test('admin runtime test uses production routing with a fixed synthetic prompt',
       usage: { inputTokens: 18, outputTokens: 6, totalTokens: 24 }
     };
   });
-  mock.method(AIUsageEvent, 'findOne', () => mockUsageQuery({
-    provider: 'groq',
-    model: route.model,
-    reasoningEffort: 'medium',
-    routeVersion: 3,
-    quotaGroup: 'groq-primary',
-    latencyMs: 125,
-    attempts: 1,
-    failovers: 0,
-    inputTokens: 18,
-    cachedInputTokens: 0,
-    outputTokens: 6,
-    reasoningTokens: 2,
-    totalTokens: 24,
-    estimatedCostUsd: 0.00001
-  }));
+  mock.method(AIUsageEvent, 'find', (filter) => {
+    usageFilter = filter;
+    return mockUsageQuery([
+      {
+        provider: 'local-codex',
+        model: 'gpt-5.6-terra',
+        reasoningEffort: 'high',
+        routeVersion: 2,
+        latencyMs: 80,
+        attempts: 1,
+        failovers: 0,
+        inputTokens: 10,
+        cachedInputTokens: 2,
+        outputTokens: 2,
+        reasoningTokens: 1,
+        totalTokens: 12,
+        usageReported: true,
+        usageSource: 'gateway-response',
+        estimatedCostUsd: 0.00002
+      },
+      {
+        provider: 'groq',
+        model: route.model,
+        reasoningEffort: 'medium',
+        routeVersion: 3,
+        quotaGroup: 'groq-primary',
+        latencyMs: 125,
+        attempts: 2,
+        failovers: 1,
+        failoverFrom: 'local-codex',
+        failoverReason: 'local_unavailable',
+        inputTokens: 18,
+        cachedInputTokens: 0,
+        outputTokens: 6,
+        reasoningTokens: 2,
+        totalTokens: 24,
+        usageReported: true,
+        usageSource: 'provider-response',
+        estimatedCostUsd: 0.00001
+      }
+    ]);
+  });
   const audit = mock.method(AIAuditEvent, 'create', async (event) => event);
 
   const result = await runRuntimeTest(route.activity, request);
@@ -253,8 +458,27 @@ test('admin runtime test uses production routing with a fixed synthetic prompt',
   assert.equal(JSON.stringify(completionInput).includes('candidate'), false);
   assert.equal(result.success, true);
   assert.equal(result.execution.requestId, 'runtime-test-1');
+  assert.deepEqual(usageFilter, {
+    sourceApp: 'admin-runtime-test',
+    requestId: 'runtime-test-1'
+  });
+  assert.equal(result.execution.provider, 'groq');
+  assert.equal(result.execution.model, route.model);
   assert.equal(result.execution.quotaGroup, 'groq-primary');
-  assert.equal(result.execution.usage.totalTokens, 24);
+  assert.equal(result.execution.usageReported, true);
+  assert.equal(result.execution.usageSource, 'aggregated-request-events');
+  assert.equal(result.execution.latencyMs, 205);
+  assert.equal(result.execution.attempts, 3);
+  assert.equal(result.execution.failovers, 1);
+  assert.deepEqual(result.execution.usage, {
+    inputTokens: 28,
+    cachedInputTokens: 2,
+    outputTokens: 8,
+    reasoningTokens: 3,
+    totalTokens: 36,
+    estimatedCostUsd: 0.00003
+  });
+  assert.equal(audit.mock.calls[0].arguments[0].metadata.totalTokens, 36);
   assert.equal(audit.mock.calls[0].arguments[0].action, 'runtime_test_succeeded');
   assert.equal('response' in audit.mock.calls[0].arguments[0].metadata, false);
 });
@@ -275,7 +499,7 @@ test('admin runtime test exercises strict structured transport for structured ac
       usage: { totalTokens: 30 }
     };
   });
-  mock.method(AIUsageEvent, 'findOne', () => mockUsageQuery({ provider: 'groq', model: structuredRoute.model, totalTokens: 30 }));
+  mock.method(AIUsageEvent, 'find', () => mockUsageQuery([{ provider: 'groq', model: structuredRoute.model, totalTokens: 30 }]));
   mock.method(AIAuditEvent, 'create', async (event) => event);
 
   const result = await runRuntimeTest(structuredRoute.activity, request);
@@ -301,11 +525,11 @@ test('admin CV runtime test uses the production CV schema accepted by the local 
       usage: { totalTokens: 12871 }
     };
   });
-  mock.method(AIUsageEvent, 'findOne', () => mockUsageQuery({
+  mock.method(AIUsageEvent, 'find', () => mockUsageQuery([{
     provider: 'local-codex',
     model: 'gpt-5.6-terra',
     totalTokens: 12871
-  }));
+  }]));
   mock.method(AIAuditEvent, 'create', async (event) => event);
 
   const result = await runRuntimeTest(cvRoute.activity, request);
@@ -392,7 +616,10 @@ test('request analytics summarize the complete filtered result set', async () =>
       totalTokens: 2100,
       estimatedCostUsd: 0.01234567,
       averageLatencyMs: 466.6,
-      failovers: 2
+      failovers: 2,
+      meteredExecutions: 3,
+      unmeteredExecutions: 1,
+      unknownMeteringExecutions: 0
     }];
   });
 
@@ -417,6 +644,9 @@ test('request analytics summarize the complete filtered result set', async () =>
     reasoningTokens: 300,
     totalTokens: 2100,
     estimatedCostUsd: 0.012346,
+    meteredExecutions: 3,
+    unmeteredExecutions: 1,
+    unknownMeteringExecutions: 0,
     averageLatencyMs: 467,
     p50LatencyMs: 400,
     p95LatencyMs: 900,

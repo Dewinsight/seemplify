@@ -1,5 +1,25 @@
 const { resolveLlmRuntimeConfig } = require('../../config/llmRuntimeConfig');
 
+function combinedRequestSignal(timeoutMs, externalSignal) {
+  const timeoutSignal = typeof globalThis.AbortSignal?.timeout === 'function'
+    ? globalThis.AbortSignal.timeout(timeoutMs)
+    : undefined;
+  if (!externalSignal) return timeoutSignal;
+  if (!timeoutSignal) return externalSignal;
+  if (typeof globalThis.AbortSignal?.any === 'function') {
+    return globalThis.AbortSignal.any([externalSignal, timeoutSignal]);
+  }
+  const controller = new AbortController();
+  const abort = (signal) => {
+    if (!controller.signal.aborted) controller.abort(signal.reason);
+  };
+  if (externalSignal.aborted) abort(externalSignal);
+  else externalSignal.addEventListener('abort', () => abort(externalSignal), { once: true });
+  if (timeoutSignal.aborted) abort(timeoutSignal);
+  else timeoutSignal.addEventListener('abort', () => abort(timeoutSignal), { once: true });
+  return controller.signal;
+}
+
 class AzureTextRollbackAdapter {
   constructor({ fetchImpl = global.fetch, configResolver = resolveLlmRuntimeConfig } = {}) {
     this.fetch = fetchImpl;
@@ -46,7 +66,7 @@ class AzureTextRollbackAdapter {
     return prepared;
   }
 
-  async request({ payload, timeoutMs = 90_000 }) {
+  async request({ payload, timeoutMs = 90_000, signal }) {
     if (typeof this.fetch !== 'function') {
       const error = new Error('No fetch implementation is available for the Azure rollback baseline');
       error.code = 'AI_PROVIDER_NETWORK_ERROR';
@@ -64,9 +84,10 @@ class AzureTextRollbackAdapter {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(this.preparePayload(payload)),
-        signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+        signal: combinedRequestSignal(timeoutMs, signal)
       });
     } catch (cause) {
+      if (signal?.aborted && signal.reason instanceof Error) throw signal.reason;
       const error = new Error('Azure text rollback baseline could not be reached');
       error.code = 'AI_PROVIDER_NETWORK_ERROR';
       error.statusCode = 503;

@@ -9,12 +9,18 @@ const {
   GROQ_120B,
   GROQ_20B,
   LOCAL_CV_MODEL,
-  LOCAL_PROVIDER
+  LOCAL_PROVIDER,
+  localProviderLabel
 } = require('../config/aiRuntimeCatalog');
 const AIAuditEvent = require('../models/AIAuditEvent');
 const { createBootstrapSettings, mergeCatalogSettings } = require('../scripts/seedAIRuntime');
 const { assessRouting } = require('../services/adminAIRuntimeService');
-const { AIRuntimeService, requiredCapabilitiesForActivity } = require('../services/aiRuntime/aiRuntimeService');
+const {
+  AIRuntimeService,
+  deriveGatewayExecutionId,
+  deriveRuntimeUsageEventId,
+  requiredCapabilitiesForActivity
+} = require('../services/aiRuntime/aiRuntimeService');
 const { retryDelayMinutes } = require('../services/aiInterviewScoringRetryService');
 const { decryptSecret, encryptSecret, fingerprintSecret, maskSecret } = require('../services/aiRuntime/secretCrypto');
 const { getAIRequestContext, runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
@@ -89,6 +95,26 @@ test('non-CV activities are configurable while CV parsing is locked to managed l
   )));
 });
 
+test('local provider labels reflect the actual engine and model', () => {
+  assert.equal(
+    localProviderLabel('local-codex', 'gpt-5.6-terra'),
+    'Terra (Codex local-cloud)'
+  );
+  assert.equal(
+    localProviderLabel('local-codex', 'gpt-5.6-sol'),
+    'Codex local-cloud: gpt-5.6-sol'
+  );
+  assert.equal(
+    localProviderLabel('local-ollama', 'gemma4:26b-a4b-it-qat'),
+    'Ollama local GPU: gemma4:26b-a4b-it-qat'
+  );
+  assert.equal(
+    localProviderLabel('local-vllm', 'Qwen/Qwen3-30B-A3B'),
+    'vLLM local GPU: Qwen/Qwen3-30B-A3B'
+  );
+  assert.equal(localProviderLabel(LOCAL_PROVIDER, LOCAL_CV_MODEL), 'Managed local runtime');
+});
+
 test('local CV provider requests require local-only inference at the signed gateway', async () => {
   const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
   const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
@@ -110,8 +136,14 @@ test('local CV provider requests require local-only inference at the signed gate
       input: {
         messages: [{ role: 'user', content: 'Synthetic CV' }],
         jsonSchema: { type: 'object' },
-        schemaName: 'candidate_cv'
-      }
+        schemaName: 'candidate_cv',
+        context: { sourceApp: 'recruiter-cv-upload' }
+      },
+      context: {
+        sourceApp: 'recruiter-cv-upload',
+        usageExecutionId: 'local-only-contract-test'
+      },
+      requestId: 'local-only-contract-request'
     });
   } finally {
     if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
@@ -122,7 +154,141 @@ test('local CV provider requests require local-only inference at the signed gate
 
   assert.equal(request.url, 'http://127.0.0.1:11435/v1/cv/analyze');
   assert.equal(JSON.parse(request.options.body).executionMode, 'local-only');
+  assert.equal(JSON.parse(request.options.body).requestSource, 'recruiter-cv-upload');
+  assert.equal(JSON.parse(request.options.body).metering.record, true);
   assert.ok(request.options.headers['x-seemplify-signature']);
+});
+
+test('local provider transport rejects production calls without a durable metering identity', async () => {
+  const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
+  process.env.LOCAL_LLM_SHARED_SECRET = 'test-local-runtime-secret';
+  let called = false;
+  const runtime = new AIRuntimeService({
+    fetchImpl: async () => {
+      called = true;
+      return { ok: true };
+    }
+  });
+  try {
+    await assert.rejects(() => runtime.localProviderRequest({
+      route: { activity: 'candidate.cv_parse', model: LOCAL_CV_MODEL },
+      input: {
+        messages: [{ role: 'user', content: 'Synthetic CV' }],
+        jsonSchema: { type: 'object' }
+      }
+    }), (error) => (
+      error.code === 'AI_USAGE_CONTEXT_REQUIRED'
+      && error.statusCode === 500
+      && error.retryable === false
+    ));
+  } finally {
+    if (previousSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET;
+    else process.env.LOCAL_LLM_SHARED_SECRET = previousSecret;
+  }
+  assert.equal(called, false);
+});
+
+test('production local runtime calls carry one stable at-source metering identity', async () => {
+  const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
+  const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
+  process.env.LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11435';
+  process.env.LOCAL_LLM_SHARED_SECRET = 'test-local-runtime-secret';
+  let requestBody;
+  const runtime = new AIRuntimeService({
+    fetchImpl: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return { ok: true };
+    }
+  });
+  const route = {
+    activity: 'candidate.cv_parse',
+    provider: LOCAL_PROVIDER,
+    model: LOCAL_CV_MODEL
+  };
+  const context = {
+    sourceApp: 'recruiter',
+    usageExecutionId: 'cv-job-1:attempt-1',
+    structuredCompletionOrdinal: 1
+  };
+  try {
+    await runtime.localProviderRequest({
+      route,
+      input: {
+        messages: [{ role: 'user', content: 'Synthetic CV' }],
+        jsonSchema: { type: 'object' }
+      },
+      context,
+      requestId: 'opaque-runtime-request-1'
+    });
+  } finally {
+    if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
+    else process.env.LOCAL_LLM_BASE_URL = previousBaseUrl;
+    if (previousSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET;
+    else process.env.LOCAL_LLM_SHARED_SECRET = previousSecret;
+  }
+
+  const eventId = deriveRuntimeUsageEventId({ context, route });
+  assert.deepEqual(requestBody.metering, {
+    record: true,
+    eventId,
+    requestId: 'opaque-runtime-request-1',
+    gatewayExecutionId: deriveGatewayExecutionId(eventId),
+    sourceApp: 'recruiter'
+  });
+});
+
+test('shared-dispatch lease abort reaches the local CV gateway and preserves its safety error', async () => {
+  const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
+  const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
+  process.env.LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11435';
+  process.env.LOCAL_LLM_SHARED_SECRET = 'test-local-runtime-secret';
+  const controller = new AbortController();
+  let requestSignal;
+  let requestStarted;
+  const started = new Promise((resolve) => {
+    requestStarted = resolve;
+  });
+  const runtime = new AIRuntimeService({
+    fetchImpl: async (_url, options) => {
+      requestSignal = options.signal;
+      requestStarted();
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      });
+    },
+    settingsModel: {},
+    credentialModel: {},
+    quotaModel: {}
+  });
+  try {
+    const request = runtime.localProviderRequest({
+      route: { activity: 'candidate.cv_parse', model: LOCAL_CV_MODEL },
+      input: {
+        messages: [{ role: 'user', content: 'Synthetic CV' }],
+        jsonSchema: { type: 'object' },
+        schemaName: 'candidate_cv'
+      },
+      context: {
+        sourceApp: 'recruiter',
+        usageExecutionId: 'shared-dispatch-abort-test'
+      },
+      requestId: 'shared-dispatch-abort-request',
+      signal: controller.signal
+    });
+    await started;
+    const leaseError = Object.assign(new Error('shared lease was lost'), {
+      code: 'CV_GLOBAL_DISPATCH_LEASE_LOST'
+    });
+    controller.abort(leaseError);
+    await assert.rejects(request, (error) => error === leaseError);
+    assert.equal(requestSignal.aborted, true);
+    assert.equal(requestSignal.reason, leaseError);
+  } finally {
+    if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
+    else process.env.LOCAL_LLM_BASE_URL = previousBaseUrl;
+    if (previousSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET;
+    else process.env.LOCAL_LLM_SHARED_SECRET = previousSecret;
+  }
 });
 
 test('non-CV local activities use the signed general completion endpoint', async () => {
@@ -147,7 +313,12 @@ test('non-CV local activities use the signed general completion endpoint', async
         messages: [{ role: 'user', content: 'Create interview questions' }],
         jsonSchema: { type: 'object' },
         schemaName: 'interview_questions'
-      }
+      },
+      context: {
+        sourceApp: 'recruiter',
+        usageExecutionId: 'general-local-contract-test'
+      },
+      requestId: 'general-local-contract-request'
     });
   } finally {
     if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
@@ -186,10 +357,18 @@ test('structured completion invokes a budget hook for every schema repair attemp
   const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
   let completions = 0;
   let reservations = 0;
-  runtime.complete = async () => ({
-    content: completions++ === 0 ? '{"answer":1}' : '{"answer":"corrected"}'
-  });
+  const executionContexts = [];
+  runtime.complete = async (_activity, input) => {
+    executionContexts.push(input.context);
+    return {
+      content: completions++ === 0 ? '{"answer":1}' : '{"answer":"corrected"}'
+    };
+  };
   const result = await runtime.structuredComplete('interview.questions', {
+    context: {
+      requestId: 'cv-queue:job-1',
+      usageExecutionId: 'cv-queue:job-1:attempt:3'
+    },
     messages: [{ role: 'user', content: 'Return an answer.' }],
     jsonSchema: {
       type: 'object',
@@ -202,6 +381,14 @@ test('structured completion invokes a budget hook for every schema repair attemp
   });
   assert.equal(result.data.answer, 'corrected');
   assert.equal(reservations, 2);
+  assert.deepEqual(
+    executionContexts.map((context) => context.structuredCompletionOrdinal),
+    [1, 2]
+  );
+  assert.deepEqual(
+    [...new Set(executionContexts.map((context) => context.usageExecutionId))],
+    ['cv-queue:job-1:attempt:3']
+  );
 });
 
 test('runtime never falls back to the general route for a missing activity route', () => {

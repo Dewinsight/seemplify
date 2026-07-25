@@ -15,6 +15,23 @@ const {
   selectHeadroomConcurrency
 } = require('./benchmark-approval.cjs');
 const { cvText: threePageCvText, pageCount, scoreCvOutput } = require('./three-page-cv-fixture.cjs');
+
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  process.stdout.write([
+    'Usage: node tools/local-llm/benchmark-codex.cjs [options]',
+    '',
+    '  --models=gpt-5.6-terra       Comma-separated Codex models',
+    '  --levels=1,2,4               Discovery concurrency levels',
+    '  --rounds=2                    Discovery rounds per level (0 = automatic)',
+    '  --sustained-rounds=3          Minimum sustained rounds',
+    '  --minimum-sustained-requests=12',
+    '  --max-p95-ms=180000',
+    '',
+    'The harness restores the original runtime selection and control state.'
+  ].join('\n') + '\n');
+  process.exit(0);
+}
+
 const { CV_EXTRACTION_SCHEMA } = require('../../recruiter/backend/services/aiModelService');
 
 const execFileAsync = promisify(execFile);
@@ -48,7 +65,7 @@ function sign(body) {
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(24).toString('base64url');
   const signature = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\n${body}`)
+    .update(`${timestamp}\n${nonce}\nPOST\n/v1/cv/analyze\n${body}`)
     .digest('base64url');
   return { timestamp, nonce, signature };
 }
@@ -101,6 +118,8 @@ async function restoreControlState(original) {
 async function analyze(requestId) {
   const body = JSON.stringify({
     activity: 'candidate.cv_parse',
+    requestSource: 'local-codex-benchmark',
+    metering: { record: false, exclusion: 'harness' },
     model: 'selected-runtime-model',
     messages: [
       {

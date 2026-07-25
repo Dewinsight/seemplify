@@ -4,6 +4,7 @@ const AIQuotaSnapshot = require('../models/AIQuotaSnapshot');
 const AIRuntimeSettings = require('../models/AIRuntimeSettings');
 const AIUsageDailyRollup = require('../models/AIUsageDailyRollup');
 const AIUsageEvent = require('../models/AIUsageEvent');
+const AIUsageLogicalRequest = require('../models/AIUsageLogicalRequest');
 const {
   ACTIVITY_DEFINITIONS,
   GROQ_120B,
@@ -13,6 +14,17 @@ const {
 const { CV_EXTRACTION_SCHEMA } = require('./aiModelService');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
 const { encryptSecret, fingerprintSecret, maskSecret } = require('./aiRuntime/secretCrypto');
+const {
+  PROJECTION_VERSION,
+  usageMeteringGroupFields,
+  usageMeteringStatus,
+  usageProjectionRepairHealth
+} = require('./aiRuntime/usageService');
+const {
+  usageMeteringOutbox,
+  usageMeteringOutboxReady,
+  usageMeteringOutboxRequired
+} = require('./aiRuntime/usageMeteringOutbox');
 const {
   assertSafeMetadata,
   redactGroqApiKeys,
@@ -27,6 +39,43 @@ function serializeCredential(credential) {
   if (!raw) return null;
   delete raw.encryptedSecret;
   return { ...raw, maskedKey: raw.lastFour ? `****${raw.lastFour}` : 'Not stored' };
+}
+
+function serializeUsageEvent(event) {
+  const raw = typeof event?.toObject === 'function' ? event.toObject() : event;
+  if (!raw) return null;
+  const meteringStatus = usageMeteringStatus(raw);
+  const usageReported = meteringStatus === 'metered'
+    ? true
+    : meteringStatus === 'unmetered'
+      ? false
+      : null;
+  return {
+    ...raw,
+    usageReported,
+    meteringStatus,
+    usageSource: usageReported
+      ? (raw.usageSource || 'historical-token-backfill')
+      : meteringStatus === 'legacy-unknown'
+        ? (raw.usageSource || 'legacy-unknown')
+        : (raw.usageSource || 'unreported')
+  };
+}
+
+function usageAccountingHealth() {
+  const meteringOutbox = usageMeteringOutbox.status();
+  const projectionRepair = usageProjectionRepairHealth();
+  const required = usageMeteringOutboxRequired();
+  const ready = usageMeteringOutboxReady(meteringOutbox);
+  return {
+    healthy: ready && projectionRepair.healthy === true,
+    meteringOutbox: {
+      ...meteringOutbox,
+      required,
+      ready
+    },
+    projectionRepair
+  };
 }
 
 function auditContext(req) {
@@ -313,10 +362,39 @@ async function runRuntimeTest(activityInput, req) {
     const result = requiresStructuredOutput
       ? await aiRuntimeService.structuredComplete(activity, structuredTestInput, { timeoutMs: 30_000 })
       : await aiRuntimeService.complete(activity, completionInput, { timeoutMs: 30_000 });
-    const usageEvent = await AIUsageEvent.findOne({ requestId: result.requestId })
-      .select('provider model reasoningEffort routeVersion quotaGroup latencyMs attempts failovers failoverFrom failoverReason inputTokens cachedInputTokens outputTokens reasoningTokens totalTokens estimatedCostUsd')
-      .sort({ createdAt: -1 })
+    const storedUsageEvents = await AIUsageEvent.find({
+      sourceApp: 'admin-runtime-test',
+      requestId: result.requestId
+    })
+      .select('provider model reasoningEffort routeVersion quotaGroup latencyMs attempts failovers failoverFrom failoverReason usageReported usageSource inputTokens cachedInputTokens outputTokens reasoningTokens totalTokens estimatedCostUsd')
+      .sort({ createdAt: 1, _id: 1 })
       .lean();
+    const usageEvents = (Array.isArray(storedUsageEvents) ? storedUsageEvents : [])
+      .map(serializeUsageEvent)
+      .filter(Boolean);
+    const finalUsageEvent = usageEvents.at(-1);
+    const usageEvent = usageEvents.length
+      ? {
+          ...finalUsageEvent,
+          latencyMs: usageEvents.reduce((total, event) => total + Number(event.latencyMs || 0), 0),
+          attempts: usageEvents.reduce((total, event) => total + Math.max(1, Number(event.attempts || 1)), 0),
+          failovers: usageEvents.reduce((maximum, event) => Math.max(maximum, Number(event.failovers || 0)), 0),
+          usageReported: usageEvents.every((event) => event.usageReported === true),
+          usageSource: usageEvents.length > 1
+            ? (usageEvents.every((event) => event.usageReported === true)
+                ? 'aggregated-request-events'
+                : 'aggregated-request-events-partial')
+            : finalUsageEvent.usageSource,
+          inputTokens: usageEvents.reduce((total, event) => total + Number(event.inputTokens || 0), 0),
+          cachedInputTokens: usageEvents.reduce((total, event) => total + Number(event.cachedInputTokens || 0), 0),
+          outputTokens: usageEvents.reduce((total, event) => total + Number(event.outputTokens || 0), 0),
+          reasoningTokens: usageEvents.reduce((total, event) => total + Number(event.reasoningTokens || 0), 0),
+          totalTokens: usageEvents.reduce((total, event) => total + Number(event.totalTokens || 0), 0),
+          estimatedCostUsd: Number(usageEvents
+            .reduce((total, event) => total + Number(event.estimatedCostUsd || 0), 0)
+            .toFixed(8))
+        }
+      : null;
 
     await writeAudit(req, {
       category: 'health',
@@ -358,6 +436,8 @@ async function runRuntimeTest(activityInput, req) {
         failoverFrom: usageEvent?.failoverFrom || null,
         failoverReason: usageEvent?.failoverReason || null,
         quotaGroup: usageEvent?.quotaGroup || '',
+        usageReported: usageEvent?.usageReported ?? Number(result.usage?.totalTokens || 0) > 0,
+        usageSource: usageEvent?.usageSource || (Number(result.usage?.totalTokens || 0) > 0 ? 'provider-response' : 'unreported'),
         usage: {
           inputTokens: usageEvent?.inputTokens ?? result.usage?.inputTokens ?? 0,
           cachedInputTokens: usageEvent?.cachedInputTokens ?? result.usage?.cachedInputTokens ?? 0,
@@ -610,16 +690,93 @@ function notFound(message) {
 function liveSummary(row = {}) {
   const calls = Number(row.calls || 0);
   const failures = Number(row.failures || 0);
+  const totalTokens = Number(row.totalTokens ?? row.tokens ?? 0);
   return {
     calls,
     successes: Number(row.successes || 0),
     failures,
     successRate: calls ? Number((((calls - failures) / calls) * 100).toFixed(1)) : 0,
-    tokens: Number(row.tokens || 0),
+    inputTokens: Number(row.inputTokens || 0),
+    cachedInputTokens: Number(row.cachedInputTokens || 0),
+    outputTokens: Number(row.outputTokens || 0),
+    reasoningTokens: Number(row.reasoningTokens || 0),
+    totalTokens,
+    tokens: totalTokens,
     estimatedCostUsd: Number(Number(row.cost || 0).toFixed(6)),
     averageLatencyMs: Math.round(Number(row.averageLatencyMs || 0)),
     maxLatencyMs: Number(row.maxLatencyMs || 0),
-    failovers: Number(row.failovers || 0)
+    failovers: Number(row.failovers || 0),
+    meteredExecutions: Number(row.meteredExecutions || 0),
+    unmeteredExecutions: Number(row.unmeteredExecutions || 0),
+    unknownMeteringExecutions: Number(row.unknownMeteringExecutions || 0)
+  };
+}
+
+function rollupMeteringGroupFields() {
+  const coverageTotal = {
+    $add: [
+      { $ifNull: ['$meteredExecutions', 0] },
+      { $ifNull: ['$unmeteredExecutions', 0] },
+      { $ifNull: ['$unknownMeteringExecutions', 0] }
+    ]
+  };
+  const hasExactCoverage = {
+    $and: [
+      { $gte: [{ $ifNull: ['$projectionVersion', 0] }, PROJECTION_VERSION] },
+      { $eq: [coverageTotal, { $ifNull: ['$calls', 0] }] }
+    ]
+  };
+  return {
+    meteredExecutions: {
+      $sum: {
+        $cond: [hasExactCoverage, { $ifNull: ['$meteredExecutions', 0] }, 0]
+      }
+    },
+    unmeteredExecutions: {
+      $sum: {
+        $cond: [hasExactCoverage, { $ifNull: ['$unmeteredExecutions', 0] }, 0]
+      }
+    },
+    unknownMeteringExecutions: {
+      $sum: {
+        $cond: [
+          hasExactCoverage,
+          { $ifNull: ['$unknownMeteringExecutions', 0] },
+          { $ifNull: ['$calls', 0] }
+        ]
+      }
+    }
+  };
+}
+
+function permanentLogicalMeteringGroupFields() {
+  const coverageTotal = {
+    $add: [
+      { $ifNull: ['$meteredExecutions', 0] },
+      { $ifNull: ['$unmeteredExecutions', 0] },
+      { $ifNull: ['$unknownMeteringExecutions', 0] }
+    ]
+  };
+  const hasExactCoverage = {
+    $and: [
+      { $gte: [{ $ifNull: ['$projectionVersion', 0] }, PROJECTION_VERSION] },
+      { $gt: [{ $ifNull: ['$executionCount', 0] }, 0] },
+      { $eq: [coverageTotal, { $ifNull: ['$executionCount', 0] }] }
+    ]
+  };
+  return {
+    meteredExecutions: {
+      $sum: { $cond: [hasExactCoverage, { $ifNull: ['$meteredExecutions', 0] }, 0] }
+    },
+    unmeteredExecutions: {
+      $sum: { $cond: [hasExactCoverage, { $ifNull: ['$unmeteredExecutions', 0] }, 0] }
+    },
+    unknownMeteringExecutions: {
+      $sum: { $cond: [hasExactCoverage, { $ifNull: ['$unknownMeteringExecutions', 0] }, 0] }
+    },
+    legacyMeteringLogicalRequests: {
+      $sum: { $cond: [hasExactCoverage, 0, 1] }
+    }
   };
 }
 
@@ -636,7 +793,8 @@ function usageBreakdownGroup(id, extra = {}) {
     reasoningTokens: { $sum: '$reasoningTokens' },
     totalTokens: { $sum: '$totalTokens' },
     estimatedCostUsd: { $sum: '$estimatedCostUsd' },
-    latencyTotalMs: { $sum: '$latencyTotalMs' }
+    latencyTotalMs: { $sum: '$latencyTotalMs' },
+    ...rollupMeteringGroupFields()
   };
 }
 
@@ -659,7 +817,10 @@ function usageBreakdown(row = {}) {
     tokens: totalTokens,
     estimatedCostUsd: Number(Number(row.estimatedCostUsd || 0).toFixed(8)),
     cost: Number(Number(row.estimatedCostUsd || 0).toFixed(8)),
-    averageLatencyMs: calls ? Math.round(Number(row.latencyTotalMs || 0) / calls) : 0
+    averageLatencyMs: calls ? Math.round(Number(row.latencyTotalMs || 0) / calls) : 0,
+    meteredExecutions: Number(row.meteredExecutions || 0),
+    unmeteredExecutions: Number(row.unmeteredExecutions || 0),
+    unknownMeteringExecutions: Number(row.unknownMeteringExecutions || 0)
   };
 }
 
@@ -668,24 +829,39 @@ function logicalRequestStages(match) {
     { $match: match },
     { $sort: { createdAt: 1, _id: 1 } },
     { $group: {
-      _id: { $ifNull: ['$requestId', { $toString: '$_id' }] },
+      _id: {
+        sourceApp: { $ifNull: ['$sourceApp', 'recruiter'] },
+        requestId: { $ifNull: ['$requestId', { $toString: '$_id' }] }
+      },
       activity: { $last: '$activity' },
       createdAt: { $max: '$createdAt' },
       statuses: { $addToSet: '$status' },
-      tokens: { $sum: '$totalTokens' },
+      inputTokens: { $sum: '$inputTokens' },
+      cachedInputTokens: { $sum: '$cachedInputTokens' },
+      outputTokens: { $sum: '$outputTokens' },
+      reasoningTokens: { $sum: '$reasoningTokens' },
+      totalTokens: { $sum: '$totalTokens' },
       cost: { $sum: '$estimatedCostUsd' },
       latencyMs: { $sum: '$latencyMs' },
       maxLatencyMs: { $max: '$latencyMs' },
-      failovers: { $max: '$failovers' }
+      failovers: { $max: '$failovers' },
+      ...usageMeteringGroupFields()
     } },
     { $project: {
       activity: 1,
       createdAt: 1,
-      tokens: 1,
+      inputTokens: 1,
+      cachedInputTokens: 1,
+      outputTokens: 1,
+      reasoningTokens: 1,
+      totalTokens: 1,
       cost: 1,
       latencyMs: 1,
       maxLatencyMs: 1,
       failovers: 1,
+      meteredExecutions: 1,
+      unmeteredExecutions: 1,
+      unknownMeteringExecutions: 1,
       status: { $cond: [{ $in: ['success', '$statuses'] }, 'success', 'failed'] }
     } }
   ];
@@ -695,11 +871,18 @@ const logicalGroupedMetrics = {
   calls: { $sum: 1 },
   successes: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
   failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
-  tokens: { $sum: '$tokens' },
+  inputTokens: { $sum: '$inputTokens' },
+  cachedInputTokens: { $sum: '$cachedInputTokens' },
+  outputTokens: { $sum: '$outputTokens' },
+  reasoningTokens: { $sum: '$reasoningTokens' },
+  totalTokens: { $sum: '$totalTokens' },
   cost: { $sum: '$cost' },
   averageLatencyMs: { $avg: '$latencyMs' },
   maxLatencyMs: { $max: '$maxLatencyMs' },
-  failovers: { $sum: '$failovers' }
+  failovers: { $sum: '$failovers' },
+  meteredExecutions: { $sum: '$meteredExecutions' },
+  unmeteredExecutions: { $sum: '$unmeteredExecutions' },
+  unknownMeteringExecutions: { $sum: '$unknownMeteringExecutions' }
 };
 
 async function queryLiveOperations() {
@@ -710,11 +893,16 @@ async function queryLiveOperations() {
     calls: { $sum: 1 },
     successes: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
     failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
-    tokens: { $sum: '$totalTokens' },
+    inputTokens: { $sum: '$inputTokens' },
+    cachedInputTokens: { $sum: '$cachedInputTokens' },
+    outputTokens: { $sum: '$outputTokens' },
+    reasoningTokens: { $sum: '$reasoningTokens' },
+    totalTokens: { $sum: '$totalTokens' },
     cost: { $sum: '$estimatedCostUsd' },
     averageLatencyMs: { $avg: '$latencyMs' },
     maxLatencyMs: { $max: '$latencyMs' },
-    failovers: { $sum: '$failovers' }
+    failovers: { $sum: '$failovers' },
+    ...usageMeteringGroupFields()
   };
   const [facets, logicalFacets, recent] = await Promise.all([
     AIUsageEvent.aggregate([
@@ -768,7 +956,7 @@ async function queryLiveOperations() {
       } }
     ]),
     AIUsageEvent.find({ createdAt: { $gte: oneHourAgo } })
-      .select('requestId sourceApp activity provider model status organizationId organizationName actorId actorName actorEmail latencyMs totalTokens estimatedCostUsd failovers failoverFrom failoverReason errorCode createdAt')
+      .select('requestId sourceApp activity provider model status organizationId organizationName actorId actorName actorEmail latencyMs usageReported usageSource inputTokens cachedInputTokens outputTokens reasoningTokens totalTokens estimatedCostUsd failovers failoverFrom failoverReason errorCode createdAt')
       .sort({ createdAt: -1 })
       .limit(12)
       .lean()
@@ -791,7 +979,8 @@ async function queryLiveOperations() {
     providers: (data.providers || []).map((row) => ({ id: row._id || 'unknown', ...liveSummary(row), lastRequestAt: row.lastRequestAt })),
     activities: (logical.activities || []).map((row) => ({ id: row._id || 'unknown', ...liveSummary(row), lastRequestAt: row.lastRequestAt })),
     timeline: (logical.timeline || []).map((row) => ({ minute: row._id, calls: Number(row.calls || 0), failures: Number(row.failures || 0) })),
-    recent
+    recent: recent.map(serializeUsageEvent),
+    accountingHealth: usageAccountingHealth()
   };
 }
 
@@ -820,7 +1009,17 @@ async function getOverview({ range = '30d' } = {}) {
       _id: null, calls: { $sum: '$calls' }, successes: { $sum: '$successes' }, failures: { $sum: '$failures' },
       inputTokens: { $sum: '$inputTokens' }, cachedInputTokens: { $sum: '$cachedInputTokens' },
       outputTokens: { $sum: '$outputTokens' }, reasoningTokens: { $sum: '$reasoningTokens' }, totalTokens: { $sum: '$totalTokens' },
-      estimatedCostUsd: { $sum: '$estimatedCostUsd' }, latencyTotalMs: { $sum: '$latencyTotalMs' }
+      estimatedCostUsd: { $sum: '$estimatedCostUsd' }, latencyTotalMs: { $sum: '$latencyTotalMs' },
+      ...rollupMeteringGroupFields(),
+      legacyAttemptCalls: {
+        $sum: {
+          $cond: [
+            { $lt: [{ $ifNull: ['$projectionVersion', 0] }, 3] },
+            '$calls',
+            0
+          ]
+        }
+      }
     } }]),
     AIUsageDailyRollup.aggregate([{ $match: match }, { $group: usageBreakdownGroup('$activity') }, { $sort: { calls: -1 } }]),
     AIUsageDailyRollup.aggregate([{ $match: match }, { $group: usageBreakdownGroup('$model') }, { $sort: { calls: -1 } }]),
@@ -828,7 +1027,14 @@ async function getOverview({ range = '30d' } = {}) {
     AIUsageDailyRollup.aggregate([{ $match: match }, { $group: usageBreakdownGroup('$sourceApp') }, { $sort: { calls: -1 } }]),
     AIUsageDailyRollup.aggregate([{ $match: { ...match, organizationId: { $ne: '' } } }, { $group: usageBreakdownGroup('$organizationId', { name: { $last: '$organizationName' } }) }, { $sort: { calls: -1 } }, { $limit: 20 }]),
     AIUsageDailyRollup.aggregate([{ $match: { ...match, actorId: { $ne: '' } } }, { $group: usageBreakdownGroup('$actorId', { name: { $last: '$actorName' } }) }, { $sort: { calls: -1 } }, { $limit: 20 }]),
-    AIUsageDailyRollup.aggregate([{ $match: match }, { $group: { _id: '$day', calls: { $sum: '$calls' }, failures: { $sum: '$failures' }, tokens: { $sum: '$totalTokens' }, cost: { $sum: '$estimatedCostUsd' } } }, { $sort: { _id: 1 } }]),
+    AIUsageDailyRollup.aggregate([{ $match: match }, { $group: {
+      _id: '$day',
+      calls: { $sum: '$calls' },
+      failures: { $sum: '$failures' },
+      tokens: { $sum: '$totalTokens' },
+      cost: { $sum: '$estimatedCostUsd' },
+      ...rollupMeteringGroupFields()
+    } }, { $sort: { _id: 1 } }]),
     AIQuotaSnapshot.find({}).sort({ quotaGroup: 1, model: 1 }).lean(),
     AIUsageEvent.find({ createdAt: { $gte: detailStart }, latencyMs: { $ne: null } }).select('latencyMs').sort({ createdAt: -1 }).limit(50000).lean(),
     start
@@ -836,13 +1042,27 @@ async function getOverview({ range = '30d' } = {}) {
           ...logicalRequestStages({ createdAt: { $gte: start } }),
           { $group: { _id: null, ...logicalGroupedMetrics } }
         ])
-      : Promise.resolve([])
+      : AIUsageLogicalRequest.aggregate([
+          {
+            $group: {
+              _id: null,
+              calls: { $sum: 1 },
+              successes: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
+              failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+              averageLatencyMs: { $avg: '$latencyTotalMs' },
+              maxLatencyMs: { $max: '$latencyMaxMs' },
+              failovers: { $sum: '$failovers' },
+              coverageStart: { $min: '$day' },
+              ...permanentLogicalMeteringGroupFields()
+            }
+          }
+        ])
   ]);
   const totals = totalsRows[0] || {};
-  const logicalTotals = logicalRows[0] || null;
-  const logicalCalls = logicalTotals ? Number(logicalTotals.calls || 0) : Number(totals.calls || 0);
-  const logicalSuccesses = logicalTotals ? Number(logicalTotals.successes || 0) : Number(totals.successes || 0);
-  const logicalFailures = logicalTotals ? Number(logicalTotals.failures || 0) : Number(totals.failures || 0);
+  const logicalTotals = logicalRows[0] || {};
+  const logicalCalls = Number(logicalTotals.calls || 0);
+  const logicalSuccesses = Number(logicalTotals.successes || 0);
+  const logicalFailures = Number(logicalTotals.failures || 0);
   const sortedLatencies = latencies.map((item) => Number(item.latencyMs || 0)).sort((a, b) => a - b);
   return {
     range,
@@ -855,11 +1075,21 @@ async function getOverview({ range = '30d' } = {}) {
       inputTokens: Number(totals.inputTokens || 0), cachedInputTokens: Number(totals.cachedInputTokens || 0),
       outputTokens: Number(totals.outputTokens || 0), reasoningTokens: Number(totals.reasoningTokens || 0), totalTokens: Number(totals.totalTokens || 0),
       estimatedCostUsd: Number(Number(totals.estimatedCostUsd || 0).toFixed(4)),
-      averageLatencyMs: logicalTotals
-        ? Math.round(Number(logicalTotals.averageLatencyMs || 0))
-        : totals.calls ? Math.round(Number(totals.latencyTotalMs || 0) / totals.calls) : 0,
+      meteredExecutions: Number(totals.meteredExecutions || 0),
+      unmeteredExecutions: Number(totals.unmeteredExecutions || 0),
+      unknownMeteringExecutions: Number(totals.unknownMeteringExecutions || 0),
+      averageLatencyMs: Math.round(Number(logicalTotals.averageLatencyMs || 0)),
       p50LatencyMs: percentile(sortedLatencies, 50), p95LatencyMs: percentile(sortedLatencies, 95),
-      latencyWindow: range === 'all' ? 'retained-detail-window' : range
+      latencyWindow: range === 'all' ? 'retained-detail-window' : range,
+      logicalCoverage: {
+        complete: range !== 'all' || Number(totals.legacyAttemptCalls || 0) === 0,
+        start: logicalTotals.coverageStart || null,
+        legacyAttemptCalls: range === 'all' ? Number(totals.legacyAttemptCalls || 0) : 0,
+        meteringComplete: range !== 'all' || Number(logicalTotals.legacyMeteringLogicalRequests || 0) === 0,
+        legacyMeteringLogicalRequests: range === 'all'
+          ? Number(logicalTotals.legacyMeteringLogicalRequests || 0)
+          : 0
+      }
     },
     byActivity: byActivity.map(usageBreakdown),
     byModel: byModel.map(usageBreakdown),
@@ -867,7 +1097,16 @@ async function getOverview({ range = '30d' } = {}) {
     bySource: bySource.map(usageBreakdown),
     organizations: organizations.map(usageBreakdown),
     actors: actors.map(usageBreakdown),
-    trend: trend.map((item) => ({ date: item._id, calls: item.calls, failures: item.failures, tokens: item.tokens, cost: item.cost })),
+    trend: trend.map((item) => ({
+      date: item._id,
+      calls: item.calls,
+      failures: item.failures,
+      tokens: item.tokens,
+      cost: item.cost,
+      meteredExecutions: Number(item.meteredExecutions || 0),
+      unmeteredExecutions: Number(item.unmeteredExecutions || 0),
+      unknownMeteringExecutions: Number(item.unknownMeteringExecutions || 0)
+    })),
     quotas
   };
 }
@@ -909,14 +1148,15 @@ async function listRequests(query = {}) {
       inputTokens: { $sum: '$inputTokens' }, cachedInputTokens: { $sum: '$cachedInputTokens' },
       outputTokens: { $sum: '$outputTokens' }, reasoningTokens: { $sum: '$reasoningTokens' },
       totalTokens: { $sum: '$totalTokens' }, estimatedCostUsd: { $sum: '$estimatedCostUsd' },
-      averageLatencyMs: { $avg: '$latencyMs' }, failovers: { $sum: '$failovers' }
+      averageLatencyMs: { $avg: '$latencyMs' }, failovers: { $sum: '$failovers' },
+      ...usageMeteringGroupFields()
     } }]),
     AIUsageEvent.find({ ...filter, latencyMs: { $ne: null } }).select('latencyMs').sort({ createdAt: -1 }).limit(50000).lean()
   ]);
   const summary = summaryRows[0] || {};
   const latencies = latencyRows.map((item) => Number(item.latencyMs || 0)).sort((a, b) => a - b);
   return {
-    items,
+    items: items.map(serializeUsageEvent),
     summary: {
       calls: Number(summary.calls || 0),
       successes: Number(summary.successes || 0),
@@ -928,6 +1168,9 @@ async function listRequests(query = {}) {
       reasoningTokens: Number(summary.reasoningTokens || 0),
       totalTokens: Number(summary.totalTokens || 0),
       estimatedCostUsd: Number(Number(summary.estimatedCostUsd || 0).toFixed(6)),
+      meteredExecutions: Number(summary.meteredExecutions || 0),
+      unmeteredExecutions: Number(summary.unmeteredExecutions || 0),
+      unknownMeteringExecutions: Number(summary.unknownMeteringExecutions || 0),
       averageLatencyMs: Math.round(Number(summary.averageLatencyMs || 0)),
       p50LatencyMs: percentile(latencies, 50),
       p95LatencyMs: percentile(latencies, 95),
@@ -942,7 +1185,7 @@ async function getRequestDetail(id) {
   if (!/^[a-f\d]{24}$/i.test(String(id || ''))) throw notFound('AI request was not found');
   const item = await AIUsageEvent.findById(id).select('-rateLimit.providerPayload').lean();
   if (!item) throw notFound('AI request was not found');
-  return redactGroqApiKeys(item);
+  return redactGroqApiKeys(serializeUsageEvent(item));
 }
 
 async function listAuditEvents(query = {}) {
@@ -989,9 +1232,11 @@ module.exports = {
   rotateCredential,
   runRuntimeTest,
   serializeCredential,
+  serializeUsageEvent,
   setCredentialEnabled,
   updateAlerts,
   updateRollout,
   updateRoute,
+  usageAccountingHealth,
   writeAudit
 };

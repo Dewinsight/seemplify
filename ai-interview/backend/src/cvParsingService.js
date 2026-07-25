@@ -1,6 +1,8 @@
 const mammoth = require('mammoth');
 const { chatCompletion, extractJsonObject } = require('./llmClient');
 
+const DEFAULT_CV_INFERENCE_TIMEOUT_MS = 240_000;
+
 const CV_PROFILE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -121,7 +123,7 @@ class CvParsingService {
     throw new Error('Only text-based PDF, DOCX, and TXT CV files are supported.');
   }
 
-  async analyzeResumeText(resumeText, context = {}) {
+  async analyzeResumeText(resumeText, context = {}, options = {}) {
     if (!resumeText || resumeText.trim().length < 50) {
       throw new Error('Could not extract enough text from this CV. Upload a text-based PDF/DOCX or enter the candidate manually.');
     }
@@ -164,7 +166,10 @@ Return:
       response_format: { type: 'json_object' },
       jsonSchema: CV_PROFILE_SCHEMA,
       schemaName: 'ai_interview_cv_profile',
-      context
+      context,
+      timeoutMs: options.timeoutMs
+        ?? Number(process.env.AI_INTERVIEW_CV_INFERENCE_TIMEOUT_MS || DEFAULT_CV_INFERENCE_TIMEOUT_MS),
+      signal: options.signal
     });
 
     const parsed = extractJsonObject(result.content) || {};
@@ -175,9 +180,9 @@ Return:
     };
   }
 
-  async parseAndAnalyze(file, context = {}) {
+  async parseAndAnalyze(file, context = {}, options = {}) {
     const resumeText = await this.extractText(file);
-    return this.analyzeResumeText(resumeText, context);
+    return this.analyzeResumeText(resumeText, context, options);
   }
 }
 

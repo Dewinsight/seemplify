@@ -38,6 +38,15 @@ async function waitFor(url, timeoutMs = 10_000) {
   throw new Error(`Timed out waiting for ${url}`);
 }
 
+async function waitForCondition(predicate, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
 test('CV extraction is locked local while local question generation has audited Groq failover', () => {
   const routes = new Map(DEFAULT_ROUTES.map((route) => [route.activity, route]));
   for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {
@@ -108,7 +117,7 @@ test('CV queue keeps a compact non-expiring operational history separate from CV
   assert.match(queueService, /HISTORY_REPAIR_INTERVAL_MS/);
   assert.match(queueService, /\.limit\(HISTORY_REPAIR_BATCH_SIZE\)/);
   assert.match(queueService, /lastUpdatedAt: \{ \$lt: document\.lastUpdatedAt \}/);
-  assert.match(queueService, /async function externalAdminJobs/);
+  assert.match(queueService, /async function adminJobsFromAudits/);
   assert.match(queueService, /producer === 'ai-interview'/);
   assert.match(historyRoute, /createLocalRuntimeHistoryAuth/);
 });
@@ -139,6 +148,22 @@ test('Terra adapter records authoritative Codex token usage instead of zeroes', 
   );
 });
 
+test('gateway completion logs include workload provenance and token composition', () => {
+  const gateway = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm', 'gateway.cjs'),
+    'utf8'
+  );
+  assert.match(gateway, /requestSource/);
+  assert.match(gateway, /endpoint:\s*cvOnly \? 'cv' : 'general'/);
+  assert.match(gateway, /inputTokens/);
+  assert.match(gateway, /cachedInputTokens/);
+  assert.match(gateway, /outputTokens/);
+  assert.match(gateway, /reasoningTokens/);
+  assert.match(gateway, /totalTokens/);
+  assert.match(gateway, /fs\.promises\.appendFile/);
+  assert.doesNotMatch(gateway, /fs\.appendFileSync\(logFile/);
+});
+
 test('CV quality harness reads engine metadata through the signed status endpoint', () => {
   const harness = fs.readFileSync(
     path.resolve(__dirname, '..', 'scripts', 'evaluateLocalCvRuntime.js'),
@@ -152,11 +177,53 @@ test('CV quality harness reads engine metadata through the signed status endpoin
 });
 
 test('local signatures are deterministic for fixed request inputs', () => {
-  const signed = signLocalRequest('secret', '{"activity":"candidate.cv_parse"}', 1234, 'abcdefghijklmnop');
+  const signed = signLocalRequest('secret', '{"activity":"candidate.cv_parse"}', {
+    now: 1234,
+    nonce: 'abcdefghijklmnop',
+    method: 'POST',
+    path: '/v1/cv/analyze'
+  });
   const expected = crypto.createHmac('sha256', 'secret')
-    .update('1234\nabcdefghijklmnop\n{"activity":"candidate.cv_parse"}')
+    .update('1234\nabcdefghijklmnop\nPOST\n/v1/cv/analyze\n{"activity":"candidate.cv_parse"}')
     .digest('base64url');
   assert.deepEqual(signed, { timestamp: '1234', nonce: 'abcdefghijklmnop', signature: expected });
+});
+
+test('local verification, benchmark, soak, and public smoke tools bind signatures to the CV endpoint', () => {
+  const toolsRoot = path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm');
+  const signingTools = [
+    'verify-engine.cjs',
+    'soak.cjs',
+    'external-smoke.cjs',
+    'evaluate-runtime-models.cjs',
+    'benchmark.cjs',
+    'benchmark-engine.cjs',
+    'benchmark-codex.cjs'
+  ];
+  for (const filename of signingTools) {
+    const source = fs.readFileSync(path.join(toolsRoot, filename), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /\.update\(`\$\{timestamp\}\\n\$\{nonce\}\\n\$\{body\}`\)/,
+      `${filename} must not use the legacy body-only signature`
+    );
+    assert.match(source, /POST\\n(?:\/v1\/cv\/analyze|\$\{requestPath\})\\n/);
+  }
+  const modelMatrix = fs.readFileSync(path.join(toolsRoot, 'evaluate-runtime-models.cjs'), 'utf8');
+  assert.match(modelMatrix, /sign\(secret, body, endpoint\)/);
+});
+
+test('sustained soak dispatches only within the approved gateway capacity', () => {
+  const soak = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm', 'soak.cjs'),
+    'utf8'
+  );
+  assert.match(soak, /dispatchWithinApprovedCapacity\(requestCount, configuredConcurrency\)/);
+  assert.match(soak, /const workerCount = Math\.min\(count, concurrency\)/);
+  assert.doesNotMatch(
+    soak,
+    /Promise\.all\(Array\.from\(\{ length: requestCount \}, \(_, index\) => analyze/
+  );
 });
 
 test('local queue history signatures cover the method, path, query, timestamp and nonce', () => {
@@ -201,6 +268,9 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     response.setHeader('content-type', 'application/json');
     if (request.url === '/api/tags') return response.end(JSON.stringify({ models: [{ name: 'gemma4:26b-a4b-it-qat' }] }));
     const payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+    if (payload.messages?.some((message) => String(message.content || '').includes('hold the slot'))) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     let content = 'Local text completion';
     if (payload.format?.properties?.toolCalls) {
       content = '{"content":"","toolCalls":[{"name":"find_candidates","arguments":{"skills":["Node.js"]}}]}';
@@ -255,9 +325,11 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   const isolatedStateFile = path.join(isolatedRuntime, 'state.json');
   const isolatedApprovalFile = path.join(isolatedRuntime, 'approved-concurrency.json');
   const isolatedLogFile = path.join(isolatedRuntime, 'gateway.log');
+  const isolatedUsageOutboxDir = path.join(isolatedRuntime, 'usage-outbox');
   fs.writeFileSync(isolatedSecretFile, historySecret);
   fs.writeFileSync(isolatedControlSecretFile, 'local-control-test-secret');
   fs.writeFileSync(isolatedApprovalFile, JSON.stringify({ byEngineModel: {} }));
+  fs.writeFileSync(isolatedLogFile, 'x'.repeat(70 * 1024));
   fs.writeFileSync(isolatedStateFile, JSON.stringify({
     enabled: true,
     ingressEnabled: true,
@@ -281,6 +353,9 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       LOCAL_LLM_STATE_FILE: isolatedStateFile,
       LOCAL_LLM_APPROVAL_FILE: isolatedApprovalFile,
       LOCAL_LLM_LOG_FILE: isolatedLogFile,
+      LOCAL_LLM_LOG_MAX_BYTES: String(64 * 1024),
+      LOCAL_LLM_USAGE_OUTBOX_DIR: isolatedUsageOutboxDir,
+      LOCAL_LLM_USAGE_INITIAL_DELAY_MS: '600000',
       LOCAL_LLM_HEALTH_RATE_LIMIT_REQUESTS: '2',
       RECRUITER_BACKEND_URL: `http://127.0.0.1:${historyBackendPort}`
     },
@@ -289,6 +364,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   });
   context.after(() => gateway.kill());
   await waitFor(`http://127.0.0.1:${gatewayPort}/health`);
+  assert.equal(await waitForCondition(() => fs.existsSync(`${isolatedLogFile}.1`)), true);
 
   const unsigned = await fetch(`http://127.0.0.1:${gatewayPort}/v1/cv/analyze`, {
     method: 'POST',
@@ -345,7 +421,12 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     messages: [{ role: 'user', content: 'hello' }],
     jsonSchema: { type: 'object' }
   });
-  const signed = signLocalRequest(secret, forbiddenBody, Date.now(), 'replay_nonce_1234567890');
+  const signed = signLocalRequest(secret, forbiddenBody, {
+    now: Date.now(),
+    nonce: 'replay_nonce_1234567890',
+    method: 'POST',
+    path: '/v1/cv/analyze'
+  });
   const headers = {
     'content-type': 'application/json',
     'x-seemplify-timestamp': signed.timestamp,
@@ -357,6 +438,58 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   const replay = await fetch(`http://127.0.0.1:${gatewayPort}/v1/cv/analyze`, { method: 'POST', headers, body: forbiddenBody });
   assert.equal(replay.status, 401);
   assert.equal((await replay.json()).code, 'NONCE_REJECTED');
+
+  const pathBound = signLocalRequest(secret, forbiddenBody, {
+    nonce: 'path_bound_nonce_1234567890',
+    method: 'POST',
+    path: '/v1/cv/analyze'
+  });
+  const pathHeaders = {
+    'content-type': 'application/json',
+    'x-seemplify-timestamp': pathBound.timestamp,
+    'x-seemplify-nonce': pathBound.nonce,
+    'x-seemplify-signature': pathBound.signature
+  };
+  const tamperedPath = await fetch(`http://127.0.0.1:${gatewayPort}/v1/complete`, {
+    method: 'POST',
+    headers: pathHeaders,
+    body: forbiddenBody
+  });
+  assert.equal(tamperedPath.status, 401);
+  assert.equal((await tamperedPath.json()).code, 'SIGNATURE_INVALID');
+  const untamperedPath = await fetch(`http://127.0.0.1:${gatewayPort}/v1/cv/analyze`, {
+    method: 'POST',
+    headers: pathHeaders,
+    body: forbiddenBody
+  });
+  assert.equal(untamperedPath.status, 403);
+
+  const secondGatewayPort = 11547;
+  const secondGateway = spawn(process.execPath, [gatewayScript], {
+    env: {
+      ...process.env,
+      LOCAL_LLM_GATEWAY_PORT: String(secondGatewayPort),
+      LOCAL_LLM_SECRET_FILE: isolatedSecretFile,
+      LOCAL_LLM_CONTROL_SECRET_FILE: isolatedControlSecretFile,
+      LOCAL_LLM_STATE_FILE: isolatedStateFile,
+      LOCAL_LLM_APPROVAL_FILE: isolatedApprovalFile,
+      LOCAL_LLM_LOG_FILE: isolatedLogFile,
+      LOCAL_LLM_USAGE_OUTBOX_DIR: isolatedUsageOutboxDir,
+      LOCAL_LLM_USAGE_INITIAL_DELAY_MS: '600000',
+      RECRUITER_BACKEND_URL: `http://127.0.0.1:${historyBackendPort}`
+    },
+    stdio: 'ignore',
+    windowsHide: true
+  });
+  context.after(() => secondGateway.kill());
+  await waitFor(`http://127.0.0.1:${secondGatewayPort}/health`);
+  const crossProcessReplay = await fetch(`http://127.0.0.1:${secondGatewayPort}/v1/cv/analyze`, {
+    method: 'POST',
+    headers,
+    body: forbiddenBody
+  });
+  assert.equal(crossProcessReplay.status, 401);
+  assert.equal((await crossProcessReplay.json()).code, 'NONCE_REJECTED');
 
   const initialState = (await (await controlRequest('/control/status')).json()).state;
   assert.equal(initialState.requestedConcurrency, 128);
@@ -420,7 +553,10 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
         originalName: 'must-not-cross-the-gateway.pdf'
       }]
     });
-    const telemetrySignature = signLocalRequest(secret, telemetryBody);
+    const telemetrySignature = signLocalRequest(secret, telemetryBody, {
+      method: 'POST',
+      path: '/v1/queue-telemetry'
+    });
     const telemetry = await fetch(`http://127.0.0.1:${gatewayPort}/v1/queue-telemetry`, {
       method: 'POST',
       headers: {
@@ -453,8 +589,19 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       body: JSON.stringify({ paused: false })
     });
 
-    const signedRequest = async (requestBody) => {
-      const signature = signLocalRequest(secret, requestBody);
+    const signedRequest = async (requestBody, { harness = true } = {}) => {
+      const parsedBody = JSON.parse(requestBody);
+      const signedBody = harness && !parsedBody.metering
+        ? JSON.stringify({
+            ...parsedBody,
+            requestSource: 'gateway-integration-test',
+            metering: { record: false, exclusion: 'harness' }
+          })
+        : requestBody;
+      const signature = signLocalRequest(secret, signedBody, {
+        method: 'POST',
+        path: '/v1/complete'
+      });
       return fetch(`http://127.0.0.1:${gatewayPort}/v1/complete`, {
         method: 'POST',
         headers: {
@@ -463,9 +610,29 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
           'x-seemplify-nonce': signature.nonce,
           'x-seemplify-signature': signature.signature
         },
-        body: requestBody
+        body: signedBody
       });
     };
+    const missingMeteringBody = JSON.stringify({
+      activity: 'recruiter.general',
+      executionMode: 'local-only',
+      messages: [{ role: 'user', content: 'This must not run without metering.' }]
+    });
+    const missingMetering = await signedRequest(missingMeteringBody, { harness: false });
+    assert.equal(missingMetering.status, 400);
+    assert.equal((await missingMetering.json()).code, 'METERING_CONTEXT_REQUIRED');
+
+    const invalidExclusionBody = JSON.stringify({
+      activity: 'recruiter.general',
+      executionMode: 'local-only',
+      requestSource: 'unrecognized-test-client',
+      metering: { record: false, exclusion: 'harness' },
+      messages: [{ role: 'user', content: 'This exclusion must be rejected.' }]
+    });
+    const invalidExclusion = await signedRequest(invalidExclusionBody, { harness: false });
+    assert.equal(invalidExclusion.status, 400);
+    assert.equal((await invalidExclusion.json()).code, 'INVALID_METERING_EXCLUSION');
+
     const structuredBody = JSON.stringify({
       activity: 'interview.questions',
       executionMode: 'local-only',
@@ -481,14 +648,54 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     assert.equal(structured.status, 200);
     assert.deepEqual((await structured.json()).data, { answer: 'Use a bounded worker queue.' });
 
+    const meteredEventId = `usage_${crypto.createHash('sha256').update('gateway-success-transport').digest('hex').slice(0, 48)}`;
+    const meteredExecutionId = `localexec_${crypto.createHash('sha256').update(meteredEventId).digest('hex').slice(0, 48)}`;
     const textBody = JSON.stringify({
       activity: 'recruiter.general',
       executionMode: 'local-only',
-      messages: [{ role: 'user', content: 'Say hello.' }]
+      messages: [{ role: 'user', content: 'Say hello.' }],
+      metering: {
+        record: true,
+        eventId: meteredEventId,
+        requestId: 'gateway-success-request',
+        gatewayExecutionId: meteredExecutionId,
+        sourceApp: 'recruiter'
+      }
     });
     const textCompletion = await signedRequest(textBody);
     assert.equal(textCompletion.status, 200);
-    assert.equal((await textCompletion.json()).content, 'Local text completion');
+    const textCompletionPayload = await textCompletion.json();
+    assert.equal(textCompletionPayload.content, 'Local text completion');
+    assert.equal(textCompletionPayload.gatewayExecutionId, meteredExecutionId);
+    assert.equal(textCompletionPayload.provider, 'local-ollama');
+    assert.equal(
+      textCompletionPayload.providerLabel,
+      'Ollama local GPU: gemma4:26b-a4b-it-qat'
+    );
+    const meteringStatus = await (await controlRequest('/control/status')).json();
+    assert.equal(meteringStatus.usageMetering.pending, 1);
+    assert.equal(meteringStatus.usageMetering.dead, 0);
+    assert.equal(meteringStatus.usageMetering.health, 'healthy');
+
+    const heldBody = JSON.stringify({
+      activity: 'recruiter.general',
+      executionMode: 'local-only',
+      messages: [{ role: 'user', content: 'hold the slot briefly' }]
+    });
+    const heldCompletion = signedRequest(heldBody);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const busyBody = JSON.stringify({
+      activity: 'recruiter.general',
+      executionMode: 'local-only',
+      messages: [{ role: 'user', content: 'second request must stay durable' }]
+    });
+    const busyCompletion = await signedRequest(busyBody);
+    assert.equal(busyCompletion.status, 503);
+    assert.equal((await busyCompletion.json()).code, 'LOCAL_LLM_BUSY');
+    assert.equal(busyCompletion.headers.get('retry-after'), '1');
+    assert.equal((await heldCompletion).status, 200);
+    const noVolatileWaiters = await (await controlRequest('/control/status')).json();
+    assert.equal(noVolatileWaiters.waiting, 0);
 
     for (const activity of Object.keys(ACTIVITY_DEFINITIONS).filter((item) => !['candidate.cv_parse', 'ai_interview.cv_parse'].includes(item))) {
       const activityBody = JSON.stringify({

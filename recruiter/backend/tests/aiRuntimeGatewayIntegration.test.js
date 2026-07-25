@@ -40,8 +40,8 @@ test('signed gateway routes activity and context but ignores caller provider con
   process.env.AI_GATEWAY_HMAC_SECRET = secret;
   process.env.AI_GATEWAY_ALLOWED_SERVICES = 'ai-interview';
   let captured;
-  aiRuntimeService.complete = async (activity, input) => {
-    captured = { activity, input };
+  aiRuntimeService.complete = async (activity, input, options) => {
+    captured = { activity, input, options };
     return {
       requestId: 'runtime-request-1',
       content: 'Hello',
@@ -81,6 +81,8 @@ test('signed gateway routes activity and context but ignores caller provider con
     assert.equal(captured.input.context.organizationId, 'org-1');
     assert.equal(captured.input.model, undefined);
     assert.equal(captured.input.credentialId, undefined);
+    assert.ok(captured.options.signal);
+    assert.equal(captured.options.signal.aborted, false);
 
     const rejected = await fetch(gateway.url, {
       method: 'POST',
@@ -93,6 +95,64 @@ test('signed gateway routes activity and context but ignores caller provider con
       body
     });
     assert.equal(rejected.status, 401);
+  } finally {
+    await gateway.close();
+    aiRuntimeService.complete = originalComplete;
+    if (originalSecret === undefined) delete process.env.AI_GATEWAY_HMAC_SECRET;
+    else process.env.AI_GATEWAY_HMAC_SECRET = originalSecret;
+    if (originalAllowed === undefined) delete process.env.AI_GATEWAY_ALLOWED_SERVICES;
+    else process.env.AI_GATEWAY_ALLOWED_SERVICES = originalAllowed;
+  }
+});
+
+test('signed gateway aborts inference when its client disconnects', async () => {
+  const originalSecret = process.env.AI_GATEWAY_HMAC_SECRET;
+  const originalAllowed = process.env.AI_GATEWAY_ALLOWED_SERVICES;
+  const originalComplete = aiRuntimeService.complete;
+  const secret = 'disconnect-hmac-secret';
+  process.env.AI_GATEWAY_HMAC_SECRET = secret;
+  process.env.AI_GATEWAY_ALLOWED_SERVICES = 'ai-interview';
+  let startedResolve;
+  const started = new Promise((resolve) => { startedResolve = resolve; });
+  let abortedResolve;
+  const aborted = new Promise((resolve) => { abortedResolve = resolve; });
+  let aborts = 0;
+  aiRuntimeService.complete = async (_activity, _input, options) => {
+    startedResolve();
+    return new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        aborts += 1;
+        abortedResolve(options.signal.reason);
+        reject(options.signal.reason);
+      }, { once: true });
+    });
+  };
+
+  const gateway = await startGateway();
+  try {
+    const body = JSON.stringify({
+      activity: 'ai_interview.chat.clarification',
+      messages: [{ role: 'user', content: 'Disconnect fixture' }]
+    });
+    const timestamp = String(Date.now());
+    const url = new URL(gateway.url);
+    const request = http.request(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+        'x-seemplify-service': 'ai-interview',
+        'x-seemplify-timestamp': timestamp,
+        'x-seemplify-signature': sign({ body, secret, timestamp })
+      }
+    });
+    request.on('error', () => {});
+    request.end(body);
+    await started;
+    request.destroy();
+    const reason = await aborted;
+    assert.equal(reason.code, 'AI_CLIENT_DISCONNECTED');
+    assert.equal(aborts, 1);
   } finally {
     await gateway.close();
     aiRuntimeService.complete = originalComplete;

@@ -7,7 +7,8 @@ const {
   GROQ_120B,
   GROQ_BASE_URL,
   LOCAL_PROVIDER,
-  createDefaultRuntimeSettings
+  createDefaultRuntimeSettings,
+  localProviderLabel
 } = require('../../config/aiRuntimeCatalog');
 const { decryptSecret } = require('./secretCrypto');
 const { getAIRequestContext } = require('./requestContext');
@@ -56,6 +57,71 @@ const STRUCTURED_ACTIVITIES = new Set([
   'ai_interview.cv_parse',
   'ai_interview.scoring'
 ]);
+
+function combinedRequestSignal(timeoutMs, externalSignal) {
+  const timeoutSignal = typeof globalThis.AbortSignal?.timeout === 'function'
+    ? globalThis.AbortSignal.timeout(timeoutMs)
+    : undefined;
+  if (!externalSignal) return timeoutSignal;
+  if (!timeoutSignal) return externalSignal;
+  if (typeof globalThis.AbortSignal?.any === 'function') {
+    return globalThis.AbortSignal.any([externalSignal, timeoutSignal]);
+  }
+  const controller = new AbortController();
+  const abort = (signal) => {
+    if (!controller.signal.aborted) controller.abort(signal.reason);
+  };
+  if (externalSignal.aborted) abort(externalSignal);
+  else externalSignal.addEventListener('abort', () => abort(externalSignal), { once: true });
+  if (timeoutSignal.aborted) abort(timeoutSignal);
+  else timeoutSignal.addEventListener('abort', () => abort(timeoutSignal), { once: true });
+  return controller.signal;
+}
+
+function activeAbortReason(signal, fallback) {
+  if (!signal?.aborted) return null;
+  return signal.reason instanceof Error ? signal.reason : fallback;
+}
+
+function deriveRuntimeUsageEventId({ context = {}, route = {} } = {}) {
+  const executionId = String(context.usageExecutionId || crypto.randomUUID());
+  const completionOrdinal = Math.max(
+    1,
+    Number(context.structuredCompletionOrdinal || context.usageCompletionOrdinal || 1) || 1
+  );
+  const identity = [
+    executionId,
+    completionOrdinal,
+    route.provider,
+    route.model,
+    route.failoverFrom
+  ].map((value) => String(value || '')).join('\u001f');
+  return `usage_${crypto.createHash('sha256').update(identity).digest('hex').slice(0, 48)}`;
+}
+
+function deriveGatewayExecutionId(eventId) {
+  const normalized = String(eventId || '').trim();
+  if (!/^usage_[a-f0-9]{48}$/.test(normalized)) {
+    throw new TypeError('A valid usage event ID is required for local metering');
+  }
+  return `localexec_${crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 48)}`;
+}
+
+function withUsageExecutionContext(context = {}) {
+  return {
+    ...context,
+    usageExecutionId: context.usageExecutionId || crypto.randomUUID(),
+    structuredCompletionOrdinal: Math.max(
+      1,
+      Number(context.structuredCompletionOrdinal || context.usageCompletionOrdinal || 1) || 1
+    )
+  };
+}
+
+function isUsagePersistenceFailure(error) {
+  return error?.code === 'AI_USAGE_PERSISTENCE_FAILED'
+    || error?.code === 'AI_USAGE_IDENTITY_CONFLICT';
+}
 
 function requiredCapabilitiesForActivity(activity) {
   const capabilities = ['text', 'reasoning'];
@@ -549,7 +615,7 @@ class AIRuntimeService {
     }
   }
 
-  async providerRequest({ credential, payload, timeoutMs = 90_000 }) {
+  async providerRequest({ credential, payload, timeoutMs = 90_000, signal }) {
     if (typeof this.fetch !== 'function') {
       throw new AIRuntimeError('No fetch implementation is available', { code: 'AI_PROVIDER_NETWORK_ERROR', retryable: true });
     }
@@ -563,9 +629,11 @@ class AIRuntimeService {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload),
-        signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+        signal: combinedRequestSignal(timeoutMs, signal)
       });
     } catch (error) {
+      const abortError = activeAbortReason(signal, error);
+      if (abortError) throw abortError;
       throw new AIRuntimeError('Groq could not be reached', {
         code: 'AI_PROVIDER_NETWORK_ERROR',
         statusCode: 503,
@@ -576,7 +644,7 @@ class AIRuntimeService {
     return response;
   }
 
-  async localProviderRequest({ route, input, timeoutMs = 240_000 }) {
+  async localProviderRequest({ route, input, context, requestId, timeoutMs = 240_000, signal }) {
     const baseUrl = String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
     const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
     if (!secret) {
@@ -584,6 +652,15 @@ class AIRuntimeService {
         code: 'AI_LOCAL_NOT_CONFIGURED', statusCode: 503, retryable: true
       });
     }
+    if (!String(requestId || '').trim() || !String(context?.usageExecutionId || '').trim()) {
+      throw new AIRuntimeError('Local inference requires a durable usage execution context', {
+        code: 'AI_USAGE_CONTEXT_REQUIRED',
+        statusCode: 500,
+        retryable: false
+      });
+    }
+    const usageEventId = deriveRuntimeUsageEventId({ context, route });
+    const sourceApp = String(context.sourceApp || input.context?.sourceApp || 'recruiter').slice(0, 64);
     const body = JSON.stringify({
       activity: route.activity,
       model: route.model,
@@ -591,14 +668,21 @@ class AIRuntimeService {
       messages: input.messages,
       jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
       schemaName: input.schemaName,
-      requestSource: String(input.context?.sourceApp || 'recruiter').slice(0, 64),
+      requestSource: sourceApp,
       temperature: input.temperature,
       topP: input.topP ?? input.top_p,
       maxTokens: input.maxTokens ?? input.max_tokens ?? input.max_completion_tokens,
       reasoningEffort: route.reasoningEffort || 'medium',
       tools: input.tools,
       toolChoice: input.toolChoice ?? input.tool_choice,
-      timeoutMs
+      timeoutMs,
+      metering: {
+        record: true,
+        eventId: usageEventId,
+        requestId: String(requestId).slice(0, 200),
+        gatewayExecutionId: deriveGatewayExecutionId(usageEventId),
+        sourceApp
+      }
     });
     const endpoint = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(route.activity)
       ? '/v1/cv/analyze'
@@ -614,9 +698,11 @@ class AIRuntimeService {
           'x-seemplify-signature': signed.signature
         },
         body,
-        signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+        signal: combinedRequestSignal(timeoutMs, signal)
       });
     } catch (error) {
+      const abortError = activeAbortReason(signal, error);
+      if (abortError) throw abortError;
       throw new AIRuntimeError('Local CV runtime could not be reached', {
         code: 'AI_LOCAL_UNAVAILABLE', statusCode: 503, retryable: true, details: sanitizeMessage(error.message)
       });
@@ -654,12 +740,28 @@ class AIRuntimeService {
     try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
     const details = errorDetails(payload, response.status, provider);
     const rateLimit = parseRateLimitHeaders(response.headers);
+    const usageEnvelope = payload?.usage && typeof payload.usage === 'object'
+      ? {
+          id: payload.id,
+          provider: payload.engine ? `local-${payload.engine}` : undefined,
+          model: payload.model,
+          gatewayExecutionId: payload.gatewayExecutionId,
+          usage: payload.usage,
+          usageReported: payload.usageReported === true,
+          usageSource: payload.usageSource
+        }
+      : null;
     return new AIRuntimeError(details.message, {
       code: details.code,
       statusCode: response.status >= 500 || response.status === 429 || response.status === 498 ? 503 : response.status,
       providerStatus: response.status,
       retryable: response.status === 401 || response.status === 403 || response.status === 429 || response.status === 498 || response.status >= 500 || details.blockedAccess,
-      details: { blockedAccess: details.blockedAccess, payloadType: payload?.error?.type, rateLimit }
+      details: {
+        blockedAccess: details.blockedAccess,
+        payloadType: payload?.error?.type,
+        rateLimit,
+        usageEnvelope
+      }
     });
   }
 
@@ -680,8 +782,12 @@ class AIRuntimeService {
       ].some((field) => Object.hasOwn(rawUsage, field)));
     const usage = normalizeUsage(rawUsage || {});
     const event = {
+      eventId: deriveRuntimeUsageEventId({ context, route }),
       requestId,
       providerRequestId: rateLimit.providerRequestId || data?.id,
+      gatewayExecutionId: data?.gatewayExecutionId,
+      meteringOrigin: data?.gatewayExecutionId ? 'backend-response' : undefined,
+      atSourceOnly: false,
       sourceApp: context.sourceApp || 'recruiter',
       activity: route.activity,
       provider: data?.provider || route.provider,
@@ -740,7 +846,11 @@ class AIRuntimeService {
     const startedAt = Date.now();
     let response;
     try {
-      response = await this.azureRollback.request({ payload, timeoutMs: options.timeoutMs });
+      response = await this.azureRollback.request({
+        payload,
+        timeoutMs: options.timeoutMs,
+        signal: options.signal
+      });
       if (!response.ok) throw await this.parseErrorResponse(response, 'azure');
       const data = stripReasoning(await response.json());
       const content = data?.choices?.[0]?.message?.content;
@@ -763,6 +873,9 @@ class AIRuntimeService {
         raw: data
       };
     } catch (error) {
+      const abortError = activeAbortReason(options.signal, error);
+      if (abortError) throw abortError;
+      if (isUsagePersistenceFailure(error)) throw error;
       const runtimeError = error instanceof AIRuntimeError ? error : new AIRuntimeError(
         sanitizeMessage(error.message),
         {
@@ -807,7 +920,12 @@ class AIRuntimeService {
       const attemptStartedAt = Date.now();
       let response;
       try {
-        response = await this.providerRequest({ credential, payload, timeoutMs: options.timeoutMs });
+        response = await this.providerRequest({
+          credential,
+          payload,
+          timeoutMs: options.timeoutMs,
+          signal: options.signal
+        });
         lastResponse = response;
         if (!response.ok) throw await this.parseErrorResponse(response);
         const data = stripReasoning(await response.json());
@@ -835,6 +953,9 @@ class AIRuntimeService {
           raw: data
         };
       } catch (error) {
+        const abortError = activeAbortReason(options.signal, error);
+        if (abortError) throw abortError;
+        if (isUsagePersistenceFailure(error)) throw error;
         lastError = error instanceof AIRuntimeError ? error : new AIRuntimeError(sanitizeMessage(error.message));
         attemptErrors.push(buildAttemptError({ attempt, credential, error: lastError, startedAt: attemptStartedAt }));
         await this.markCredentialFailure(credential, lastError, route.model, settings);
@@ -862,9 +983,15 @@ class AIRuntimeService {
   }
 
   async complete(activity, input = {}, options = {}) {
+    const abortedBeforeStart = activeAbortReason(options.signal);
+    if (abortedBeforeStart) throw abortedBeforeStart;
     const settings = await this.getSettings();
     const configuredRoute = this.resolveRoute(activity, settings);
-    const context = getAIRequestContext({ ...(input.context || {}), ...(options.context || {}), promptVersion: input.promptVersion });
+    const context = withUsageExecutionContext(getAIRequestContext({
+      ...(input.context || {}),
+      ...(options.context || {}),
+      promptVersion: input.promptVersion
+    }));
     const requestId = context.requestId || crypto.randomUUID();
     const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
     if (route.provider === LOCAL_PROVIDER) {
@@ -872,12 +999,23 @@ class AIRuntimeService {
       const payload = this.normalizePayload(input, route, { stream: false });
       let response;
       try {
-        response = await this.localProviderRequest({ route, input, timeoutMs: options.timeoutMs || 240_000 });
+        response = await this.localProviderRequest({
+          route,
+          input,
+          context,
+          requestId,
+          timeoutMs: options.timeoutMs || 240_000,
+          signal: options.signal
+        });
         if (!response.ok) throw await this.parseErrorResponse(response, 'local-ollama');
         const localData = await response.json();
+        const localProvider = localData.provider
+          || (localData.engine ? `local-${localData.engine}` : route.provider);
         const data = {
           id: localData.id,
-          provider: localData.engine ? `local-${localData.engine}` : route.provider,
+          provider: localProvider,
+          providerLabel: localData.providerLabel
+            || localProviderLabel(localProvider, localData.model || route.model),
           model: localData.model || route.model,
           choices: [{
             message: {
@@ -888,7 +1026,8 @@ class AIRuntimeService {
           }],
           usage: localData.usage || {},
           usageReported: localData.usageReported,
-          usageSource: localData.usageSource
+          usageSource: localData.usageSource,
+          gatewayExecutionId: localData.gatewayExecutionId
         };
         await this.recordResult({
           requestId, context, route, status: 'success', response, payload, data, attempts: 1, startedAt
@@ -900,17 +1039,27 @@ class AIRuntimeService {
           finishReason: data.choices[0].finish_reason,
           model: data.model,
           provider: data.provider,
+          providerLabel: data.providerLabel,
           engine: localData.engine,
           usage: normalizeUsage(data.usage),
-          raw: { ...data, localEngine: localData.engine, localMetrics: localData.metrics }
+          raw: {
+            ...data,
+            localEngine: localData.engine,
+            localProviderLabel: data.providerLabel,
+            localMetrics: localData.metrics
+          }
         };
       } catch (error) {
+        const abortError = activeAbortReason(options.signal, error);
+        if (abortError) throw abortError;
+        if (isUsagePersistenceFailure(error)) throw error;
         const runtimeError = error instanceof AIRuntimeError ? error : new AIRuntimeError(
           sanitizeMessage(error.message),
           { code: error.code || 'AI_LOCAL_UNAVAILABLE', statusCode: 503, retryable: true }
         );
         await this.recordResult({
           requestId, context, route, status: 'failed', response, payload,
+          data: runtimeError.details?.usageEnvelope || undefined,
           error: runtimeError, attempts: 1, startedAt
         });
         const fallbackRoute = isLocalRuntimeUnavailable(runtimeError)
@@ -958,22 +1107,41 @@ class AIRuntimeService {
     }
     const schemaName = String(input.schemaName || activity.replace(/[^a-z0-9_-]/gi, '_')).slice(0, 64);
     const baseMessages = Array.isArray(input.messages) ? input.messages : [];
-    const structuredRequestId = getAIRequestContext(input.context).requestId || crypto.randomUUID();
+    const structuredContext = withUsageExecutionContext(getAIRequestContext({
+      ...(input.context || {}),
+      ...(options.context || {})
+    }));
+    const structuredRequestId = structuredContext.requestId || crypto.randomUUID();
     let messages = baseMessages;
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const abortedBeforeAttempt = activeAbortReason(options.signal);
+      if (abortedBeforeAttempt) throw abortedBeforeAttempt;
       if (typeof options.beforeAttempt === 'function') {
         await options.beforeAttempt({ attempt: attempt + 1, activity });
       }
       const result = await this.complete(activity, {
         ...input,
-        context: { ...(input.context || {}), requestId: structuredRequestId },
+        context: {
+          ...(input.context || {}),
+          ...structuredContext,
+          requestId: structuredRequestId,
+          structuredCompletionOrdinal: attempt + 1
+        },
         messages,
         response_format: {
           type: 'json_schema',
           json_schema: { name: schemaName, strict: input.schemaStrict !== false, schema }
         }
-      }, options);
+      }, {
+        ...options,
+        context: {
+          ...(options.context || {}),
+          ...structuredContext,
+          requestId: structuredRequestId,
+          structuredCompletionOrdinal: attempt + 1
+        }
+      });
       let parsed;
       try {
         parsed = JSON.parse(result.content);
@@ -1036,6 +1204,7 @@ class AIRuntimeService {
         data: dataForUsage, attempts: attempt, attemptErrors, startedAt
       });
     } catch (error) {
+      if (isUsagePersistenceFailure(error)) throw error;
       await this.recordResult({
         requestId, context, route, credential, status: 'failed', response, payload,
         error: new AIRuntimeError('Groq stream ended unexpectedly', { code: 'AI_STREAM_INTERRUPTED' }),
@@ -1055,9 +1224,12 @@ class AIRuntimeService {
       const [clientStream, telemetryStream] = response.body.tee();
       void this.monitorStream({
         stream: telemetryStream, requestId, context, route, response, payload, attempt: 1, startedAt
+      }).catch((error) => {
+        console.error('AI stream usage persistence failed:', sanitizeMessage(error.message));
       });
       return new Response(clientStream, { status: response.status, headers: response.headers });
     } catch (error) {
+      if (isUsagePersistenceFailure(error)) throw error;
       const runtimeError = error instanceof AIRuntimeError ? error : new AIRuntimeError(
         sanitizeMessage(error.message),
         { code: error.code || 'AI_AZURE_BASELINE_ERROR', statusCode: error.statusCode || 503 }
@@ -1073,18 +1245,18 @@ class AIRuntimeService {
   async streamResponse(activity, input = {}, options = {}) {
     const settings = await this.getSettings();
     const configuredRoute = this.resolveRoute(activity, settings);
-    const context = getAIRequestContext({
+    const context = withUsageExecutionContext(getAIRequestContext({
       ...(input.context || {}),
       ...(options.context || {}),
       promptVersion: input.promptVersion
-    });
+    }));
     const requestId = context.requestId || crypto.randomUUID();
     const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
     if (route.provider === LOCAL_PROVIDER) {
       const result = await this.complete(activity, {
         ...input,
         stream: false,
-        context: { ...(input.context || {}), requestId }
+        context: { ...(input.context || {}), ...context, requestId }
       }, options);
       const chunks = [];
       const base = {
@@ -1169,9 +1341,12 @@ class AIRuntimeService {
         void this.monitorStream({
           stream: telemetryStream, requestId, context, route, credential, response, payload,
           attempt, attemptErrors, startedAt
+        }).catch((error) => {
+          console.error('AI stream usage persistence failed:', sanitizeMessage(error.message));
         });
         return new Response(clientStream, { status: response.status, headers: response.headers });
       } catch (error) {
+        if (isUsagePersistenceFailure(error)) throw error;
         lastError = error instanceof AIRuntimeError ? error : new AIRuntimeError(sanitizeMessage(error.message));
         attemptErrors.push(buildAttemptError({ attempt, credential, error: lastError, startedAt: attemptStartedAt }));
         await this.markCredentialFailure(credential, lastError, route.model, settings);
@@ -1258,6 +1433,8 @@ module.exports = aiRuntimeService;
 module.exports.AIRuntimeError = AIRuntimeError;
 module.exports.AIRuntimeService = AIRuntimeService;
 module.exports.calculateFailovers = calculateFailovers;
+module.exports.deriveGatewayExecutionId = deriveGatewayExecutionId;
+module.exports.deriveRuntimeUsageEventId = deriveRuntimeUsageEventId;
 module.exports.deterministicBucket = deterministicBucket;
 module.exports.isLocalRuntimeUnavailable = isLocalRuntimeUnavailable;
 module.exports.quotaSnapshotIsAvailable = quotaSnapshotIsAvailable;

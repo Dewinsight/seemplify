@@ -1,7 +1,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { buildSignature, createAIPlatformClient, extractJsonObject } = require('../src/llmClient');
+const {
+  buildSignature,
+  createAIPlatformClient,
+  extractJsonObject,
+  normalizeGatewayTimeoutMs
+} = require('../src/llmClient');
 
 test('standalone client signs the exact path/body and never sends a provider key or model', async () => {
   let captured;
@@ -60,6 +65,46 @@ test('gateway network deadlines become retryable service errors', async () => {
       && error.statusCode === 503
       && !error.message.includes('socket timeout')
   ));
+});
+
+test('shared-dispatch lease abort reaches the gateway request and preserves its safety error', async () => {
+  const controller = new AbortController();
+  let requestSignal;
+  let requestStarted;
+  const started = new Promise((resolve) => {
+    requestStarted = resolve;
+  });
+  const client = createAIPlatformClient({
+    env: {
+      SEEMPLIFY_AI_GATEWAY_URL: 'https://api.example.test',
+      AI_GATEWAY_HMAC_SECRET: 'secret'
+    },
+    fetchImpl: async (_url, init) => {
+      requestSignal = init.signal;
+      requestStarted();
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+      });
+    }
+  });
+  const request = client.chatCompletion(
+    [{ role: 'user', content: 'Fixture' }],
+    { signal: controller.signal }
+  );
+  await started;
+  const leaseError = Object.assign(new Error('shared lease was lost'), {
+    code: 'CV_GLOBAL_DISPATCH_LEASE_LOST'
+  });
+  controller.abort(leaseError);
+  await assert.rejects(request, (error) => error === leaseError);
+  assert.equal(requestSignal.aborted, true);
+  assert.equal(requestSignal.reason, leaseError);
+});
+
+test('gateway accepts the four-minute CV deadline and caps unsafe values', () => {
+  assert.equal(normalizeGatewayTimeoutMs(240_000), 240_000);
+  assert.equal(normalizeGatewayTimeoutMs(600_000), 300_000);
+  assert.equal(normalizeGatewayTimeoutMs(100), 1_000);
 });
 
 test('JSON extraction handles strict, fenced, and embedded objects', () => {

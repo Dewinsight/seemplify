@@ -113,19 +113,40 @@ class CreditsService {
       // Validate inputs
       if (!organizationId) {
         console.error(`❌ [${timestamp}] Invalid organizationId: ${organizationId}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'Invalid organization ID' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'INVALID_CREDIT_CONTEXT',
+          permanent: true,
+          message: 'Invalid organization ID'
+        };
       }
       
       if (!action || typeof action !== 'string') {
         console.error(`❌ [${timestamp}] Invalid action: ${action}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'Invalid action specified' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'INVALID_CREDIT_CONTEXT',
+          permanent: true,
+          message: 'Invalid action specified'
+        };
       }
       
       const organization = await Organization.findById(organizationId);
       
       if (!organization) {
         console.error(`❌ [${timestamp}] Organization not found: ${organizationId}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'Organization not found' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'CREDIT_ORGANIZATION_NOT_FOUND',
+          permanent: true,
+          message: 'Organization not found'
+        };
       }
 
       // Get credit cost for this action from plan
@@ -133,7 +154,14 @@ class CreditsService {
       
       if (!plan) {
         console.warn(`⚠️ No plan found for organization ${organizationId}, plan code: ${organization.subscription?.plan}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'No plan configured for organization' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'CREDIT_PLAN_NOT_CONFIGURED',
+          permanent: true,
+          message: 'No plan configured for organization'
+        };
       }
       
       const creditCosts = plan.credits?.creditCosts || {};
@@ -185,6 +213,8 @@ class CreditsService {
           allowed: false, 
           cost, 
           remaining: 0, 
+          error: 'CREDIT_BALANCE_ERROR',
+          permanent: true,
           message: 'Credit balance error: negative credits detected' 
         };
       }
@@ -195,6 +225,8 @@ class CreditsService {
           allowed: false, 
           cost: 0, 
           remaining: remainingCredits, 
+          error: 'INVALID_CREDIT_COST',
+          permanent: true,
           message: 'Invalid action cost configuration' 
         };
       }
@@ -211,12 +243,21 @@ class CreditsService {
           allowed: false,
           cost,
           remaining: remainingCredits,
+          error: 'INSUFFICIENT_CREDITS',
+          permanent: true,
           message: `Insufficient credits. Required: ${cost}, Available: ${remainingCredits}`
         };
       }
     } catch (error) {
       console.error('Error checking credits:', error);
-      return { allowed: false, cost: 0, remaining: 0, message: error.message };
+      return {
+        allowed: false,
+        cost: 0,
+        remaining: 0,
+        error: error.code || 'CREDIT_CHECK_UNAVAILABLE',
+        retryable: true,
+        message: error.message
+      };
     }
   }
 
@@ -404,6 +445,170 @@ class CreditsService {
     } finally {
       session.endSession();
     }
+  }
+
+  /**
+   * Atomically consume credits once for a durable operation.
+   *
+   * The idempotency key lives in the embedded ledger transaction and the
+   * conditional pipeline update checks both that key and the balance on the
+   * same Organization write. This avoids the check-then-debit race in async
+   * request replay paths.
+   */
+  async consumeCreditsIdempotently(
+    organizationId,
+    action,
+    entityId,
+    entityType,
+    userId,
+    metadata = {}
+  ) {
+    const idempotencyKey = String(metadata.idempotencyKey || '').trim();
+    if (!idempotencyKey) {
+      const error = new Error('An idempotency key is required for idempotent credit consumption');
+      error.code = 'CREDIT_IDEMPOTENCY_KEY_REQUIRED';
+      error.permanent = true;
+      throw error;
+    }
+    if (
+      !mongoose.isValidObjectId(organizationId)
+      || !mongoose.isValidObjectId(entityId)
+      || !mongoose.isValidObjectId(userId)
+    ) {
+      const error = new Error('Organization, entity, and user must be valid Mongo ObjectIds');
+      error.code = 'INVALID_CREDIT_CONTEXT';
+      error.permanent = true;
+      throw error;
+    }
+
+    const normalizedOrganizationId = new mongoose.Types.ObjectId(String(organizationId));
+    const normalizedEntityId = new mongoose.Types.ObjectId(String(entityId));
+    const normalizedUserId = new mongoose.Types.ObjectId(String(userId));
+    const existingFilter = {
+      _id: normalizedOrganizationId,
+      'subscription.creditUsage.transactions': {
+        $elemMatch: { 'metadata.idempotencyKey': idempotencyKey }
+      }
+    };
+
+    const existingOrganization = await Organization.findOne(existingFilter).lean();
+    const existingTransaction = existingOrganization?.subscription?.creditUsage?.transactions?.find(
+      (transaction) => transaction.metadata?.idempotencyKey === idempotencyKey
+    );
+    if (existingTransaction) {
+      return {
+        success: true,
+        alreadyConsumed: true,
+        credits: Math.abs(Number(existingTransaction.credits || 0)),
+        balanceAfter: existingTransaction.balanceAfter,
+        transaction: existingTransaction
+      };
+    }
+
+    const creditCheck = await this.checkSufficientCredits(normalizedOrganizationId, action, {
+      creditCostOverride: metadata.creditCostOverride
+        ?? metadata.costOverride
+        ?? metadata.overrideCost
+    });
+    const cost = Number(creditCheck.cost || 0);
+    if (cost === 0 && creditCheck.allowed) {
+      return {
+        success: true,
+        alreadyConsumed: false,
+        credits: 0,
+        balanceAfter: creditCheck.remaining
+      };
+    }
+
+    const timestamp = new Date();
+    const transactionId = new mongoose.Types.ObjectId();
+    const updated = creditCheck.allowed
+      ? await Organization.findOneAndUpdate(
+        {
+          _id: normalizedOrganizationId,
+          'subscription.creditUsage.remainingCredits': { $gte: cost },
+          'subscription.creditUsage.transactions': {
+            $not: { $elemMatch: { 'metadata.idempotencyKey': idempotencyKey } }
+          }
+        },
+        [
+          {
+            $set: {
+              'subscription.creditUsage.usedCredits': {
+                $add: [
+                  { $ifNull: ['$subscription.creditUsage.usedCredits', 0] },
+                  cost
+                ]
+              },
+              'subscription.creditUsage.remainingCredits': {
+                $subtract: ['$subscription.creditUsage.remainingCredits', cost]
+              },
+              'subscription.creditUsage.transactions': {
+                $concatArrays: [
+                  { $ifNull: ['$subscription.creditUsage.transactions', []] },
+                  [{
+                    _id: transactionId,
+                    action,
+                    credits: -cost,
+                    entityId: normalizedEntityId,
+                    entityType,
+                    performedBy: normalizedUserId,
+                    timestamp,
+                    balanceAfter: {
+                      $subtract: ['$subscription.creditUsage.remainingCredits', cost]
+                    },
+                    metadata: {
+                      ...metadata,
+                      idempotencyKey
+                    }
+                  }]
+                ]
+              }
+            }
+          }
+        ],
+        { new: true }
+      ).lean()
+      : null;
+
+    if (updated) {
+      const transaction = updated.subscription.creditUsage.transactions.find(
+        (item) => String(item._id) === String(transactionId)
+      );
+      return {
+        success: true,
+        alreadyConsumed: false,
+        credits: cost,
+        balanceAfter: Number(updated.subscription.creditUsage.remainingCredits),
+        transaction
+      };
+    }
+
+    // Distinguish a concurrent winner from a genuinely exhausted balance.
+    const latest = await Organization.findById(normalizedOrganizationId).lean();
+    const concurrentTransaction = latest?.subscription?.creditUsage?.transactions?.find(
+      (transaction) => transaction.metadata?.idempotencyKey === idempotencyKey
+    );
+    if (concurrentTransaction) {
+      return {
+        success: true,
+        alreadyConsumed: true,
+        credits: Math.abs(Number(concurrentTransaction.credits || 0)),
+        balanceAfter: concurrentTransaction.balanceAfter,
+        transaction: concurrentTransaction
+      };
+    }
+
+    return {
+      success: false,
+      alreadyConsumed: false,
+      error: creditCheck.error || 'INSUFFICIENT_CREDITS',
+      retryable: creditCheck.retryable === true,
+      permanent: creditCheck.permanent === true,
+      credits: cost,
+      balanceAfter: Number(latest?.subscription?.creditUsage?.remainingCredits || 0),
+      message: creditCheck.message || `Insufficient credits. Required: ${cost}`
+    };
   }
 
   /**

@@ -30,11 +30,21 @@ function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes, localRunt
     parsed.values.set(key, createValue());
     added.push(key);
   };
+  const requireExact = (key, expectedValue) => {
+    const expected = String(expectedValue).trim();
+    const current = String(parsed.values.get(key) || '').trim();
+    if (current && current !== expected) {
+      throw new Error(`${key} must be ${expected}`);
+    }
+    ensure(key, () => expected);
+  };
 
   ensure('AI_PROVIDER_ENCRYPTION_KEY', () => randomBytes(32).toString('base64'));
   ensure('AI_PROVIDER_ENCRYPTION_KEY_VERSION', () => 'v1');
   ensure('AI_GATEWAY_HMAC_SECRET', () => randomBytes(48).toString('base64'));
   ensure('AI_GATEWAY_ALLOWED_SERVICES', () => 'ai-interview');
+  requireExact('AI_USAGE_OUTBOX_ENABLED', localRuntime.usageOutboxEnabled || 'true');
+  requireExact('AI_USAGE_REDIS_HOST', localRuntime.usageRedisHost || 'dokploy-redis');
   if (String(localRuntime.sharedSecret || '').trim()) {
     ensure('LOCAL_LLM_SHARED_SECRET', () => String(localRuntime.sharedSecret).trim());
     ensure('LOCAL_LLM_BASE_URL', () => String(localRuntime.baseUrl || 'https://cv-llm.aiinnigeria.com').trim());
@@ -71,10 +81,14 @@ async function main() {
   const applicationId = String(process.env.RECRUITER_BACKEND_APP_ID || '');
   const localSharedSecret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
   const cvStatusTokenSecret = String(process.env.CV_STATUS_TOKEN_SECRET || '').trim();
+  const usageOutboxEnabled = String(process.env.AI_USAGE_OUTBOX_ENABLED || '').trim();
+  const usageRedisHost = String(process.env.AI_USAGE_REDIS_HOST || '').trim();
   if (!token) throw new Error('DOKPLOY_TOKEN is required');
   if (!applicationId) throw new Error('RECRUITER_BACKEND_APP_ID is required');
   if (!localSharedSecret) throw new Error('LOCAL_LLM_SHARED_SECRET is required');
   if (!cvStatusTokenSecret) throw new Error('CV_STATUS_TOKEN_SECRET is required');
+  if (usageOutboxEnabled !== 'true') throw new Error('AI_USAGE_OUTBOX_ENABLED must be true');
+  if (!usageRedisHost) throw new Error('AI_USAGE_REDIS_HOST is required');
 
   const base = apiBase(process.env.DOKPLOY_URL);
   const app = await dokployRequest(`${base}/application.one?applicationId=${encodeURIComponent(applicationId)}`, token);
@@ -82,7 +96,9 @@ async function main() {
     sharedSecret: localSharedSecret,
     baseUrl: process.env.LOCAL_LLM_BASE_URL || 'https://cv-llm.aiinnigeria.com',
     statusTokenSecret: cvStatusTokenSecret,
-    concurrency: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '1'
+    concurrency: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '1',
+    usageOutboxEnabled,
+    usageRedisHost
   });
   if (!result.added.length) {
     console.log('AI Runtime security environment is already configured; no values changed.');

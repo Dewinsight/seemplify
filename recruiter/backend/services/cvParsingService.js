@@ -38,7 +38,7 @@ class CVParsingService {
       if (fileType === 'application/pdf') {
         // ✅ UPGRADED: Using PDF.js for better text extraction
         const pdfjs = await this.loadPdfJs();
-        const dataBuffer = fs.readFileSync(filePath);
+        const dataBuffer = await fs.promises.readFile(filePath);
         
         // Load the PDF document
         const loadingTask = pdfjs.getDocument({
@@ -103,7 +103,7 @@ class CVParsingService {
    * @param {string} fileType - MIME type of the file
    * @returns {Promise<Object>} - Combined parsing and AI analysis result
    */
-  async analyzeText(resumeText, activity = 'candidate.cv_parse') {
+  async analyzeText(resumeText, activity = 'candidate.cv_parse', options = {}) {
     try {
       if (!resumeText || resumeText.trim().length < 50) {
         return {
@@ -116,11 +116,13 @@ class CVParsingService {
           aiSuccess: false
         };
       }
-      const aiAnalysisResult = await this.aiModelService.analyzeCV(resumeText, activity);
+      const aiAnalysisResult = await this.aiModelService.analyzeCV(resumeText, activity, options);
       if (!aiAnalysisResult.success) {
         return {
           success: false,
           error: aiAnalysisResult.error || 'AI CV analysis is temporarily unavailable.',
+          code: aiAnalysisResult.code,
+          retryable: aiAnalysisResult.retryable === true,
           resumeText,
           aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
           extractedFields: {},

@@ -1,5 +1,21 @@
 const mongoose = require('mongoose');
 
+const CompletionEffectSchema = new mongoose.Schema({
+  status: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'skipped'],
+    default: 'pending'
+  },
+  attempts: { type: Number, default: 0, min: 0 },
+  claimToken: String,
+  claimedAt: Date,
+  completedAt: Date,
+  lastError: {
+    message: String,
+    at: Date
+  }
+}, { _id: false });
+
 const CVProcessingJobSchema = new mongoose.Schema({
   publicId: { type: String, required: true, unique: true, index: true },
   statusTokenHash: { type: String, required: true, select: false },
@@ -10,22 +26,98 @@ const CVProcessingJobSchema = new mongoose.Schema({
     default: 'queued',
     index: true
   },
+  stage: {
+    type: String,
+    enum: ['ingesting', 'uploading', 'extracting', 'analyzing', 'finalizing', 'completed', 'failed'],
+    index: true
+  },
   progress: { type: Number, default: 0, min: 0, max: 100 },
   organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
   actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   jobAppliedFor: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' },
   source: { type: String, enum: ['private', 'public', 'bulk', 'ai-interview'], required: true },
+  billing: {
+    required: { type: Boolean, default: false },
+    action: String,
+    cost: Number,
+    state: {
+      type: String,
+      enum: ['not_required', 'pending', 'charged', 'failed'],
+      default: 'not_required'
+    },
+    idempotencyKey: String,
+    attempts: { type: Number, default: 0, min: 0 },
+    failureDisposition: {
+      type: String,
+      enum: ['retryable', 'permanent']
+    },
+    nextAttemptAt: Date,
+    terminalAt: Date,
+    chargedAt: Date,
+    lastAttemptAt: Date,
+    lastError: {
+      code: String,
+      message: String
+    }
+  },
+  publicApplicationReservation: {
+    reserved: { type: Boolean, default: false },
+    job: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' },
+    creditCost: Number,
+    applicationCount: Number,
+    limitReached: { type: Boolean, default: false },
+    reservedAt: Date
+  },
+  completionEffects: {
+    candidateNotification: { type: CompletionEffectSchema, default: () => ({}) },
+    gptCacheInvalidation: { type: CompletionEffectSchema, default: () => ({}) },
+    websocketBroadcast: { type: CompletionEffectSchema, default: () => ({}) },
+    embedding: { type: CompletionEffectSchema, default: () => ({}) },
+    limitReachedNotification: { type: CompletionEffectSchema, default: () => ({}) }
+  },
+  completionEffectsCompletedAt: Date,
   originalName: { type: String, required: true },
   fileType: { type: String, required: true },
   fileSize: { type: Number, required: true },
-  resumeText: { type: String, required: true, select: false },
+  resumeText: { type: String, default: '', select: false },
+  durableFile: {
+    provider: { type: String, enum: ['gridfs'] },
+    bucket: String,
+    fileId: String,
+    sha256: String,
+    length: Number,
+    persistedAt: Date,
+    releasedAt: Date,
+    cleanupState: {
+      type: String,
+      enum: ['retained', 'pending', 'deleted', 'failed'],
+      default: 'retained'
+    },
+    cleanupAttempts: { type: Number, default: 0, min: 0 },
+    cleanupAttemptedAt: Date,
+    cleanupNextAttemptAt: Date,
+    cleanupError: String
+  },
   cloudinary: {
     resumeUrl: String,
     publicId: String,
-    resourceType: String
+    assetId: String,
+    resourceType: String,
+    deliveryType: String,
+    cleanupState: {
+      type: String,
+      enum: ['retained', 'pending', 'deleted', 'failed'],
+      default: 'retained'
+    },
+    cleanupAttempts: { type: Number, default: 0, min: 0 },
+    cleanupAttemptedAt: Date,
+    cleanupNextAttemptAt: Date,
+    releasedAt: Date,
+    cleanupError: String
   },
   formData: { type: mongoose.Schema.Types.Mixed, default: {} },
   attempts: { type: Number, default: 0 },
+  boundedFailureAttempts: { type: Number, default: 0, min: 0 },
   lastError: {
     code: String,
     message: String,
@@ -35,7 +127,10 @@ const CVProcessingJobSchema = new mongoose.Schema({
   startedAt: Date,
   completedAt: Date,
   failedAt: Date,
-  expiresAt: { type: Date, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) }
+  // The TTL is assigned only after a job reaches a terminal state. Queued,
+  // processing, and offline-waiting jobs must survive an arbitrarily long
+  // local-runtime outage.
+  expiresAt: Date
 }, { timestamps: true, minimize: false });
 
 CVProcessingJobSchema.index(
@@ -47,5 +142,13 @@ CVProcessingJobSchema.index({ completedAt: -1 });
 CVProcessingJobSchema.index({ failedAt: -1 });
 CVProcessingJobSchema.index({ updatedAt: -1 });
 CVProcessingJobSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+CVProcessingJobSchema.index({ state: 1, 'durableFile.cleanupNextAttemptAt': 1 });
+CVProcessingJobSchema.index({ state: 1, 'cloudinary.cleanupNextAttemptAt': 1 });
+CVProcessingJobSchema.index({
+  source: 1,
+  'billing.state': 1,
+  'billing.failureDisposition': 1,
+  'billing.nextAttemptAt': 1
+});
 
 module.exports = mongoose.model('CVProcessingJob', CVProcessingJobSchema);

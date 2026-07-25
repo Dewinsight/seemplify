@@ -1,6 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const { corsOptions } = require('./config/corsOptions');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const path = require('path');
@@ -13,6 +14,7 @@ const aiInterviewVoiceLiveService = require('./services/aiInterviewVoiceLiveServ
 const grantVerificationScheduler = require('./scripts/grantVerificationScheduler');
 const interviewFeedbackEmailService = require('./services/interviewQuestionEmailService');
 const backgroundServiceManager = require('./services/backgroundServiceManager');
+const memoryManager = require('./services/memoryManager');
 const multiCandidateRetryService = require('./services/multiCandidateRetryService');
 const interviewBotJoinService = require('./services/interviewBotJoinService');
 const aiInterviewEmailService = require('./services/aiInterviewEmailService');
@@ -20,12 +22,21 @@ const localAIRuntimeHealthService = require('./services/localAIRuntimeHealthServ
 const { requestValidation } = require('./middleware/requestValidation');
 const { requireFeature } = require('./middleware/featureFlagMiddleware');
 const { aiRequestContextMiddleware } = require('./services/aiRuntime/requestContext');
+const {
+  persistUsageEnvelope,
+  usageProjectionRepairHealth
+} = require('./services/aiRuntime/usageService');
+const {
+  assertUsageMeteringOutboxReady,
+  usageMeteringOutbox,
+  usageMeteringOutboxReady
+} = require('./services/aiRuntime/usageMeteringOutbox');
 
 // Load environment variables
 dotenv.config();
 
 // Connect to database
-connectDB();
+const databaseReady = connectDB();
 
 const app = express();
 
@@ -87,79 +98,6 @@ app.use((req, res, next) => {
 // Request Validation Middleware (prevents HTTP desync attacks)
 app.use(requestValidation);
 app.use(aiRequestContextMiddleware);
-
-// Enhanced CORS configuration with proper preflight handling
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, postman)
-    if (!origin) return callback(null, true);
-    
-    // Explicitly allowed origins
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5000', 
-      'http://localhost:5173',
-      'https://app.seemplifyai.com',
-      'https://app-dev.seemplifyai.com',
-      'https://candidate.seemplifyai.com',
-      'https://candidate-dev.seemplifyai.com',
-      'https://candidate-ibom.aiinnigeria.com',
-      'https://candidate-ibom-dev.aiinnigeria.com',
-      'https://api.seemplifyai.com',
-      'https://api-dev.seemplifyai.com',
-      'https://auth.seemplifyai.com',
-      'https://auth-dev.seemplifyai.com',
-      'https://thesmarthr.netlify.app',
-      'https://smarthr.aiinnigeria.com',
-      'https://jetstone.aiinnigeria.com',
-      'https://akwaibom.aiinnigeria.com',
-      'https://ibom.aiinnigeria.com',
-      'https://akwa.aiinnigeria.com',
-      'https://smarthrhandover-dev.sterling.ng',
-      'smarthrhandover-dev.sterling.ng',
-      'https://producive.com',
-      'https://www.producive.com'
-    ];
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    // Allow localhost for development
-    if (origin.includes('localhost')) return callback(null, true);
-    
-    // Allow all netlify domains
-    if (origin.includes('netlify.app') || origin.includes('netlify.com')) {
-      return callback(null, true);
-    }
-    
-    // Allow HTTPS origins for now (tighten this later)
-    if (origin.startsWith('https://')) return callback(null, true);
-    
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true, // Allow cookies to be sent
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], // Explicitly allow all methods
-  allowedHeaders: [
-    'Accept',
-    'Content-Type',
-    'Authorization',
-    'X-Requested-With',
-    'X-Session-ID',
-    'X-Trace-ID',
-    'X-Caller-ID',
-    'X-Organization-Id',
-    'X-Organization-ID',
-    'x-session-id',
-    'x-trace-id',
-    'x-caller-id',
-    'x-organization-id',
-    'X-Nylas-Signature',
-    'x-admin-auth-token'
-  ],
-  exposedHeaders: ['X-Session-ID'], // Expose session ID header to frontend
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
-};
 
 // Apply CORS with webhook bypass
 app.use((req, res, next) => {
@@ -395,29 +333,47 @@ backgroundServiceManager.register('grantVerification', grantVerificationSchedule
 backgroundServiceManager.register('multiCandidateRetry', multiCandidateRetryService);
 backgroundServiceManager.register('aiInterviewScoringRetry', aiInterviewScoringRetryService);
 backgroundServiceManager.register('localAIRuntimeHealth', localAIRuntimeHealthService);
-
-// Start all background services
-backgroundServiceManager.startAll();
+backgroundServiceManager.register('memoryManager', memoryManager);
 
 // Add health check endpoint
 app.get('/api/health', (req, res) => {
   const health = backgroundServiceManager.getHealthCheck();
-  res.status(health.healthy ? 200 : 503).json(health);
+  const meteringOutbox = usageMeteringOutbox.status();
+  const projectionRepair = usageProjectionRepairHealth();
+  const healthy = health.healthy
+    && usageMeteringOutboxReady(meteringOutbox)
+    && projectionRepair.healthy;
+  res.status(healthy ? 200 : 503).json({
+    ...health,
+    healthy,
+    aiUsageMeteringOutbox: meteringOutbox,
+    aiUsageProjectionRepair: projectionRepair
+  });
 });
 
-server.listen(PORT, async () => {
+async function startServer() {
+  await databaseReady;
+  try {
+    const meteringOutbox = await usageMeteringOutbox.start(persistUsageEnvelope);
+    assertUsageMeteringOutboxReady(meteringOutbox);
+  } catch (error) {
+    console.error('AI usage metering worker failed to start:', error.message);
+    if (process.env.NODE_ENV === 'production') throw error;
+  }
+  backgroundServiceManager.startAll();
+  server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 WebSocket available at ws://localhost:${PORT}/ws/assistant`);
   console.log(`📊 Background services status:`, backgroundServiceManager.getStatus());
   console.log(`🔥 Session middleware applied selectively to prevent infinite loops`);
 
-  // Initialize BullMQ worker for bulk CV uploads
+  // Drain pre-durable bulk jobs by migrating them into cv-analysis-local.
   try {
     const bulkUploadService = require('./services/bulkUploadService');
     await bulkUploadService.initQueue();
-    console.log('📦 BullMQ bulk upload queue initialized');
+    console.log('Legacy bulk upload migration queue initialized');
   } catch (err) {
-    console.warn('⚠️ BullMQ init failed (non-fatal, bulk upload will init on first use):', err.message);
+    console.warn('Legacy bulk migration init deferred:', err.message);
   }
   try {
     const cvAnalysisQueue = require('./services/cvAnalysisQueueService');
@@ -435,4 +391,10 @@ server.listen(PORT, async () => {
   } catch (err) {
     console.warn('⚠️ Enrichment queue init failed (non-fatal, enrichment will init on first use):', err.message);
   }
+  });
+}
+
+void startServer().catch((error) => {
+  console.error('Recruiter backend startup failed:', error.message);
+  process.exit(1);
 });

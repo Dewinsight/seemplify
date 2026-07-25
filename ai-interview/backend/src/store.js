@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { isDeepStrictEqual } = require('node:util');
 const mongoose = require('mongoose');
 const {
   AI_INTERVIEW_PRICE_CENTS,
@@ -14,9 +15,14 @@ const STORE_PATH = process.env.AI_INTERVIEW_STORE_PATH
   ? path.resolve(process.env.AI_INTERVIEW_STORE_PATH)
   : path.join(__dirname, 'data', 'store.json');
 const DEMO_TOKEN = 'demo-token';
-const COLLECTIONS = ['jobs', 'candidates', 'questions', 'interviews', 'sessions', 'emailLog', 'walletLedger', 'users', 'cvProcessingJobs'];
+// CV processing jobs have their own repository. In Mongo deployments they must
+// never participate in this snapshot writer: deleteMany/reinsert is inherently
+// unsafe for queue state that is being updated concurrently by workers.
+const COLLECTIONS = ['jobs', 'candidates', 'questions', 'interviews', 'sessions', 'emailLog', 'walletLedger', 'users'];
 
 let mongoConnected = false;
+let candidateIndexesReady = false;
+let storeMutationTail = Promise.resolve();
 
 function id(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -55,6 +61,17 @@ async function connectMongo() {
     });
     mongoConnected = true;
     console.log(`AI Interview Mongo connected to database "${getMongoDbName()}"`);
+  }
+  if (!candidateIndexesReady) {
+    await mongoose.connection.db.collection('candidates').createIndex(
+      { cvProcessingJobIds: 1 },
+      {
+        name: 'uniq_cv_processing_job_identity',
+        unique: true,
+        partialFilterExpression: { cvProcessingJobIds: { $type: 'array' } }
+      }
+    );
+    candidateIndexesReady = true;
   }
   return mongoose.connection.db;
 }
@@ -236,6 +253,7 @@ function seedStore() {
       }
     ],
     cvProcessingJobs: [],
+    cvStorageCleanupTasks: [],
     users: seedUsers(nowText),
     generatedAt: nowText
   };
@@ -253,7 +271,7 @@ async function ensureStore() {
   const db = await connectMongo();
   const settings = await db.collection('settings').findOne({ _id: 'settings' });
   if (!settings) {
-    await writeStore(seedStore());
+    await writeStoreUnlocked(seedStore());
     return;
   }
 
@@ -273,11 +291,85 @@ async function readMongoStore() {
   return store;
 }
 
-async function writeMongoStore(store) {
+function buildCandidateDeltaOperations(previousCandidates = [], nextCandidates = []) {
+  const previousById = new Map(previousCandidates.map((candidate) => [candidate._id, candidate]));
+  const nextById = new Map(nextCandidates.map((candidate) => [candidate._id, candidate]));
+  const operations = [];
+
+  for (const [candidateId, candidate] of nextById) {
+    const previous = previousById.get(candidateId);
+    if (!previous) {
+      const candidateFields = { ...candidate };
+      delete candidateFields._id;
+      operations.push({
+        updateOne: {
+          filter: { _id: candidateId },
+          update: { $setOnInsert: candidateFields },
+          upsert: true
+        }
+      });
+      continue;
+    }
+    const set = {};
+    const unset = {};
+    const keys = new Set([...Object.keys(previous), ...Object.keys(candidate)]);
+    keys.delete('_id');
+    for (const key of keys) {
+      const hadValue = Object.prototype.hasOwnProperty.call(previous, key);
+      const hasValue = Object.prototype.hasOwnProperty.call(candidate, key);
+      if (hadValue && !hasValue) {
+        unset[key] = '';
+      } else if (hasValue && (!hadValue || !isDeepStrictEqual(previous[key], candidate[key]))) {
+        set[key] = candidate[key];
+      }
+    }
+    if (Object.keys(set).length || Object.keys(unset).length) {
+      operations.push({
+        updateOne: {
+          filter: { _id: candidateId },
+          update: {
+            ...(Object.keys(set).length ? { $set: set } : {}),
+            ...(Object.keys(unset).length ? { $unset: unset } : {})
+          }
+        }
+      });
+    }
+  }
+
+  for (const [candidateId, previous] of previousById) {
+    if (nextById.has(candidateId)) continue;
+    operations.push({
+      deleteOne: {
+        filter: {
+          _id: candidateId,
+          cvProcessingRevision: Object.prototype.hasOwnProperty.call(
+            previous,
+            'cvProcessingRevision'
+          )
+            ? previous.cvProcessingRevision
+            : { $exists: false }
+        }
+      }
+    });
+  }
+  return operations;
+}
+
+async function writeMongoStore(store, previousStore = null) {
   const db = await connectMongo();
   const settings = { ...(store.settings || defaultSettings()), _id: 'settings', updatedAt: iso(new Date()) };
   await db.collection('settings').replaceOne({ _id: 'settings' }, settings, { upsert: true });
   for (const collectionName of COLLECTIONS) {
+    if (collectionName === 'candidates' && previousStore) {
+      const operations = buildCandidateDeltaOperations(
+        previousStore.candidates || [],
+        store.candidates || []
+      );
+      if (operations.length) {
+        await db.collection(collectionName).bulkWrite(operations, { ordered: false });
+      }
+      continue;
+    }
     await db.collection(collectionName).deleteMany({});
     const docs = store[collectionName] || [];
     if (docs.length) {
@@ -292,20 +384,35 @@ async function readStore() {
   return JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
 }
 
-async function writeStore(store) {
+async function writeStoreUnlocked(store, previousStore = null) {
   const nextStore = { ...store, updatedAt: iso(new Date()) };
   if (shouldUseMongo()) {
-    await writeMongoStore(nextStore);
+    await writeMongoStore(nextStore, previousStore);
     return;
   }
   fs.writeFileSync(STORE_PATH, JSON.stringify(nextStore, null, 2));
 }
 
-async function mutateStore(mutator) {
-  const store = await readStore();
-  const result = await mutator(store);
-  await writeStore(store);
+function serializeStoreMutation(operation) {
+  const result = storeMutationTail.then(operation, operation);
+  storeMutationTail = result.then(() => undefined, () => undefined);
   return result;
+}
+
+async function writeStore(store) {
+  return serializeStoreMutation(() => writeStoreUnlocked(store));
+}
+
+async function mutateStore(mutator) {
+  return serializeStoreMutation(async () => {
+    const store = await readStore();
+    const previousStore = {
+      candidates: structuredClone(store.candidates || [])
+    };
+    const result = await mutator(store);
+    await writeStoreUnlocked(store, previousStore);
+    return result;
+  });
 }
 
 function getFrontendUrl() {
@@ -409,6 +516,10 @@ module.exports = {
   getOptionsPayload,
   makePublicState,
   shouldUseMongo,
+  connectMongo,
   getMongoDbName,
-  canAccessOwnedResource
+  canAccessOwnedResource,
+  buildCandidateDeltaOperations,
+  // Exposed for focused persistence-boundary tests.
+  STORE_COLLECTIONS: Object.freeze([...COLLECTIONS])
 };

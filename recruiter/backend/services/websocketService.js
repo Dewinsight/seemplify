@@ -2,7 +2,6 @@
 // WebSocket service for real-time communication with frontend
 
 const WebSocket = require('ws');
-const { streamMessageWithAgent } = require('./langchainAgentService');
 const { allowFeatureUpgrade } = require('../middleware/websocketFeatureGuard');
 const { getPlatformFeatureSettings } = require('./platformFeatureService');
 
@@ -175,6 +174,7 @@ class WebSocketService {
       this.sendError(clientId, 'Missing userInput in chat message');
       return;
     }
+    const { streamMessageWithAgent } = require('./langchainAgentService');
 
     // 🔍 DEBUG: Log session information to track the issue
     console.log(`💬 Processing chat for ${clientId}: "${userInput}"`);

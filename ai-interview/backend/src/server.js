@@ -25,6 +25,7 @@ const azureSpeechSttService = require('./azureSpeechSttService');
 const brevoEmailService = require('./brevoEmailService');
 const questionGeneratorService = require('./questionGeneratorService');
 const cvProcessingQueue = require('./cvProcessingQueueService');
+const cvCandidateResults = require('./cvCandidateResultRepository');
 const {
   platformFeatureClient,
   requirePlatformFeature
@@ -306,11 +307,15 @@ function mergeCandidateProfile(candidate, profileInput = {}, metadata = {}) {
   candidate.profileUpdatedAt = iso(new Date());
   candidate.profileSource = metadata.source || candidate.profileSource || 'manual';
   candidate.resumeUploads = candidate.resumeUploads || [];
-  if (metadata.fileName) {
+  const alreadyRecorded = metadata.processingJobId && candidate.resumeUploads.some(
+    (upload) => upload.processingJobId === metadata.processingJobId
+  );
+  if (metadata.fileName && !alreadyRecorded) {
     candidate.resumeUploads.push({
       fileName: metadata.fileName,
       mimeType: metadata.mimeType,
       textLength: Number(metadata.textLength || 0),
+      ...(metadata.processingJobId ? { processingJobId: metadata.processingJobId } : {}),
       analyzedAt: metadata.analyzedAt || iso(new Date())
     });
   }
@@ -521,69 +526,37 @@ async function processDueInvites() {
 }
 
 async function completeCvProcessingJob(processingJob, parsed) {
-  return mutateStore((store) => {
-    store.cvProcessingJobs = store.cvProcessingJobs || [];
-    const currentJob = store.cvProcessingJobs.find((item) => item.publicId === processingJob.publicId);
-    if (!currentJob) throw new Error('AI Interview CV processing job was not found.');
-    if (currentJob.state === 'completed' && currentJob.result) return currentJob.result;
-
-    const profile = parsed.profile;
-    let candidate;
-    if (processingJob.mode === 'enrich') {
-      candidate = store.candidates.find((item) => (
-        item._id === processingJob.candidateId
-        && (!item.createdBy || item.createdBy === processingJob.actorId)
-      ));
-      if (!candidate) throw new Error('Candidate not found.');
-    } else {
-      const email = normalizeEmail(profile.email);
-      if (!email) {
-        throw new Error('The CV was parsed, but no email address was found. Add the candidate manually or upload a clearer CV.');
-      }
-      candidate = store.candidates.find((item) => (
-        normalizeEmail(item.email) === email
-        && item.jobId === processingJob.jobId
-        && (!item.createdBy || item.createdBy === processingJob.actorId)
-      ));
-      if (!candidate) {
-        const now = iso(new Date());
-        candidate = {
-          _id: id('cand'),
-          jobId: processingJob.jobId,
-          status: 'active',
-          createdBy: processingJob.actorId,
-          createdAt: now,
-          updatedAt: now
-        };
-        store.candidates.push(candidate);
-      }
-    }
-
-    mergeCandidateProfile(candidate, profile, {
+  const profile = parsed.profile;
+  const committed = await cvCandidateResults.commit({
+    processingJob,
+    candidateEmail: normalizeEmail(profile.email),
+    createCandidate: (createdAt, candidateId) => ({
+      _id: candidateId,
+      jobId: processingJob.jobId,
+      status: 'active',
+      createdBy: processingJob.actorId,
+      createdAt,
+      updatedAt: createdAt
+    }),
+    applyResult: (candidate, committedAt) => mergeCandidateProfile(candidate, profile, {
       source: processingJob.mode === 'enrich' ? 'cv_enrichment' : 'cv_import',
       fileName: processingJob.originalName,
       mimeType: processingJob.mimeType,
       textLength: parsed.resumeText?.length || 0,
       resumeText: parsed.resumeText,
-      ai: parsed.ai
-    });
-    candidate.updatedAt = iso(new Date());
-    const actor = { _id: processingJob.actorId, role: 'recruiter' };
-    const result = {
-      candidate: { ...candidate },
-      profile: parsed.profile,
-      history: buildCandidateHistory(store, candidate, actor)
-    };
-    currentJob.state = 'completed';
-    currentJob.progress = 100;
-    currentJob.candidateId = candidate._id;
-    currentJob.completedAt = iso(new Date());
-    currentJob.updatedAt = currentJob.completedAt;
-    currentJob.result = result;
-    delete currentJob.lastError;
-    cvProcessingQueue.appendTransition(currentJob);
-    return result;
+      ai: parsed.ai,
+      processingJobId: processingJob.publicId,
+      analyzedAt: committedAt
+    })
   });
+  const candidate = committed.candidate;
+  const store = await readStore();
+  const actor = { _id: processingJob.actorId, role: 'recruiter' };
+  return {
+    candidate,
+    profile: parsed.profile,
+    history: buildCandidateHistory(store, candidate, actor)
+  };
 }
 
 async function processQueuedScoring() {

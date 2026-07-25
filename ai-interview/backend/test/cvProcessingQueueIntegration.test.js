@@ -13,7 +13,7 @@ process.env.AI_INTERVIEW_REDIS_PORT = process.env.AI_INTERVIEW_REDIS_PORT || '46
 process.env.AI_INTERVIEW_CV_QUEUE_CONCURRENCY = '1';
 
 const queueService = require('../src/cvProcessingQueueService');
-const { iso, mutateStore } = require('../src/store');
+const { iso } = require('../src/store');
 
 test.after(async () => {
   await queueService.closeForTests();
@@ -37,22 +37,15 @@ test('BullMQ completes AI Interview CV jobs FIFO and keeps excess uploads waitin
         ai: { model: 'integration-fake', analyzedAt: iso(new Date()) }
       };
     },
-    onCompleted: async (processingJob, parsed) => mutateStore((store) => {
-      const current = store.cvProcessingJobs.find((item) => item.publicId === processingJob.publicId);
+    onCompleted: async (processingJob, parsed) => {
       const candidate = {
         _id: `cand_${processingJob.publicId}`,
         name: parsed.profile.name,
         email: parsed.profile.email
       };
       completionOrder.push(processingJob.publicId);
-      current.state = 'completed';
-      current.progress = 100;
-      current.candidateId = candidate._id;
-      current.completedAt = iso(new Date());
-      current.updatedAt = current.completedAt;
-      current.result = { candidate, profile: parsed.profile, history: [] };
-      return current.result;
-    })
+      return { candidate, profile: parsed.profile, history: [] };
+    }
   });
 
   const submissions = [];

@@ -24,3 +24,5 @@ jobs:
           LOCAL_LLM_SHARED_SECRET: ${{ secrets.LOCAL_LLM_SHARED_SECRET }}
           CV_STATUS_TOKEN_SECRET: ${{ secrets.CV_STATUS_TOKEN_SECRET }}
           CV_ANALYSIS_QUEUE_CONCURRENCY: "1"
+          AI_USAGE_OUTBOX_ENABLED: "true"
+          AI_USAGE_REDIS_HOST: dokploy-redis

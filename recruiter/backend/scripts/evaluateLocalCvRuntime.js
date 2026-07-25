@@ -244,6 +244,8 @@ async function callLocal(text) {
   const secret = fs.readFileSync(secretFile, 'utf8').trim();
   const body = JSON.stringify({
     activity: 'candidate.cv_parse',
+    requestSource: 'local-cv-evaluation',
+    metering: { record: false, exclusion: 'harness' },
     model: 'selected-runtime-model',
     messages: promptFor(text),
     jsonSchema: CV_EXTRACTION_SCHEMA,
@@ -251,7 +253,7 @@ async function callLocal(text) {
     maxTokens: 8000,
     timeoutMs: 300_000
   });
-  const signed = signLocalRequest(secret, body);
+  const signed = signLocalRequest(secret, body, { method: 'POST', path: '/v1/cv/analyze' });
   const startedAt = Date.now();
   const response = await fetch(`${gatewayUrl}/v1/cv/analyze`, {
     method: 'POST',
@@ -279,7 +281,7 @@ async function callLocal(text) {
 async function getRuntimeStatus() {
   const secret = fs.readFileSync(secretFile, 'utf8').trim();
   const body = JSON.stringify({ operation: 'status' });
-  const signed = signLocalRequest(secret, body);
+  const signed = signLocalRequest(secret, body, { method: 'POST', path: '/v1/status' });
   const response = await fetch(`${gatewayUrl}/v1/status`, {
     method: 'POST',
     headers: {

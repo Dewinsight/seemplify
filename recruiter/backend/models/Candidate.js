@@ -231,6 +231,10 @@ const CandidateSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  cloudinaryDeliveryType: {
+    type: String,
+    trim: true,
+  },
   // Processing metadata
   processingMetadata: {
     uploadSuccess: Boolean,
@@ -239,7 +243,7 @@ const CandidateSchema = new mongoose.Schema({
     fileSize: Number,
     originalName: String,
     processedAt: Date,
-    cvProcessingJobId: { type: String, index: true },
+    cvProcessingJobId: String,
   },
   // Fields for tracking application process
   applicationDate: {
@@ -309,5 +313,19 @@ CandidateSchema.index({ organization: 1 });
 CandidateSchema.index({ organization: 1, status: 1 });
 CandidateSchema.index({ organization: 1, createdAt: -1 });
 CandidateSchema.index({ organization: 1, email: 1 });
+CandidateSchema.index(
+  { 'processingMetadata.cvProcessingJobId': 1 },
+  {
+    unique: true,
+    name: 'uniq_cv_processing_job_candidate',
+    partialFilterExpression: {
+      'processingMetadata.cvProcessingJobId': { $type: 'string' }
+    }
+  }
+);
+
+// Index creation is deliberately sequenced by cvRuntimeCompatibilityService so
+// historical blanks and duplicates are repaired before the unique index build.
+CandidateSchema.set('autoIndex', false);
 
 module.exports = mongoose.model('Candidate', CandidateSchema);

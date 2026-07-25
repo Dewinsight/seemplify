@@ -18,7 +18,11 @@ const AIQuotaSnapshotSchema = new mongoose.Schema({
   localTokensMinute: { type: Number, default: 0 },
   observedAt: { type: Date, default: Date.now },
   blockedUntil: Date,
-  blockedReason: String
+  blockedReason: String,
+  projectionWatermark: Number,
+  projectionVersion: Number,
+  projectionHash: String,
+  projectedAt: Date
 }, { timestamps: true });
 
 AIQuotaSnapshotSchema.index({ provider: 1, quotaGroup: 1, model: 1 }, { unique: true });

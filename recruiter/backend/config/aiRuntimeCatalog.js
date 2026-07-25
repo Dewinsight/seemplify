@@ -149,6 +149,29 @@ const DEFAULT_ROLLOUT_SETTINGS = Object.freeze({
   samplingSalt: 'groq-gpt-oss-v1'
 });
 
+function localProviderLabel(provider, model) {
+  const normalizedProvider = String(provider || '').trim().toLowerCase();
+  const normalizedModel = String(model || '').trim();
+  if (normalizedProvider === 'local-codex') {
+    return normalizedModel.toLowerCase() === 'gpt-5.6-terra'
+      ? 'Terra (Codex local-cloud)'
+      : normalizedModel
+        ? `Codex local-cloud: ${normalizedModel}`
+        : 'Codex local-cloud';
+  }
+  if (normalizedProvider === 'local-ollama') {
+    return !normalizedModel || normalizedModel === LOCAL_MANAGED_MODEL
+      ? 'Managed local runtime'
+      : `Ollama local GPU: ${normalizedModel}`;
+  }
+  if (normalizedProvider === 'local-vllm') {
+    return normalizedModel
+      ? `vLLM local GPU: ${normalizedModel}`
+      : 'vLLM local GPU';
+  }
+  return normalizedModel || normalizedProvider || 'Unknown provider';
+}
+
 function createDefaultRuntimeSettings() {
   return {
     key: 'global',
@@ -177,5 +200,6 @@ module.exports = {
   LOCAL_CV_MODEL,
   LOCAL_MANAGED_MODEL,
   LOCAL_PROVIDER,
-  createDefaultRuntimeSettings
+  createDefaultRuntimeSettings,
+  localProviderLabel
 };

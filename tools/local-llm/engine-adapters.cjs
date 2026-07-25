@@ -41,9 +41,13 @@ function engineSettings(state = {}) {
 }
 
 async function fetchJson(url, options = {}) {
+  const timeoutSignal = AbortSignal.timeout(Number(options.timeoutMs || 240_000));
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, timeoutSignal])
+    : timeoutSignal;
   const response = await fetch(url, {
     ...options,
-    signal: AbortSignal.timeout(Number(options.timeoutMs || 240_000))
+    signal
   });
   const text = await response.text();
   let data;
@@ -86,6 +90,24 @@ function stripThinkingText(content) {
   return value
     .replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '')
     .trim();
+}
+
+function attachUsageEnvelope(error, {
+  id,
+  engine,
+  model,
+  usage,
+  usageReported
+} = {}) {
+  if (!error || !usage || typeof usage !== 'object') return error;
+  error.usageEnvelope = {
+    id,
+    engine,
+    model,
+    usage,
+    usageReported: usageReported === true
+  };
+  return error;
 }
 
 function ollamaMessages(messages, { model, enableThinking }) {
@@ -365,8 +387,16 @@ async function runOllama(input, state) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(requestBody),
-    timeoutMs: effectiveInput.timeoutMs
+    timeoutMs: effectiveInput.timeoutMs,
+    signal: effectiveInput.signal
   });
+  const usageReported = ['prompt_eval_count', 'eval_count']
+    .some((field) => Object.hasOwn(data || {}, field));
+  const usage = {
+    prompt_tokens: Number(data.prompt_eval_count || 0),
+    completion_tokens: Number(data.eval_count || 0),
+    total_tokens: Number(data.prompt_eval_count || 0) + Number(data.eval_count || 0)
+  };
   const rawContent = stripThinkingText(data?.message?.content);
   const nativeToolCalls = data?.message?.tool_calls || [];
   let parsed;
@@ -375,25 +405,37 @@ async function runOllama(input, state) {
       ? parseStructuredContent(rawContent, 'Ollama')
       : { content: rawContent, data: undefined };
   } catch (error) {
+    attachUsageEnvelope(error, {
+      id: data.created_at,
+      engine: 'ollama',
+      model: data.model || engine.model,
+      usage,
+      usageReported
+    });
     if (data.done_reason === 'length') {
       const truncated = new Error('Ollama reached its structured-output token limit before completing the response');
       truncated.code = 'LOCAL_LLM_OUTPUT_TRUNCATED';
-      throw truncated;
+      throw attachUsageEnvelope(truncated, error.usageEnvelope);
     }
     throw error;
   }
   if (textEnvelope) parsed = { content: String(parsed.data?.content || '').trim(), data: undefined };
-  if (!parsed.content && !nativeToolCalls.length) throw new Error('Ollama returned an empty response');
+  if (!parsed.content && !nativeToolCalls.length) {
+    throw attachUsageEnvelope(new Error('Ollama returned an empty response'), {
+      id: data.created_at,
+      engine: 'ollama',
+      model: data.model || engine.model,
+      usage,
+      usageReported
+    });
+  }
   return {
     id: data.created_at || crypto.randomUUID(),
     engine: 'ollama',
     model: data.model || engine.model,
     ...finalizeOutput(parsed, effectiveInput, { nativeToolCalls, finishReason: data.done_reason || 'stop' }),
-    usage: {
-      prompt_tokens: Number(data.prompt_eval_count || 0),
-      completion_tokens: Number(data.eval_count || 0),
-      total_tokens: Number(data.prompt_eval_count || 0) + Number(data.eval_count || 0)
-    },
+    usage,
+    usageReported,
     metrics: {
       latencyMs: Date.now() - startedAt,
       loadDurationNs: data.load_duration,
@@ -441,9 +483,23 @@ async function runVllm(input, state) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(requestBody),
-    timeoutMs: effectiveInput.timeoutMs
+    timeoutMs: effectiveInput.timeoutMs,
+    signal: effectiveInput.signal
   });
   const choice = data?.choices?.[0];
+  const rawUsage = data.usage || {};
+  const usageReported = Boolean(data.usage && typeof data.usage === 'object' && [
+    'prompt_tokens',
+    'input_tokens',
+    'completion_tokens',
+    'output_tokens',
+    'total_tokens'
+  ].some((field) => Object.hasOwn(data.usage, field)));
+  const usage = {
+    prompt_tokens: Number(rawUsage.prompt_tokens || 0),
+    completion_tokens: Number(rawUsage.completion_tokens || 0),
+    total_tokens: Number(rawUsage.total_tokens || 0)
+  };
   let parsed;
   try {
     const rawContent = stripThinkingText(choice?.message?.content);
@@ -452,14 +508,20 @@ async function runVllm(input, state) {
       : { content: rawContent, data: undefined };
     if (!parsed.content && !choice?.message?.tool_calls?.length) throw new Error('vLLM returned an empty response');
   } catch (error) {
+    attachUsageEnvelope(error, {
+      id: data.id,
+      engine: 'vllm',
+      model: data.model || engine.model,
+      usage,
+      usageReported
+    });
     if (choice?.finish_reason === 'length') {
       const truncated = new Error('vLLM reached its structured-output token limit before completing the CV');
       truncated.code = 'LOCAL_LLM_OUTPUT_TRUNCATED';
-      throw truncated;
+      throw attachUsageEnvelope(truncated, error.usageEnvelope);
     }
     throw error;
   }
-  const usage = data.usage || {};
   return {
     id: data.id || crypto.randomUUID(),
     engine: 'vllm',
@@ -468,64 +530,157 @@ async function runVllm(input, state) {
       nativeToolCalls: choice?.message?.tool_calls || [],
       finishReason: choice?.finish_reason || 'stop'
     }),
-    usage: {
-      prompt_tokens: Number(usage.prompt_tokens || 0),
-      completion_tokens: Number(usage.completion_tokens || 0),
-      total_tokens: Number(usage.total_tokens || 0)
-    },
+    usage,
+    usageReported,
     metrics: { latencyMs: Date.now() - startedAt }
   };
 }
 
-function spawnCapture(command, args, { input = '', cwd, timeoutMs = 240_000, env = process.env } = {}) {
+function waitForChildExit(child, timeoutMs) {
+  if (child.exitCode !== null || child.signalCode) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeListener('exit', onExit);
+      resolve(value);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    child.once('exit', onExit);
+  });
+}
+
+async function terminateChildTree(child) {
+  if (!child || child.exitCode !== null || child.signalCode) return;
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+        windowsHide: true,
+        stdio: 'ignore'
+      });
+      killer.once('error', () => resolve());
+      killer.once('exit', () => resolve());
+    });
+  } else {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      try { child.kill('SIGTERM'); } catch {}
+    }
+    if (!await waitForChildExit(child, 2_000)) {
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        try { child.kill('SIGKILL'); } catch {}
+      }
+    }
+  }
+  if (!await waitForChildExit(child, 5_000)) {
+    const error = new Error(`Inference process tree ${child.pid} did not terminate`);
+    error.code = 'CODEX_TERMINATION_FAILED';
+    throw error;
+  }
+}
+
+function spawnCapture(command, args, {
+  input = '',
+  cwd,
+  timeoutMs = 240_000,
+  env = process.env,
+  signal
+} = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       env,
       windowsHide: true,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe']
     });
     const stdout = [];
     const stderr = [];
     let outputBytes = 0;
     let settled = false;
+    let terminationError = null;
+    let terminationPromise = null;
     let timer;
+    const retainCapturedStdout = (error) => {
+      const output = Buffer.concat(stdout).toString('utf8').trim();
+      if (!error || !output || error.capturedStdout) return error;
+      Object.defineProperty(error, 'capturedStdout', {
+        configurable: true,
+        enumerable: false,
+        value: output
+      });
+      return error;
+    };
     const finish = (callback) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
       callback();
+    };
+    const terminate = (error) => {
+      if (settled || terminationPromise) return terminationPromise;
+      terminationError = error;
+      clearTimeout(timer);
+      terminationPromise = terminateChildTree(child)
+        .catch((terminationFailure) => {
+          terminationError.cause = terminationFailure;
+          terminationError.code = terminationFailure.code || terminationError.code;
+        })
+        .finally(() => {
+          finish(() => reject(retainCapturedStdout(terminationError)));
+        });
+      return terminationPromise;
+    };
+    const abort = () => {
+      const error = new Error('Codex inference was cancelled');
+      error.code = 'CODEX_EXEC_ABORTED';
+      void terminate(error);
     };
     const collect = (target) => (chunk) => {
       outputBytes += chunk.length;
       if (outputBytes > 8 * 1024 * 1024) {
-        child.kill();
-        return finish(() => reject(new Error('Codex output exceeded the 8 MiB safety limit')));
+        const error = new Error('Codex output exceeded the 8 MiB safety limit');
+        error.code = 'CODEX_OUTPUT_LIMIT';
+        void terminate(error);
+        return;
       }
       target.push(chunk);
     };
     child.stdout.on('data', collect(stdout));
     child.stderr.on('data', collect(stderr));
-    child.once('error', (error) => finish(() => reject(error)));
-    child.once('exit', (code, signal) => finish(() => {
+    child.once('error', (error) => finish(() => reject(retainCapturedStdout(terminationError || error))));
+    // Wait for stdio to close as well as process exit. On Windows, resolving
+    // on `exit` alone can race cleanup of the child's working directory.
+    child.once('close', (code, signal) => finish(() => {
+      if (terminationError) return reject(retainCapturedStdout(terminationError));
       const output = Buffer.concat(stdout).toString('utf8').trim();
       const diagnostic = Buffer.concat(stderr).toString('utf8').trim();
       if (code !== 0) {
         const error = new Error(`Codex exited with ${code ?? signal}: ${diagnostic.slice(-2000) || 'no diagnostic output'}`);
         error.code = 'CODEX_EXEC_FAILED';
-        return reject(error);
+        // Keep bounded stdout private and non-enumerable so runCodex can
+        // recover authoritative usage without leaking generated content to
+        // logs or JSON error serializers.
+        return reject(retainCapturedStdout(error));
       }
       resolve({ stdout: output, stderr: diagnostic });
     }));
     timer = setTimeout(() => {
-      child.kill();
-      finish(() => {
-        const error = new Error(`Codex exceeded the ${timeoutMs} ms request timeout`);
-        error.code = 'CODEX_EXEC_TIMEOUT';
-        reject(error);
-      });
+      const error = new Error(`Codex exceeded the ${timeoutMs} ms request timeout`);
+      error.code = 'CODEX_EXEC_TIMEOUT';
+      void terminate(error);
     }, timeoutMs);
     timer.unref();
+    if (signal?.aborted) return abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    child.stdin.on('error', () => {});
     child.stdin.end(input, 'utf8');
   });
 }
@@ -563,6 +718,100 @@ function codexPrompt(input) {
   ].join('\n');
 }
 
+const CODEX_ENV_ALLOWLIST = new Set([
+  'ALL_PROXY',
+  'APPDATA',
+  'CODEX_API_KEY',
+  'CODEX_HOME',
+  'COMSPEC',
+  'HOME',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'LANG',
+  'LC_ALL',
+  'LOCALAPPDATA',
+  'NODE_EXTRA_CA_CERTS',
+  'NO_PROXY',
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'OPENAI_ORGANIZATION',
+  'OPENAI_ORG_ID',
+  'OPENAI_PROJECT',
+  'OPENAI_PROJECT_ID',
+  'PATH',
+  'PATHEXT',
+  'PROGRAMDATA',
+  'PROGRAMFILES',
+  'PROGRAMFILES(X86)',
+  'SSL_CERT_FILE',
+  'SYSTEMDRIVE',
+  'SYSTEMROOT',
+  'TEMP',
+  'TMP',
+  'TZ',
+  'USERPROFILE',
+  'WINDIR'
+]);
+
+function codexChildEnv(source = process.env) {
+  const env = {};
+  for (const [key, value] of Object.entries(source || {})) {
+    if (value === undefined || !CODEX_ENV_ALLOWLIST.has(key.toUpperCase())) continue;
+    env[key] = String(value);
+  }
+  env.CODEX_NON_INTERACTIVE = '1';
+  return env;
+}
+
+function normalizedCodexUsage(rawUsage = {}) {
+  const usageReported = Boolean(rawUsage && typeof rawUsage === 'object' && [
+    'input_tokens',
+    'output_tokens',
+    'total_tokens'
+  ].some((field) => Object.hasOwn(rawUsage, field)));
+  const inputTokens = Number(rawUsage.input_tokens || 0);
+  const cachedInputTokens = Math.min(inputTokens, Number(rawUsage.cached_input_tokens || 0));
+  const outputTokens = Number(rawUsage.output_tokens || 0);
+  const reasoningTokens = Math.min(outputTokens, Number(rawUsage.reasoning_output_tokens || 0));
+  return {
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: Number(rawUsage.total_tokens || inputTokens + outputTokens),
+      prompt_tokens_details: {
+        cached_tokens: cachedInputTokens,
+        cache_write_tokens: Number(rawUsage.cache_write_input_tokens || 0)
+      },
+      completion_tokens_details: {
+        reasoning_tokens: reasoningTokens
+      }
+    },
+    usageReported
+  };
+}
+
+function recoverCodexUsage(output) {
+  const events = String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return [];
+      }
+    });
+  const usageEvent = [...events].reverse().find((event) => (
+    ['turn.completed', 'turn.failed'].includes(event?.type)
+    && event?.usage
+    && typeof event.usage === 'object'
+  ));
+  return usageEvent ? normalizedCodexUsage(usageEvent.usage) : null;
+}
+
 function parseCodexJsonl(output) {
   const events = String(output || '')
     .split(/\r?\n/)
@@ -577,37 +826,84 @@ function parseCodexJsonl(output) {
         throw error;
       }
     });
+  const usageEvent = [...events].reverse().find((event) => (
+    ['turn.completed', 'turn.failed'].includes(event?.type)
+    && event?.usage
+    && typeof event.usage === 'object'
+  ));
+  const {
+    usage,
+    usageReported
+  } = normalizedCodexUsage(usageEvent?.usage || {});
   const failure = events.find((event) => event?.type === 'turn.failed');
   if (failure) {
     const error = new Error(String(failure.error?.message || failure.message || 'Codex turn failed'));
     error.code = String(failure.error?.code || 'CODEX_TURN_FAILED');
+    error.codexUsage = usage;
+    error.usageReported = usageReported;
     throw error;
   }
   const messages = events
     .filter((event) => event?.type === 'item.completed' && event.item?.type === 'agent_message')
     .map((event) => String(event.item?.text || '').trim())
     .filter(Boolean);
-  const completed = [...events].reverse().find((event) => event?.type === 'turn.completed');
-  const rawUsage = completed?.usage || {};
-  const inputTokens = Number(rawUsage.input_tokens || 0);
-  const cachedInputTokens = Math.min(inputTokens, Number(rawUsage.cached_input_tokens || 0));
-  const outputTokens = Number(rawUsage.output_tokens || 0);
-  const reasoningTokens = Math.min(outputTokens, Number(rawUsage.reasoning_output_tokens || 0));
   return {
     content: messages.at(-1) || '',
-    usage: {
-      prompt_tokens: inputTokens,
-      completion_tokens: outputTokens,
-      total_tokens: inputTokens + outputTokens,
-      prompt_tokens_details: {
-        cached_tokens: cachedInputTokens,
-        cache_write_tokens: Number(rawUsage.cache_write_input_tokens || 0)
-      },
-      completion_tokens_details: {
-        reasoning_tokens: reasoningTokens
-      }
-    }
+    usage,
+    usageReported
   };
+}
+
+function codexExecArgs(engine, requestDir) {
+  return [
+    codexScript,
+    '--strict-config',
+    '--disable', 'shell_tool',
+    '--disable', 'apps',
+    '--disable', 'goals',
+    '--disable', 'hooks',
+    '--disable', 'multi_agent',
+    '--disable', 'remote_plugin',
+    '--config', 'web_search="disabled"',
+    '--config', 'shell_environment_policy.inherit="none"',
+    'exec',
+    '--ephemeral',
+    '--ignore-user-config',
+    '--ignore-rules',
+    '--sandbox', 'read-only',
+    '--skip-git-repo-check',
+    '--model', engine.model,
+    '--color', 'never',
+    '--cd', requestDir,
+    '--json',
+    '-'
+  ];
+}
+
+async function removeCodexRequestDir(requestDir, {
+  remove = fs.promises.rm,
+  warn = (message) => process.emitWarning(message, {
+    code: 'CODEX_WORKSPACE_CLEANUP_FAILED'
+  })
+} = {}) {
+  try {
+    await remove(requestDir, {
+      recursive: true,
+      force: true,
+      // Windows can keep a process working directory locked briefly after
+      // the child exits. fs.rm retries the transient EBUSY/EPERM/ENOTEMPTY
+      // cases with linear backoff when recursive removal is enabled.
+      maxRetries: 10,
+      retryDelay: 100
+    });
+    return true;
+  } catch (error) {
+    // Cleanup must never replace an otherwise successful inference result.
+    // The request directory is an ephemeral, read-only cwd; emit an
+    // operational warning so a persistent filesystem problem is observable.
+    warn(`Could not remove the isolated Codex request directory: ${error.message}`);
+    return false;
+  }
 }
 
 async function runCodex(input, state) {
@@ -623,43 +919,74 @@ async function runCodex(input, state) {
   fs.mkdirSync(requestDir, { recursive: true });
   const startedAt = Date.now();
   try {
-    const result = await spawnCapture(process.execPath, [
-      codexScript,
-      'exec',
-      '--ephemeral',
-      '--ignore-user-config',
-      '--ignore-rules',
-      '--sandbox', 'read-only',
-      '--skip-git-repo-check',
-      '--model', engine.model,
-      '--color', 'never',
-      '--cd', requestDir,
-      '--json',
-      '-'
-    ], {
-      input: codexPrompt(effectiveInput),
-      cwd: requestDir,
-      timeoutMs: Number(input.timeoutMs || 240_000),
-      env: {
-        ...process.env,
-        CODEX_NON_INTERACTIVE: '1'
+    let result;
+    try {
+      result = await spawnCapture(process.execPath, codexExecArgs(engine, requestDir), {
+        input: codexPrompt(effectiveInput),
+        cwd: requestDir,
+        timeoutMs: Number(input.timeoutMs || 240_000),
+        signal: effectiveInput.signal,
+        env: codexChildEnv()
+      });
+    } catch (error) {
+      if (error.capturedStdout) {
+        const recovered = recoverCodexUsage(error.capturedStdout);
+        if (recovered) {
+          attachUsageEnvelope(error, {
+            id: crypto.randomUUID(),
+            engine: 'codex',
+            model: engine.model,
+            usage: recovered.usage,
+            usageReported: recovered.usageReported
+          });
+        }
+        delete error.capturedStdout;
       }
-    });
-    const codexResult = parseCodexJsonl(result.stdout);
-    const parsed = effectiveInput.jsonSchema
-      ? parseStructuredContent(codexResult.content, 'Codex CLI')
-      : { content: stripThinkingText(codexResult.content), data: undefined };
-    if (!parsed.content) throw new Error('Codex CLI returned an empty response');
+      throw error;
+    }
+    let codexResult;
+    try {
+      codexResult = parseCodexJsonl(result.stdout);
+    } catch (error) {
+      if (error.codexUsage) {
+        attachUsageEnvelope(error, {
+          id: crypto.randomUUID(),
+          engine: 'codex',
+          model: engine.model,
+          usage: error.codexUsage,
+          usageReported: error.usageReported
+        });
+        delete error.codexUsage;
+        delete error.usageReported;
+      }
+      throw error;
+    }
+    let parsed;
+    try {
+      parsed = effectiveInput.jsonSchema
+        ? parseStructuredContent(codexResult.content, 'Codex CLI')
+        : { content: stripThinkingText(codexResult.content), data: undefined };
+      if (!parsed.content) throw new Error('Codex CLI returned an empty response');
+    } catch (error) {
+      throw attachUsageEnvelope(error, {
+        id: crypto.randomUUID(),
+        engine: 'codex',
+        model: engine.model,
+        usage: codexResult.usage,
+        usageReported: codexResult.usageReported
+      });
+    }
     return {
       id: crypto.randomUUID(),
       engine: 'codex',
       model: engine.model,
       ...finalizeOutput(parsed, effectiveInput),
       usage: codexResult.usage,
+      usageReported: codexResult.usageReported,
       metrics: { latencyMs: Date.now() - startedAt }
     };
   } finally {
-    fs.rmSync(requestDir, { recursive: true, force: true });
+    await removeCodexRequestDir(requestDir);
   }
 }
 
@@ -708,23 +1035,29 @@ module.exports = {
   ENGINE_IDS,
   analyzeWithEngine,
   codexPrompt,
+  codexChildEnv,
+  codexExecArgs,
   codexInstallDir,
   codexScript,
   engineHealth,
   engineSettings,
   finalizeOutput,
   finiteCvSchema,
+  attachUsageEnvelope,
   hasOpenObjectSchema,
   normalizeToolCalls,
   ollamaMessages,
   parseCodexJsonl,
+  recoverCodexUsage,
   parseStructuredContent,
   prepareInferenceInput,
+  removeCodexRequestDir,
   runCodex,
   runOllama,
   runVllm,
   shouldEnvelopeOllamaText,
   spawnCapture,
   stripThinkingText,
+  terminateChildTree,
   vllmMessages
 };

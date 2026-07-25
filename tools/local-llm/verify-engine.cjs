@@ -34,7 +34,7 @@ function sign(body) {
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(24).toString('base64url');
   const signature = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\n${body}`)
+    .update(`${timestamp}\n${nonce}\nPOST\n/v1/cv/analyze\n${body}`)
     .digest('base64url');
   return { timestamp, nonce, signature };
 }
@@ -65,6 +65,8 @@ async function verify() {
   const status = await (await controlFetch(`${gatewayUrl}/control/status`)).json();
   const body = JSON.stringify({
     activity: 'candidate.cv_parse',
+    requestSource: 'local-engine-verification',
+    metering: { record: false, exclusion: 'harness' },
     model: 'selected-runtime-model',
     messages: [
       { role: 'system', content: 'Extract only explicit CV facts. Return JSON matching the supplied schema.' },

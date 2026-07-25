@@ -3,6 +3,7 @@ const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
 const localAIRuntimeHealthService = require('../services/localAIRuntimeHealthService');
+const { LiveSnapshotBroadcaster } = require('../services/aiRuntime/liveSnapshotBroadcaster');
 const {
   createCredential,
   createQuotaGroup,
@@ -28,6 +29,16 @@ const router = express.Router();
 const analyticsAccess = [adminAuth, requirePermission('viewAnalytics')];
 const settingsAccess = [adminAuth, requirePermission('systemSettings')];
 const secretAccess = [adminAuth, requirePermission('systemSettings')];
+const liveOperationsStream = new LiveSnapshotBroadcaster({
+  sampler: getLiveOperations,
+  intervalMs: 3_000,
+  errorMessage: 'Live AI telemetry is temporarily unavailable'
+});
+const queueTelemetryStream = new LiveSnapshotBroadcaster({
+  sampler: () => cvAnalysisQueue.adminTelemetry(),
+  intervalMs: 2_000,
+  errorMessage: 'Queue telemetry is temporarily unavailable'
+});
 
 function handleError(res, error, fallback) {
   const knownRuntimeError = error?.name === 'AIRuntimeError' && String(error?.code || '').startsWith('AI_');
@@ -59,40 +70,7 @@ router.get('/live', ...analyticsAccess, async (_req, res) => {
 });
 
 router.get('/live/stream', ...analyticsAccess, async (req, res) => {
-  res.status(200);
-  res.set({
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no'
-  });
-  res.flushHeaders?.();
-  let closed = false;
-  let sending = false;
-  const sendSnapshot = async () => {
-    if (closed || sending) return;
-    sending = true;
-    try {
-      const snapshot = await getLiveOperations();
-      if (!closed) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
-    } catch {
-      if (!closed) res.write('event: telemetry-error\ndata: {"message":"Live AI telemetry is temporarily unavailable"}\n\n');
-    } finally {
-      sending = false;
-    }
-  };
-  const snapshotTimer = setInterval(() => void sendSnapshot(), 3_000);
-  const heartbeatTimer = setInterval(() => {
-    if (!closed) res.write(': keep-alive\n\n');
-  }, 15_000);
-  snapshotTimer.unref?.();
-  heartbeatTimer.unref?.();
-  req.on('close', () => {
-    closed = true;
-    clearInterval(snapshotTimer);
-    clearInterval(heartbeatTimer);
-  });
-  await sendSnapshot();
+  liveOperationsStream.subscribe(req, res);
 });
 
 router.get('/requests', ...analyticsAccess, async (req, res) => {
@@ -164,47 +142,15 @@ router.get('/local/queue', ...analyticsAccess, async (_req, res) => {
 });
 
 router.get('/local/queue/stream', ...analyticsAccess, async (req, res) => {
-  res.status(200);
-  res.set({
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no'
-  });
-  res.flushHeaders?.();
+  queueTelemetryStream.subscribe(req, res);
+});
 
-  let closed = false;
-  let sending = false;
-  let snapshotTimer;
-  let heartbeatTimer;
-  const close = () => {
-    closed = true;
-    if (snapshotTimer) clearInterval(snapshotTimer);
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-  };
-  req.on('close', close);
-
-  const sendSnapshot = async () => {
-    if (closed || sending) return;
-    sending = true;
-    try {
-      const snapshot = await cvAnalysisQueue.adminTelemetry();
-      if (!closed) res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
-    } catch {
-      if (!closed) res.write(`event: telemetry-error\ndata: {"message":"Queue telemetry is temporarily unavailable"}\n\n`);
-    } finally {
-      sending = false;
-    }
-  };
-
-  await sendSnapshot();
-  if (closed) return;
-  snapshotTimer = setInterval(() => void sendSnapshot(), 2_000);
-  heartbeatTimer = setInterval(() => {
-    if (!closed) res.write(': keep-alive\n\n');
-  }, 15_000);
-  snapshotTimer.unref?.();
-  heartbeatTimer.unref?.();
+router.get('/local/queue/history', ...analyticsAccess, async (req, res) => {
+  try {
+    res.json(await cvAnalysisQueue.listAdminHistory(req.query));
+  } catch (error) {
+    handleError(res, error, 'Failed to load CV processing history');
+  }
 });
 
 router.get('/local/queue/jobs/:jobId', ...analyticsAccess, async (req, res) => {

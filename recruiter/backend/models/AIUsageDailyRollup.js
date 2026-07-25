@@ -21,7 +21,16 @@ const AIUsageDailyRollupSchema = new mongoose.Schema({
   totalTokens: { type: Number, default: 0 },
   estimatedCostUsd: { type: Number, default: 0 },
   latencyTotalMs: { type: Number, default: 0 },
-  latencyMaxMs: { type: Number, default: 0 }
+  latencyMaxMs: { type: Number, default: 0 },
+  meteredExecutions: { type: Number, default: 0 },
+  unmeteredExecutions: { type: Number, default: 0 },
+  unknownMeteringExecutions: { type: Number, default: 0 },
+  // Materialized-view metadata. The watermark prevents a slower projection
+  // from replacing totals which already include newer events.
+  projectionWatermark: Number,
+  projectionVersion: Number,
+  projectionHash: String,
+  projectedAt: Date
 }, { timestamps: true });
 
 AIUsageDailyRollupSchema.index({

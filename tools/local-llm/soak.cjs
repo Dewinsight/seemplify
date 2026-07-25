@@ -39,7 +39,7 @@ function signedHeaders(body) {
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(24).toString('base64url');
   const signature = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\n${body}`)
+    .update(`${timestamp}\n${nonce}\nPOST\n/v1/cv/analyze\n${body}`)
     .digest('base64url');
   return {
     'content-type': 'application/json',
@@ -49,9 +49,11 @@ function signedHeaders(body) {
   };
 }
 
-async function analyze(index) {
+async function analyze(index, enqueuedAt) {
   const body = JSON.stringify({
     activity: 'candidate.cv_parse',
+    requestSource: 'local-soak',
+    metering: { record: false, exclusion: 'harness' },
     model: 'selected-runtime-model',
     messages: [
       { role: 'system', content: 'Extract only explicit CV facts and return the supplied JSON schema.' },
@@ -76,12 +78,40 @@ async function analyze(index) {
     return {
       ok: Boolean(valid),
       status: response.status,
+      queueWaitMs: startedAt - enqueuedAt,
       latencyMs: Date.now() - startedAt,
+      endToEndLatencyMs: Date.now() - enqueuedAt,
       error: valid ? undefined : payload.code || payload.message || 'invalid response'
     };
   } catch (error) {
-    return { ok: false, latencyMs: Date.now() - startedAt, error: error.message };
+    return {
+      ok: false,
+      queueWaitMs: startedAt - enqueuedAt,
+      latencyMs: Date.now() - startedAt,
+      endToEndLatencyMs: Date.now() - enqueuedAt,
+      error: error.message
+    };
   }
+}
+
+async function dispatchWithinApprovedCapacity(count, concurrency) {
+  const enqueuedAt = Date.now();
+  const results = new Array(count);
+  let cursor = 0;
+  const workerCount = Math.min(count, concurrency);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= count) return;
+      results[index] = await analyze(index + 1, enqueuedAt);
+    }
+  });
+  await Promise.all(workers);
+  return {
+    results,
+    maxHarnessWaiting: Math.max(0, count - workerCount)
+  };
 }
 
 function percentile(values, ratio) {
@@ -111,13 +141,14 @@ async function main() {
       .catch(() => {});
   }, 250);
   const startedAt = Date.now();
-  let results;
+  let dispatch;
   try {
-    results = await Promise.all(Array.from({ length: requestCount }, (_, index) => analyze(index + 1)));
+    dispatch = await dispatchWithinApprovedCapacity(requestCount, configuredConcurrency);
   } finally {
     clearInterval(sampler);
   }
 
+  const { results, maxHarnessWaiting } = dispatch;
   const successful = results.filter((result) => result.ok);
   const elapsedMs = Date.now() - startedAt;
   const report = {
@@ -129,18 +160,18 @@ async function main() {
     successful: successful.length,
     failed: requestCount - successful.length,
     maxActive: Math.max(0, ...samples.map((sample) => sample.active)),
-    maxWaiting: Math.max(0, ...samples.map((sample) => sample.waiting)),
+    gatewayMaxWaiting: Math.max(0, ...samples.map((sample) => sample.waiting)),
+    maxHarnessWaiting,
     p50LatencyMs: percentile(successful.map((result) => result.latencyMs), 0.5),
     p95LatencyMs: percentile(successful.map((result) => result.latencyMs), 0.95),
+    p50EndToEndLatencyMs: percentile(successful.map((result) => result.endToEndLatencyMs), 0.5),
+    p95EndToEndLatencyMs: percentile(successful.map((result) => result.endToEndLatencyMs), 0.95),
     elapsedMs,
     throughputPerMinute: Number((successful.length / (elapsedMs / 60_000)).toFixed(2)),
     results,
     passed: successful.length === requestCount
       && Math.max(0, ...samples.map((sample) => sample.active)) <= configuredConcurrency
-      && (
-        requestCount <= configuredConcurrency
-        || Math.max(0, ...samples.map((sample) => sample.waiting)) >= requestCount - configuredConcurrency
-      )
+      && maxHarnessWaiting === Math.max(0, requestCount - configuredConcurrency)
   };
   const modelSlug = `${runtime.engine}-${runtime.model}`.replace(/[^a-z0-9_-]+/gi, '-');
   fs.writeFileSync(path.join(runtimeDir, `soak-${modelSlug}-${report.generatedAt.replaceAll(':', '-')}.json`), JSON.stringify(report, null, 2));

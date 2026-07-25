@@ -2,6 +2,35 @@ const crypto = require('crypto');
 
 const COMPLETE_PATH = '/api/internal/ai/v1/complete';
 const DEFAULT_GATEWAY_TIMEOUT_MS = 30_000;
+const MAX_GATEWAY_TIMEOUT_MS = 300_000;
+
+function normalizeGatewayTimeoutMs(value) {
+  const requested = Number(value);
+  return Math.min(
+    MAX_GATEWAY_TIMEOUT_MS,
+    Math.max(1_000, Number.isFinite(requested) ? requested : DEFAULT_GATEWAY_TIMEOUT_MS)
+  );
+}
+
+function combinedRequestSignal(timeoutMs, externalSignal) {
+  const timeoutSignal = typeof globalThis.AbortSignal?.timeout === 'function'
+    ? globalThis.AbortSignal.timeout(timeoutMs)
+    : undefined;
+  if (!externalSignal) return timeoutSignal;
+  if (!timeoutSignal) return externalSignal;
+  if (typeof globalThis.AbortSignal?.any === 'function') {
+    return globalThis.AbortSignal.any([externalSignal, timeoutSignal]);
+  }
+  const controller = new AbortController();
+  const abort = (signal) => {
+    if (!controller.signal.aborted) controller.abort(signal.reason);
+  };
+  if (externalSignal.aborted) abort(externalSignal);
+  else externalSignal.addEventListener('abort', () => abort(externalSignal), { once: true });
+  if (timeoutSignal.aborted) abort(timeoutSignal);
+  else timeoutSignal.addEventListener('abort', () => abort(timeoutSignal), { once: true });
+  return controller.signal;
+}
 
 function extractJsonObject(content) {
   const text = String(content || '').trim();
@@ -81,10 +110,9 @@ function createAIPlatformClient({ env = process.env, fetchImpl = global.fetch, n
 
       const body = JSON.stringify(requestBody);
       const signature = buildSignature({ timestamp, serviceId, path, body, secret });
-      const requestedTimeout = Number(options.timeoutMs || env.AI_GATEWAY_TIMEOUT_MS || DEFAULT_GATEWAY_TIMEOUT_MS);
-      const timeoutMs = Math.min(120_000, Math.max(1_000, Number.isFinite(requestedTimeout)
-        ? requestedTimeout
-        : DEFAULT_GATEWAY_TIMEOUT_MS));
+      const timeoutMs = normalizeGatewayTimeoutMs(
+        options.timeoutMs || env.AI_GATEWAY_TIMEOUT_MS || DEFAULT_GATEWAY_TIMEOUT_MS
+      );
       let response;
       try {
         response = await fetchImpl(url, {
@@ -97,9 +125,12 @@ function createAIPlatformClient({ env = process.env, fetchImpl = global.fetch, n
             ...(options.context?.requestId ? { 'x-request-id': String(options.context.requestId) } : {})
           },
           body,
-          signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+          signal: combinedRequestSignal(timeoutMs, options.signal)
         });
       } catch (cause) {
+        if (options.signal?.aborted && options.signal.reason instanceof Error) {
+          throw options.signal.reason;
+        }
         const error = new Error('Seemplify AI gateway could not be reached before the request deadline.');
         error.code = 'LLM_REQUEST_FAILED';
         error.statusCode = 503;
@@ -148,5 +179,6 @@ module.exports = {
   chatCompletion: (...args) => defaultClient.chatCompletion(...args),
   createAIPlatformClient,
   extractJsonObject,
+  normalizeGatewayTimeoutMs,
   resolveGatewayUrl
 };

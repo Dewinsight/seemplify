@@ -6,31 +6,9 @@ const fs = require('fs');
 const candidateController = require('../controllers/candidateController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization, requirePermission } = require('../middleware/organizationMiddleware');
-const { requireCredits, deductCredits } = require('../middleware/creditsMiddleware');
+const { requireCredits } = require('../middleware/creditsMiddleware');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
-
-function queueUpload(source) {
-  return async (req, res) => {
-    try {
-      const result = await cvAnalysisQueue.submitUpload(req, source);
-      const state = cvAnalysisQueue.publicState(result.job);
-      return res.status(202).json({
-        ...state,
-        statusToken: result.statusToken,
-        statusUrl: `/api/candidates/cv-jobs/${result.job.publicId}`,
-        duplicate: result.duplicate,
-        idempotentReplay: result.duplicate,
-        queueAvailable: !result.enqueueDeferred
-      });
-    } catch (error) {
-      console.error('CV queue submission failed:', error);
-      return res.status(error.statusCode || 500).json({
-        code: error.code || 'CV_QUEUE_SUBMISSION_FAILED',
-        msg: error.message || 'CV upload could not be queued'
-      });
-    }
-  };
-}
+const queueUpload = require('../middleware/cvQueueUploadHandler');
 
 // Ensure uploads directory exists
 const uploadsDir = 'uploads/';
@@ -130,7 +108,6 @@ router.post('/upload-cv',
     }
     next();
   },
-  deductCredits,
   queueUpload('private')
 );
 

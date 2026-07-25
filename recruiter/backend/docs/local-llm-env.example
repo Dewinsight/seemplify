@@ -1,3 +1,21 @@
 LOCAL_LLM_BASE_URL=https://cv-llm.aiinnigeria.com
 LOCAL_LLM_SHARED_SECRET=
+CV_STATUS_TOKEN_SECRET=
+
+# Durable CV queue and its cross-service GPU dispatch contract. The Redis
+# endpoint, identity, prefix, approved limit, lease, and fairness window must
+# match the standalone AI Interview service exactly.
+CV_ANALYSIS_QUEUE_ENABLED=true
 CV_ANALYSIS_QUEUE_CONCURRENCY=1
+CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY=1
+CV_GLOBAL_DISPATCH_REDIS_URL=redis://127.0.0.1:6379/0
+CV_GLOBAL_DISPATCH_IDENTITY=seemplify-cv-inference
+CV_GLOBAL_DISPATCH_KEY_PREFIX=seemplify:cv:dispatch:v2
+CV_GLOBAL_DISPATCH_APPROVED_LIMIT=1
+CV_GLOBAL_DISPATCH_LEASE_MS=120000
+CV_GLOBAL_DISPATCH_FAIRNESS_WINDOW_MS=10000
+
+# Retry-safe AI usage metering. This defaults to REDIS_URL/REDIS_* when the
+# AI_USAGE_* settings are omitted.
+AI_USAGE_OUTBOX_ENABLED=true
+AI_USAGE_REDIS_URL=redis://127.0.0.1:6379/0

@@ -1,4 +1,5 @@
 const creditsService = require('../services/creditsService');
+const mongoose = require('mongoose');
 
 /**
  * Helper function to extract entity ID and details from various response structures
@@ -20,6 +21,10 @@ const extractEntityDetails = (data) => {
   
   // Check for jobId field (used by AI matching endpoint)
   if (data.jobId) {
+    if (!mongoose.isValidObjectId(data.jobId)) {
+      console.warn('Ignoring non-Mongo jobId for credit attribution');
+      return null;
+    }
     console.log('   Found jobId field in response');
     // Convert ObjectId to string if needed
     const jobId = data.jobId.toString ? data.jobId.toString() : data.jobId;

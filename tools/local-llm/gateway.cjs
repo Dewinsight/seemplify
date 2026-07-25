@@ -16,7 +16,11 @@ const {
   normalizeConcurrency
 } = require('./approval-store.cjs');
 const { BoundedFixedWindowRateLimiter } = require('./bounded-rate-limit.cjs');
-const { ACTIVITY_DEFINITIONS } = require('../../recruiter/backend/config/aiRuntimeCatalog');
+const { LocalUsageMeteringOutbox } = require('./usage-metering-outbox.cjs');
+const {
+  ACTIVITY_DEFINITIONS,
+  localProviderLabel
+} = require('../../recruiter/backend/config/aiRuntimeCatalog');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
@@ -24,6 +28,10 @@ const secretFile = process.env.LOCAL_LLM_SECRET_FILE || path.join(runtimeDir, 's
 const controlSecretFile = process.env.LOCAL_LLM_CONTROL_SECRET_FILE || path.join(runtimeDir, 'control-secret');
 const stateFile = process.env.LOCAL_LLM_STATE_FILE || path.join(runtimeDir, 'state.json');
 const logFile = process.env.LOCAL_LLM_LOG_FILE || path.join(runtimeDir, 'gateway.log');
+const nonceDir = process.env.LOCAL_LLM_NONCE_DIR || path.join(path.dirname(stateFile), 'nonces');
+const usageOutboxDir = process.env.LOCAL_LLM_USAGE_OUTBOX_DIR || path.join(runtimeDir, 'usage-outbox');
+const logMaxBytes = Math.max(64 * 1024, Number(process.env.LOCAL_LLM_LOG_MAX_BYTES || 10 * 1024 * 1024));
+const logRotations = Math.max(1, Math.min(20, Number(process.env.LOCAL_LLM_LOG_ROTATIONS || 5)));
 const host = process.env.LOCAL_LLM_GATEWAY_HOST || '127.0.0.1';
 const port = Number(process.env.LOCAL_LLM_GATEWAY_PORT || 11435);
 const maxBodyBytes = Number(process.env.LOCAL_LLM_MAX_BODY_BYTES || 2 * 1024 * 1024);
@@ -35,15 +43,27 @@ const rateLimitMaxKeys = Number(process.env.LOCAL_LLM_RATE_LIMIT_MAX_KEYS || 10_
 const publicHealthRateLimitWindowMs = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_WINDOW_MS || 60 * 1000);
 const publicHealthRateLimitRequests = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_REQUESTS || 30);
 const publicHealthRateLimitMaxKeys = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_MAX_KEYS || 10_000);
-const maxWaitingRequests = Number(process.env.LOCAL_LLM_MAX_WAITING_REQUESTS || 1000);
 const recruiterBackendUrl = String(process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com').replace(/\/+$/, '');
 const allowedActivities = new Set(Object.keys(ACTIVITY_DEFINITIONS));
 const cvActivities = new Set(['candidate.cv_parse', 'ai_interview.cv_parse']);
+const meteringExcludedHarnessSources = new Set([
+  'gateway-integration-test',
+  'local-benchmark',
+  'local-codex-benchmark',
+  'local-cv-evaluation',
+  'local-engine-benchmark',
+  'local-engine-verification',
+  'local-external-smoke',
+  'local-soak',
+  'provider-benchmark',
+  'runtime-model-evaluation'
+]);
 const requiredCvFields = ['firstName', 'lastName', 'email', 'skills', 'summary'];
 
 for (const file of [secretFile, controlSecretFile, stateFile, logFile]) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
 }
+fs.mkdirSync(nonceDir, { recursive: true });
 
 function atomicWrite(file, value) {
   const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -139,14 +159,58 @@ function writeState(update) {
   };
 }
 
+let logWriteChain = Promise.resolve();
+
+async function rotateLogIfNeeded(additionalBytes) {
+  let size = 0;
+  try {
+    size = Number((await fs.promises.stat(logFile)).size || 0);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  if (size + additionalBytes <= logMaxBytes) return;
+  for (let index = logRotations - 1; index >= 1; index -= 1) {
+    const source = `${logFile}.${index}`;
+    const target = `${logFile}.${index + 1}`;
+    await fs.promises.rm(target, { force: true }).catch(() => {});
+    await fs.promises.rename(source, target).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  }
+  await fs.promises.rm(`${logFile}.1`, { force: true }).catch(() => {});
+  await fs.promises.rename(logFile, `${logFile}.1`).catch((error) => {
+    if (error?.code !== 'ENOENT') throw error;
+  });
+}
+
 function log(level, message, metadata = {}) {
   const record = JSON.stringify({ at: new Date().toISOString(), level, message, ...metadata });
-  fs.appendFileSync(logFile, `${record}\n`, 'utf8');
   process.stdout.write(`${record}\n`);
+  logWriteChain = logWriteChain
+    .then(async () => {
+      const line = `${record}\n`;
+      await rotateLogIfNeeded(Buffer.byteLength(line));
+      await fs.promises.appendFile(logFile, line, 'utf8');
+    })
+    .catch((error) => {
+      process.stderr.write(`Gateway log write failed: ${String(error?.message || error)}\n`);
+    });
+  return logWriteChain;
 }
 
 const secret = ensureSecret(secretFile);
 const controlSecret = ensureSecret(controlSecretFile);
+const usageMeteringOutbox = new LocalUsageMeteringOutbox({
+  directory: usageOutboxDir,
+  endpointUrl: `${recruiterBackendUrl}/api/internal/ai/v1/local-usage/events`,
+  secret,
+  initialDelayMs: Number(process.env.LOCAL_LLM_USAGE_INITIAL_DELAY_MS || 15_000),
+  retryBaseMs: Number(process.env.LOCAL_LLM_USAGE_RETRY_BASE_MS || 1_000),
+  retryMaxMs: Number(process.env.LOCAL_LLM_USAGE_RETRY_MAX_MS || 5 * 60_000),
+  deadMaxJobs: Number(process.env.LOCAL_LLM_USAGE_DEAD_MAX_JOBS || 1_000),
+  deadRetentionMs: Number(process.env.LOCAL_LLM_USAGE_DEAD_RETENTION_MS || 30 * 24 * 60 * 60_000),
+  log
+});
 const seenNonces = new Map();
 const requestLimiter = new BoundedFixedWindowRateLimiter({
   windowMs: rateLimitWindowMs,
@@ -158,7 +222,7 @@ const publicHealthLimiter = new BoundedFixedWindowRateLimiter({
   requests: publicHealthRateLimitRequests,
   maxKeys: publicHealthRateLimitMaxKeys
 });
-const waiting = [];
+const activeControllers = new Set();
 let active = 0;
 let completed = 0;
 let failed = 0;
@@ -166,9 +230,54 @@ let totalLatencyMs = 0;
 let lastRequestAt = null;
 let shuttingDown = false;
 let queueTelemetry = null;
+let lastNoncePruneAt = 0;
 
 function pruneNonces(now = Date.now()) {
   for (const [nonce, expiresAt] of seenNonces) if (expiresAt <= now) seenNonces.delete(nonce);
+  if (now - lastNoncePruneAt < 60_000) return;
+  lastNoncePruneAt = now;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(nonceDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.nonce')) continue;
+    const file = path.join(nonceDir, entry.name);
+    try {
+      const expiresAt = Number(fs.readFileSync(file, 'utf8'));
+      if (!Number.isFinite(expiresAt) || expiresAt <= now) fs.unlinkSync(file);
+    } catch {}
+  }
+}
+
+function claimNonce(nonce, expiresAt, now = Date.now()) {
+  if (seenNonces.has(nonce)) return false;
+  const file = path.join(nonceDir, `${nonce}.nonce`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let handle;
+    try {
+      handle = fs.openSync(file, 'wx', 0o600);
+      fs.writeFileSync(handle, String(expiresAt), 'utf8');
+      fs.closeSync(handle);
+      seenNonces.set(nonce, expiresAt);
+      return true;
+    } catch (error) {
+      if (handle !== undefined) {
+        try { fs.closeSync(handle); } catch {}
+      }
+      if (error?.code !== 'EEXIST') return false;
+      try {
+        const storedExpiry = Number(fs.readFileSync(file, 'utf8'));
+        if (Number.isFinite(storedExpiry) && storedExpiry > now) return false;
+        fs.unlinkSync(file);
+      } catch {
+        return false;
+      }
+    }
+  }
+  return false;
 }
 
 function safeEqual(left, right) {
@@ -199,6 +308,7 @@ function normalizeQueueTelemetry(input = {}) {
         queue: queueText(job?.queue, 80),
         state: queueText(job?.state, 40),
         phase: queueText(job?.phase || job?.state, 40),
+        stage: queueText(job?.stage, 40) || null,
         progress: Math.min(100, queueCount(job?.progress)),
         attempts: queueCount(job?.attempts),
         createdAt: queueTimestamp(job?.createdAt),
@@ -212,6 +322,7 @@ function normalizeQueueTelemetry(input = {}) {
         transitions: Array.isArray(job?.transitions)
           ? job.transitions.slice(-20).map((transition) => ({
               phase: queueText(transition?.phase || transition?.state, 40),
+              stage: queueText(transition?.stage, 40) || null,
               state: queueText(transition?.state, 40),
               progress: Math.min(100, queueCount(transition?.progress)),
               attempts: queueCount(transition?.attempts),
@@ -260,6 +371,18 @@ function normalizeQueueTelemetry(input = {}) {
       averageProcessingMs: queueCount(input.rates?.averageProcessingMs),
       p95ProcessingMs: queueCount(input.rates?.p95ProcessingMs)
     },
+    history: {
+      retainedIndefinitely: input.history?.retainedIndefinitely === true,
+      total: queueCount(input.history?.total),
+      completed: queueCount(input.history?.completed),
+      failed: queueCount(input.history?.failed),
+      active: queueCount(input.history?.active)
+    },
+    retention: {
+      recruiterStateWindowDays: Math.max(1, queueCount(input.retention?.recruiterStateWindowDays) || 30),
+      aiInterviewStateSource: queueText(input.retention?.aiInterviewStateSource, 40) || 'permanent-audit',
+      permanentHistory: input.retention?.permanentHistory === true
+    },
     worker: {
       running: Boolean(input.worker?.running),
       concurrency: Math.max(1, queueCount(input.worker?.concurrency ?? input.workerConcurrency) || 1),
@@ -286,7 +409,7 @@ function normalizeQueueTelemetry(input = {}) {
   };
 }
 
-function verifySignature(headers, rawBody) {
+function verifySignature(headers, method, requestPath, rawBody) {
   const timestamp = String(headers['x-seemplify-timestamp'] || '');
   const nonce = String(headers['x-seemplify-nonce'] || '');
   const signature = String(headers['x-seemplify-signature'] || '');
@@ -296,14 +419,14 @@ function verifySignature(headers, rawBody) {
   if (!Number.isFinite(numericTimestamp) || Math.abs(now - numericTimestamp) > signatureSkewMs) {
     return { ok: false, code: 'SIGNATURE_EXPIRED' };
   }
-  if (!/^[A-Za-z0-9_-]{16,128}$/.test(nonce) || seenNonces.has(nonce)) {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) {
     return { ok: false, code: 'NONCE_REJECTED' };
   }
   const expected = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\n${rawBody}`)
+    .update(`${timestamp}\n${nonce}\n${String(method || '').toUpperCase()}\n${requestPath}\n${rawBody}`)
     .digest('base64url');
   if (!safeEqual(expected, signature)) return { ok: false, code: 'SIGNATURE_INVALID' };
-  seenNonces.set(nonce, now + nonceTtlMs);
+  if (!claimNonce(nonce, now + nonceTtlMs, now)) return { ok: false, code: 'NONCE_REJECTED' };
   return { ok: true };
 }
 
@@ -440,28 +563,17 @@ async function readBody(request) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function acquireSlot() {
-  return new Promise((resolve) => {
-    const dispatch = () => {
-      const state = readState();
-      if (shuttingDown || !state.enabled || state.paused) return false;
-      if (active >= Math.max(1, Number(state.concurrency || 1))) return false;
-      active += 1;
-      resolve(() => {
-        active = Math.max(0, active - 1);
-        pumpQueue();
-      });
-      return true;
-    };
-    if (!dispatch()) waiting.push(dispatch);
-  });
-}
-
-function pumpQueue() {
-  for (let index = 0; index < waiting.length;) {
-    if (waiting[index]()) waiting.splice(index, 1);
-    else index += 1;
-  }
+function tryAcquireSlot() {
+  const state = readState();
+  if (shuttingDown || !state.enabled || state.paused) return null;
+  if (active >= Math.max(1, Number(state.concurrency || 1))) return null;
+  active += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    active = Math.max(0, active - 1);
+  };
 }
 
 function statusPayload() {
@@ -473,6 +585,8 @@ function statusPayload() {
     state,
     engine: selected.id,
     model: selected.model,
+    provider: `local-${selected.id}`,
+    providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
     executionMode: selected.id === 'codex' ? 'local-cloud' : 'local',
     cvLocalEligible,
     engines: Object.entries(state.engines || {}).map(([id, value]) => ({
@@ -482,22 +596,142 @@ function statusPayload() {
       selected: id === selected.id
     })),
     active,
-    waiting: waiting.length,
+    waiting: 0,
     completed,
     failed,
     averageLatencyMs: completed ? Math.round(totalLatencyMs / completed) : 0,
     lastRequestAt,
     queue: queueTelemetry,
+    usageMetering: usageMeteringOutbox.status(),
     pid: process.pid,
     uptimeSeconds: Math.round(process.uptime())
   };
+}
+
+function gatewayExecutionId(eventId) {
+  return `localexec_${crypto.createHash('sha256').update(String(eventId)).digest('hex').slice(0, 48)}`;
+}
+
+function meteringContext(input = {}, requestSource = '') {
+  const metering = input.metering;
+  if (metering?.record === false) {
+    if (
+      metering.exclusion !== 'harness'
+      || !meteringExcludedHarnessSources.has(requestSource)
+    ) {
+      throw Object.assign(new Error('The local metering exclusion is not recognized'), {
+        code: 'INVALID_METERING_EXCLUSION',
+        status: 400
+      });
+    }
+    return null;
+  }
+  if (!metering) {
+    throw Object.assign(new Error('A durable local metering context is required'), {
+      code: 'METERING_CONTEXT_REQUIRED',
+      status: 400
+    });
+  }
+  if (metering.record !== true || !/^usage_[a-f0-9]{48}$/.test(String(metering.eventId || ''))) {
+    throw Object.assign(new Error('The local metering context is invalid'), {
+      code: 'INVALID_METERING_CONTEXT',
+      status: 400
+    });
+  }
+  const expectedExecutionId = gatewayExecutionId(metering.eventId);
+  if (String(metering.gatewayExecutionId || '') !== expectedExecutionId) {
+    throw Object.assign(new Error('The local metering execution identity is invalid'), {
+      code: 'INVALID_METERING_CONTEXT',
+      status: 400
+    });
+  }
+  const requestId = String(metering.requestId || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
+  const sourceApp = String(metering.sourceApp || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 64);
+  if (!requestId || !sourceApp) {
+    throw Object.assign(new Error('The local metering request identity is incomplete'), {
+      code: 'INVALID_METERING_CONTEXT',
+      status: 400
+    });
+  }
+  return {
+    eventId: metering.eventId,
+    gatewayExecutionId: expectedExecutionId,
+    requestId,
+    sourceApp
+  };
+}
+
+function meteredTokenCounts(usage = {}) {
+  const inputTokens = Math.max(0, Number(usage.prompt_tokens || usage.input_tokens || 0));
+  const cachedInputTokens = Math.min(
+    inputTokens,
+    Math.max(0, Number(
+      usage.prompt_tokens_details?.cached_tokens
+      || usage.input_tokens_details?.cached_tokens
+      || usage.cached_input_tokens
+      || 0
+    ))
+  );
+  const outputTokens = Math.max(0, Number(usage.completion_tokens || usage.output_tokens || 0));
+  const reasoningTokens = Math.min(
+    outputTokens,
+    Math.max(0, Number(
+      usage.completion_tokens_details?.reasoning_tokens
+      || usage.output_tokens_details?.reasoning_tokens
+      || usage.reasoning_output_tokens
+      || 0
+    ))
+  );
+  return {
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningTokens,
+    totalTokens: Math.max(
+      inputTokens + outputTokens,
+      Number(usage.total_tokens || usage.totalTokens || 0)
+    )
+  };
+}
+
+async function persistAtSourceUsage({
+  metering,
+  input,
+  engine,
+  model,
+  providerRequestId,
+  status,
+  httpStatus,
+  errorCode,
+  latencyMs,
+  usage,
+  usageReported,
+  usageSource
+}) {
+  if (!metering) return;
+  await usageMeteringOutbox.enqueue({
+    ...metering,
+    activity: input.activity,
+    provider: `local-${engine}`,
+    model,
+    providerRequestId,
+    status,
+    httpStatus,
+    errorCode,
+    latencyMs,
+    usageReported: usageReported === true,
+    usageSource: usageReported === true ? usageSource : 'unreported',
+    ...meteredTokenCounts(usage),
+    occurredAt: new Date().toISOString()
+  });
 }
 
 async function handleCompletion(request, response, rawBody, { cvOnly = false } = {}) {
   if (!withinRateLimit(request)) {
     return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
   }
-  const verified = verifySignature(request.headers, rawBody);
+  const requestPath = new URL(request.url, `http://${request.headers.host || `${host}:${port}`}`).pathname;
+  const verified = verifySignature(request.headers, request.method, requestPath, rawBody);
   if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
   const state = readState();
   if (!state.ingressEnabled || !state.enabled) {
@@ -529,6 +763,15 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   if (!cvOnly && input.executionMode !== 'local-only') {
     return sendJson(response, 400, { code: 'LOCAL_ONLY_MODE_REQUIRED' });
   }
+  const requestSource = String(input.requestSource || (cvOnly ? 'cv-route' : 'local-route'))
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .slice(0, 64);
+  let metering;
+  try {
+    metering = meteringContext(input, requestSource);
+  } catch (error) {
+    return sendJson(response, error.status || 400, { code: error.code, message: error.message });
+  }
   const selected = engineSettings(state);
   if (input.executionMode === 'local-only' && !ENGINE_IDS.includes(selected.id)) {
     return sendJson(response, 503, {
@@ -537,48 +780,177 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       message: `Local inference requires a managed local or local-cloud engine; ${selected.id} is unavailable`
     });
   }
-  if (waiting.length >= maxWaitingRequests) {
-    return sendJson(response, 503, { code: 'GATEWAY_QUEUE_FULL', retryable: true });
+  const release = tryAcquireSlot();
+  if (!release) {
+    return sendJson(response, 503, {
+      code: 'LOCAL_LLM_BUSY',
+      message: 'Inference capacity is occupied; keep this work in the durable queue and retry',
+      retryable: true,
+      retryAfterMs: 1_000
+    }, { 'retry-after': '1' });
   }
 
-  const release = await acquireSlot();
+  const controller = new AbortController();
+  activeControllers.add(controller);
+  const abortIfDisconnected = () => controller.abort(new Error('Inference caller disconnected'));
+  request.once('aborted', abortIfDisconnected);
+  request.once('close', () => {
+    if (!request.complete) abortIfDisconnected();
+  });
+  response.once('close', () => {
+    if (!response.writableEnded) abortIfDisconnected();
+  });
   const startedAt = Date.now();
   lastRequestAt = new Date().toISOString();
   try {
-    const data = await analyzeWithEngine(input, readState());
+    const data = await analyzeWithEngine({ ...input, signal: controller.signal }, readState());
     const schemaErrors = input.jsonSchema ? validateSchemaValue(data.data, input.jsonSchema) : [];
     if (schemaErrors.length && !data.toolCalls?.length) {
       const error = new Error(`Inference engine returned invalid structured data: ${schemaErrors.slice(0, 5).join('; ')}`);
       error.code = 'LOCAL_LLM_SCHEMA_INVALID';
+      error.usageEnvelope = {
+        id: data.id,
+        engine: data.engine,
+        model: data.model,
+        usage: data.usage,
+        usageReported: data.usageReported === true
+      };
       throw error;
     }
     const latencyMs = Date.now() - startedAt;
+    const {
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+      reasoningTokens,
+      totalTokens
+    } = meteredTokenCounts(data.usage);
+    const responseId = data.id || crypto.randomUUID();
+    const provider = `local-${data.engine}`;
+    const providerLabel = localProviderLabel(provider, data.model);
+    try {
+      await persistAtSourceUsage({
+        metering,
+        input,
+        engine: data.engine,
+        model: data.model,
+        providerRequestId: responseId,
+        status: 'success',
+        httpStatus: 200,
+        latencyMs,
+        usage: data.usage,
+        usageReported: data.usageReported,
+        usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported'
+      });
+    } catch (meteringError) {
+      meteringError.code = 'LOCAL_METERING_DURABILITY_FAILED';
+      meteringError.status = 503;
+      meteringError.usageEnvelope = {
+        id: responseId,
+        engine: data.engine,
+        model: data.model,
+        usage: data.usage,
+        usageReported: data.usageReported === true
+      };
+      throw meteringError;
+    }
     completed += 1;
     totalLatencyMs += latencyMs;
-    log('info', 'Local AI completion finished', { activity: input.activity, latencyMs, engine: data.engine, model: data.model });
-    return sendJson(response, 200, {
-      id: data.id || crypto.randomUUID(),
+    log('info', 'Local AI completion finished', {
+      activity: input.activity,
+      requestSource,
+      endpoint: cvOnly ? 'cv' : 'general',
+      latencyMs,
       engine: data.engine,
       model: data.model,
+      gatewayExecutionId: metering?.gatewayExecutionId,
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+      reasoningTokens,
+      totalTokens
+    });
+    return sendJson(response, 200, {
+      id: responseId,
+      provider,
+      providerLabel,
+      engine: data.engine,
+      model: data.model,
+      gatewayExecutionId: metering?.gatewayExecutionId,
       content: data.content,
       data: data.data,
       toolCalls: data.toolCalls || [],
       finishReason: data.finishReason || (data.toolCalls?.length ? 'tool_calls' : 'stop'),
       usage: data.usage,
+      usageReported: data.usageReported === true,
+      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
       metrics: {
         ...(data.metrics || {}),
         latencyMs
       }
     });
   } catch (error) {
+    const usageEnvelope = error.usageEnvelope;
+    if (usageEnvelope && metering) {
+      try {
+        await persistAtSourceUsage({
+          metering,
+          input,
+          engine: usageEnvelope.engine || selected.id,
+          model: usageEnvelope.model || selected.model,
+          providerRequestId: usageEnvelope.id,
+          status: 'failed',
+          httpStatus: error.status || 503,
+          errorCode: error.code || 'LOCAL_LLM_UNAVAILABLE',
+          latencyMs: Date.now() - startedAt,
+          usage: usageEnvelope.usage,
+          usageReported: usageEnvelope.usageReported,
+          usageSource: usageEnvelope.usageReported === true
+            ? `${usageEnvelope.engine || selected.id}-response`
+            : 'unreported'
+        });
+      } catch (meteringError) {
+        log('error', 'Local usage event could not be persisted to the durable outbox', {
+          eventId: metering.eventId,
+          error: meteringError.message
+        });
+      }
+    }
     failed += 1;
-    log('error', 'Local AI completion failed', { activity: input.activity, error: error.message });
+    log('error', 'Local AI completion failed', {
+      activity: input.activity,
+      requestSource,
+      endpoint: cvOnly ? 'cv' : 'general',
+      latencyMs: Date.now() - startedAt,
+      engine: selected.id,
+      model: selected.model,
+      errorCode: error.code || 'LOCAL_LLM_UNAVAILABLE',
+      error: error.message
+    });
     return sendJson(response, error.status || 503, {
       code: error.code || 'LOCAL_LLM_UNAVAILABLE',
       message: error.message,
-      retryable: true
+      retryable: true,
+      gatewayExecutionId: metering?.gatewayExecutionId,
+      ...(usageEnvelope ? {
+        id: usageEnvelope.id,
+        provider: `local-${usageEnvelope.engine || selected.id}`,
+        providerLabel: localProviderLabel(
+          `local-${usageEnvelope.engine || selected.id}`,
+          usageEnvelope.model || selected.model
+        ),
+        engine: usageEnvelope.engine,
+        model: usageEnvelope.model,
+        usage: usageEnvelope.usage,
+        usageReported: usageEnvelope.usageReported === true,
+        usageSource: usageEnvelope.usageReported === true
+          ? `${usageEnvelope.engine}-response`
+          : 'unreported'
+      } : {})
     });
   } finally {
+    activeControllers.delete(controller);
+    request.removeListener('aborted', abortIfDisconnected);
     release();
   }
 }
@@ -671,7 +1043,6 @@ const server = http.createServer(async (request, response) => {
         allowed.concurrency = normalizeConcurrency(requestedConcurrency);
       }
       const state = writeState(allowed);
-      pumpQueue();
       return sendJson(response, 200, { ok: true, state });
     } catch (error) {
       return sendJson(response, error.status || 400, {
@@ -701,7 +1072,7 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
       }
       const rawBody = await readBody(request);
-      const verified = verifySignature(request.headers, rawBody);
+      const verified = verifySignature(request.headers, request.method, url.pathname, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const health = await engineHealth(readState());
       return sendJson(response, 200, { ...statusPayload(), health });
@@ -715,7 +1086,7 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
       }
       const rawBody = await readBody(request);
-      const verified = verifySignature(request.headers, rawBody);
+      const verified = verifySignature(request.headers, request.method, url.pathname, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const input = JSON.parse(rawBody);
       queueTelemetry = normalizeQueueTelemetry(input);
@@ -733,15 +1104,22 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, host, () => {
+  usageMeteringOutbox.start();
   const selected = engineSettings(readState());
   log('info', 'Local CV LLM gateway started', { host, port, engine: selected.id, model: selected.model });
 });
 
 function shutdown(signal) {
   shuttingDown = true;
+  usageMeteringOutbox.stop();
   writeState({ paused: true });
+  for (const controller of activeControllers) {
+    controller.abort(new Error(`Gateway shutdown requested by ${signal}`));
+  }
   log('info', 'Gateway shutdown requested', { signal });
-  server.close(() => process.exit(0));
+  server.close(() => {
+    void logWriteChain.finally(() => process.exit(0));
+  });
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 

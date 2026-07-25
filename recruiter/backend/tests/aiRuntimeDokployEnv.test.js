@@ -15,12 +15,16 @@ test('Dokploy AI Runtime setup adds only missing security values', () => {
     'AI_PROVIDER_ENCRYPTION_KEY',
     'AI_PROVIDER_ENCRYPTION_KEY_VERSION',
     'AI_GATEWAY_HMAC_SECRET',
-    'AI_GATEWAY_ALLOWED_SERVICES'
+    'AI_GATEWAY_ALLOWED_SERVICES',
+    'AI_USAGE_OUTBOX_ENABLED',
+    'AI_USAGE_REDIS_HOST'
   ]);
   assert.equal(parsed.get('MONGO_URI'), 'mongodb://example');
   assert.equal(parsed.get('EXISTING'), 'value');
   assert.equal(Buffer.from(parsed.get('AI_PROVIDER_ENCRYPTION_KEY'), 'base64').length, 32);
   assert.equal(Buffer.from(parsed.get('AI_GATEWAY_HMAC_SECRET'), 'base64').length, 48);
+  assert.equal(parsed.get('AI_USAGE_OUTBOX_ENABLED'), 'true');
+  assert.equal(parsed.get('AI_USAGE_REDIS_HOST'), 'dokploy-redis');
 });
 
 test('Dokploy AI Runtime setup never rotates existing secrets implicitly', () => {
@@ -28,7 +32,9 @@ test('Dokploy AI Runtime setup never rotates existing secrets implicitly', () =>
     'AI_PROVIDER_ENCRYPTION_KEY=existing-encryption',
     'AI_PROVIDER_ENCRYPTION_KEY_VERSION=v9',
     'AI_GATEWAY_HMAC_SECRET=existing-hmac',
-    'AI_GATEWAY_ALLOWED_SERVICES=ai-interview,worker'
+    'AI_GATEWAY_ALLOWED_SERVICES=ai-interview,worker',
+    'AI_USAGE_OUTBOX_ENABLED=true',
+    'AI_USAGE_REDIS_HOST=dokploy-redis'
   ].join('\n');
   const result = ensureAIRuntimeEnv(original, () => { throw new Error('must not generate'); });
 
@@ -48,6 +54,19 @@ test('Dokploy setup adds the externally supplied local CV runtime values without
   assert.equal(parsed.get('LOCAL_LLM_SHARED_SECRET'), 'local-shared-secret');
   assert.equal(parsed.get('CV_STATUS_TOKEN_SECRET'), 'opaque-status-secret');
   assert.equal(parsed.get('CV_ANALYSIS_QUEUE_CONCURRENCY'), '1');
+  assert.equal(parsed.get('AI_USAGE_OUTBOX_ENABLED'), 'true');
+  assert.equal(parsed.get('AI_USAGE_REDIS_HOST'), 'dokploy-redis');
+});
+
+test('Dokploy setup rejects disabled metering or a conflicting Redis host', () => {
+  assert.throws(
+    () => ensureAIRuntimeEnv('AI_USAGE_OUTBOX_ENABLED=false', deterministicBytes),
+    /AI_USAGE_OUTBOX_ENABLED must be true/
+  );
+  assert.throws(
+    () => ensureAIRuntimeEnv('AI_USAGE_REDIS_HOST=wrong-redis', deterministicBytes),
+    /AI_USAGE_REDIS_HOST must be dokploy-redis/
+  );
 });
 
 test('Dokploy URL normalization accepts root and API URLs', () => {

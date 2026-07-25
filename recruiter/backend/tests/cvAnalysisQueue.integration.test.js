@@ -27,6 +27,7 @@ let mongo;
 let inspectionConnection;
 let inspectionQueue;
 let initialGatewayControl;
+let telemetryPayloads = [];
 
 const resumeText = [
   'Ada Lovelace',
@@ -108,6 +109,22 @@ test.before(async () => {
   });
   inspectionQueue = new Queue('cv-analysis-local', { connection: inspectionConnection });
   await inspectionQueue.obliterate({ force: true });
+  cvQueue._setDependenciesForTests({
+    telemetryTransport: async ({ body, headers }) => {
+      telemetryPayloads.push({ body: JSON.parse(body), headers });
+      const response = await controlFetch('http://127.0.0.1:11435/control/status');
+      const gateway = await response.json();
+      return {
+        ok: response.ok,
+        status: response.status,
+        payload: {
+          desiredConcurrency: gateway?.state?.concurrency,
+          desiredPaused: gateway?.state?.paused
+        }
+      };
+    }
+  });
+  await cvQueue._initializeGlobalDispatchForTests();
 });
 
 test('retry backoff grows exponentially and caps local-runtime outages', () => {
@@ -121,7 +138,9 @@ test('retry backoff grows exponentially and caps local-runtime outages', () => {
 });
 
 test.after(async () => {
-  if (initialGatewayControl) await setGatewayControl(initialGatewayControl).catch(() => {});
+  if (initialGatewayControl) {
+    await setGatewayControl(initialGatewayControl).catch(() => {});
+  }
   await cvQueue.closeForTests();
   if (inspectionQueue) await inspectionQueue.close();
   if (inspectionConnection) await inspectionConnection.quit();
@@ -131,10 +150,12 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   await inspectionQueue.obliterate({ force: true });
-  await inspectionQueue.pause();
   await CVProcessingJob.deleteMany({});
   await CVProcessingAudit.deleteMany({});
   await Candidate.deleteMany({});
+  telemetryPayloads = [];
+  await setGatewayControl({ concurrency: 1, paused: true });
+  assert.equal(await cvQueue.publishTelemetry(), true);
 });
 
 test('status tokens are isolated and compared without exposing the stored hash', async () => {
@@ -229,6 +250,20 @@ test('history backfills retained jobs with lifecycle data and supports retry pag
   const retrying = await cvQueue.listHistory({ state: 'retrying', search: 'cv_history_retrying', page: 1, limit: 10 });
   assert.equal(retrying.total, 1);
   assert.equal(retrying.jobs[0].phase, 'retrying');
+
+  await CVProcessingJob.deleteOne({ publicId: 'cv_history_completed' });
+  const retainedDetail = await cvQueue.getAdminJobDetail('cv_history_completed');
+  assert.equal(retainedDetail.jobId, 'cv_history_completed');
+  assert.equal(retainedDetail.producer, 'recruiter');
+  assert.equal(retainedDetail.file.name, 'ada-lovelace.pdf');
+  const adminHistory = await cvQueue.listAdminHistory({
+    state: 'completed',
+    search: 'cv_history_completed',
+    page: 1,
+    limit: 10
+  });
+  assert.equal(adminHistory.total, 1);
+  assert.equal(adminHistory.jobs[0].jobId, 'cv_history_completed');
 });
 
 test('signed AI Interview queue events join permanent history and aggregate telemetry', async () => {
@@ -316,9 +351,12 @@ test('stale Mongo jobs are recovered after a queue restart', async () => {
   assert.equal(await cvQueue.recoverStaleJobs(), 0);
 });
 
-test('signed telemetry applies Control Center pause and approved concurrency to BullMQ', async () => {
-  await inspectionQueue.resume();
-  await cvQueue.initWorker();
+test('isolated telemetry transport applies real Control Center pause and approved concurrency without publishing test jobs', async () => {
+  await setGatewayControl({ concurrency: 1, paused: false });
+  assert.equal(await cvQueue.publishTelemetry(), true);
+  assert.ok(telemetryPayloads.length > 0);
+  assert.equal(telemetryPayloads.at(-1).body.recentJobs.length, 0);
+  assert.match(telemetryPayloads.at(-1).headers['x-seemplify-signature'], /^[A-Za-z0-9_-]+$/);
   try {
     await setGatewayControl({ concurrency: 1, paused: true });
     assert.equal(await cvQueue.publishTelemetry(), true);
@@ -337,7 +375,8 @@ test('signed telemetry applies Control Center pause and approved concurrency to 
 
 test('local runtime outages wait durably and resume without duplicate candidates', { timeout: 180_000 }, async () => {
   await setGatewayIngress(false);
-  await inspectionQueue.resume();
+  await setGatewayControl({ concurrency: 1, paused: false });
+  assert.equal(await cvQueue.publishTelemetry(), true);
   await cvQueue.initWorker();
   const { job } = await createJob();
   const bullJob = await cvQueue.enqueueExistingJob(job._id);

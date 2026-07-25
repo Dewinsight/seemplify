@@ -47,7 +47,7 @@ function signedHeaders(body) {
     'x-seemplify-timestamp': timestamp,
     'x-seemplify-nonce': nonce,
     'x-seemplify-signature': crypto.createHmac('sha256', secret)
-      .update(`${timestamp}\n${nonce}\n${body}`)
+      .update(`${timestamp}\n${nonce}\nPOST\n/v1/cv/analyze\n${body}`)
       .digest('base64url')
   };
 }
@@ -85,6 +85,8 @@ async function main() {
   };
   const body = JSON.stringify({
     activity: 'candidate.cv_parse',
+    requestSource: 'local-external-smoke',
+    metering: { record: false, exclusion: 'harness' },
     model: 'selected-runtime-model',
     executionMode: 'local-only',
     messages: [

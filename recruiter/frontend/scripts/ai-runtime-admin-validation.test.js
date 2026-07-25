@@ -94,7 +94,7 @@ test('AI Runtime exposes the synthetic route test workflow', () => {
 });
 
 test('activity audit filters every managed local provider and resets pagination with the range', () => {
-  assert.match(pageSource, /SelectItem value="local-codex">Terra \(local-cloud\)<\/SelectItem>/);
+  assert.match(pageSource, /SelectItem value="local-codex">Codex local-cloud<\/SelectItem>/);
   assert.match(pageSource, /SelectItem value="local-ollama">Ollama \(local GPU\)<\/SelectItem>/);
   assert.match(pageSource, /SelectItem value="local-vllm">vLLM \(local GPU\)<\/SelectItem>/);
   assert.match(pageSource, /setRange\(value as RangeKey\); setRequestPage\(1\);/);
@@ -102,28 +102,42 @@ test('activity audit filters every managed local provider and resets pagination 
 
 test('overview shows provider and model token composition and follows live snapshots', () => {
   assert.match(pageSource, /function providerUsageLabel/);
-  assert.match(pageSource, /provider === 'local-codex'\) return 'Terra \(local-cloud\)'/);
+  assert.match(pageSource, /model === 'gpt-5\.6-terra'\) return 'Terra \(Codex local-cloud\)'/);
+  assert.match(pageSource, /return model \? `Codex local-cloud · \$\{model\}` : 'Codex local-cloud'/);
   assert.match(pageSource, /Earlier local-cloud records and direct benchmark runs cannot be reconstructed/);
-  assert.match(pageSource, /Usage unavailable/);
+  assert.match(pageSource, /formatAggregateTokens/);
   assert.match(pageSource, /providerUsageLabel\(provider\.id\)/);
-  assert.match(pageSource, /providerUsageLabel\(request\.provider\)/);
+  assert.match(pageSource, /providerUsageLabel\(request\.provider, request\.model\)/);
   assert.match(pageSource, /<TableHead>Token breakdown<\/TableHead>/);
   assert.match(pageSource, /row\.inputTokens/);
   assert.match(pageSource, /row\.cachedInputTokens/);
   assert.match(pageSource, /row\.outputTokens/);
   assert.match(pageSource, /row\.reasoningTokens/);
   assert.match(pageSource, /row\.averageLatencyMs/);
+  assert.match(pageSource, /<TableHead>Recorded tokens<\/TableHead>/);
+  assert.match(pageSource, /provider\.totalTokens/);
+  assert.match(pageSource, /provider\.inputTokens/);
+  assert.match(pageSource, /provider\.cachedInputTokens/);
+  assert.match(pageSource, /provider\.outputTokens/);
+  assert.match(pageSource, /provider\.reasoningTokens/);
   assert.match(pageSource, /liveSnapshotRevisionRef\.current \+= 1/);
   assert.match(pageSource, /context\.tab === 'requests' && context\.requestPage === 1/);
   assert.match(pageSource, /\}, 10_000\);/);
 });
 
-test('historical zero-token events are labelled as not recorded', () => {
+test('zero-token events distinguish explicit unmetered from legacy unknown', () => {
   assert.match(pageSource, /function formatRecordedTokens/);
-  assert.match(pageSource, /: 'Not recorded';/);
-  assert.match(pageSource, /formatRecordedTokens\(request\.totalTokens\)/);
-  assert.match(pageSource, /formatRecordedTokens\(data\.totalTokens, data\.inputTokens\)/);
-  assert.match(pageSource, /formatRecordedTokens\(data\.totalTokens\)/);
+  assert.match(pageSource, /'Not reported' : 'Unknown \(legacy\)'/);
+  assert.match(pageSource, /formatRecordedTokens\(request\.meteringStatus, request\.totalTokens\)/);
+  assert.match(pageSource, /formatRecordedTokens\(data\.meteringStatus, data\.totalTokens, data\.inputTokens\)/);
+  assert.match(pageSource, /formatRecordedTokens\(data\.meteringStatus, data\.totalTokens\)/);
+  assert.match(pageSource, /meteredExecutions/);
+  assert.match(pageSource, /unmeteredExecutions/);
+  assert.match(pageSource, /unknownMeteringExecutions/);
+  assert.match(pageSource, /old zero token fields remain unknown, not measured zero/);
+  assert.match(pageSource, /Token metering/);
+  assert.match(pageSource, /Usage source/);
+  assert.match(pageSource, /aggregated-request-events-partial' \? 'Partially reported'/);
 });
 
 test('unreported local state does not claim an engine, routability, or a starting worker', () => {
@@ -155,8 +169,12 @@ test('request filters do not fan out into the full runtime refresh', () => {
 
 test('requests and routing expose full operational health', () => {
   assert.match(pageSource, /Overall AI totals/);
-  assert.match(pageSource, /Filtered request totals/);
-  assert.match(pageSource, /permanent daily rollups/);
+  assert.match(pageSource, /Filtered execution events/);
+  assert.match(pageSource, /permanent per-request projection/);
+  assert.match(pageSource, /daily attempt rollups/);
+  assert.match(pageSource, /logicalCoverage/);
+  assert.match(pageSource, /not inferred as logical requests/);
+  assert.doesNotMatch(pageSource, /range === 'all' \? 'Execution events' : 'Logical requests'/);
   assert.match(pageSource, /retained 90-day window/);
   assert.match(pageSource, /Reasoning tokens/);
   assert.match(pageSource, /routingHealth/);
@@ -166,13 +184,18 @@ test('requests and routing expose full operational health', () => {
 
 test('AI Runtime exposes managed local inference, model inventory, and its durable CV queue', () => {
   assert.match(pageSource, /TabsTrigger value="local"/);
-  assert.match(pageSource, /CV parsing and question generation use the best available managed runtime/);
+  assert.match(pageSource, /CV parsing is locked to the selected managed runtime/);
+  assert.match(pageSource, /CV jobs never fall back to Groq/);
   assert.match(pageSource, /localRuntime\?\.cvLocalEligible/);
   assert.match(pageSource, /Codex CLI \(local-cloud\)/);
   assert.match(pageSource, /Local engines and models/);
   assert.match(pageSource, /Available in Control Center/);
   assert.match(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Managed local'/);
   assert.match(pageSource, /localRuntime\?\.failover\?\.intervalMinutes \? `Every \$\{localRuntime\.failover\.intervalMinutes\} minutes` : 'Not reported'/);
+  assert.match(pageSource, /Gateway metering/);
+  assert.match(pageSource, /localRuntime\?\.usageMetering/);
+  assert.match(pageSource, /Metering backlog/);
+  assert.match(pageSource, /Last meter delivery/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/health-check/);
   assert.match(pageSource, /Check and route now/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/\$\{paused \? 'pause' : 'resume'\}/);
@@ -186,6 +209,14 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
 test('AI Runtime exposes live cross-provider operations and clickable attributable audits', () => {
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/live\/stream/);
   assert.match(pageSource, /All Groq and managed-local AI activity/);
+  assert.match(pageSource, /Logical requests · 5 min/);
+  assert.match(pageSource, /Execution events · 5 min/);
+  assert.match(pageSource, /Logical requests count each request ID once/);
+  assert.match(pageSource, /Separately recorded retries and failovers appear as distinct events/);
+  assert.match(pageSource, /Hosted Redis metering outbox/);
+  assert.match(pageSource, /Usage projection repair/);
+  assert.match(pageSource, /Execution metering · 1 hour/);
+  assert.match(pageSource, /meteringCoverageLabel\(provider\)/);
   assert.match(pageSource, /Provider health Â· 1 hour|Provider health · 1 hour/);
   assert.match(pageSource, /Activity audit/);
   assert.match(pageSource, /Search person, company, activity or request/);
@@ -200,18 +231,22 @@ test('live queue parser handles snapshots, heartbeats, and partial frames', () =
   const first = parseServerSentEventBuffer([
     ': keep-alive',
     '',
+    'id: 1721851200000-1',
     'event: snapshot',
     'data: {"waiting":2}',
     '',
     'event: snapshot',
     'data: {"waiting":'
   ].join('\n'));
-  assert.deepEqual(first.frames, [{ event: 'snapshot', data: '{"waiting":2}' }]);
+  assert.deepEqual(first.frames, [{ id: '1721851200000-1', event: 'snapshot', data: '{"waiting":2}' }]);
   assert.equal(first.remainder, 'event: snapshot\ndata: {"waiting":');
 
   const second = parseServerSentEventBuffer(`${first.remainder}3}\n\n`);
   assert.deepEqual(second.frames, [{ event: 'snapshot', data: '{"waiting":3}' }]);
   assert.equal(second.remainder, '');
+  assert.match(pageSource, /headers\['Last-Event-ID'\] = liveEventIdRef\.current/);
+  assert.match(pageSource, /headers\['Last-Event-ID'\] = queueEventIdRef\.current/);
+  assert.match(pageSource, /sampledAt < queueSampledAtRef\.current/);
 });
 
 test('credential removal is explicit, confirmed, and permission-aware', () => {

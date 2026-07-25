@@ -1048,9 +1048,10 @@ exports.getAccessibleResumeUrl = async (req, res) => {
 
     // Generate accessible URL for PDF
     console.log(`📄 Generating accessible URL for candidate: ${candidate.firstName} ${candidate.lastName}`);
-    const accessibleUrl = cloudinaryUploadService.getAccessiblePdfUrl(candidate.cloudinaryPublicId);
-    const downloadUrl = cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId);
-    const previewUrl = cloudinaryUploadService.getPdfPreviewUrl(candidate.cloudinaryPublicId);
+    const deliveryType = candidate.cloudinaryDeliveryType || 'upload';
+    const accessibleUrl = cloudinaryUploadService.getAccessiblePdfUrl(candidate.cloudinaryPublicId, deliveryType);
+    const downloadUrl = cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId, deliveryType);
+    const previewUrl = cloudinaryUploadService.getPdfPreviewUrl(candidate.cloudinaryPublicId, deliveryType);
 
     res.json({
       msg: 'Accessible URLs generated successfully',
