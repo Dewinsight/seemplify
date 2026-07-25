@@ -79,6 +79,7 @@ type RangeKey = '7d' | '30d' | '90d' | 'all';
 type TabKey = 'overview' | 'local' | 'test' | 'routing' | 'credentials' | 'requests' | 'alerts';
 type DetailKind = 'request' | 'queue' | 'audit';
 type MeteringStatus = 'metered' | 'unmetered' | 'legacy-unknown';
+type QueueViewMode = 'recent' | 'history';
 
 interface MeteringCounts {
   meteredExecutions: number;
@@ -170,6 +171,43 @@ interface LocalRuntimeStatus {
   error?: string;
 }
 
+interface LocalQueueTransition {
+  phase: string;
+  stage: string | null;
+  state: string;
+  progress: number;
+  attempts: number;
+  sequence: number | null;
+  at: string;
+  errorCode: string | null;
+}
+
+interface LocalQueueJob {
+  jobId: string;
+  source: 'private' | 'public' | 'bulk' | 'ai-interview';
+  producer?: 'recruiter' | 'ai-interview';
+  queue?: string;
+  state: 'queued' | 'waiting_for_local_runtime' | 'processing' | 'completed' | 'failed';
+  phase?: string;
+  stage?: string | null;
+  progress: number;
+  attempts: number;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  updatedAt: string;
+  waitMs: number | null;
+  processingMs: number | null;
+  errorCode: string | null;
+  organization: { id: string; name: string };
+  uploader: { id: string; name: string; email: string; type: 'member' | 'public' };
+  application: { id: string; title: string } | null;
+  candidate: { id: string; name: string; email: string } | null;
+  file: { name: string; type: string; size: number };
+  transitions?: LocalQueueTransition[];
+}
+
 interface LocalQueueStatus {
   queue: string;
   concurrency: number;
@@ -202,26 +240,23 @@ interface LocalQueueStatus {
     averageProcessingMs: number;
     p95ProcessingMs: number;
   };
-  recentJobs: Array<{
-    jobId: string;
-    source: 'private' | 'public' | 'bulk' | 'ai-interview';
-    state: 'queued' | 'waiting_for_local_runtime' | 'processing' | 'completed' | 'failed';
-    progress: number;
-    attempts: number;
-    createdAt: string;
-    startedAt: string | null;
-    completedAt: string | null;
-    failedAt: string | null;
-    updatedAt: string;
-    waitMs: number | null;
-    processingMs: number | null;
-    errorCode: string | null;
-    organization: { id: string; name: string };
-    uploader: { id: string; name: string; email: string; type: 'member' | 'public' };
-    application: { id: string; title: string } | null;
-    candidate: { id: string; name: string; email: string } | null;
-    file: { name: string; type: string; size: number };
-  }>;
+  stream?: {
+    eventId: string;
+    sampledAt: string;
+    staleAfterMs: number;
+  };
+  recentJobs: LocalQueueJob[];
+}
+
+interface LocalQueueHistory {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+  jobs: LocalQueueJob[];
+  retainedIndefinitely: boolean;
+  coverageStartedAt: string | null;
+  measuredAt: string;
 }
 
 interface AlertSettings {
@@ -355,6 +390,14 @@ interface AccountingHealth {
     inFlight: boolean;
     healthy: boolean;
   };
+  projectionLedger?: {
+    healthy: boolean;
+    source: string;
+    staleAfterSeconds: number;
+    stalePendingCount: number;
+    staleErroredCount: number;
+    oldestPendingAt?: string | null;
+  };
 }
 
 interface LiveOperations {
@@ -442,6 +485,7 @@ interface UsageRequest {
   totalTokens: number;
   estimatedCostUsd: number;
   latencyMs: number;
+  attempts: number;
   failovers: number;
   errorCode?: string;
   errorMessage?: string;
@@ -577,6 +621,42 @@ function formatDuration(value?: number | null) {
   return `${hours}h ${minutes % 60}m`;
 }
 
+function telemetryAge(value: string | null | undefined, now: number) {
+  if (!value) return null;
+  const sampledAt = Date.parse(value);
+  if (!Number.isFinite(sampledAt)) return null;
+  return Math.max(0, now - sampledAt);
+}
+
+function telemetryAgeLabel(value: string | null | undefined, now: number) {
+  const age = telemetryAge(value, now);
+  return age == null ? 'no successful sample' : `${formatDuration(age)} ago`;
+}
+
+function lastUtcMinuteBuckets(
+  points: Array<{ minute: string; calls: number; failures: number }>,
+  sampledAt?: string,
+  count = 30
+) {
+  const parsedEnd = Date.parse(sampledAt || '');
+  const end = new Date(Number.isFinite(parsedEnd) ? parsedEnd : Date.now());
+  end.setUTCSeconds(0, 0);
+  const pointsByMinute = new Map(points.map((point) => {
+    const minute = new Date(point.minute);
+    minute.setUTCSeconds(0, 0);
+    return [minute.getTime(), point];
+  }));
+  return Array.from({ length: count }, (_, index) => {
+    const minute = new Date(end.getTime() - ((count - index - 1) * 60_000));
+    const recorded = pointsByMinute.get(minute.getTime());
+    return {
+      minute: minute.toISOString(),
+      calls: Number(recorded?.calls || 0),
+      failures: Number(recorded?.failures || 0)
+    };
+  });
+}
+
 function formatFileSize(value?: number | null) {
   const bytes = Number(value || 0);
   if (!bytes) return '0 B';
@@ -688,8 +768,20 @@ export default function AIRuntimeAdminPage() {
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
   const [localRuntime, setLocalRuntime] = useState<LocalRuntimeStatus | null>(null);
   const [localQueue, setLocalQueue] = useState<LocalQueueStatus | null>(null);
+  const [queueViewMode, setQueueViewMode] = useState<QueueViewMode>('recent');
+  const [queueHistory, setQueueHistory] = useState<LocalQueueHistory | null>(null);
+  const [queueHistoryPage, setQueueHistoryPage] = useState(1);
+  const [queueHistoryState, setQueueHistoryState] = useState('all');
+  const [queueHistorySource, setQueueHistorySource] = useState('all');
+  const [queueHistorySearch, setQueueHistorySearch] = useState('');
+  const [queueHistoryLoading, setQueueHistoryLoading] = useState(false);
+  const [queueHistoryError, setQueueHistoryError] = useState('');
   const [queueConnection, setQueueConnection] = useState<'idle' | 'connecting' | 'live' | 'reconnecting'>('idle');
   const [queueStreamError, setQueueStreamError] = useState('');
+  const [gatewayTelemetryLastSuccessAt, setGatewayTelemetryLastSuccessAt] = useState<string | null>(null);
+  const [gatewayTelemetryError, setGatewayTelemetryError] = useState('');
+  const [queueTelemetryLastSuccessAt, setQueueTelemetryLastSuccessAt] = useState<string | null>(null);
+  const [telemetryNow, setTelemetryNow] = useState(() => Date.now());
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [requests, setRequests] = useState<UsageRequest[]>([]);
   const [requestSummary, setRequestSummary] = useState<RequestSummary | null>(null);
@@ -725,18 +817,30 @@ export default function AIRuntimeAdminPage() {
   const liveSampledAtRef = useRef(0);
   const queueEventIdRef = useRef('');
   const queueSampledAtRef = useRef(0);
+  const queueHistoryRequestRef = useRef(0);
   const liveAggregateRevisionRef = useRef(0);
   const liveAggregateRefreshInFlightRef = useRef(false);
   const liveAggregateContextRef = useRef<{
     loadOverview: () => Promise<void>;
     loadRequests: () => Promise<void>;
+    loadAudits: () => Promise<void>;
     tab: TabKey;
     requestPage: number;
+    auditPage: number;
   } | null>(null);
 
   const definitions = useMemo(() => new Map(
     (settings?.activityDefinitions || []).map((item) => [item.activity, item])
   ), [settings]);
+  const visibleQueueJobs = queueViewMode === 'history'
+    ? queueHistory?.jobs || []
+    : localQueue?.recentJobs || [];
+  const gatewayTelemetryAgeMs = telemetryAge(gatewayTelemetryLastSuccessAt, telemetryNow);
+  const gatewayTelemetryStale = gatewayTelemetryAgeMs == null || gatewayTelemetryAgeMs > 30_000;
+  const queueStaleAfterMs = Math.max(6_000, Number(localQueue?.stream?.staleAfterMs || 0));
+  const queueTelemetryAgeMs = telemetryAge(queueTelemetryLastSuccessAt, telemetryNow);
+  const queueTelemetryStale = queueTelemetryAgeMs == null || queueTelemetryAgeMs > queueStaleAfterMs;
+  const queueTelemetryError = queueStreamError || localQueue?.error || '';
 
   const availableQuotaGroups = useMemo(
     () => (settings?.quotaGroups || []).filter((group) => group.enabled !== false),
@@ -810,14 +914,51 @@ export default function AIRuntimeAdminPage() {
   }, [canConfigure]);
 
   const loadLocalGateway = useCallback(async () => {
-    const runtime = await adminJson<LocalRuntimeStatus>('/api/admin/ai-runtime/local/status');
-    setLocalRuntime(runtime);
+    try {
+      const runtime = await adminJson<LocalRuntimeStatus>('/api/admin/ai-runtime/local/status');
+      setLocalRuntime(runtime);
+      setGatewayTelemetryLastSuccessAt(new Date().toISOString());
+      setGatewayTelemetryError('');
+    } catch (error) {
+      setGatewayTelemetryError(error instanceof Error ? error.message : 'Gateway telemetry request failed');
+      throw error;
+    }
   }, []);
 
   const loadLocalQueue = useCallback(async () => {
-    const queueStatus = await adminJson<LocalQueueStatus>('/api/admin/ai-runtime/local/queue');
-    setLocalQueue(queueStatus);
+    try {
+      const queueStatus = await adminJson<LocalQueueStatus>('/api/admin/ai-runtime/local/queue');
+      setLocalQueue(queueStatus);
+      setQueueTelemetryLastSuccessAt(queueStatus.sampledAt || new Date().toISOString());
+      setQueueStreamError('');
+    } catch (error) {
+      setQueueStreamError(error instanceof Error ? error.message : 'Queue telemetry request failed');
+      throw error;
+    }
   }, []);
+
+  const loadLocalQueueHistory = useCallback(async () => {
+    const requestRevision = ++queueHistoryRequestRef.current;
+    setQueueHistoryLoading(true);
+    const params = new URLSearchParams({
+      page: String(queueHistoryPage),
+      limit: '25'
+    });
+    if (queueHistoryState !== 'all') params.set('state', queueHistoryState);
+    if (queueHistorySource !== 'all') params.set('source', queueHistorySource);
+    if (queueHistorySearch.trim()) params.set('search', queueHistorySearch.trim());
+    try {
+      const history = await adminJson<LocalQueueHistory>(`/api/admin/ai-runtime/local/queue/history?${params}`);
+      if (requestRevision !== queueHistoryRequestRef.current) return;
+      setQueueHistory(history);
+      setQueueHistoryError('');
+    } catch (error) {
+      if (requestRevision !== queueHistoryRequestRef.current) return;
+      setQueueHistoryError(error instanceof Error ? error.message : 'CV processing history request failed');
+    } finally {
+      if (requestRevision === queueHistoryRequestRef.current) setQueueHistoryLoading(false);
+    }
+  }, [queueHistoryPage, queueHistorySearch, queueHistorySource, queueHistoryState]);
 
   const loadLocalRuntime = useCallback(async () => {
     await Promise.all([loadLocalGateway(), loadLocalQueue()]);
@@ -843,8 +984,8 @@ export default function AIRuntimeAdminPage() {
   }, [auditPage]);
 
   useEffect(() => {
-    liveAggregateContextRef.current = { loadOverview, loadRequests, tab, requestPage };
-  }, [loadOverview, loadRequests, requestPage, tab]);
+    liveAggregateContextRef.current = { loadOverview, loadRequests, loadAudits, tab, requestPage, auditPage };
+  }, [auditPage, loadAudits, loadOverview, loadRequests, requestPage, tab]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -860,6 +1001,9 @@ export default function AIRuntimeAdminPage() {
       const refreshes = [context.loadOverview()];
       if (context.tab === 'requests' && context.requestPage === 1) {
         refreshes.push(context.loadRequests());
+      }
+      if (context.tab === 'alerts' && context.auditPage === 1) {
+        refreshes.push(context.loadAudits());
       }
       void Promise.all(refreshes)
         .then(() => {
@@ -974,6 +1118,21 @@ export default function AIRuntimeAdminPage() {
     return () => window.clearInterval(timer);
   }, [loadLocalGateway, tab]);
   useEffect(() => {
+    if (tab !== 'local') return;
+    setTelemetryNow(Date.now());
+    const timer = window.setInterval(() => setTelemetryNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [tab]);
+  useEffect(() => {
+    if (tab !== 'local' || queueViewMode !== 'history') return;
+    const initial = window.setTimeout(() => void loadLocalQueueHistory(), 250);
+    const timer = window.setInterval(() => void loadLocalQueueHistory(), 10_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [loadLocalQueueHistory, queueViewMode, tab]);
+  useEffect(() => {
     if (tab !== 'local') {
       setQueueConnection('idle');
       return;
@@ -1019,6 +1178,7 @@ export default function AIRuntimeAdminPage() {
               if (frame.id) queueEventIdRef.current = frame.id;
               if (Number.isFinite(sampledAt)) queueSampledAtRef.current = sampledAt;
               setLocalQueue(snapshot);
+              setQueueTelemetryLastSuccessAt(snapshot.stream?.sampledAt || snapshot.sampledAt || new Date().toISOString());
               setQueueConnection('live');
               setQueueStreamError('');
             } else if (frame.event === 'telemetry-error') {
@@ -1425,7 +1585,7 @@ export default function AIRuntimeAdminPage() {
                         title="Model usage"
                         rows={overview?.byModel || []}
                         label={(id) => id || 'Unknown'}
-                        note="Terra totals cover hosted requests made after token capture was enabled. Earlier local-cloud records and direct benchmark runs cannot be reconstructed and remain legacy-unknown rather than zero."
+                        note="Model Usage follows the aggregate projection and may update up to 10 seconds after live activity. Terra $0 means no metered API charge, not missing usage; hosted tokens and latency are recorded after capture was enabled. Direct harness and benchmark traffic is excluded, while older local-cloud records remain legacy-unknown."
                       />
                       <BreakdownTable title="Provider usage" rows={overview?.byProvider || []} label={providerUsageLabel} />
                       <BreakdownTable title="Application usage" rows={overview?.bySource || []} label={(id) => id || 'Unknown'} />
@@ -1465,7 +1625,13 @@ export default function AIRuntimeAdminPage() {
                       <p className="mt-1 text-xs text-gray-500">CV parsing is locked to the selected managed runtime. Other assigned activities may fall back to Groq when local inference is unavailable.</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={!localRuntime ? 'unknown' : localRuntime.reachable && localRuntime.health?.ok === true && localRuntime.cvLocalEligible !== false ? 'healthy' : localRuntime.reachable ? 'unknown' : 'unavailable'} />
+                      <StatusBadge status={gatewayTelemetryError || gatewayTelemetryStale
+                        ? 'stale'
+                        : !localRuntime
+                          ? 'unknown'
+                          : localRuntime.reachable && localRuntime.health?.ok === true && localRuntime.cvLocalEligible !== false
+                            ? 'healthy'
+                            : localRuntime.reachable ? 'unknown' : 'unavailable'} />
                       {canConfigure && <Button variant="outline" size="sm" disabled={busy === 'local-health'} onClick={runLocalHealthCheck} className="border-gray-700">Check and route now</Button>}
                       <Button variant="outline" size="sm" onClick={loadLocalRuntime} className="border-gray-700">
                         <RefreshCw className="mr-2 h-4 w-4" />Refresh
@@ -1487,6 +1653,8 @@ export default function AIRuntimeAdminPage() {
                       ['Gateway waiting', optionalNumber(localRuntime?.waiting)],
                       ['Concurrency', optionalNumber(localRuntime?.state?.concurrency ?? localQueue?.concurrency)],
                       ['Average latency', optionalNumber(localRuntime?.averageLatencyMs, ' ms')],
+                      ['Gateway telemetry', gatewayTelemetryStale ? 'Stale' : 'Current'],
+                      ['Gateway sample age', telemetryAgeLabel(gatewayTelemetryLastSuccessAt, telemetryNow)],
                       ['Gateway metering', localRuntime?.usageMetering ? `${localRuntime.usageMetering.health} · ${localRuntime.usageMetering.running ? 'worker running' : 'worker stopped'}` : 'Not reported'],
                       ['Metering backlog', localRuntime?.usageMetering ? `${formatNumber(localRuntime.usageMetering.pending)} pending · ${formatNumber(localRuntime.usageMetering.dead)} dead` : 'Not reported'],
                       ['Last meter delivery', localRuntime?.usageMetering?.lastDeliveryAt ? formatDate(localRuntime.usageMetering.lastDeliveryAt) : 'Not reported']
@@ -1512,7 +1680,12 @@ export default function AIRuntimeAdminPage() {
                        Local usage delivery is {localRuntime?.usageMetering?.health || 'degraded'}: {localRuntime?.usageMetering?.lastError || `${formatNumber(localRuntime?.usageMetering?.dead)} metering event(s) need operator review`}.
                      </div>
                    )}
-                   {localRuntime?.error && <div className="border-t border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-200">{localRuntime.error}</div>}
+                   {(gatewayTelemetryError || localRuntime?.error) && (
+                     <div className="border-t border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+                       Gateway telemetry error: {gatewayTelemetryError || localRuntime?.error}
+                       {gatewayTelemetryLastSuccessAt && ` Last successful sample was ${telemetryAgeLabel(gatewayTelemetryLastSuccessAt, telemetryNow)}.`}
+                     </div>
+                   )}
                 </section>
 
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
@@ -1542,7 +1715,11 @@ export default function AIRuntimeAdminPage() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-sm font-semibold text-white">Durable CV queue</h2>
-                        <StatusBadge status={!localQueue ? 'unknown' : !localQueue.available ? 'unavailable' : localQueue.paused ? 'paused' : 'healthy'} />
+                        <StatusBadge status={queueTelemetryError || queueTelemetryStale
+                          ? 'stale'
+                          : !localQueue
+                            ? 'unknown'
+                            : !localQueue.available ? 'unavailable' : localQueue.paused ? 'paused' : 'healthy'} />
                       </div>
                       <p className="mt-1 text-xs text-gray-500">Uploads remain stored while the runtime is offline. BullMQ dispatch and durable Mongo state are shown separately.</p>
                       <div aria-live="polite" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -1551,12 +1728,21 @@ export default function AIRuntimeAdminPage() {
                           {queueConnection === 'live' ? 'Live updates' : queueConnection === 'reconnecting' ? 'Reconnecting' : 'Connecting'}
                         </span>
                         <span className="text-gray-500">Every 2 seconds</span>
-                        <span className="text-gray-500">Updated {formatTime(localQueue?.sampledAt)}</span>
-                        {queueStreamError && <span className="text-amber-300">{queueStreamError}</span>}
+                        <span className={queueTelemetryStale ? 'text-red-300' : 'text-gray-500'}>
+                          Last success {telemetryAgeLabel(queueTelemetryLastSuccessAt, telemetryNow)}
+                        </span>
+                        {queueTelemetryError && <span className="text-red-300">Telemetry error: {queueTelemetryError}</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={loadLocalQueue} className="border-gray-700">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => queueViewMode === 'history'
+                          ? void Promise.all([loadLocalQueue(), loadLocalQueueHistory()])
+                          : void loadLocalQueue()}
+                        className="border-gray-700"
+                      >
                         <RefreshCw className="mr-2 h-4 w-4" />Refresh
                       </Button>
                       {canConfigure && (
@@ -1580,6 +1766,8 @@ export default function AIRuntimeAdminPage() {
                       ['Average processing', formatDuration(localQueue?.rates?.averageProcessingMs)],
                       ['P95 processing', formatDuration(localQueue?.rates?.p95ProcessingMs)],
                       ['Worker utilisation', `${formatNumber(localQueue?.worker?.utilizationPercent)}%`],
+                      ['Queue telemetry', queueTelemetryStale ? 'Stale' : 'Current'],
+                      ['Queue sample age', telemetryAgeLabel(queueTelemetryLastSuccessAt, telemetryNow)],
                       ['Queue name', localQueue?.queue || 'Not reported']
                     ].map(([label, value]) => (
                       <div key={label} className="bg-gray-900 px-4 py-3">
@@ -1591,7 +1779,7 @@ export default function AIRuntimeAdminPage() {
                   <div className="border-b border-gray-800">
                     <div className="px-4 py-3">
                       <h3 className="text-sm font-medium text-white">Queue state</h3>
-                      <p className="mt-1 text-xs text-gray-500">BullMQ counts are dispatch records; durable counts are the 30-day processing ledger.</p>
+                      <p className="mt-1 text-xs text-gray-500">BullMQ counts are dispatch records. Recruiter state is retained for 30 days; AI-interview state and Processing history are permanent.</p>
                     </div>
                     <div className="overflow-x-auto">
                       <Table>
@@ -1623,10 +1811,77 @@ export default function AIRuntimeAdminPage() {
                       </Table>
                     </div>
                   </div>
-                  <div className="px-4 py-3">
-                    <h3 className="text-sm font-medium text-white">Recent jobs</h3>
-                    <p className="mt-1 text-xs text-gray-500">Admin-only attribution for operational investigation. Select a row to inspect the complete processing audit.</p>
+                  <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium text-white">{queueViewMode === 'history' ? 'Processing history' : 'Recent jobs'}</h3>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {queueViewMode === 'history'
+                          ? 'Permanent processing audit across recruiter and AI-interview CV uploads.'
+                          : 'Live active and recently updated jobs. Select a row to inspect its complete processing audit.'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1" aria-label="CV queue records">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        aria-pressed={queueViewMode === 'recent'}
+                        onClick={() => setQueueViewMode('recent')}
+                        className={queueViewMode === 'recent' ? 'border-gray-500 bg-gray-800 text-white' : 'border-gray-700 text-gray-400'}
+                      >
+                        Recent
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        aria-pressed={queueViewMode === 'history'}
+                        onClick={() => setQueueViewMode('history')}
+                        className={queueViewMode === 'history' ? 'border-gray-500 bg-gray-800 text-white' : 'border-gray-700 text-gray-400'}
+                      >
+                        History
+                      </Button>
+                    </div>
                   </div>
+                  {queueViewMode === 'history' && (
+                    <div className="grid gap-2 border-b border-gray-800 bg-gray-950/40 px-4 py-3 md:grid-cols-[minmax(220px,1fr)_180px_180px_auto]">
+                      <Input
+                        aria-label="Search CV processing history by job ID"
+                        value={queueHistorySearch}
+                        onChange={(event) => { setQueueHistorySearch(event.target.value); setQueueHistoryPage(1); }}
+                        placeholder="Search job ID"
+                        className="border-gray-700 bg-gray-950"
+                      />
+                      <Select value={queueHistoryState} onValueChange={(value) => { setQueueHistoryState(value); setQueueHistoryPage(1); }}>
+                        <SelectTrigger aria-label="Filter CV processing history by state" className="border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All states</SelectItem>
+                          <SelectItem value="queued">Queued</SelectItem>
+                          <SelectItem value="waiting_for_local_runtime">Waiting for runtime</SelectItem>
+                          <SelectItem value="processing">Processing</SelectItem>
+                          <SelectItem value="retrying">Retrying</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="failed">Failed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={queueHistorySource} onValueChange={(value) => { setQueueHistorySource(value); setQueueHistoryPage(1); }}>
+                        <SelectTrigger aria-label="Filter CV processing history by source" className="border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All sources</SelectItem>
+                          <SelectItem value="private">Private upload</SelectItem>
+                          <SelectItem value="public">Public application</SelectItem>
+                          <SelectItem value="bulk">Bulk upload</SelectItem>
+                          <SelectItem value="ai-interview">AI interview</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center justify-end text-xs text-gray-500">
+                        {queueHistoryLoading ? <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Loading</> : `${formatNumber(queueHistory?.total)} records`}
+                      </div>
+                    </div>
+                  )}
+                  {queueViewMode === 'history' && queueHistoryError && (
+                    <div role="alert" className="border-b border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-200">{queueHistoryError}</div>
+                  )}
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -1644,7 +1899,7 @@ export default function AIRuntimeAdminPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(localQueue?.recentJobs || []).map((job) => (
+                        {visibleQueueJobs.map((job) => (
                           <TableRow
                             key={job.jobId}
                             role="button"
@@ -1664,7 +1919,7 @@ export default function AIRuntimeAdminPage() {
                               <div className="max-w-56 truncate text-sm text-gray-300" title={job.file?.name}>{job.file?.name || 'Not reported'}</div>
                               <div className="text-xs text-gray-500">{job.application?.title || job.candidate?.name || 'No job linked'}</div>
                             </TableCell>
-                            <TableCell>{job.source.replace('-', ' ')}</TableCell>
+                            <TableCell>{job.source.replace(/-/g, ' ')}</TableCell>
                             <TableCell>
                               <div className={`font-medium ${queueStateClass(job.state)}`}>{job.state.replace(/_/g, ' ')}</div>
                               {job.errorCode && <div className="mt-1 font-mono text-xs text-red-300">{job.errorCode}</div>}
@@ -1676,14 +1931,48 @@ export default function AIRuntimeAdminPage() {
                             <TableCell>{formatTime(job.updatedAt)}</TableCell>
                           </TableRow>
                         ))}
-                        {!localQueue?.recentJobs?.length && (
+                        {!visibleQueueJobs.length && !queueHistoryLoading && (
                           <TableRow>
-                            <TableCell colSpan={10} className="h-20 text-center text-gray-500">No CV processing jobs have been recorded.</TableCell>
+                            <TableCell colSpan={10} className="h-20 text-center text-gray-500">
+                              {queueViewMode === 'history' ? 'No processing history matches these filters.' : 'No recent CV processing jobs.'}
+                            </TableCell>
                           </TableRow>
                         )}
                       </TableBody>
                     </Table>
                   </div>
+                  {queueViewMode === 'history' && (
+                    <div className="flex flex-col gap-2 border-t border-gray-800 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+                      <span>
+                        Retained permanently
+                        {queueHistory?.coverageStartedAt ? ` · coverage from ${formatDate(queueHistory.coverageStartedAt)}` : ''}
+                        {queueHistory?.measuredAt ? ` · checked ${formatTime(queueHistory.measuredAt)}` : ''}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Previous CV history page"
+                          disabled={queueHistoryPage <= 1 || queueHistoryLoading}
+                          onClick={() => setQueueHistoryPage((page) => Math.max(1, page - 1))}
+                          className="border-gray-700"
+                        >
+                          <ChevronLeft className="h-4 w-4" />Previous
+                        </Button>
+                        <span>Page {queueHistoryPage} of {Math.max(1, queueHistory?.pages || 1)}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Next CV history page"
+                          disabled={queueHistoryPage >= Math.max(1, queueHistory?.pages || 1) || queueHistoryLoading}
+                          onClick={() => setQueueHistoryPage((page) => page + 1)}
+                          className="border-gray-700"
+                        >
+                          Next<ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </section>
               </TabsContent>
 
@@ -1861,7 +2150,7 @@ export default function AIRuntimeAdminPage() {
                 </section>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="overflow-x-auto"><Table>
                   <TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Activity</TableHead><TableHead>Application</TableHead><TableHead>Organization / person</TableHead><TableHead>Model</TableHead><TableHead>Tokens</TableHead><TableHead>Est. cost</TableHead><TableHead>Attempts</TableHead><TableHead>Latency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>{requests.map((request) => <TableRow key={request._id} role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Inspect AI request ${request.requestId}`} className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)} onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`))}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{providerUsageLabel(request.provider, request.model)}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell><div>{formatRecordedTokens(request.meteringStatus, request.totalTokens)}</div><div className="mt-1 text-[11px] text-gray-500">{request.meteringStatus?.replace('-', ' ') || 'legacy unknown'}</div></TableCell><TableCell>{formatRecordedCost(request.meteringStatus, request.totalTokens, request.estimatedCostUsd)}</TableCell><TableCell>{request.failovers + 1}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>{requests.map((request) => <TableRow key={request._id} role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Inspect AI request ${request.requestId}`} className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)} onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`))}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{providerUsageLabel(request.provider, request.model)}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell><div>{formatRecordedTokens(request.meteringStatus, request.totalTokens)}</div><div className="mt-1 text-[11px] text-gray-500">{request.meteringStatus?.replace('-', ' ') || 'legacy unknown'}</div></TableCell><TableCell>{formatRecordedCost(request.meteringStatus, request.totalTokens, request.estimatedCostUsd)}</TableCell><TableCell>{formatNumber(request.attempts)}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
                 </Table></div>{!requests.length && <div className="py-16 text-center text-sm text-gray-500">No requests match these filters.</div>}</section>
                 <div className="flex items-center justify-end gap-2"><Button variant="outline" size="icon" aria-label="Previous request page" title="Previous request page" disabled={requestPage <= 1} onClick={() => setRequestPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{requestPage} of {requestPages}</span><Button variant="outline" size="icon" aria-label="Next request page" title="Next request page" disabled={requestPage >= requestPages} onClick={() => setRequestPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div>
               </TabsContent>
@@ -1993,10 +2282,11 @@ function LiveOperationsPanel({
 }) {
   const five = data?.totals.fiveMinutes;
   const hour = data?.totals.hour;
-  const timeline = (data?.timeline || []).slice(-30);
+  const timeline = lastUtcMinuteBuckets(data?.timeline || [], data?.sampledAt);
   const peak = Math.max(1, ...timeline.map((point) => point.calls));
   const meteringOutbox = data?.accountingHealth?.meteringOutbox;
   const projectionRepair = data?.accountingHealth?.projectionRepair;
+  const projectionLedger = data?.accountingHealth?.projectionLedger;
   const outboxStatus = !meteringOutbox
     ? 'unknown'
     : !meteringOutbox.configured
@@ -2005,6 +2295,9 @@ function LiveOperationsPanel({
   const repairStatus = !projectionRepair
     ? 'unknown'
     : projectionRepair.healthy ? 'complete' : projectionRepair.status;
+  const ledgerStatus = !projectionLedger
+    ? 'unknown'
+    : projectionLedger.healthy ? 'healthy' : 'degraded';
   return (
     <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900">
       <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2017,7 +2310,7 @@ function LiveOperationsPanel({
         </div>
         <div className="text-xs text-gray-500">{error || `Sampled ${formatTime(data?.sampledAt)}`}</div>
       </div>
-      <div className="grid border-b border-gray-800 md:grid-cols-2">
+      <div className="grid border-b border-gray-800 md:grid-cols-3">
         <div className="border-b border-gray-800 px-4 py-3 md:border-b-0 md:border-r">
           <div className="flex items-center gap-2"><h3 className="text-xs font-medium text-gray-300">Hosted Redis metering outbox</h3><StatusBadge status={outboxStatus} /></div>
           <p className="mt-2 text-xs text-gray-500">
@@ -2028,7 +2321,7 @@ function LiveOperationsPanel({
           {meteringOutbox?.lastError?.message && <p className="mt-1 break-words text-xs text-red-300">{meteringOutbox.lastError.message}</p>}
           {meteringOutbox?.lastTerminalFailure?.reasonCode && <p className="mt-1 break-words text-xs text-red-300">{meteringOutbox.lastTerminalFailure.reasonCode}</p>}
         </div>
-        <div className="px-4 py-3">
+        <div className="border-b border-gray-800 px-4 py-3 md:border-b-0 md:border-r">
           <div className="flex items-center gap-2"><h3 className="text-xs font-medium text-gray-300">Usage projection repair</h3><StatusBadge status={repairStatus} /></div>
           <p className="mt-2 text-xs text-gray-500">
             {projectionRepair
@@ -2036,6 +2329,17 @@ function LiveOperationsPanel({
               : 'Status not reported.'}
           </p>
           {projectionRepair?.lastError && <p className="mt-1 break-words text-xs text-red-300">{projectionRepair.lastError}</p>}
+        </div>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2"><h3 className="text-xs font-medium text-gray-300">Usage projection ledger</h3><StatusBadge status={ledgerStatus} /></div>
+          <p className="mt-2 text-xs text-gray-500">
+            {projectionLedger
+              ? `${formatNumber(projectionLedger.stalePendingCount)} stale pending · ${formatNumber(projectionLedger.staleErroredCount)} errored · ${formatNumber(projectionLedger.staleAfterSeconds)}s threshold`
+              : 'Status not reported.'}
+          </p>
+          {projectionLedger?.oldestPendingAt && (
+            <p className="mt-1 text-xs text-gray-500">Oldest pending event {formatDate(projectionLedger.oldestPendingAt)}</p>
+          )}
         </div>
       </div>
       <dl className="grid gap-px border-b border-gray-800 bg-gray-800 sm:grid-cols-4 xl:grid-cols-8">
@@ -2066,16 +2370,15 @@ function LiveOperationsPanel({
         </div>
         <div className="mt-3 flex h-20 items-end gap-1" aria-label="AI requests by minute">
           {timeline.map((point) => {
-            const totalHeight = Math.max(4, Math.round((point.calls / peak) * 72));
+            const totalHeight = point.calls ? Math.max(4, Math.round((point.calls / peak) * 72)) : 2;
             const failureHeight = point.calls ? Math.round((point.failures / point.calls) * totalHeight) : 0;
             return (
               <div key={point.minute} className="group relative flex min-w-0 flex-1 flex-col justify-end" style={{ height: `${totalHeight}px` }} title={`${formatTime(point.minute)}: ${point.calls} calls, ${point.failures} failed`}>
-                <div className="w-full bg-blue-500/70" style={{ height: `${Math.max(0, totalHeight - failureHeight)}px` }} />
+                <div className={point.calls ? 'w-full bg-blue-500/70' : 'w-full bg-gray-700'} style={{ height: `${Math.max(0, totalHeight - failureHeight)}px` }} />
                 {failureHeight > 0 && <div className="w-full bg-red-500/80" style={{ height: `${failureHeight}px` }} />}
               </div>
             );
           })}
-          {!timeline.length && <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">No AI activity in the last hour.</div>}
         </div>
       </div>
       <div className="grid xl:grid-cols-2">
@@ -2149,6 +2452,7 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
     const file = recordValue(data.file);
     const application = recordValue(data.application);
     const candidate = recordValue(data.candidate);
+    const transitions = Array.isArray(data.transitions) ? data.transitions.map(recordValue) : [];
     return (
       <div className="space-y-5">
         <section className="overflow-hidden rounded-md border border-gray-800">
@@ -2177,6 +2481,36 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
             <DetailDatum label="File size / type" value={`${formatFileSize(Number(file.size || 0))} · ${textValue(file.type)}`} />
             <DetailDatum label="Error code" value={data.errorCode} mono />
           </dl>
+        </section>
+        <section className="overflow-hidden rounded-md border border-gray-800">
+          <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-semibold text-white">Processing history</h3></div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-gray-800">
+                  <TableHead>Time</TableHead>
+                  <TableHead>Phase</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead>Attempt</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transitions.map((transition, index) => (
+                  <TableRow key={`${textValue(transition.at, 'transition')}:${index}`} className="border-gray-800">
+                    <TableCell className="whitespace-nowrap text-gray-400">{formatDate(textValue(transition.at, ''))}</TableCell>
+                    <TableCell className={queueStateClass(textValue(transition.state, ''))}>{textValue(transition.phase, textValue(transition.state)).replace(/_/g, ' ')}</TableCell>
+                    <TableCell>{textValue(transition.stage, '—')}</TableCell>
+                    <TableCell>{formatNumber(Number(transition.progress || 0))}%</TableCell>
+                    <TableCell>{formatNumber(Number(transition.attempts || 0))}</TableCell>
+                    <TableCell className="font-mono text-xs text-red-300">{textValue(transition.errorCode, '—')}</TableCell>
+                  </TableRow>
+                ))}
+                {!transitions.length && <TableRow><TableCell colSpan={6} className="h-16 text-center text-gray-500">No lifecycle transitions were recorded for this job.</TableCell></TableRow>}
+              </TableBody>
+            </Table>
+          </div>
         </section>
       </div>
     );

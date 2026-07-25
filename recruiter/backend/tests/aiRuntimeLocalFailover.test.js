@@ -117,3 +117,57 @@ test('runtime enforces the CV provider lock even when stored settings are stale'
   assert.equal(resolved.provider, LOCAL_PROVIDER);
   assert.equal(resolved.failoverPolicy, 'wait_local');
 });
+
+test('settings merge and route resolution canonicalize stale failover policies', async () => {
+  const stored = createDefaultRuntimeSettings();
+  const localRoute = stored.routes.find((route) => route.activity === 'matching.analysis');
+  localRoute.provider = LOCAL_PROVIDER;
+  localRoute.model = 'managed-local-gpu';
+  localRoute.failoverPolicy = 'none';
+  const groqRoute = stored.routes.find((route) => route.activity === 'recruiter.general');
+  groqRoute.failoverPolicy = 'groq_immediate';
+
+  const runtime = new AIRuntimeService({
+    settingsModel: {
+      findOne() {
+        return { lean: async () => stored };
+      }
+    },
+    credentialModel: {},
+    quotaModel: {}
+  });
+  const merged = await runtime.getSettings({ force: true });
+  assert.equal(
+    merged.routes.find((route) => route.activity === 'matching.analysis').failoverPolicy,
+    'groq_immediate'
+  );
+  assert.equal(
+    merged.routes.find((route) => route.activity === 'recruiter.general').failoverPolicy,
+    'none'
+  );
+
+  localRoute.failoverPolicy = 'wait_local';
+  groqRoute.failoverPolicy = 'wait_local';
+  assert.equal(runtime.resolveRoute('matching.analysis', stored).failoverPolicy, 'groq_immediate');
+  assert.equal(runtime.resolveRoute('recruiter.general', stored).failoverPolicy, 'none');
+});
+
+test('execution failover ignores caller-supplied policies', () => {
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
+  const settings = createDefaultRuntimeSettings();
+  settings.localFailover.active = true;
+
+  const localRoute = runtime.resolveRoute('interview.questions', settings);
+  const failedOver = runtime.resolveExecutionRoute({ ...localRoute, failoverPolicy: 'none' }, settings, {});
+  assert.equal(failedOver.provider, 'groq');
+  assert.equal(failedOver.failoverPolicy, 'none');
+
+  const cvRoute = runtime.resolveRoute('candidate.cv_parse', settings);
+  const stillLocal = runtime.resolveExecutionRoute(
+    { ...cvRoute, failoverPolicy: 'groq_immediate' },
+    settings,
+    {}
+  );
+  assert.equal(stillLocal.provider, LOCAL_PROVIDER);
+  assert.equal(stillLocal.failoverPolicy, 'wait_local');
+});

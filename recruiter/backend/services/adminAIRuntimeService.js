@@ -9,7 +9,8 @@ const {
   ACTIVITY_DEFINITIONS,
   GROQ_120B,
   GROQ_20B,
-  createDefaultRuntimeSettings
+  createDefaultRuntimeSettings,
+  failoverPolicyForRoute
 } = require('../config/aiRuntimeCatalog');
 const { CV_EXTRACTION_SCHEMA } = require('./aiModelService');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
@@ -62,19 +63,35 @@ function serializeUsageEvent(event) {
   };
 }
 
-function usageAccountingHealth() {
+function usageAccountingHealth(projectionLedger = {}) {
   const meteringOutbox = usageMeteringOutbox.status();
   const projectionRepair = usageProjectionRepairHealth();
   const required = usageMeteringOutboxRequired();
   const ready = usageMeteringOutboxReady(meteringOutbox);
+  const stalePendingCount = Math.max(0, Number(projectionLedger.stalePendingCount || 0));
+  const staleErroredCount = Math.max(0, Number(projectionLedger.staleErroredCount || 0));
+  const oldestPendingAt = projectionLedger.oldestPendingAt
+    ? new Date(projectionLedger.oldestPendingAt)
+    : null;
+  const ledgerHealthy = stalePendingCount === 0;
   return {
-    healthy: ready && projectionRepair.healthy === true,
+    healthy: ready && projectionRepair.healthy === true && ledgerHealthy,
     meteringOutbox: {
       ...meteringOutbox,
       required,
       ready
     },
-    projectionRepair
+    projectionRepair,
+    projectionLedger: {
+      healthy: ledgerHealthy,
+      source: 'ai_usage_events',
+      staleAfterSeconds: 60,
+      stalePendingCount,
+      staleErroredCount,
+      oldestPendingAt: oldestPendingAt && Number.isFinite(oldestPendingAt.getTime())
+        ? oldestPendingAt.toISOString()
+        : null
+    }
   };
 }
 
@@ -588,6 +605,7 @@ async function updateRoute(activity, input, req) {
     model: model.id,
     reasoningEffort: effort,
     enabled: input.enabled !== false,
+    failoverPolicy: failoverPolicyForRoute(activity, model.provider),
     routeVersion: Number(route.routeVersion || 1) + 1
   } : route);
   await AIRuntimeSettings.updateOne({ key: 'global' }, {
@@ -889,6 +907,7 @@ async function queryLiveOperations() {
   const sampledAt = new Date();
   const oneHourAgo = new Date(sampledAt.getTime() - 60 * 60_000);
   const fiveMinutesAgo = new Date(sampledAt.getTime() - 5 * 60_000);
+  const staleProjectionBefore = new Date(sampledAt.getTime() - 60_000);
   const groupedMetrics = {
     calls: { $sum: 1 },
     successes: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
@@ -904,7 +923,7 @@ async function queryLiveOperations() {
     failovers: { $sum: '$failovers' },
     ...usageMeteringGroupFields()
   };
-  const [facets, logicalFacets, recent] = await Promise.all([
+  const [facets, logicalFacets, recent, projectionLedgerRows] = await Promise.all([
     AIUsageEvent.aggregate([
       { $match: { createdAt: { $gte: oneHourAgo } } },
       { $facet: {
@@ -959,7 +978,42 @@ async function queryLiveOperations() {
       .select('requestId sourceApp activity provider model status organizationId organizationName actorId actorName actorEmail latencyMs usageReported usageSource inputTokens cachedInputTokens outputTokens reasoningTokens totalTokens estimatedCostUsd failovers failoverFrom failoverReason errorCode createdAt')
       .sort({ createdAt: -1 })
       .limit(12)
-      .lean()
+      .lean(),
+    AIUsageEvent.aggregate([
+      {
+        $match: {
+          projectionExcluded: { $ne: true },
+          createdAt: { $lte: staleProjectionBefore },
+          $or: [
+            { dailyRollupProjectedAt: null },
+            { logicalRollupProjectedAt: null },
+            { quotaProjectedAt: null },
+            { projectionLastError: { $exists: true, $ne: '' } }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          stalePendingCount: { $sum: 1 },
+          staleErroredCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: [{ $type: '$projectionLastError' }, 'missing'] },
+                    { $ne: ['$projectionLastError', ''] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          },
+          oldestPendingAt: { $min: '$createdAt' }
+        }
+      }
+    ])
   ]);
   const data = facets[0] || {};
   const logical = logicalFacets[0] || {};
@@ -980,7 +1034,7 @@ async function queryLiveOperations() {
     activities: (logical.activities || []).map((row) => ({ id: row._id || 'unknown', ...liveSummary(row), lastRequestAt: row.lastRequestAt })),
     timeline: (logical.timeline || []).map((row) => ({ minute: row._id, calls: Number(row.calls || 0), failures: Number(row.failures || 0) })),
     recent: recent.map(serializeUsageEvent),
-    accountingHealth: usageAccountingHealth()
+    accountingHealth: usageAccountingHealth(projectionLedgerRows?.[0])
   };
 }
 

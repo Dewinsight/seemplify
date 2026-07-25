@@ -189,6 +189,18 @@ test('local signatures are deterministic for fixed request inputs', () => {
   assert.deepEqual(signed, { timestamp: '1234', nonce: 'abcdefghijklmnop', signature: expected });
 });
 
+test('gateway replay protection keeps durable nonce I/O off the event loop', () => {
+  const gateway = fs.readFileSync(gatewayScript, 'utf8');
+  const nonceIo = gateway.slice(
+    gateway.indexOf('async function pruneNonces'),
+    gateway.indexOf('function safeEqual')
+  );
+  assert.match(nonceIo, /fs\.promises\.readdir/);
+  assert.match(nonceIo, /fs\.promises\.open\(file, 'wx'/);
+  assert.match(nonceIo, /fs\.promises\.readFile/);
+  assert.doesNotMatch(nonceIo, /(?:readdirSync|openSync|readFileSync|writeFileSync|unlinkSync)/);
+});
+
 test('local verification, benchmark, soak, and public smoke tools bind signatures to the CV endpoint', () => {
   const toolsRoot = path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm');
   const signingTools = [
@@ -262,6 +274,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   const historyBackendPort = 11546;
   const historySecret = 'local-cv-runtime-test-secret';
   let observedHistoryRequest = null;
+  let observedProviderTelemetryRequest = null;
   const fakeOllama = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -289,23 +302,40 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   await listen(fakeOllama, ollamaPort);
   context.after(() => new Promise((resolve) => fakeOllama.close(resolve)));
   const fakeHistoryBackend = http.createServer((request, response) => {
-    observedHistoryRequest = {
+    const observedRequest = {
       url: request.url,
       timestamp: String(request.headers['x-seemplify-timestamp'] || ''),
       nonce: String(request.headers['x-seemplify-nonce'] || ''),
       signature: String(request.headers['x-seemplify-signature'] || '')
     };
+    if (request.url === '/api/internal/local-cv-queue/provider-telemetry') {
+      observedProviderTelemetryRequest = observedRequest;
+    } else {
+      observedHistoryRequest = observedRequest;
+    }
     const expected = signLocalHistoryRequest(
       historySecret,
       request.method,
       request.url,
-      observedHistoryRequest.timestamp,
-      observedHistoryRequest.nonce
+      observedRequest.timestamp,
+      observedRequest.nonce
     );
     response.setHeader('content-type', 'application/json');
-    if (expected !== observedHistoryRequest.signature) {
+    if (expected !== observedRequest.signature) {
       response.statusCode = 401;
       return response.end(JSON.stringify({ code: 'INVALID_SIGNATURE' }));
+    }
+    if (request.url === '/api/internal/local-cv-queue/provider-telemetry') {
+      return response.end(JSON.stringify({
+        sampledAt: '2026-07-25T12:00:00.000Z',
+        window: { minutes: 60 },
+        totals: {
+          fiveMinutes: { calls: 2, failures: 0, averageLatencyMs: 500, totalTokens: 900, estimatedCostUsd: 0.001 },
+          hour: { calls: 8, failures: 1, averageLatencyMs: 700, totalTokens: 4_000, estimatedCostUsd: 0.02 }
+        },
+        providers: [{ id: 'local-codex', calls: 5, failures: 0, averageLatencyMs: 1_200, totalTokens: 3_100, estimatedCostUsd: 0, lastRequestAt: '2026-07-25T11:59:00.000Z', actorEmail: 'private@example.test' }],
+        recent: [{ organizationName: 'Private Ltd' }]
+      }));
     }
     return response.end(JSON.stringify({
       page: 2,
@@ -384,6 +414,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   });
   assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/status`)).status, 403);
   assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/queue-history`)).status, 403);
+  assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/provider-telemetry`)).status, 403);
   assert.equal((await fetch(`http://127.0.0.1:${gatewayPort}/control/state`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
@@ -416,6 +447,15 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   assert.match(observedHistoryRequest.url, /search=job_demo/);
   await controlRequest('/control/queue-history?state=retrying&page=1&limit=25');
   assert.match(observedHistoryRequest.url, /state=retrying/);
+  const providerTelemetryResponse = await controlRequest('/control/provider-telemetry');
+  assert.equal(providerTelemetryResponse.status, 200);
+  const providerTelemetry = await providerTelemetryResponse.json();
+  assert.equal(providerTelemetry.providers[0].id, 'local-codex');
+  assert.equal(providerTelemetry.totals.fiveMinutes.calls, 2);
+  assert.equal(JSON.stringify(providerTelemetry).includes('private@example.test'), false);
+  assert.equal(JSON.stringify(providerTelemetry).includes('Private Ltd'), false);
+  assert.equal(observedProviderTelemetryRequest.url, '/api/internal/local-cv-queue/provider-telemetry');
+  assert.equal(observedProviderTelemetryRequest.signature.includes(historySecret), false);
   const forbiddenBody = JSON.stringify({
     activity: 'unknown.activity',
     messages: [{ role: 'user', content: 'hello' }],
@@ -510,6 +550,14 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ paused: true })
     });
+    assert.equal(await waitForCondition(() => {
+      const auditLog = fs.readFileSync(isolatedLogFile, 'utf8');
+      return auditLog.includes('"message":"Local AI control state changed"')
+        && auditLog.includes('"action":"control_state_updated"')
+        && auditLog.includes('"paused":{"from":false,"to":true}')
+        && auditLog.includes('"message":"Local AI control state change rejected"')
+        && auditLog.includes('"errorCode":"CONCURRENCY_NOT_APPROVED"');
+    }), true);
     const telemetryBody = JSON.stringify({
       schemaVersion: 2,
       waiting: 7,

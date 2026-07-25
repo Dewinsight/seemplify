@@ -122,13 +122,18 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'ai_interview.scoring': { label: 'AI Interview scoring', group: 'AI Interview', model: GROQ_120B, reasoningEffort: 'high' }
 });
 
+function failoverPolicyForRoute(activity, provider) {
+  if (ACTIVITY_DEFINITIONS[activity]?.lockedProvider === true) return 'wait_local';
+  return provider === LOCAL_PROVIDER ? 'groq_immediate' : 'none';
+}
+
 const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
   activity,
   provider: definition.provider || GROQ_PROVIDER,
   model: definition.model,
   reasoningEffort: definition.reasoningEffort,
   lockedProvider: definition.lockedProvider === true,
-  failoverPolicy: definition.failoverPolicy || 'none',
+  failoverPolicy: failoverPolicyForRoute(activity, definition.provider || GROQ_PROVIDER),
   enabled: true,
   routeVersion: 1
 })));
@@ -201,5 +206,6 @@ module.exports = {
   LOCAL_MANAGED_MODEL,
   LOCAL_PROVIDER,
   createDefaultRuntimeSettings,
+  failoverPolicyForRoute,
   localProviderLabel
 };

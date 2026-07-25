@@ -53,6 +53,41 @@ function handleError(res, error, fallback) {
   return res.status(error?.statusCode || 500).json({ code: error?.code || 'AI_RUNTIME_ADMIN_ERROR', msg: fallback });
 }
 
+function safeTimestamp(value) {
+  const timestamp = value ? new Date(value) : null;
+  return timestamp && Number.isFinite(timestamp.getTime()) ? timestamp.toISOString() : null;
+}
+
+function localFailoverAuditState(value) {
+  if (!value) return null;
+  return {
+    enabled: value.enabled !== false,
+    active: value.active === true,
+    status: value.status || 'unknown',
+    reason: value.reason || null,
+    engine: value.engine || null,
+    model: value.model || null,
+    checkedAt: safeTimestamp(value.checkedAt)
+  };
+}
+
+function queueAuditState(value) {
+  if (!value) return null;
+  return {
+    paused: value.paused === true,
+    available: value.available !== false,
+    workerRunning: value.worker?.running === true,
+    concurrency: Math.max(0, Number(value.concurrency ?? value.worker?.concurrency ?? 0)),
+    waiting: Math.max(0, Number(value.counts?.waitingTotal ?? value.counts?.waiting ?? 0)),
+    active: Math.max(0, Number(value.counts?.active || 0)),
+    delayed: Math.max(0, Number(value.counts?.delayed || 0))
+  };
+}
+
+function operationalErrorCode(error, fallback) {
+  return String(error?.code || fallback).slice(0, 120);
+}
+
 router.get('/overview', ...analyticsAccess, async (req, res) => {
   try {
     res.json(await getOverview(req.query));
@@ -125,10 +160,40 @@ router.get('/local/status', ...analyticsAccess, async (_req, res) => {
   }
 });
 
-router.post('/local/health-check', ...settingsAccess, async (_req, res) => {
+router.post('/local/health-check', ...settingsAccess, async (req, res) => {
+  let before = null;
   try {
-    res.json({ success: true, ...(await localAIRuntimeHealthService.checkNow()) });
+    const settings = await aiRuntimeService.getSettings({ force: true });
+    before = localFailoverAuditState(settings.localFailover);
+    const result = await localAIRuntimeHealthService.checkNow();
+    await writeAudit(req, {
+      category: 'health',
+      action: 'local_health_check_succeeded',
+      targetType: 'AIRuntimeSettings',
+      targetId: 'local-managed-runtime',
+      model: result.model || undefined,
+      message: 'Manual local AI health check succeeded',
+      metadata: {
+        before,
+        after: localFailoverAuditState(result)
+      }
+    });
+    res.json({ success: true, ...result });
   } catch (error) {
+    await writeAudit(req, {
+      category: 'health',
+      action: 'local_health_check_failed',
+      status: 'failed',
+      targetType: 'AIRuntimeSettings',
+      targetId: 'local-managed-runtime',
+      message: 'Manual local AI health check failed',
+      metadata: {
+        before,
+        errorCode: operationalErrorCode(error, 'LOCAL_AI_HEALTH_CHECK_FAILED')
+      }
+    }).catch((auditError) => {
+      console.error('Failed to audit manual local AI health check failure', auditError);
+    });
     handleError(res, error, 'Failed to run local AI health check');
   }
 });
@@ -164,13 +229,43 @@ router.get('/local/queue/jobs/:jobId', ...analyticsAccess, async (req, res) => {
 });
 
 router.post('/local/queue/:action', ...settingsAccess, async (req, res) => {
+  let before = null;
   try {
     if (!['pause', 'resume'].includes(req.params.action)) {
       return res.status(400).json({ code: 'INVALID_QUEUE_ACTION', msg: 'Action must be pause or resume' });
     }
-    const queue = await cvAnalysisQueue.setPaused(req.params.action === 'pause');
+    const paused = req.params.action === 'pause';
+    before = queueAuditState(await cvAnalysisQueue.adminTelemetry().catch(() => null));
+    const queue = await cvAnalysisQueue.setPaused(paused);
+    await writeAudit(req, {
+      category: 'configuration',
+      action: paused ? 'cv_queue_paused' : 'cv_queue_resumed',
+      targetType: 'CVProcessingQueue',
+      targetId: 'local-cv-dispatch',
+      message: `${paused ? 'Paused' : 'Resumed'} local CV queue dispatch`,
+      metadata: {
+        before,
+        after: queueAuditState(queue)
+      }
+    });
     res.json({ success: true, queue });
   } catch (error) {
+    const paused = req.params.action === 'pause';
+    await writeAudit(req, {
+      category: 'configuration',
+      action: paused ? 'cv_queue_pause_failed' : 'cv_queue_resume_failed',
+      status: 'failed',
+      targetType: 'CVProcessingQueue',
+      targetId: 'local-cv-dispatch',
+      message: `Failed to ${paused ? 'pause' : 'resume'} local CV queue dispatch`,
+      metadata: {
+        before,
+        requestedPaused: paused,
+        errorCode: operationalErrorCode(error, 'CV_QUEUE_CONTROL_FAILED')
+      }
+    }).catch((auditError) => {
+      console.error('Failed to audit local CV queue control failure', auditError);
+    });
     handleError(res, error, 'Failed to update local CV queue');
   }
 });

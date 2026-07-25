@@ -5,18 +5,28 @@ const fs = require('node:fs');
 const path = require('node:path');
 const AIAuditEvent = require('../models/AIAuditEvent');
 const AIQuotaSnapshot = require('../models/AIQuotaSnapshot');
+const AIRuntimeSettings = require('../models/AIRuntimeSettings');
 const AIUsageDailyRollup = require('../models/AIUsageDailyRollup');
 const AIUsageEvent = require('../models/AIUsageEvent');
 const AIUsageLogicalRequest = require('../models/AIUsageLogicalRequest');
+const {
+  createDefaultRuntimeSettings,
+  GROQ_120B,
+  LOCAL_MANAGED_MODEL
+} = require('../config/aiRuntimeCatalog');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const { AIRuntimeError } = require('../services/aiRuntime/aiRuntimeService');
+const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+const localAIRuntimeHealthService = require('../services/localAIRuntimeHealthService');
 const {
   getLiveOperations,
   getOverview,
   listRequests,
   runRuntimeTest,
-  serializeUsageEvent
+  serializeUsageEvent,
+  updateRoute
 } = require('../services/adminAIRuntimeService');
+const adminAIRuntimeRouter = require('../routes/adminAIRuntime');
 
 const route = {
   activity: 'recruiter.general',
@@ -38,6 +48,29 @@ const request = {
 };
 
 afterEach(() => mock.restoreAll());
+
+function adminRouteHandler(method, routePath) {
+  const layer = adminAIRuntimeRouter.stack.find((item) => (
+    item.route?.path === routePath && item.route.methods?.[method] === true
+  ));
+  assert.ok(layer, `${method.toUpperCase()} ${routePath} route must exist`);
+  return layer.route.stack.at(-1).handle;
+}
+
+function responseRecorder() {
+  return {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(value) {
+      this.body = value;
+      return this;
+    }
+  };
+}
 
 test('historical token-bearing events are serialized as metered even before the flag backfill', () => {
   const serialized = serializeUsageEvent({
@@ -89,6 +122,185 @@ test('queue telemetry stream is authenticated, unbuffered, and cleans up timers'
   assert.match(routeSource, /queueTelemetryStream\.subscribe\(req, res\)/);
 });
 
+test('manual local health checks audit safe before and after state', async () => {
+  const checkedAt = new Date('2026-07-25T09:00:00.000Z');
+  mock.method(aiRuntimeService, 'getSettings', async () => ({
+    localFailover: {
+      enabled: true,
+      active: true,
+      status: 'groq_failover',
+      reason: 'local_gateway_unreachable',
+      engine: 'codex',
+      model: 'gpt-5.6-terra',
+      checkedAt: new Date('2026-07-25T08:30:00.000Z')
+    }
+  }));
+  mock.method(localAIRuntimeHealthService, 'checkNow', async () => ({
+    enabled: true,
+    active: false,
+    status: 'healthy',
+    reason: null,
+    engine: 'codex',
+    model: 'gpt-5.6-terra',
+    checkedAt,
+    localRuntime: {
+      gatewayUrl: 'https://must-not-be-audited.invalid',
+      state: { enabled: true }
+    }
+  }));
+  const audit = mock.method(AIAuditEvent, 'create', async (event) => event);
+  const res = responseRecorder();
+
+  await adminRouteHandler('post', '/local/health-check')(request, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  const event = audit.mock.calls[0].arguments[0];
+  assert.equal(event.action, 'local_health_check_succeeded');
+  assert.equal(event.category, 'health');
+  assert.equal(event.metadata.before.active, true);
+  assert.equal(event.metadata.after.active, false);
+  assert.equal(event.metadata.after.checkedAt, checkedAt.toISOString());
+  assert.equal(JSON.stringify(event.metadata).includes('gatewayUrl'), false);
+  assert.deepEqual(Object.keys(event.metadata.after).sort(), [
+    'active', 'checkedAt', 'enabled', 'engine', 'model', 'reason', 'status'
+  ]);
+});
+
+test('failed manual local health checks write a content-free failed audit', async () => {
+  mock.method(aiRuntimeService, 'getSettings', async () => ({
+    localFailover: { enabled: true, active: false, status: 'healthy' }
+  }));
+  const error = Object.assign(new Error('private gateway response'), { code: 'LOCAL_GATEWAY_TIMEOUT' });
+  mock.method(localAIRuntimeHealthService, 'checkNow', async () => {
+    throw error;
+  });
+  const audit = mock.method(AIAuditEvent, 'create', async (event) => event);
+  mock.method(console, 'error', () => {});
+  const res = responseRecorder();
+
+  await adminRouteHandler('post', '/local/health-check')(request, res);
+
+  assert.equal(res.statusCode, 500);
+  const event = audit.mock.calls[0].arguments[0];
+  assert.equal(event.action, 'local_health_check_failed');
+  assert.equal(event.status, 'failed');
+  assert.equal(event.metadata.errorCode, 'LOCAL_GATEWAY_TIMEOUT');
+  assert.equal(JSON.stringify(event).includes('private gateway response'), false);
+});
+
+test('queue pause and resume audit bounded operational before and after state', async () => {
+  let paused = false;
+  mock.method(cvAnalysisQueue, 'adminTelemetry', async () => ({
+    paused,
+    available: true,
+    concurrency: 1,
+    counts: { waitingTotal: 3, active: 1, delayed: 2 },
+    worker: { running: true },
+    recentJobs: [{ originalName: 'must-not-be-audited.pdf' }]
+  }));
+  mock.method(cvAnalysisQueue, 'setPaused', async (nextPaused) => {
+    paused = nextPaused;
+    return {
+      paused,
+      available: true,
+      concurrency: 1,
+      counts: { waitingTotal: 3, active: 1, delayed: 2 },
+      worker: { running: true },
+      recentJobs: [{ actorEmail: 'must-not-be-audited@example.com' }]
+    };
+  });
+  const audit = mock.method(AIAuditEvent, 'create', async (event) => event);
+
+  for (const action of ['pause', 'resume']) {
+    const res = responseRecorder();
+    await adminRouteHandler('post', '/local/queue/:action')(
+      { ...request, params: { action } },
+      res
+    );
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.queue.paused, action === 'pause');
+  }
+
+  const pauseEvent = audit.mock.calls[0].arguments[0];
+  const resumeEvent = audit.mock.calls[1].arguments[0];
+  assert.equal(pauseEvent.action, 'cv_queue_paused');
+  assert.equal(pauseEvent.metadata.before.paused, false);
+  assert.equal(pauseEvent.metadata.before.workerRunning, true);
+  assert.equal(pauseEvent.metadata.after.paused, true);
+  assert.equal(pauseEvent.metadata.after.workerRunning, true);
+  assert.equal(resumeEvent.action, 'cv_queue_resumed');
+  assert.equal(resumeEvent.metadata.before.paused, true);
+  assert.equal(resumeEvent.metadata.after.paused, false);
+  assert.equal(JSON.stringify([pauseEvent.metadata, resumeEvent.metadata]).includes('recentJobs'), false);
+  assert.equal(JSON.stringify([pauseEvent.metadata, resumeEvent.metadata]).includes('must-not-be-audited'), false);
+});
+
+test('failed queue controls write a safe failed audit', async () => {
+  mock.method(cvAnalysisQueue, 'adminTelemetry', async () => ({
+    paused: false,
+    available: true,
+    counts: { waitingTotal: 1, active: 0, delayed: 0 },
+    worker: { running: true }
+  }));
+  mock.method(cvAnalysisQueue, 'setPaused', async () => {
+    throw Object.assign(new Error('redis://private-host'), { code: 'QUEUE_CONTROL_UNAVAILABLE' });
+  });
+  const audit = mock.method(AIAuditEvent, 'create', async (event) => event);
+  mock.method(console, 'error', () => {});
+  const res = responseRecorder();
+
+  await adminRouteHandler('post', '/local/queue/:action')(
+    { ...request, params: { action: 'pause' } },
+    res
+  );
+
+  assert.equal(res.statusCode, 500);
+  const event = audit.mock.calls[0].arguments[0];
+  assert.equal(event.action, 'cv_queue_pause_failed');
+  assert.equal(event.status, 'failed');
+  assert.equal(event.metadata.requestedPaused, true);
+  assert.equal(event.metadata.errorCode, 'QUEUE_CONTROL_UNAVAILABLE');
+  assert.equal(JSON.stringify(event).includes('redis://private-host'), false);
+});
+
+test('route updates derive failover policy from the selected provider and ignore client policy', async () => {
+  let settings = createDefaultRuntimeSettings();
+  settings.models = settings.models.map((model) => (
+    model.provider === 'groq' ? { ...model, available: true } : model
+  ));
+  const persistedRoutes = [];
+  mock.method(aiRuntimeService, 'getSettings', async () => settings);
+  mock.method(AIRuntimeSettings, 'updateOne', async (_filter, update) => {
+    if (update.$set?.routes) {
+      persistedRoutes.push(update.$set.routes);
+      settings = { ...settings, routes: update.$set.routes };
+    }
+    return { modifiedCount: 1 };
+  });
+  mock.method(AIAuditEvent, 'create', async (event) => event);
+
+  await updateRoute('matching.analysis', {
+    model: LOCAL_MANAGED_MODEL,
+    reasoningEffort: 'high',
+    enabled: true,
+    failoverPolicy: 'none'
+  }, request);
+  const local = persistedRoutes[0].find((item) => item.activity === 'matching.analysis');
+  assert.equal(local.provider, 'local-ollama');
+  assert.equal(local.failoverPolicy, 'groq_immediate');
+
+  await updateRoute('matching.analysis', {
+    model: GROQ_120B,
+    reasoningEffort: 'high',
+    enabled: true,
+    failoverPolicy: 'wait_local'
+  }, request);
+  const groq = persistedRoutes[1].find((item) => item.activity === 'matching.analysis');
+  assert.equal(groq.provider, 'groq');
+  assert.equal(groq.failoverPolicy, 'none');
+});
+
 test('live operations and click-through audit endpoints require analytics access', () => {
   const routeSource = fs.readFileSync(path.join(__dirname, '..', 'routes', 'adminAIRuntime.js'), 'utf8');
   assert.match(routeSource, /router\.get\('\/live\/stream', \.\.\.analyticsAccess/);
@@ -121,6 +333,17 @@ test('live operations compares providers, preserves token composition, and group
       assert.deepEqual(requestGroup.$group._id.requestId, {
         $ifNull: ['$requestId', { $toString: '$_id' }]
       });
+    }
+    if (aggregateCall === 3) {
+      const match = pipeline[0].$match;
+      assert.deepEqual(match.projectionExcluded, { $ne: true });
+      assert.ok(match.createdAt.$lte instanceof Date);
+      assert.equal(match.$or.length, 4);
+      return [{
+        stalePendingCount: 2,
+        staleErroredCount: 1,
+        oldestPendingAt: new Date('2026-07-25T08:00:00.000Z')
+      }];
     }
     return aggregateCall === 1 ? [{
       hour: [{ calls: 9, successes: 7, failures: 2, tokens: 4000, cost: 0.02, averageLatencyMs: 700, maxLatencyMs: 1900, failovers: 1, meteredExecutions: 7, unmeteredExecutions: 1, unknownMeteringExecutions: 1 }],
@@ -203,6 +426,15 @@ test('live operations compares providers, preserves token composition, and group
   assert.equal(result.recent[0].meteringStatus, 'legacy-unknown');
   assert.equal(typeof result.accountingHealth.meteringOutbox.ready, 'boolean');
   assert.equal(typeof result.accountingHealth.projectionRepair.healthy, 'boolean');
+  assert.equal(result.accountingHealth.healthy, false);
+  assert.deepEqual(result.accountingHealth.projectionLedger, {
+    healthy: false,
+    source: 'ai_usage_events',
+    staleAfterSeconds: 60,
+    stalePendingCount: 2,
+    staleErroredCount: 1,
+    oldestPendingAt: '2026-07-25T08:00:00.000Z'
+  });
 });
 
 test('overview exposes full token, success, and latency detail for local and hosted usage', async () => {

@@ -90,8 +90,8 @@ class TestRuntime extends AIRuntimeService {
     ));
   }
 
-  async providerRequest({ credential, payload }) {
-    this.providerCalls.push({ credential, payload });
+  async providerRequest({ credential, payload, timeoutMs, signal }) {
+    this.providerCalls.push({ credential, payload, timeoutMs, signal });
     const next = this.responses.shift();
     if (next instanceof Error) throw next;
     return next;
@@ -210,13 +210,31 @@ test('eligible local request does not fail over when automatic failover is disab
   assert.equal(runtime.results.length, 1);
 });
 
-test('eligible local request does not fail over for schema, authentication, or other non-outage errors', async () => {
-  for (const error of [
-    new AIRuntimeError('Invalid schema', {
+test('eligible non-CV local request falls back when the local response violates its schema', async () => {
+  const runtime = new TestRuntime([jsonResponse(successPayload('Recovered structured response'))]);
+  runtime.localProviderRequest = async () => {
+    throw new AIRuntimeError('Invalid schema', {
       code: 'LOCAL_LLM_SCHEMA_INVALID',
       statusCode: 503,
       retryable: true
-    }),
+    });
+  };
+
+  const result = await runtime.complete('interview.questions', {
+    messages: [{ role: 'user', content: 'Generate interview questions' }]
+  });
+  assert.equal(result.provider, 'groq');
+  assert.equal(result.failover.reason, 'LOCAL_LLM_SCHEMA_INVALID');
+  assert.equal(runtime.providerCalls.length, 1);
+  assert.equal(runtime.results.length, 2);
+  assert.equal(isLocalRuntimeUnavailable(new AIRuntimeError('Invalid schema', {
+    code: 'LOCAL_LLM_SCHEMA_INVALID',
+    retryable: true
+  })), true);
+});
+
+test('eligible local request does not fail over for authentication or other non-outage errors', async () => {
+  for (const error of [
     new AIRuntimeError('Request rejected', {
       code: 'ACTIVITY_NOT_ALLOWED',
       statusCode: 403,
@@ -364,8 +382,8 @@ test('post-generation gateway failures persist authoritative Terra token usage',
   }, 502);
 
   await assert.rejects(
-    () => runtime.complete('interview.questions', {
-      messages: [{ role: 'user', content: 'Generate structured questions.' }]
+    () => runtime.complete('candidate.cv_parse', {
+      messages: [{ role: 'user', content: 'Extract this synthetic CV.' }]
     }),
     (error) => error.code === 'LOCAL_LLM_SCHEMA_INVALID'
   );
@@ -470,6 +488,24 @@ for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {
     assert.equal(runtime.results[0].route.provider, 'local-ollama');
     assert.equal(runtime.results[0].route.failoverPolicy, 'wait_local');
     assert.equal(calculateFailovers(runtime.results[0].route, 1), 0);
+  });
+
+  test(`${activity} never silently falls back when local output violates its schema`, async () => {
+    const runtime = new TestRuntime([jsonResponse(successPayload('must not be used'))]);
+    runtime.localProviderRequest = async () => {
+      throw new AIRuntimeError('Invalid schema', {
+        code: 'LOCAL_LLM_SCHEMA_INVALID',
+        statusCode: 503,
+        retryable: true
+      });
+    };
+
+    await assert.rejects(() => runtime.complete(activity, {
+      messages: [{ role: 'user', content: 'Extract this CV' }]
+    }), (error) => error.code === 'LOCAL_LLM_SCHEMA_INVALID');
+    assert.equal(runtime.providerCalls.length, 0);
+    assert.equal(runtime.results.length, 1);
+    assert.equal(runtime.results[0].route.failoverPolicy, 'wait_local');
   });
 }
 
@@ -679,6 +715,23 @@ test('streaming responses pass through while telemetry consumes a tee', async ()
   assert.equal(await response.text(), streamBody);
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(runtime.results.some((item) => item.status === 'success'), true);
+});
+
+test('streaming requests propagate the caller abort signal to Groq transport', async () => {
+  const controller = new AbortController();
+  const runtime = new TestRuntime([new Response('data: [DONE]\n\n', {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' }
+  })]);
+  const response = await runtime.streamResponse('assistant.chat', {
+    messages: [{ role: 'user', content: 'Stream' }]
+  }, {
+    signal: controller.signal,
+    timeoutMs: 12_345
+  });
+  assert.equal(runtime.providerCalls[0].signal, controller.signal);
+  assert.equal(runtime.providerCalls[0].timeoutMs, 12_345);
+  await response.text();
 });
 
 test('streaming failures are recorded after bounded failover attempts', async () => {

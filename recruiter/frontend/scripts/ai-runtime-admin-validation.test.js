@@ -104,7 +104,9 @@ test('overview shows provider and model token composition and follows live snaps
   assert.match(pageSource, /function providerUsageLabel/);
   assert.match(pageSource, /model === 'gpt-5\.6-terra'\) return 'Terra \(Codex local-cloud\)'/);
   assert.match(pageSource, /return model \? `Codex local-cloud · \$\{model\}` : 'Codex local-cloud'/);
-  assert.match(pageSource, /Earlier local-cloud records and direct benchmark runs cannot be reconstructed/);
+  assert.match(pageSource, /Model Usage follows the aggregate projection and may update up to 10 seconds/);
+  assert.match(pageSource, /Terra \$0 means no metered API charge, not missing usage/);
+  assert.match(pageSource, /Direct harness and benchmark traffic is excluded/);
   assert.match(pageSource, /formatAggregateTokens/);
   assert.match(pageSource, /providerUsageLabel\(provider\.id\)/);
   assert.match(pageSource, /providerUsageLabel\(request\.provider, request\.model\)/);
@@ -122,7 +124,13 @@ test('overview shows provider and model token composition and follows live snaps
   assert.match(pageSource, /provider\.reasoningTokens/);
   assert.match(pageSource, /liveSnapshotRevisionRef\.current \+= 1/);
   assert.match(pageSource, /context\.tab === 'requests' && context\.requestPage === 1/);
+  assert.match(pageSource, /context\.tab === 'alerts' && context\.auditPage === 1/);
   assert.match(pageSource, /\}, 10_000\);/);
+  assert.match(pageSource, /lastUtcMinuteBuckets\(data\?\.timeline \|\| \[\], data\?\.sampledAt\)/);
+  assert.match(pageSource, /Usage projection ledger/);
+  assert.match(pageSource, /projectionLedger\.stalePendingCount/);
+  assert.match(pageSource, /projectionLedger\.staleErroredCount/);
+  assert.match(pageSource, /projectionLedger\.oldestPendingAt/);
 });
 
 test('zero-token events distinguish explicit unmetered from legacy unknown', () => {
@@ -200,10 +208,27 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
   assert.match(pageSource, /Check and route now/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/\$\{paused \? 'pause' : 'resume'\}/);
   assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/stream/);
+  assert.match(pageSource, /\/api\/admin\/ai-runtime\/local\/queue\/history/);
   assert.match(pageSource, /Live updates/);
   assert.match(pageSource, /Every 2 seconds/);
+  assert.match(pageSource, /Gateway sample age/);
+  assert.match(pageSource, /Queue sample age/);
+  assert.match(pageSource, /gatewayTelemetryStale/);
+  assert.match(pageSource, /queueTelemetryStale/);
   assert.match(pageSource, /BullMQ counts are dispatch records/);
   assert.match(pageSource, /Recent jobs/);
+  assert.match(pageSource, /Processing history/);
+  assert.match(pageSource, /Filter CV processing history by state/);
+  assert.match(pageSource, /Filter CV processing history by source/);
+  assert.match(pageSource, /Previous CV history page/);
+  assert.match(pageSource, /data\.transitions/);
+  assert.match(pageSource, /No lifecycle transitions were recorded for this job/);
+});
+
+test('activity attempts use the recorded request field', () => {
+  assert.match(pageSource, /attempts: number;/);
+  assert.match(pageSource, /formatNumber\(request\.attempts\)/);
+  assert.doesNotMatch(pageSource, /request\.failovers \+ 1/);
 });
 
 test('AI Runtime exposes live cross-provider operations and clickable attributable audits', () => {

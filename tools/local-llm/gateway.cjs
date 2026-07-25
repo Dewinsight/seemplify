@@ -159,6 +159,26 @@ function writeState(update) {
   };
 }
 
+function controlAuditValue(key, value) {
+  if (key !== 'engines') return value;
+  return Object.fromEntries(ENGINE_IDS.map((id) => [
+    id,
+    {
+      model: String(value?.[id]?.model || '')
+    }
+  ]));
+}
+
+function controlStateChanges(before, after, requested) {
+  return Object.fromEntries(Object.keys(requested).map((key) => [
+    key,
+    {
+      from: controlAuditValue(key, before?.[key]),
+      to: controlAuditValue(key, after?.[key])
+    }
+  ]));
+}
+
 let logWriteChain = Promise.resolve();
 
 async function rotateLogIfNeeded(additionalBytes) {
@@ -232,46 +252,48 @@ let shuttingDown = false;
 let queueTelemetry = null;
 let lastNoncePruneAt = 0;
 
-function pruneNonces(now = Date.now()) {
+async function pruneNonces(now = Date.now()) {
   for (const [nonce, expiresAt] of seenNonces) if (expiresAt <= now) seenNonces.delete(nonce);
   if (now - lastNoncePruneAt < 60_000) return;
   lastNoncePruneAt = now;
   let entries = [];
   try {
-    entries = fs.readdirSync(nonceDir, { withFileTypes: true });
+    entries = await fs.promises.readdir(nonceDir, { withFileTypes: true });
   } catch {
     return;
   }
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.nonce')) continue;
+  await Promise.all(entries.map(async (entry) => {
+    if (!entry.isFile() || !entry.name.endsWith('.nonce')) return;
     const file = path.join(nonceDir, entry.name);
     try {
-      const expiresAt = Number(fs.readFileSync(file, 'utf8'));
-      if (!Number.isFinite(expiresAt) || expiresAt <= now) fs.unlinkSync(file);
+      const expiresAt = Number(await fs.promises.readFile(file, 'utf8'));
+      if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+        await fs.promises.rm(file, { force: true });
+      }
     } catch {}
-  }
+  }));
 }
 
-function claimNonce(nonce, expiresAt, now = Date.now()) {
+async function claimNonce(nonce, expiresAt, now = Date.now()) {
   if (seenNonces.has(nonce)) return false;
   const file = path.join(nonceDir, `${nonce}.nonce`);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let handle;
     try {
-      handle = fs.openSync(file, 'wx', 0o600);
-      fs.writeFileSync(handle, String(expiresAt), 'utf8');
-      fs.closeSync(handle);
+      handle = await fs.promises.open(file, 'wx', 0o600);
+      await handle.writeFile(String(expiresAt), 'utf8');
+      await handle.close();
       seenNonces.set(nonce, expiresAt);
       return true;
     } catch (error) {
-      if (handle !== undefined) {
-        try { fs.closeSync(handle); } catch {}
+      if (handle) {
+        try { await handle.close(); } catch {}
       }
       if (error?.code !== 'EEXIST') return false;
       try {
-        const storedExpiry = Number(fs.readFileSync(file, 'utf8'));
+        const storedExpiry = Number(await fs.promises.readFile(file, 'utf8'));
         if (Number.isFinite(storedExpiry) && storedExpiry > now) return false;
-        fs.unlinkSync(file);
+        await fs.promises.rm(file, { force: true });
       } catch {
         return false;
       }
@@ -297,6 +319,37 @@ function queueTimestamp(value) {
 
 function queueText(value, maximumLength = 80) {
   return String(value || '').replace(/[^\w.:/-]/g, '').slice(0, maximumLength);
+}
+
+function providerMetric(value = {}) {
+  const cost = Math.max(0, Number(value.estimatedCostUsd || 0));
+  return {
+    calls: queueCount(value.calls),
+    failures: queueCount(value.failures),
+    averageLatencyMs: queueCount(value.averageLatencyMs),
+    totalTokens: queueCount(value.totalTokens),
+    estimatedCostUsd: Number((Number.isFinite(cost) ? cost : 0).toFixed(8))
+  };
+}
+
+function normalizeProviderTelemetry(input = {}) {
+  return {
+    sampledAt: queueTimestamp(input.sampledAt),
+    window: {
+      minutes: Math.max(1, Math.min(24 * 60, queueCount(input.window?.minutes) || 60))
+    },
+    totals: {
+      fiveMinutes: providerMetric(input.totals?.fiveMinutes),
+      hour: providerMetric(input.totals?.hour)
+    },
+    providers: (Array.isArray(input.providers) ? input.providers : [])
+      .slice(0, 16)
+      .map((provider) => ({
+        id: queueText(provider?.id, 80) || 'unknown',
+        ...providerMetric(provider),
+        lastRequestAt: queueTimestamp(provider?.lastRequestAt)
+      }))
+  };
 }
 
 function normalizeQueueTelemetry(input = {}) {
@@ -409,13 +462,12 @@ function normalizeQueueTelemetry(input = {}) {
   };
 }
 
-function verifySignature(headers, method, requestPath, rawBody) {
+async function verifySignature(headers, method, requestPath, rawBody) {
   const timestamp = String(headers['x-seemplify-timestamp'] || '');
   const nonce = String(headers['x-seemplify-nonce'] || '');
   const signature = String(headers['x-seemplify-signature'] || '');
   const numericTimestamp = Number(timestamp);
   const now = Date.now();
-  pruneNonces(now);
   if (!Number.isFinite(numericTimestamp) || Math.abs(now - numericTimestamp) > signatureSkewMs) {
     return { ok: false, code: 'SIGNATURE_EXPIRED' };
   }
@@ -426,7 +478,8 @@ function verifySignature(headers, method, requestPath, rawBody) {
     .update(`${timestamp}\n${nonce}\n${String(method || '').toUpperCase()}\n${requestPath}\n${rawBody}`)
     .digest('base64url');
   if (!safeEqual(expected, signature)) return { ok: false, code: 'SIGNATURE_INVALID' };
-  if (!claimNonce(nonce, now + nonceTtlMs, now)) return { ok: false, code: 'NONCE_REJECTED' };
+  await pruneNonces(now);
+  if (!await claimNonce(nonce, now + nonceTtlMs, now)) return { ok: false, code: 'NONCE_REJECTED' };
   return { ok: true };
 }
 
@@ -475,6 +528,28 @@ async function fetchQueueHistory(inputUrl) {
     code: 'CV_HISTORY_INVALID_RESPONSE',
     message: 'The recruiter backend returned an invalid history response'
   }));
+  return { status: upstream.status, payload };
+}
+
+async function fetchProviderTelemetry() {
+  const requestPath = '/api/internal/local-cv-queue/provider-telemetry';
+  const signed = signQueueHistoryPath(requestPath);
+  const upstream = await fetch(`${recruiterBackendUrl}${requestPath}`, {
+    headers: {
+      accept: 'application/json',
+      'x-seemplify-timestamp': signed.timestamp,
+      'x-seemplify-nonce': signed.nonce,
+      'x-seemplify-signature': signed.signature
+    },
+    signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(5_000) : undefined
+  });
+  const input = await upstream.json().catch(() => null);
+  const payload = upstream.ok && input
+    ? normalizeProviderTelemetry(input)
+    : {
+        code: queueText(input?.code, 80) || 'PROVIDER_TELEMETRY_UNAVAILABLE',
+        message: 'Hosted AI provider telemetry is unavailable'
+      };
   return { status: upstream.status, payload };
 }
 
@@ -731,7 +806,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
   }
   const requestPath = new URL(request.url, `http://${request.headers.host || `${host}:${port}`}`).pathname;
-  const verified = verifySignature(request.headers, request.method, requestPath, rawBody);
+  const verified = await verifySignature(request.headers, request.method, requestPath, rawBody);
   if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
   const state = readState();
   if (!state.ingressEnabled || !state.enabled) {
@@ -993,6 +1068,15 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 503, { code: 'CV_HISTORY_UNAVAILABLE', message: error.message });
     }
   }
+  if (request.method === 'GET' && url.pathname === '/control/provider-telemetry') {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const telemetry = await fetchProviderTelemetry();
+      return sendJson(response, telemetry.status, telemetry.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'PROVIDER_TELEMETRY_UNAVAILABLE', message: error.message });
+    }
+  }
   if (request.method === 'PUT' && url.pathname === '/control/state') {
     if (!isLocalControlRequest(request)) {
       return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
@@ -1042,9 +1126,19 @@ const server = http.createServer(async (request, response) => {
         });
         allowed.concurrency = normalizeConcurrency(requestedConcurrency);
       }
+      const before = readState();
       const state = writeState(allowed);
+      await log('info', 'Local AI control state changed', {
+        action: 'control_state_updated',
+        changes: controlStateChanges(before, state, allowed)
+      });
       return sendJson(response, 200, { ok: true, state });
     } catch (error) {
+      await log('warn', 'Local AI control state change rejected', {
+        action: 'control_state_rejected',
+        errorCode: error.code || 'INVALID_STATE',
+        error: String(error.message || error).slice(0, 300)
+      });
       return sendJson(response, error.status || 400, {
         code: error.code || 'INVALID_STATE',
         message: error.message,
@@ -1072,7 +1166,7 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
       }
       const rawBody = await readBody(request);
-      const verified = verifySignature(request.headers, request.method, url.pathname, rawBody);
+      const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const health = await engineHealth(readState());
       return sendJson(response, 200, { ...statusPayload(), health });
@@ -1086,7 +1180,7 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
       }
       const rawBody = await readBody(request);
-      const verified = verifySignature(request.headers, request.method, url.pathname, rawBody);
+      const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const input = JSON.parse(rawBody);
       queueTelemetry = normalizeQueueTelemetry(input);

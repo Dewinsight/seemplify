@@ -8,6 +8,7 @@ const {
   GROQ_BASE_URL,
   LOCAL_PROVIDER,
   createDefaultRuntimeSettings,
+  failoverPolicyForRoute,
   localProviderLabel
 } = require('../../config/aiRuntimeCatalog');
 const { decryptSecret } = require('./secretCrypto');
@@ -34,6 +35,7 @@ const LOCAL_FAILOVER_ERROR_CODES = new Set([
   'LOCAL_ENGINE_REQUIRED',
   'GATEWAY_QUEUE_FULL',
   'LOCAL_LLM_UNAVAILABLE',
+  'LOCAL_LLM_SCHEMA_INVALID',
   'CODEX_EXEC_FAILED',
   'CODEX_EXEC_TIMEOUT',
   'CODEX_NOT_INSTALLED',
@@ -353,7 +355,10 @@ class AIRuntimeService {
       ...defaults,
       ...settings,
       models: [...modelsByKey.values()],
-      routes: [...routesByActivity.values()],
+      routes: [...routesByActivity.values()].map((route) => ({
+        ...route,
+        failoverPolicy: failoverPolicyForRoute(route.activity, route.provider)
+      })),
       quotaGroups: Array.isArray(settings?.quotaGroups) && settings.quotaGroups.length ? settings.quotaGroups : defaults.quotaGroups,
       alerts: { ...defaults.alerts, ...(settings?.alerts || {}) },
       localFailover: { ...defaults.localFailover, ...(settings?.localFailover || {}) },
@@ -380,11 +385,11 @@ class AIRuntimeService {
           provider: definition.provider,
           model: definition.model,
           lockedProvider: true,
-          failoverPolicy: definition.failoverPolicy
+          failoverPolicy: failoverPolicyForRoute(normalized, definition.provider)
         }
       : {
           ...storedRoute,
-          failoverPolicy: storedRoute.failoverPolicy || definition.failoverPolicy || 'none'
+          failoverPolicy: failoverPolicyForRoute(normalized, storedRoute.provider)
         };
     if (!route?.enabled || !settings.providerEnabled) {
       throw new AIRuntimeError(`AI activity ${normalized} is disabled`, { code: 'AI_ACTIVITY_DISABLED', statusCode: 503 });
@@ -409,20 +414,25 @@ class AIRuntimeService {
   }
 
   resolveExecutionRoute(route, settings, context) {
-    if (route.provider === LOCAL_PROVIDER) {
-      if (!settings.localFailover?.enabled || !settings.localFailover?.active) return route;
-      if (route.failoverPolicy !== 'groq_immediate') return route;
+    const canonicalRoute = {
+      ...route,
+      failoverPolicy: failoverPolicyForRoute(route.activity, route.provider)
+    };
+    if (canonicalRoute.provider === LOCAL_PROVIDER) {
+      if (!settings.localFailover?.enabled || !settings.localFailover?.active) return canonicalRoute;
+      if (canonicalRoute.failoverPolicy !== 'groq_immediate') return canonicalRoute;
       return this.createGroqFailoverRoute(
-        route,
+        canonicalRoute,
         settings,
         settings.localFailover.reason || 'local_runtime_unhealthy'
       );
     }
-    if (shouldUseGroq(context, settings.rollout)) return route;
+    if (shouldUseGroq(context, settings.rollout)) return canonicalRoute;
     return {
-      ...route,
+      ...canonicalRoute,
       provider: 'azure',
       model: 'azure-text-baseline',
+      failoverPolicy: 'none',
       modelConfig: {
         id: 'azure-text-baseline',
         provider: 'azure',
@@ -433,9 +443,10 @@ class AIRuntimeService {
   }
 
   createGroqFailoverRoute(route, settings, reason = 'local_runtime_unhealthy') {
+    const failoverPolicy = failoverPolicyForRoute(route.activity, route.provider);
     if (
       route.provider !== LOCAL_PROVIDER
-      || route.failoverPolicy !== 'groq_immediate'
+      || failoverPolicy !== 'groq_immediate'
       || settings.localFailover?.enabled !== true
     ) return null;
     const fallbackModel = route.activity.startsWith('ai_interview.chat.') ? 'openai/gpt-oss-20b' : GROQ_120B;
@@ -457,6 +468,7 @@ class AIRuntimeService {
       provider: 'groq',
       model: fallbackModel,
       modelConfig,
+      failoverPolicy: 'none',
       failoverFrom: LOCAL_PROVIDER,
       failoverReason: sanitizeMessage(reason || 'local_runtime_unhealthy')
     };
@@ -1326,7 +1338,12 @@ class AIRuntimeService {
       lastCredential = credential;
       const attemptStartedAt = Date.now();
       try {
-        const response = await this.providerRequest({ credential, payload, timeoutMs: options.timeoutMs });
+        const response = await this.providerRequest({
+          credential,
+          payload,
+          timeoutMs: options.timeoutMs,
+          signal: options.signal
+        });
         lastResponse = response;
         if (!response.ok) throw await this.parseErrorResponse(response);
         await this.markCredentialSuccess(credential, settings);
