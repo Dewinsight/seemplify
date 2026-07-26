@@ -186,7 +186,11 @@ function Assert-ModelIdentifier([string]$Value) {
   if ($Value -notmatch '^[A-Za-z0-9._:/-]{2,200}$') { throw 'Model identifier contains unsupported characters.' }
 }
 
-function Invoke-NativeCapture([string]$FilePath, [string[]]$Arguments) {
+function Invoke-NativeCapture(
+  [string]$FilePath,
+  [string[]]$Arguments,
+  [int]$TimeoutMs = 0
+) {
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $FilePath
   $startInfo.Arguments = (($Arguments | ForEach-Object {
@@ -199,9 +203,27 @@ function Invoke-NativeCapture([string]$FilePath, [string[]]$Arguments) {
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
   [void]$process.Start()
-  $stdout = $process.StandardOutput.ReadToEnd()
-  $stderr = $process.StandardError.ReadToEnd()
-  $process.WaitForExit()
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  $completed = if ($TimeoutMs -gt 0) {
+    $process.WaitForExit($TimeoutMs)
+  } else {
+    $process.WaitForExit()
+    $true
+  }
+  if (-not $completed) {
+    try { $process.Kill() } catch {}
+    try { $process.WaitForExit() } catch {}
+  }
+  $stdout = $stdoutTask.GetAwaiter().GetResult()
+  $stderr = $stderrTask.GetAwaiter().GetResult()
+  if (-not $completed) {
+    return [pscustomobject]@{
+      exitCode = 124
+      stdout = $stdout
+      stderr = if ($stderr) { $stderr } else { "Process timed out after $TimeoutMs ms." }
+    }
+  }
   return [pscustomobject]@{ exitCode=$process.ExitCode; stdout=$stdout; stderr=$stderr }
 }
 
@@ -367,12 +389,27 @@ function Load-OllamaModel {
 }
 
 function Get-VllmContainer {
-  if (-not (Get-Command docker.exe -ErrorAction SilentlyContinue)) { return $null }
-  $containerId = & docker.exe container ls --all --quiet --filter "name=^/$VllmContainer`$" 2>$null | Select-Object -First 1
-  if (-not $containerId) { return $null }
-  $raw = & docker.exe inspect $containerId 2>$null
-  if ($LASTEXITCODE -ne 0 -or -not $raw) { return $null }
-  return ($raw | ConvertFrom-Json | Select-Object -First 1)
+  try {
+    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+    if (-not $docker) { return $null }
+
+    # Docker may be installed while its per-user configuration is unavailable
+    # (for example, when Local Control Center runs under a restricted process).
+    # Capture native stderr instead of allowing that optional inventory probe to
+    # become a terminating PowerShell error and hide the healthy Terra gateway.
+    $list = Invoke-NativeCapture $docker.Source @(
+      'container', 'ls', '--all', '--quiet', '--filter', "name=^/$VllmContainer`$"
+    ) 3000
+    if ($list.exitCode -ne 0 -or -not $list.stdout.Trim()) { return $null }
+    $containerId = ($list.stdout -split '\r?\n' | Select-Object -First 1).Trim()
+    if (-not $containerId) { return $null }
+
+    $inspection = Invoke-NativeCapture $docker.Source @('inspect', $containerId) 3000
+    if ($inspection.exitCode -ne 0 -or -not $inspection.stdout.Trim()) { return $null }
+    return ($inspection.stdout | ConvertFrom-Json | Select-Object -First 1)
+  } catch {
+    return $null
+  }
 }
 
 function Stop-Vllm {
@@ -475,14 +512,22 @@ function Login-CodexCli {
   }
 }
 
-function Get-CodexStatus {
+function Get-CodexStatus([switch]$SkipAuthenticationProbe) {
   $authenticated = $false
-  $authLabel = 'Not installed'
-  if (Test-Path $CodexScript) {
-    $result = Invoke-NativeCapture (Get-Command node.exe).Source @($CodexScript, 'login', 'status')
-    $authOutput = "$($result.stdout)`n$($result.stderr)".Trim()
-    $authenticated = $result.exitCode -eq 0 -and $authOutput -match 'Logged in'
-    $authLabel = if ($authenticated) { $authOutput } else { 'Authentication required' }
+  $authLabel = if (Test-Path $CodexScript) { 'Authentication not checked' } else { 'Not installed' }
+  if ((Test-Path $CodexScript) -and -not $SkipAuthenticationProbe) {
+    try {
+      $node = Get-Command node.exe -ErrorAction Stop
+      $result = Invoke-NativeCapture $node.Source @($CodexScript, 'login', 'status') 8000
+      $authOutput = "$($result.stdout)`n$($result.stderr)".Trim()
+      $authenticated = $result.exitCode -eq 0 -and $authOutput -match 'Logged in'
+      $authLabel = if ($authenticated) { $authOutput } else { 'Authentication required' }
+    } catch {
+      # Status must remain available to the Control Center even when the
+      # desktop host cannot inspect the Codex login store. Inference health is
+      # reported independently by the already-running gateway.
+      $authLabel = 'Authentication status unavailable'
+    }
   }
   $catalog = $null
   if (Test-Path $CodexCatalogFile) {
@@ -656,27 +701,44 @@ function Verify-InferenceEngine([string]$EngineId, [string]$ModelId) {
 function Get-Status {
   $gateway = $null
   try { $gateway = Invoke-GatewayControl -Path '/control/status' -TimeoutSec 3 } catch {}
-  $ollama = $null
-  try { $ollama = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/ps' -TimeoutSec 3 } catch {}
-  $ollamaTags = @()
-  try { $ollamaTags = @((Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -TimeoutSec 3).models | ForEach-Object { $_.name }) } catch {}
-  $vllm = [ordered]@{ installed=$false; running=$false; healthy=$false; container=$VllmContainer; image=$VllmImage }
-  if (Get-Command docker.exe -ErrorAction SilentlyContinue) {
-    $imageStatus = Invoke-NativeCapture (Get-Command docker.exe).Source @('image', 'inspect', $VllmImage)
-    $vllm.installed = $imageStatus.exitCode -eq 0
+  $state = Get-SavedState
+  if ($gateway.state) {
+    foreach ($property in @('enabled', 'ingressEnabled', 'paused', 'concurrency', 'autoStart', 'selectionMode', 'selectedEngine')) {
+      if ($null -ne $gateway.state.$property) { $state.$property = $gateway.state.$property }
+    }
+    if ($gateway.state.engines) { $state.engines = $gateway.state.engines }
   }
-  $container = Get-VllmContainer
-  if ($container) {
-    $vllm.installed = $true
-    $vllm.running = [bool]$container.State.Running
-    $vllm.model = [string]$container.Config.Labels.'ai.seemplify.model'
-    $vllm.status = [string]$container.State.Status
-    if ($container.State.Running) {
-      try {
-        $served = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/v1/models' -TimeoutSec 3
-        $vllm.healthy = $true
-        $vllm.models = @($served.data)
-      } catch {}
+  $selectedEngine = if ($gateway.engine) { [string]$gateway.engine } else { [string]$state.selectedEngine }
+  $selectedModel = if ($gateway.model) { [string]$gateway.model } else { [string]$state.engines.$selectedEngine.model }
+
+  $ollama = $null
+  $ollamaTags = @()
+  if ($selectedEngine -eq 'ollama') {
+    try { $ollama = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/ps' -TimeoutSec 3 } catch {}
+    try { $ollamaTags = @((Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -TimeoutSec 3).models | ForEach-Object { $_.name }) } catch {}
+  }
+  $vllm = [ordered]@{ installed=$false; running=$false; healthy=$false; container=$VllmContainer; image=$VllmImage }
+  if ($selectedEngine -eq 'vllm') {
+    try {
+      $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+      if ($docker) {
+        $imageStatus = Invoke-NativeCapture $docker.Source @('image', 'inspect', $VllmImage) 3000
+        $vllm.installed = $imageStatus.exitCode -eq 0
+      }
+    } catch {}
+    $container = Get-VllmContainer
+    if ($container) {
+      $vllm.installed = $true
+      $vllm.running = [bool]$container.State.Running
+      $vllm.model = [string]$container.Config.Labels.'ai.seemplify.model'
+      $vllm.status = [string]$container.State.Status
+      if ($container.State.Running) {
+        try {
+          $served = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/v1/models' -TimeoutSec 3
+          $vllm.healthy = $true
+          $vllm.models = @($served.data)
+        } catch {}
+      }
     }
   }
   $gpu = $null
@@ -687,15 +749,6 @@ function Get-Status {
       $gpu = [ordered]@{ name=$parts[0]; memoryTotalMiB=[int]$parts[1]; memoryUsedMiB=[int]$parts[2]; utilizationPercent=[int]$parts[3] }
     }
   } catch {}
-  $state = Get-SavedState
-  if ($gateway.state) {
-    foreach ($property in @('enabled', 'ingressEnabled', 'paused', 'concurrency', 'autoStart', 'selectionMode', 'selectedEngine')) {
-      if ($null -ne $gateway.state.$property) { $state.$property = $gateway.state.$property }
-    }
-    if ($gateway.state.engines) { $state.engines = $gateway.state.engines }
-  }
-  $selectedEngine = if ($gateway.engine) { [string]$gateway.engine } else { [string]$state.selectedEngine }
-  $selectedModel = if ($gateway.model) { [string]$gateway.model } else { [string]$state.engines.$selectedEngine.model }
   $verification = [ordered]@{ byEngineModel=[ordered]@{} }
   if (Test-Path $VerificationFile) {
     try { $verification = Get-Content -LiteralPath $VerificationFile -Raw | ConvertFrom-Json } catch {}
@@ -703,11 +756,16 @@ function Get-Status {
   $benchmarks = [ordered]@{ profiles=@(); recommendation=$null }
   if (Test-Path $BenchmarkSummaryScript) {
     try {
-      $benchmarkResult = Invoke-NativeCapture (Get-Command node.exe).Source @($BenchmarkSummaryScript)
+      $benchmarkResult = Invoke-NativeCapture (Get-Command node.exe).Source @($BenchmarkSummaryScript) 5000
       if ($benchmarkResult.exitCode -eq 0 -and $benchmarkResult.stdout) {
         $benchmarks = $benchmarkResult.stdout | ConvertFrom-Json
       }
     } catch {}
+  }
+  $codex = Get-CodexStatus -SkipAuthenticationProbe
+  if ($selectedEngine -eq 'codex' -and $gateway.pid) {
+    $codex.authenticated = $true
+    $codex.authStatus = 'Active gateway session'
   }
   return [ordered]@{
     installed = [bool]$OllamaExe
@@ -717,7 +775,7 @@ function Get-Status {
     engines = [ordered]@{
       ollama = [ordered]@{ installed=[bool]$OllamaExe; executable=$OllamaExe; running=[bool](Get-Process ollama -ErrorAction SilentlyContinue); model=[string]$state.engines.ollama.model; availableModels=$ollamaTags; runtime=$ollama }
       vllm = $vllm
-      codex = Get-CodexStatus
+      codex = $codex
     }
     gpu = $gpu
     verification = $verification
@@ -811,5 +869,50 @@ switch ($Action) {
   'status' {}
 }
 
-$status = Get-Status
+$status = $null
+try {
+  $status = Get-Status
+} catch {
+  $statusError = [string]$_.Exception.Message
+  $savedState = Get-SavedState
+  $gateway = $null
+  try { $gateway = Invoke-GatewayControl -Path '/control/status' -TimeoutSec 3 } catch {}
+  $selectedEngine = if ($gateway.engine) { [string]$gateway.engine } else { [string]$savedState.selectedEngine }
+  $selectedModel = if ($gateway.model) { [string]$gateway.model } else { [string]$savedState.engines.$selectedEngine.model }
+  $status = [ordered]@{
+    installed = [bool]$OllamaExe
+    engine = $selectedEngine
+    model = $selectedModel
+    gateway = $gateway
+    engines = [ordered]@{
+      ollama = [ordered]@{
+        installed=[bool]$OllamaExe
+        executable=$OllamaExe
+        running=[bool](Get-Process ollama -ErrorAction SilentlyContinue)
+        model=[string]$savedState.engines.ollama.model
+        availableModels=@()
+        runtime=$null
+      }
+      vllm = [ordered]@{
+        installed=$false
+        running=$false
+        healthy=$false
+        container=$VllmContainer
+        image=$VllmImage
+      }
+      codex = [ordered]@{
+        installed=(Test-Path $CodexScript)
+        authenticated=$false
+        authStatus='Authentication status unavailable'
+        defaultModel=$DefaultModels.codex
+        models=@()
+        catalogRefreshedAt=$null
+      }
+    }
+    gpu = $null
+    verification = [ordered]@{ byEngineModel=[ordered]@{} }
+    benchmarks = [ordered]@{ profiles=@(); recommendation=$null }
+    statusWarning = "Optional engine inventory unavailable: $statusError"
+  }
+}
 if ($Json) { $status | ConvertTo-Json -Depth 20 -Compress } else { [pscustomobject]$status | Format-List }
