@@ -28,10 +28,12 @@ function Invoke-Deployment([switch]$ForceDeploy) {
   try {
     & git fetch origin main --quiet
     if ($LASTEXITCODE -ne 0) { Write-DeployLog 'Fetch failed.'; return }
-    & git cat-file -e "${DeploymentRef}:experience-management/package.json" 2>$null
-    if ($LASTEXITCODE -ne 0) { Write-DeployLog "Skipped: $DeploymentRef does not contain Experience Management yet."; return }
-    $commit = (& git rev-parse $DeploymentRef).Trim()
-    $tree = (& git rev-parse "${DeploymentRef}:experience-management").Trim()
+    $commit = (@(& git rev-parse --verify --quiet $DeploymentRef 2>$null) -join '').Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $commit) { Write-DeployLog "Skipped: $DeploymentRef could not be inspected."; return }
+    $manifestPath = (@(& git ls-tree --name-only $commit -- experience-management/package.json 2>$null) -join '').Trim()
+    if ($LASTEXITCODE -ne 0) { Write-DeployLog "Skipped: $DeploymentRef could not be inspected."; return }
+    if ($manifestPath -ne 'experience-management/package.json') { Write-DeployLog "Skipped: $DeploymentRef does not contain Experience Management yet."; return }
+    $tree = (& git rev-parse "${commit}:experience-management").Trim()
     $deployed = if (Test-Path $DeployedFile) { (Get-Content $DeployedFile -Raw).Trim() } else { '' }
     if ($tree -eq $deployed -and -not $ForceDeploy) { return }
     New-Item -ItemType Directory -Force $DeploymentsDir | Out-Null
