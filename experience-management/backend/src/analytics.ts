@@ -10,6 +10,12 @@ function average(values: number[]) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 }
 
+function distributionValues(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return Object.entries(value as Record<string, unknown>).map(([label, item]) => `${label}: ${String(item)}`);
+  return [value];
+}
+
 function pearson(left: number[], right: number[]) {
   if (left.length < 3 || left.length !== right.length) return null;
   const leftMean = average(left)!;
@@ -55,7 +61,7 @@ export function computeAnalytics(survey: Survey, responses: ResponseRecord[]) {
   const questionSummaries = questions.filter((question) => question.type !== 'statement').map((question) => {
     const values = completed.map((response) => response.answers[question.id]).filter((value) => value !== undefined && value !== null && value !== '');
     const counts = new Map<string, number>();
-    values.flatMap((value) => Array.isArray(value) ? value : [value]).forEach((value) => counts.set(String(value), (counts.get(String(value)) || 0) + 1));
+    values.flatMap(distributionValues).forEach((value) => counts.set(String(value), (counts.get(String(value)) || 0) + 1));
     const numeric = values.map(asNumber).filter((value): value is number => value !== null);
     return {
       questionId: question.id, title: question.title, type: question.type, answered: values.length,
@@ -63,8 +69,8 @@ export function computeAnalytics(survey: Survey, responses: ResponseRecord[]) {
       average: average(numeric), distribution: [...counts.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
     };
   });
-  const outcomeQuestion = npsQuestion || csatQuestion || cesQuestion || questions.find((question) => ['rating', 'slider', 'number'].includes(question.type));
-  const drivers = outcomeQuestion ? questions.filter((question) => question.id !== outcomeQuestion.id && ['rating', 'slider', 'number', 'csat', 'ces', 'nps'].includes(question.type)).map((question) => {
+  const outcomeQuestion = npsQuestion || csatQuestion || cesQuestion || questions.find((question) => ['rating', 'graphical_rating', 'slider', 'number'].includes(question.type));
+  const drivers = outcomeQuestion ? questions.filter((question) => question.id !== outcomeQuestion.id && ['rating', 'graphical_rating', 'slider', 'number', 'csat', 'ces', 'nps'].includes(question.type)).map((question) => {
     const pairs = completed.map((response) => [asNumber(response.answers[question.id]), asNumber(response.answers[outcomeQuestion.id])])
       .filter((pair): pair is [number, number] => pair[0] !== null && pair[1] !== null);
     const correlation = pearson(pairs.map((pair) => pair[0]), pairs.map((pair) => pair[1]));

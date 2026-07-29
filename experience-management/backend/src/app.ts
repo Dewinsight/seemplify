@@ -17,7 +17,7 @@ import { attachEventStream, publishEvent } from './events.js';
 import { emailStatus, listRecipients, sendInvitations } from './emailService.js';
 import { getTerraStatus } from './terraClient.js';
 import { templates } from './templates.js';
-import { QUESTION_TYPES, type AiJobKind, type Collector, type Question, type Survey } from './types.js';
+import { QUESTION_TYPES, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type Survey } from './types.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -68,6 +68,55 @@ function requireSurvey(id: string) {
   const survey = getSurvey(id);
   if (!survey) throw new Error('Survey not found.');
   return survey;
+}
+
+function hasAnswer(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false;
+  if (Array.isArray(value)) return value.some(hasAnswer);
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasAnswer);
+  return true;
+}
+
+function ruleMatches(rule: LogicRule, answers: Record<string, unknown>) {
+  const actual = answers[rule.sourceQuestionId];
+  if (!hasAnswer(actual)) return false;
+  if (rule.operator === 'contains') return Array.isArray(actual) ? actual.map(String).includes(String(rule.value)) : String(actual).toLowerCase().includes(String(rule.value).toLowerCase());
+  if (rule.operator === 'not_equals') return String(actual) !== String(rule.value);
+  if (rule.operator === 'less_than') return Number(actual) < Number(rule.value);
+  if (rule.operator === 'greater_than') return Number(actual) > Number(rule.value);
+  return String(actual) === String(rule.value);
+}
+
+function questionIsVisible(question: Question, answers: Record<string, unknown>) {
+  const show = (question.logic || []).filter((rule) => rule.action === 'show');
+  const hidden = (question.logic || []).filter((rule) => rule.action === 'hide').some((rule) => ruleMatches(rule, answers));
+  return !hidden && (!show.length || show.every((rule) => ruleMatches(rule, answers)));
+}
+
+function skippedPages(survey: Survey, answers: Record<string, unknown>) {
+  const questions = survey.questions || [];
+  const pages = new Set<number>();
+  for (const rule of questions.flatMap((question) => question.logic || []).filter((item) => item.action === 'skip_to' && item.targetQuestionId && ruleMatches(item, answers))) {
+    const source = questions.find((question) => question.id === rule.sourceQuestionId);
+    const target = questions.find((question) => question.id === rule.targetQuestionId);
+    if (!source || !target || target.page <= source.page) continue;
+    for (let page = source.page + 1; page < target.page; page += 1) pages.add(page);
+  }
+  return pages;
+}
+
+function createRuleTickets(survey: Survey, responseRecord: ResponseRecord) {
+  const questions = survey.questions || [];
+  for (const rule of questions.flatMap((question) => question.logic || []).filter((item) => item.action === 'create_ticket' && ruleMatches(item, responseRecord.answers))) {
+    const existing = db.prepare("SELECT id FROM tickets WHERE response_id=? AND status<>'closed'").get(responseRecord.id);
+    if (existing) return;
+    const source = questions.find((question) => question.id === rule.sourceQuestionId);
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO tickets (id,survey_id,response_id,title,priority,status,notes,created_at,updated_at) VALUES (?,?,?,?,?,'open',?,?,?)`).run(
+      crypto.randomUUID(), survey.id, responseRecord.id, `Follow up: ${source?.title || 'survey response'}`.slice(0, 160), 'high',
+      `Triggered when the answer ${rule.operator.replaceAll('_', ' ')} ${String(rule.value)}.`, now, now
+    );
+  }
 }
 
 function queueJob(kind: AiJobKind, input: Record<string, unknown>, surveyId?: string | null, responseId?: string | null) {
@@ -205,7 +254,8 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
   const input = z.object({ answers: z.record(z.string(), z.unknown()), startedAt: z.string().datetime().optional(), respondentToken: z.string().max(200).optional(), status: z.enum(['partial', 'completed']).optional(), metadata: z.record(z.string(), z.unknown()).optional() }).safeParse(request.body);
   if (!input.success) return sendError(response, input.error);
   const answers = input.data.answers;
-  const missing = (survey.questions || []).filter((question) => question.required && question.type !== 'statement' && (answers[question.id] === undefined || answers[question.id] === '' || (Array.isArray(answers[question.id]) && !(answers[question.id] as unknown[]).length)));
+  const omittedPages = skippedPages(survey, answers);
+  const missing = (survey.questions || []).filter((question) => question.required && question.type !== 'statement' && !omittedPages.has(question.page) && questionIsVisible(question, answers) && !hasAnswer(answers[question.id]));
   if (missing.length && input.data.status !== 'partial') return response.status(400).json({ error: 'Required questions are incomplete.', questionIds: missing.map((question) => question.id) });
   const stored = createResponse({
     surveyId: survey.id, collectorId: collector.id, respondentToken: input.data.respondentToken,
@@ -215,6 +265,7 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
   if (stored.status === 'completed') {
     const recipient = request.query.recipient || input.data.respondentToken;
     if (recipient) db.prepare(`UPDATE recipients SET status='responded',responded_at=? WHERE token=?`).run(new Date().toISOString(), String(recipient));
+    createRuleTickets(survey, stored);
     queueJob('response.analyze', {}, survey.id, stored.id);
   }
   publishEvent('response', { surveyId: survey.id, responseId: stored.id, status: stored.status });

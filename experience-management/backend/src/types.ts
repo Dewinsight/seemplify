@@ -1,7 +1,7 @@
 export const QUESTION_TYPES = [
-  'single_choice', 'multiple_choice', 'nps', 'csat', 'ces', 'short_text', 'long_text',
-  'email', 'number', 'rating', 'slider', 'ranking', 'matrix', 'date', 'contact', 'file',
-  'media', 'statement'
+  'single_choice', 'multiple_choice', 'dropdown', 'nps', 'multi_nps', 'csat', 'ces',
+  'short_text', 'multi_text', 'long_text', 'email', 'number', 'rating', 'graphical_rating',
+  'slider', 'ranking', 'matrix', 'date', 'contact', 'file', 'media', 'statement'
 ] as const;
 
 export type QuestionType = typeof QUESTION_TYPES[number];

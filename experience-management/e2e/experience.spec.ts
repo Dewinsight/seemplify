@@ -47,3 +47,40 @@ test('admin surface and public survey remain usable at a narrow mobile viewport'
   await expect(page.getByRole('heading', { name: 'Surveys' })).toBeVisible();
   await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll');
 });
+
+test('conditional respondent logic skips a page and opens a recovery case', async ({ page }, testInfo) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+  const setup = await page.evaluate(async (id) => {
+    const json = (method: string, body: unknown) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const source = `logic-source-${id}`; const skipped = `logic-skipped-${id}`; const target = `logic-target-${id}`;
+    const sourceTitle = `Routing choice ${id}`;
+    const surveyResponse = await fetch('/api/surveys', json('POST', {
+      title: `Conditional journey ${id}`, purpose: 'customer_experience', primaryMetric: 'custom',
+      questions: [
+        { id: source, page: 1, position: 0, type: 'dropdown', title: sourceTitle, required: true, options: ['Continue', 'Escalate'], settings: {}, logic: [{ action: 'skip_to', sourceQuestionId: source, operator: 'equals', value: 'Escalate', targetQuestionId: target }] },
+        { id: skipped, page: 2, position: 1, type: 'multi_text', title: 'Tell us about each product', required: true, options: ['Product A', 'Product B'], settings: {}, logic: [] },
+        { id: target, page: 3, position: 2, type: 'graphical_rating', title: 'Rate the experience', required: true, options: [], settings: {}, logic: [{ action: 'create_ticket', sourceQuestionId: source, operator: 'equals', value: 'Escalate' }] }
+      ]
+    }));
+    const survey = await surveyResponse.json();
+    const collectorResponse = await fetch(`/api/surveys/${survey.id}/collectors`, json('POST', { name: 'Logic journey', type: 'web' }));
+    const collector = await collectorResponse.json();
+    await fetch(`/api/surveys/${survey.id}/publish`, json('POST', { status: 'live' }));
+    return { surveyId: survey.id, publicUrl: collector.publicUrl, sourceTitle };
+  }, suffix);
+
+  await page.goto(setup.publicUrl);
+  await page.getByLabel(setup.sourceTitle).selectOption('Escalate');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByText('Page 3 of 3')).toBeVisible();
+  await expect(page.getByText('Tell us about each product')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Excellent' }).click();
+  await page.getByRole('button', { name: 'Submit response' }).click();
+  await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
+  await page.goto('/tickets');
+  await expect(page.getByText(`Follow up: ${setup.sourceTitle}`)).toBeVisible();
+});

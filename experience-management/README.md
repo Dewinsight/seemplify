@@ -49,8 +49,8 @@ The first `initialize` or `start` creates a random admin password and session se
 .\scripts\auto-deploy.ps1 -Action status
 ```
 
-Auto-deploy polls `origin/main`, fast-forwards only a clean worktree, then runs install, typecheck, tests, build, and a local restart. A dirty or diverged checkout is logged and never overwritten.
+Auto-deploy polls `origin/main`, exports only the Experience Management subtree into an isolated release under `.local-runtime/experience-management/deployments`, then runs install, typecheck, tests, build, and a health-checked local restart. It never switches, resets, or overwrites the developer checkout; a failed release restores the previous active deployment.
 
 ## Verification
 
-`npm run test:all` runs strict type checks, backend and frontend tests, a production build, and Playwright in desktop Chromium and a Pixel-sized mobile viewport. `scripts/live-ai-smoke.mjs` validates all Terra workflows against the real signed local gateway; it removes its generated survey afterward.
+`npm run test:all` runs strict type checks, backend and frontend tests, a production build, and Playwright in desktop Chromium and a Pixel-sized mobile viewport. `scripts/live-ai-smoke.mjs` validates all Terra workflows against the real signed local gateway; it removes its synthetic survey and AI-job history afterward.

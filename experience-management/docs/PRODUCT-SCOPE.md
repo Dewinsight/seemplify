@@ -8,7 +8,7 @@ This implementation is an original Seemplify product with feature parity goals, 
 | --- | --- |
 | CX, EX, and market-research suites | Survey purpose, templates, metrics, and analysis presets |
 | Survey from one prompt | Terra structured survey generation |
-| 20+ question types | Extensible question registry and respondent renderers |
+| 20+ question types | 22 implemented question types, including multi-NPS, graphical rating, matrix, ranking, media, and structured text |
 | Skip, display, and branch logic | Question-level rules in the survey data model and respondent renderer |
 | Themes and multilingual surveys | Theme settings and Terra translation jobs |
 | Web, email, API, QR, manual, kiosk collection | Collector records and public collector routes |

@@ -37,4 +37,19 @@ test('protects admin APIs while allowing a complete public survey workflow', asy
   assert.equal(jobs.body[0].kind, 'response.analyze');
   assert.equal(jobs.body[0].state, 'queued');
   await request(app).post(`/api/public/collectors/${collector.slug}/responses`).send({ answers: {}, status: 'completed' }).expect(400);
+
+  const conditional = await agent.post('/api/surveys').send({
+    title: 'Conditional product review', purpose: 'market_research', primaryMetric: 'custom',
+    questions: [
+      { id: 'logic-source', page: 1, position: 0, type: 'dropdown', title: 'What should happen next?', required: true, options: ['Continue', 'Escalate'], settings: {}, logic: [{ action: 'skip_to', sourceQuestionId: 'logic-source', operator: 'equals', value: 'Escalate', targetQuestionId: 'logic-target' }] },
+      { id: 'logic-skipped', page: 2, position: 1, type: 'multi_text', title: 'Tell us about each product', required: true, options: ['Product A', 'Product B'], settings: {}, logic: [] },
+      { id: 'logic-target', page: 3, position: 2, type: 'graphical_rating', title: 'Rate the experience', required: true, options: [], settings: {}, logic: [{ action: 'create_ticket', sourceQuestionId: 'logic-source', operator: 'equals', value: 'Escalate' }] }
+    ]
+  }).expect(201);
+  const conditionalCollector = await agent.post(`/api/surveys/${conditional.body.id}/collectors`).send({ name: 'Conditional web', type: 'web' }).expect(201);
+  await agent.post(`/api/surveys/${conditional.body.id}/publish`).send({ status: 'live' }).expect(200);
+  await request(app).post(`/api/public/collectors/${conditionalCollector.body.slug}/responses`).send({ answers: { 'logic-source': 'Escalate', 'logic-target': 1 }, status: 'completed' }).expect(201);
+  const tickets = await agent.get(`/api/surveys/${conditional.body.id}/tickets`).expect(200);
+  assert.equal(tickets.body.length, 1);
+  assert.equal(tickets.body[0].priority, 'high');
 });
