@@ -5,7 +5,10 @@ const emitter = new EventEmitter();
 emitter.setMaxListeners(200);
 
 export function publishEvent(type: string, data: unknown) {
-  emitter.emit('event', { type, data, at: new Date().toISOString() });
+  const eventData = type === 'ai-job' && data && typeof data === 'object'
+    ? ((job: Record<string, unknown>) => ({ id: job.id, kind: job.kind, state: job.state, stage: job.stage, progress: job.progress, updatedAt: job.updatedAt }))(data as Record<string, unknown>)
+    : data;
+  emitter.emit('event', { type, data: eventData, at: new Date().toISOString() });
 }
 
 export function attachEventStream(_request: Request, response: Response) {

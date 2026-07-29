@@ -833,7 +833,7 @@ test('connects X with a one-time OAuth handshake, encrypts secrets, and durably 
   try {
     const started = await owner.post('/api/integrations/x/connect').send({}).expect(201);
     assert.equal(started.body.authorizeUrl, 'https://api.x.invalid/oauth/authenticate?oauth_token=request-token-12345');
-    const setCookies = started.headers['set-cookie'] as unknown as string[]; const handshakeCookie = setCookies.find((value) => value.startsWith('seemplify_x_oauth='))!;
+    const setCookies = started.headers['set-cookie'] as unknown as string[]; const handshakeCookie = setCookies.find((value) => value.startsWith('seemplify_x_oauth_'))!;
     assert.match(handshakeCookie, /HttpOnly/); assert.match(handshakeCookie, /SameSite=Lax/); assert.match(handshakeCookie, /Path=\/api\/integrations\/x\/callback/);
     const cookiePair = handshakeCookie.split(';')[0];
     const callback = await request(app).get('/api/integrations/x/callback?oauth_token=request-token-12345&oauth_verifier=approved-verifier-12345').set('Cookie', cookiePair).expect(303);
@@ -899,7 +899,7 @@ test('connects X with a one-time OAuth handshake, encrypts secrets, and durably 
 
     const pendingReconnect = await owner.post('/api/integrations/x/connect').send({}).expect(201);
     assert.equal(pendingReconnect.body.authorizeUrl, 'https://api.x.invalid/oauth/authenticate?oauth_token=request-token-67890');
-    const pendingCookie = (pendingReconnect.headers['set-cookie'] as unknown as string[]).find((value) => value.startsWith('seemplify_x_oauth='))!.split(';')[0];
+    const pendingCookie = (pendingReconnect.headers['set-cookie'] as unknown as string[]).find((value) => value.startsWith('seemplify_x_oauth_'))!.split(';')[0];
     holdNextAccessExchange = true;
     const staleCallback = request(app).get('/api/integrations/x/callback?oauth_token=request-token-67890&oauth_verifier=approved-verifier-67890')
       .set('Cookie', pendingCookie).then((response) => response);

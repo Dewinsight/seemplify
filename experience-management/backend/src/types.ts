@@ -82,6 +82,9 @@ export type AiJobKind =
   | 'analyst.chat'
   | 'report.generate'
   | 'social.analyze'
+  | 'social.report'
+  | 'social.reply_draft'
+  | 'intelligence.synthesize'
   | 'journey.generate'
   | 'journey.optimize';
 
@@ -163,6 +166,7 @@ export interface AiJob {
   kind: AiJobKind;
   surveyId: string | null;
   responseId: string | null;
+  requestedBy: string | null;
   state: 'queued' | 'processing' | 'completed' | 'failed';
   stage: string;
   progress: number;

@@ -160,19 +160,59 @@ test('eligible local request failure records the Terra attempt then succeeds on 
   assert.equal(calculateFailovers(runtime.results[1].route, 2), 2);
 });
 
-test('usage event identity separates executions and local-to-Groq outcomes from one request', () => {
-  const localRoute = { provider: 'local-ollama', model: 'gpt-5.6-terra' };
+test('a terminal persisted local failure never runs a Groq failover', async () => {
+  const runtime = new TestRuntime([jsonResponse(successPayload('must not be used'))]);
+  const gatewayExecutionId = `localexec_${'b'.repeat(48)}`;
+  runtime.localProviderRequest = async () => jsonResponse({
+    code: 'CODEX_TURN_FAILED',
+    message: 'The terminal provider outcome is available from its durable receipt',
+    retryable: false,
+    id: gatewayExecutionId,
+    gatewayExecutionId,
+    engine: 'codex',
+    model: 'gpt-5.6-terra',
+    usage: {
+      input_tokens: 0,
+      cached_input_tokens: 0,
+      output_tokens: 0,
+      reasoning_tokens: 0,
+      total_tokens: 0
+    },
+    usageReported: false,
+    usageSource: 'unreported'
+  }, 503);
+
+  await assert.rejects(() => runtime.complete('interview.questions', {
+    context: { requestId: 'terminal-local-result' },
+    messages: [{ role: 'user', content: 'Generate interview questions' }]
+  }), (error) => error.code === 'CODEX_TURN_FAILED' && error.retryable === false);
+
+  assert.equal(runtime.providerCalls.length, 0);
+  assert.equal(runtime.results.length, 1);
+  assert.equal(runtime.results[0].status, 'failed');
+  assert.equal(runtime.results[0].data.gatewayExecutionId, gatewayExecutionId);
+});
+
+test('gateway identity is stable across route changes and scoped by source, activity, execution and ordinal', () => {
+  const localRoute = {
+    activity: 'candidate.cv_parse',
+    provider: 'local-ollama',
+    model: 'gpt-5.6-terra'
+  };
   const groqRoute = {
+    activity: 'candidate.cv_parse',
     provider: 'groq',
     model: 'openai/gpt-oss-120b',
     failoverFrom: 'local-ollama'
   };
   const first = {
-    usageExecutionId: 'cv-queue:job-1:attempt:1',
+    sourceApp: 'recruiter',
+    usageExecutionId: 'cv-queue:job-1',
     structuredCompletionOrdinal: 1
   };
   const second = {
-    usageExecutionId: 'cv-queue:job-1:attempt:2',
+    sourceApp: 'recruiter',
+    usageExecutionId: 'cv-queue:job-2',
     structuredCompletionOrdinal: 1
   };
 
@@ -180,13 +220,34 @@ test('usage event identity separates executions and local-to-Groq outcomes from 
     deriveRuntimeUsageEventId({ context: first, route: localRoute }),
     deriveRuntimeUsageEventId({ context: first, route: localRoute })
   );
-  assert.notEqual(
+  assert.equal(
     deriveRuntimeUsageEventId({ context: first, route: localRoute }),
     deriveRuntimeUsageEventId({ context: first, route: groqRoute })
   );
   assert.notEqual(
     deriveRuntimeUsageEventId({ context: first, route: localRoute }),
     deriveRuntimeUsageEventId({ context: second, route: localRoute })
+  );
+  assert.notEqual(
+    deriveRuntimeUsageEventId({ context: first, route: localRoute }),
+    deriveRuntimeUsageEventId({
+      context: first,
+      route: { ...localRoute, activity: 'interview.questions' }
+    })
+  );
+  assert.notEqual(
+    deriveRuntimeUsageEventId({ context: first, route: localRoute }),
+    deriveRuntimeUsageEventId({
+      context: { ...first, sourceApp: 'experience-management' },
+      route: localRoute
+    })
+  );
+  assert.notEqual(
+    deriveRuntimeUsageEventId({ context: first, route: localRoute }),
+    deriveRuntimeUsageEventId({
+      context: { ...first, structuredCompletionOrdinal: 2 },
+      route: localRoute
+    })
   );
 });
 

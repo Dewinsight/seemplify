@@ -18,6 +18,16 @@ test('Experience schemas constrain confidence and strength to decimal unit value
   assert.deepEqual(insights.properties.drivers.items.properties.strength, { type: 'number', minimum: 0, maximum: 1 });
   assert.deepEqual(insights.properties.forecast.properties.confidence, { type: 'number', minimum: 0, maximum: 1 });
   assert.deepEqual(insights.properties.healthScore, { type: 'number', minimum: 0, maximum: 100 });
+  const social = aiJsonSchemas.socialListening as any;
+  assert.equal(social.properties.mentions.items.required.includes('evidence'), true);
+  assert.equal(social.properties.mentions.items.properties.evidence.minLength, 1);
+  assert.equal(social.properties.themes.items.properties.evidence.minItems, 1);
+  assert.equal(social.properties.themes.items.properties.evidence.items.minLength, 1);
+  const combined = aiJsonSchemas.crossSourceIntelligence as any;
+  const combinedEvidence = combined.properties.themes.items.properties.evidence;
+  assert.equal(combinedEvidence.minItems, 1);
+  assert.equal(combinedEvidence.items.properties.excerpt.minLength, 12);
+  assert.equal(combinedEvidence.items.properties.relevance.minLength, 3);
 });
 
 test('signs Terra requests and supplies durable metering identity', async () => {
@@ -39,8 +49,8 @@ test('signs Terra requests and supplies durable metering identity', async () => 
   const result = await completeWithTerra({ activity: 'experience.analyst_chat', requestId: 'job-1', messages: [{ role: 'user', content: 'Question' }] });
   assert.deepEqual(result.data, { answer: 'Grounded' });
   assert.equal(result.runtime.model, 'gpt-5.6-terra');
-  await completeWithTerra({ activity: 'experience.analyst_chat', requestId: 'job-1:attempt:2', messages: [{ role: 'user', content: 'Question' }] });
-  assert.notEqual(eventIds[0], eventIds[1]);
+  await completeWithTerra({ activity: 'experience.analyst_chat', requestId: 'job-1', messages: [{ role: 'user', content: 'Question' }] });
+  assert.equal(eventIds[0], eventIds[1], 'a retried durable job must keep one metering identity');
   await completeWithTerra({ activity: 'experience.social_listening', requestId: 'job-social', messages: [{ role: 'user', content: 'Mentions' }] });
   await completeWithTerra({ activity: 'experience.journey_mapping', requestId: 'job-journey', messages: [{ role: 'user', content: 'Journey brief' }] });
   assert.deepEqual(activities, ['experience.analyst_chat', 'experience.analyst_chat', 'experience.social_listening', 'experience.journey_mapping']);

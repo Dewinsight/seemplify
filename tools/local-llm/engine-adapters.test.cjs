@@ -184,14 +184,19 @@ for (const [engine, run, payload] of [
   }]
 ]) {
   test(`${engine} preserves authoritative usage when generated structured output is invalid`, async (context) => {
-    context.mock.method(global, 'fetch', async () => new Response(
-      JSON.stringify(payload),
-      { status: 200, headers: { 'content-type': 'application/json' } }
-    ));
+    let dispatches = 0;
+    context.mock.method(global, 'fetch', async () => {
+      assert.equal(dispatches, 1);
+      return new Response(
+        JSON.stringify(payload),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    });
     await assert.rejects(
       () => run({
         activity: 'interview.questions',
         messages: [{ role: 'user', content: 'Return structured data.' }],
+        onProviderDispatch: async () => { dispatches += 1; },
         jsonSchema: {
           type: 'object',
           additionalProperties: false,
@@ -213,6 +218,7 @@ for (const [engine, run, payload] of [
         return true;
       }
     );
+    assert.equal(dispatches, 1);
   });
 }
 

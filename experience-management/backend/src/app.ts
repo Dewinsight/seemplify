@@ -10,9 +10,9 @@ import { currentSessionUser, forgotPassword, login, logout, requireAdmin, resetP
 import { computeAnalytics } from './analytics.js';
 import { config } from './config.js';
 import {
-  createCollector, createJob, createJourney, createResponse, db, deleteJourney, deleteSurvey, findActiveJourneyOptimization, getCollectorBySlug, getJob,
-  getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJobs, listJourneyVersionSummaries,
-  listJourneys, listResponses, listSocialMentions, listSocialMentionsByIds, listSurveys, restoreJourneyVersion, saveSurvey, updateJourney
+  createCollector, createJob, createJourney, createResponse, db, deleteJourney, deleteSurvey, findActiveJourneyOptimization, getCollectorBySlug, getJob, getJobForUser,
+  getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJourneyVersionSummaries,
+  listJobsForUser, listJourneys, listResponses, listSocialMentionsByIds, listSocialMentionsByIdsForUser, listSocialMentionsForUser, listSurveys, restoreJourneyVersion, saveSurvey, updateJourney
 } from './database.js';
 import { attachEventStream, publishEvent } from './events.js';
 import { emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations } from './emailService.js';
@@ -24,6 +24,11 @@ import {
 import { authenticateBrevoWebhook, parseBrevoWebhookPayload, processBrevoWebhookEvents } from './brevoWebhook.js';
 import { parseSocialMentionImport } from './socialImport.js';
 import { getTerraStatus } from './terraClient.js';
+import {
+  createIntelligenceReport, createSocialIntelligenceReport, createSocialReplyDraft, getIntelligenceReport,
+  IntelligenceError, listIntelligenceReports, listIntelligenceSources, listSocialIntelligenceReports,
+  listSocialReplyDrafts, updateSocialReplyDraft
+} from './intelligence.js';
 import { templates } from './templates.js';
 import { esignPublicRouter, esignRouter } from './esignRoutes.js';
 import { QUESTION_TYPES, type AiJob, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
@@ -92,6 +97,16 @@ function xError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return sendError(response, error);
   if (error instanceof XIntegrationError) return response.status(error.status).json({ error: error.message });
   return response.status(502).json({ error: 'The X integration request could not be completed.' });
+}
+function intelligenceError(response: express.Response, error: unknown) {
+  if (error instanceof z.ZodError) return sendError(response, error);
+  if (error instanceof IntelligenceError) return response.status(error.status).json({ error: error.message });
+  return response.status(500).json({ error: error instanceof Error ? error.message : 'The intelligence request could not be completed.' });
+}
+
+function idempotencyKey(request: express.Request) {
+  const value = request.get('idempotency-key');
+  return value ? z.string().uuid().parse(value) : undefined;
 }
 
 function authenticatedUser(request: express.Request) {
@@ -166,8 +181,8 @@ function createRuleTickets(survey: Survey, responseRecord: ResponseRecord) {
   }
 }
 
-function queueJob(kind: AiJobKind, input: Record<string, unknown>, surveyId?: string | null, responseId?: string | null) {
-  const job = createJob(kind, input, surveyId, responseId);
+function queueJob(kind: AiJobKind, input: Record<string, unknown>, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
+  const job = createJob(kind, input, surveyId, responseId, requestedBy);
   publishEvent('ai-job', job);
   void aiJobRunner.pump();
   return job;
@@ -183,7 +198,7 @@ app.use('/api/esign', esignRouter);
 app.use('/api/public/esign', esignPublicRouter);
 app.get('/api/events', attachEventStream);
 app.get('/api/runtime', noStore, async (_request, response) => response.json({ terra: await getTerraStatus(), email: emailStatus(), worker: aiJobRunner.status() }));
-app.get('/api/bootstrap', noStore, (_request, response) => {
+app.get('/api/bootstrap', noStore, (request, response) => {
   const surveys = listSurveys();
   const jobCounts = db.prepare(`SELECT state,COUNT(*) count FROM ai_jobs GROUP BY state`).all();
   response.json({
@@ -195,12 +210,13 @@ app.get('/api/bootstrap', noStore, (_request, response) => {
       openTickets: Number((db.prepare("SELECT COUNT(*) count FROM tickets WHERE status<>'closed'").get() as any).count),
       aiJobs: jobCounts
     },
-    recentJobs: listJobs(12), email: emailStatus()
+    recentJobs: listJobsForUser(authenticatedUser(request).id, 12), email: emailStatus()
   });
 });
 
 const xConfigurationInput = z.object({
   consumerKey: z.string().min(8).max(2000).optional(), consumerSecret: z.string().min(8).max(2000).optional(),
+  clientId: z.string().min(8).max(2000).optional(), clientSecret: z.string().min(8).max(2000).optional(),
   bearerToken: z.string().min(8).max(2000).optional(), accessToken: z.string().min(8).max(2000).optional(),
   accessTokenSecret: z.string().min(8).max(2000).optional()
 }).strict();
@@ -209,25 +225,32 @@ const xQueryUpdateInput = xQueryInput.partial().refine((value) => Object.keys(va
 
 app.get('/api/integrations/x/callback', noStore, async (request, response) => {
   response.setHeader('Referrer-Policy', 'no-referrer');
-  response.setHeader('Set-Cookie', clearXOAuthCookie());
+  const requestToken = typeof request.query.state === 'string' ? request.query.state
+    : typeof request.query.oauth_token === 'string' ? request.query.oauth_token
+      : typeof request.query.denied === 'string' ? request.query.denied : undefined;
+  response.setHeader('Set-Cookie', clearXOAuthCookie(requestToken));
   let outcome: 'connected' | 'denied' | 'failed' = 'failed';
   try {
     outcome = await finishXOAuth({
       oauthToken: typeof request.query.oauth_token === 'string' ? request.query.oauth_token : undefined,
       oauthVerifier: typeof request.query.oauth_verifier === 'string' ? request.query.oauth_verifier : undefined,
       denied: typeof request.query.denied === 'string' ? request.query.denied : undefined,
-      handshake: xOAuthCookieFromHeader(request.headers.cookie)
+      code: typeof request.query.code === 'string' ? request.query.code : undefined,
+      state: typeof request.query.state === 'string' ? request.query.state : undefined,
+      error: typeof request.query.error === 'string' ? request.query.error : undefined,
+      handshake: xOAuthCookieFromHeader(request.headers.cookie, requestToken)
     });
   } catch { outcome = 'failed'; }
   return response.redirect(303, `/social-listening?x=${outcome}`);
 });
 app.get('/api/integrations/x', noStore, (request, response) => {
-  try { return response.json(getXIntegrationStatus(authenticatedUser(request))); } catch (error) { return xError(response, error); }
+  try { return response.json(getXIntegrationStatus(authenticatedUser(request), typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined)); } catch (error) { return xError(response, error); }
 });
 app.get('/api/integrations/x/mentions', noStore, (request, response) => {
   try {
     const requested = Number(request.query.limit || 500);
-    return response.json(listXCollectedMentions(authenticatedUser(request), Number.isFinite(requested) ? requested : 500));
+    return response.json(listXCollectedMentions(authenticatedUser(request), Number.isFinite(requested) ? requested : 500,
+      typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined));
   } catch (error) { return xError(response, error); }
 });
 app.put('/api/integrations/x/app', (request, response) => {
@@ -244,23 +267,50 @@ app.post('/api/integrations/x/connect', async (request, response) => {
   } catch (error) { return xError(response, error); }
 });
 app.delete('/api/integrations/x/connection', (request, response) => {
-  try { disconnectXAccount(authenticatedUser(request)); return response.status(204).end(); } catch (error) { return xError(response, error); }
+  try { disconnectXAccount(authenticatedUser(request), typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined); return response.status(204).end(); } catch (error) { return xError(response, error); }
 });
 app.delete('/api/integrations/x/history', (request, response) => {
-  try { return response.json(deleteXCollectedHistory(authenticatedUser(request))); } catch (error) { return xError(response, error); }
+  try { return response.json(deleteXCollectedHistory(authenticatedUser(request), typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined)); } catch (error) { return xError(response, error); }
 });
 app.patch('/api/integrations/x/connection', (request, response) => {
   try {
     const input = z.object({ autoSync: z.boolean().optional(), syncIntervalMinutes: z.number().int().optional() }).strict().parse(request.body || {});
-    return response.json(updateXConnectionSettings(authenticatedUser(request), input));
+    return response.json(updateXConnectionSettings(authenticatedUser(request), input, typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined));
   } catch (error) { return xError(response, error); }
 });
 app.post('/api/integrations/x/sync', (request, response) => {
-  try { const queued = enqueueXSync(authenticatedUser(request)); return response.status(202).json(queued); }
+  try { const queued = enqueueXSync(authenticatedUser(request), typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined); return response.status(202).json(queued); }
   catch (error) { return xError(response, error); }
 });
 app.post('/api/integrations/x/queries', (request, response) => {
-  try { return response.status(201).json(createXQuery(authenticatedUser(request), xQueryInput.parse(request.body || {}))); }
+  try {
+    const parsed = xQueryInput.extend({ connectionId: z.string().uuid().optional() }).parse(request.body || {});
+    const { connectionId, ...query } = parsed;
+    return response.status(201).json(createXQuery(authenticatedUser(request), query, connectionId));
+  }
+  catch (error) { return xError(response, error); }
+});
+
+app.post('/api/integrations/x/connections/:connectionId/sync', (request, response) => {
+  try { return response.status(202).json(enqueueXSync(authenticatedUser(request), String(request.params.connectionId))); }
+  catch (error) { return xError(response, error); }
+});
+app.patch('/api/integrations/x/connections/:connectionId', (request, response) => {
+  try {
+    const input = z.object({ autoSync: z.boolean().optional(), syncIntervalMinutes: z.number().int().optional() }).strict().parse(request.body || {});
+    return response.json(updateXConnectionSettings(authenticatedUser(request), input, String(request.params.connectionId)));
+  } catch (error) { return xError(response, error); }
+});
+app.delete('/api/integrations/x/connections/:connectionId', (request, response) => {
+  try { disconnectXAccount(authenticatedUser(request), String(request.params.connectionId)); return response.status(204).end(); }
+  catch (error) { return xError(response, error); }
+});
+app.delete('/api/integrations/x/connections/:connectionId/history', (request, response) => {
+  try { return response.json(deleteXCollectedHistory(authenticatedUser(request), String(request.params.connectionId))); }
+  catch (error) { return xError(response, error); }
+});
+app.post('/api/integrations/x/connections/:connectionId/queries', (request, response) => {
+  try { return response.status(201).json(createXQuery(authenticatedUser(request), xQueryInput.parse(request.body || {}), String(request.params.connectionId))); }
   catch (error) { return xError(response, error); }
 });
 app.patch('/api/integrations/x/queries/:id', (request, response) => {
@@ -279,13 +329,13 @@ const mentionInput = z.object({
 });
 app.get('/api/social/mentions', noStore, (request, response) => {
   const requested = Number(request.query.limit || 500);
-  return response.json(listSocialMentions(Number.isFinite(requested) ? Math.max(1, Math.min(1000, Math.floor(requested))) : 500));
+  return response.json(listSocialMentionsForUser(authenticatedUser(request).id, Number.isFinite(requested) ? Math.max(1, Math.min(1000, Math.floor(requested))) : 500));
 });
 app.post('/api/social/mentions', (request, response) => {
   const parsed = z.object({ mentions: z.array(mentionInput).min(1).max(200), analyze: z.boolean().optional() }).safeParse(request.body);
   if (!parsed.success) return sendError(response, parsed.error);
   const mentions = insertSocialMentions(parsed.data.mentions as Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>);
-  const job = parsed.data.analyze === false ? null : queueJob('social.analyze', { mentionIds: mentions.map((mention) => mention.id) });
+  const job = parsed.data.analyze === false ? null : queueJob('social.analyze', { mentionIds: mentions.map((mention) => mention.id) }, null, null, authenticatedUser(request).id);
   publishEvent('data-changed', { reason: 'social-mentions-imported', count: mentions.length });
   return response.status(job ? 202 : 201).json({ mentions, jobId: job?.id || null, state: job?.state || null });
 });
@@ -306,7 +356,7 @@ app.post('/api/social/mentions/import', socialImportUpload.single('file'), (requ
     const existingIds = new Set(listSocialMentionsByIds(validated.map((mention) => mention.id)).map((mention) => mention.id));
     const mentions = insertSocialMentions(validated as Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>);
     const importedIds = mentions.map((mention) => mention.id).filter((id) => !existingIds.has(id));
-    const job = fields.analyze === 'false' || !importedIds.length ? null : queueJob('social.analyze', { mentionIds: importedIds });
+    const job = fields.analyze === 'false' || !importedIds.length ? null : queueJob('social.analyze', { mentionIds: importedIds }, null, null, authenticatedUser(request).id);
     const summary = { ...parsed.summary, imported: importedIds.length, skipped: validated.length - importedIds.length, replayed: importedIds.length === 0 };
     publishEvent('data-changed', { reason: 'social-mentions-file-imported', count: importedIds.length, batchId: parsed.summary.batchId, replayed: summary.replayed });
     return response.status(job ? 202 : 201).json({ mentions, jobId: job?.id || null, state: job?.state || null, summary });
@@ -325,16 +375,82 @@ app.post('/api/webhooks/brevo/transactional', (request, response) => {
   catch { return response.status(500).json({ error: 'Transactional webhook processing failed.' }); }
 });
 app.post('/api/social/analyze', (request, response) => {
-  const parsed = z.object({ mentionIds: z.array(z.string()).min(1).max(500).optional() }).safeParse(request.body || {});
+  const parsed = z.object({ mentionIds: z.array(z.string().uuid()).min(1).max(200).optional() }).safeParse(request.body || {});
   if (!parsed.success) return sendError(response, parsed.error);
-  const job = queueJob('social.analyze', { mentionIds: parsed.data.mentionIds || undefined });
+  const user = authenticatedUser(request); const requested = parsed.data.mentionIds;
+  const mentions = requested ? listSocialMentionsByIdsForUser(requested, user.id) : listSocialMentionsForUser(user.id, 200);
+  if (requested && mentions.length !== new Set(requested).size) return response.status(404).json({ error: 'One or more social mentions are not available to this account.' });
+  if (!mentions.length) return response.status(409).json({ error: 'Import or collect at least one social mention before running analysis.' });
+  const job = queueJob('social.analyze', { mentionIds: mentions.map((mention) => mention.id) }, null, null, user.id);
   return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
 });
 app.delete('/api/social/mentions/:id', (request, response) => {
-  const deleted = db.prepare('DELETE FROM social_mentions WHERE id=?').run(String(request.params.id)).changes > 0;
+  const id = String(request.params.id);
+  if (db.prepare('SELECT 1 FROM x_connection_mentions WHERE mention_id=? LIMIT 1').get(id)) {
+    return response.status(409).json({ error: 'Collected X posts are deleted from the selected account history so linked reports and jobs can be handled safely.' });
+  }
+  const deleted = db.prepare('DELETE FROM social_mentions WHERE id=?').run(id).changes > 0;
   if (!deleted) return response.status(404).json({ error: 'Mention not found.' });
   publishEvent('data-changed', { reason: 'social-mention-deleted', id: String(request.params.id) });
   return response.status(204).end();
+});
+
+app.get('/api/social/mentions/:id/reply-drafts', noStore, (request, response) => {
+  try { return response.json(listSocialReplyDrafts(authenticatedUser(request), String(request.params.id))); }
+  catch (error) { return intelligenceError(response, error); }
+});
+app.get('/api/social/reply-drafts', noStore, (request, response) => {
+  try { return response.json(listSocialReplyDrafts(authenticatedUser(request))); }
+  catch (error) { return intelligenceError(response, error); }
+});
+app.post('/api/social/mentions/:id/reply-drafts', (request, response) => {
+  try {
+    const input = z.object({ tone: z.enum(['helpful', 'empathetic', 'concise', 'professional', 'warm']).default('helpful'), instructions: z.string().trim().max(1000).optional() }).strict().parse(request.body || {});
+    const created = createSocialReplyDraft(authenticatedUser(request), { mentionId: String(request.params.id), ...input, idempotencyKey: idempotencyKey(request) });
+    publishEvent('ai-job', created.job); void aiJobRunner.pump();
+    return response.status(202).json({ draft: created.draft, jobId: created.job.id, state: created.job.state, deduplicated: !created.created, statusUrl: `/api/ai/jobs/${created.job.id}` });
+  } catch (error) { return intelligenceError(response, error); }
+});
+app.patch('/api/social/reply-drafts/:id', (request, response) => {
+  try {
+    const input = z.object({ content: z.string().trim().min(1).max(280).optional(), archived: z.boolean().optional() }).strict()
+      .refine((value) => value.content !== undefined || value.archived !== undefined, 'Provide a draft change.').parse(request.body || {});
+    return response.json(updateSocialReplyDraft(authenticatedUser(request), String(request.params.id), input));
+  } catch (error) { return intelligenceError(response, error); }
+});
+app.get('/api/social/reports', noStore, (request, response) => {
+  try { return response.json(listSocialIntelligenceReports(authenticatedUser(request), typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined)); }
+  catch (error) { return intelligenceError(response, error); }
+});
+app.post('/api/social/reports', (request, response) => {
+  try {
+    const input = z.object({ connectionId: z.string().uuid(), title: z.string().trim().min(2).max(180), mentionIds: z.array(z.string().uuid()).max(200).optional() }).strict().parse(request.body || {});
+    const created = createSocialIntelligenceReport(authenticatedUser(request), { ...input, idempotencyKey: idempotencyKey(request) });
+    publishEvent('ai-job', created.job); void aiJobRunner.pump();
+    return response.status(202).json({ report: created.report, jobId: created.job.id, state: created.job.state, deduplicated: !created.created, statusUrl: `/api/ai/jobs/${created.job.id}` });
+  } catch (error) { return intelligenceError(response, error); }
+});
+
+app.get('/api/intelligence/sources', noStore, (request, response) => {
+  try { return response.json(listIntelligenceSources(authenticatedUser(request))); }
+  catch (error) { return intelligenceError(response, error); }
+});
+app.get('/api/intelligence/reports', noStore, (request, response) => {
+  try { return response.json(listIntelligenceReports(authenticatedUser(request))); }
+  catch (error) { return intelligenceError(response, error); }
+});
+app.get('/api/intelligence/reports/:id', noStore, (request, response) => {
+  try { return response.json(getIntelligenceReport(authenticatedUser(request), String(request.params.id))); }
+  catch (error) { return intelligenceError(response, error); }
+});
+app.post('/api/intelligence/reports', (request, response) => {
+  try {
+    const input = z.object({ title: z.string().trim().min(2).max(180), objective: z.string().trim().max(1000).optional(),
+      sourceRefs: z.array(z.string().trim().min(3).max(200)).min(2).max(12) }).strict().parse(request.body || {});
+    const created = createIntelligenceReport(authenticatedUser(request), { ...input, idempotencyKey: idempotencyKey(request) });
+    publishEvent('ai-job', created.job); void aiJobRunner.pump();
+    return response.status(202).json({ report: created.report, jobId: created.job.id, state: created.job.state, deduplicated: !created.created, statusUrl: `/api/ai/jobs/${created.job.id}` });
+  } catch (error) { return intelligenceError(response, error); }
 });
 
 const journeyText = (maximum: number) => z.string().trim().min(1).max(maximum);
@@ -412,7 +528,7 @@ app.delete('/api/journeys/:id', (request, response) => {
 app.post('/api/ai/journeys', (request, response) => {
   const parsed = z.object({ brief: z.string().trim().min(10).max(8000), audience: z.string().trim().max(500).optional(), industry: z.string().trim().max(200).optional(), objective: z.string().trim().max(2000).optional() }).safeParse(request.body);
   if (!parsed.success) return sendError(response, parsed.error);
-  const job = queueJob('journey.generate', parsed.data);
+  const job = queueJob('journey.generate', parsed.data, null, null, authenticatedUser(request).id);
   return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
 });
 app.post('/api/journeys/:id/ai/optimize', (request, response) => {
@@ -428,7 +544,7 @@ app.post('/api/journeys/:id/ai/optimize', (request, response) => {
     return response.status(409).json(activeJourneyOptimizationConflict(existing, sameSnapshot ? 'different_focus' : 'stale_snapshot'));
   }
   try {
-    const job = queueJob('journey.optimize', { journeyId: journey.id, journeyUpdatedAt: journey.updatedAt, focus });
+    const job = queueJob('journey.optimize', { journeyId: journey.id, journeyUpdatedAt: journey.updatedAt, focus }, null, null, authenticatedUser(request).id);
     return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}`, deduplicated: false });
   } catch (error: any) {
     const raced = String(error?.code || '').startsWith('SQLITE_CONSTRAINT') ? findActiveJourneyOptimization(journey.id) : null;
@@ -658,7 +774,7 @@ app.post('/api/surveys', (request, response) => {
 app.post('/api/ai/surveys', (request, response) => {
   const brief = z.object({ brief: z.string().min(10).max(8000), purpose: z.string().optional(), audience: z.string().optional(), language: z.string().optional(), numberOfQuestions: z.number().int().min(2).max(40).optional() }).safeParse(request.body);
   if (!brief.success) return sendError(response, brief.error);
-  const job = queueJob('survey.generate', brief.data);
+  const job = queueJob('survey.generate', brief.data, null, null, authenticatedUser(request).id);
   return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
 });
 app.get('/api/surveys/:id', noStore, (request, response) => {
@@ -775,7 +891,7 @@ app.get('/api/responses/:id', noStore, (request, response) => {
 app.post('/api/responses/:id/analyze', (request, response) => {
   const item = getResponse(String(request.params.id));
   if (!item) return response.status(404).json({ error: 'Response not found.' });
-  const job = queueJob('response.analyze', {}, item.surveyId, item.id);
+  const job = queueJob('response.analyze', {}, item.surveyId, item.id, authenticatedUser(request).id);
   return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
 });
 app.get('/api/surveys/:id/analytics', noStore, (request, response) => {
@@ -795,15 +911,15 @@ for (const route of [
   app.post(`/api/surveys/:id/ai/${route.path}`, (request, response) => {
     try {
       requireSurvey(String(request.params.id));
-      const job = queueJob(route.kind, request.body || {}, String(request.params.id));
+      const job = queueJob(route.kind, request.body || {}, String(request.params.id), null, authenticatedUser(request).id);
       return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
     } catch (error) { return sendError(response, error, 404); }
   });
 }
 
-app.get('/api/ai/jobs', noStore, (request, response) => response.json(listJobs(Math.min(500, Number(request.query.limit || 100)))));
+app.get('/api/ai/jobs', noStore, (request, response) => response.json(listJobsForUser(authenticatedUser(request).id, Math.min(500, Number(request.query.limit || 100)))));
 app.get('/api/ai/jobs/:id', noStore, (request, response) => {
-  const job = getJob(String(request.params.id));
+  const job = getJobForUser(String(request.params.id), authenticatedUser(request).id);
   return job ? response.json(job) : response.status(404).json({ error: 'AI job not found.' });
 });
 

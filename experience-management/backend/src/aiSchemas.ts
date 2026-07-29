@@ -92,16 +92,40 @@ export const reportResult = z.object({
 
 const socialMentionAnalysis = z.object({
   mentionId: z.string(), sentiment: z.enum(['negative', 'neutral', 'positive', 'mixed']), sentimentScore: z.number().min(-1).max(1),
-  emotions: z.array(z.string()), themes: z.array(z.string()), summary: z.string(), risk: z.enum(['low', 'medium', 'high', 'critical'])
+  emotions: z.array(z.string()).max(20), themes: z.array(z.string()).max(20), summary: z.string(), risk: z.enum(['low', 'medium', 'high', 'critical']),
+  evidence: z.string().trim().min(1).max(500)
 });
+const socialEvidence = z.array(z.string().trim().min(1).max(1000)).min(1).max(20);
 export const socialListeningResult = z.object({
   executiveSummary: z.string(),
-  sentiment: z.object({ negative: z.number(), neutral: z.number(), positive: z.number(), mixed: z.number() }),
-  themes: z.array(z.object({ name: z.string(), mentions: z.number(), sentiment: z.string(), evidence: z.array(z.string()) })),
-  emergingTrends: z.array(z.object({ trend: z.string(), direction: z.enum(['rising', 'stable', 'falling']), evidence: z.array(z.string()) })),
-  risks: z.array(z.object({ issue: z.string(), severity: z.enum(['low', 'medium', 'high', 'critical']), evidence: z.array(z.string()), action: z.string() })),
-  opportunities: z.array(z.object({ opportunity: z.string(), evidence: z.array(z.string()), action: z.string() })),
-  mentions: z.array(socialMentionAnalysis)
+  sentiment: z.object({ negative: z.number().int().nonnegative(), neutral: z.number().int().nonnegative(), positive: z.number().int().nonnegative(), mixed: z.number().int().nonnegative() }),
+  themes: z.array(z.object({ name: z.string(), mentions: z.number().int().nonnegative(), sentiment: z.string(), evidence: socialEvidence })).max(50),
+  emergingTrends: z.array(z.object({ trend: z.string(), direction: z.enum(['rising', 'stable', 'falling']), evidence: socialEvidence })).max(30),
+  risks: z.array(z.object({ issue: z.string(), severity: z.enum(['low', 'medium', 'high', 'critical']), evidence: socialEvidence, action: z.string() })).max(30),
+  opportunities: z.array(z.object({ opportunity: z.string(), evidence: socialEvidence, action: z.string() })).max(30),
+  mentions: z.array(socialMentionAnalysis).max(200)
+});
+
+export const socialReplyDraftResult = z.object({
+  reply: z.string().trim().min(1).max(280),
+  rationale: z.string().trim().min(1).max(2000),
+  safetyFlags: z.array(z.string().trim().min(1).max(200)).max(20)
+});
+
+const intelligenceEvidence = z.object({
+  sourceRef: z.string().trim().min(1).max(200), excerpt: z.string().trim().min(12).max(1000), relevance: z.string().trim().min(3).max(1000)
+});
+const intelligenceFinding = z.object({
+  title: z.string().trim().min(1).max(300), detail: z.string().trim().min(1).max(4000),
+  evidence: z.array(intelligenceEvidence).min(1).max(20), confidence: z.number().min(0).max(1)
+});
+export const crossSourceIntelligenceResult = z.object({
+  title: z.string().trim().min(1).max(300), executiveSummary: z.string().trim().min(1).max(8000), confidence: z.number().min(0).max(1),
+  themes: z.array(intelligenceFinding).max(30), convergence: z.array(intelligenceFinding).max(20), divergence: z.array(intelligenceFinding).max(20),
+  risks: z.array(intelligenceFinding).max(20), opportunities: z.array(intelligenceFinding).max(20),
+  recommendations: z.array(z.object({ action: z.string().trim().min(1).max(2000), priority: z.enum(['now', 'next', 'later']),
+    rationale: z.string().trim().min(1).max(3000), evidence: z.array(intelligenceEvidence).min(1).max(20) })).max(30),
+  limitations: z.array(z.string().trim().min(1).max(1000)).max(30)
 });
 
 const journeyString = (maximum: number, minimum = 1) => z.string().trim().min(minimum).max(maximum);
@@ -124,10 +148,17 @@ const percentageNumber = { type: 'number', minimum: 0, maximum: 100 } as const;
 const nonNegativeInteger = { type: 'integer', minimum: 0 } as const;
 const boolean = { type: 'boolean' } as const;
 const strings = { type: 'array', items: string } as const;
+const socialEvidenceString = { type: 'string', minLength: 1, maxLength: 1000 } as const;
+const socialEvidenceStrings = { type: 'array', minItems: 1, maxItems: 20, items: socialEvidenceString } as const;
 const finiteObject = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({
   type: 'object', additionalProperties: false, required, properties
 });
 const arrayOf = (items: unknown) => ({ type: 'array', items });
+const intelligenceEvidenceJson = finiteObject({
+  sourceRef: { type: 'string', minLength: 1, maxLength: 200 },
+  excerpt: { type: 'string', minLength: 12, maxLength: 1000 },
+  relevance: { type: 'string', minLength: 3, maxLength: 1000 }
+});
 
 const generatedQuestionJson = finiteObject({
   type: { type: 'string', enum: [...QUESTION_TYPES] }, title: string, description: string,
@@ -181,11 +212,28 @@ export const aiJsonSchemas = {
   socialListening: finiteObject({
     executiveSummary: string,
     sentiment: finiteObject({ negative: nonNegativeInteger, neutral: nonNegativeInteger, positive: nonNegativeInteger, mixed: nonNegativeInteger }),
-    themes: arrayOf(finiteObject({ name: string, mentions: nonNegativeInteger, sentiment: string, evidence: strings })),
-    emergingTrends: arrayOf(finiteObject({ trend: string, direction: { type: 'string', enum: ['rising', 'stable', 'falling'] }, evidence: strings })),
-    risks: arrayOf(finiteObject({ issue: string, severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, evidence: strings, action: string })),
-    opportunities: arrayOf(finiteObject({ opportunity: string, evidence: strings, action: string })),
-    mentions: arrayOf(finiteObject({ mentionId: string, sentiment: { type: 'string', enum: ['negative', 'neutral', 'positive', 'mixed'] }, sentimentScore: signedUnitNumber, emotions: strings, themes: strings, summary: string, risk: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] } }))
+    themes: { type: 'array', maxItems: 50, items: finiteObject({ name: string, mentions: nonNegativeInteger, sentiment: string, evidence: socialEvidenceStrings }) },
+    emergingTrends: { type: 'array', maxItems: 30, items: finiteObject({ trend: string, direction: { type: 'string', enum: ['rising', 'stable', 'falling'] }, evidence: socialEvidenceStrings }) },
+    risks: { type: 'array', maxItems: 30, items: finiteObject({ issue: string, severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, evidence: socialEvidenceStrings, action: string }) },
+    opportunities: { type: 'array', maxItems: 30, items: finiteObject({ opportunity: string, evidence: socialEvidenceStrings, action: string }) },
+    mentions: { type: 'array', maxItems: 200, items: finiteObject({ mentionId: string, sentiment: { type: 'string', enum: ['negative', 'neutral', 'positive', 'mixed'] }, sentimentScore: signedUnitNumber,
+      emotions: { type: 'array', maxItems: 20, items: string }, themes: { type: 'array', maxItems: 20, items: string }, summary: string,
+      risk: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, evidence: { type: 'string', minLength: 1, maxLength: 500 } }) }
+  }),
+  socialReplyDraft: finiteObject({
+    reply: { type: 'string', minLength: 1, maxLength: 280 }, rationale: { type: 'string', minLength: 1, maxLength: 2000 },
+    safetyFlags: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 200 } }
+  }),
+  crossSourceIntelligence: finiteObject({
+    title: { type: 'string', minLength: 1, maxLength: 300 }, executiveSummary: { type: 'string', minLength: 1, maxLength: 8000 }, confidence: unitNumber,
+    themes: arrayOf(finiteObject({ title: string, detail: string, evidence: { type: 'array', minItems: 1, maxItems: 20, items: intelligenceEvidenceJson }, confidence: unitNumber })),
+    convergence: arrayOf(finiteObject({ title: string, detail: string, evidence: { type: 'array', minItems: 1, maxItems: 20, items: intelligenceEvidenceJson }, confidence: unitNumber })),
+    divergence: arrayOf(finiteObject({ title: string, detail: string, evidence: { type: 'array', minItems: 1, maxItems: 20, items: intelligenceEvidenceJson }, confidence: unitNumber })),
+    risks: arrayOf(finiteObject({ title: string, detail: string, evidence: { type: 'array', minItems: 1, maxItems: 20, items: intelligenceEvidenceJson }, confidence: unitNumber })),
+    opportunities: arrayOf(finiteObject({ title: string, detail: string, evidence: { type: 'array', minItems: 1, maxItems: 20, items: intelligenceEvidenceJson }, confidence: unitNumber })),
+    recommendations: arrayOf(finiteObject({ action: string, priority: { type: 'string', enum: ['now', 'next', 'later'] }, rationale: string,
+      evidence: { type: 'array', minItems: 1, maxItems: 20, items: intelligenceEvidenceJson } })),
+    limitations: strings
   }),
   journey: finiteObject({
     name: { type: 'string', minLength: 2, maxLength: 180 }, audience: { type: 'string', maxLength: 500 },

@@ -383,6 +383,7 @@ async function runOllama(input, state) {
     }
   };
   if (generationSchema) requestBody.format = generationSchema;
+  await effectiveInput.onProviderDispatch?.();
   const data = await fetchJson(`${engine.baseUrl}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -479,6 +480,7 @@ async function runVllm(input, state) {
           }
         };
   }
+  await effectiveInput.onProviderDispatch?.();
   const data = await fetchJson(`${engine.baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -921,6 +923,7 @@ async function runCodex(input, state) {
   try {
     let result;
     try {
+      await effectiveInput.onProviderDispatch?.();
       result = await spawnCapture(process.execPath, codexExecArgs(engine, requestDir), {
         input: codexPrompt(effectiveInput),
         cwd: requestDir,

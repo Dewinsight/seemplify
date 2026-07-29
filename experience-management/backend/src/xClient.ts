@@ -11,8 +11,9 @@ export class XApiError extends Error {
   code: 'authentication' | 'billing' | 'permission' | 'rate_limit' | 'network' | 'provider';
   retryAt: string | null;
   retryable: boolean;
-  constructor(message: string, status: number, code: XApiError['code'], retryable = false, retryAt: string | null = null) {
-    super(message); this.name = 'XApiError'; this.status = status; this.code = code; this.retryable = retryable; this.retryAt = retryAt;
+  problemType: string | null;
+  constructor(message: string, status: number, code: XApiError['code'], retryable = false, retryAt: string | null = null, problemType: string | null = null) {
+    super(message); this.name = 'XApiError'; this.status = status; this.code = code; this.retryable = retryable; this.retryAt = retryAt; this.problemType = problemType;
   }
 }
 
@@ -78,12 +79,25 @@ async function readBounded(response: Response) {
   return body;
 }
 
-function providerError(response: Response, rate: XRateLimit) {
-  if (response.status === 401) return new XApiError('X rejected the account credentials. Reconnect the X account.', 401, 'authentication');
-  if (response.status === 402) return new XApiError('X API credits or billing are required before this data can be synchronised.', 402, 'billing');
-  if (response.status === 403) return new XApiError('The X app does not have permission for this data. Confirm read access and the X API plan.', 403, 'permission');
-  if (response.status === 429) return new XApiError('The X API rate limit has been reached. Synchronisation will resume after the reset time.', 429, 'rate_limit', true, rate.resetAt);
-  return new XApiError('X is temporarily unavailable. The synchronisation will be retried.', response.status, 'provider', response.status >= 500);
+function providerProblem(body: string) {
+  try {
+    const parsed = JSON.parse(body) as { type?: unknown; title?: unknown; detail?: unknown; error?: unknown; error_description?: unknown };
+    return {
+      type: String(parsed.type || parsed.error || '').slice(0, 200),
+      detail: String(parsed.detail || parsed.error_description || parsed.title || '').slice(0, 500)
+    };
+  } catch { return { type: '', detail: '' }; }
+}
+
+function providerError(response: Response, rate: XRateLimit, body = '') {
+  const problem = providerProblem(body); const problemType = problem.type || null;
+  if (response.status === 401 || problem.type === 'invalid_grant') return new XApiError('X rejected or expired this account connection. Reconnect the X account.', 401, 'authentication', false, null, problemType);
+  if (response.status === 402 || /credits-depleted|payment/i.test(`${problem.type} ${problem.detail}`)) {
+    return new XApiError('X API credits are depleted. Add credits in the X Developer Console, then retry this sync.', 402, 'billing', false, null, problemType || 'credits-depleted');
+  }
+  if (response.status === 403) return new XApiError('The X app does not have permission for this data. Confirm read access, OAuth scopes, and the X API plan.', 403, 'permission', false, null, problemType);
+  if (response.status === 429) return new XApiError('The X API rate limit has been reached. Synchronisation will resume after the reset time.', 429, 'rate_limit', true, rate.resetAt, problemType);
+  return new XApiError(problem.detail || 'X is temporarily unavailable. The request will be retried when safe.', response.status, 'provider', response.status >= 500, null, problemType);
 }
 
 async function xFetch(url: string, authorization: string, accept = 'application/json') {
@@ -96,7 +110,7 @@ async function xFetch(url: string, authorization: string, accept = 'application/
   } catch { throw new XApiError('X could not be reached. The synchronisation will be retried.', 503, 'network', true); }
   const rate = rateLimit(response);
   const body = await readBounded(response);
-  if (!response.ok) throw providerError(response, rate);
+  if (!response.ok) throw providerError(response, rate, body);
   return { body, rate };
 }
 
@@ -109,7 +123,7 @@ async function xPost(url: string, authorization: string) {
     });
   } catch { throw new XApiError('X could not be reached. Try connecting again.', 503, 'network', true); }
   const rate = rateLimit(response); const body = await readBounded(response);
-  if (!response.ok) throw providerError(response, rate);
+  if (!response.ok) throw providerError(response, rate, body);
   if (Buffer.byteLength(body) > 16 * 1024) throw new XApiError('X returned an invalid authentication response.', 502, 'provider');
   return { body, rate };
 }
@@ -135,6 +149,66 @@ export async function exchangeOAuthToken(credentials: { consumerKey: string; con
   const result = await xPost(url, authorization); const parsed = parseForm(result.body);
   if (!parsed.oauth_token || !parsed.oauth_token_secret) throw new XApiError('X did not return account credentials.', 502, 'provider');
   return { accessToken: parsed.oauth_token, accessTokenSecret: parsed.oauth_token_secret, xUserId: parsed.user_id || null, username: parsed.screen_name || null };
+}
+
+export type XOAuth2Token = {
+  accessToken: string;
+  refreshToken: string | null;
+  expiresIn: number;
+  scopes: string[];
+  tokenType: string;
+};
+
+async function oauth2TokenRequest(credentials: { clientId: string; clientSecret: string }, fields: Record<string, string>) {
+  const url = `${config.xApiBaseUrl}/2/oauth2/token`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(requestTimeoutMs),
+      headers: {
+        accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded',
+        authorization: `Basic ${Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`, 'utf8').toString('base64')}`,
+        'user-agent': 'Seemplify-Experience/1.0'
+      },
+      body: new URLSearchParams(fields).toString()
+    });
+  } catch { throw new XApiError('X could not be reached. Try connecting again.', 503, 'network', true); }
+  const rate = rateLimit(response); const body = await readBounded(response);
+  if (!response.ok) throw providerError(response, rate, body);
+  let parsed: any;
+  try { parsed = JSON.parse(body); } catch { throw new XApiError('X returned malformed OAuth credentials.', 502, 'provider'); }
+  if (!parsed.access_token || String(parsed.token_type || '').toLowerCase() !== 'bearer') throw new XApiError('X did not return a usable account access token.', 502, 'provider');
+  return {
+    accessToken: String(parsed.access_token), refreshToken: parsed.refresh_token ? String(parsed.refresh_token) : null,
+    expiresIn: Math.max(60, Math.min(86_400, Number(parsed.expires_in || 7200))),
+    scopes: String(parsed.scope || '').split(/\s+/).filter(Boolean), tokenType: String(parsed.token_type)
+  } satisfies XOAuth2Token;
+}
+
+export function exchangeOAuth2Code(credentials: { clientId: string; clientSecret: string }, input: { code: string; redirectUri: string; codeVerifier: string }) {
+  return oauth2TokenRequest(credentials, {
+    code: input.code, grant_type: 'authorization_code', redirect_uri: input.redirectUri, code_verifier: input.codeVerifier
+  });
+}
+
+export function refreshOAuth2Token(credentials: { clientId: string; clientSecret: string }, refreshToken: string) {
+  return oauth2TokenRequest(credentials, { refresh_token: refreshToken, grant_type: 'refresh_token' });
+}
+
+export async function revokeOAuth2Token(credentials: { clientId: string; clientSecret: string }, token: string) {
+  const url = `${config.xApiBaseUrl}/2/oauth2/revoke`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(requestTimeoutMs),
+      headers: {
+        accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded',
+        authorization: `Basic ${Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`, 'utf8').toString('base64')}`,
+        'user-agent': 'Seemplify-Experience/1.0'
+      }, body: new URLSearchParams({ token }).toString()
+    });
+  } catch { return false; }
+  await readBounded(response); return response.ok;
 }
 
 export async function getXJson<T>(input: {

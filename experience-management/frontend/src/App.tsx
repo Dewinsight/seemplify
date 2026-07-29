@@ -11,6 +11,7 @@ const PublicSurveyPage = lazy(() => import('@/pages/PublicSurveyPage').then((mod
 const AiQueuePage = lazy(() => import('@/pages/AiQueuePage').then((module) => ({ default: module.AiQueuePage })));
 const TicketsPage = lazy(() => import('@/pages/TicketsPage').then((module) => ({ default: module.TicketsPage })));
 const SocialListeningPage = lazy(() => import('@/pages/SocialListeningPage').then((module) => ({ default: module.SocialListeningPage })));
+const IntelligencePage = lazy(() => import('@/pages/IntelligencePage').then((module) => ({ default: module.IntelligencePage })));
 const JourneysPage = lazy(() => import('@/pages/JourneysPage').then((module) => ({ default: module.JourneysPage })));
 const CampaignsPage = lazy(() => import('@/pages/CampaignsPage').then((module) => ({ default: module.CampaignsPage })));
 const CampaignWorkspacePage = lazy(() => import('@/pages/CampaignWorkspacePage').then((module) => ({ default: module.CampaignWorkspacePage })));
@@ -49,6 +50,7 @@ export function App() {
     <Route path="/agreements/:id"><Admin><AgreementWorkspacePage /></Admin></Route>
     <Route path="/agreements"><Admin><AgreementsPage /></Admin></Route>
     <Route path="/social-listening"><Admin><SocialListeningPage /></Admin></Route>
+    <Route path="/intelligence"><Admin><IntelligencePage /></Admin></Route>
     <Route path="/journeys"><Admin><JourneysPage /></Admin></Route>
     <Route path="/ai-queue"><Admin><AiQueuePage /></Admin></Route>
     <Route path="/tickets"><Admin><TicketsPage /></Admin></Route>

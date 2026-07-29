@@ -87,6 +87,7 @@ export const config = {
   ),
   xApiBaseUrl: String(process.env.X_API_BASE_URL || 'https://api.x.com').replace(/\/+$/, ''),
   xOAuthBaseUrl: String(process.env.X_OAUTH_BASE_URL || 'https://api.x.com').replace(/\/+$/, ''),
+  xOAuth2AuthorizeBaseUrl: String(process.env.X_OAUTH2_AUTHORIZE_BASE_URL || 'https://x.com').replace(/\/+$/, ''),
   xCredentialEncryptionKeyFile: resolveFromBackend(
     process.env.X_CREDENTIAL_ENCRYPTION_KEY_FILE || '../../.local-runtime/experience-management/x-credential-encryption-key'
   ),
@@ -104,6 +105,12 @@ export const config = {
   ),
   xSeedAccessTokenSecretFile: resolveFromBackend(
     process.env.X_SEED_ACCESS_TOKEN_SECRET_FILE || '../../.local-runtime/experience-management/x-access-token-secret'
+  ),
+  xSeedClientIdFile: resolveFromBackend(
+    process.env.X_SEED_CLIENT_ID_FILE || '../../.local-runtime/experience-management/x-client-id'
+  ),
+  xSeedClientSecretFile: resolveFromBackend(
+    process.env.X_SEED_CLIENT_SECRET_FILE || '../../.local-runtime/experience-management/x-client-secret'
   ),
   xSyncPollSeconds: boundedNumber(process.env.X_SYNC_POLL_SECONDS, 60, 15, 300),
   adminEmail: String(process.env.ADMIN_EMAIL || 'admin@seemplify.local').trim().toLowerCase(),

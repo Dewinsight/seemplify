@@ -23,7 +23,7 @@ const {
   deriveRuntimeUsageEventId,
   requiredCapabilitiesForActivity
 } = require('../services/aiRuntime/aiRuntimeService');
-const { retryDelayMinutes } = require('../services/aiInterviewScoringRetryService');
+const { retryDelayMinutes, scoringRequestId } = require('../services/aiInterviewScoringRetryService');
 const { decryptSecret, encryptSecret, fingerprintSecret, maskSecret } = require('../services/aiRuntime/secretCrypto');
 const { getAIRequestContext, runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
 const { validateJsonSchema } = require('../services/aiRuntime/jsonSchemaValidator');
@@ -287,6 +287,39 @@ test('production local runtime calls carry one stable at-source metering identit
   });
 });
 
+test('terminal gateway failures preserve retryability and at-source metering identity', async () => {
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
+  const gatewayExecutionId = `localexec_${'a'.repeat(48)}`;
+  const error = await runtime.parseErrorResponse(new Response(JSON.stringify({
+    code: 'CODEX_TURN_FAILED',
+    message: 'The provider outcome was persisted and must not be repeated',
+    retryable: false,
+    id: gatewayExecutionId,
+    gatewayExecutionId,
+    engine: 'codex',
+    model: 'gpt-5.6-terra',
+    usage: {
+      input_tokens: 0,
+      cached_input_tokens: 0,
+      output_tokens: 0,
+      reasoning_tokens: 0,
+      total_tokens: 0
+    },
+    usageReported: false,
+    usageSource: 'unreported'
+  }), {
+    status: 503,
+    headers: { 'content-type': 'application/json' }
+  }), LOCAL_PROVIDER);
+
+  assert.equal(error.retryable, false);
+  assert.equal(error.details.usageEnvelope.gatewayExecutionId, gatewayExecutionId);
+  assert.equal(error.details.usageEnvelope.provider, 'local-codex');
+  assert.equal(error.details.usageEnvelope.model, 'gpt-5.6-terra');
+  assert.equal(error.details.usageEnvelope.usage.total_tokens, 0);
+  assert.equal(error.details.usageEnvelope.usageReported, false);
+});
+
 test('shared-dispatch lease abort reaches the local CV gateway and preserves its safety error', async () => {
   const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
   const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
@@ -417,7 +450,7 @@ test('structured completion invokes a budget hook for every schema repair attemp
   const result = await runtime.structuredComplete('interview.questions', {
     context: {
       requestId: 'cv-queue:job-1',
-      usageExecutionId: 'cv-queue:job-1:attempt:3'
+      usageExecutionId: 'cv-queue:job-1'
     },
     messages: [{ role: 'user', content: 'Return an answer.' }],
     jsonSchema: {
@@ -437,8 +470,27 @@ test('structured completion invokes a budget hook for every schema repair attemp
   );
   assert.deepEqual(
     [...new Set(executionContexts.map((context) => context.usageExecutionId))],
-    ['cv-queue:job-1:attempt:3']
+    ['cv-queue:job-1']
   );
+});
+
+test('runtime reuses a stable request ID as its local usage execution identity', async () => {
+  const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
+  const executionContexts = [];
+  runtime.complete = async (_activity, input) => {
+    executionContexts.push(input.context);
+    return { content: '{"answer":"ok"}' };
+  };
+  await runtime.structuredComplete('interview.questions', {
+    context: { requestId: 'request-stable-across-retries' },
+    messages: [{ role: 'user', content: 'Return an answer.' }],
+    jsonSchema: {
+      type: 'object',
+      required: ['answer'],
+      properties: { answer: { type: 'string' } }
+    }
+  });
+  assert.equal(executionContexts[0].usageExecutionId, 'request-stable-across-retries');
 });
 
 test('runtime never falls back to the general route for a missing activity route', () => {
@@ -775,4 +827,5 @@ test('alert reservations are protected by a unique sparse dedupe key', () => {
 
 test('interview scoring retries back off without becoming permanently failed', () => {
   assert.deepEqual([1, 2, 3, 4, 5, 10].map(retryDelayMinutes), [2, 4, 8, 16, 32, 32]);
+  assert.equal(scoringRequestId('session-42'), 'ai-interview-score:session-42');
 });

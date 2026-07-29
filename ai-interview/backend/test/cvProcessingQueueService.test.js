@@ -92,6 +92,45 @@ test('worker terminality uses stored real failures rather than BullMQ attemptsMa
   assert.equal(stored.queueEventPending, true);
 });
 
+test('BullMQ retries keep one logical local usage execution identity', async () => {
+  const submitted = await queueService.submit({
+    file: {
+      buffer: Buffer.from('Annie Easley\nannie@example.com\nComputer scientist with extensive software, energy systems, and aerospace experience.'),
+      originalname: 'annie.txt',
+      mimetype: 'text/plain',
+      size: 108
+    },
+    organizationId: 'settings',
+    actorId: 'user_recruiter',
+    jobId: 'job_engineering',
+    mode: 'import',
+    idempotencyKey: 'stable-local-usage-execution-id'
+  });
+  const contexts = [];
+  await queueService.init({
+    analyze: async (_text, context) => {
+      contexts.push(context);
+      throw Object.assign(new Error('local runtime busy'), { code: 'LOCAL_LLM_BUSY' });
+    },
+    onCompleted: async () => ({ candidate: { _id: 'unused' } })
+  });
+  const delivery = {
+    data: { processingJobId: submitted.job.publicId },
+    attemptsMade: 0,
+    async updateProgress() {}
+  };
+  await assert.rejects(() => queueService._processJobForTests(delivery), /local runtime busy/);
+  delivery.attemptsMade = 1;
+  await assert.rejects(() => queueService._processJobForTests(delivery), /local runtime busy/);
+  assert.deepEqual(
+    contexts.map((context) => context.usageExecutionId),
+    [
+      `ai-interview-cv-queue:${submitted.job.publicId}`,
+      `ai-interview-cv-queue:${submitted.job.publicId}`
+    ]
+  );
+});
+
 test('full shared capacity preserves durable waiting state without counting an inference attempt', async () => {
   class SyntheticDelayedError extends Error {}
   const submitted = await queueService.submit({

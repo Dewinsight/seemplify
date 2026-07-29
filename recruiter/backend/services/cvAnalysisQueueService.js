@@ -2173,7 +2173,7 @@ async function processJob(bullJob, workerToken) {
           actorEmail: actor?.email || processingJob.formData?.email,
           jobId: processingJob.publicId,
           requestId: `cv-queue:${processingJob.publicId}`,
-          usageExecutionId: `cv-queue:${processingJob.publicId}:attempt:${processingJob.attempts}`,
+          usageExecutionId: `cv-queue:${processingJob.publicId}`,
           promptVersion: 'candidate-cv-local-v1'
         }, () => cvParser.analyzeText(
           processingJob.resumeText,

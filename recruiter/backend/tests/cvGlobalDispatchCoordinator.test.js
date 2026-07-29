@@ -810,6 +810,7 @@ test('queue source acquires only around model inference, after preprocessing and
       inference: 'runInferenceWithGlobalPermit(',
       model: 'cvParser.analyzeText(',
       finalization: 'createCandidateOnce(',
+      usageIdentity: 'usageExecutionId: `cv-queue:${processingJob.publicId}`',
       worker: /new Worker\(queueName,\s*processJob,/
     },
     {
@@ -818,6 +819,7 @@ test('queue source acquires only around model inference, after preprocessing and
       inference: 'runInferenceWithGlobalPermit(',
       model: 'analyzeResume(',
       finalization: 'completionHandler(',
+      usageIdentity: 'usageExecutionId: `ai-interview-cv-queue:${processingJob.publicId}`',
       worker: /new Worker\(QUEUE_NAME,\s*processJob,/
     }
   ];
@@ -844,6 +846,8 @@ test('queue source acquires only around model inference, after preprocessing and
     assert.ok(attemptIndex > inferenceIndex);
     assert.ok(attemptIndex < modelIndex);
     assert.ok(usageExecutionIndex > attemptIndex);
+    assert.match(processSource, new RegExp(item.usageIdentity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.doesNotMatch(processSource.slice(usageExecutionIndex, processSource.indexOf('\n', usageExecutionIndex)), /attempt/);
     assert.ok(processSource.indexOf(item.finalization) > modelIndex);
     assert.match(source, item.worker);
     assert.match(processSource, /waiting_for_local_runtime/);

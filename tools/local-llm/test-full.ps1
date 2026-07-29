@@ -167,6 +167,10 @@ try {
     if ($ping -ne 'PONG') { throw 'Disposable Redis did not answer PING.' }
   }
 
+  Invoke-TestStep 'Local gateway durability and adapter tests' {
+    Invoke-InDirectory $RepositoryRoot { Invoke-Checked node.exe --test 'tools/local-llm/*.test.cjs' }
+  }
+
   Invoke-TestStep 'All recruiter backend tests' {
     $previousPort = $env:CV_TEST_REDIS_PORT
     $previousDispatchRedisUrl = $env:CV_GLOBAL_DISPATCH_REDIS_URL

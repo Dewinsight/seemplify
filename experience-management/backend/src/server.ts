@@ -23,7 +23,8 @@ async function shutdown(signal: string) {
   const forceExit = setTimeout(() => process.exit(1), 10_000); forceExit.unref();
   aiJobRunner.stop();
   xSyncRunner.stop();
-  const [campaignDrained, esignDrained] = await Promise.all([campaignRunner.stop(8_000), esignWorker.stop(8_000)]);
+  const [aiDrained, campaignDrained, esignDrained] = await Promise.all([aiJobRunner.drain(8_000), campaignRunner.stop(8_000), esignWorker.stop(8_000)]);
+  if (!aiDrained) console.warn('AI worker did not drain before the shutdown deadline; its durable job will recover on restart.');
   if (!campaignDrained) console.warn('Campaign worker did not drain before the shutdown deadline.');
   if (!esignDrained) console.warn('E-sign worker did not drain before the shutdown deadline.');
   server.close(() => { clearTimeout(forceExit); process.exit(0); });

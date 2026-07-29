@@ -21,6 +21,8 @@ $XConsumerSecretFile = Join-Path $RuntimeDir 'x-consumer-secret'
 $XBearerTokenFile = Join-Path $RuntimeDir 'x-bearer-token'
 $XAccessTokenFile = Join-Path $RuntimeDir 'x-access-token'
 $XAccessTokenSecretFile = Join-Path $RuntimeDir 'x-access-token-secret'
+$XClientIdFile = Join-Path $RuntimeDir 'x-client-id'
+$XClientSecretFile = Join-Path $RuntimeDir 'x-client-secret'
 $CloudflareTunnelTokenFile = Join-Path $RuntimeDir 'cloudflare-tunnel-token'
 $StdoutLog = Join-Path $RuntimeDir 'server.stdout.log'
 $StderrLog = Join-Path $RuntimeDir 'server.stderr.log'
@@ -60,7 +62,7 @@ function Initialize-Runtime {
   foreach ($secretFile in @(
     $PasswordFile, $SessionSecretFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
     $XConsumerKeyFile, $XConsumerSecretFile, $XBearerTokenFile, $XAccessTokenFile,
-    $XAccessTokenSecretFile, $CloudflareTunnelTokenFile
+    $XAccessTokenSecretFile, $XClientIdFile, $XClientSecretFile, $CloudflareTunnelTokenFile
   )) { Protect-RuntimeSecret $secretFile }
   $envFile = Join-Path $SourceProjectDir 'backend\.env'
   if (-not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath (Join-Path $SourceProjectDir 'backend\.env.example') -Destination $envFile }
@@ -84,6 +86,7 @@ function Start-Server {
   $env:ESIGN_ENCRYPTION_KEY_FILE=$EsignEncryptionKeyFile; $env:ESIGN_STORAGE_DIR=$EsignStorageDir
   $env:X_SEED_CONSUMER_KEY_FILE=$XConsumerKeyFile; $env:X_SEED_CONSUMER_SECRET_FILE=$XConsumerSecretFile
   $env:X_SEED_BEARER_TOKEN_FILE=$XBearerTokenFile; $env:X_SEED_ACCESS_TOKEN_FILE=$XAccessTokenFile; $env:X_SEED_ACCESS_TOKEN_SECRET_FILE=$XAccessTokenSecretFile
+  $env:X_SEED_CLIENT_ID_FILE=$XClientIdFile; $env:X_SEED_CLIENT_SECRET_FILE=$XClientSecretFile
   $env:DATABASE_PATH=(Join-Path $RuntimeDir 'experience.sqlite'); $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
   $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
   # The shared CRM file supplies Brevo credentials only. Experience owns its

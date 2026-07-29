@@ -445,47 +445,66 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await page.goto('/social-listening');
   await expect(page.getByRole('heading', { name: 'Social listening' })).toBeVisible();
   const suffix = `${testInfo.project.name}-${Date.now()}`;
-  await expect(page.getByText('X connection')).toBeVisible();
-  await expect(page.getByText('Setup required')).toBeVisible();
-  await page.route('**/api/integrations/x/mentions?limit=1000', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test mentions outage.' }) }));
+  await expect(page.getByRole('heading', { name: 'X accounts' })).toBeVisible();
+  const initialXStatus = await (await page.request.get('/api/integrations/x')).json();
+  if (initialXStatus.connections.length) await expect(page.getByText('disconnected', { exact: true })).toBeVisible();
+  else await expect(page.getByText('No X account connected')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add X account' })).toBeDisabled();
+  await page.route('**/api/integrations/x/mentions?limit=1000*', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test mentions outage.' }) }));
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByText(/Some live data could not refresh/)).toBeVisible();
-  await expect(page.getByText('Setup required')).toBeVisible();
-  await page.unroute('**/api/integrations/x/mentions?limit=1000');
-  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByRole('heading', { name: 'X accounts' })).toBeVisible();
+  await page.unroute('**/api/integrations/x/mentions?limit=1000*');
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByText(/Some live data could not refresh/)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Configure X API' }).click();
-  await expect(page.getByRole('dialog').getByText('Configure the X developer app')).toBeVisible();
-  await expect(page.getByRole('dialog').getByText('http://127.0.0.1:5412/api/integrations/x/callback')).toBeVisible();
-  await expect(page.getByLabel('API / Consumer key')).toHaveValue('');
+  await page.getByRole('button', { name: 'API settings' }).click();
+  const appDialog = page.getByRole('dialog', { name: 'X developer app' });
+  await expect(appDialog.getByText('http://127.0.0.1:5412/api/integrations/x/callback')).toBeVisible();
+  await expect(page.getByLabel('OAuth 2 client ID')).toHaveValue('');
   await expect(page.getByLabel('Bearer token')).toHaveValue('');
-  await page.getByLabel('API / Consumer key').fill('incomplete-key');
-  await expect(page.getByText('Enter the consumer key and consumer secret together.')).toBeVisible();
+  await page.getByLabel('OAuth 2 client ID').fill('incomplete-client-id');
   await expect(page.getByRole('button', { name: 'Save securely' })).toBeDisabled();
-  await page.getByRole('button', { name: 'Close' }).click();
-  await page.getByRole('button', { name: 'Configure X API' }).click();
-  await expect(page.getByLabel('API / Consumer key')).toHaveValue('');
-  await page.getByRole('button', { name: 'Close' }).click();
+  await appDialog.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'API settings' }).click();
+  await expect(page.getByLabel('OAuth 2 client ID')).toHaveValue('incomplete-client-id');
+  await page.getByLabel('OAuth 2 client ID').fill('');
+  await page.getByRole('dialog', { name: 'X developer app' }).getByRole('button', { name: 'Cancel' }).click();
 
   await page.evaluate(async () => {
     const update = (body: Record<string, string>) => fetch('/api/integrations/x/app', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     await update({ consumerKey: 'playwright-consumer-key', consumerSecret: 'playwright-consumer-secret', accessToken: 'playwright-access-token', accessTokenSecret: 'playwright-access-secret' });
-    await update({ consumerKey: 'playwright-consumer-key-rotated', consumerSecret: 'playwright-consumer-secret-rotated' });
   });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Reconnect with X' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add X account' })).toBeEnabled();
+  await expect(page.getByText('Pending account')).toBeVisible();
+  await expect(page.getByText('pending verification', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sync now' })).toBeVisible();
+  for (const section of ['Listening (0)', 'Queries (0)', 'Intelligence (0)', 'Reply drafts (0)', 'Sync history', 'Connection']) {
+    await expect(page.getByRole('button', { name: section })).toBeVisible();
+  }
+  await page.getByRole('button', { name: 'Connection' }).click();
+  await expect(page.getByRole('heading', { name: 'Connection settings' })).toBeVisible();
+  await expect(page.getByText('Automatic sync')).toBeVisible();
+  await page.evaluate(() => fetch('/api/integrations/x/app', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ consumerKey: 'playwright-consumer-key-rotated', consumerSecret: 'playwright-consumer-secret-rotated' })
+  }));
+  await page.reload();
+  await expect(page.getByText('reauthorization required', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sync now' })).toHaveCount(0);
   await page.evaluate(() => fetch('/api/integrations/x/connection', { method: 'DELETE' }));
   await page.reload();
-  await expect(page.getByText('OAuth access is off')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Reconnect with X' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Delete history' })).toBeDisabled();
+  await expect(page.getByText('disconnected', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Connection' }).click();
+  await expect(page.getByRole('button', { name: 'Reconnect through X' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete X history' })).toBeEnabled();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening-disconnected.png'), fullPage: true });
   await page.getByRole('button', { name: 'API settings' }).click();
   await expect(page.getByRole('button', { name: 'Remove X developer app' })).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.getByRole('button', { name: 'Remove X developer app' }).click();
-  await expect(page.getByText('Setup required')).toBeVisible();
+  await expect(page.getByText('disconnected', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add X account' })).toBeDisabled();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening.png'), fullPage: true });
 
   const journey = await page.evaluate(async (id) => {

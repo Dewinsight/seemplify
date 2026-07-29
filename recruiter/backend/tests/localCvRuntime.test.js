@@ -287,17 +287,21 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   const historySecret = 'local-cv-runtime-test-secret';
   let observedHistoryRequest = null;
   let observedProviderTelemetryRequest = null;
+  let ollamaCompletionCalls = 0;
   const fakeOllama = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     response.setHeader('content-type', 'application/json');
     if (request.url === '/api/tags') return response.end(JSON.stringify({ models: [{ name: 'gemma4:26b-a4b-it-qat' }] }));
+    ollamaCompletionCalls += 1;
     const payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
     if (payload.messages?.some((message) => String(message.content || '').includes('hold the slot'))) {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     let content = 'Local text completion';
-    if (payload.format?.properties?.toolCalls) {
+    if (payload.messages?.some((message) => String(message.content || '').includes('return an invalid structured result'))) {
+      content = '{"unexpected":true}';
+    } else if (payload.format?.properties?.toolCalls) {
       content = '{"content":"","toolCalls":[{"name":"find_candidates","arguments":{"skills":["Node.js"]}}]}';
     } else if (payload.format?.properties?.answer) {
       content = '{"answer":"Use a bounded worker queue."}';
@@ -368,6 +372,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   const isolatedApprovalFile = path.join(isolatedRuntime, 'approved-concurrency.json');
   const isolatedLogFile = path.join(isolatedRuntime, 'gateway.log');
   const isolatedUsageOutboxDir = path.join(isolatedRuntime, 'usage-outbox');
+  const isolatedExecutionReceiptDir = path.join(isolatedRuntime, 'execution-receipts');
   fs.writeFileSync(isolatedSecretFile, historySecret);
   fs.writeFileSync(isolatedControlSecretFile, 'local-control-test-secret');
   fs.writeFileSync(isolatedApprovalFile, JSON.stringify({ byEngineModel: {} }));
@@ -397,6 +402,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       LOCAL_LLM_LOG_FILE: isolatedLogFile,
       LOCAL_LLM_LOG_MAX_BYTES: String(64 * 1024),
       LOCAL_LLM_USAGE_OUTBOX_DIR: isolatedUsageOutboxDir,
+      LOCAL_LLM_EXECUTION_RECEIPT_DIR: isolatedExecutionReceiptDir,
       LOCAL_LLM_USAGE_INITIAL_DELAY_MS: '600000',
       LOCAL_LLM_HEALTH_RATE_LIMIT_REQUESTS: '2',
       RECRUITER_BACKEND_URL: `http://127.0.0.1:${historyBackendPort}`
@@ -527,6 +533,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       LOCAL_LLM_APPROVAL_FILE: isolatedApprovalFile,
       LOCAL_LLM_LOG_FILE: isolatedLogFile,
       LOCAL_LLM_USAGE_OUTBOX_DIR: isolatedUsageOutboxDir,
+      LOCAL_LLM_EXECUTION_RECEIPT_DIR: isolatedExecutionReceiptDir,
       LOCAL_LLM_USAGE_INITIAL_DELAY_MS: '600000',
       RECRUITER_BACKEND_URL: `http://127.0.0.1:${historyBackendPort}`
     },
@@ -665,7 +672,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     const experienceDefaultState = (await experienceDefaultResponse.json()).state.applicationDefaults.experienceManagement;
     assert.deepEqual(experienceDefaultState, { engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' });
 
-    const signedRequest = async (requestBody, { harness = true } = {}) => {
+    const signedRequest = async (requestBody, { harness = true, targetPort = gatewayPort } = {}) => {
       const parsedBody = JSON.parse(requestBody);
       const signedBody = harness && !parsedBody.metering
         ? JSON.stringify({
@@ -678,7 +685,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
         method: 'POST',
         path: '/v1/complete'
       });
-      return fetch(`http://127.0.0.1:${gatewayPort}/v1/complete`, {
+      return fetch(`http://127.0.0.1:${targetPort}/v1/complete`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -780,6 +787,91 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     assert.equal(meteringStatus.usageMetering.pending, 1);
     assert.equal(meteringStatus.usageMetering.dead, 0);
     assert.equal(meteringStatus.usageMetering.health, 'healthy');
+    const providerCallsAfterFirstMeteredCompletion = ollamaCompletionCalls;
+    const sameProcessReplay = await signedRequest(textBody);
+    assert.equal(sameProcessReplay.status, 200);
+    assert.deepEqual(await sameProcessReplay.json(), textCompletionPayload);
+    assert.equal(ollamaCompletionCalls, providerCallsAfterFirstMeteredCompletion);
+    const [deliveredSimulation] = fs.readdirSync(isolatedUsageOutboxDir)
+      .filter((name) => /^[a-f0-9]{64}\.json$/.test(name));
+    assert.ok(deliveredSimulation);
+    fs.unlinkSync(path.join(isolatedUsageOutboxDir, deliveredSimulation));
+    const crossProcessReceiptReplay = await signedRequest(textBody, { targetPort: secondGatewayPort });
+    assert.equal(crossProcessReceiptReplay.status, 200);
+    assert.deepEqual(await crossProcessReceiptReplay.json(), textCompletionPayload);
+    assert.equal(ollamaCompletionCalls, providerCallsAfterFirstMeteredCompletion);
+    const replayMeteringStatus = await (await controlRequest('/control/status')).json();
+    assert.equal(replayMeteringStatus.usageMetering.pending, 1);
+
+    const conflictingExecutionBody = JSON.stringify({
+      ...JSON.parse(textBody),
+      messages: [{ role: 'user', content: 'A changed request must never reuse the prior execution identity.' }]
+    });
+    const conflictingExecution = await signedRequest(conflictingExecutionBody, { targetPort: secondGatewayPort });
+    assert.equal(conflictingExecution.status, 409);
+    const conflictingExecutionPayload = await conflictingExecution.json();
+    assert.equal(conflictingExecutionPayload.code, 'LOCAL_EXECUTION_IDENTITY_CONFLICT');
+    assert.equal(conflictingExecutionPayload.retryable, false);
+    assert.equal(ollamaCompletionCalls, providerCallsAfterFirstMeteredCompletion);
+
+    const concurrentEventId = `usage_${crypto.createHash('sha256').update('gateway-concurrent-transport').digest('hex').slice(0, 48)}`;
+    const concurrentExecutionId = `localexec_${crypto.createHash('sha256').update(concurrentEventId).digest('hex').slice(0, 48)}`;
+    const concurrentBody = JSON.stringify({
+      activity: 'experience.analyst_chat',
+      executionMode: 'local-only',
+      messages: [{ role: 'user', content: 'hold the slot briefly while a duplicate arrives' }],
+      metering: {
+        record: true,
+        eventId: concurrentEventId,
+        requestId: 'gateway-concurrent-request',
+        gatewayExecutionId: concurrentExecutionId,
+        sourceApp: 'experience-management'
+      }
+    });
+    const beforeConcurrentDuplicates = ollamaCompletionCalls;
+    const [concurrentFirst, concurrentSecond] = await Promise.all([
+      signedRequest(concurrentBody),
+      signedRequest(concurrentBody, { targetPort: secondGatewayPort })
+    ]);
+    assert.equal(concurrentFirst.status, 200);
+    assert.equal(concurrentSecond.status, 200);
+    assert.deepEqual(await concurrentFirst.json(), await concurrentSecond.json());
+    assert.equal(ollamaCompletionCalls, beforeConcurrentDuplicates + 1);
+    const receiptStatus = await (await controlRequest('/control/status')).json();
+    assert.equal(receiptStatus.executionReceipts.configured, true);
+    assert.equal(receiptStatus.executionReceipts.conflicts >= 0, true);
+
+    const invalidEventId = `usage_${crypto.createHash('sha256').update('gateway-invalid-schema').digest('hex').slice(0, 48)}`;
+    const invalidExecutionId = `localexec_${crypto.createHash('sha256').update(invalidEventId).digest('hex').slice(0, 48)}`;
+    const invalidStructuredBody = JSON.stringify({
+      activity: 'interview.questions',
+      executionMode: 'local-only',
+      messages: [{ role: 'user', content: 'return an invalid structured result' }],
+      jsonSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['answer'],
+        properties: { answer: { type: 'string' } }
+      },
+      metering: {
+        record: true,
+        eventId: invalidEventId,
+        requestId: 'gateway-invalid-schema-request',
+        gatewayExecutionId: invalidExecutionId,
+        sourceApp: 'recruiter'
+      }
+    });
+    const beforeInvalidStructured = ollamaCompletionCalls;
+    const invalidStructured = await signedRequest(invalidStructuredBody);
+    assert.equal(invalidStructured.status, 503);
+    const invalidStructuredPayload = await invalidStructured.json();
+    assert.equal(invalidStructuredPayload.code, 'LOCAL_LLM_SCHEMA_INVALID');
+    assert.equal(invalidStructuredPayload.retryable, false);
+    assert.equal(ollamaCompletionCalls, beforeInvalidStructured + 1);
+    const invalidStructuredReplay = await signedRequest(invalidStructuredBody, { targetPort: secondGatewayPort });
+    assert.equal(invalidStructuredReplay.status, 503);
+    assert.deepEqual(await invalidStructuredReplay.json(), invalidStructuredPayload);
+    assert.equal(ollamaCompletionCalls, beforeInvalidStructured + 1);
 
     const heldBody = JSON.stringify({
       activity: 'recruiter.general',

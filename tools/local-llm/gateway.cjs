@@ -20,6 +20,10 @@ const {
   ActivityQueueScheduler
 } = require('./activity-queue.cjs');
 const { BoundedFixedWindowRateLimiter } = require('./bounded-rate-limit.cjs');
+const {
+  LocalExecutionReceiptStore,
+  canonicalRequestFingerprint
+} = require('./execution-receipt-store.cjs');
 const { LocalUsageMeteringOutbox } = require('./usage-metering-outbox.cjs');
 const {
   ACTIVITY_DEFINITIONS,
@@ -34,6 +38,7 @@ const stateFile = process.env.LOCAL_LLM_STATE_FILE || path.join(runtimeDir, 'sta
 const logFile = process.env.LOCAL_LLM_LOG_FILE || path.join(runtimeDir, 'gateway.log');
 const nonceDir = process.env.LOCAL_LLM_NONCE_DIR || path.join(path.dirname(stateFile), 'nonces');
 const usageOutboxDir = process.env.LOCAL_LLM_USAGE_OUTBOX_DIR || path.join(runtimeDir, 'usage-outbox');
+const executionReceiptDir = process.env.LOCAL_LLM_EXECUTION_RECEIPT_DIR || path.join(runtimeDir, 'execution-receipts');
 const logMaxBytes = Math.max(64 * 1024, Number(process.env.LOCAL_LLM_LOG_MAX_BYTES || 10 * 1024 * 1024));
 const logRotations = Math.max(1, Math.min(20, Number(process.env.LOCAL_LLM_LOG_ROTATIONS || 5)));
 const host = process.env.LOCAL_LLM_GATEWAY_HOST || '127.0.0.1';
@@ -255,6 +260,18 @@ const usageMeteringOutbox = new LocalUsageMeteringOutbox({
   retryMaxMs: Number(process.env.LOCAL_LLM_USAGE_RETRY_MAX_MS || 5 * 60_000),
   deadMaxJobs: Number(process.env.LOCAL_LLM_USAGE_DEAD_MAX_JOBS || 1_000),
   deadRetentionMs: Number(process.env.LOCAL_LLM_USAGE_DEAD_RETENTION_MS || 30 * 24 * 60 * 60_000),
+  log
+});
+const executionReceiptStore = new LocalExecutionReceiptStore({
+  directory: executionReceiptDir,
+  encryptionSecret: secret,
+  retentionMs: Number(process.env.LOCAL_LLM_EXECUTION_RECEIPT_RETENTION_MS || 30 * 24 * 60 * 60_000),
+  maxReceipts: Number(process.env.LOCAL_LLM_EXECUTION_RECEIPT_MAX_COUNT || 10_000),
+  maxTombstones: Number(process.env.LOCAL_LLM_EXECUTION_TOMBSTONE_MAX_COUNT || 50_000),
+  maxBytes: Number(process.env.LOCAL_LLM_EXECUTION_RECEIPT_MAX_BYTES || 512 * 1024 * 1024),
+  maxPreparedBytes: Number(process.env.LOCAL_LLM_EXECUTION_RECEIPT_MAX_RESULT_BYTES || 8 * 1024 * 1024),
+  leaseMs: Number(process.env.LOCAL_LLM_EXECUTION_LEASE_MS || 120_000),
+  pollMs: Number(process.env.LOCAL_LLM_EXECUTION_POLL_MS || 50),
   log
 });
 const seenNonces = new Map();
@@ -647,6 +664,7 @@ function isLocalControlRequest(request) {
 }
 
 function sendJson(response, status, payload, extraHeaders = {}) {
+  if (response.writableEnded || response.destroyed) return false;
   const body = JSON.stringify(payload);
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -656,6 +674,7 @@ function sendJson(response, status, payload, extraHeaders = {}) {
     ...extraHeaders
   });
   response.end(body);
+  return true;
 }
 
 function validateSchemaValue(value, schema, location = '$') {
@@ -755,6 +774,7 @@ function statusPayload() {
     lastRequestAt,
     queue: queueTelemetry,
     usageMetering: usageMeteringOutbox.status(),
+    executionReceipts: executionReceiptStore.status(),
     pid: process.pid,
     uptimeSeconds: Math.round(process.uptime())
   };
@@ -846,9 +866,9 @@ function meteredTokenCounts(usage = {}) {
   };
 }
 
-async function persistAtSourceUsage({
+function atSourceUsageRecord({
   metering,
-  input,
+  activity,
   engine,
   model,
   providerRequestId,
@@ -858,12 +878,13 @@ async function persistAtSourceUsage({
   latencyMs,
   usage,
   usageReported,
-  usageSource
+  usageSource,
+  occurredAt = new Date().toISOString()
 }) {
-  if (!metering) return;
-  await usageMeteringOutbox.enqueue({
+  if (!metering) return null;
+  return {
     ...metering,
-    activity: input.activity,
+    activity,
     provider: `local-${engine}`,
     model,
     providerRequestId,
@@ -874,8 +895,30 @@ async function persistAtSourceUsage({
     usageReported: usageReported === true,
     usageSource: usageReported === true ? usageSource : 'unreported',
     ...meteredTokenCounts(usage),
-    occurredAt: new Date().toISOString()
-  });
+    occurredAt
+  };
+}
+
+async function persistAtSourceUsage(record) {
+  if (!record) return;
+  await usageMeteringOutbox.enqueue(record);
+}
+
+function normalizeMeteringDurabilityError(error) {
+  error.code = error.code === 'LOCAL_USAGE_IDENTITY_CONFLICT'
+    ? error.code
+    : 'LOCAL_METERING_DURABILITY_FAILED';
+  error.status = error.code === 'LOCAL_USAGE_IDENTITY_CONFLICT' ? 409 : 503;
+  error.retryable = error.code !== 'LOCAL_USAGE_IDENTITY_CONFLICT';
+  return error;
+}
+
+async function ensurePreparedUsageIsDurable(prepared) {
+  try {
+    await persistAtSourceUsage(prepared?.usageRecord);
+  } catch (error) {
+    throw normalizeMeteringDurabilityError(error);
+  }
 }
 
 async function handleCompletion(request, response, rawBody, { cvOnly = false } = {}) {
@@ -957,34 +1000,106 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       active: { engine: selected.id, model: selected.model }
     });
   }
-  const controller = new AbortController();
-  activeControllers.add(controller);
-  const abortIfDisconnected = () => controller.abort(new Error('Inference caller disconnected'));
-  request.once('aborted', abortIfDisconnected);
-  request.once('close', () => {
-    if (!request.complete) abortIfDisconnected();
-  });
-  response.once('close', () => {
-    if (!response.writableEnded) abortIfDisconnected();
-  });
-  let permit;
-  try {
-    permit = await inferenceScheduler.acquire(input.activity, { signal: controller.signal });
-  } catch (error) {
-    activeControllers.delete(controller);
-    request.removeListener('aborted', abortIfDisconnected);
-    return sendJson(response, error.status || 503, {
-      code: error.code || 'ACTIVITY_QUEUE_UNAVAILABLE',
-      message: error.message,
-      retryable: error.retryable !== false,
-      retryAfterMs: 1_000
-    }, { 'retry-after': '1' });
-  }
-  const startedAt = Date.now();
+  const requestController = new AbortController();
+  const abortRequest = () => requestController.abort(new Error('Inference caller disconnected'));
+  const abortIncompleteRequest = () => { if (!request.complete) abortRequest(); };
+  const abortIncompleteResponse = () => { if (!response.writableEnded) abortRequest(); };
+  request.once('aborted', abortRequest);
+  request.once('close', abortIncompleteRequest);
+  response.once('close', abortIncompleteResponse);
+  const requestFingerprint = metering ? canonicalRequestFingerprint({
+    method: 'POST',
+    path: requestPath,
+    body: {
+      ...input,
+      requestSource,
+      runtimeProfile: runtimeProfile || undefined,
+      metering: { record: true, ...metering }
+    }
+  }) : null;
+  let executionLease = null;
+  let heartbeatTimer = null;
+  let executionController = null;
+  let permit = null;
+  let receiptPrepared = false;
+  let providerOutcomeMustNotRepeat = false;
+  let startedAt = Date.now();
   let executionStatus = 'failed';
-  lastRequestAt = new Date().toISOString();
   try {
-    const data = await analyzeWithEngine({ ...input, signal: controller.signal }, executionState);
+    if (metering) {
+      const acquisition = await executionReceiptStore.acquire({
+        executionId: metering.gatewayExecutionId,
+        requestFingerprint,
+        signal: requestController.signal
+      });
+      if (acquisition.action === 'replay') {
+        // The outbox deletes delivered files. Re-enqueueing the exact event on
+        // every replay makes a completed receipt self-healing after a crash or
+        // manual outbox loss; the hosted usage endpoint is event-idempotent.
+        await ensurePreparedUsageIsDurable(acquisition.prepared);
+        log('info', 'Local AI completion replayed from its durable receipt', {
+          activity: input.activity,
+          requestSource,
+          runtimeProfile: runtimeProfile || undefined,
+          endpoint: cvOnly ? 'cv' : 'general',
+          gatewayExecutionId: metering.gatewayExecutionId
+        });
+        return sendJson(response, acquisition.prepared.response.status, acquisition.prepared.response.payload);
+      }
+      executionLease = acquisition;
+      const heartbeatLease = acquisition;
+      heartbeatTimer = setInterval(() => {
+        void executionReceiptStore.heartbeat(heartbeatLease).catch((error) => {
+          log('error', 'Local execution receipt heartbeat failed', {
+            gatewayExecutionId: metering.gatewayExecutionId,
+            error: error.message
+          });
+        });
+      }, Math.max(50, Math.floor(executionReceiptStore.leaseMs / 3)));
+      heartbeatTimer.unref?.();
+      if (acquisition.action === 'recover') {
+        receiptPrepared = true;
+        try {
+          await ensurePreparedUsageIsDurable(acquisition.prepared);
+          await executionReceiptStore.complete(executionLease);
+        } catch (error) {
+          throw normalizeMeteringDurabilityError(error);
+        }
+        executionLease = null;
+        log('info', 'Local AI completion recovered before provider dispatch', {
+          activity: input.activity,
+          requestSource,
+          runtimeProfile: runtimeProfile || undefined,
+          endpoint: cvOnly ? 'cv' : 'general',
+          gatewayExecutionId: metering.gatewayExecutionId
+        });
+        return sendJson(response, acquisition.prepared.response.status, acquisition.prepared.response.payload);
+      }
+      // Once an execution identity is durably reserved, finish it even if the
+      // initiating HTTP client disconnects. A later caller can replay the
+      // encrypted receipt instead of paying for another inference.
+      executionController = new AbortController();
+    } else {
+      executionController = requestController;
+    }
+    activeControllers.add(executionController);
+    permit = await inferenceScheduler.acquire(input.activity, { signal: executionController.signal });
+    lastRequestAt = new Date().toISOString();
+    let providerDispatched = false;
+    const data = await analyzeWithEngine({
+      ...input,
+      signal: executionController.signal,
+      onProviderDispatch: async () => {
+        if (providerDispatched) return;
+        // This callback runs immediately before fetch/spawn in every adapter.
+        // Preflight failures remain retryable; once it returns, the outcome is
+        // at-most-once and must be durably replayed or fail closed.
+        if (executionLease) await executionReceiptStore.markStarted(executionLease);
+        providerDispatched = true;
+        providerOutcomeMustNotRepeat = true;
+        startedAt = Date.now();
+      }
+    }, executionState);
     const schemaErrors = input.jsonSchema ? validateSchemaValue(data.data, input.jsonSchema) : [];
     if (schemaErrors.length) {
       const error = new Error(`Inference engine returned invalid structured data: ${schemaErrors.slice(0, 5).join('; ')}`);
@@ -1009,30 +1124,72 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     const responseId = data.id || crypto.randomUUID();
     const provider = `local-${data.engine}`;
     const providerLabel = localProviderLabel(provider, data.model);
+    const usageRecord = atSourceUsageRecord({
+      metering,
+      activity: input.activity,
+      engine: data.engine,
+      model: data.model,
+      providerRequestId: responseId,
+      status: 'success',
+      httpStatus: 200,
+      latencyMs,
+      usage: data.usage,
+      usageReported: data.usageReported,
+      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported'
+    });
+    const responsePayload = {
+      id: responseId,
+      provider,
+      providerLabel,
+      engine: data.engine,
+      model: data.model,
+      runtimeProfile: runtimeProfile || undefined,
+      gatewayExecutionId: metering?.gatewayExecutionId,
+      content: data.content,
+      data: data.data,
+      toolCalls: data.toolCalls || [],
+      finishReason: data.finishReason || (data.toolCalls?.length ? 'tool_calls' : 'stop'),
+      usage: data.usage,
+      usageReported: data.usageReported === true,
+      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
+      metrics: {
+        ...(data.metrics || {}),
+        queueWaitMs: permit.waitMs,
+        latencyMs
+      }
+    };
+    if (executionLease) {
+      try {
+        await executionReceiptStore.prepare({
+          ...executionLease,
+          prepared: {
+            response: { status: 200, payload: responsePayload },
+            usageRecord
+          }
+        });
+        receiptPrepared = true;
+      } catch (error) {
+        error.usageEnvelope = {
+          id: responseId,
+          engine: data.engine,
+          model: data.model,
+          usage: data.usage,
+          usageReported: data.usageReported === true
+        };
+        throw error;
+      }
+    }
     try {
-      await persistAtSourceUsage({
-        metering,
-        input,
-        engine: data.engine,
-        model: data.model,
-        providerRequestId: responseId,
-        status: 'success',
-        httpStatus: 200,
-        latencyMs,
-        usage: data.usage,
-        usageReported: data.usageReported,
-        usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported'
-      });
+      await persistAtSourceUsage(usageRecord);
+      if (executionLease) {
+        await executionReceiptStore.complete(executionLease);
+        executionLease = null;
+      }
     } catch (meteringError) {
       meteringError.code = 'LOCAL_METERING_DURABILITY_FAILED';
       meteringError.status = 503;
-      meteringError.usageEnvelope = {
-        id: responseId,
-        engine: data.engine,
-        model: data.model,
-        usage: data.usage,
-        usageReported: data.usageReported === true
-      };
+      meteringError.retryable = true;
+      meteringError.receiptPrepared = receiptPrepared;
       throw meteringError;
     }
     completed += 1;
@@ -1054,34 +1211,88 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       reasoningTokens,
       totalTokens
     });
-    return sendJson(response, 200, {
-      id: responseId,
-      provider,
-      providerLabel,
-      engine: data.engine,
-      model: data.model,
-      runtimeProfile: runtimeProfile || undefined,
-      gatewayExecutionId: metering?.gatewayExecutionId,
-      content: data.content,
-      data: data.data,
-      toolCalls: data.toolCalls || [],
-      finishReason: data.finishReason || (data.toolCalls?.length ? 'tool_calls' : 'stop'),
-      usage: data.usage,
-      usageReported: data.usageReported === true,
-      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
-      metrics: {
-        ...(data.metrics || {}),
-        queueWaitMs: permit.waitMs,
-        latencyMs
-      }
-    });
+    return sendJson(response, 200, responsePayload);
   } catch (error) {
     const usageEnvelope = error.usageEnvelope;
-    if (usageEnvelope && metering) {
+    let responseError = error;
+    const failurePayload = (failure, retryable, envelope = usageEnvelope) => ({
+      code: failure.code || 'LOCAL_LLM_UNAVAILABLE',
+      message: failure.message,
+      retryable,
+      gatewayExecutionId: metering?.gatewayExecutionId,
+      ...(envelope ? {
+        id: envelope.id,
+        provider: `local-${envelope.engine || selected.id}`,
+        providerLabel: localProviderLabel(
+          `local-${envelope.engine || selected.id}`,
+          envelope.model || selected.model
+        ),
+        engine: envelope.engine,
+        model: envelope.model,
+        usage: envelope.usage,
+        usageReported: envelope.usageReported === true,
+        usageSource: envelope.usageReported === true
+          ? `${envelope.engine}-response`
+          : 'unreported'
+      } : {})
+    });
+    let responsePayload = failurePayload(error, error.retryable !== false);
+    if (providerOutcomeMustNotRepeat && metering && executionLease && !receiptPrepared) {
+      const terminalUsageEnvelope = {
+        id: usageEnvelope?.id || metering.gatewayExecutionId,
+        engine: usageEnvelope?.engine || selected.id,
+        model: usageEnvelope?.model || selected.model,
+        usage: usageEnvelope?.usage || {
+          input_tokens: 0,
+          cached_input_tokens: 0,
+          output_tokens: 0,
+          reasoning_tokens: 0,
+          total_tokens: 0
+        },
+        usageReported: usageEnvelope?.usageReported === true
+      };
+      const terminalUsageRecord = atSourceUsageRecord({
+        metering,
+        activity: input.activity,
+        engine: terminalUsageEnvelope.engine,
+        model: terminalUsageEnvelope.model,
+        providerRequestId: terminalUsageEnvelope.id,
+        status: 'failed',
+        httpStatus: error.status || 503,
+        errorCode: error.code || 'LOCAL_LLM_UNAVAILABLE',
+        latencyMs: Date.now() - startedAt,
+        usage: terminalUsageEnvelope.usage,
+        usageReported: terminalUsageEnvelope.usageReported,
+        usageSource: terminalUsageEnvelope.usageReported === true
+          ? `${terminalUsageEnvelope.engine}-response`
+          : 'unreported'
+      });
+      const terminalPayload = failurePayload(error, false, terminalUsageEnvelope);
       try {
-        await persistAtSourceUsage({
+        await executionReceiptStore.prepare({
+          ...executionLease,
+          prepared: {
+            response: { status: error.status || 503, payload: terminalPayload },
+            usageRecord: terminalUsageRecord
+          }
+        });
+        receiptPrepared = true;
+        await persistAtSourceUsage(terminalUsageRecord);
+        await executionReceiptStore.complete(executionLease);
+        executionLease = null;
+        error.retryable = false;
+        responsePayload = terminalPayload;
+      } catch (durabilityError) {
+        normalizeMeteringDurabilityError(durabilityError);
+        durabilityError.receiptPrepared = receiptPrepared;
+        responseError = durabilityError;
+        responsePayload = failurePayload(durabilityError, durabilityError.retryable, null);
+      }
+    } else if (usageEnvelope && metering && !receiptPrepared) {
+      try {
+        await persistAtSourceUsage(atSourceUsageRecord({
           metering,
-          input,
+          activity: input.activity,
           engine: usageEnvelope.engine || selected.id,
           model: usageEnvelope.model || selected.model,
           providerRequestId: usageEnvelope.id,
@@ -1094,7 +1305,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
           usageSource: usageEnvelope.usageReported === true
             ? `${usageEnvelope.engine || selected.id}-response`
             : 'unreported'
-        });
+        }));
       } catch (meteringError) {
         log('error', 'Local usage event could not be persisted to the durable outbox', {
           eventId: metering.eventId,
@@ -1102,7 +1313,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
         });
       }
     }
-    failed += 1;
+    if (permit || receiptPrepared) failed += 1;
     log('error', 'Local AI completion failed', {
       activity: input.activity,
       requestSource,
@@ -1110,34 +1321,31 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       latencyMs: Date.now() - startedAt,
       engine: selected.id,
       model: selected.model,
-      errorCode: error.code || 'LOCAL_LLM_UNAVAILABLE',
-      error: error.message
+      errorCode: responseError.code || 'LOCAL_LLM_UNAVAILABLE',
+      error: responseError.message
     });
-    return sendJson(response, error.status || 503, {
-      code: error.code || 'LOCAL_LLM_UNAVAILABLE',
-      message: error.message,
-      retryable: true,
-      gatewayExecutionId: metering?.gatewayExecutionId,
-      ...(usageEnvelope ? {
-        id: usageEnvelope.id,
-        provider: `local-${usageEnvelope.engine || selected.id}`,
-        providerLabel: localProviderLabel(
-          `local-${usageEnvelope.engine || selected.id}`,
-          usageEnvelope.model || selected.model
-        ),
-        engine: usageEnvelope.engine,
-        model: usageEnvelope.model,
-        usage: usageEnvelope.usage,
-        usageReported: usageEnvelope.usageReported === true,
-        usageSource: usageEnvelope.usageReported === true
-          ? `${usageEnvelope.engine}-response`
-          : 'unreported'
-      } : {})
-    });
+    return sendJson(response, responseError.status || 503, responsePayload);
   } finally {
-    activeControllers.delete(controller);
-    request.removeListener('aborted', abortIfDisconnected);
-    permit.release({
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (executionLease) {
+      try {
+        if (providerOutcomeMustNotRepeat && !receiptPrepared) {
+          await executionReceiptStore.forfeitAmbiguous(executionLease);
+        } else {
+          await executionReceiptStore.release(executionLease);
+        }
+      } catch (error) {
+        log('error', 'Local execution receipt could not release its lease', {
+          gatewayExecutionId: metering?.gatewayExecutionId,
+          error: error.message
+        });
+      }
+    }
+    if (executionController) activeControllers.delete(executionController);
+    request.removeListener('aborted', abortRequest);
+    request.removeListener('close', abortIncompleteRequest);
+    response.removeListener('close', abortIncompleteResponse);
+    permit?.release({
       status: executionStatus,
       latencyMs: Date.now() - startedAt
     });
@@ -1358,6 +1566,9 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   usageMeteringOutbox.start();
+  void executionReceiptStore.prune({ force: true }).catch((error) => {
+    log('error', 'Local execution receipt startup pruning failed', { error: error.message });
+  });
   const selected = engineSettings(readState());
   log('info', 'Local CV LLM gateway started', { host, port, engine: selected.id, model: selected.model });
 });

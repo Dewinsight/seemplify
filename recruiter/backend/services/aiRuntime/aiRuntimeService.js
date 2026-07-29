@@ -93,8 +93,17 @@ function deriveRuntimeUsageEventId({ context = {}, route = {} } = {}) {
     Number(context.structuredCompletionOrdinal || context.usageCompletionOrdinal || 1) || 1
   );
   const identity = [
+    context.sourceApp || 'recruiter',
+    route.activity,
     executionId,
-    completionOrdinal,
+    completionOrdinal
+  ].map((value) => String(value || '')).join('\u001f');
+  return `usage_${crypto.createHash('sha256').update(identity).digest('hex').slice(0, 48)}`;
+}
+
+function deriveProviderOutcomeUsageEventId({ context = {}, route = {} } = {}) {
+  const identity = [
+    deriveRuntimeUsageEventId({ context, route }),
     route.provider,
     route.model,
     route.failoverFrom
@@ -113,7 +122,11 @@ function deriveGatewayExecutionId(eventId) {
 function withUsageExecutionContext(context = {}) {
   return {
     ...context,
-    usageExecutionId: context.usageExecutionId || crypto.randomUUID(),
+    // Request IDs are already stable across transport retries. Reuse one when
+    // the caller has not supplied a more specific logical execution identity
+    // so a local gateway retry replays its durable receipt instead of running
+    // (and metering) the same inference again.
+    usageExecutionId: context.usageExecutionId || context.requestId || crypto.randomUUID(),
     structuredCompletionOrdinal: Math.max(
       1,
       Number(context.structuredCompletionOrdinal || context.usageCompletionOrdinal || 1) || 1
@@ -761,22 +774,29 @@ class AIRuntimeService {
     try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
     const details = errorDetails(payload, response.status, provider);
     const rateLimit = parseRateLimitHeaders(response.headers);
-    const usageEnvelope = payload?.usage && typeof payload.usage === 'object'
+    const hasGatewayIdentity = /^localexec_[a-f0-9]{48}$/.test(String(payload?.gatewayExecutionId || ''));
+    const usageEnvelope = (payload?.usage && typeof payload.usage === 'object') || hasGatewayIdentity
       ? {
           id: payload.id,
           provider: payload.engine ? `local-${payload.engine}` : undefined,
           model: payload.model,
           gatewayExecutionId: payload.gatewayExecutionId,
-          usage: payload.usage,
+          usage: payload.usage && typeof payload.usage === 'object' ? payload.usage : {},
           usageReported: payload.usageReported === true,
           usageSource: payload.usageSource
         }
       : null;
+    const defaultRetryable = response.status === 401
+      || response.status === 403
+      || response.status === 429
+      || response.status === 498
+      || response.status >= 500
+      || details.blockedAccess;
     return new AIRuntimeError(details.message, {
       code: details.code,
       statusCode: response.status >= 500 || response.status === 429 || response.status === 498 ? 503 : response.status,
       providerStatus: response.status,
-      retryable: response.status === 401 || response.status === 403 || response.status === 429 || response.status === 498 || response.status >= 500 || details.blockedAccess,
+      retryable: typeof payload?.retryable === 'boolean' ? payload.retryable : defaultRetryable,
       details: {
         blockedAccess: details.blockedAccess,
         payloadType: payload?.error?.type,
@@ -802,8 +822,11 @@ class AIRuntimeService {
         'totalTokens'
       ].some((field) => Object.hasOwn(rawUsage, field)));
     const usage = normalizeUsage(rawUsage || {});
+    const gatewayMetered = Boolean(data?.gatewayExecutionId) || isManagedLocalProvider(route.provider);
     const event = {
-      eventId: deriveRuntimeUsageEventId({ context, route }),
+      eventId: gatewayMetered
+        ? deriveRuntimeUsageEventId({ context, route })
+        : deriveProviderOutcomeUsageEventId({ context, route }),
       requestId,
       providerRequestId: rateLimit.providerRequestId || data?.id,
       gatewayExecutionId: data?.gatewayExecutionId,

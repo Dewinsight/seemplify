@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { CircleAlert, CircleCheck, ClipboardList, Cpu, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, Megaphone, Menu, Plus, Radar, Route, Sparkles, X } from 'lucide-react';
+import { BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, Megaphone, Menu, Plus, Radar, Route, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ const navigation = [
   { to: '/campaigns', label: 'Campaigns', icon: Megaphone },
   { to: '/agreements', label: 'Agreements', icon: FileSignature },
   { to: '/social-listening', label: 'Social listening', icon: Radar },
+  { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit },
   { to: '/journeys', label: 'Journey maps', icon: Route },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
   { to: '/tickets', label: 'Service recovery', icon: Inbox }
@@ -96,6 +97,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const terraReady = runtime?.terra?.ready === true;
   const runtimeState: RuntimeState = runtime === null ? 'checking' : terraReady ? 'ready' : 'unavailable';
   const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
+  const creationAction = location.pathname.startsWith('/agreements')
+    ? { to: '/agreements/new', label: 'New agreement' }
+    : location.pathname === '/' || location.pathname.startsWith('/surveys')
+      ? { to: '/surveys/new', label: 'New survey' }
+      : null;
   if (editorMode) return <div className="min-h-screen bg-background"><header className="flex h-[52px] items-center justify-between border-b bg-card px-4"><Link to="/agreements" className="flex items-center gap-2"><div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="text-sm font-semibold">Seemplify Experience</span></Link><span className="text-xs font-medium text-muted-foreground">Agreement field editor</span></header><main>{children}</main></div>;
   return <div className="min-h-screen bg-background">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col overflow-hidden border-r bg-card md:flex"><SidebarContent runtimeState={runtimeState} runtimeLabel={runtimeLabel} /></aside>
@@ -108,7 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-3"><Button className="md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="text-sm font-semibold">{title}</div></div>
         <div className="flex items-center gap-2">
           <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>
-          <Button asChild size="sm"><Link to={location.pathname.startsWith('/agreements') ? '/agreements/new' : '/surveys/new'}><Plus />{location.pathname.startsWith('/agreements') ? 'New agreement' : 'New survey'}</Link></Button>
+          {creationAction && <Button asChild size="sm"><Link to={creationAction.to}><Plus />{creationAction.label}</Link></Button>}
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>

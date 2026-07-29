@@ -15,7 +15,9 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /path="\/s\/:slug"/);
   assert.match(app, /SurveyStudioPage/);
   assert.match(app, /SocialListeningPage/);
+  assert.match(app, /IntelligencePage/);
   assert.match(app, /JourneysPage/);
+  assert.match(app, /path="\/intelligence"/);
   assert.match(app, /path="\/campaigns"/);
   assert.match(app, /path="\/campaigns\/:id"/);
   assert.match(app, /path="\/agreements"/);
@@ -40,16 +42,25 @@ test('ships the native agreement preparation and signing workspaces', () => {
   for (const feature of ['pdfjs-dist', 'DndContext', 'PointerSensor', 'KeyboardSensor', 'DragOverlay', 'placementType']) assert.match(editor, new RegExp(feature));
   for (const feature of ['access-code', 'consent', 'SignatureCanvas', 'Next required', 'Decline agreement', 'Finish']) assert.match(signing, new RegExp(feature));
 });
-test('exposes an X connector, Terra social analysis, and journey mapping as first-class workspaces', () => {
+test('exposes multi-account X listening, human-reviewed replies, cross-source intelligence, and journey mapping', () => {
   const social = fs.readFileSync(path.join(source, 'pages', 'SocialListeningPage.tsx'), 'utf8');
+  const intelligence = fs.readFileSync(path.join(source, 'pages', 'IntelligencePage.tsx'), 'utf8');
   const journeys = fs.readFileSync(path.join(source, 'pages', 'JourneysPage.tsx'), 'utf8');
-  assert.match(social, /\/api\/integrations\/x\/mentions/);
-  for (const endpoint of ['/api/integrations/x', '/api/integrations/x/connect', '/api/integrations/x/sync', '/api/integrations/x/queries']) assert.match(social, new RegExp(endpoint.replaceAll('/', '\\/')));
-  for (const feature of ['Connect with X', 'Reconnect with X', 'Listening queries', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Remove X developer app', 'Cancelled']) assert.match(social, new RegExp(feature));
+  const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  for (const endpoint of ['/api/integrations/x', '/api/integrations/x/connect', '/api/integrations/x/mentions', '/api/social/reports', '/api/social/reply-drafts']) assert.match(social, new RegExp(endpoint.replaceAll('/', '\\/')));
+  assert.match(social, /connections\/\$\{connection\.id\}\/sync/);
+  assert.match(social, /connections\/\$\{connection\.id\}\/queries/);
+  assert.match(social, /mentions\/\$\{replyMention\.id\}\/reply-drafts/);
+  for (const feature of ['X accounts', 'Add X account', 'X API credits are depleted', 'Listening queries', 'Reply assistant', 'Draft a reply with Terra', 'Draft only', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Remove X developer app', 'waiting_billing']) assert.match(social, new RegExp(feature));
   assert.match(social, /Promise\.allSettled/);
-  assert.match(social, /setCredentialDialogOpen/);
-  assert.match(social, /\/api\/integrations\/x\/history/);
+  assert.match(social, /selectedConnectionId/);
+  assert.match(social, /selectedConnectionRef/);
   assert.doesNotMatch(social, /Import pasted text|Choose CSV, JSON or TXT/);
+  for (const endpoint of ['/api/intelligence/sources', '/api/intelligence/reports']) assert.match(intelligence, new RegExp(endpoint.replaceAll('/', '\\/')));
+  for (const feature of ['Build an analysis', 'Choose 2', 'Source snapshots are captured', 'Survey reports', 'Social reports', 'Run analysis', 'Executive summary', 'Where sources converge', 'Where sources diverge', 'Limitations']) assert.match(intelligence, new RegExp(feature));
+  assert.match(intelligence, /selectedRefs\.length < 2/);
+  assert.match(intelligence, /current\.length < 12/);
+  assert.match(shell, /label: 'Intelligence'/);
   assert.match(journeys, /\/api\/ai\/journeys/);
   assert.match(journeys, /Journey stages/);
   assert.match(journeys, /Audit and improve/);

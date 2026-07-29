@@ -11,7 +11,9 @@ Seemplify Experience is a standalone experience-management application inspired 
 - Brevo invitations with recipient-level delivery tracking, using the shared Seemplify sender configuration.
 - Individual and aggregate response analysis, NPS/CSAT/CES, trends, drop-off, cross-variable breakdowns, and key-driver correlations.
 - Terra sentiment, emotion, topic, intent, risk, recommendation, translation, executive-report, and ask-your-data workflows.
-- Terra social listening over imported/API-fed public mentions, with per-mention sentiment, emotions, themes, risk, trends, and opportunities.
+- Multi-account X social listening through OAuth 2.0 PKCE, with durable credit/rate-limit waits, account-specific cursors, posts, mentions, recent-search queries, and encrypted refresh tokens.
+- Human-reviewed Terra reply drafts that are editable and copyable but never posted automatically.
+- Saved social-intelligence reports and a cross-source Intelligence workspace that synthesizes selected survey and social report snapshots with traceable evidence and history.
 - Terra-generated customer journey maps covering stages, touchpoints, actions, emotions, friction, measures, opportunities, and a repeatable AI audit workflow.
 - Durable SQLite AI jobs with retries, progress, operational history, and live Server-Sent Events.
 - CSV/JSON exports and service-recovery tickets generated from negative feedback.

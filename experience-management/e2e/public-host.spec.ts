@@ -60,6 +60,18 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-social-listening.png'), fullPage: true });
 
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Intelligence' }).click();
+  await expect(page.getByRole('heading', { name: 'Intelligence', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Build an analysis' })).toBeVisible();
+  const intelligenceSources = await page.request.get('/api/intelligence/sources');
+  const intelligenceReports = await page.request.get('/api/intelligence/reports');
+  expect(intelligenceSources.status()).toBe(200);
+  expect(intelligenceReports.status()).toBe(200);
+  expect(await intelligenceSources.json()).toEqual(expect.any(Array));
+  expect(await intelligenceReports.json()).toEqual(expect.any(Array));
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-intelligence.png'), fullPage: true });
+
+  if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Journey maps' }).click();
   await expect(page.getByRole('heading', { name: 'Journey maps', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'How this workspace works' })).toBeVisible();

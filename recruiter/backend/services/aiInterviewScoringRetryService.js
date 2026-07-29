@@ -11,6 +11,10 @@ function retryDelayMinutes(attempts) {
   return Math.min(60, 2 ** Math.min(Math.max(1, Number(attempts) || 1), 5));
 }
 
+function scoringRequestId(sessionId) {
+  return `ai-interview-score:${sessionId}`;
+}
+
 class AIInterviewScoringRetryService {
   constructor() {
     this.isRunning = false;
@@ -120,7 +124,9 @@ class AIInterviewScoringRetryService {
         sessionId: session._id,
         jobId: interview.job,
         candidateId: session.candidate,
-        requestId: `ai-interview-score:${session._id}:${session.scoring.attempts}`
+        // The logical scoring operation keeps one identity across durable
+        // retries so a recovered local response is replayed, never rerun.
+        requestId: scoringRequestId(session._id)
       };
       await runWithAIRequestContext(context, () => (
         this.finishScoring(session, interview, Number(session.scoring.attempts || 1))
@@ -157,3 +163,4 @@ const service = new AIInterviewScoringRetryService();
 module.exports = service;
 module.exports.AIInterviewScoringRetryService = AIInterviewScoringRetryService;
 module.exports.retryDelayMinutes = retryDelayMinutes;
+module.exports.scoringRequestId = scoringRequestId;

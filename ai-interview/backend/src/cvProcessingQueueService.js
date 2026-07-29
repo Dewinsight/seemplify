@@ -631,7 +631,7 @@ async function processJob(bullJob, workerToken) {
           jobId: processingJob.jobId,
           candidateId: processingJob.candidateId,
           requestId: `ai-interview-cv-queue:${processingJob.publicId}`,
-          usageExecutionId: `ai-interview-cv-queue:${processingJob.publicId}:attempt:${Math.max(1, Number(processingJob.attempts || 1))}`
+          usageExecutionId: `ai-interview-cv-queue:${processingJob.publicId}`
         }, { signal });
       },
       async ({ reason, error }) => {
