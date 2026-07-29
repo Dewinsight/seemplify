@@ -42,6 +42,14 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-dashboard.png'), fullPage: true });
 
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Agreements' }).click();
+  await expect(page.getByRole('heading', { name: 'Agreements', exact: true })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('link', { name: 'New agreement' }).first()).toBeVisible();
+  const envelopes = await page.request.get('/api/esign/envelopes');
+  expect(envelopes.status()).toBe(200);
+  expect(await envelopes.json()).toEqual(expect.any(Array));
+
+  if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Social listening' }).click();
   await expect(page.getByRole('heading', { name: 'Social listening' })).toBeVisible();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-social-listening.png'), fullPage: true });
