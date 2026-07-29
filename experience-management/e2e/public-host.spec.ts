@@ -37,7 +37,12 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   expect(liveRefresh.connected, `Event stream failed with readyState ${liveRefresh.readyState}`).toBe(true);
   const mobile = testInfo.project.name === 'mobile-chromium';
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
-  await expect(page.getByRole('complementary').getByText(/Terra .* (ready|unavailable)/)).toBeVisible();
+  const sidebar = page.getByRole('complementary');
+  const runtimeStatus = sidebar.getByTestId('sidebar-runtime-status');
+  await expect(runtimeStatus).toBeVisible();
+  await expect(runtimeStatus).toHaveAccessibleName(/Open AI queue\..*\.(Ready|Unavailable)\./i);
+  const runtimeBounds = await runtimeStatus.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+  expect(runtimeBounds.scrollWidth).toBeLessThanOrEqual(runtimeBounds.clientWidth);
   if (mobile) await page.getByRole('button', { name: 'Close navigation' }).click();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-dashboard.png'), fullPage: true });
 

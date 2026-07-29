@@ -44,6 +44,64 @@ test('authenticated live refresh stream connects and emits its handshake', async
   expect(result.connected, `Event stream failed with readyState ${result.readyState}`).toBe(true);
 });
 
+test('sidebar runtime identity stays readable and opens the AI queue', async ({ page }, testInfo) => {
+  const providerLabel = 'Terra (Codex local-cloud through managed Local Control Center)';
+  const mobile = testInfo.project.name === 'mobile-chromium';
+  if (!mobile) await page.setViewportSize({ width: 768, height: 800 });
+  await page.route('**/api/runtime', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ terra: { ready: true, reachable: true, providerLabel }, worker: { active: 0, concurrency: 1 } })
+  }));
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  if (mobile) {
+    await page.getByRole('main').evaluate((element) => { element.style.minHeight = '3000px'; });
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    expect(await page.evaluate(() => window.getComputedStyle(document.body).overflow)).toBe('hidden');
+  }
+  const sidebar = page.getByRole('complementary');
+  const runtimeStatus = sidebar.getByTestId('sidebar-runtime-status');
+  const provider = runtimeStatus.getByTestId('sidebar-runtime-provider');
+  await expect(runtimeStatus).toHaveAccessibleName(`Open AI queue. ${providerLabel}. Ready.`);
+  await expect(runtimeStatus.getByText('AI runtime')).toBeVisible();
+  await expect(runtimeStatus.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(provider).toHaveAttribute('title', providerLabel);
+  await expect(sidebar.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  const dimensions = await runtimeStatus.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  const providerStyle = await provider.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return { overflow: style.overflow, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace };
+  });
+  expect(providerStyle).toEqual({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+  const sidebarBox = await sidebar.boundingBox();
+  expect(sidebarBox).not.toBeNull();
+  for (const control of [runtimeStatus, sidebar.getByRole('button', { name: 'Sign out' }), sidebar.getByRole('link', { name: 'Terms' }), sidebar.getByRole('link', { name: 'Privacy' })]) {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(sidebarBox!.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(sidebarBox!.x + sidebarBox!.width + 0.5);
+  }
+  const runtimeReceivesPointer = await runtimeStatus.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const target = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    return target === element || (target ? element.contains(target) : false);
+  });
+  expect(runtimeReceivesPointer).toBe(true);
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('sidebar-runtime.png'), fullPage: true });
+
+  const runtimeBox = await runtimeStatus.boundingBox();
+  expect(runtimeBox).not.toBeNull();
+  await page.mouse.click(runtimeBox!.x + runtimeBox!.width / 2, runtimeBox!.y + runtimeBox!.height / 2);
+  await expect(page.getByRole('heading', { name: 'Experience AI queue' })).toBeVisible();
+  if (mobile) expect(await page.evaluate(() => window.getComputedStyle(document.body).overflow)).not.toBe('hidden');
+});
+
 test('account signup and forgot-password entry points are complete', async ({ page }, testInfo) => {
   const email = `experience-${testInfo.project.name}-${Date.now()}@example.com`;
   await page.goto('/login');

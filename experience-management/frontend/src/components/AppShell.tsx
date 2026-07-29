@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { ClipboardList, FileSignature, Gauge, Inbox, LogOut, Megaphone, Menu, Plus, Radar, RadioTower, Route, Sparkles, X } from 'lucide-react';
+import { CircleAlert, CircleCheck, ClipboardList, Cpu, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, Megaphone, Menu, Plus, Radar, Route, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -18,28 +18,63 @@ const navigation = [
 ];
 
 function Brand() {
-  return <Link to="/" className="flex h-16 items-center gap-3 border-b px-5">
+  return <Link to="/" className="flex h-16 shrink-0 items-center gap-3 border-b px-5">
     <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">S</div>
     <div><div className="text-sm font-semibold leading-4">Seemplify</div><div className="text-xs text-muted-foreground">Experience</div></div>
   </Link>;
 }
 
-function SidebarContent({ close, terraReady, runtimeLabel }: { close?: () => void; terraReady: boolean; runtimeLabel: string }) {
+type RuntimeState = 'checking' | 'ready' | 'unavailable';
+
+function runtimeName(label: string) {
+  return label.replace(/\s*\([^)]*\)\s*$/, '').trim() || label;
+}
+
+function runtimeSummary(label: string) {
+  const match = label.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  return match ? `${match[1].trim()} · ${match[2].trim()}` : label;
+}
+
+function SidebarContent({ close, runtimeState, runtimeLabel }: { close?: () => void; runtimeState: RuntimeState; runtimeLabel: string }) {
   async function signOut() { try { await api('/api/auth/logout', { method: 'POST' }); } finally { window.location.assign('/login'); } }
+  const status = runtimeState === 'ready' ? 'Ready' : runtimeState === 'checking' ? 'Checking' : 'Unavailable';
+  const StatusIcon = runtimeState === 'ready' ? CircleCheck : runtimeState === 'checking' ? LoaderCircle : CircleAlert;
   return <>
     <Brand />
-    <nav className="flex-1 space-y-1 p-3" aria-label="Primary navigation">
+    <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary navigation">
       {navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={close} className={({ isActive }) => cn('flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', isActive && 'bg-secondary text-secondary-foreground')}>
         <Icon className="h-4 w-4" />{label}
       </NavLink>)}
     </nav>
-    <div className="border-t p-4">
-      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span className="flex items-center gap-2"><RadioTower className="h-3.5 w-3.5" />Hosted locally</span>
-        <span className={terraReady ? 'text-emerald-700' : 'text-amber-700'} aria-live="polite">{runtimeLabel} {terraReady ? 'ready' : 'unavailable'}</span>
-      </div>
-      <button onClick={signOut} className="mt-3 flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"><LogOut className="h-3.5 w-3.5" />Sign out</button>
-      <div className="mt-3 flex gap-3 text-[11px] text-muted-foreground"><Link className="hover:text-foreground hover:underline" to="/legal/terms">Terms</Link><Link className="hover:text-foreground hover:underline" to="/legal/privacy">Privacy</Link></div>
+    <div className="relative z-10 shrink-0 border-t bg-card p-3">
+      <Link
+        to="/ai-queue"
+        onClick={close}
+        data-testid="sidebar-runtime-status"
+        aria-label={`Open AI queue. ${runtimeLabel}. ${status}.`}
+        className="group flex min-w-0 items-center gap-3 rounded-md px-2 py-2 outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Cpu className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-foreground">AI runtime</span>
+            <span
+              className={cn(
+                'flex shrink-0 items-center gap-1 text-[11px] font-medium',
+                runtimeState === 'ready' ? 'text-emerald-700' : runtimeState === 'checking' ? 'text-muted-foreground' : 'text-amber-700'
+              )}
+              aria-live="polite"
+              aria-atomic="true"
+              role="status"
+            >
+              <StatusIcon className={cn('h-3 w-3', runtimeState === 'checking' && 'animate-spin')} />{status}
+            </span>
+          </span>
+          <span data-testid="sidebar-runtime-provider" className="mt-0.5 block truncate text-[11px] text-muted-foreground" title={runtimeLabel}>{runtimeSummary(runtimeLabel)}</span>
+        </span>
+      </Link>
+      <button onClick={signOut} className="mt-1 flex h-9 w-full items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><LogOut className="h-4 w-4" />Sign out</button>
+      <div className="flex gap-3 px-2 pt-1 text-[11px] text-muted-foreground"><Link className="hover:text-foreground hover:underline" to="/legal/terms">Terms</Link><Link className="hover:text-foreground hover:underline" to="/legal/privacy">Privacy</Link></div>
     </div>
   </>;
 }
@@ -49,23 +84,30 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [runtime, setRuntime] = useState<any>(null);
   const location = useLocation();
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [mobileOpen]);
   useEffect(() => { api<any>('/api/runtime').then(setRuntime).catch(() => setRuntime({ terra: { reachable: false } })); const timer = setInterval(() => api<any>('/api/runtime').then(setRuntime).catch(() => null), 30_000); return () => clearInterval(timer); }, []);
   const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(location.pathname);
   const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
   const terraReady = runtime?.terra?.ready === true;
+  const runtimeState: RuntimeState = runtime === null ? 'checking' : terraReady ? 'ready' : 'unavailable';
   const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
   if (editorMode) return <div className="min-h-screen bg-background"><header className="flex h-[52px] items-center justify-between border-b bg-card px-4"><Link to="/agreements" className="flex items-center gap-2"><div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="text-sm font-semibold">Seemplify Experience</span></Link><span className="text-xs font-medium text-muted-foreground">Agreement field editor</span></header><main>{children}</main></div>;
   return <div className="min-h-screen bg-background">
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] flex-col border-r bg-card md:flex"><SidebarContent terraReady={terraReady} runtimeLabel={runtimeLabel} /></aside>
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col overflow-hidden border-r bg-card md:flex"><SidebarContent runtimeState={runtimeState} runtimeLabel={runtimeLabel} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
       <button aria-label="Dismiss navigation" className="absolute inset-0 bg-foreground/30" onClick={() => setMobileOpen(false)} />
-      <aside className="relative flex h-full w-[278px] flex-col border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent close={() => setMobileOpen(false)} terraReady={terraReady} runtimeLabel={runtimeLabel} /></aside>
+      <aside className="relative flex h-full w-[278px] flex-col overflow-hidden border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent close={() => setMobileOpen(false)} runtimeState={runtimeState} runtimeLabel={runtimeLabel} /></aside>
     </div>}
-    <div className="md:pl-[236px]">
+    <div className="md:pl-[248px]">
       <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6">
         <div className="flex items-center gap-3"><Button className="md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="text-sm font-semibold">{title}</div></div>
         <div className="flex items-center gap-2">
-          <Badge variant={terraReady ? 'success' : 'warning'} className="hidden sm:inline-flex">{runtimeLabel} {terraReady ? 'ready' : 'unavailable'}</Badge>
+          <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>
           <Button asChild size="sm"><Link to={location.pathname.startsWith('/agreements') ? '/agreements/new' : '/surveys/new'}><Plus />{location.pathname.startsWith('/agreements') ? 'New agreement' : 'New survey'}</Link></Button>
         </div>
       </header>
