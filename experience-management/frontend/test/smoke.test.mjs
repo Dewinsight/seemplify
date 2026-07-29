@@ -33,7 +33,10 @@ test('exposes Terra social listening and journey mapping as first-class admin wo
 test('ships a survey-specific email campaign workspace with audience, sequencing and delivery history', () => {
   const list = fs.readFileSync(path.join(source, 'pages', 'CampaignsPage.tsx'), 'utf8');
   const workspace = fs.readFileSync(path.join(source, 'pages', 'CampaignWorkspacePage.tsx'), 'utf8');
+  const contactImport = fs.readFileSync(path.join(source, 'lib', 'contactImport.ts'), 'utf8');
   assert.match(list, /\/api\/campaigns/);
+  assert.doesNotMatch(list, /surveyRows\[0\]/);
+  assert.match(list, /No survey is selected automatically/);
   for (const section of ['Audience', 'Sequence', 'Activity', 'Settings']) assert.match(workspace, new RegExp(section));
   assert.match(workspace, /Plain text \(recommended\)/);
   assert.match(workspace, /Load sequence template/);
@@ -41,6 +44,12 @@ test('ships a survey-specific email campaign workspace with audience, sequencing
   assert.match(workspace, /Stop follow-ups after a response/);
   assert.match(workspace, /Secured provider events then update delivery/);
   assert.match(workspace, /providerStatus/);
+  assert.match(workspace, /campaign-settings-survey/);
+  assert.match(workspace, /surveyId: selectedSurveyId/);
+  for (const contactFeature of ['Add person', 'Job title \/ position', 'Add custom field', 'Import an audience list']) assert.match(workspace, new RegExp(contactFeature));
+  assert.match(contactImport, /jobTitle/);
+  assert.match(contactImport, /customData/);
+  assert.match(contactImport, /knownIndexes/);
 });
 test('keeps every Experience AI action visible in the survey workspace', () => {
   const ai = fs.readFileSync(path.join(source, 'components', 'survey', 'AiTab.tsx'), 'utf8');

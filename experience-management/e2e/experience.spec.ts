@@ -217,20 +217,64 @@ test('imports a feedback file and runs a sequenced survey campaign through compl
     }));
     const survey = await created.json();
     await fetch(`/api/surveys/${survey.id}/publish`, json('POST', { status: 'live' }));
-    return { surveyId: survey.id, questionId };
+    const alternateResponse = await fetch('/api/surveys', json('POST', {
+      title: `Alternate campaign survey ${id}`, purpose: 'market_research', primaryMetric: 'custom',
+      questions: [{ id: `alternate-question-${id}`, page: 1, position: 0, type: 'short_text', title: 'What should change?', required: false, options: [], settings: {}, logic: [] }]
+    }));
+    const alternate = await alternateResponse.json();
+    return { surveyId: survey.id, surveyTitle: survey.title, questionId, alternateSurveyId: alternate.id, alternateSurveyTitle: alternate.title };
   }, suffix);
 
+  await page.goto('/campaigns');
+  await expect(page.getByRole('heading', { name: 'Campaigns', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Survey', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Create campaign' })).toBeDisabled();
   await page.goto(`/campaigns?survey=${setup.surveyId}`);
   await expect(page.getByRole('heading', { name: 'Campaigns', exact: true })).toBeVisible();
   const campaignName = `Follow-up campaign ${suffix}`;
   await page.getByLabel('Name').fill(campaignName);
-  await page.getByLabel('Survey').selectOption(setup.surveyId);
+  await expect(page.getByLabel('Survey', { exact: true })).toHaveValue(setup.surveyId);
   await page.getByRole('button', { name: 'Create campaign' }).click();
   await expect(page.getByRole('heading', { name: campaignName })).toBeVisible();
 
-  await page.getByLabel('Contacts').fill(`email,first name,last name,company\nada-${suffix}@example.com,Ada,Lovelace,Analytical Engines`);
-  await page.getByRole('button', { name: 'Import contacts' }).click();
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.locator('#campaign-settings-survey').selectOption(setup.alternateSurveyId);
+  await expect(page.getByRole('button', { name: 'Launch campaign' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await expect(page.locator('.page-description')).toContainText(setup.alternateSurveyTitle);
+  await page.locator('#campaign-settings-survey').selectOption(setup.surveyId);
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await expect(page.locator('.page-description')).toContainText(setup.surveyTitle);
+
+  await page.getByRole('tab', { name: 'Audience' }).click();
+  await page.getByRole('button', { name: 'Add person' }).click();
+  const contactDialog = page.getByRole('dialog', { name: 'Add person' });
+  await contactDialog.getByLabel('Email address').fill(`ada-${suffix}@example.com`);
+  await contactDialog.getByLabel('First name').fill('Ada');
+  await contactDialog.getByLabel('Last name').fill('Lovelace');
+  await contactDialog.getByLabel('Job title / position').fill('Chief analyst');
+  await contactDialog.getByLabel('Company').fill('Analytical Engines');
+  await contactDialog.getByRole('button', { name: 'Add custom field' }).click();
+  await contactDialog.getByLabel('Custom field 1 name').fill('Region');
+  await contactDialog.getByLabel('Custom field 1 value').fill('London');
+  await contactDialog.getByRole('button', { name: 'Add person' }).click();
   await expect(page.getByText(`ada-${suffix}@example.com`)).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Chief analyst' })).toBeVisible();
+  await expect(page.getByText('Region: London')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Import list' }).click();
+  const importDialog = page.getByRole('dialog', { name: 'Import an audience list' });
+  await importDialog.getByLabel('Contacts').fill(`email,first name,last name,position,company,customer tier\ngrace-${suffix}@example.com,Grace,Hopper,Rear admiral,US Navy,Research`);
+  await expect(importDialog.getByText('Custom fields: customer tier.')).toBeVisible();
+  await importDialog.getByRole('button', { name: 'Import 1 contact' }).click();
+  await expect(importDialog).toBeHidden();
+  const graceRow = page.getByRole('row').filter({ hasText: `grace-${suffix}@example.com` });
+  await expect(graceRow).toBeVisible();
+  await expect(graceRow.getByText('customer tier: Research')).toBeVisible();
+  await graceRow.getByRole('button', { name: `Remove grace-${suffix}@example.com` }).click();
+  await expect(graceRow.getByText('suppressed', { exact: true })).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('campaign-audience.png'), fullPage: true });
+
   await page.getByRole('tab', { name: 'Sequence' }).click();
   await expect(page.getByText('Step 1', { exact: true })).toBeVisible();
   await expect(page.getByText('Step 2', { exact: true })).toBeVisible();
@@ -249,7 +293,7 @@ test('imports a feedback file and runs a sequenced survey campaign through compl
   const campaignId = new URL(page.url()).pathname.split('/').pop()!;
   await page.evaluate(async ({ campaignId, questionId }) => {
     const detail = await fetch(`/api/campaigns/${campaignId}`).then((response) => response.json());
-    const contact = detail.contacts[0];
+    const contact = detail.contacts.find((item: any) => item.status === 'active');
     await fetch(`/api/public/collectors/${detail.collector.slug}/responses?recipient=${encodeURIComponent(contact.token)}`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ answers: { [questionId]: 'Great' }, status: 'completed' })
@@ -257,7 +301,10 @@ test('imports a feedback file and runs a sequenced survey campaign through compl
   }, { campaignId, questionId: setup.questionId });
   await expect(page.getByText('completed', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Responses', { exact: true }).locator('..').getByText('1', { exact: true })).toBeVisible();
-  await page.evaluate((surveyId) => fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' }), setup.surveyId);
+  await page.evaluate(async ({ surveyId, alternateSurveyId }) => {
+    await fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' });
+    await fetch(`/api/surveys/${alternateSurveyId}`, { method: 'DELETE' });
+  }, setup);
 });
 
 test('admin surface and public survey remain usable at a narrow mobile viewport', async ({ page }, testInfo) => {

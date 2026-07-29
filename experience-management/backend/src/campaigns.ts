@@ -71,7 +71,7 @@ const rowStep = (row: any): CampaignStep => ({
 
 const rowContact = (row: any): CampaignContact => ({
   id: row.id, campaignId: row.campaign_id, email: row.email, firstName: row.first_name,
-  lastName: row.last_name, company: row.company, token: row.token, status: row.status,
+  lastName: row.last_name, jobTitle: row.job_title || '', company: row.company, token: row.token, status: row.status,
   customData: parseJson(row.custom_json, {}), currentStep: Number(row.current_step), lastSentAt: row.last_sent_at,
   respondedAt: row.responded_at, createdAt: row.created_at, updatedAt: row.updated_at,
   recipientId: row.id, nextSendAt: row.next_send_at || null
@@ -173,20 +173,25 @@ export function updateCampaign(id: string, input: { name?: string; stopOnRespons
   if (current.status === 'completed') throw new Error('Completed campaigns cannot be edited.');
   if (current.launchedAt && input.startAt !== undefined && input.startAt !== current.startAt) throw new Error('The start time cannot be changed after launch.');
   let surveyId = current.surveyId; let collectorId = current.collectorId;
+  let surveyChanged = false;
   if (input.surveyId && input.surveyId !== current.surveyId) {
     if (current.status !== 'draft') throw new Error('The survey can only be changed while the campaign is a draft.');
     if (!getSurvey(input.surveyId)) throw new Error('Survey not found.');
     surveyId = input.surveyId;
+    surveyChanged = true;
     collectorId = resolveEmailCollector(surveyId, input.collectorId).id;
   } else if (input.collectorId && input.collectorId !== current.collectorId) {
     if (current.status !== 'draft') throw new Error('The collector can only be changed while the campaign is a draft.');
     collectorId = resolveEmailCollector(surveyId, input.collectorId).id;
   }
   const now = new Date().toISOString();
-  db.prepare(`UPDATE campaigns SET survey_id=?,collector_id=?,name=?,stop_on_response=?,start_at=?,updated_at=? WHERE id=?`).run(
-    surveyId, collectorId, input.name?.trim() || current.name, input.stopOnResponse === undefined ? (current.stopOnResponse ? 1 : 0) : (input.stopOnResponse ? 1 : 0),
-    input.startAt === undefined ? current.startAt : input.startAt, now, id
-  );
+  db.transaction(() => {
+    db.prepare(`UPDATE campaigns SET survey_id=?,collector_id=?,name=?,stop_on_response=?,start_at=?,updated_at=? WHERE id=?`).run(
+      surveyId, collectorId, input.name?.trim() || current.name, input.stopOnResponse === undefined ? (current.stopOnResponse ? 1 : 0) : (input.stopOnResponse ? 1 : 0),
+      input.startAt === undefined ? current.startAt : input.startAt, now, id
+    );
+    if (surveyChanged) db.prepare('UPDATE campaign_steps SET embed_question_id=NULL,updated_at=? WHERE campaign_id=?').run(now, id);
+  })();
   publishEvent('campaign', { campaignId: id, reason: 'updated' });
   return getCampaignDetail(id);
 }
@@ -217,17 +222,20 @@ export const replaceCampaignSteps = db.transaction((campaignId: string, steps: A
   return getCampaignDetail(campaignId);
 });
 
-export const addCampaignContacts = db.transaction((campaignId: string, contacts: Array<{ email: string; firstName?: string; lastName?: string; company?: string; customData?: Record<string, unknown> }>) => {
+export const addCampaignContacts = db.transaction((campaignId: string, contacts: Array<{ email: string; firstName?: string; lastName?: string; jobTitle?: string; company?: string; customData?: Record<string, unknown> }>) => {
   const campaign = requireCampaign(campaignId);
   if (campaign.status === 'active' || campaign.status === 'completed') throw new Error('Pause the campaign before adding contacts.');
   const now = new Date().toISOString(); let added = 0; let duplicates = 0; let suppressed = 0;
   const isSuppressed = db.prepare('SELECT 1 FROM email_suppressions WHERE email=?');
-  const insert = db.prepare(`INSERT OR IGNORE INTO campaign_contacts (id,campaign_id,email,first_name,last_name,company,token,status,custom_json,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,'active',?,?,?)`);
+  const insert = db.prepare(`INSERT OR IGNORE INTO campaign_contacts (id,campaign_id,email,first_name,last_name,job_title,company,token,status,custom_json,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,'active',?,?,?)`);
   for (const item of contacts) {
     const email = item.email.trim().toLowerCase();
     if (isSuppressed.get(email)) { suppressed += 1; continue; }
-    const result = insert.run(crypto.randomUUID(), campaignId, email, item.firstName || '', item.lastName || '', item.company || '', crypto.randomBytes(18).toString('base64url'), JSON.stringify(item.customData || {}), now, now);
+    const result = insert.run(
+      crypto.randomUUID(), campaignId, email, item.firstName || '', item.lastName || '', item.jobTitle || '', item.company || '',
+      crypto.randomBytes(18).toString('base64url'), JSON.stringify(item.customData || {}), now, now
+    );
     if (result.changes) added += 1; else duplicates += 1;
   }
   db.prepare('UPDATE campaigns SET updated_at=? WHERE id=?').run(now, campaignId);
@@ -239,6 +247,46 @@ export const addCampaignContacts = db.transaction((campaignId: string, contacts:
     summary: { received: contacts.length, added, duplicates, suppressed, imported: added, skipped: duplicates + suppressed }
   };
 });
+
+export function updateCampaignContact(campaignId: string, contactId: string, input: {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  jobTitle?: string;
+  company?: string;
+  customData?: Record<string, unknown>;
+}) {
+  const campaign = requireCampaign(campaignId);
+  if (campaign.status === 'active' || campaign.status === 'completed') throw new Error('Pause the campaign before editing contacts.');
+  const row = db.prepare('SELECT * FROM campaign_contacts WHERE id=? AND campaign_id=?').get(contactId, campaignId) as any;
+  if (!row) throw new Error('Campaign contact not found.');
+  const email = (input.email ?? String(row.email)).trim().toLowerCase();
+  if (campaign.launchedAt && email !== String(row.email).toLowerCase()) throw new Error('The email address cannot be changed after campaign launch.');
+  if (email !== String(row.email).toLowerCase() && db.prepare('SELECT 1 FROM email_suppressions WHERE email=?').get(email)) {
+    throw new Error('This email address is suppressed and cannot be added to a campaign.');
+  }
+  if (db.prepare('SELECT 1 FROM campaign_contacts WHERE campaign_id=? AND email=? AND id<>?').get(campaignId, email, contactId)) {
+    throw new Error('A contact with this email address is already in the campaign.');
+  }
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE campaign_contacts SET email=?,first_name=?,last_name=?,job_title=?,company=?,custom_json=?,updated_at=?
+    WHERE id=? AND campaign_id=?`).run(
+    email,
+    input.firstName ?? String(row.first_name || ''),
+    input.lastName ?? String(row.last_name || ''),
+    input.jobTitle ?? String(row.job_title || ''),
+    input.company ?? String(row.company || ''),
+    JSON.stringify(input.customData ?? parseJson(row.custom_json, {})),
+    now,
+    contactId,
+    campaignId
+  );
+  db.prepare('UPDATE campaigns SET updated_at=? WHERE id=?').run(now, campaignId);
+  publishEvent('campaign', { campaignId, reason: 'contact-updated', contactId });
+  const updated = db.prepare(`SELECT r.*,(SELECT MIN(d.scheduled_at) FROM campaign_deliveries d WHERE d.contact_id=r.id AND d.state='queued') next_send_at
+    FROM campaign_contacts r WHERE r.id=? AND r.campaign_id=?`).get(contactId, campaignId);
+  return rowContact(updated);
+}
 
 export function suppressCampaignContact(campaignId: string, contactId: string) {
   requireCampaign(campaignId); const now = new Date().toISOString();
@@ -417,6 +465,26 @@ function embeddedQuestion(question: Question | undefined, surveyUrl: string) {
   return { html, text };
 }
 
+function contactVariables(contact: CampaignContact, surveyTitle: string, surveyUrl: string) {
+  const custom = Object.entries(contact.customData || {}).reduce<Record<string, string>>((values, [label, value]) => {
+    const key = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (key && ['string', 'number', 'boolean'].includes(typeof value) && !Object.prototype.hasOwnProperty.call(values, `custom.${key}`)) {
+      values[`custom.${key}`] = String(value);
+    }
+    return values;
+  }, {});
+  return {
+    first_name: contact.firstName,
+    last_name: contact.lastName,
+    position: contact.jobTitle,
+    job_title: contact.jobTitle,
+    company: contact.company,
+    survey_title: surveyTitle,
+    survey_link: surveyUrl,
+    ...custom
+  };
+}
+
 const finalizeSuccessfulDelivery = db.transaction((input: { deliveryId: string; campaignId: string; contactId: string; stepPosition: number; providerMessageId: string }) => {
   const now = new Date().toISOString();
   db.prepare("UPDATE campaign_deliveries SET state='sent',provider_message_id=?,error=NULL,sent_at=?,updated_at=? WHERE id=? AND state='sending'").run(input.providerMessageId, now, now, input.deliveryId);
@@ -492,7 +560,7 @@ async function processDelivery(delivery: CampaignDelivery) {
     const sent = await sendCampaignEmail({
       deliveryId: delivery.id, to: contact.email, name: [contact.firstName, contact.lastName].filter(Boolean).join(' '),
       subject: step.subject, mode: step.mode, bodyText: step.bodyText, bodyHtml: step.bodyHtml,
-      variables: { first_name: contact.firstName, last_name: contact.lastName, company: contact.company, survey_title: survey.title, survey_link: surveyUrl },
+      variables: contactVariables(contact, survey.title, surveyUrl),
       embeddedQuestionHtml: embedded.html, embeddedQuestionText: embedded.text,
       unsubscribeUrl: `${config.publicUrl.replace(/\/$/, '')}/api/public/campaigns/unsubscribe/${encodeURIComponent(contact.token)}`
     });
@@ -585,7 +653,7 @@ export async function sendCampaignTest(campaignId: string, emails: string[]) {
       const sent = await sendCampaignEmail({
         deliveryId: crypto.randomUUID(), to: email, subject: step.subject, mode: step.mode,
         bodyText: step.bodyText, bodyHtml: step.bodyHtml,
-        variables: { first_name: 'Test', last_name: 'Recipient', company: 'Example company', survey_title: survey.title, survey_link: surveyUrl },
+        variables: { first_name: 'Test', last_name: 'Recipient', position: 'Customer Success Lead', job_title: 'Customer Success Lead', company: 'Example company', survey_title: survey.title, survey_link: surveyUrl, 'custom.segment': 'Enterprise' },
         embeddedQuestionHtml: embedded.html, embeddedQuestionText: embedded.text
       });
       outcomes.push({ email, status: 'sent', messageId: (sent as any).messageId || null });

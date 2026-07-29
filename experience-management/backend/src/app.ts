@@ -19,7 +19,7 @@ import { emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipi
 import {
   addCampaignContacts, campaignTemplates, createCampaign, getCampaignDetail, launchCampaign, listCampaignSummaries,
   getCampaignUnsubscribePreview, markCampaignContactResponded, pauseCampaign, replaceCampaignSteps, resumeCampaign,
-  sendCampaignTest, suppressCampaignContact, suppressEmailGlobally, unsubscribeCampaignContact, updateCampaign
+  sendCampaignTest, suppressCampaignContact, suppressEmailGlobally, unsubscribeCampaignContact, updateCampaign, updateCampaignContact
 } from './campaigns.js';
 import { authenticateBrevoWebhook, parseBrevoWebhookPayload, processBrevoWebhookEvents } from './brevoWebhook.js';
 import { parseSocialMentionImport } from './socialImport.js';
@@ -295,6 +295,30 @@ const campaignStepInput = z.object({
   bodyText: z.string().max(30_000).default(''), bodyHtml: z.string().max(100_000).optional(),
   embedQuestionId: z.string().max(200).nullable().optional()
 });
+const campaignCustomData = z.record(
+  z.string().trim().min(1).max(64),
+  z.union([z.string().max(500), z.number().finite(), z.boolean(), z.null()])
+).superRefine((value, context) => {
+  if (Object.keys(value).length > 25) context.addIssue({ code: 'custom', message: 'A contact can have at most 25 custom fields.' });
+  if (Object.keys(value).some((key) => ['__proto__', 'prototype', 'constructor'].includes(key.trim().toLowerCase()))) {
+    context.addIssue({ code: 'custom', message: 'A custom field uses a reserved name.' });
+  }
+  const normalized = new Set<string>();
+  for (const key of Object.keys(value)) {
+    const token = key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!token) context.addIssue({ code: 'custom', path: [key], message: 'Custom field names must contain a letter or number.' });
+    else if (normalized.has(token)) context.addIssue({ code: 'custom', path: [key], message: 'Custom field names must be unique.' });
+    normalized.add(token);
+  }
+});
+const campaignContactInput = z.object({
+  email: z.string().trim().email().max(320),
+  firstName: z.string().trim().max(150).optional(),
+  lastName: z.string().trim().max(150).optional(),
+  jobTitle: z.string().trim().max(180).optional(),
+  company: z.string().trim().max(250).optional(),
+  customData: campaignCustomData.optional()
+});
 app.get('/api/campaign-templates', noStore, (_request, response) => response.json(campaignTemplates.map((template) => ({
   ...template, ...template.steps[0]
 }))));
@@ -316,7 +340,7 @@ app.put('/api/campaigns/:id', (request, response) => {
   try {
     const input = z.object({
       name: z.string().min(2).max(180).optional(), stopOnResponse: z.boolean().optional(),
-      startAt: z.string().datetime().nullable().optional(), surveyId: z.string().optional(), collectorId: z.string().optional(),
+      startAt: z.string().datetime().nullable().optional(), surveyId: z.string().min(1).optional(), collectorId: z.string().optional(),
       settings: z.object({ stopOnResponse: z.boolean().optional() }).passthrough().optional()
     }).parse(request.body);
     return response.json(updateCampaign(String(request.params.id), { ...input, stopOnResponse: input.stopOnResponse ?? input.settings?.stopOnResponse }));
@@ -330,12 +354,18 @@ app.put('/api/campaigns/:id/steps', (request, response) => {
 });
 app.post('/api/campaigns/:id/contacts', (request, response) => {
   try {
-    const input = z.object({ contacts: z.array(z.object({
-      email: z.string().email().max(320), firstName: z.string().max(150).optional(), lastName: z.string().max(150).optional(),
-      company: z.string().max(250).optional(), customData: z.record(z.string(), z.unknown()).optional()
-    })).min(1).max(1000) }).parse(request.body);
+    const input = z.object({ contacts: z.array(campaignContactInput).min(1).max(1000) }).parse(request.body);
     return response.status(201).json(addCampaignContacts(String(request.params.id), input.contacts));
   } catch (error) { return sendError(response, error); }
+});
+app.put('/api/campaigns/:id/contacts/:contactId', (request, response) => {
+  try {
+    const input = campaignContactInput.partial().refine((value) => Object.keys(value).length > 0, 'Add at least one contact field.').parse(request.body);
+    return response.json(updateCampaignContact(String(request.params.id), String(request.params.contactId), input));
+  } catch (error) {
+    const status = error instanceof Error && /not found/i.test(error.message) ? 404 : 400;
+    return sendError(response, error, status);
+  }
 });
 app.delete('/api/campaigns/:id/contacts/:contactId', (request, response) => {
   try {

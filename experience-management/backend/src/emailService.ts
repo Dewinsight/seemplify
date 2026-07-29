@@ -43,11 +43,11 @@ async function sendBrevoEmail(input: { to: string; name?: string; subject: strin
   return { ...payload, mode: 'brevo' };
 }
 
-const CAMPAIGN_TOKENS = ['first_name', 'last_name', 'company', 'survey_title', 'survey_link'] as const;
-
-function personalize(value: string, variables: Record<(typeof CAMPAIGN_TOKENS)[number], string>, html = false) {
-  return String(value || '').replace(/\{\{\s*(first_name|last_name|company|survey_title|survey_link)\s*\}\}/gi, (_match, key: string) => {
-    const replacement = variables[key.toLowerCase() as (typeof CAMPAIGN_TOKENS)[number]] || '';
+function personalize(value: string, variables: Record<string, string>, html = false) {
+  return String(value || '').replace(/\{\{\s*([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)?)\s*\}\}/gi, (token, key: string) => {
+    const normalized = key.toLowerCase();
+    if (!Object.prototype.hasOwnProperty.call(variables, normalized)) return token;
+    const replacement = variables[normalized] || '';
     return html ? escapeHtml(replacement) : replacement;
   });
 }
@@ -84,7 +84,7 @@ export async function sendCampaignEmail(input: {
   mode: 'plain' | 'html';
   bodyText: string;
   bodyHtml?: string;
-  variables: Record<(typeof CAMPAIGN_TOKENS)[number], string>;
+  variables: Record<string, string>;
   embeddedQuestionHtml?: string;
   embeddedQuestionText?: string;
   unsubscribeUrl?: string;

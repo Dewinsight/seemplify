@@ -223,7 +223,7 @@ test('runs a durable multi-step survey campaign and stops reminders after respon
   assert.equal(steps.body.steps[1].delayMinutes, 60);
 
   const contacts = await agent.post(`/api/campaigns/${campaignId}/contacts`).send({ contacts: [
-    { email: 'ada@example.com', firstName: 'Ada', lastName: 'Lovelace', company: 'Analytical Engines', customData: { segment: 'customer' } },
+    { email: 'ada@example.com', firstName: 'Ada', lastName: 'Lovelace', jobTitle: 'Mathematician', company: 'Analytical Engines', customData: { segment: 'customer' } },
     { email: 'ADA@example.com', firstName: 'Duplicate' }
   ] }).expect(201);
   assert.equal(contacts.body.summary.received, 2);
@@ -231,6 +231,23 @@ test('runs a durable multi-step survey campaign and stops reminders after respon
   assert.equal(contacts.body.summary.duplicates, 1);
   assert.equal(contacts.body.summary.imported, 1);
   assert.equal(contacts.body.summary.skipped, 1);
+  assert.equal(contacts.body.contacts[0].firstName, 'Ada');
+  assert.equal(contacts.body.contacts[0].lastName, 'Lovelace');
+  assert.equal(contacts.body.contacts[0].jobTitle, 'Mathematician');
+  assert.equal(contacts.body.contacts[0].company, 'Analytical Engines');
+  assert.deepEqual(contacts.body.contacts[0].customData, { segment: 'customer' });
+  const contactId = contacts.body.contacts[0].id;
+  const updatedContact = await agent.put(`/api/campaigns/${campaignId}/contacts/${contactId}`).send({
+    jobTitle: 'Chief analyst', customData: { 'Account tier': 'Enterprise', Region: 'London' }
+  }).expect(200);
+  assert.equal(updatedContact.body.jobTitle, 'Chief analyst');
+  assert.deepEqual(updatedContact.body.customData, { 'Account tier': 'Enterprise', Region: 'London' });
+  await agent.post(`/api/campaigns/${campaignId}/contacts`).send({ contacts: [{
+    email: 'collision@example.com', customData: { 'Account tier': 'Enterprise', 'account-tier': 'Duplicate token' }
+  }] }).expect(400);
+  await agent.post(`/api/campaigns/${campaignId}/contacts`).send({ contacts: [{
+    email: 'too-many-fields@example.com', customData: Object.fromEntries(Array.from({ length: 26 }, (_, index) => [`Field ${index}`, `${index}`]))
+  }] }).expect(400);
   const testSend = await agent.post(`/api/campaigns/${campaignId}/test`).send({ email: 'preview@example.com' }).expect(200);
   assert.equal(testSend.body.outcomes[0].status, 'sent');
   assert.doesNotMatch(sanitizeCampaignHtml('<script>alert(1)</script><p>Safe</p><a href="javascript:bad">No</a>'), /script|javascript/i);
@@ -242,6 +259,8 @@ test('runs a durable multi-step survey campaign and stops reminders after respon
   assert.equal(running.body.metrics.sentDeliveries, 1);
   assert.equal(running.body.metrics.queuedDeliveries, 1);
   assert.equal(running.body.contacts[0].status, 'active');
+  await agent.put(`/api/campaigns/${campaignId}/contacts/${contactId}`).send({ firstName: 'Augusta' }).expect(400)
+    .expect(({ body }) => assert.match(body.error, /pause the campaign/i));
   const token = running.body.contacts[0].token;
   const slug = running.body.collector.slug;
 
@@ -400,9 +419,20 @@ test('enforces campaign collector, embedding and post-launch scheduling invarian
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [step('embed-dropdown')] }).expect(400)
     .expect(({ body }) => assert.match(body.error, /supported choice or rating/i));
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [step('embed-first')] }).expect(200);
+  const alternate = await agent.post('/api/surveys').send({
+    title: 'Alternate campaign survey', purpose: 'customer_experience', status: 'draft', primaryMetric: 'csat',
+    questions: [{ id: 'alternate-embed', page: 1, position: 0, type: 'single_choice', title: 'Alternate choice', required: false, options: ['Yes', 'No'], settings: {}, logic: [] }]
+  }).expect(201);
+  const switched = await agent.put(`/api/campaigns/${id}`).send({ surveyId: alternate.body.id }).expect(200);
+  assert.equal(switched.body.campaign.surveyId, alternate.body.id);
+  assert.equal(switched.body.collector.surveyId, alternate.body.id);
+  assert.ok(switched.body.steps.every((item: any) => item.embedQuestionId === null));
+  await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [step('alternate-embed')] }).expect(200);
   await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'invariant@example.com' }] }).expect(201);
-  await agent.post(`/api/surveys/${survey.body.id}/publish`).send({ status: 'live' }).expect(200);
+  await agent.post(`/api/surveys/${alternate.body.id}/publish`).send({ status: 'live' }).expect(200);
   await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() + 60_000).toISOString() }).expect(200);
+  await agent.put(`/api/campaigns/${id}`).send({ surveyId: survey.body.id }).expect(400)
+    .expect(({ body }) => assert.match(body.error, /survey can only be changed while.*draft/i));
   await agent.put(`/api/campaigns/${id}`).send({ startAt: new Date(Date.now() + 120_000).toISOString() }).expect(400)
     .expect(({ body }) => assert.match(body.error, /cannot be changed after launch/i));
   await agent.post(`/api/campaigns/${id}/pause`).send({}).expect(200);
@@ -471,6 +501,44 @@ test('uses UUID idempotency keys and reports all-failed and mixed test-send outc
     const duplicate = await agent.post(`/api/campaigns/${id}/test`).send({ email: 'idempotent@example.com' }).expect(200);
     assert.equal(duplicate.body.outcomes[0].status, 'sent');
     assert.match(duplicate.body.outcomes[0].messageId, /^idempotent:/);
+  } finally {
+    config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
+  }
+});
+
+test('personalizes job title and scalar custom contact fields without bypassing HTML escaping', async () => {
+  const agent = request.agent(app);
+  await agent.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
+  const survey = await agent.post('/api/surveys').send({
+    title: 'Personalized campaign survey', purpose: 'market_research', status: 'draft', primaryMetric: 'custom',
+    questions: [{ id: 'personalized-answer', page: 1, position: 0, type: 'short_text', title: 'Comment', required: false, options: [], settings: {}, logic: [] }]
+  }).expect(201);
+  await agent.post(`/api/surveys/${survey.body.id}/publish`).send({ status: 'live' }).expect(200);
+  const campaign = await agent.post('/api/campaigns').send({ name: 'Personalized fields campaign', surveyId: survey.body.id }).expect(201);
+  const id = campaign.body.campaign.id;
+  await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{
+    delayMinutes: 0, subject: '{{first_name}} · {{position}} · {{custom.account_tier}}', mode: 'html',
+    bodyText: '{{first_name}} {{job_title}} {{custom.region}}',
+    bodyHtml: '<p>{{first_name}} {{job_title}} {{custom.region}} {{unknown_value}}</p>'
+  }] }).expect(200);
+  await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{
+    email: 'personalized@example.com', firstName: 'Mina', lastName: 'Test', jobTitle: 'Head <Research>',
+    customData: { 'Account tier': 'Enterprise', Region: '<North>' }
+  }] }).expect(201);
+  const originalMode = config.emailMode; const originalKey = config.brevoApiKey; const originalFetch = globalThis.fetch;
+  let providerRequest: any;
+  config.emailMode = 'send'; config.brevoApiKey = 'test-key';
+  globalThis.fetch = async (_url, init) => {
+    providerRequest = JSON.parse(String(init?.body || '{}'));
+    return new Response(JSON.stringify({ messageId: 'personalized-message' }), { status: 201, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(200);
+    await campaignRunner.pump();
+    assert.equal(providerRequest.subject, 'Mina · Head <Research> · Enterprise');
+    assert.match(providerRequest.htmlContent, /Mina Head &lt;Research&gt; &lt;North&gt; \{\{unknown_value\}\}/);
+    assert.match(providerRequest.textContent, /^Mina Head <Research> <North>\n\nUnsubscribe:/);
+    assert.equal(providerRequest.to[0].name, 'Mina Test');
   } finally {
     config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
   }

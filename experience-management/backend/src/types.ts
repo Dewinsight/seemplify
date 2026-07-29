@@ -183,6 +183,7 @@ export interface CampaignContact {
   email: string;
   firstName: string;
   lastName: string;
+  jobTitle: string;
   company: string;
   token: string;
   status: CampaignContactStatus;

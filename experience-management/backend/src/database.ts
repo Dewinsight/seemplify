@@ -196,6 +196,7 @@ db.exec(`
     email TEXT NOT NULL COLLATE NOCASE,
     first_name TEXT NOT NULL DEFAULT '',
     last_name TEXT NOT NULL DEFAULT '',
+    job_title TEXT NOT NULL DEFAULT '',
     company TEXT NOT NULL DEFAULT '',
     token TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'active',
@@ -266,6 +267,8 @@ const recipientColumns = new Set((db.prepare('PRAGMA table_info(recipients)').al
 for (const column of ['first_attempt_at', 'updated_at']) {
   if (!recipientColumns.has(column)) db.exec(`ALTER TABLE recipients ADD COLUMN ${column} TEXT`);
 }
+const campaignContactColumns = new Set((db.prepare('PRAGMA table_info(campaign_contacts)').all() as any[]).map((column) => String(column.name)));
+if (!campaignContactColumns.has('job_title')) db.exec("ALTER TABLE campaign_contacts ADD COLUMN job_title TEXT NOT NULL DEFAULT ''");
 
 const parseJson = <T>(value: unknown, fallback: T): T => {
   try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; }

@@ -24,7 +24,7 @@ export interface CampaignStep {
 }
 export interface CampaignContact {
   id: string; campaignId: string; recipientId: string; email: string; firstName: string; lastName: string;
-  company: string; status: 'pending' | 'active' | 'completed' | 'responded' | 'unsubscribed' | 'suppressed' | 'failed';
+  jobTitle: string; company: string; status: 'pending' | 'active' | 'completed' | 'responded' | 'unsubscribed' | 'suppressed' | 'failed';
   currentStep: number; nextSendAt: string | null; customData: Record<string, any>; createdAt: string; updatedAt: string;
 }
 export interface CampaignDelivery {
