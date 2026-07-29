@@ -14,12 +14,13 @@ after(() => { globalThis.fetch = originalFetch; fs.rmSync(root, { recursive: tru
 
 test('signs Terra requests and supplies durable metering identity', async () => {
   const eventIds: string[] = [];
+  const activities: string[] = [];
   globalThis.fetch = async (_url, init) => {
     const body = String(init?.body || ''); const headers = init?.headers as Record<string, string>;
     const expected = crypto.createHmac('sha256', secret).update(`${headers['x-seemplify-timestamp']}\n${headers['x-seemplify-nonce']}\nPOST\n/v1/complete\n${body}`).digest('base64url');
     assert.equal(headers['x-seemplify-signature'], expected);
     const payload = JSON.parse(body);
-    assert.equal(payload.activity, 'experience.analyst_chat');
+    activities.push(payload.activity);
     assert.equal(payload.executionMode, 'local-only');
     assert.match(payload.metering.eventId, /^usage_[a-f0-9]{48}$/);
     eventIds.push(payload.metering.eventId);
@@ -31,4 +32,7 @@ test('signs Terra requests and supplies durable metering identity', async () => 
   assert.equal(result.runtime.model, 'gpt-5.6-terra');
   await completeWithTerra({ activity: 'experience.analyst_chat', requestId: 'job-1:attempt:2', messages: [{ role: 'user', content: 'Question' }] });
   assert.notEqual(eventIds[0], eventIds[1]);
+  await completeWithTerra({ activity: 'experience.social_listening', requestId: 'job-social', messages: [{ role: 'user', content: 'Mentions' }] });
+  await completeWithTerra({ activity: 'experience.journey_mapping', requestId: 'job-journey', messages: [{ role: 'user', content: 'Journey brief' }] });
+  assert.deepEqual(activities, ['experience.analyst_chat', 'experience.analyst_chat', 'experience.social_listening', 'experience.journey_mapping']);
 });

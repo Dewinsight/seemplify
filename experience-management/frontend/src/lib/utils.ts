@@ -17,7 +17,8 @@ export function formatDuration(value?: number | null) {
 export function humanizeActivity(value: string) {
   const names: Record<string, string> = {
     'survey.generate': 'Survey generation', 'survey.improve': 'Survey quality review', 'survey.translate': 'Survey translation',
-    'response.analyze': 'Response analysis', 'insights.generate': 'Insight generation', 'analyst.chat': 'Analyst chat', 'report.generate': 'Executive report'
+    'response.analyze': 'Response analysis', 'insights.generate': 'Insight generation', 'analyst.chat': 'Analyst chat', 'report.generate': 'Executive report',
+    'social.analyze': 'Social listening analysis', 'journey.generate': 'Journey generation', 'journey.optimize': 'Journey optimization'
   };
   return names[value] || value.replaceAll('.', ' ').replaceAll('_', ' ');
 }

@@ -10,14 +10,15 @@ import { login, logout, requireAdmin, session } from './auth.js';
 import { computeAnalytics } from './analytics.js';
 import { config } from './config.js';
 import {
-  createCollector, createJob, createResponse, db, deleteSurvey, getCollectorBySlug, getJob,
-  getResponse, getSurvey, listCollectors, listInsights, listJobs, listResponses, listSurveys, saveSurvey
+  createCollector, createJob, createResponse, db, deleteJourney, deleteSurvey, getCollectorBySlug, getJob,
+  getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJobs,
+  listJourneys, listResponses, listSocialMentions, listSurveys, saveJourney, saveSurvey
 } from './database.js';
 import { attachEventStream, publishEvent } from './events.js';
 import { emailStatus, listRecipients, sendInvitations } from './emailService.js';
 import { getTerraStatus } from './terraClient.js';
 import { templates } from './templates.js';
-import { QUESTION_TYPES, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type Survey } from './types.js';
+import { QUESTION_TYPES, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -148,6 +149,69 @@ app.get('/api/bootstrap', noStore, (_request, response) => {
     },
     recentJobs: listJobs(12), email: emailStatus()
   });
+});
+
+const mentionInput = z.object({
+  source: z.enum(['x', 'google_play', 'app_store', 'review', 'forum', 'other']), author: z.string().max(200).optional(),
+  content: z.string().min(2).max(5000), url: z.string().url().max(2000).or(z.literal('')).optional(), language: z.string().max(80).optional(),
+  publishedAt: z.string().datetime().optional(), metadata: z.record(z.string(), z.unknown()).optional()
+});
+app.get('/api/social/mentions', noStore, (request, response) => {
+  const requested = Number(request.query.limit || 500);
+  return response.json(listSocialMentions(Number.isFinite(requested) ? Math.max(1, Math.min(1000, Math.floor(requested))) : 500));
+});
+app.post('/api/social/mentions', (request, response) => {
+  const parsed = z.object({ mentions: z.array(mentionInput).min(1).max(200), analyze: z.boolean().optional() }).safeParse(request.body);
+  if (!parsed.success) return sendError(response, parsed.error);
+  const mentions = insertSocialMentions(parsed.data.mentions as Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>);
+  const job = parsed.data.analyze === false ? null : queueJob('social.analyze', { mentionIds: mentions.map((mention) => mention.id) });
+  publishEvent('data-changed', { reason: 'social-mentions-imported', count: mentions.length });
+  return response.status(job ? 202 : 201).json({ mentions, jobId: job?.id || null, state: job?.state || null });
+});
+app.post('/api/social/analyze', (request, response) => {
+  const parsed = z.object({ mentionIds: z.array(z.string()).min(1).max(500).optional() }).safeParse(request.body || {});
+  if (!parsed.success) return sendError(response, parsed.error);
+  const job = queueJob('social.analyze', { mentionIds: parsed.data.mentionIds || undefined });
+  return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+});
+app.delete('/api/social/mentions/:id', (request, response) => {
+  const deleted = db.prepare('DELETE FROM social_mentions WHERE id=?').run(String(request.params.id)).changes > 0;
+  if (!deleted) return response.status(404).json({ error: 'Mention not found.' });
+  publishEvent('data-changed', { reason: 'social-mention-deleted', id: String(request.params.id) });
+  return response.status(204).end();
+});
+
+const journeyInput = z.object({
+  id: z.string().optional(), name: z.string().min(2).max(180), audience: z.string().max(500).optional(), objective: z.string().max(2000).optional(),
+  industry: z.string().max(200).optional(), summary: z.string().max(5000).optional(), stages: z.array(z.object({
+    name: z.string().min(1).max(200), goal: z.string().max(1000), touchpoints: z.array(z.string().max(500)).max(50), customerActions: z.array(z.string().max(500)).max(50),
+    emotions: z.array(z.string().max(200)).max(30), painPoints: z.array(z.string().max(1000)).max(50), metrics: z.array(z.string().max(500)).max(50),
+    opportunities: z.array(z.string().max(1000)).max(50), recommendedActions: z.array(z.string().max(1000)).max(50)
+  })).max(20).optional()
+});
+app.get('/api/journeys', noStore, (_request, response) => response.json(listJourneys()));
+app.get('/api/journeys/:id', noStore, (request, response) => { const journey = getJourney(String(request.params.id)); return journey ? response.json(journey) : response.status(404).json({ error: 'Journey not found.' }); });
+app.post('/api/journeys', (request, response) => {
+  const parsed = journeyInput.safeParse(request.body); if (!parsed.success) return sendError(response, parsed.error);
+  const journey = saveJourney(parsed.data as any); publishEvent('data-changed', { reason: 'journey-saved', id: journey.id });
+  return response.status(201).json(journey);
+});
+app.delete('/api/journeys/:id', (request, response) => {
+  if (!deleteJourney(String(request.params.id))) return response.status(404).json({ error: 'Journey not found.' });
+  publishEvent('data-changed', { reason: 'journey-deleted', id: String(request.params.id) });
+  return response.status(204).end();
+});
+app.post('/api/ai/journeys', (request, response) => {
+  const parsed = z.object({ brief: z.string().min(10).max(8000), audience: z.string().max(500).optional(), industry: z.string().max(200).optional(), objective: z.string().max(2000).optional() }).safeParse(request.body);
+  if (!parsed.success) return sendError(response, parsed.error);
+  const job = queueJob('journey.generate', parsed.data);
+  return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+});
+app.post('/api/journeys/:id/ai/optimize', (request, response) => {
+  if (!getJourney(String(request.params.id))) return response.status(404).json({ error: 'Journey not found.' });
+  const parsed = z.object({ focus: z.string().max(2000).optional() }).safeParse(request.body || {}); if (!parsed.success) return sendError(response, parsed.error);
+  const job = queueJob('journey.optimize', { journeyId: String(request.params.id), focus: parsed.data.focus || '' });
+  return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
 });
 
 app.get('/api/templates', (_request, response) => response.json(templates));

@@ -11,6 +11,8 @@ Seemplify Experience is a standalone experience-management application inspired 
 - Brevo invitations, reminders, and completion messages with recipient-level delivery tracking.
 - Individual and aggregate response analysis, NPS/CSAT/CES, trends, drop-off, cross-variable breakdowns, and key-driver correlations.
 - Terra sentiment, emotion, topic, intent, risk, recommendation, translation, executive-report, and ask-your-data workflows.
+- Terra social listening over imported/API-fed public mentions, with per-mention sentiment, emotions, themes, risk, trends, and opportunities.
+- Terra-generated customer journey maps covering stages, touchpoints, actions, emotions, friction, measures, opportunities, and a repeatable AI audit workflow.
 - Durable SQLite AI jobs with retries, progress, operational history, and live Server-Sent Events.
 - CSV/JSON exports and service-recovery tickets generated from negative feedback.
 
@@ -53,4 +55,4 @@ Auto-deploy polls `origin/main`, exports only the Experience Management subtree 
 
 ## Verification
 
-`npm run test:all` runs strict type checks, backend and frontend tests, a production build, and Playwright in desktop Chromium and a Pixel-sized mobile viewport. `scripts/live-ai-smoke.mjs` validates all Terra workflows against the real signed local gateway; it removes its synthetic survey and AI-job history afterward.
+`npm run test:all` runs strict type checks, backend and frontend tests, a production build, and Playwright in desktop Chromium and a Pixel-sized mobile viewport. `scripts/live-ai-smoke.mjs` validates all signed Terra activities—including social listening and journey generation/optimization—against the real local gateway; it removes its synthetic surveys, mentions, journey maps, and AI-job history afterward.

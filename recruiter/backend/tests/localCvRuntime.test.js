@@ -63,8 +63,15 @@ test('CV extraction is locked local while local question generation has audited 
     assert.equal(ACTIVITY_DEFINITIONS[activity].defaultLocal, true);
     assert.notEqual(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
   }
+  const experienceActivities = Object.keys(ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.'));
+  for (const activity of experienceActivities) {
+    assert.equal(routes.get(activity).provider, LOCAL_PROVIDER);
+    assert.equal(routes.get(activity).model, LOCAL_CV_MODEL);
+    assert.equal(routes.get(activity).failoverPolicy, 'wait_local');
+    assert.equal(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
+  }
   for (const [activity, route] of routes) {
-    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity)) continue;
+    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity) || experienceActivities.includes(activity)) continue;
     assert.equal(route.provider, GROQ_PROVIDER, `${activity} must remain on Groq`);
   }
 });

@@ -144,6 +144,26 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     lockedProvider: true,
     failoverPolicy: 'wait_local'
   },
+  'experience.social_listening': {
+    label: 'Experience social listening',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'high',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.journey_mapping': {
+    label: 'Experience journey mapping',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'high',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
   'interview.questions': {
     label: 'Interview question generation',
     group: 'Interviews',

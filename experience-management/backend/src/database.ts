@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { config } from './config.js';
-import type { AiJob, Collector, Question, ResponseRecord, Survey } from './types.js';
+import type { AiJob, Collector, Journey, Question, ResponseRecord, SocialMention, Survey } from './types.js';
 
 export const db = new Database(config.databasePath);
 db.pragma('journal_mode = WAL');
@@ -113,6 +113,30 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'open',
     owner TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS social_mentions (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    author TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL,
+    url TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT '',
+    published_at TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    analysis_json TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS social_mentions_published ON social_mentions(published_at DESC);
+  CREATE TABLE IF NOT EXISTS journeys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    audience TEXT NOT NULL DEFAULT '',
+    objective TEXT NOT NULL DEFAULT '',
+    industry TEXT NOT NULL DEFAULT '',
+    stages_json TEXT NOT NULL DEFAULT '[]',
+    summary TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -299,5 +323,45 @@ export function updateJob(id: string, values: { state?: AiJob['state']; stage?: 
   );
   return getJob(id);
 }
+
+const rowMention = (row: any): SocialMention => ({
+  id: row.id, source: row.source, author: row.author, content: row.content, url: row.url,
+  language: row.language, publishedAt: row.published_at, metadata: parseJson(row.metadata_json, {}),
+  analysis: parseJson(row.analysis_json, null), createdAt: row.created_at
+});
+
+export function listSocialMentions(limit = 500) {
+  return (db.prepare('SELECT * FROM social_mentions ORDER BY published_at DESC LIMIT ?').all(limit) as any[]).map(rowMention);
+}
+
+export const insertSocialMentions = db.transaction((items: Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>) => {
+  const insert = db.prepare(`INSERT INTO social_mentions (id,source,author,content,url,language,published_at,metadata_json,analysis_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  const now = new Date().toISOString();
+  return items.map((item) => {
+    const id = item.id || crypto.randomUUID();
+    insert.run(id, item.source, item.author || '', item.content.trim(), item.url || '', item.language || '', item.publishedAt || now, JSON.stringify(item.metadata || {}), item.analysis ? JSON.stringify(item.analysis) : null, now);
+    return rowMention(db.prepare('SELECT * FROM social_mentions WHERE id=?').get(id));
+  });
+});
+
+export function setSocialMentionAnalysis(id: string, analysis: unknown) {
+  db.prepare('UPDATE social_mentions SET analysis_json=? WHERE id=?').run(JSON.stringify(analysis), id);
+}
+
+const rowJourney = (row: any): Journey => ({
+  id: row.id, name: row.name, audience: row.audience, objective: row.objective, industry: row.industry,
+  stages: parseJson(row.stages_json, []), summary: row.summary, createdAt: row.created_at, updatedAt: row.updated_at
+});
+
+export function listJourneys() { return (db.prepare('SELECT * FROM journeys ORDER BY updated_at DESC').all() as any[]).map(rowJourney); }
+export function getJourney(id: string): Journey | null { const row = db.prepare('SELECT * FROM journeys WHERE id=?').get(id) as any; return row ? rowJourney(row) : null; }
+export function saveJourney(input: Partial<Journey> & { name: string }) {
+  const now = new Date().toISOString(); const id = input.id || crypto.randomUUID();
+  db.prepare(`INSERT INTO journeys (id,name,audience,objective,industry,stages_json,summary,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name,audience=excluded.audience,objective=excluded.objective,industry=excluded.industry,stages_json=excluded.stages_json,summary=excluded.summary,updated_at=excluded.updated_at`)
+    .run(id, input.name.trim(), input.audience || '', input.objective || '', input.industry || '', JSON.stringify(input.stages || []), input.summary || '', input.createdAt || now, now);
+  return getJourney(id)!;
+}
+export function deleteJourney(id: string) { return db.prepare('DELETE FROM journeys WHERE id=?').run(id).changes > 0; }
 
 db.prepare(`UPDATE ai_jobs SET state='queued',stage='recovered_after_restart',progress=0,started_at=NULL,retry_at=NULL,updated_at=? WHERE state='processing'`).run(new Date().toISOString());

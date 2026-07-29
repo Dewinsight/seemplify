@@ -80,7 +80,47 @@ export type AiJobKind =
   | 'response.analyze'
   | 'insights.generate'
   | 'analyst.chat'
-  | 'report.generate';
+  | 'report.generate'
+  | 'social.analyze'
+  | 'journey.generate'
+  | 'journey.optimize';
+
+export interface SocialMention {
+  id: string;
+  source: 'x' | 'google_play' | 'app_store' | 'review' | 'forum' | 'other';
+  author: string;
+  content: string;
+  url: string;
+  language: string;
+  publishedAt: string;
+  metadata: Record<string, unknown>;
+  analysis: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface JourneyStage {
+  name: string;
+  goal: string;
+  touchpoints: string[];
+  customerActions: string[];
+  emotions: string[];
+  painPoints: string[];
+  metrics: string[];
+  opportunities: string[];
+  recommendedActions: string[];
+}
+
+export interface Journey {
+  id: string;
+  name: string;
+  audience: string;
+  objective: string;
+  industry: string;
+  stages: JourneyStage[];
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface AiJob {
   id: string;

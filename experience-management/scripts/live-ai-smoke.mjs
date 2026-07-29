@@ -10,6 +10,8 @@ const email = process.env.EXPERIENCE_ADMIN_EMAIL || 'admin@seemplify.local';
 const password = fs.readFileSync(path.join(repository, '.local-runtime', 'experience-management', 'admin-password'), 'utf8').trim();
 let cookie = '';
 const smokeJobIds = [];
+const mentionIds = [];
+const journeyIds = [];
 async function call(url, options = {}) {
   const response = await fetch(`${baseUrl}${url}`, { ...options, headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...options.headers } });
   if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
@@ -55,9 +57,37 @@ try {
     ['improve', {}], ['translate', { language: 'French' }], ['insights', {}],
     ['ask', { question: 'What is the most urgent issue and which response supports it?' }], ['report', { audience: 'executive leadership' }]
   ]) { const queued = await post(`/api/surveys/${surveyId}/ai/${request[0]}`, request[1]); smokeJobIds.push(queued.jobId); await waitForJob(queued.jobId); }
+
+  const social = await post('/api/social/mentions', { mentions: [
+    { source: 'google_play', content: 'The new setup flow is clear and I reached the dashboard quickly.' },
+    { source: 'review', content: 'Billing was confusing and support took two days to answer.' },
+    { source: 'x', content: 'Support fixed my problem quickly, but the initial instructions were unclear.' }
+  ], analyze: true });
+  mentionIds.push(...social.mentions.map((mention) => mention.id)); smokeJobIds.push(social.jobId);
+  const socialAnalysis = await waitForJob(social.jobId);
+  const socialOutput = socialAnalysis.result.output;
+  const socialCount = Object.values(socialOutput.sentiment).reduce((sum, value) => sum + Number(value), 0);
+  if (socialCount !== mentionIds.length || socialOutput.mentions.length !== mentionIds.length) throw new Error('Social-listening output did not account for every supplied mention.');
+  if (socialOutput.mentions.some((item) => !mentionIds.includes(item.mentionId))) throw new Error('Social-listening output invented a mention ID.');
+
+  const journeyQueued = await post('/api/ai/journeys', {
+    brief: 'Map a B2B software customer journey from discovery and evaluation through onboarding, adoption, support, renewal, and advocacy.',
+    audience: 'Operations leaders at growing companies', industry: 'B2B software', objective: 'Reduce time to value and improve renewal'
+  });
+  smokeJobIds.push(journeyQueued.jobId);
+  const journeyGenerated = await waitForJob(journeyQueued.jobId);
+  const journey = journeyGenerated.result.output.journey;
+  journeyIds.push(journey.id);
+  if (!Array.isArray(journey.stages) || journey.stages.length < 3) throw new Error('Journey generation returned fewer than three stages.');
+  const optimized = await post(`/api/journeys/${journey.id}/ai/optimize`, { focus: 'Strengthen measurable outcomes, owners, and closed-loop recovery.' });
+  smokeJobIds.push(optimized.jobId);
+  const optimizedJourney = await waitForJob(optimized.jobId);
+  if (optimizedJourney.result.output.journey.id !== journey.id) throw new Error('Journey optimization did not preserve the journey identity.');
   console.log('LIVE_AI_SMOKE_PASS');
 } finally {
   if (surveyId) await call(`/api/surveys/${surveyId}`, { method: 'DELETE' }).catch(() => null);
+  for (const journeyId of journeyIds) await call(`/api/journeys/${journeyId}`, { method: 'DELETE' }).catch(() => null);
+  for (const mentionId of mentionIds) await call(`/api/social/mentions/${mentionId}`, { method: 'DELETE' }).catch(() => null);
   if (baseUrl.startsWith('http://127.0.0.1') && smokeJobIds.length) {
     const databasePath = process.env.DATABASE_PATH || path.join(repository, '.local-runtime', 'experience-management', 'experience.sqlite');
     if (fs.existsSync(databasePath)) {

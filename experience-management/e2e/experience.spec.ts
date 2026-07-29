@@ -84,3 +84,44 @@ test('conditional respondent logic skips a page and opens a recovery case', asyn
   await page.goto('/tickets');
   await expect(page.getByText(`Follow up: ${setup.sourceTitle}`)).toBeVisible();
 });
+
+test('social listening and journey maps remain visible while Terra work waits durably', async ({ page }, testInfo) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+
+  await page.goto('/social-listening');
+  await expect(page.getByRole('heading', { name: 'Social listening' })).toBeVisible();
+  await page.getByLabel('Mention source').selectOption('google_play');
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+  await page.getByLabel('Public mentions').fill(`Setup remained confusing ${suffix}\nSupport fixed the problem quickly ${suffix}`);
+  await page.getByRole('button', { name: 'Import and analyze' }).click();
+  await expect(page.getByText(`Setup remained confusing ${suffix}`)).toBeVisible();
+  await expect(page.getByText(`Support fixed the problem quickly ${suffix}`)).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening.png'), fullPage: true });
+
+  const journey = await page.evaluate(async (id) => {
+    const response = await fetch('/api/journeys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      name: `Activation journey ${id}`, audience: 'New customers', objective: 'Improve activation', industry: 'B2B software', summary: 'A practical path from discovery to adoption.',
+      stages: [
+        { name: 'Discover', goal: 'Understand the value', touchpoints: ['Website'], customerActions: ['Compare options'], emotions: ['Curious'], painPoints: ['Unclear pricing'], metrics: ['Demo conversion'], opportunities: ['Clarify plans'], recommendedActions: ['Publish plan comparison'] },
+        { name: 'Activate', goal: 'Reach first value', touchpoints: ['Product onboarding'], customerActions: ['Configure workspace'], emotions: ['Hopeful'], painPoints: ['Too many steps'], metrics: ['Time to value'], opportunities: ['Progressive setup'], recommendedActions: ['Reduce required fields'] },
+        { name: 'Adopt', goal: 'Build a repeatable habit', touchpoints: ['Product', 'Email'], customerActions: ['Invite teammates'], emotions: ['Confident'], painPoints: ['Role confusion'], metrics: ['Weekly active teams'], opportunities: ['Role guidance'], recommendedActions: ['Add role-based checklist'] }
+      ]
+    }) });
+    return response.json();
+  }, suffix);
+  await page.goto('/journeys');
+  await expect(page.getByRole('heading', { name: 'Customer journeys' })).toBeVisible();
+  await expect(page.getByText(journey.name).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Discover' })).toBeVisible();
+  await expect(page.getByText('Time to value')).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('journey-map.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Audit and improve' }).click();
+  await expect(page.getByText('Journey audit queued with Terra.')).toBeVisible();
+
+  await page.goto('/ai-queue');
+  await expect(page.getByText('Social listening analysis').first()).toBeVisible();
+  await expect(page.getByText('Journey optimization').first()).toBeVisible();
+});

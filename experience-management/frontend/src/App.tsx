@@ -10,6 +10,8 @@ const SurveyStudioPage = lazy(() => import('@/pages/SurveyStudioPage').then((mod
 const PublicSurveyPage = lazy(() => import('@/pages/PublicSurveyPage').then((module) => ({ default: module.PublicSurveyPage })));
 const AiQueuePage = lazy(() => import('@/pages/AiQueuePage').then((module) => ({ default: module.AiQueuePage })));
 const TicketsPage = lazy(() => import('@/pages/TicketsPage').then((module) => ({ default: module.TicketsPage })));
+const SocialListeningPage = lazy(() => import('@/pages/SocialListeningPage').then((module) => ({ default: module.SocialListeningPage })));
+const JourneysPage = lazy(() => import('@/pages/JourneysPage').then((module) => ({ default: module.JourneysPage })));
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 function Admin({ children }: { children: ReactNode }) { return <AppShell>{children}</AppShell>; }
 
@@ -20,6 +22,8 @@ export function App() {
     <Route path="/surveys/new"><Admin><CreateSurveyPage /></Admin></Route>
     <Route path="/surveys/:id"><Admin><SurveyStudioPage /></Admin></Route>
     <Route path="/surveys"><Admin><SurveysPage /></Admin></Route>
+    <Route path="/social-listening"><Admin><SocialListeningPage /></Admin></Route>
+    <Route path="/journeys"><Admin><JourneysPage /></Admin></Route>
     <Route path="/ai-queue"><Admin><AiQueuePage /></Admin></Route>
     <Route path="/tickets"><Admin><TicketsPage /></Admin></Route>
     <Route path="/"><Admin><DashboardPage /></Admin></Route>

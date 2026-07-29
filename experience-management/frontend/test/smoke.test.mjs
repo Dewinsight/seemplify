@@ -9,6 +9,17 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /path="\/login"/);
   assert.match(app, /path="\/s\/:slug"/);
   assert.match(app, /SurveyStudioPage/);
+  assert.match(app, /SocialListeningPage/);
+  assert.match(app, /JourneysPage/);
+});
+test('exposes Terra social listening and journey mapping as first-class admin workspaces', () => {
+  const social = fs.readFileSync(path.join(source, 'pages', 'SocialListeningPage.tsx'), 'utf8');
+  const journeys = fs.readFileSync(path.join(source, 'pages', 'JourneysPage.tsx'), 'utf8');
+  assert.match(social, /\/api\/social\/mentions/);
+  assert.match(social, /Mention history/);
+  assert.match(journeys, /\/api\/ai\/journeys/);
+  assert.match(journeys, /Journey stages/);
+  assert.match(journeys, /Audit and improve/);
 });
 test('keeps every Experience AI action visible in the survey workspace', () => {
   const ai = fs.readFileSync(path.join(source, 'components', 'survey', 'AiTab.tsx'), 'utf8');

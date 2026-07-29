@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { ClipboardList, Gauge, Inbox, LogOut, Menu, Plus, RadioTower, Sparkles, X } from 'lucide-react';
+import { ClipboardList, Gauge, Inbox, LogOut, Menu, Plus, Radar, RadioTower, Route, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 const navigation = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
   { to: '/surveys', label: 'Surveys', icon: ClipboardList },
+  { to: '/social-listening', label: 'Social listening', icon: Radar },
+  { to: '/journeys', label: 'Journeys', icon: Route },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
   { to: '/tickets', label: 'Service recovery', icon: Inbox }
 ];

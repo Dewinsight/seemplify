@@ -50,7 +50,7 @@ test('every seeded AI activity has one compatible explicit route', () => {
   assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
 });
 
-test('default routing uses local inference only for CV parsing and question generation', () => {
+test('default routing keeps CV, question generation, and Experience AI on managed local inference', () => {
   const settings = createDefaultRuntimeSettings();
   const liveChatActivities = new Set([
     'ai_interview.chat.introduction',
@@ -61,7 +61,8 @@ test('default routing uses local inference only for CV parsing and question gene
     'candidate.cv_parse',
     'interview.questions',
     'ai_interview.question_generation',
-    'ai_interview.cv_parse'
+    'ai_interview.cv_parse',
+    ...Object.keys(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.'))
   ]);
 
   for (const route of settings.routes) {
@@ -613,7 +614,7 @@ test('admin permission boundaries keep secrets super-admin only', () => {
   assert.equal(allowed, true);
 });
 
-test('default catalog keeps only CV parsing and question generation local', () => {
+test('default catalog keeps CV, question generation, and every Experience activity local', () => {
   const settings = createDefaultRuntimeSettings();
   assert.ok(settings.routes.length >= 25);
   const localRoutes = settings.routes.filter((route) => route.provider === LOCAL_PROVIDER);
@@ -621,6 +622,14 @@ test('default catalog keeps only CV parsing and question generation local', () =
     'ai_interview.cv_parse',
     'ai_interview.question_generation',
     'candidate.cv_parse',
+    'experience.analyst_chat',
+    'experience.insight_generation',
+    'experience.journey_mapping',
+    'experience.report_generation',
+    'experience.response_analysis',
+    'experience.social_listening',
+    'experience.survey_generation',
+    'experience.translation',
     'interview.questions'
   ]);
   assert.equal(settings.routes.filter((route) => !localRoutes.includes(route)).every((route) => route.provider === 'groq'), true);

@@ -90,6 +90,29 @@ export const reportResult = z.object({
   methodology: z.string()
 });
 
+const socialMentionAnalysis = z.object({
+  mentionId: z.string(), sentiment: z.enum(['negative', 'neutral', 'positive', 'mixed']), sentimentScore: z.number().min(-1).max(1),
+  emotions: z.array(z.string()), themes: z.array(z.string()), summary: z.string(), risk: z.enum(['low', 'medium', 'high', 'critical'])
+});
+export const socialListeningResult = z.object({
+  executiveSummary: z.string(),
+  sentiment: z.object({ negative: z.number(), neutral: z.number(), positive: z.number(), mixed: z.number() }),
+  themes: z.array(z.object({ name: z.string(), mentions: z.number(), sentiment: z.string(), evidence: z.array(z.string()) })),
+  emergingTrends: z.array(z.object({ trend: z.string(), direction: z.enum(['rising', 'stable', 'falling']), evidence: z.array(z.string()) })),
+  risks: z.array(z.object({ issue: z.string(), severity: z.enum(['low', 'medium', 'high', 'critical']), evidence: z.array(z.string()), action: z.string() })),
+  opportunities: z.array(z.object({ opportunity: z.string(), evidence: z.array(z.string()), action: z.string() })),
+  mentions: z.array(socialMentionAnalysis)
+});
+
+const journeyStage = z.object({
+  name: z.string(), goal: z.string(), touchpoints: z.array(z.string()), customerActions: z.array(z.string()),
+  emotions: z.array(z.string()), painPoints: z.array(z.string()), metrics: z.array(z.string()),
+  opportunities: z.array(z.string()), recommendedActions: z.array(z.string())
+});
+export const journeyResult = z.object({
+  name: z.string(), audience: z.string(), objective: z.string(), industry: z.string(), summary: z.string(), stages: z.array(journeyStage).min(3).max(12)
+});
+
 const string = { type: 'string' } as const;
 const number = { type: 'number' } as const;
 const boolean = { type: 'boolean' } as const;
@@ -147,5 +170,18 @@ export const aiJsonSchemas = {
     sections: arrayOf(finiteObject({ heading: string, body: string, evidence: strings })),
     recommendations: arrayOf(finiteObject({ action: string, priority: { type: 'string', enum: ['now', 'next', 'later'] }, expectedOutcome: string })),
     methodology: string
+  }),
+  socialListening: finiteObject({
+    executiveSummary: string,
+    sentiment: finiteObject({ negative: number, neutral: number, positive: number, mixed: number }),
+    themes: arrayOf(finiteObject({ name: string, mentions: number, sentiment: string, evidence: strings })),
+    emergingTrends: arrayOf(finiteObject({ trend: string, direction: { type: 'string', enum: ['rising', 'stable', 'falling'] }, evidence: strings })),
+    risks: arrayOf(finiteObject({ issue: string, severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, evidence: strings, action: string })),
+    opportunities: arrayOf(finiteObject({ opportunity: string, evidence: strings, action: string })),
+    mentions: arrayOf(finiteObject({ mentionId: string, sentiment: { type: 'string', enum: ['negative', 'neutral', 'positive', 'mixed'] }, sentimentScore: number, emotions: strings, themes: strings, summary: string, risk: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] } }))
+  }),
+  journey: finiteObject({
+    name: string, audience: string, objective: string, industry: string, summary: string,
+    stages: arrayOf(finiteObject({ name: string, goal: string, touchpoints: strings, customerActions: strings, emotions: strings, painPoints: strings, metrics: strings, opportunities: strings, recommendedActions: strings }))
   })
 };

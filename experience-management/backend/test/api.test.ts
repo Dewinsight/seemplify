@@ -56,3 +56,44 @@ test('protects admin APIs while allowing a complete public survey workflow', asy
   assert.equal(tickets.body.length, 1);
   assert.equal(tickets.body[0].priority, 'high');
 });
+
+test('persists social mentions and journey maps before Terra work is dispatched', async () => {
+  const agent = request.agent(app);
+  await agent.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
+
+  const imported = await agent.post('/api/social/mentions').send({
+    mentions: [
+      { source: 'google_play', content: 'Setup was confusing, but support resolved the issue quickly.' },
+      { source: 'x', content: 'The latest onboarding flow is much easier to understand.' }
+    ],
+    analyze: true
+  }).expect(202);
+  assert.equal(imported.body.mentions.length, 2);
+  assert.match(imported.body.jobId, /^[a-f0-9-]{36}$/);
+  const mentions = await agent.get('/api/social/mentions?limit=not-a-number').expect(200);
+  assert.equal(mentions.body.length, 2);
+  assert.equal(mentions.body[0].analysis, null);
+  const socialJob = await agent.get(`/api/ai/jobs/${imported.body.jobId}`).expect(200);
+  assert.equal(socialJob.body.kind, 'social.analyze');
+  assert.deepEqual(socialJob.body.input.mentionIds.sort(), imported.body.mentions.map((mention: any) => mention.id).sort());
+  await agent.post('/api/social/analyze').send({ mentionIds: [] }).expect(400);
+
+  const created = await agent.post('/api/journeys').send({
+    name: 'Customer onboarding journey', audience: 'New customers', industry: 'Software', objective: 'Improve activation', summary: 'A measurable onboarding lifecycle.',
+    stages: [{ name: 'Discover', goal: 'Understand value', touchpoints: ['Website'], customerActions: ['Compare options'], emotions: ['Curious'], painPoints: ['Unclear pricing'], metrics: ['Visit-to-demo conversion'], opportunities: ['Clarify plans'], recommendedActions: ['Publish a plan comparison'] }]
+  }).expect(201);
+  const journeys = await agent.get('/api/journeys').expect(200);
+  assert.equal(journeys.body[0].id, created.body.id);
+  assert.equal(journeys.body[0].stages[0].metrics[0], 'Visit-to-demo conversion');
+
+  const optimized = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: 'Ownership and metrics' }).expect(202);
+  const optimizationJob = await agent.get(`/api/ai/jobs/${optimized.body.jobId}`).expect(200);
+  assert.equal(optimizationJob.body.kind, 'journey.optimize');
+  assert.equal(optimizationJob.body.input.journeyId, created.body.id);
+  const generated = await agent.post('/api/ai/journeys').send({ brief: 'Map the complete onboarding lifecycle for a new software customer.', audience: 'New customers' }).expect(202);
+  const generationJob = await agent.get(`/api/ai/jobs/${generated.body.jobId}`).expect(200);
+  assert.equal(generationJob.body.kind, 'journey.generate');
+
+  await agent.delete(`/api/journeys/${created.body.id}`).expect(204);
+  await agent.delete(`/api/social/mentions/${imported.body.mentions[0].id}`).expect(204);
+});

@@ -399,4 +399,71 @@ fixtures.push({
   qualityEvaluator: 'bias'
 });
 
+const experienceQuestionSchema = strictObject({
+  type: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, required: { type: 'boolean' }, options: stringArray, page: { type: 'integer' }
+});
+const experienceFixtures = [
+  {
+    id: 'experience-survey-generation', activity: 'experience.survey_generation',
+    prompt: 'Create a short onboarding survey for new customers that measures effort and clarity.',
+    schema: strictObject({ title: { type: 'string' }, description: { type: 'string' }, purpose: { type: 'string' }, audience: { type: 'string' }, primaryMetric: { type: 'string' }, language: { type: 'string' }, estimatedMinutes: { type: 'number' }, questions: { type: 'array', items: experienceQuestionSchema } }),
+    keywords: ['Onboarding', 'effort', 'clarity'],
+    output: { title: 'Customer onboarding check-in', description: 'Measure early effort and clarity.', purpose: 'customer_experience', audience: 'New customers', primaryMetric: 'ces', language: 'English', estimatedMinutes: 2, questions: [{ type: 'ces', title: 'How easy was setup?', description: 'Rate your onboarding effort.', required: true, options: [], page: 1 }, { type: 'long_text', title: 'What was unclear?', description: 'Share one improvement.', required: false, options: [], page: 1 }] }
+  },
+  {
+    id: 'experience-response-analysis', activity: 'experience.response_analysis',
+    prompt: 'Analyze only this response: setup was confusing, but support resolved the issue quickly.',
+    schema: strictObject({ language: { type: 'string' }, sentiment: { type: 'string' }, sentimentScore: { type: 'number' }, confidence: { type: 'number' }, emotions: stringArray, intent: { type: 'string' }, urgency: { type: 'string' }, summary: { type: 'string' }, topics: { type: 'array', items: strictObject({ name: { type: 'string' }, sentiment: { type: 'string' }, evidence: { type: 'string' } }) }, recommendedActions: stringArray, flags: stringArray }),
+    keywords: ['confusing', 'support', 'mixed'],
+    output: { language: 'English', sentiment: 'neutral', sentimentScore: 0, confidence: 0.92, emotions: ['frustration', 'relief'], intent: 'product feedback', urgency: 'medium', summary: 'Mixed feedback: setup was confusing while support resolved the issue quickly.', topics: [{ name: 'Setup', sentiment: 'negative', evidence: 'setup was confusing' }, { name: 'Support', sentiment: 'positive', evidence: 'support resolved the issue quickly' }], recommendedActions: ['Simplify setup guidance.'], flags: ['mixed sentiment'] }
+  },
+  {
+    id: 'experience-insights', activity: 'experience.insight_generation',
+    prompt: 'Use supplied onboarding feedback to identify the strongest theme and a measurable action.',
+    schema: strictObject({ executiveSummary: { type: 'string' }, healthScore: { type: 'number' }, keyFindings: stringArray, recommendations: stringArray }),
+    keywords: ['onboarding', 'clarity', 'completion'],
+    output: { executiveSummary: 'Onboarding clarity is the strongest supplied theme.', healthScore: 64, keyFindings: ['Customers report unclear setup guidance during onboarding.'], recommendations: ['Track onboarding completion after simplifying the setup guide.'] }
+  },
+  {
+    id: 'experience-analyst-chat', activity: 'experience.analyst_chat',
+    prompt: 'Answer from supplied evidence: which issue is most urgent? Response r-1 says setup blocked activation.',
+    schema: strictObject({ answer: { type: 'string' }, evidence: { type: 'array', items: strictObject({ responseId: { type: 'string' }, excerpt: { type: 'string' }, relevance: { type: 'string' } }) }, caveats: stringArray, suggestedQuestions: stringArray }),
+    keywords: ['setup', 'r-1', 'activation'],
+    output: { answer: 'Setup friction is most urgent because it blocked activation.', evidence: [{ responseId: 'r-1', excerpt: 'setup blocked activation', relevance: 'Directly identifies the blocking issue.' }], caveats: ['Only one response was supplied.'], suggestedQuestions: ['Which setup step causes the block?'] }
+  },
+  {
+    id: 'experience-report', activity: 'experience.report_generation',
+    prompt: 'Create an executive report from supplied onboarding evidence without inventing data.',
+    schema: strictObject({ title: { type: 'string' }, executiveSummary: { type: 'string' }, sections: { type: 'array', items: strictObject({ heading: { type: 'string' }, body: { type: 'string' }, evidence: stringArray }) }, recommendations: { type: 'array', items: strictObject({ action: { type: 'string' }, priority: { type: 'string' }, expectedOutcome: { type: 'string' } }) }, methodology: { type: 'string' } }),
+    keywords: ['onboarding', 'setup', 'evidence'],
+    output: { title: 'Onboarding experience report', executiveSummary: 'Supplied feedback identifies setup clarity as the primary issue.', sections: [{ heading: 'Setup friction', body: 'Customers describe unclear onboarding steps.', evidence: ['setup was confusing'] }], recommendations: [{ action: 'Simplify the setup guide.', priority: 'now', expectedOutcome: 'Improve onboarding completion, measured after release.' }], methodology: 'Used only supplied response evidence and deterministic metrics.' }
+  },
+  {
+    id: 'experience-translation', activity: 'experience.translation',
+    prompt: 'Translate the supplied onboarding survey into French while preserving IDs.',
+    schema: strictObject({ language: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, thankYouMessage: { type: 'string' }, questions: { type: 'array', items: strictObject({ questionId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, options: stringArray }) } }),
+    keywords: ['French', 'Intégration', 'q-1'],
+    output: { language: 'French', title: 'Enquête sur l’intégration', description: 'Évaluez votre expérience.', thankYouMessage: 'Merci pour votre retour.', questions: [{ questionId: 'q-1', title: 'L’intégration était-elle simple ?', description: 'Évaluez l’effort requis.', options: ['Très simple', 'Difficile'] }] }
+  },
+  {
+    id: 'experience-social-listening', activity: 'experience.social_listening',
+    prompt: 'Analyze two imported public mentions: m-1 praises support; m-2 reports confusing billing.',
+    schema: strictObject({ executiveSummary: { type: 'string' }, sentiment: strictObject({ positive: { type: 'number' }, neutral: { type: 'number' }, mixed: { type: 'number' }, negative: { type: 'number' } }), themes: stringArray, risks: stringArray, opportunities: stringArray, mentions: { type: 'array', items: strictObject({ mentionId: { type: 'string' }, sentiment: { type: 'string' }, summary: { type: 'string' } }) } }),
+    keywords: ['m-1', 'm-2', 'billing'],
+    output: { executiveSummary: 'Support is praised while billing clarity creates risk.', sentiment: { positive: 1, neutral: 0, mixed: 0, negative: 1 }, themes: ['Support quality', 'Billing clarity'], risks: ['Confusing billing'], opportunities: ['Clarify billing guidance'], mentions: [{ mentionId: 'm-1', sentiment: 'positive', summary: 'Praises support.' }, { mentionId: 'm-2', sentiment: 'negative', summary: 'Reports confusing billing.' }] }
+  },
+  {
+    id: 'experience-journey-mapping', activity: 'experience.journey_mapping',
+    prompt: 'Map a software customer journey from discovery through onboarding and adoption.',
+    schema: strictObject({ name: { type: 'string' }, audience: { type: 'string' }, objective: { type: 'string' }, industry: { type: 'string' }, summary: { type: 'string' }, stages: { type: 'array', items: strictObject({ name: { type: 'string' }, touchpoints: stringArray, painPoints: stringArray, metrics: stringArray, recommendedActions: stringArray }) } }),
+    keywords: ['Discovery', 'Onboarding', 'Adoption'],
+    output: { name: 'Software customer journey', audience: 'New customers', objective: 'Improve activation', industry: 'Software', summary: 'A measurable path from discovery to adoption.', stages: [{ name: 'Discovery', touchpoints: ['Website'], painPoints: ['Unclear value'], metrics: ['Demo conversion'], recommendedActions: ['Clarify value proposition'] }, { name: 'Onboarding', touchpoints: ['Setup flow'], painPoints: ['Too many steps'], metrics: ['Time to value'], recommendedActions: ['Reduce setup steps'] }, { name: 'Adoption', touchpoints: ['Product'], painPoints: ['Low feature discovery'], metrics: ['Weekly active use'], recommendedActions: ['Add contextual guidance'] }] }
+  }
+];
+fixtures.push(...experienceFixtures.map((fixture) => ({
+  id: fixture.id, activity: fixture.activity, azureBaselineScore: 8.5,
+  messages: [{ role: 'user', content: fixture.prompt }], schema: fixture.schema,
+  expectedKeywords: fixture.keywords, expectedOutput: fixture.output
+})));
+
 module.exports = fixtures;
