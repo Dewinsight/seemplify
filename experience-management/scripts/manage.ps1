@@ -50,7 +50,7 @@ function Start-Server {
   $env:HOST='127.0.0.1'; $env:PORT='5410'; $env:PUBLIC_URL='https://experience.aiinnigeria.com'
   $env:ADMIN_PASSWORD_FILE=$PasswordFile; $env:SESSION_SECRET_FILE=$SessionSecretFile
   $env:DATABASE_PATH=(Join-Path $RuntimeDir 'experience.sqlite'); $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
-  $env:LOCAL_LLM_BASE_URL='http://127.0.0.1:11435'; $env:LOCAL_LLM_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
+  $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
   $sharedBrevo = Join-Path (Split-Path -Parent $RepositoryDir) 'crm\Xplorer-Full-backend\.env'
   if (Test-Path -LiteralPath $sharedBrevo) { $env:BREVO_ENV_FILE=$sharedBrevo }
   $process = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList @('backend/dist/server.js') -WorkingDirectory $ProjectDir -WindowStyle Hidden -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog -PassThru

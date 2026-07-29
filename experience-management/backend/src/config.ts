@@ -50,9 +50,13 @@ export const config = {
     process.env.UPLOAD_DIR || '../../.local-runtime/experience-management/uploads'
   ),
   frontendDist: resolveFromBackend(process.env.FRONTEND_DIST || '../frontend/dist'),
-  localLlmBaseUrl: String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, ''),
-  localLlmSecretFile: resolveFromBackend(
-    process.env.LOCAL_LLM_SHARED_SECRET_FILE || '../../.local-runtime/llm/service-secret'
+  terraGatewayBaseUrl: String(
+    process.env.TERRA_GATEWAY_BASE_URL || process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435'
+  ).replace(/\/+$/, ''),
+  terraGatewaySecretFile: resolveFromBackend(
+    process.env.TERRA_GATEWAY_SHARED_SECRET_FILE
+      || process.env.LOCAL_LLM_SHARED_SECRET_FILE
+      || '../../.local-runtime/llm/service-secret'
   ),
   aiWorkerConcurrency: Math.max(1, Math.min(16, Number(process.env.AI_WORKER_CONCURRENCY || 4))),
   brevoApiKey: process.env.BREVO_API_KEY || '',

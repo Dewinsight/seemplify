@@ -37,6 +37,23 @@ async function sendBrevoEmail(input: { to: string; name?: string; subject: strin
   return { ...payload, mode: 'brevo' };
 }
 
+export async function sendPasswordResetEmail(input: { email: string; name: string; token: string }) {
+  const resetUrl = `${config.publicUrl}/reset-password?token=${encodeURIComponent(input.token)}`;
+  const greeting = input.name ? `Hello ${escapeHtml(input.name)},` : 'Hello,';
+  return sendBrevoEmail({
+    to: input.email,
+    name: input.name,
+    subject: 'Reset your Seemplify Experience password',
+    html: `<div style="font-family:Helvetica,Arial,sans-serif;color:#20211f;line-height:1.6;max-width:620px;margin:auto">
+      <h2 style="font-size:22px;margin:0 0 18px">Reset your password</h2>
+      <p>${greeting}</p><p>Use the secure link below to choose a new password. It expires in 30 minutes and can only be used once.</p>
+      <p><a href="${escapeHtml(resetUrl)}" style="display:inline-block;background:#26352e;color:#fff;text-decoration:none;padding:12px 18px;border-radius:7px;font-weight:600">Reset password</a></p>
+      <p style="font-size:13px;color:#6b706c">If you did not request this, you can ignore this email. Do not share the link.</p>
+    </div>`,
+    text: `Reset your Seemplify Experience password using this one-time link: ${resetUrl}\n\nIt expires in 30 minutes. If you did not request this, ignore this email.`
+  });
+}
+
 function inviteContent(survey: Survey, collector: Collector, recipient: { name?: string; token: string }, message?: string) {
   const surveyUrl = `${collector.publicUrl}?recipient=${encodeURIComponent(recipient.token)}`;
   const greeting = recipient.name ? `Hello ${escapeHtml(recipient.name)},` : 'Hello,';

@@ -22,7 +22,7 @@ function Brand() {
   </Link>;
 }
 
-function SidebarContent({ close, terraReady }: { close?: () => void; terraReady: boolean }) {
+function SidebarContent({ close, terraReady, runtimeLabel }: { close?: () => void; terraReady: boolean; runtimeLabel: string }) {
   async function signOut() { try { await api('/api/auth/logout', { method: 'POST' }); } finally { window.location.assign('/login'); } }
   return <>
     <Brand />
@@ -34,7 +34,7 @@ function SidebarContent({ close, terraReady }: { close?: () => void; terraReady:
     <div className="border-t p-4">
       <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-2"><RadioTower className="h-3.5 w-3.5" />Hosted locally</span>
-        <span className={terraReady ? 'text-emerald-700' : 'text-amber-700'} aria-live="polite">Terra {terraReady ? 'ready' : 'unavailable'}</span>
+        <span className={terraReady ? 'text-emerald-700' : 'text-amber-700'} aria-live="polite">{runtimeLabel} {terraReady ? 'ready' : 'unavailable'}</span>
       </div>
       <button onClick={signOut} className="mt-3 flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"><LogOut className="h-3.5 w-3.5" />Sign out</button>
     </div>
@@ -48,18 +48,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
   useEffect(() => { api<any>('/api/runtime').then(setRuntime).catch(() => setRuntime({ terra: { reachable: false } })); const timer = setInterval(() => api<any>('/api/runtime').then(setRuntime).catch(() => null), 30_000); return () => clearInterval(timer); }, []);
   const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
-  const terraReady = runtime?.terra?.reachable && runtime?.terra?.health?.ok !== false;
+  const terraReady = runtime?.terra?.ready === true;
+  const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
   return <div className="min-h-screen bg-background">
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] flex-col border-r bg-card md:flex"><SidebarContent terraReady={terraReady} /></aside>
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] flex-col border-r bg-card md:flex"><SidebarContent terraReady={terraReady} runtimeLabel={runtimeLabel} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
       <button aria-label="Dismiss navigation" className="absolute inset-0 bg-foreground/30" onClick={() => setMobileOpen(false)} />
-      <aside className="relative flex h-full w-[278px] flex-col border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent close={() => setMobileOpen(false)} terraReady={terraReady} /></aside>
+      <aside className="relative flex h-full w-[278px] flex-col border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent close={() => setMobileOpen(false)} terraReady={terraReady} runtimeLabel={runtimeLabel} /></aside>
     </div>}
     <div className="md:pl-[236px]">
       <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6">
         <div className="flex items-center gap-3"><Button className="md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="text-sm font-semibold">{title}</div></div>
         <div className="flex items-center gap-2">
-          <Badge variant={terraReady ? 'success' : 'warning'} className="hidden sm:inline-flex">Terra {terraReady ? 'ready' : 'unavailable'}</Badge>
+          <Badge variant={terraReady ? 'success' : 'warning'} className="hidden sm:inline-flex">{runtimeLabel} {terraReady ? 'ready' : 'unavailable'}</Badge>
           <Button asChild size="sm"><Link to="/surveys/new"><Plus />New survey</Link></Button>
         </div>
       </header>

@@ -6,7 +6,7 @@ import helmet from 'helmet';
 import multer from 'multer';
 import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
-import { login, logout, requireAdmin, session } from './auth.js';
+import { forgotPassword, login, logout, requireAdmin, resetPassword, session, signup } from './auth.js';
 import { computeAnalytics } from './analytics.js';
 import { config } from './config.js';
 import {
@@ -37,6 +37,9 @@ const upload = multer({
 app.use('/uploads', express.static(config.uploadDir, { index: false, maxAge: '1d' }));
 
 app.post('/api/auth/login', login);
+app.post('/api/auth/signup', signup);
+app.post('/api/auth/forgot-password', forgotPassword);
+app.post('/api/auth/reset-password', resetPassword);
 app.post('/api/auth/logout', logout);
 app.get('/api/auth/session', session);
 app.use('/api', (request, response, next) => {

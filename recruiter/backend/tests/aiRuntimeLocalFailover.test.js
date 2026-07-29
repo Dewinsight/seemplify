@@ -4,7 +4,9 @@ const test = require('node:test');
 const {
   createDefaultRuntimeSettings,
   GROQ_120B,
-  LOCAL_PROVIDER
+  LOCAL_PROVIDER,
+  TERRA_MODEL,
+  TERRA_PROVIDER
 } = require('../config/aiRuntimeCatalog');
 const { AIRuntimeService } = require('../services/aiRuntime/aiRuntimeService');
 const {
@@ -99,6 +101,14 @@ test('health failover uses Groq for eligible work but keeps every CV route local
     assert.equal(cvRoute.provider, LOCAL_PROVIDER);
     assert.equal(cvRoute.failoverPolicy, 'wait_local');
     assert.equal(cvRoute.failoverFrom, undefined);
+  }
+
+  for (const activity of Object.keys(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS).filter((name) => name.startsWith('experience.'))) {
+    const terraRoute = runtime.resolveExecutionRoute(runtime.resolveRoute(activity, settings), settings, {});
+    assert.equal(terraRoute.provider, TERRA_PROVIDER);
+    assert.equal(terraRoute.model, TERRA_MODEL);
+    assert.equal(terraRoute.failoverPolicy, 'wait_local');
+    assert.equal(terraRoute.failoverFrom, undefined);
   }
 
   settings.localFailover.active = false;

@@ -29,7 +29,7 @@ This implementation is an original Seemplify product with feature parity goals, 
 
 ## AI invariants
 
-All eight experience-management AI activities are locked to the managed local provider. They never fall back to Groq. The backend signs every gateway request, supplies a durable metering identity, persists the job before dispatch, and retries local outages without discarding the job.
+All eight experience-management AI activities use the dedicated Experience runtime profile through the shared Seemplify gateway. Local Control Center owns and displays that profile; its initial default is Codex `gpt-5.6-terra`. A deliberate Control Center change can select another managed engine/model for new Experience jobs. Jobs remain durable and retry while the selected profile is unavailable, and the backend signs every request, supplies a durable metering identity, and persists the job before dispatch.
 
 The AI prompt always treats respondent data as untrusted content and requires evidence from supplied responses. Structured outputs are schema validated before being stored.
 

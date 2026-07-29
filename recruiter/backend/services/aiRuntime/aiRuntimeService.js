@@ -6,9 +6,9 @@ const {
   ACTIVITY_DEFINITIONS,
   GROQ_120B,
   GROQ_BASE_URL,
-  LOCAL_PROVIDER,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
+  isManagedLocalProvider,
   localProviderLabel
 } = require('../../config/aiRuntimeCatalog');
 const { decryptSecret } = require('./secretCrypto');
@@ -33,6 +33,7 @@ const LOCAL_FAILOVER_ERROR_CODES = new Set([
   'LOCAL_LLM_DISABLED',
   'LOCAL_LLM_PAUSED',
   'LOCAL_ENGINE_REQUIRED',
+  'REQUIRED_RUNTIME_UNAVAILABLE',
   'GATEWAY_QUEUE_FULL',
   'LOCAL_LLM_UNAVAILABLE',
   'LOCAL_LLM_SCHEMA_INVALID',
@@ -220,7 +221,11 @@ function responseJson(data, status = 200, headers = {}) {
 function errorDetails(payload, status, provider = 'groq') {
   const body = payload?.error || payload || {};
   const code = String(body.code || body.type || (status === 429 ? 'rate_limit_exceeded' : `${provider}_http_${status}`));
-  const providerLabel = provider === 'groq' ? 'Groq' : provider === 'local-ollama' ? 'Local CV runtime' : 'Azure';
+  const providerLabel = provider === 'groq'
+    ? 'Groq'
+    : provider === 'local-codex'
+      ? 'Terra'
+      : isManagedLocalProvider(provider) ? 'Managed AI runtime' : 'Azure';
   return {
     code,
     message: sanitizeMessage(body.message || `${providerLabel} request failed with status ${status}`),
@@ -418,7 +423,7 @@ class AIRuntimeService {
       ...route,
       failoverPolicy: failoverPolicyForRoute(route.activity, route.provider)
     };
-    if (canonicalRoute.provider === LOCAL_PROVIDER) {
+    if (isManagedLocalProvider(canonicalRoute.provider)) {
       if (!settings.localFailover?.enabled || !settings.localFailover?.active) return canonicalRoute;
       if (canonicalRoute.failoverPolicy !== 'groq_immediate') return canonicalRoute;
       return this.createGroqFailoverRoute(
@@ -445,7 +450,7 @@ class AIRuntimeService {
   createGroqFailoverRoute(route, settings, reason = 'local_runtime_unhealthy') {
     const failoverPolicy = failoverPolicyForRoute(route.activity, route.provider);
     if (
-      route.provider !== LOCAL_PROVIDER
+      !isManagedLocalProvider(route.provider)
       || failoverPolicy !== 'groq_immediate'
       || settings.localFailover?.enabled !== true
     ) return null;
@@ -460,7 +465,7 @@ class AIRuntimeService {
         code: 'AI_FAILOVER_MODEL_UNAVAILABLE',
         statusCode: 503,
         retryable: true,
-        details: { failoverFrom: LOCAL_PROVIDER, failoverReason: sanitizeMessage(reason) }
+        details: { failoverFrom: route.provider, failoverReason: sanitizeMessage(reason) }
       });
     }
     return {
@@ -469,7 +474,7 @@ class AIRuntimeService {
       model: fallbackModel,
       modelConfig,
       failoverPolicy: 'none',
-      failoverFrom: LOCAL_PROVIDER,
+      failoverFrom: route.provider,
       failoverReason: sanitizeMessage(reason || 'local_runtime_unhealthy')
     };
   }
@@ -673,10 +678,14 @@ class AIRuntimeService {
     }
     const usageEventId = deriveRuntimeUsageEventId({ context, route });
     const sourceApp = String(context.sourceApp || input.context?.sourceApp || 'recruiter').slice(0, 64);
+    const experienceProfile = String(route.activity || '').startsWith('experience.');
     const body = JSON.stringify({
       activity: route.activity,
       model: route.model,
       executionMode: 'local-only',
+      runtimeProfile: experienceProfile ? 'experience-management' : undefined,
+      requiredEngine: route.provider === 'local-codex' && !experienceProfile ? 'codex' : undefined,
+      requiredModel: route.provider === 'local-codex' && !experienceProfile ? route.model : undefined,
       messages: input.messages,
       jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
       schemaName: input.schemaName,
@@ -1006,7 +1015,7 @@ class AIRuntimeService {
     }));
     const requestId = context.requestId || crypto.randomUUID();
     const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
-    if (route.provider === LOCAL_PROVIDER) {
+    if (isManagedLocalProvider(route.provider)) {
       const startedAt = Date.now();
       const payload = this.normalizePayload(input, route, { stream: false });
       let response;
@@ -1019,7 +1028,7 @@ class AIRuntimeService {
           timeoutMs: options.timeoutMs || 240_000,
           signal: options.signal
         });
-        if (!response.ok) throw await this.parseErrorResponse(response, 'local-ollama');
+        if (!response.ok) throw await this.parseErrorResponse(response, route.provider);
         const localData = await response.json();
         const localProvider = localData.provider
           || (localData.engine ? `local-${localData.engine}` : route.provider);
@@ -1264,7 +1273,7 @@ class AIRuntimeService {
     }));
     const requestId = context.requestId || crypto.randomUUID();
     const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
-    if (route.provider === LOCAL_PROVIDER) {
+    if (isManagedLocalProvider(route.provider)) {
       const result = await this.complete(activity, {
         ...input,
         stream: false,

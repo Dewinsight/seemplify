@@ -10,6 +10,8 @@ const {
   GROQ_20B,
   LOCAL_CV_MODEL,
   LOCAL_PROVIDER,
+  TERRA_MODEL,
+  TERRA_PROVIDER,
   localProviderLabel
 } = require('../config/aiRuntimeCatalog');
 const AIAuditEvent = require('../models/AIAuditEvent');
@@ -50,7 +52,7 @@ test('every seeded AI activity has one compatible explicit route', () => {
   assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
 });
 
-test('default routing keeps CV, question generation, and Experience AI on managed local inference', () => {
+test('default routing keeps CV and questions on managed local inference while Experience is pinned to Terra', () => {
   const settings = createDefaultRuntimeSettings();
   const liveChatActivities = new Set([
     'ai_interview.chat.introduction',
@@ -61,27 +63,37 @@ test('default routing keeps CV, question generation, and Experience AI on manage
     'candidate.cv_parse',
     'interview.questions',
     'ai_interview.question_generation',
-    'ai_interview.cv_parse',
-    ...Object.keys(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.'))
+    'ai_interview.cv_parse'
   ]);
+  const terraActivities = new Set(
+    Object.keys(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS)
+      .filter((activity) => activity.startsWith('experience.'))
+  );
 
   for (const route of settings.routes) {
-    const expectedModel = localActivities.has(route.activity)
-      ? LOCAL_CV_MODEL
-      : liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B;
+    const expectedModel = terraActivities.has(route.activity)
+      ? TERRA_MODEL
+      : localActivities.has(route.activity)
+        ? LOCAL_CV_MODEL
+        : liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B;
+    const expectedProvider = terraActivities.has(route.activity)
+      ? TERRA_PROVIDER
+      : localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq';
     assert.equal(route.model, expectedModel, route.activity);
-    assert.equal(route.provider, localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq', route.activity);
+    assert.equal(route.provider, expectedProvider, route.activity);
   }
   assert.equal(settings.routes.find((route) => route.activity === 'matching.analysis').reasoningEffort, 'high');
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.scoring').reasoningEffort, 'high');
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.chat.clarification').reasoningEffort, 'low');
 });
 
-test('non-CV activities are configurable while CV parsing is locked to managed local inference', () => {
+test('configurable activities can use local inference while CV and Experience provider locks remain enforced', () => {
   const settings = createDefaultRuntimeSettings();
   for (const route of settings.routes) {
-    route.provider = LOCAL_PROVIDER;
-    route.model = LOCAL_CV_MODEL;
+    if (!route.activity.startsWith('experience.')) {
+      route.provider = LOCAL_PROVIDER;
+      route.model = LOCAL_CV_MODEL;
+    }
   }
   assert.equal(assessRouting(settings).valid, true);
 
@@ -158,6 +170,43 @@ test('local CV provider requests require local-only inference at the signed gate
   assert.equal(JSON.parse(request.options.body).requestSource, 'recruiter-cv-upload');
   assert.equal(JSON.parse(request.options.body).metering.record, true);
   assert.ok(request.options.headers['x-seemplify-signature']);
+});
+
+test('Experience routes use the application profile managed by Local Control Center', async () => {
+  const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
+  const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
+  process.env.LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11435';
+  process.env.LOCAL_LLM_SHARED_SECRET = 'test-local-runtime-secret';
+  let request;
+  const runtime = new AIRuntimeService({
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true };
+    }
+  });
+  try {
+    await runtime.localProviderRequest({
+      route: {
+        activity: 'experience.analyst_chat',
+        provider: TERRA_PROVIDER,
+        model: TERRA_MODEL,
+        reasoningEffort: 'medium'
+      },
+      input: { messages: [{ role: 'user', content: 'Question' }] },
+      context: { sourceApp: 'experience-management', usageExecutionId: 'terra-contract-test' },
+      requestId: 'terra-contract-request'
+    });
+  } finally {
+    if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
+    else process.env.LOCAL_LLM_BASE_URL = previousBaseUrl;
+    if (previousSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET;
+    else process.env.LOCAL_LLM_SHARED_SECRET = previousSecret;
+  }
+  const body = JSON.parse(request.options.body);
+  assert.equal(request.url, 'http://127.0.0.1:11435/v1/complete');
+  assert.equal(body.runtimeProfile, 'experience-management');
+  assert.equal(body.requiredEngine, undefined);
+  assert.equal(body.requiredModel, undefined);
 });
 
 test('local provider transport rejects production calls without a durable metering identity', async () => {
@@ -614,7 +663,7 @@ test('admin permission boundaries keep secrets super-admin only', () => {
   assert.equal(allowed, true);
 });
 
-test('default catalog keeps CV, question generation, and every Experience activity local', () => {
+test('default catalog keeps CV and question generation local and pins every Experience activity to Terra', () => {
   const settings = createDefaultRuntimeSettings();
   assert.ok(settings.routes.length >= 25);
   const localRoutes = settings.routes.filter((route) => route.provider === LOCAL_PROVIDER);
@@ -622,6 +671,10 @@ test('default catalog keeps CV, question generation, and every Experience activi
     'ai_interview.cv_parse',
     'ai_interview.question_generation',
     'candidate.cv_parse',
+    'interview.questions'
+  ]);
+  const terraRoutes = settings.routes.filter((route) => route.provider === TERRA_PROVIDER);
+  assert.deepEqual(terraRoutes.map((route) => route.activity).sort(), [
     'experience.analyst_chat',
     'experience.insight_generation',
     'experience.journey_mapping',
@@ -629,13 +682,14 @@ test('default catalog keeps CV, question generation, and every Experience activi
     'experience.response_analysis',
     'experience.social_listening',
     'experience.survey_generation',
-    'experience.translation',
-    'interview.questions'
+    'experience.translation'
   ]);
-  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
+  assert.equal(terraRoutes.every((route) => route.model === TERRA_MODEL && route.failoverPolicy === 'wait_local'), true);
+  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route) && !terraRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-120b'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-20b'), true);
   assert.equal(settings.models.some((model) => model.id === LOCAL_CV_MODEL), true);
+  assert.equal(settings.models.some((model) => model.id === TERRA_MODEL && model.provider === TERRA_PROVIDER), true);
   assert.deepEqual(settings.rollout, {
     groqPercent: 100,
     azureBaselineEnabled: false,

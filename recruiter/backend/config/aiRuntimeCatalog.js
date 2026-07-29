@@ -5,6 +5,8 @@ const GROQ_20B = 'openai/gpt-oss-20b';
 const LOCAL_PROVIDER = 'local-ollama';
 const LOCAL_MANAGED_MODEL = 'managed-local-gpu';
 const LOCAL_CV_MODEL = LOCAL_MANAGED_MODEL;
+const TERRA_PROVIDER = 'local-codex';
+const TERRA_MODEL = 'gpt-5.6-terra';
 const DEFAULT_LOCAL_FAILOVER = Object.freeze({
   enabled: true,
   intervalMinutes: 30,
@@ -54,6 +56,20 @@ const DEFAULT_MODELS = Object.freeze([
     enabled: true,
     localOnly: true,
     managed: true
+  },
+  {
+    id: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
+    label: 'Terra (Codex local-cloud)',
+    capabilities: ['text', 'reasoning', 'json_object', 'json_schema', 'tools', 'streaming'],
+    pricing: { inputPerMillionUsd: 0, cachedInputPerMillionUsd: 0, outputPerMillionUsd: 0 },
+    documentedLimits: { concurrency: 32 },
+    contextWindow: 131072,
+    maxOutputTokens: 65536,
+    available: true,
+    enabled: true,
+    localCloud: true,
+    managed: true
   }
 ]);
 
@@ -87,8 +103,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.survey_generation': {
     label: 'Experience survey generation',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'medium',
     defaultLocal: true,
     lockedProvider: true,
@@ -97,8 +113,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.response_analysis': {
     label: 'Experience response analysis',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'medium',
     defaultLocal: true,
     lockedProvider: true,
@@ -107,8 +123,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.insight_generation': {
     label: 'Experience insight generation',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'high',
     defaultLocal: true,
     lockedProvider: true,
@@ -117,8 +133,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.analyst_chat': {
     label: 'Experience analyst chat',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'medium',
     defaultLocal: true,
     lockedProvider: true,
@@ -127,8 +143,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.report_generation': {
     label: 'Experience report generation',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'high',
     defaultLocal: true,
     lockedProvider: true,
@@ -137,8 +153,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.translation': {
     label: 'Experience survey translation',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'medium',
     defaultLocal: true,
     lockedProvider: true,
@@ -147,8 +163,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.social_listening': {
     label: 'Experience social listening',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'high',
     defaultLocal: true,
     lockedProvider: true,
@@ -157,8 +173,8 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.journey_mapping': {
     label: 'Experience journey mapping',
     group: 'Experience Management',
-    model: LOCAL_MANAGED_MODEL,
-    provider: LOCAL_PROVIDER,
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
     reasoningEffort: 'high',
     defaultLocal: true,
     lockedProvider: true,
@@ -204,7 +220,11 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
 
 function failoverPolicyForRoute(activity, provider) {
   if (ACTIVITY_DEFINITIONS[activity]?.lockedProvider === true) return 'wait_local';
-  return provider === LOCAL_PROVIDER ? 'groq_immediate' : 'none';
+  return isManagedLocalProvider(provider) ? 'groq_immediate' : 'none';
+}
+
+function isManagedLocalProvider(provider) {
+  return ['local-codex', 'local-ollama', 'local-vllm'].includes(String(provider || '').trim().toLowerCase());
 }
 
 const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
@@ -285,7 +305,10 @@ module.exports = {
   LOCAL_CV_MODEL,
   LOCAL_MANAGED_MODEL,
   LOCAL_PROVIDER,
+  TERRA_MODEL,
+  TERRA_PROVIDER,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
+  isManagedLocalProvider,
   localProviderLabel
 };

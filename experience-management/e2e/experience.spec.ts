@@ -1,5 +1,27 @@
 import { expect, test } from '@playwright/test';
 
+test('account signup and forgot-password entry points are complete', async ({ page }, testInfo) => {
+  const email = `experience-${testInfo.project.name}-${Date.now()}@example.com`;
+  await page.goto('/login');
+  await expect(page.getByRole('link', { name: 'Create an account' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Forgot password?' })).toBeVisible();
+  await page.getByRole('link', { name: 'Create an account' }).click();
+  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+  await page.getByLabel('Name').fill('Experience Researcher');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill('Experience-Account-2026');
+  await page.getByLabel('Confirm password').fill('Experience-Account-2026');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  await page.evaluate(() => fetch('/api/auth/logout', { method: 'POST' }));
+  await page.goto('/forgot-password');
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Send reset link' }).click();
+  await expect(page.getByText('If an account exists for that email')).toBeVisible();
+  await page.goto('/reset-password');
+  await expect(page.getByText('missing its security token')).toBeVisible();
+});
+
 test('admin builds, publishes and receives a survey response through the public experience', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/login$/);
@@ -53,6 +75,7 @@ test('conditional respondent logic skips a page and opens a recovery case', asyn
   await page.getByLabel('Email').fill('qa@seemplify.local');
   await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
   const suffix = `${testInfo.project.name}-${Date.now()}`;
   const setup = await page.evaluate(async (id) => {
     const json = (method: string, body: unknown) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -90,6 +113,7 @@ test('social listening and journey maps remain visible while Terra work waits du
   await page.getByLabel('Email').fill('qa@seemplify.local');
   await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
   await page.goto('/social-listening');
   await expect(page.getByRole('heading', { name: 'Social listening' })).toBeVisible();

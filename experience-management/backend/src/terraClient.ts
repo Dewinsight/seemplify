@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { config } from './config.js';
 
+const RUNTIME_PROFILE = 'experience-management';
+
 export class TerraError extends Error {
   code: string;
   status: number;
@@ -18,7 +20,7 @@ export class TerraError extends Error {
 
 function readSecret() {
   try {
-    const value = fs.readFileSync(config.localLlmSecretFile, 'utf8').trim();
+    const value = fs.readFileSync(config.terraGatewaySecretFile, 'utf8').trim();
     if (!value) throw new Error('empty');
     return value;
   } catch {
@@ -65,6 +67,7 @@ export async function completeWithTerra(input: TerraCompletionInput) {
   const body = JSON.stringify({
     activity: input.activity,
     executionMode: 'local-only',
+    runtimeProfile: RUNTIME_PROFILE,
     messages: input.messages,
     jsonSchema: input.jsonSchema,
     schemaName: input.schemaName,
@@ -82,7 +85,7 @@ export async function completeWithTerra(input: TerraCompletionInput) {
   });
   let response: globalThis.Response;
   try {
-    response = await fetch(`${config.localLlmBaseUrl}${requestPath}`, {
+    response = await fetch(`${config.terraGatewayBaseUrl}${requestPath}`, {
       method: 'POST',
       headers: signedHeaders(secret, body, requestPath),
       body,
@@ -100,6 +103,14 @@ export async function completeWithTerra(input: TerraCompletionInput) {
       payload.retryable !== false && response.status >= 429
     );
   }
+  if (String(payload.runtimeProfile || '').trim().toLowerCase() !== RUNTIME_PROFILE) {
+    throw new TerraError(
+      'The shared AI gateway did not honor the Experience Management runtime profile.',
+      'EXPERIENCE_PROFILE_MISMATCH',
+      503,
+      true
+    );
+  }
   return {
     data: payload.data,
     content: String(payload.content || ''),
@@ -115,13 +126,26 @@ export async function getTerraStatus() {
   try {
     const secret = readSecret();
     const requestPath = '/v1/status';
-    const body = JSON.stringify({ operation: 'status', source: 'experience-management' });
-    const response = await fetch(`${config.localLlmBaseUrl}${requestPath}`, {
+    const body = JSON.stringify({ operation: 'status', source: RUNTIME_PROFILE, runtimeProfile: RUNTIME_PROFILE });
+    const response = await fetch(`${config.terraGatewayBaseUrl}${requestPath}`, {
       method: 'POST', headers: signedHeaders(secret, body, requestPath), body, signal: AbortSignal.timeout(8000)
     });
     const payload = await response.json().catch(() => ({})) as any;
-    return { reachable: response.ok, ...payload };
+    const ready = response.ok
+      && String(payload.runtimeProfile || '').trim().toLowerCase() === RUNTIME_PROFILE
+      && payload.health?.ok === true;
+    return {
+      ...payload,
+      reachable: response.ok,
+      ready,
+      runtimeProfile: RUNTIME_PROFILE
+    };
   } catch (error) {
-    return { reachable: false, error: error instanceof Error ? error.message : String(error) };
+    return {
+      reachable: false,
+      ready: false,
+      runtimeProfile: RUNTIME_PROFILE,
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 }

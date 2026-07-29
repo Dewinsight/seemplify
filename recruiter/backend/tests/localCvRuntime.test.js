@@ -12,7 +12,9 @@ const {
   DEFAULT_ROUTES,
   GROQ_PROVIDER,
   LOCAL_CV_MODEL,
-  LOCAL_PROVIDER
+  LOCAL_PROVIDER,
+  TERRA_MODEL,
+  TERRA_PROVIDER
 } = require('../config/aiRuntimeCatalog');
 const { signLocalRequest } = require('../services/aiRuntime/aiRuntimeService');
 const { createLocalRuntimeHistoryAuth, signLocalHistoryRequest } = require('../middleware/localRuntimeHistoryAuth');
@@ -65,8 +67,8 @@ test('CV extraction is locked local while local question generation has audited 
   }
   const experienceActivities = Object.keys(ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.'));
   for (const activity of experienceActivities) {
-    assert.equal(routes.get(activity).provider, LOCAL_PROVIDER);
-    assert.equal(routes.get(activity).model, LOCAL_CV_MODEL);
+    assert.equal(routes.get(activity).provider, TERRA_PROVIDER);
+    assert.equal(routes.get(activity).model, TERRA_MODEL);
     assert.equal(routes.get(activity).failoverPolicy, 'wait_local');
     assert.equal(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
   }
@@ -647,6 +649,18 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ paused: false })
     });
+    const experienceDefaultResponse = await controlRequest('/control/state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        applicationDefaults: {
+          experienceManagement: { engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' }
+        }
+      })
+    });
+    assert.equal(experienceDefaultResponse.status, 200);
+    const experienceDefaultState = (await experienceDefaultResponse.json()).state.applicationDefaults.experienceManagement;
+    assert.deepEqual(experienceDefaultState, { engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' });
 
     const signedRequest = async (requestBody, { harness = true } = {}) => {
       const parsedBody = JSON.parse(requestBody);
@@ -706,6 +720,34 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     const structured = await signedRequest(structuredBody);
     assert.equal(structured.status, 200);
     assert.deepEqual((await structured.json()).data, { answer: 'Use a bounded worker queue.' });
+
+    const experienceBody = JSON.stringify({
+      activity: 'experience.analyst_chat',
+      executionMode: 'local-only',
+      runtimeProfile: 'experience-management',
+      messages: [{ role: 'user', content: 'Use the Experience default.' }]
+    });
+    const experienceCompletion = await signedRequest(experienceBody);
+    assert.equal(experienceCompletion.status, 200);
+    const experiencePayload = await experienceCompletion.json();
+    assert.equal(experiencePayload.runtimeProfile, 'experience-management');
+    assert.equal(experiencePayload.engine, 'ollama');
+    assert.equal(experiencePayload.model, 'gemma4:26b-a4b-it-qat');
+
+    const terraRequiredBody = JSON.stringify({
+      activity: 'experience.analyst_chat',
+      executionMode: 'local-only',
+      requiredEngine: 'codex',
+      requiredModel: 'gpt-5.6-terra',
+      messages: [{ role: 'user', content: 'Use Terra only.' }]
+    });
+    const terraRequired = await signedRequest(terraRequiredBody);
+    assert.equal(terraRequired.status, 503);
+    const terraRequiredPayload = await terraRequired.json();
+    assert.equal(terraRequiredPayload.code, 'REQUIRED_RUNTIME_UNAVAILABLE');
+    assert.equal(terraRequiredPayload.retryable, true);
+    assert.deepEqual(terraRequiredPayload.required, { engine: 'codex', model: 'gpt-5.6-terra' });
+    assert.equal(terraRequiredPayload.active.engine, 'ollama');
 
     const meteredEventId = `usage_${crypto.createHash('sha256').update('gateway-success-transport').digest('hex').slice(0, 48)}`;
     const meteredExecutionId = `localexec_${crypto.createHash('sha256').update(meteredEventId).digest('hex').slice(0, 48)}`;

@@ -13,7 +13,33 @@ fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(se
 Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile });
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
+const { issuePasswordResetToken } = await import('../src/auth.js');
 after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
+
+test('supports shared-workspace signup and one-time password recovery', async () => {
+  const email = 'researcher@example.com'; const originalPassword = 'Researcher-Start-2026';
+  const created = request.agent(app);
+  await created.post('/api/auth/signup').send({ name: 'Research Owner', email, password: originalPassword }).expect(201)
+    .expect(({ body }) => {
+      assert.equal(body.authenticated, true);
+      assert.equal(body.user.email, email);
+      assert.equal(body.user.role, 'owner');
+    });
+  await created.get('/api/bootstrap').expect(200);
+  await request(app).post('/api/auth/signup').send({ name: 'Duplicate User', email, password: originalPassword }).expect(409);
+  const unknown = await request(app).post('/api/auth/forgot-password').send({ email: 'missing@example.com' }).expect(202);
+  const known = await request(app).post('/api/auth/forgot-password').send({ email }).expect(202);
+  assert.equal(known.body.message, unknown.body.message);
+
+  const issued = issuePasswordResetToken(email);
+  assert.ok(issued?.token);
+  const resetAgent = request.agent(app); const newPassword = 'Researcher-Reset-2026';
+  await resetAgent.post('/api/auth/reset-password').send({ token: issued.token, password: newPassword }).expect(200);
+  await resetAgent.get('/api/bootstrap').expect(200);
+  await request(app).post('/api/auth/reset-password').send({ token: issued.token, password: 'Another-Password-2026' }).expect(400);
+  await request(app).post('/api/auth/login').send({ email, password: originalPassword }).expect(401);
+  await request(app).post('/api/auth/login').send({ email, password: newPassword }).expect(200);
+});
 
 test('protects admin APIs while allowing a complete public survey workflow', async () => {
   await request(app).get('/login').expect(200).expect(/Experience test shell/);

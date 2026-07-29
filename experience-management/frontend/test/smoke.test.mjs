@@ -7,6 +7,9 @@ const source = path.resolve(import.meta.dirname, '..', 'src');
 test('registers protected admin and public response routes', () => {
   const app = fs.readFileSync(path.join(source, 'App.tsx'), 'utf8');
   assert.match(app, /path="\/login"/);
+  assert.match(app, /path="\/signup"/);
+  assert.match(app, /path="\/forgot-password"/);
+  assert.match(app, /path="\/reset-password"/);
   assert.match(app, /path="\/s\/:slug"/);
   assert.match(app, /SurveyStudioPage/);
   assert.match(app, /SocialListeningPage/);

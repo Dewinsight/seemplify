@@ -89,6 +89,9 @@ function defaultState() {
     autoStart: true,
     selectionMode: 'automatic',
     selectedEngine: 'codex',
+    applicationDefaults: {
+      experienceManagement: { engine: 'codex', model: 'gpt-5.6-terra' }
+    },
     engines: Object.fromEntries(Object.entries(ENGINE_DEFAULTS).map(([id, item]) => [
       id,
       { model: item.model, ...(item.baseUrl ? { baseUrl: item.baseUrl } : {}) }
@@ -124,6 +127,10 @@ function readStoredState() {
     return {
       ...defaults,
       ...saved,
+      applicationDefaults: {
+        ...defaults.applicationDefaults,
+        ...(saved.applicationDefaults || {})
+      },
       engines: Object.fromEntries(Object.keys(ENGINE_DEFAULTS).map((id) => [
         id,
         { ...defaults.engines[id], ...(saved.engines?.[id] || {}) }
@@ -137,6 +144,21 @@ function readStoredState() {
 
 function readState() {
   return applyConcurrencyPolicy(readStoredState());
+}
+
+function stateForRuntimeProfile(state, runtimeProfile) {
+  if (runtimeProfile !== 'experience-management') return state;
+  const profile = state.applicationDefaults?.experienceManagement || {};
+  const engine = ENGINE_IDS.includes(profile.engine) ? profile.engine : 'codex';
+  const model = String(profile.model || state.engines?.[engine]?.model || ENGINE_DEFAULTS[engine]?.model || '');
+  return {
+    ...state,
+    selectedEngine: engine,
+    engines: {
+      ...state.engines,
+      [engine]: { ...(state.engines?.[engine] || {}), model }
+    }
+  };
 }
 
 function writeState(update) {
@@ -257,7 +279,11 @@ let lastNoncePruneAt = 0;
 
 function activitySchedulerLimits(activity) {
   const state = readState();
-  const selected = engineSettings(state);
+  const executionState = stateForRuntimeProfile(
+    state,
+    String(activity || '').startsWith('experience.') ? 'experience-management' : ''
+  );
+  const selected = engineSettings(executionState);
   const available = !shuttingDown && state.enabled && !state.paused;
   const decision = activityConcurrencyDecision({
     engine: selected.id,
@@ -703,6 +729,7 @@ function statusPayload() {
     provider: `local-${selected.id}`,
     providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
     executionMode: selected.id === 'codex' ? 'local-cloud' : 'local',
+    applicationDefaults: state.applicationDefaults,
     cvLocalEligible,
     engines: Object.entries(state.engines || {}).map(([id, value]) => ({
       id,
@@ -888,12 +915,37 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   } catch (error) {
     return sendJson(response, error.status || 400, { code: error.code, message: error.message });
   }
-  const selected = engineSettings(state);
+  const runtimeProfile = String(input.runtimeProfile || '').trim().toLowerCase();
+  if (runtimeProfile && runtimeProfile !== 'experience-management') {
+    return sendJson(response, 400, { code: 'INVALID_RUNTIME_PROFILE' });
+  }
+  const executionState = stateForRuntimeProfile(state, runtimeProfile);
+  const selected = engineSettings(executionState);
   if (input.executionMode === 'local-only' && !ENGINE_IDS.includes(selected.id)) {
     return sendJson(response, 503, {
       code: 'LOCAL_ENGINE_REQUIRED',
       retryable: true,
       message: `Local inference requires a managed local or local-cloud engine; ${selected.id} is unavailable`
+    });
+  }
+  const requiredEngine = String(input.requiredEngine || '').trim().toLowerCase();
+  const requiredModel = String(input.requiredModel || '').trim();
+  if (requiredEngine && !ENGINE_IDS.includes(requiredEngine)) {
+    return sendJson(response, 400, { code: 'INVALID_REQUIRED_ENGINE' });
+  }
+  if (requiredModel.length > 200 || /[\u0000-\u001f\u007f]/.test(requiredModel)) {
+    return sendJson(response, 400, { code: 'INVALID_REQUIRED_MODEL' });
+  }
+  const engineMismatch = requiredEngine && selected.id !== requiredEngine;
+  const modelMismatch = requiredModel
+    && String(selected.model || '').trim().toLowerCase() !== requiredModel.toLowerCase();
+  if (engineMismatch || modelMismatch) {
+    return sendJson(response, 503, {
+      code: 'REQUIRED_RUNTIME_UNAVAILABLE',
+      retryable: true,
+      message: 'The runtime required by this activity is not currently selected',
+      required: { engine: requiredEngine || null, model: requiredModel || null },
+      active: { engine: selected.id, model: selected.model }
     });
   }
   const controller = new AbortController();
@@ -923,7 +975,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   let executionStatus = 'failed';
   lastRequestAt = new Date().toISOString();
   try {
-    const data = await analyzeWithEngine({ ...input, signal: controller.signal }, readState());
+    const data = await analyzeWithEngine({ ...input, signal: controller.signal }, executionState);
     const schemaErrors = input.jsonSchema ? validateSchemaValue(data.data, input.jsonSchema) : [];
     if (schemaErrors.length && !data.toolCalls?.length) {
       const error = new Error(`Inference engine returned invalid structured data: ${schemaErrors.slice(0, 5).join('; ')}`);
@@ -980,6 +1032,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     log('info', 'Local AI completion finished', {
       activity: input.activity,
       requestSource,
+      runtimeProfile: runtimeProfile || undefined,
       endpoint: cvOnly ? 'cv' : 'general',
       queueWaitMs: permit.waitMs,
       latencyMs,
@@ -998,6 +1051,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       providerLabel,
       engine: data.engine,
       model: data.model,
+      runtimeProfile: runtimeProfile || undefined,
       gatewayExecutionId: metering?.gatewayExecutionId,
       content: data.content,
       data: data.data,
@@ -1165,6 +1219,19 @@ const server = http.createServer(async (request, response) => {
           allowed.engines[id] = { ...allowed.engines[id], model: modelValue };
         }
       }
+      if (input.applicationDefaults && typeof input.applicationDefaults === 'object') {
+        const requested = input.applicationDefaults.experienceManagement;
+        if (requested !== undefined) {
+          const engine = String(requested?.engine || '').trim().toLowerCase();
+          const model = String(requested?.model || '').trim();
+          if (!ENGINE_IDS.includes(engine)) throw new Error('Unsupported Experience Management engine');
+          if (!/^[A-Za-z0-9._:/-]{2,200}$/.test(model)) throw new Error('Invalid Experience Management model identifier');
+          allowed.applicationDefaults = {
+            ...readState().applicationDefaults,
+            experienceManagement: { engine, model }
+          };
+        }
+      }
       if (requestedConcurrency !== null) {
         const current = readStoredState();
         const targetEngine = allowed.selectedEngine || current.selectedEngine;
@@ -1220,8 +1287,26 @@ const server = http.createServer(async (request, response) => {
       const rawBody = await readBody(request);
       const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
-      const health = await engineHealth(readState());
-      return sendJson(response, 200, { ...statusPayload(), health });
+      const input = JSON.parse(rawBody || '{}');
+      const runtimeProfile = input.source === 'experience-management' || input.runtimeProfile === 'experience-management'
+        ? 'experience-management'
+        : '';
+      const state = readState();
+      const executionState = stateForRuntimeProfile(state, runtimeProfile);
+      const selected = engineSettings(executionState);
+      const health = await engineHealth(executionState);
+      return sendJson(response, 200, {
+        ...statusPayload(),
+        ...(runtimeProfile ? {
+          runtimeProfile,
+          engine: selected.id,
+          model: selected.model,
+          provider: `local-${selected.id}`,
+          providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
+          executionMode: selected.id === 'codex' ? 'local-cloud' : 'local'
+        } : {}),
+        health
+      });
     } catch (error) {
       return sendJson(response, error.code === 'BODY_TOO_LARGE' ? 413 : 500, { code: error.code || 'GATEWAY_ERROR' });
     }

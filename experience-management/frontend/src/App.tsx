@@ -13,12 +13,18 @@ const TicketsPage = lazy(() => import('@/pages/TicketsPage').then((module) => ({
 const SocialListeningPage = lazy(() => import('@/pages/SocialListeningPage').then((module) => ({ default: module.SocialListeningPage })));
 const JourneysPage = lazy(() => import('@/pages/JourneysPage').then((module) => ({ default: module.JourneysPage })));
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ default: module.LoginPage })));
+const SignupPage = lazy(() => import('@/pages/SignupPage').then((module) => ({ default: module.SignupPage })));
+const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage').then((module) => ({ default: module.ResetPasswordPage })));
 function Admin({ children }: { children: ReactNode }) { return <AppShell>{children}</AppShell>; }
 
 export function App() {
   return <Suspense fallback={<PageLoader />}><Switch>
     <Route path="/s/:slug"><PublicSurveyPage /></Route>
     <Route path="/login"><LoginPage /></Route>
+    <Route path="/signup"><SignupPage /></Route>
+    <Route path="/forgot-password"><ForgotPasswordPage /></Route>
+    <Route path="/reset-password"><ResetPasswordPage /></Route>
     <Route path="/surveys/new"><Admin><CreateSurveyPage /></Admin></Route>
     <Route path="/surveys/:id"><Admin><SurveyStudioPage /></Admin></Route>
     <Route path="/surveys"><Admin><SurveysPage /></Admin></Route>

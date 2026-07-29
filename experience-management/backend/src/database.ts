@@ -9,6 +9,25 @@ db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member',
+    session_version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS password_reset_lookup ON password_reset_tokens(token_hash, used_at, expires_at);
   CREATE TABLE IF NOT EXISTS surveys (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,

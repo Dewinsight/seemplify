@@ -3,7 +3,7 @@ param(
     'start', 'stop', 'force-stop', 'restart', 'status', 'load', 'unload',
     'pause', 'resume', 'enable-ingress', 'disable-ingress',
     'enable-auto-start', 'disable-auto-start', 'set-concurrency',
-    'select-engine', 'select-best', 'set-model', 'verify-engine', 'install-codex', 'login-codex', 'sync-codex-models',
+    'select-engine', 'select-best', 'set-model', 'set-experience-default', 'verify-engine', 'install-codex', 'login-codex', 'sync-codex-models',
     'install-vllm', 'vllm-start', 'vllm-stop'
   )]
   [string]$Action = 'status',
@@ -95,6 +95,9 @@ function New-DefaultState {
     autoStart = $true
     selectionMode = 'automatic'
     selectedEngine = 'codex'
+    applicationDefaults = [ordered]@{
+      experienceManagement = [ordered]@{ engine='codex'; model=$DefaultModels.codex }
+    }
     engines = [ordered]@{
       ollama = [ordered]@{ model=$DefaultModels.ollama; baseUrl='http://127.0.0.1:11434' }
       vllm = [ordered]@{ model=$DefaultModels.vllm; baseUrl='http://127.0.0.1:8000' }
@@ -110,6 +113,15 @@ function Get-SavedState {
       $saved = Get-Content -LiteralPath $StateFile -Raw | ConvertFrom-Json
       foreach ($property in @('enabled', 'ingressEnabled', 'paused', 'concurrency', 'autoStart', 'selectionMode', 'selectedEngine')) {
         if ($null -ne $saved.$property) { $defaults[$property] = $saved.$property }
+      }
+      if ($saved.applicationDefaults.experienceManagement) {
+        $experienceDefault = $saved.applicationDefaults.experienceManagement
+        if ($experienceDefault.engine -in @('ollama', 'vllm', 'codex')) {
+          $defaults.applicationDefaults.experienceManagement.engine = [string]$experienceDefault.engine
+        }
+        if ($experienceDefault.model) {
+          $defaults.applicationDefaults.experienceManagement.model = [string]$experienceDefault.model
+        }
       }
       foreach ($engineId in @('ollama', 'vllm', 'codex')) {
         $savedEngine = $saved.engines.$engineId
@@ -852,6 +864,15 @@ switch ($Action) {
     if (-not $Model) { throw '-Model is required for set-model.' }
     Select-InferenceEngine $Engine $Model
     Set-GatewayState @{ selectionMode='manual' } | Out-Null
+  }
+  'set-experience-default' {
+    if (-not $Model) { throw '-Model is required for set-experience-default.' }
+    Assert-ModelIdentifier $Model
+    Set-GatewayState @{
+      applicationDefaults = [ordered]@{
+        experienceManagement = [ordered]@{ engine=$Engine; model=$Model }
+      }
+    } | Out-Null
   }
   'verify-engine' {
     $verificationModel = if ($Model) { $Model } else { Get-EngineModel $Engine }

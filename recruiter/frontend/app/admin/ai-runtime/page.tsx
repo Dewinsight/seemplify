@@ -1757,15 +1757,18 @@ export default function AIRuntimeAdminPage() {
                       <TableBody>
                         {(localRuntime?.activityQueues || []).map((lane) => {
                           const route = settings?.routes.find((item) => item.activity === lane.activity);
-                          const localAssigned = route?.enabled && route.provider === 'local-ollama';
+                          const managedAssigned = route?.enabled && route.provider?.startsWith('local-');
+                          const routingLabel = route?.provider === 'local-codex'
+                            ? 'Terra assigned'
+                            : managedAssigned ? 'Local GPU assigned' : 'Not assigned';
                           return (
                             <TableRow key={lane.activity} className="border-gray-800">
                               <TableCell>
                                 <div className="font-medium text-gray-200">{definitions.get(lane.activity)?.label || lane.activity}</div>
                                 <div className="font-mono text-xs text-gray-500">{lane.activity}</div>
                               </TableCell>
-                              <TableCell className={localAssigned ? 'text-green-300' : 'text-gray-500'}>
-                                {localAssigned ? 'Assigned local' : 'Not assigned'}
+                              <TableCell className={managedAssigned ? 'text-green-300' : 'text-gray-500'}>
+                                {routingLabel}
                               </TableCell>
                               <TableCell>{formatNumber(lane.active)}</TableCell>
                               <TableCell className={lane.waiting > 0 ? 'text-amber-300' : undefined}>{formatNumber(lane.waiting)}</TableCell>
