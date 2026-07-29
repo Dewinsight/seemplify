@@ -12,7 +12,7 @@ This implementation is an original Seemplify product with feature parity goals, 
 | Skip, display, and branch logic | Question-level rules in the survey data model and respondent renderer |
 | Themes and multilingual surveys | Theme settings and Terra translation jobs |
 | Web, email, API, QR, manual, kiosk collection | Collector records and public collector routes |
-| Invitations, reminders, thank-you messages | Brevo transactional email workflows |
+| Email invitations and respondent thank-you screen | Brevo transactional invitations plus the configured post-response experience |
 | NPS, CSAT, CES | Deterministic calculation and trend views |
 | Question summary and individual responses | Aggregate charts plus response detail |
 | Dropout analysis | Completion and question-reach funnel |

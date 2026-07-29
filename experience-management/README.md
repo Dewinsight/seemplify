@@ -8,7 +8,7 @@ Seemplify Experience is a standalone experience-management application inspired 
 - Rich survey builder with NPS, CSAT, CES, choice, rating, matrix, ranking, text, contact, date, file, and media questions.
 - Display and branch logic, page grouping, validation, preview, and a public respondent experience.
 - Web-link, QR, email, API, manual-entry, and kiosk collectors.
-- Brevo invitations, reminders, and completion messages with recipient-level delivery tracking.
+- Brevo invitations with recipient-level delivery tracking, using the shared Seemplify sender configuration.
 - Individual and aggregate response analysis, NPS/CSAT/CES, trends, drop-off, cross-variable breakdowns, and key-driver correlations.
 - Terra sentiment, emotion, topic, intent, risk, recommendation, translation, executive-report, and ask-your-data workflows.
 - Terra social listening over imported/API-fed public mentions, with per-mention sentiment, emotions, themes, risk, trends, and opportunities.
