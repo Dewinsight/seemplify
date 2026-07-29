@@ -10,6 +10,8 @@ $RepositoryDir = Split-Path -Parent $ProjectDir
 $RuntimeDir = Join-Path $RepositoryDir '.local-runtime\experience-management'
 $PidFile = Join-Path $RuntimeDir 'auto-deploy.pid'
 $LogFile = Join-Path $RuntimeDir 'auto-deploy.log'
+$WatcherOutputLog = Join-Path $RuntimeDir 'auto-deploy.stdout.log'
+$WatcherErrorLog = Join-Path $RuntimeDir 'auto-deploy.stderr.log'
 $DeployedFile = Join-Path $RuntimeDir 'deployed-tree'
 $ActiveProjectFile = Join-Path $RuntimeDir 'active-project-path'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
@@ -77,7 +79,7 @@ function Watch {
 if ($Action -eq 'watch') { Watch; exit }
 if ($Action -eq 'once') { Invoke-Deployment -ForceDeploy:$Force; exit }
 if ($Action -eq 'start' -and -not (Get-Watcher)) {
-  $process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-Action','watch') -WindowStyle Hidden -PassThru
+  $process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-Action','watch') -WindowStyle Hidden -RedirectStandardOutput $WatcherOutputLog -RedirectStandardError $WatcherErrorLog -PassThru
   Set-Content -LiteralPath $PidFile -Value $process.Id -Encoding ascii
 }
 if ($Action -eq 'stop') { $process = Get-Watcher; if ($process) { Stop-Process -Id $process.ProcessId -Force }; Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue }
