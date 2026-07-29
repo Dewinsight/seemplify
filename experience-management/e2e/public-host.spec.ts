@@ -40,7 +40,7 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   const sidebar = page.getByRole('complementary');
   const runtimeStatus = sidebar.getByTestId('sidebar-runtime-status');
   await expect(runtimeStatus).toBeVisible();
-  await expect(runtimeStatus).toHaveAccessibleName(/Open AI queue\..*\.(Ready|Unavailable)\./i);
+  await expect(runtimeStatus).toHaveAccessibleName(/Open AI queue\..*\.\s*(Ready|Unavailable)\./i);
   const runtimeBounds = await runtimeStatus.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
   expect(runtimeBounds.scrollWidth).toBeLessThanOrEqual(runtimeBounds.clientWidth);
   if (mobile) await page.getByRole('button', { name: 'Close navigation' }).click();
