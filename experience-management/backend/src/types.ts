@@ -166,6 +166,22 @@ export interface Campaign {
   completedAt: string | null;
 }
 
+export type CampaignWorkflowSectionKey = 'setup' | 'audience' | 'sequence' | 'schedule';
+
+export interface CampaignWorkflowSection {
+  key: CampaignWorkflowSectionKey;
+  complete: boolean;
+  issues: string[];
+}
+
+export interface CampaignReadiness {
+  ready: boolean;
+  completedSections: number;
+  totalSections: number;
+  sections: Record<CampaignWorkflowSectionKey, CampaignWorkflowSection>;
+  issues: string[];
+}
+
 export interface CampaignStep {
   id: string;
   campaignId: string;

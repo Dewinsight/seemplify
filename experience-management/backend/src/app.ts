@@ -381,9 +381,12 @@ app.post('/api/templates/:templateId/create', (request, response) => {
 
 const campaignStepInput = z.object({
   id: z.string().uuid().optional(), delayMinutes: z.number().int().min(0).max(525_600),
-  subject: z.string().min(1).max(250), mode: z.enum(['plain', 'html']).default('plain'),
+  subject: z.string().trim().min(1).max(250), mode: z.enum(['plain', 'html']).default('plain'),
   bodyText: z.string().max(30_000).default(''), bodyHtml: z.string().max(100_000).optional(),
   embedQuestionId: z.string().max(200).nullable().optional()
+}).superRefine((step, context) => {
+  const body = step.mode === 'html' ? step.bodyHtml : step.bodyText;
+  if (!body?.trim()) context.addIssue({ code: 'custom', path: [step.mode === 'html' ? 'bodyHtml' : 'bodyText'], message: 'Each campaign step needs message content.' });
 });
 const campaignCustomData = z.record(
   z.string().trim().min(1).max(64),
@@ -416,7 +419,7 @@ app.get('/api/campaigns', noStore, (_request, response) => response.json(listCam
 app.post('/api/campaigns', (request, response) => {
   try {
     const input = z.object({
-      name: z.string().min(2).max(180), surveyId: z.string().min(1), collectorId: z.string().optional(),
+      name: z.string().trim().min(2).max(180), surveyId: z.string().min(1), collectorId: z.string().optional(),
       stopOnResponse: z.boolean().optional(), startAt: z.string().datetime().nullable().optional(), templateId: z.string().max(100).optional()
     }).parse(request.body);
     return response.status(201).json(createCampaign(input));
@@ -429,7 +432,7 @@ app.get('/api/campaigns/:id', noStore, (request, response) => {
 app.put('/api/campaigns/:id', (request, response) => {
   try {
     const input = z.object({
-      name: z.string().min(2).max(180).optional(), stopOnResponse: z.boolean().optional(),
+      name: z.string().trim().min(2).max(180).optional(), stopOnResponse: z.boolean().optional(),
       startAt: z.string().datetime().nullable().optional(), surveyId: z.string().min(1).optional(), collectorId: z.string().optional(),
       settings: z.object({ stopOnResponse: z.boolean().optional() }).passthrough().optional()
     }).parse(request.body);
@@ -466,8 +469,7 @@ app.delete('/api/campaigns/:id/contacts/:contactId', (request, response) => {
 app.post('/api/campaigns/:id/launch', (request, response) => {
   try {
     const input = z.object({ startAt: z.string().datetime().nullable().optional() }).parse(request.body || {});
-    if (input.startAt !== undefined) updateCampaign(String(request.params.id), { startAt: input.startAt });
-    return response.json(launchCampaign(String(request.params.id)));
+    return response.json(launchCampaign(String(request.params.id), input.startAt));
   } catch (error) { return sendError(response, error); }
 });
 app.post('/api/campaigns/:id/pause', (request, response) => {

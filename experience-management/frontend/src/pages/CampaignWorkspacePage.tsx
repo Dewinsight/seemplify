@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowUp, Clock3, ExternalLink, FileUp, Loader2, Mail, Pause, Pencil, Play, Plus, Save, Send, Trash2, Users, X } from 'lucide-react';
+import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, CalendarClock, CheckCircle2, Clock3, ExternalLink, FileUp, Loader2, Mail, Pause, Pencil, Play, Plus, Save, Send, Trash2, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, json } from '@/lib/api';
 import { contactsFromText, customFieldToken } from '@/lib/contactImport';
@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import type { Campaign, CampaignContact, CampaignDelivery, CampaignDetail, CampaignStep, CampaignTemplate, Survey } from '@/types';
+import type { Campaign, CampaignContact, CampaignDelivery, CampaignDetail, CampaignStep, CampaignTemplate, CampaignWorkflowSectionKey, Survey } from '@/types';
 
 const variables = ['{{first_name}}', '{{last_name}}', '{{job_title}}', '{{position}}', '{{company}}', '{{custom.field_name}}', '{{survey_title}}', '{{survey_link}}'];
 const compatibleEmbeddedTypes = new Set(['single_choice', 'nps', 'csat', 'ces', 'rating', 'graphical_rating']);
@@ -53,7 +53,7 @@ function emptyStep(campaignId: string, position: number, template?: CampaignTemp
   };
 }
 
-function SequenceEditor({ detail, templates, onRefresh }: { detail: CampaignDetail; templates: CampaignTemplate[]; onRefresh: () => Promise<void> }) {
+function SequenceEditor({ detail, templates, onRefresh, onDraftState }: { detail: CampaignDetail; templates: CampaignTemplate[]; onRefresh: () => Promise<void>; onDraftState: (state: { dirty: boolean; valid: boolean }) => void }) {
   const [steps, setSteps] = useState<CampaignStep[]>(detail.steps);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,6 +62,9 @@ function SequenceEditor({ detail, templates, onRefresh }: { detail: CampaignDeta
   useEffect(() => { if (!dirty) setSteps(detail.steps); }, [detail.steps, dirty]);
   const embeddedQuestions = (detail.survey.questions || []).filter((question) => question.page === 1 && compatibleEmbeddedTypes.has(question.type));
   const availableVariables = useMemo(() => [...variables, ...new Set(detail.contacts.flatMap((contact) => Object.keys(contact.customData || {}).map((label) => customFieldToken(label)).filter(Boolean).map((key) => `{{custom.${key}}}`)))], [detail.contacts]);
+  const editable = detail.campaign.status === 'draft' && !detail.campaign.launchedAt;
+  const valid = steps.length > 0 && steps.every((step) => step.subject.trim() && (step.mode === 'html' ? step.bodyHtml : step.bodyText).trim());
+  useEffect(() => onDraftState({ dirty, valid: Boolean(valid) }), [dirty, onDraftState, valid]);
   function change(index: number, values: Partial<CampaignStep>) { setSteps((current) => current.map((step, stepIndex) => stepIndex === index ? { ...step, ...values } : step)); setDirty(true); }
   function move(index: number, offset: number) { const target = index + offset; if (target < 0 || target >= steps.length) return; const next = [...steps]; [next[index], next[target]] = [next[target], next[index]]; setSteps(next.map((step, position) => ({ ...step, position }))); setDirty(true); }
   function remove(index: number) { if (steps.length === 1) return toast.error('A campaign needs at least one message.'); setSteps((current) => current.filter((_, stepIndex) => stepIndex !== index).map((step, position) => ({ ...step, position }))); setDirty(true); }
@@ -97,21 +100,25 @@ function SequenceEditor({ detail, templates, onRefresh }: { detail: CampaignDeta
     finally { setTesting(false); }
   }
   return <div className="space-y-4">
-    <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center"><div><div className="font-semibold">Email sequence</div><p className="mt-1 text-sm text-muted-foreground">Plain text is the default. Add HTML only when the design is important enough to justify it.</p></div><div className="flex flex-wrap gap-2"><select aria-label="Load sequence template" className="h-9 min-w-52 rounded-md border border-input bg-background px-3 text-sm" defaultValue="" onChange={(event) => { applySequenceTemplate(event.target.value); event.target.value = ''; }}><option value="">Load sequence template</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select><Button variant="outline" onClick={() => { setSteps((current) => [...current, emptyStep(detail.campaign.id, current.length, templates[0])]); setDirty(true); }}><Plus />Add step</Button><Button disabled={!dirty || saving} onClick={save}>{saving ? <Loader2 className="animate-spin" /> : <Save />}{saving ? 'Saving' : 'Save sequence'}</Button></div></div>
+    {!editable && <div className="border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">The saved sequence is locked after campaign launch.</div>}
+    <fieldset disabled={!editable || saving} className="space-y-4 border-0 p-0">
+    <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center"><div><div className="font-semibold">Email sequence</div><p className="mt-1 text-sm text-muted-foreground">Plain text is the default. Add HTML only when the design is important enough to justify it.</p></div><div className="flex flex-wrap gap-2"><select aria-label="Load sequence template" className="h-9 min-w-52 rounded-md border border-input bg-background px-3 text-sm" defaultValue="" onChange={(event) => { applySequenceTemplate(event.target.value); event.target.value = ''; }}><option value="">Load sequence template</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select><Button variant="outline" onClick={() => { setSteps((current) => [...current, emptyStep(detail.campaign.id, current.length, templates[0])]); setDirty(true); }}><Plus />Add step</Button><Button disabled={!dirty || saving || !valid} onClick={save}>{saving ? <Loader2 className="animate-spin" /> : <Save />}{saving ? 'Saving' : 'Save sequence'}</Button></div></div>
+    {!valid && <div className="flex gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>Every email step requires both a subject and message before the sequence can be saved.</span></div>}
     {steps.map((step, index) => <section className="border bg-card" key={step.id}>
       <div className="flex min-h-12 items-center justify-between gap-3 border-b px-4 py-2"><div><span className="text-sm font-semibold">Step {index + 1}</span><span className="ml-2 text-xs text-muted-foreground">{index === 0 ? 'Initial invitation' : `${step.delayMinutes} minutes after the previous step`}</span></div><div className="flex"><Button variant="ghost" size="icon" aria-label={`Move step ${index + 1} up`} disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp /></Button><Button variant="ghost" size="icon" aria-label={`Move step ${index + 1} down`} disabled={index === steps.length - 1} onClick={() => move(index, 1)}><ArrowDown /></Button><Button variant="ghost" size="icon" aria-label={`Delete step ${index + 1}`} disabled={steps.length === 1} onClick={() => remove(index)}><Trash2 /></Button></div></div>
       <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-4">
           {index > 0 && <div><Label className="field-label" htmlFor={`step-delay-${step.id}`}>Delay after previous step</Label><div className="flex gap-2"><Input id={`step-delay-${step.id}`} className="max-w-36" type="number" min={1} value={step.delayMinutes % 1440 === 0 ? step.delayMinutes / 1440 : step.delayMinutes % 60 === 0 ? step.delayMinutes / 60 : step.delayMinutes} onChange={(event) => { const amount = Math.max(1, Number(event.target.value)); const unit = step.delayMinutes % 1440 === 0 ? 1440 : step.delayMinutes % 60 === 0 ? 60 : 1; change(index, { delayMinutes: amount * unit }); }} /><select aria-label={`Step ${index + 1} delay unit`} className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={step.delayMinutes % 1440 === 0 ? 'days' : step.delayMinutes % 60 === 0 ? 'hours' : 'minutes'} onChange={(event) => { const current = step.delayMinutes % 1440 === 0 ? step.delayMinutes / 1440 : step.delayMinutes % 60 === 0 ? step.delayMinutes / 60 : step.delayMinutes; const factor = event.target.value === 'days' ? 1440 : event.target.value === 'hours' ? 60 : 1; change(index, { delayMinutes: Math.max(1, current) * factor }); }}><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option></select></div></div>}
-          <div><Label className="field-label" htmlFor={`step-subject-${step.id}`}>Subject</Label><Input id={`step-subject-${step.id}`} value={step.subject} onChange={(event) => change(index, { subject: event.target.value })} /></div>
+          <div><Label className="field-label" htmlFor={`step-subject-${step.id}`}>Subject <span className="text-destructive" aria-hidden="true">*</span></Label><Input id={`step-subject-${step.id}`} value={step.subject} required aria-required="true" aria-invalid={!step.subject.trim()} onChange={(event) => change(index, { subject: event.target.value })} /></div>
           <div className="grid gap-3 sm:grid-cols-2"><div><Label className="field-label">Message format</Label><select aria-label={`Step ${index + 1} message format`} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={step.mode} onChange={(event) => change(index, { mode: event.target.value as CampaignStep['mode'] })}><option value="plain">Plain text (recommended)</option><option value="html">HTML email</option></select></div><div><Label className="field-label">Start from template</Label><select aria-label={`Step ${index + 1} template`} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" defaultValue="" onChange={(event) => { applyTemplate(index, event.target.value); event.target.value = ''; }}><option value="">Choose a template</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select></div></div>
-          <div><Label className="field-label" htmlFor={`step-body-${step.id}`}>{step.mode === 'html' ? 'HTML source' : 'Message'}</Label><Textarea id={`step-body-${step.id}`} className={step.mode === 'html' ? 'font-mono text-xs' : ''} rows={10} value={step.mode === 'html' ? step.bodyHtml : step.bodyText} onChange={(event) => change(index, step.mode === 'html' ? { bodyHtml: event.target.value } : { bodyText: event.target.value })} /></div>
+          <div><Label className="field-label" htmlFor={`step-body-${step.id}`}>{step.mode === 'html' ? 'HTML source' : 'Message'} <span className="text-destructive" aria-hidden="true">*</span></Label><Textarea id={`step-body-${step.id}`} className={step.mode === 'html' ? 'font-mono text-xs' : ''} rows={10} value={step.mode === 'html' ? step.bodyHtml : step.bodyText} required aria-required="true" aria-invalid={!(step.mode === 'html' ? step.bodyHtml : step.bodyText).trim()} onChange={(event) => change(index, step.mode === 'html' ? { bodyHtml: event.target.value } : { bodyText: event.target.value })} /></div>
           <div><Label className="field-label">Embed a question</Label><select aria-label={`Step ${index + 1} embedded question`} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={step.embedQuestionId || ''} onChange={(event) => change(index, { embedQuestionId: event.target.value || null })}><option value="">Survey link only</option>{embeddedQuestions.map((question, questionIndex) => <option value={question.id} key={question.id}>{questionIndex + 1}. {question.title}</option>)}</select><p className="mt-1 text-xs leading-5 text-muted-foreground">Compatible choices open the survey with that answer preselected. The respondent can review it before submitting.</p></div>
         </div>
         <aside className="border-l-0 lg:border-l lg:pl-5"><div className="text-sm font-semibold">Preview</div><div className="mt-3 min-h-52 border bg-white p-4 text-sm text-slate-900">{step.mode === 'html' ? <iframe title={`Step ${index + 1} HTML preview`} sandbox="" srcDoc={step.bodyHtml} className="h-56 w-full border-0" /> : <div className="whitespace-pre-wrap leading-6">{step.bodyText}</div>}</div><div className="mt-4 text-xs leading-5 text-muted-foreground">Variables: {availableVariables.join(', ')}</div></aside>
       </div>
     </section>)}
     <Card><CardContent className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-end"><div className="flex-1"><Label className="field-label" htmlFor="campaign-test-email">Send a test</Label><Input id="campaign-test-email" type="email" placeholder="you@company.com" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} /></div><Button variant="outline" disabled={testing} onClick={sendTest}>{testing ? <Loader2 className="animate-spin" /> : <Mail />}{testing ? 'Sending' : 'Send test email'}</Button></CardContent></Card>
+    </fieldset>
   </div>;
 }
 
@@ -246,44 +253,132 @@ function Activity({ detail }: { detail: CampaignDetail }) {
   return <Card className="overflow-hidden"><CardHeader><CardTitle>Delivery history</CardTitle><p className="text-xs leading-5 text-muted-foreground">Accepted means Brevo accepted the request. Secured provider events then update delivery, engagement, bounce, complaint and unsubscribe status in real time.{historyNote}</p></CardHeader><CardContent className="px-0 pb-0">{detail.deliveries.length ? <div className="overflow-x-auto"><table className="data-table min-w-[980px]"><thead><tr><th>Recipient</th><th>Step</th><th>Lifecycle</th><th>Scheduled</th><th>Accepted</th><th>Provider event</th><th>Attempt</th><th>Error</th></tr></thead><tbody>{detail.deliveries.map((delivery) => <tr key={delivery.id}><td>{delivery.email || detail.contacts.find((contact) => contact.id === delivery.contactId)?.email || '—'}</td><td>{delivery.stepPosition + 1}</td><td className="capitalize">{deliveryLifecycle(delivery).replace(/_/g, ' ')}</td><td>{formatDateTime(delivery.scheduledAt)}</td><td>{formatDateTime(delivery.sentAt)}</td><td>{formatDateTime(providerEventTime(delivery))}</td><td>{delivery.attempt}</td><td className="max-w-xs truncate text-xs text-destructive">{delivery.error || '—'}</td></tr>)}</tbody></table></div> : <div className="px-5 py-16 text-center"><Clock3 className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">Nothing sent yet</div><p className="mt-1 text-xs text-muted-foreground">Delivery events appear here when the campaign launches.</p></div>}</CardContent></Card>;
 }
 
+type CampaignWorkspaceTab = CampaignWorkflowSectionKey | 'review' | 'activity';
+const workflowLabels: Record<CampaignWorkflowSectionKey, string> = { setup: 'Setup', audience: 'Audience', sequence: 'Sequence', schedule: 'Schedule' };
+
 export function CampaignWorkspacePage() {
   const { id = '' } = useParams();
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
   const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [activeTab, setActiveTab] = useState<CampaignWorkspaceTab>('setup');
   const [working, setWorking] = useState(false);
   const [name, setName] = useState('');
   const [selectedSurveyId, setSelectedSurveyId] = useState('');
   const [startAt, setStartAt] = useState('');
   const [stopOnResponse, setStopOnResponse] = useState(true);
-  const settingsDirty = useRef(false);
-  const load = useCallback(async () => { const [next, templateRows, surveyRows] = await Promise.all([api<CampaignDetail>(`/api/campaigns/${id}`), api<CampaignTemplate[]>('/api/campaign-templates'), api<Survey[]>('/api/surveys')]); setDetail(next); setTemplates(templateRows); setSurveys(surveyRows); if (!settingsDirty.current) { setName(next.campaign.name); setSelectedSurveyId(next.campaign.surveyId); setStartAt(dateTimeInputValue(next.campaign.startsAt)); setStopOnResponse(next.campaign.settings?.stopOnResponse !== false); } }, [id]);
+  const setupDirtyRef = useRef(false); const scheduleDirtyRef = useRef(false);
+  const [setupDirty, setSetupDirty] = useState(false); const [scheduleDirty, setScheduleDirty] = useState(false);
+  const [sequenceDraft, setSequenceDraft] = useState({ dirty: false, valid: true });
+  const onSequenceDraftState = useCallback((next: { dirty: boolean; valid: boolean }) => {
+    setSequenceDraft((current) => current.dirty === next.dirty && current.valid === next.valid ? current : next);
+  }, []);
+  const markSetupDirty = () => { setupDirtyRef.current = true; setSetupDirty(true); };
+  const markScheduleDirty = () => { scheduleDirtyRef.current = true; setScheduleDirty(true); };
+  const load = useCallback(async () => {
+    const [next, templateRows, surveyRows] = await Promise.all([api<CampaignDetail>(`/api/campaigns/${id}`), api<CampaignTemplate[]>('/api/campaign-templates'), api<Survey[]>('/api/surveys')]);
+    setDetail(next); setTemplates(templateRows); setSurveys(surveyRows);
+    if (!setupDirtyRef.current) { setName(next.campaign.name); setSelectedSurveyId(next.campaign.surveyId); }
+    if (!scheduleDirtyRef.current) { setStartAt(dateTimeInputValue(next.campaign.startsAt)); setStopOnResponse(next.campaign.settings?.stopOnResponse !== false); }
+  }, [id]);
   useEffect(() => { void load().catch((error) => toast.error(error instanceof Error ? error.message : 'Could not load campaign.')); }, [load]);
   useLiveRefresh(() => { void load(); });
   useEffect(() => { if (detail?.campaign.status !== 'active') return; const timer = window.setInterval(() => void load(), 5000); return () => window.clearInterval(timer); }, [detail?.campaign.status, load]);
+
+  const selectedSurvey = surveys.find((item) => item.id === selectedSurveyId);
+  const workflowSections = useMemo(() => {
+    if (!detail) return [];
+    if (detail.campaign.status !== 'draft') return (Object.entries(workflowLabels) as Array<[CampaignWorkflowSectionKey, string]>).map(([key, label]) => ({ key, label, issues: [], complete: true }));
+    const setupIssues: string[] = [];
+    if (name.trim().length < 2) setupIssues.push('Enter a campaign name.');
+    if (!selectedSurvey) setupIssues.push('Select a survey.');
+    else if (selectedSurvey.status !== 'live') setupIssues.push('Publish the selected survey.');
+    if (!setupDirty && selectedSurveyId === detail.campaign.surveyId) {
+      for (const issue of detail.readiness.sections.setup.issues) if (!setupIssues.includes(issue)) setupIssues.push(issue);
+    }
+    if (setupDirty) setupIssues.push('Save the setup changes.');
+    const sequenceIssues = sequenceDraft.dirty
+      ? [sequenceDraft.valid ? 'Save the sequence changes.' : 'Complete and save every email step.']
+      : detail.readiness.sections.sequence.issues;
+    const scheduleIssues: string[] = [];
+    if (!startAt || !Number.isFinite(new Date(startAt).getTime())) scheduleIssues.push('Set a campaign start time.');
+    if (scheduleDirty) scheduleIssues.push('Save the schedule changes.');
+    return [
+      { key: 'setup' as const, label: 'Setup', issues: setupIssues },
+      { key: 'audience' as const, label: 'Audience', issues: detail.readiness.sections.audience.issues },
+      { key: 'sequence' as const, label: 'Sequence', issues: sequenceIssues },
+      { key: 'schedule' as const, label: 'Schedule', issues: scheduleIssues }
+    ].map((section) => ({ ...section, complete: section.issues.length === 0 }));
+  }, [detail, name, scheduleDirty, selectedSurvey, selectedSurveyId, sequenceDraft, setupDirty, startAt]);
+  const completedSteps = workflowSections.filter((section) => section.complete).length;
+  const workflowReady = workflowSections.length === 4 && completedSteps === 4;
+  const hasUnsavedChanges = setupDirty || scheduleDirty || sequenceDraft.dirty;
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    const confirmNavigation = (event: MouseEvent) => {
+      const link = (event.target as HTMLElement | null)?.closest('a[href]') as HTMLAnchorElement | null;
+      if (!link || link.target || link.href === window.location.href) return;
+      if (!window.confirm('Leave this campaign and discard unsaved changes?')) { event.preventDefault(); event.stopImmediatePropagation(); }
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    document.addEventListener('click', confirmNavigation, true);
+    return () => { window.removeEventListener('beforeunload', warnBeforeUnload); document.removeEventListener('click', confirmNavigation, true); };
+  }, [hasUnsavedChanges]);
+
   async function transition(action: 'launch' | 'pause' | 'resume') {
     if (!detail) return;
-    if (action === 'launch' && settingsDirty.current) return toast.error('Save the campaign settings, including the selected survey, before launching.');
-    if (action === 'launch' && detail.survey.status !== 'live') return toast.error('Publish the survey before launching this campaign.');
-    if (action === 'launch' && (!detail.contacts.length || !detail.steps.length)) return toast.error('Add contacts and at least one sequence step before launch.');
-    try { setWorking(true); await api(`/api/campaigns/${id}/${action}`, json('POST', action === 'launch' ? { startAt: startAt ? new Date(startAt).toISOString() : undefined } : {})); toast.success(action === 'launch' ? 'Campaign launched' : action === 'pause' ? 'Campaign paused' : 'Campaign resumed'); await load(); }
+    if (action === 'launch' && !workflowReady) {
+      const firstIncomplete = workflowSections.find((section) => !section.complete);
+      setActiveTab(firstIncomplete?.key || 'review');
+      return toast.error(firstIncomplete?.issues[0] || 'Complete the campaign workflow before launch.');
+    }
+    try { setWorking(true); await api(`/api/campaigns/${id}/${action}`, json('POST', {})); toast.success(action === 'launch' ? 'Campaign launched' : action === 'pause' ? 'Campaign paused' : 'Campaign resumed'); await load(); }
     catch (error) { toast.error(error instanceof Error ? error.message : `Could not ${action} campaign.`); }
     finally { setWorking(false); }
   }
-  async function saveSettings() { if (!selectedSurveyId) return toast.error('Select the survey for this campaign.'); try { setWorking(true); await api(`/api/campaigns/${id}`, json('PUT', { name, ...(detail?.campaign.launchedAt ? {} : { surveyId: selectedSurveyId, startAt: startAt ? new Date(startAt).toISOString() : null }), settings: { ...detail?.campaign.settings, stopOnResponse } })); settingsDirty.current = false; toast.success('Campaign settings saved'); await load(); } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not save campaign.'); } finally { setWorking(false); } }
+  async function saveSetup() {
+    if (name.trim().length < 2) return toast.error('Enter a campaign name with at least two characters.');
+    if (!selectedSurveyId) return toast.error('Select the survey for this campaign.');
+    try {
+      setWorking(true);
+      await api(`/api/campaigns/${id}`, json('PUT', { name: name.trim(), ...(detail?.campaign.launchedAt ? {} : { surveyId: selectedSurveyId }) }));
+      setupDirtyRef.current = false; setSetupDirty(false); toast.success('Campaign setup saved'); await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not save campaign setup.'); }
+    finally { setWorking(false); }
+  }
+  async function saveSchedule() {
+    if (!detail) return;
+    if (!startAt) return toast.error('Set the campaign start time before saving this step.');
+    const date = new Date(startAt); if (!Number.isFinite(date.getTime())) return toast.error('Choose a valid campaign start time.');
+    try {
+      setWorking(true);
+      await api(`/api/campaigns/${id}`, json('PUT', { ...(detail.campaign.launchedAt ? {} : { startAt: date.toISOString() }), settings: { ...detail.campaign.settings, stopOnResponse } }));
+      scheduleDirtyRef.current = false; setScheduleDirty(false); toast.success('Campaign schedule saved'); await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not save the campaign schedule.'); }
+    finally { setWorking(false); }
+  }
   if (!detail) return <div className="h-96 animate-pulse bg-muted" />;
   const { campaign, metrics, survey, collector } = detail;
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local timezone';
   return <div className="space-y-5">
-    <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end"><div><Button variant="ghost" size="sm" asChild className="-ml-3 mb-2"><Link to="/campaigns"><ArrowLeft />All campaigns</Link></Button><div className="flex items-center gap-3"><h1 className="page-title">{campaign.name}</h1><Badge variant={statusVariant(campaign.status)} className="capitalize">{campaign.status}</Badge></div><p className="page-description">{survey.title} · Email sequence through {collector.name}</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" asChild><a href={collector.publicUrl} target="_blank" rel="noreferrer"><ExternalLink />Survey link</a></Button>{campaign.status === 'active' ? <Button variant="outline" size="sm" disabled={working} onClick={() => void transition('pause')}><Pause />Pause</Button> : campaign.status === 'paused' ? <Button size="sm" disabled={working} onClick={() => void transition('resume')}><Play />Resume</Button> : <Button size="sm" disabled={working || campaign.status === 'completed' || settingsDirty.current} onClick={() => void transition('launch')}><Send />Launch campaign</Button>}</div></div>
+    <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end"><div><Button variant="ghost" size="sm" asChild className="-ml-3 mb-2"><Link to="/campaigns"><ArrowLeft />All campaigns</Link></Button><div className="flex items-center gap-3"><h1 className="page-title">{campaign.name}</h1><Badge variant={statusVariant(campaign.status)} className="capitalize">{campaign.status}</Badge></div><p className="page-description">{survey.title} · Email sequence through {collector.name}</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" asChild><a href={collector.publicUrl} target="_blank" rel="noreferrer"><ExternalLink />Survey link</a></Button>{campaign.status === 'active' ? <Button variant="outline" size="sm" disabled={working} onClick={() => void transition('pause')}><Pause />Pause</Button> : campaign.status === 'paused' ? <Button size="sm" disabled={working} onClick={() => void transition('resume')}><Play />Resume</Button> : campaign.status === 'draft' ? <Button size="sm" disabled={working} onClick={() => setActiveTab('review')}><Send />Review and launch</Button> : null}</div></div>
     <div className="grid border bg-card sm:grid-cols-3 lg:grid-cols-6">{[
       ['Audience', metrics.contacts], ['Queued', metrics.queued], ['Accepted', metrics.sent], ['Responses', metrics.responded], ['Failed', metrics.failed], ['Skipped', metrics.skipped]
     ].map(([label, value]) => <div className="border-b px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0" key={label}><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-lg font-semibold">{value}</div></div>)}</div>
-    {survey.status !== 'live' && <div className="flex items-center justify-between gap-4 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><span>This survey is still {survey.status}. Publish it before launching the campaign.</span><Button size="sm" variant="outline" asChild><Link to={`/surveys/${survey.id}`}>Open survey</Link></Button></div>}
-    <Tabs defaultValue="audience"><TabsList className="w-full justify-start overflow-x-auto"><TabsTrigger value="audience">Audience</TabsTrigger><TabsTrigger value="sequence">Sequence</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger><TabsTrigger value="settings">Settings</TabsTrigger></TabsList>
-      <TabsContent value="audience"><AudienceEditor detail={detail} onRefresh={load} /></TabsContent>
-      <TabsContent value="sequence"><SequenceEditor detail={detail} templates={templates} onRefresh={load} /></TabsContent>
+    {campaign.status === 'draft' && <div className={`flex items-center gap-3 border px-4 py-3 text-sm ${workflowReady ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-amber-200 bg-amber-50 text-amber-950'}`} aria-live="polite">{workflowReady ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}<span>{workflowReady ? 'All required steps are complete. Review the campaign before launch.' : `${completedSteps} of 4 required steps complete. Open any step marked “Needs attention” to finish it.`}</span></div>}
+    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CampaignWorkspaceTab)}>
+      <TabsList className="w-full justify-start gap-6 overflow-x-auto" aria-label="Campaign workflow">
+        {workflowSections.map((section, index) => <TabsTrigger value={section.key} key={section.key} className="flex min-w-max items-center gap-2" title={section.issues.join(' ')}><span>{index + 1}. {section.label}</span>{section.complete ? <CheckCircle2 className="h-4 w-4 text-emerald-700" aria-hidden="true" /> : <AlertCircle className="h-4 w-4 text-amber-700" aria-hidden="true" />}<span className="sr-only">{section.complete ? 'Complete' : 'Needs attention'}</span></TabsTrigger>)}
+        <TabsTrigger value="review" className="flex min-w-max items-center gap-2"><span>5. Review</span>{workflowReady ? <CheckCircle2 className="h-4 w-4 text-emerald-700" aria-hidden="true" /> : <AlertCircle className="h-4 w-4 text-amber-700" aria-hidden="true" />}<span className="sr-only">{workflowReady ? 'Ready' : 'Needs attention'}</span></TabsTrigger>
+        <TabsTrigger value="activity" className="min-w-max gap-2">Activity</TabsTrigger>
+      </TabsList>
+      <TabsContent value="setup"><fieldset disabled={working} className="border-0 p-0"><Card className="max-w-2xl"><CardHeader><CardTitle>Campaign setup</CardTitle><p className="text-xs leading-5 text-muted-foreground">Name the campaign and select the exact survey recipients should receive.</p></CardHeader><CardContent className="space-y-4"><div><Label className="field-label" htmlFor="campaign-settings-name">Campaign name <span className="text-destructive" aria-hidden="true">*</span></Label><Input id="campaign-settings-name" value={name} required aria-required="true" aria-invalid={name.trim().length < 2} onChange={(event) => { markSetupDirty(); setName(event.target.value); }} />{name.trim().length < 2 && <p className="mt-1 text-xs text-destructive">Enter at least two characters.</p>}</div><div><Label className="field-label" htmlFor="campaign-settings-survey">Survey <span className="text-destructive" aria-hidden="true">*</span></Label><select id="campaign-settings-survey" aria-required="true" aria-invalid={!selectedSurveyId || selectedSurvey?.status !== 'live'} aria-describedby="campaign-settings-survey-help" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedSurveyId} disabled={Boolean(campaign.launchedAt)} onChange={(event) => { markSetupDirty(); setSelectedSurveyId(event.target.value); }}><option value="">Select the survey to send</option>{surveys.map((item) => <option value={item.id} key={item.id}>{item.title} ({item.status})</option>)}</select><p id="campaign-settings-survey-help" className={`mt-1 text-xs leading-5 ${selectedSurvey && selectedSurvey.status !== 'live' ? 'text-destructive' : 'text-muted-foreground'}`}>{campaign.launchedAt ? 'The survey is locked after launch so recipient links and response attribution remain correct.' : !selectedSurvey ? 'Required: choose the exact survey for this campaign.' : selectedSurvey.status !== 'live' ? 'This survey must be published before the setup step is complete.' : 'The selected live survey will be linked in every campaign message.'}</p></div><Button disabled={working || !setupDirty || name.trim().length < 2 || !selectedSurveyId} onClick={() => void saveSetup()}><Save />{working ? 'Saving' : 'Save setup'}</Button></CardContent></Card></fieldset></TabsContent>
+      <TabsContent value="audience" forceMount className="data-[state=inactive]:hidden"><AudienceEditor detail={detail} onRefresh={load} /></TabsContent>
+      <TabsContent value="sequence" forceMount className="data-[state=inactive]:hidden"><SequenceEditor detail={detail} templates={templates} onRefresh={load} onDraftState={onSequenceDraftState} /></TabsContent>
+      <TabsContent value="schedule"><fieldset disabled={working} className="border-0 p-0"><Card className="max-w-2xl"><CardHeader><CardTitle>Campaign schedule</CardTitle><p className="text-xs leading-5 text-muted-foreground">Choose and save when the first message may enter the delivery queue.</p></CardHeader><CardContent className="space-y-4">{!startAt && !campaign.launchedAt && <div className="flex gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-medium">Start time required</div><p className="mt-1 text-xs leading-5">Select a date and time below. The campaign cannot launch until this step is saved.</p></div></div>}<div><Label className="field-label" htmlFor="campaign-start-at">Start time <span className="text-destructive" aria-hidden="true">*</span></Label><div className="flex flex-col gap-2 sm:flex-row"><Input id="campaign-start-at" type="datetime-local" value={startAt} required aria-required="true" aria-invalid={!startAt} disabled={Boolean(campaign.launchedAt)} onChange={(event) => { markScheduleDirty(); setStartAt(event.target.value); }} /><Button type="button" variant="outline" disabled={Boolean(campaign.launchedAt)} onClick={() => { markScheduleDirty(); setStartAt(dateTimeInputValue(new Date().toISOString())); }}><CalendarClock />Use current time</Button></div><p className={`mt-1 text-xs ${!startAt ? 'text-destructive' : 'text-muted-foreground'}`}>{campaign.launchedAt ? 'The start time is locked after launch so queued delivery times remain accurate.' : `Required. Times are entered in ${timezone}. A past time starts as soon as the campaign is launched.`}</p></div><label className="flex items-start gap-3 border-t pt-4 text-sm"><input type="checkbox" className="mt-1 rounded border-input text-primary focus:ring-primary" checked={stopOnResponse} onChange={(event) => { markScheduleDirty(); setStopOnResponse(event.target.checked); }} /><span><span className="font-medium">Stop follow-ups after a response</span><span className="mt-1 block text-xs text-muted-foreground">Queued sequence messages are skipped as soon as this recipient completes the survey.</span></span></label><Button disabled={working || !scheduleDirty || !startAt} onClick={() => void saveSchedule()}><Save />{working ? 'Saving' : 'Save schedule'}</Button></CardContent></Card></fieldset></TabsContent>
+      <TabsContent value="review"><Card className="max-w-3xl"><CardHeader><CardTitle>{campaign.status === 'draft' ? 'Review and launch' : 'Campaign summary'}</CardTitle><p className="text-xs leading-5 text-muted-foreground">{campaign.status === 'draft' ? 'Every required workflow step must be complete. You can return to any step without losing your place.' : 'The campaign setup and delivery choices are retained here for reference.'}</p></CardHeader><CardContent className="space-y-5"><div className="divide-y border">{workflowSections.map((section) => <button type="button" className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left hover:bg-muted/30" key={section.key} onClick={() => setActiveTab(section.key)}><div><div className="text-sm font-medium">{workflowLabels[section.key]}</div><div className={`mt-1 text-xs leading-5 ${section.complete ? 'text-muted-foreground' : 'text-destructive'}`}>{section.complete ? section.key === 'audience' ? campaign.status === 'draft' ? `${detail.contacts.filter((contact) => contact.status === 'active').length} active contact${detail.contacts.filter((contact) => contact.status === 'active').length === 1 ? '' : 's'}` : `${metrics.contacts} campaign contact${metrics.contacts === 1 ? '' : 's'}` : section.key === 'sequence' ? `${detail.steps.length} saved message${detail.steps.length === 1 ? '' : 's'}` : section.key === 'schedule' ? formatDateTime(campaign.startsAt) : `${survey.title} selected` : section.issues.join(' ')}</div></div>{section.complete ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" aria-label="Complete" /> : <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-label="Needs attention" />}</button>)}</div>{campaign.status === 'draft' ? <div><Button disabled={working || !workflowReady} onClick={() => void transition('launch')}><Send />{working ? 'Launching' : 'Launch campaign'}</Button>{!workflowReady && <p className="mt-2 text-xs text-destructive" role="status">Complete the steps marked “Needs attention” before launching.</p>}</div> : <p className="text-sm text-muted-foreground">This campaign is {campaign.status}. Its setup is retained here for reference.</p>}</CardContent></Card></TabsContent>
       <TabsContent value="activity"><Activity detail={detail} /></TabsContent>
-      <TabsContent value="settings"><Card className="max-w-2xl"><CardHeader><CardTitle>Campaign settings</CardTitle></CardHeader><CardContent className="space-y-4"><div><Label className="field-label" htmlFor="campaign-settings-name">Name</Label><Input id="campaign-settings-name" value={name} onChange={(event) => { settingsDirty.current = true; setName(event.target.value); }} /></div><div><Label className="field-label" htmlFor="campaign-settings-survey">Survey</Label><select id="campaign-settings-survey" aria-describedby="campaign-settings-survey-help" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedSurveyId} disabled={Boolean(campaign.launchedAt)} onChange={(event) => { settingsDirty.current = true; setSelectedSurveyId(event.target.value); }}><option value="">Select the survey to send</option>{surveys.map((item) => <option value={item.id} key={item.id}>{item.title} ({item.status})</option>)}</select><p id="campaign-settings-survey-help" className="mt-1 text-xs leading-5 text-muted-foreground">{campaign.launchedAt ? 'The survey is locked after launch so recipient links and response attribution remain correct.' : 'Choose the exact survey this campaign will send. Changing it also switches to that survey’s email collector.'}</p></div><div><Label className="field-label" htmlFor="campaign-start-at">Start time</Label><Input id="campaign-start-at" type="datetime-local" value={startAt} disabled={Boolean(campaign.launchedAt)} onChange={(event) => { settingsDirty.current = true; setStartAt(event.target.value); }} /><p className="mt-1 text-xs text-muted-foreground">{campaign.launchedAt ? 'The start time is locked after launch so queued delivery times remain accurate.' : 'Leave blank to begin immediately when you launch.'}</p></div><label className="flex items-start gap-3 border-t pt-4 text-sm"><input type="checkbox" className="mt-1 rounded border-input text-primary focus:ring-primary" checked={stopOnResponse} onChange={(event) => { settingsDirty.current = true; setStopOnResponse(event.target.checked); }} /><span><span className="font-medium">Stop follow-ups after a response</span><span className="mt-1 block text-xs text-muted-foreground">Queued sequence messages are skipped as soon as this recipient completes the survey.</span></span></label><Button disabled={working || !selectedSurveyId} onClick={() => void saveSettings()}><Save />Save settings</Button></CardContent></Card></TabsContent>
     </Tabs>
   </div>;
 }

@@ -4,7 +4,7 @@ import { createCollector, db, getCollector, getSurvey } from './database.js';
 import { sendCampaignEmail } from './emailService.js';
 import { publishEvent } from './events.js';
 import type {
-  Campaign, CampaignContact, CampaignDelivery, CampaignStep, Collector, Question, Survey
+  Campaign, CampaignContact, CampaignDelivery, CampaignReadiness, CampaignStep, Collector, Question, Survey
 } from './types.js';
 
 type CampaignTemplate = {
@@ -118,6 +118,47 @@ function campaignMetrics(campaignId: string) {
   };
 }
 
+export function getCampaignReadiness(id: string, startAtOverride?: string | null): CampaignReadiness {
+  const campaign = requireCampaign(id);
+  const survey = getSurvey(campaign.surveyId);
+  const collector = getCollector(campaign.collectorId);
+  const steps = db.prepare('SELECT subject,content_mode,body_text,body_html FROM campaign_steps WHERE campaign_id=? ORDER BY position').all(id) as any[];
+  const sendableContacts = Number((db.prepare(`SELECT COUNT(*) count FROM campaign_contacts r WHERE campaign_id=? AND status='active'
+    AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=r.email)`).get(id) as any).count);
+
+  const setupIssues: string[] = [];
+  if (campaign.name.trim().length < 2) setupIssues.push('Enter a campaign name.');
+  if (!survey) setupIssues.push('Select an existing survey.');
+  else if (survey.status !== 'live') setupIssues.push('Publish the selected survey.');
+  if (!collector || collector.type !== 'email' || collector.status !== 'open') setupIssues.push('Use an open email collector.');
+
+  const audienceIssues = sendableContacts ? [] : ['Add at least one active, unsuppressed contact.'];
+  const sequenceIssues: string[] = [];
+  if (!steps.length) sequenceIssues.push('Add at least one email step.');
+  if (steps.some((step) => !String(step.subject || '').trim())) sequenceIssues.push('Add a subject to every email step.');
+  if (steps.some((step) => !String((step.content_mode === 'html' ? step.body_html : step.body_text) || '').trim())) {
+    sequenceIssues.push('Add message content to every email step.');
+  }
+  const effectiveStartAt = startAtOverride === undefined ? campaign.startAt : startAtOverride;
+  const scheduleIssues = effectiveStartAt && Number.isFinite(Date.parse(effectiveStartAt))
+    ? [] : ['Set and save a campaign start time.'];
+
+  const sections: CampaignReadiness['sections'] = {
+    setup: { key: 'setup', complete: setupIssues.length === 0, issues: setupIssues },
+    audience: { key: 'audience', complete: audienceIssues.length === 0, issues: audienceIssues },
+    sequence: { key: 'sequence', complete: sequenceIssues.length === 0, issues: sequenceIssues },
+    schedule: { key: 'schedule', complete: scheduleIssues.length === 0, issues: scheduleIssues }
+  };
+  const issues = Object.values(sections).flatMap((section) => section.issues);
+  return {
+    ready: issues.length === 0,
+    completedSections: Object.values(sections).filter((section) => section.complete).length,
+    totalSections: Object.keys(sections).length,
+    sections,
+    issues
+  };
+}
+
 export function getCampaignDetail(id: string) {
   const campaign = requireCampaign(id);
   return {
@@ -128,7 +169,8 @@ export function getCampaignDetail(id: string) {
     contacts: (db.prepare(`SELECT r.*,(SELECT MIN(d.scheduled_at) FROM campaign_deliveries d WHERE d.contact_id=r.id AND d.state='queued') next_send_at
       FROM campaign_contacts r WHERE r.campaign_id=? ORDER BY r.created_at DESC LIMIT 1000`).all(id) as any[]).map(rowContact),
     deliveries: (db.prepare('SELECT * FROM campaign_deliveries WHERE campaign_id=? ORDER BY created_at DESC LIMIT 1000').all(id) as any[]).map(rowDelivery),
-    metrics: campaignMetrics(id)
+    metrics: campaignMetrics(id),
+    readiness: getCampaignReadiness(id)
   };
 }
 
@@ -369,18 +411,27 @@ function ensureInitialDeliveries(campaignId: string) {
   for (const contact of contacts) insert.run(crypto.randomUUID(), campaignId, first.id, contact.id, Number(first.position), scheduledAt, now, now);
 }
 
-export function launchCampaign(id: string) {
-  const campaign = requireCampaign(id); const survey = getSurvey(campaign.surveyId); const collector = getCollector(campaign.collectorId);
-  if (!survey || survey.status !== 'live') throw new Error('Publish the survey before launching its campaign.');
-  if (!collector || collector.type !== 'email' || collector.status !== 'open') throw new Error('An open email collector is required.');
-  const steps = Number((db.prepare('SELECT COUNT(*) count FROM campaign_steps WHERE campaign_id=?').get(id) as any).count);
-  const contacts = Number((db.prepare(`SELECT COUNT(*) count FROM campaign_contacts r WHERE campaign_id=? AND status='active'
-    AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=r.email)`).get(id) as any).count);
-  if (!steps) throw new Error('Add at least one sequence step before launch.');
-  if (!contacts) throw new Error('Add at least one active contact before launch.');
-  const now = new Date().toISOString();
-  db.prepare("UPDATE campaigns SET status='active',launched_at=COALESCE(launched_at,?),paused_at=NULL,completed_at=NULL,updated_at=? WHERE id=?").run(now, now, id);
-  ensureInitialDeliveries(id); publishEvent('campaign', { campaignId: id, reason: 'launched' }); refreshCampaignCompletion(id); void campaignRunner.pump();
+export function launchCampaign(id: string, startAtOverride?: string | null) {
+  db.transaction(() => {
+    const campaign = requireCampaign(id); const survey = getSurvey(campaign.surveyId); const collector = getCollector(campaign.collectorId);
+    if (campaign.status !== 'draft' || campaign.launchedAt) throw new Error('This campaign has already been launched.');
+    if (!survey || survey.status !== 'live') throw new Error('Publish the survey before launching its campaign.');
+    if (!collector || collector.type !== 'email' || collector.status !== 'open') throw new Error('An open email collector is required.');
+    const steps = Number((db.prepare('SELECT COUNT(*) count FROM campaign_steps WHERE campaign_id=?').get(id) as any).count);
+    const contacts = Number((db.prepare(`SELECT COUNT(*) count FROM campaign_contacts r WHERE campaign_id=? AND status='active'
+      AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=r.email)`).get(id) as any).count);
+    if (!steps) throw new Error('Add at least one sequence step before launch.');
+    if (!contacts) throw new Error('Add at least one active contact before launch.');
+    const readiness = getCampaignReadiness(id, startAtOverride);
+    if (!readiness.ready) throw new Error(readiness.issues[0] || 'Complete the campaign workflow before launch.');
+    const now = new Date().toISOString();
+    const startAt = startAtOverride === undefined ? campaign.startAt : startAtOverride;
+    const changed = db.prepare(`UPDATE campaigns SET status='active',start_at=?,launched_at=?,paused_at=NULL,completed_at=NULL,updated_at=?
+      WHERE id=? AND status='draft' AND launched_at IS NULL`).run(startAt, now, now, id).changes;
+    if (changed !== 1) throw new Error('This campaign has already been launched.');
+    ensureInitialDeliveries(id);
+  })();
+  publishEvent('campaign', { campaignId: id, reason: 'launched' }); refreshCampaignCompletion(id); void campaignRunner.pump();
   return getCampaignDetail(id);
 }
 

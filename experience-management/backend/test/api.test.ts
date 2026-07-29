@@ -254,6 +254,15 @@ test('runs a durable multi-step survey campaign and stops reminders after respon
   assert.equal(testSend.body.outcomes[0].status, 'sent');
   assert.doesNotMatch(sanitizeCampaignHtml('<script>alert(1)</script><p>Safe</p><a href="javascript:bad">No</a>'), /script|javascript/i);
 
+  const readiness = await agent.get(`/api/campaigns/${campaignId}`).expect(200);
+  assert.equal(readiness.body.readiness.sections.setup.complete, true);
+  assert.equal(readiness.body.readiness.sections.audience.complete, true);
+  assert.equal(readiness.body.readiness.sections.sequence.complete, true);
+  assert.equal(readiness.body.readiness.sections.schedule.complete, false);
+  assert.match(readiness.body.readiness.sections.schedule.issues[0], /start time/i);
+  await agent.post(`/api/campaigns/${campaignId}/launch`).send({}).expect(400)
+    .expect(({ body }) => assert.match(body.error, /start time/i));
+
   await agent.post(`/api/campaigns/${campaignId}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
   await campaignRunner.pump();
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -290,7 +299,7 @@ test('pauses, resumes and recovers leased campaign deliveries without losing wor
   const id = campaign.body.campaign.id;
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{ delayMinutes: 30, subject: 'Scheduled survey', mode: 'plain', bodyText: '{{survey_link}}' }] }).expect(200);
   const added = await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'queued@example.com' }] }).expect(201);
-  await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(200);
+  await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
   await agent.post(`/api/campaigns/${id}/pause`).send({}).expect(200);
   await campaignRunner.pump();
   const paused = await agent.get(`/api/campaigns/${id}`).expect(200);
@@ -329,7 +338,7 @@ test('can continue follow-ups after a response when stop-on-response is disabled
     { delayMinutes: 60, subject: 'Second', mode: 'plain', bodyText: '{{survey_link}}' }
   ] }).expect(200);
   await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'continue@example.com' }] }).expect(201);
-  await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(200);
+  await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
   await campaignRunner.pump(); await new Promise((resolve) => setTimeout(resolve, 20));
   const before = await agent.get(`/api/campaigns/${id}`).expect(200);
   const contact = before.body.contacts[0];
@@ -367,7 +376,7 @@ test('does not orphan a follow-up when a response arrives during an in-flight se
     ? (providerRequest = JSON.parse(String(init?.body || '{}')), pendingSend)
     : new Response(JSON.stringify({ error: 'runtime unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } });
   try {
-    await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(200);
+    await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const state = (db.prepare('SELECT state FROM campaign_deliveries WHERE campaign_id=?').get(id) as any)?.state;
       if (state === 'sending') break;
@@ -414,8 +423,18 @@ test('enforces campaign collector, embedding and post-launch scheduling invarian
   const id = campaign.body.campaign.id;
   assert.notEqual(campaign.body.collector.id, closedCollector.body.id);
   assert.equal(campaign.body.collector.status, 'open');
+  const originalStartAt = new Date(Date.now() + 30_000).toISOString();
+  const rejectedStartAt = new Date(Date.now() + 45_000).toISOString();
+  await agent.put(`/api/campaigns/${id}`).send({ startAt: originalStartAt }).expect(200);
+  await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: rejectedStartAt }).expect(400);
+  const afterRejectedLaunch = await agent.get(`/api/campaigns/${id}`).expect(200);
+  assert.equal(afterRejectedLaunch.body.campaign.startsAt, originalStartAt);
 
   const step = (embedQuestionId: string) => ({ delayMinutes: 30, subject: 'Survey', mode: 'plain', bodyText: '{{survey_link}}', embedQuestionId });
+  await agent.put(`/api/campaigns/${id}`).send({ name: '   ' }).expect(400);
+  await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{ delayMinutes: 0, subject: '   ', mode: 'plain', bodyText: 'Message' }] }).expect(400);
+  await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{ delayMinutes: 0, subject: 'Subject', mode: 'plain', bodyText: '   ' }] }).expect(400);
+  await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{ delayMinutes: 0, subject: 'Subject', mode: 'html', bodyText: '', bodyHtml: '   ' }] }).expect(400);
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [step('embed-later')] }).expect(400)
     .expect(({ body }) => assert.match(body.error, /first survey page/i));
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [step('embed-dropdown')] }).expect(400)
@@ -432,7 +451,13 @@ test('enforces campaign collector, embedding and post-launch scheduling invarian
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [step('alternate-embed')] }).expect(200);
   await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'invariant@example.com' }] }).expect(201);
   await agent.post(`/api/surveys/${alternate.body.id}/publish`).send({ status: 'live' }).expect(200);
+  db.prepare("UPDATE campaigns SET name='' WHERE id=?").run(id);
+  await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() + 60_000).toISOString() }).expect(400)
+    .expect(({ body }) => assert.match(body.error, /campaign name/i));
+  db.prepare("UPDATE campaigns SET name='Invariant campaign' WHERE id=?").run(id);
   await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() + 60_000).toISOString() }).expect(200);
+  await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(400)
+    .expect(({ body }) => assert.match(body.error, /already been launched/i));
   await agent.put(`/api/campaigns/${id}`).send({ surveyId: survey.body.id }).expect(400)
     .expect(({ body }) => assert.match(body.error, /survey can only be changed while.*draft/i));
   await agent.put(`/api/campaigns/${id}`).send({ startAt: new Date(Date.now() + 120_000).toISOString() }).expect(400)
@@ -452,7 +477,7 @@ test('fails stale ambiguous delivery leases instead of risking duplicate sends',
   const id = campaign.body.campaign.id;
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{ delayMinutes: 30, subject: 'Later', mode: 'plain', bodyText: '{{survey_link}}' }] }).expect(200);
   await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'stale-lease@example.com' }] }).expect(201);
-  await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(200);
+  await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
   const staleAt = new Date(Date.now() - (config.brevoIdempotencyTtlMinutes + 5) * 60_000).toISOString();
   db.prepare("UPDATE campaign_deliveries SET state='sending',attempt=1,first_attempt_at=?,updated_at=? WHERE campaign_id=?").run(staleAt, staleAt, id);
   assert.equal(recoverCampaignDeliveries(), 1);
@@ -535,7 +560,7 @@ test('personalizes job title and scalar custom contact fields without bypassing 
     return new Response(JSON.stringify({ messageId: 'personalized-message' }), { status: 201, headers: { 'content-type': 'application/json' } });
   };
   try {
-    await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(200);
+    await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
     await campaignRunner.pump();
     assert.equal(providerRequest.subject, 'Mina · Head <Research> · Enterprise');
     assert.match(providerRequest.htmlContent, /Mina Head &lt;Research&gt; &lt;North&gt; \{\{unknown_value\}\}/);
@@ -558,7 +583,7 @@ test('requires unsubscribe confirmation and applies global suppression without G
   const id = first.body.campaign.id;
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{ delayMinutes: 30, subject: 'Later', mode: 'plain', bodyText: '{{survey_link}}' }] }).expect(200);
   const added = await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'unsubscribe-me@example.com' }] }).expect(201);
-  await agent.post(`/api/campaigns/${id}/launch`).send({}).expect(200);
+  await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
   const token = added.body.contacts[0].token;
 
   const preview = await request(app).get(`/api/public/campaigns/unsubscribe/${token}`).expect(200);
@@ -594,7 +619,7 @@ test('authenticates, bounds and idempotently applies single and batched Brevo de
     { delayMinutes: 60, subject: 'Follow-up', mode: 'plain', bodyText: '{{survey_link}}' }
   ] }).expect(200);
   await agent.post(`/api/campaigns/${campaignId}/contacts`).send({ contacts: [{ email: 'webhook-bounce@example.com' }] }).expect(201);
-  await agent.post(`/api/campaigns/${campaignId}/launch`).send({}).expect(200);
+  await agent.post(`/api/campaigns/${campaignId}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
   await campaignRunner.pump();
   const before = await agent.get(`/api/campaigns/${campaignId}`).expect(200);
   const sent = before.body.deliveries.find((delivery: any) => delivery.state === 'sent');

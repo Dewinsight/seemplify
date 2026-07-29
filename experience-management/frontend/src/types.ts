@@ -47,9 +47,15 @@ export interface CampaignMetrics {
   contacts: number; queued: number; sent: number; failed: number; skipped: number; responded: number; completed: number;
   totalContacts?: number; totalDeliveries?: number; responseRate?: number; lastActivityAt?: string | null;
 }
+export type CampaignWorkflowSectionKey = 'setup' | 'audience' | 'sequence' | 'schedule';
+export interface CampaignWorkflowSection { key: CampaignWorkflowSectionKey; complete: boolean; issues: string[] }
+export interface CampaignReadiness {
+  ready: boolean; completedSections: number; totalSections: number;
+  sections: Record<CampaignWorkflowSectionKey, CampaignWorkflowSection>; issues: string[];
+}
 export interface CampaignDetail {
   campaign: Campaign; survey: Survey; collector: Collector; steps: CampaignStep[]; contacts: CampaignContact[];
-  deliveries: CampaignDelivery[]; metrics: CampaignMetrics;
+  deliveries: CampaignDelivery[]; metrics: CampaignMetrics; readiness: CampaignReadiness;
 }
 export interface CampaignTemplate {
   id: string; name: string; description: string;

@@ -245,16 +245,18 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   await page.getByRole('button', { name: 'Create campaign' }).click();
   await expect(page.getByRole('heading', { name: campaignName })).toBeVisible();
 
-  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: /Setup/ }).click();
   await page.locator('#campaign-settings-survey').selectOption(setup.alternateSurveyId);
-  await expect(page.getByRole('button', { name: 'Launch campaign' })).toBeDisabled();
-  await page.getByRole('button', { name: 'Save settings' }).click();
+  await page.getByRole('tab', { name: /Schedule/ }).click();
+  await expect(page.getByText('Start time required')).toBeVisible();
+  await page.getByRole('tab', { name: /Setup/ }).click();
+  await page.getByRole('button', { name: 'Save setup' }).click();
   await expect(page.locator('.page-description')).toContainText(setup.alternateSurveyTitle);
   await page.locator('#campaign-settings-survey').selectOption(setup.surveyId);
-  await page.getByRole('button', { name: 'Save settings' }).click();
+  await page.getByRole('button', { name: 'Save setup' }).click();
   await expect(page.locator('.page-description')).toContainText(setup.surveyTitle);
 
-  await page.getByRole('tab', { name: 'Audience' }).click();
+  await page.getByRole('tab', { name: /Audience/ }).click();
   await page.getByRole('button', { name: 'Add person' }).click();
   const contactDialog = page.getByRole('dialog', { name: 'Add person' });
   await contactDialog.getByLabel('Email address').fill(`ada-${suffix}@example.com`);
@@ -283,7 +285,7 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   await expect(graceRow.getByText('suppressed', { exact: true })).toBeVisible();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('campaign-audience.png'), fullPage: true });
 
-  await page.getByRole('tab', { name: 'Sequence' }).click();
+  await page.getByRole('tab', { name: /Sequence/ }).click();
   await expect(page.getByText('Step 1', { exact: true })).toBeVisible();
   await expect(page.getByText('Step 2', { exact: true })).toBeVisible();
   await page.getByLabel('Step 1 embedded question').selectOption(setup.questionId);
@@ -291,8 +293,18 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   await expect(page.getByText('Sequence saved')).toBeVisible();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('campaign-sequence.png'), fullPage: true });
 
+  await page.getByRole('tab', { name: /Schedule/ }).click();
+  const campaignStart = await page.evaluate(() => {
+    const date = new Date(Date.now() - 60_000);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  });
+  await page.getByLabel(/Start time/).fill(campaignStart);
+  await page.getByRole('button', { name: 'Save schedule' }).click();
+  await expect(page.getByText('Campaign schedule saved')).toBeVisible();
+  await page.getByRole('tab', { name: /Review/ }).click();
+  await expect(page.getByText('All required steps are complete. Review the campaign before launch.')).toBeVisible();
   await page.getByRole('button', { name: 'Launch campaign' }).click();
-  await expect(page.getByText('active', { exact: true })).toBeVisible();
+  await expect(page.getByText('active', { exact: true }).first()).toBeVisible();
   await page.getByRole('tab', { name: 'Activity' }).click();
   const deliveryHistory = page.locator('table').filter({ has: page.getByRole('columnheader', { name: 'Lifecycle' }) });
   await expect(deliveryHistory.locator('tbody')).toContainText('accepted', { timeout: 15_000 });

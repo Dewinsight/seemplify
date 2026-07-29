@@ -47,7 +47,7 @@ test('ships a survey-specific email campaign workspace with audience, sequencing
   assert.match(list, /\/api\/campaigns/);
   assert.doesNotMatch(list, /surveyRows\[0\]/);
   assert.match(list, /No survey is selected automatically/);
-  for (const section of ['Audience', 'Sequence', 'Activity', 'Settings']) assert.match(workspace, new RegExp(section));
+  for (const section of ['Setup', 'Audience', 'Sequence', 'Schedule', 'Review', 'Activity']) assert.match(workspace, new RegExp(section));
   assert.match(workspace, /Plain text \(recommended\)/);
   assert.match(workspace, /Load sequence template/);
   assert.match(workspace, /Embed a question/);
@@ -56,6 +56,11 @@ test('ships a survey-specific email campaign workspace with audience, sequencing
   assert.match(workspace, /providerStatus/);
   assert.match(workspace, /campaign-settings-survey/);
   assert.match(workspace, /surveyId: selectedSurveyId/);
+  assert.match(workspace, /Start time required/);
+  assert.match(workspace, /Set a campaign start time/);
+  assert.match(workspace, /aria-required="true"/);
+  assert.match(workspace, /Review and launch/);
+  assert.match(workspace, /forceMount/);
   for (const contactFeature of ['Add person', 'Job title \/ position', 'Add custom field', 'Import an audience list']) assert.match(workspace, new RegExp(contactFeature));
   assert.match(contactImport, /jobTitle/);
   assert.match(contactImport, /customData/);
