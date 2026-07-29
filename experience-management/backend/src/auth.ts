@@ -9,7 +9,7 @@ const cookieName = 'seemplify_experience_session';
 const resetLifetimeMs = 30 * 60_000;
 const scryptParameters = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 type UserRow = { id: string; email: string; name: string; password_hash: string; role: string; session_version: number };
-type SessionUser = { id: string; email: string; name: string; role: string; sessionVersion: number };
+export type SessionUser = { id: string; email: string; name: string; role: string; sessionVersion: number };
 
 function readRequired(path: string, label: string) {
   try { const value = fs.readFileSync(path, 'utf8').trim(); if (value.length < 20) throw new Error('too short'); return value; }
@@ -72,7 +72,7 @@ function parseCookies(request: Request) {
     .map((part) => part.trim().split('=').map(decodeURIComponent)).filter((part) => part.length === 2));
 }
 
-function sessionUser(request: Request): SessionUser | null {
+export function currentSessionUser(request: Request): SessionUser | null {
   const token = parseCookies(request)[cookieName]; if (!token) return null;
   const [payload, signature] = token.split('.');
   if (!payload || !signature || !safeEqual(sign(payload), signature)) return null;
@@ -85,7 +85,7 @@ function sessionUser(request: Request): SessionUser | null {
   } catch { return null; }
 }
 
-export function validSession(request: Request) { return Boolean(sessionUser(request)); }
+export function validSession(request: Request) { return Boolean(currentSessionUser(request)); }
 
 function cookie(value: string, maxAge: number) {
   const secure = config.publicUrl.startsWith('https://') ? '; Secure' : '';
@@ -122,6 +122,18 @@ function createUser(email: string, name: string, password: string) {
   db.prepare(`INSERT INTO users (id,email,name,password_hash,role,session_version,created_at,updated_at)
     VALUES (?,?,?,?,?,1,?,?)`).run(id, email, name, hashPassword(password), role, now, now);
   return { id, email, name, role, sessionVersion: 1 } satisfies SessionUser;
+}
+
+export function bootstrapAdminAccount() {
+  const existing = userByEmail(config.adminEmail);
+  if (existing) {
+    if (existing.role !== 'owner') db.prepare("UPDATE users SET role='owner',updated_at=? WHERE id=?").run(new Date().toISOString(), existing.id);
+    return existing.id;
+  }
+  const password = readRequired(config.adminPasswordFile, 'Admin password');
+  const created = createUser(config.adminEmail, 'Workspace admin', password);
+  if (created.role !== 'owner') db.prepare("UPDATE users SET role='owner',updated_at=? WHERE id=?").run(new Date().toISOString(), created.id);
+  return created.id;
 }
 
 export function signup(request: Request, response: Response) {
@@ -222,8 +234,14 @@ export function resetPassword(request: Request, response: Response) {
 
 export function logout(_request: Request, response: Response) { response.setHeader('Set-Cookie', cookie('', 0)); return response.status(204).end(); }
 export function requireAdmin(request: Request, response: Response, next: NextFunction) { if (!validSession(request)) return response.status(401).json({ error: 'Authentication required.' }); next(); }
+export function requireOwner(request: Request, response: Response, next: NextFunction) {
+  const user = currentSessionUser(request);
+  if (!user) return response.status(401).json({ error: 'Authentication required.' });
+  if (user.role !== 'owner') return response.status(403).json({ error: 'Workspace owner access is required.' });
+  next();
+}
 export function session(request: Request, response: Response) {
-  const user = sessionUser(request);
+  const user = currentSessionUser(request);
   return response.json({
     authenticated: Boolean(user),
     email: user?.email || null,

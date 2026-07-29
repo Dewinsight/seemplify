@@ -13,6 +13,13 @@ $PidFile = Join-Path $RuntimeDir 'server.pid'
 $PasswordFile = Join-Path $RuntimeDir 'admin-password'
 $SessionSecretFile = Join-Path $RuntimeDir 'session-secret'
 $BrevoWebhookSecretFile = Join-Path $RuntimeDir 'brevo-webhook-secret'
+$XCredentialEncryptionKeyFile = Join-Path $RuntimeDir 'x-credential-encryption-key'
+$XConsumerKeyFile = Join-Path $RuntimeDir 'x-consumer-key'
+$XConsumerSecretFile = Join-Path $RuntimeDir 'x-consumer-secret'
+$XBearerTokenFile = Join-Path $RuntimeDir 'x-bearer-token'
+$XAccessTokenFile = Join-Path $RuntimeDir 'x-access-token'
+$XAccessTokenSecretFile = Join-Path $RuntimeDir 'x-access-token-secret'
+$CloudflareTunnelTokenFile = Join-Path $RuntimeDir 'cloudflare-tunnel-token'
 $StdoutLog = Join-Path $RuntimeDir 'server.stdout.log'
 $StderrLog = Join-Path $RuntimeDir 'server.stderr.log'
 $StartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Seemplify Experience.lnk'
@@ -30,10 +37,27 @@ function Get-ProjectDir {
 }
 
 function New-RandomSecret([int]$Bytes = 32) { $value = New-Object byte[] $Bytes; $generator = [Security.Cryptography.RandomNumberGenerator]::Create(); try { $generator.GetBytes($value) } finally { $generator.Dispose() }; return [Convert]::ToBase64String($value).TrimEnd('=').Replace('+','-').Replace('/','_') }
+function Protect-RuntimeSecret([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+  $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  $acl = New-Object Security.AccessControl.FileSecurity
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($identity in @($currentIdentity, 'NT AUTHORITY\SYSTEM')) {
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow')
+    [void]$acl.AddAccessRule($rule)
+  }
+  [IO.File]::SetAccessControl([IO.Path]::GetFullPath($Path), $acl)
+}
 function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $PasswordFile)) { Set-Content -LiteralPath $PasswordFile -Value (New-RandomSecret 24) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $XCredentialEncryptionKeyFile)) { Set-Content -LiteralPath $XCredentialEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
+  foreach ($secretFile in @(
+    $PasswordFile, $SessionSecretFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile,
+    $XConsumerKeyFile, $XConsumerSecretFile, $XBearerTokenFile, $XAccessTokenFile,
+    $XAccessTokenSecretFile, $CloudflareTunnelTokenFile
+  )) { Protect-RuntimeSecret $secretFile }
   $envFile = Join-Path $SourceProjectDir 'backend\.env'
   if (-not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath (Join-Path $SourceProjectDir 'backend\.env.example') -Destination $envFile }
 }
@@ -52,6 +76,9 @@ function Start-Server {
   $env:HOST='127.0.0.1'; $env:PORT='5410'; $env:PUBLIC_URL='https://experience.aiinnigeria.com'
   $env:ADMIN_PASSWORD_FILE=$PasswordFile; $env:SESSION_SECRET_FILE=$SessionSecretFile
   $env:BREVO_WEBHOOK_SECRET_FILE=$BrevoWebhookSecretFile
+  $env:X_CREDENTIAL_ENCRYPTION_KEY_FILE=$XCredentialEncryptionKeyFile
+  $env:X_SEED_CONSUMER_KEY_FILE=$XConsumerKeyFile; $env:X_SEED_CONSUMER_SECRET_FILE=$XConsumerSecretFile
+  $env:X_SEED_BEARER_TOKEN_FILE=$XBearerTokenFile; $env:X_SEED_ACCESS_TOKEN_FILE=$XAccessTokenFile; $env:X_SEED_ACCESS_TOKEN_SECRET_FILE=$XAccessTokenSecretFile
   $env:DATABASE_PATH=(Join-Path $RuntimeDir 'experience.sqlite'); $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
   $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
   $sharedBrevo = Join-Path (Split-Path -Parent $RepositoryDir) 'crm\Xplorer-Full-backend\.env'
@@ -69,7 +96,7 @@ function Set-AutoStart([bool]$Enabled) {
 function Get-Status {
   $process = Get-ServerProcess; $healthy = $false; try { $healthy = (Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:5410/health' -TimeoutSec 3).StatusCode -eq 200 } catch {}
   $project = Get-ProjectDir
-  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
+  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
 }
 switch ($Action) { 'initialize' { Initialize-Runtime }; 'start' { Start-Server }; 'stop' { Stop-Server }; 'restart' { Stop-Server; Start-Server }; 'enable-auto-start' { Initialize-Runtime; Set-AutoStart $true }; 'disable-auto-start' { Set-AutoStart $false }; 'status' {} }
 $status = Get-Status; if ($Json) { $status | ConvertTo-Json -Compress } else { [pscustomobject]$status | Format-List }

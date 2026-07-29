@@ -38,6 +38,7 @@ function SidebarContent({ close, terraReady, runtimeLabel }: { close?: () => voi
         <span className={terraReady ? 'text-emerald-700' : 'text-amber-700'} aria-live="polite">{runtimeLabel} {terraReady ? 'ready' : 'unavailable'}</span>
       </div>
       <button onClick={signOut} className="mt-3 flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"><LogOut className="h-3.5 w-3.5" />Sign out</button>
+      <div className="mt-3 flex gap-3 text-[11px] text-muted-foreground"><Link className="hover:text-foreground hover:underline" to="/legal/terms">Terms</Link><Link className="hover:text-foreground hover:underline" to="/legal/privacy">Privacy</Link></div>
     </div>
   </>;
 }

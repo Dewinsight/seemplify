@@ -75,6 +75,27 @@ export const config = {
   brevoWebhookSecretFile: resolveFromBackend(
     process.env.BREVO_WEBHOOK_SECRET_FILE || '../../.local-runtime/experience-management/brevo-webhook-secret'
   ),
+  xApiBaseUrl: String(process.env.X_API_BASE_URL || 'https://api.x.com').replace(/\/+$/, ''),
+  xOAuthBaseUrl: String(process.env.X_OAUTH_BASE_URL || 'https://api.x.com').replace(/\/+$/, ''),
+  xCredentialEncryptionKeyFile: resolveFromBackend(
+    process.env.X_CREDENTIAL_ENCRYPTION_KEY_FILE || '../../.local-runtime/experience-management/x-credential-encryption-key'
+  ),
+  xSeedConsumerKeyFile: resolveFromBackend(
+    process.env.X_SEED_CONSUMER_KEY_FILE || '../../.local-runtime/experience-management/x-consumer-key'
+  ),
+  xSeedConsumerSecretFile: resolveFromBackend(
+    process.env.X_SEED_CONSUMER_SECRET_FILE || '../../.local-runtime/experience-management/x-consumer-secret'
+  ),
+  xSeedBearerTokenFile: resolveFromBackend(
+    process.env.X_SEED_BEARER_TOKEN_FILE || '../../.local-runtime/experience-management/x-bearer-token'
+  ),
+  xSeedAccessTokenFile: resolveFromBackend(
+    process.env.X_SEED_ACCESS_TOKEN_FILE || '../../.local-runtime/experience-management/x-access-token'
+  ),
+  xSeedAccessTokenSecretFile: resolveFromBackend(
+    process.env.X_SEED_ACCESS_TOKEN_SECRET_FILE || '../../.local-runtime/experience-management/x-access-token-secret'
+  ),
+  xSyncPollSeconds: boundedNumber(process.env.X_SYNC_POLL_SECONDS, 60, 15, 300),
   adminEmail: String(process.env.ADMIN_EMAIL || 'admin@seemplify.local').trim().toLowerCase(),
   adminPasswordFile: resolveFromBackend(process.env.ADMIN_PASSWORD_FILE || '../../.local-runtime/experience-management/admin-password'),
   sessionSecretFile: resolveFromBackend(process.env.SESSION_SECRET_FILE || '../../.local-runtime/experience-management/session-secret'),

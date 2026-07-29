@@ -11,6 +11,10 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   expect(await missingAsset.text()).not.toContain('<!doctype html>');
   const unauthenticated = await page.goto('/api/bootstrap');
   expect(unauthenticated?.status()).toBe(401);
+  const terms = await page.goto('/legal/terms'); expect(terms?.status()).toBe(200);
+  await expect(page.getByRole('heading', { name: 'Terms of Service' })).toBeVisible();
+  const privacy = await page.goto('/legal/privacy'); expect(privacy?.status()).toBe(200);
+  await expect(page.getByRole('heading', { name: 'Privacy Policy' })).toBeVisible();
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Create an account' }).click();

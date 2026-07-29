@@ -6,7 +6,7 @@ import helmet from 'helmet';
 import multer from 'multer';
 import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
-import { forgotPassword, login, logout, requireAdmin, resetPassword, session, signup } from './auth.js';
+import { currentSessionUser, forgotPassword, login, logout, requireAdmin, resetPassword, session, signup } from './auth.js';
 import { computeAnalytics } from './analytics.js';
 import { config } from './config.js';
 import {
@@ -26,6 +26,11 @@ import { parseSocialMentionImport } from './socialImport.js';
 import { getTerraStatus } from './terraClient.js';
 import { templates } from './templates.js';
 import { QUESTION_TYPES, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
+import {
+  clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXSync,
+  finishXOAuth, getXIntegrationStatus, listXCollectedMentions, saveXConfiguration, startXOAuth, updateXConnectionSettings, updateXQuery,
+  XIntegrationError, xOAuthCookieFromHeader
+} from './xIntegration.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -56,7 +61,7 @@ app.post('/api/auth/logout', logout);
 app.get('/api/auth/session', session);
 app.use('/api', (request, response, next) => {
   const publicRoute = request.path.startsWith('/public/collectors/') || request.path.startsWith('/public/campaigns/unsubscribe/')
-    || request.path === '/webhooks/brevo/transactional' || request.path === '/uploads';
+    || request.path === '/webhooks/brevo/transactional' || request.path === '/integrations/x/callback' || request.path === '/uploads';
   return publicRoute ? next() : requireAdmin(request, response, next);
 });
 
@@ -79,6 +84,18 @@ function sendError(response: express.Response, error: unknown, status = 400) {
   if (error instanceof z.ZodError) return response.status(status).json({ error: 'Validation failed', details: error.issues });
   const message = error instanceof Error ? error.message : String(error);
   return response.status(status).json({ error: message });
+}
+
+function xError(response: express.Response, error: unknown) {
+  if (error instanceof z.ZodError) return sendError(response, error);
+  if (error instanceof XIntegrationError) return response.status(error.status).json({ error: error.message });
+  return response.status(502).json({ error: 'The X integration request could not be completed.' });
+}
+
+function authenticatedUser(request: express.Request) {
+  const user = currentSessionUser(request);
+  if (!user) throw new XIntegrationError('Authentication required.', 401);
+  return user;
 }
 
 function publicHtml(value: unknown) {
@@ -176,6 +193,79 @@ app.get('/api/bootstrap', noStore, (_request, response) => {
     },
     recentJobs: listJobs(12), email: emailStatus()
   });
+});
+
+const xConfigurationInput = z.object({
+  consumerKey: z.string().min(8).max(2000).optional(), consumerSecret: z.string().min(8).max(2000).optional(),
+  bearerToken: z.string().min(8).max(2000).optional(), accessToken: z.string().min(8).max(2000).optional(),
+  accessTokenSecret: z.string().min(8).max(2000).optional()
+}).strict();
+const xQueryInput = z.object({ label: z.string().trim().min(2).max(100), query: z.string().trim().min(2).max(512), enabled: z.boolean().optional() }).strict();
+const xQueryUpdateInput = xQueryInput.partial().refine((value) => Object.keys(value).length > 0, 'Provide at least one change.');
+
+app.get('/api/integrations/x/callback', noStore, async (request, response) => {
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  response.setHeader('Set-Cookie', clearXOAuthCookie());
+  let outcome: 'connected' | 'denied' | 'failed' = 'failed';
+  try {
+    outcome = await finishXOAuth({
+      oauthToken: typeof request.query.oauth_token === 'string' ? request.query.oauth_token : undefined,
+      oauthVerifier: typeof request.query.oauth_verifier === 'string' ? request.query.oauth_verifier : undefined,
+      denied: typeof request.query.denied === 'string' ? request.query.denied : undefined,
+      handshake: xOAuthCookieFromHeader(request.headers.cookie)
+    });
+  } catch { outcome = 'failed'; }
+  return response.redirect(303, `/social-listening?x=${outcome}`);
+});
+app.get('/api/integrations/x', noStore, (request, response) => {
+  try { return response.json(getXIntegrationStatus(authenticatedUser(request))); } catch (error) { return xError(response, error); }
+});
+app.get('/api/integrations/x/mentions', noStore, (request, response) => {
+  try {
+    const requested = Number(request.query.limit || 500);
+    return response.json(listXCollectedMentions(authenticatedUser(request), Number.isFinite(requested) ? requested : 500));
+  } catch (error) { return xError(response, error); }
+});
+app.put('/api/integrations/x/app', (request, response) => {
+  try { return response.json(saveXConfiguration(authenticatedUser(request), xConfigurationInput.parse(request.body || {}))); }
+  catch (error) { return xError(response, error); }
+});
+app.delete('/api/integrations/x/app', (request, response) => {
+  try { deleteXConfiguration(authenticatedUser(request)); return response.status(204).end(); } catch (error) { return xError(response, error); }
+});
+app.post('/api/integrations/x/connect', async (request, response) => {
+  try {
+    const started = await startXOAuth(authenticatedUser(request)); response.setHeader('Set-Cookie', started.cookie);
+    return response.status(201).json({ authorizeUrl: started.authorizeUrl });
+  } catch (error) { return xError(response, error); }
+});
+app.delete('/api/integrations/x/connection', (request, response) => {
+  try { disconnectXAccount(authenticatedUser(request)); return response.status(204).end(); } catch (error) { return xError(response, error); }
+});
+app.delete('/api/integrations/x/history', (request, response) => {
+  try { return response.json(deleteXCollectedHistory(authenticatedUser(request))); } catch (error) { return xError(response, error); }
+});
+app.patch('/api/integrations/x/connection', (request, response) => {
+  try {
+    const input = z.object({ autoSync: z.boolean().optional(), syncIntervalMinutes: z.number().int().optional() }).strict().parse(request.body || {});
+    return response.json(updateXConnectionSettings(authenticatedUser(request), input));
+  } catch (error) { return xError(response, error); }
+});
+app.post('/api/integrations/x/sync', (request, response) => {
+  try { const queued = enqueueXSync(authenticatedUser(request)); return response.status(202).json(queued); }
+  catch (error) { return xError(response, error); }
+});
+app.post('/api/integrations/x/queries', (request, response) => {
+  try { return response.status(201).json(createXQuery(authenticatedUser(request), xQueryInput.parse(request.body || {}))); }
+  catch (error) { return xError(response, error); }
+});
+app.patch('/api/integrations/x/queries/:id', (request, response) => {
+  try { return response.json(updateXQuery(authenticatedUser(request), String(request.params.id), xQueryUpdateInput.parse(request.body || {}))); }
+  catch (error) { return xError(response, error); }
+});
+app.delete('/api/integrations/x/queries/:id', (request, response) => {
+  try { deleteXQuery(authenticatedUser(request), String(request.params.id)); return response.status(204).end(); }
+  catch (error) { return xError(response, error); }
 });
 
 const mentionInput = z.object({

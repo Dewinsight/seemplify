@@ -10,6 +10,8 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /path="\/signup"/);
   assert.match(app, /path="\/forgot-password"/);
   assert.match(app, /path="\/reset-password"/);
+  assert.match(app, /path="\/legal\/terms"/);
+  assert.match(app, /path="\/legal\/privacy"/);
   assert.match(app, /path="\/s\/:slug"/);
   assert.match(app, /SurveyStudioPage/);
   assert.match(app, /SocialListeningPage/);
@@ -17,18 +19,26 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /path="\/campaigns"/);
   assert.match(app, /path="\/campaigns\/:id"/);
 });
-test('exposes Terra social listening and journey mapping as first-class admin workspaces', () => {
+test('exposes an X connector, Terra social analysis, and journey mapping as first-class workspaces', () => {
   const social = fs.readFileSync(path.join(source, 'pages', 'SocialListeningPage.tsx'), 'utf8');
   const journeys = fs.readFileSync(path.join(source, 'pages', 'JourneysPage.tsx'), 'utf8');
-  assert.match(social, /\/api\/social\/mentions/);
-  assert.match(social, /Mention history/);
+  assert.match(social, /\/api\/integrations\/x\/mentions/);
+  for (const endpoint of ['/api/integrations/x', '/api/integrations/x/connect', '/api/integrations/x/sync', '/api/integrations/x/queries']) assert.match(social, new RegExp(endpoint.replaceAll('/', '\\/')));
+  for (const feature of ['Connect with X', 'Reconnect with X', 'Listening queries', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Remove X developer app', 'Cancelled']) assert.match(social, new RegExp(feature));
+  assert.match(social, /Promise\.allSettled/);
+  assert.match(social, /setCredentialDialogOpen/);
+  assert.match(social, /\/api\/integrations\/x\/history/);
+  assert.doesNotMatch(social, /Import pasted text|Choose CSV, JSON or TXT/);
   assert.match(journeys, /\/api\/ai\/journeys/);
   assert.match(journeys, /Journey stages/);
   assert.match(journeys, /Audit and improve/);
-  assert.match(social, /\/api\/social\/mentions\/import/);
-  assert.match(social, /CSV, JSON or TXT/);
-  assert.match(social, /CSV column mapping/);
-  assert.match(social, /body\.append\('mapping'/);
+});
+test('publishes public X-aware terms and privacy links at authentication surfaces', () => {
+  const legal = fs.readFileSync(path.join(source, 'pages', 'LegalPage.tsx'), 'utf8');
+  const login = fs.readFileSync(path.join(source, 'pages', 'LoginPage.tsx'), 'utf8');
+  const signup = fs.readFileSync(path.join(source, 'pages', 'SignupPage.tsx'), 'utf8');
+  for (const phrase of ['X credentials and data', 'Terms of Service', 'Privacy Policy', 'support@seemplify.com']) assert.match(legal, new RegExp(phrase));
+  for (const page of [login, signup]) { assert.match(page, /\/legal\/terms/); assert.match(page, /\/legal\/privacy/); }
 });
 test('ships a survey-specific email campaign workspace with audience, sequencing and delivery history', () => {
   const list = fs.readFileSync(path.join(source, 'pages', 'CampaignsPage.tsx'), 'utf8');

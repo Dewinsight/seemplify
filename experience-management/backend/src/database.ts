@@ -140,6 +140,9 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS social_mentions (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
+    external_id TEXT,
+    x_connection_id TEXT,
+    ingestion_kind TEXT,
     author TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL,
     url TEXT NOT NULL DEFAULT '',
@@ -150,6 +153,100 @@ db.exec(`
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS social_mentions_published ON social_mentions(published_at DESC);
+  CREATE TABLE IF NOT EXISTS x_apps (
+    id TEXT PRIMARY KEY,
+    consumer_key_enc TEXT,
+    consumer_secret_enc TEXT,
+    bearer_token_enc TEXT,
+    credential_version INTEGER NOT NULL DEFAULT 1,
+    configured_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS x_connections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    app_id TEXT NOT NULL REFERENCES x_apps(id) ON DELETE CASCADE,
+    access_token_enc TEXT NOT NULL,
+    access_token_secret_enc TEXT NOT NULL,
+    x_user_id TEXT,
+    username TEXT,
+    display_name TEXT,
+    profile_image_url TEXT,
+    status TEXT NOT NULL DEFAULT 'pending_verification',
+    generation INTEGER NOT NULL DEFAULT 1,
+    auto_sync INTEGER NOT NULL DEFAULT 0,
+    sync_interval_minutes INTEGER NOT NULL DEFAULT 60,
+    next_sync_at TEXT,
+    last_sync_at TEXT,
+    last_success_at TEXT,
+    last_post_id TEXT,
+    last_mention_id TEXT,
+    last_error TEXT,
+    rate_limit_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS x_connections_schedule ON x_connections(auto_sync,next_sync_at);
+  CREATE TABLE IF NOT EXISTS x_oauth_requests (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    app_id TEXT NOT NULL REFERENCES x_apps(id) ON DELETE CASCADE,
+    credential_version INTEGER NOT NULL,
+    request_token_hash TEXT NOT NULL UNIQUE,
+    request_secret_enc TEXT NOT NULL,
+    handshake_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS x_oauth_requests_expiry ON x_oauth_requests(expires_at,consumed_at);
+  CREATE TABLE IF NOT EXISTS x_listening_queries (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES x_connections(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    query TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    since_id TEXT,
+    last_sync_at TEXT,
+    last_success_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS x_listening_queries_connection ON x_listening_queries(connection_id,enabled,created_at);
+  CREATE TABLE IF NOT EXISTS x_sync_jobs (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES x_connections(id) ON DELETE CASCADE,
+    trigger_type TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'queued',
+    stage TEXT NOT NULL DEFAULT 'queued',
+    progress INTEGER NOT NULL DEFAULT 0,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    run_after TEXT,
+    posts_fetched INTEGER NOT NULL DEFAULT 0,
+    mentions_fetched INTEGER NOT NULL DEFAULT 0,
+    search_fetched INTEGER NOT NULL DEFAULT 0,
+    imported_count INTEGER NOT NULL DEFAULT 0,
+    analysis_job_id TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    completed_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS x_sync_jobs_dispatch ON x_sync_jobs(state,run_after,created_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS x_sync_jobs_one_active ON x_sync_jobs(connection_id) WHERE state IN ('queued','processing','waiting_rate_limit');
+  CREATE TABLE IF NOT EXISTS x_connection_mentions (
+    connection_id TEXT NOT NULL REFERENCES x_connections(id) ON DELETE CASCADE,
+    mention_id TEXT NOT NULL REFERENCES social_mentions(id) ON DELETE CASCADE,
+    streams_json TEXT NOT NULL DEFAULT '[]',
+    query_ids_json TEXT NOT NULL DEFAULT '[]',
+    discovered_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    PRIMARY KEY(connection_id,mention_id)
+  );
+  CREATE INDEX IF NOT EXISTS x_connection_mentions_recent ON x_connection_mentions(connection_id,last_seen_at DESC);
   CREATE TABLE IF NOT EXISTS journeys (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -269,6 +366,15 @@ for (const column of ['first_attempt_at', 'updated_at']) {
 }
 const campaignContactColumns = new Set((db.prepare('PRAGMA table_info(campaign_contacts)').all() as any[]).map((column) => String(column.name)));
 if (!campaignContactColumns.has('job_title')) db.exec("ALTER TABLE campaign_contacts ADD COLUMN job_title TEXT NOT NULL DEFAULT ''");
+const socialMentionColumns = new Set((db.prepare('PRAGMA table_info(social_mentions)').all() as any[]).map((column) => String(column.name)));
+if (!socialMentionColumns.has('external_id')) db.exec('ALTER TABLE social_mentions ADD COLUMN external_id TEXT');
+if (!socialMentionColumns.has('x_connection_id')) db.exec('ALTER TABLE social_mentions ADD COLUMN x_connection_id TEXT');
+if (!socialMentionColumns.has('ingestion_kind')) db.exec('ALTER TABLE social_mentions ADD COLUMN ingestion_kind TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS social_mentions_x_external ON social_mentions(source,external_id) WHERE external_id IS NOT NULL');
+const xConnectionColumns = new Set((db.prepare('PRAGMA table_info(x_connections)').all() as any[]).map((column) => String(column.name)));
+if (!xConnectionColumns.has('last_post_id')) db.exec('ALTER TABLE x_connections ADD COLUMN last_post_id TEXT');
+if (!xConnectionColumns.has('last_mention_id')) db.exec('ALTER TABLE x_connections ADD COLUMN last_mention_id TEXT');
+if (!xConnectionColumns.has('generation')) db.exec('ALTER TABLE x_connections ADD COLUMN generation INTEGER NOT NULL DEFAULT 1');
 
 const parseJson = <T>(value: unknown, fallback: T): T => {
   try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; }
@@ -458,7 +564,8 @@ export function updateJob(id: string, values: { state?: AiJob['state']; stage?: 
 }
 
 const rowMention = (row: any): SocialMention => ({
-  id: row.id, source: row.source, author: row.author, content: row.content, url: row.url,
+  id: row.id, source: row.source, externalId: row.external_id, xConnectionId: row.x_connection_id,
+  ingestionKind: row.ingestion_kind, author: row.author, content: row.content, url: row.url,
   language: row.language, publishedAt: row.published_at, metadata: parseJson(row.metadata_json, {}),
   analysis: parseJson(row.analysis_json, null), createdAt: row.created_at
 });
@@ -477,12 +584,14 @@ export function listSocialMentionsByIds(ids: string[]) {
 }
 
 export const insertSocialMentions = db.transaction((items: Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>) => {
-  const insert = db.prepare(`INSERT OR IGNORE INTO social_mentions (id,source,author,content,url,language,published_at,metadata_json,analysis_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  const insert = db.prepare(`INSERT OR IGNORE INTO social_mentions (id,source,external_id,x_connection_id,ingestion_kind,author,content,url,language,published_at,metadata_json,analysis_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const now = new Date().toISOString();
   return items.map((item) => {
     const id = item.id || crypto.randomUUID();
-    insert.run(id, item.source, item.author || '', item.content.trim(), item.url || '', item.language || '', item.publishedAt || now, JSON.stringify(item.metadata || {}), item.analysis ? JSON.stringify(item.analysis) : null, now);
-    return rowMention(db.prepare('SELECT * FROM social_mentions WHERE id=?').get(id));
+    insert.run(id, item.source, item.externalId || null, item.xConnectionId || null, item.ingestionKind || null, item.author || '', item.content.trim(), item.url || '', item.language || '', item.publishedAt || now, JSON.stringify(item.metadata || {}), item.analysis ? JSON.stringify(item.analysis) : null, now);
+    const row = db.prepare('SELECT * FROM social_mentions WHERE id=?').get(id)
+      || (item.externalId ? db.prepare('SELECT * FROM social_mentions WHERE source=? AND external_id=?').get(item.source, item.externalId) : null);
+    return rowMention(row);
   });
 });
 
@@ -507,4 +616,5 @@ export function saveJourney(input: Partial<Journey> & { name: string }) {
 export function deleteJourney(id: string) { return db.prepare('DELETE FROM journeys WHERE id=?').run(id).changes > 0; }
 
 db.prepare(`UPDATE ai_jobs SET state='queued',stage='recovered_after_restart',progress=0,started_at=NULL,retry_at=NULL,updated_at=? WHERE state='processing'`).run(new Date().toISOString());
+db.prepare(`UPDATE x_sync_jobs SET state='queued',stage='recovered_after_restart',progress=0,started_at=NULL,run_after=NULL,updated_at=? WHERE state='processing'`).run(new Date().toISOString());
 db.prepare("UPDATE campaigns SET status='active' WHERE status='running'").run();

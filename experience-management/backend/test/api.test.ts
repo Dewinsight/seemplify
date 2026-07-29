@@ -6,18 +6,20 @@ import { after, test } from 'node:test';
 import request from 'supertest';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-experience-api-'));
-const passwordFile = path.join(root, 'admin-password'); const sessionFile = path.join(root, 'session-secret'); const webhookSecretFile = path.join(root, 'brevo-webhook-secret');
+const passwordFile = path.join(root, 'admin-password'); const sessionFile = path.join(root, 'session-secret'); const webhookSecretFile = path.join(root, 'brevo-webhook-secret'); const xKeyFile = path.join(root, 'x-credential-encryption-key');
 const frontendDist = path.join(root, '.release', 'frontend', 'dist');
 fs.mkdirSync(frontendDist, { recursive: true }); fs.writeFileSync(path.join(frontendDist, 'index.html'), '<!doctype html><title>Experience test shell</title>');
 fs.mkdirSync(path.join(frontendDist, 'assets'), { recursive: true });
 fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-a1b2c3.js'), 'globalThis.__experienceAssetLoaded = true;');
 fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-d4e5f6.css'), ':root { color: rgb(1 2 3); }');
-fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(sessionFile, 'test-session-secret-that-is-long-and-random-enough'); fs.writeFileSync(webhookSecretFile, 'test-brevo-webhook-secret-that-is-long-enough');
-Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile, BREVO_WEBHOOK_SECRET_FILE: webhookSecretFile, BREVO_IDEMPOTENCY_TTL_MINUTES: '120' });
+fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(sessionFile, 'test-session-secret-that-is-long-and-random-enough'); fs.writeFileSync(webhookSecretFile, 'test-brevo-webhook-secret-that-is-long-enough'); fs.writeFileSync(xKeyFile, Buffer.alloc(32, 9).toString('base64url'));
+Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile, BREVO_WEBHOOK_SECRET_FILE: webhookSecretFile, BREVO_IDEMPOTENCY_TTL_MINUTES: '120', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, X_API_BASE_URL: 'https://api.x.invalid', X_OAUTH_BASE_URL: 'https://api.x.invalid',
+  X_SEED_CONSUMER_KEY_FILE: path.join(root, 'no-x-consumer-key'), X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'no-x-consumer-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(root, 'no-x-bearer-token'), X_SEED_ACCESS_TOKEN_FILE: path.join(root, 'no-x-access-token'), X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(root, 'no-x-access-token-secret') });
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
 const { issuePasswordResetToken } = await import('../src/auth.js');
 const { campaignRunner, recoverCampaignDeliveries } = await import('../src/campaigns.js');
+const { xSyncRunner } = await import('../src/xIntegration.js');
 const { sanitizeCampaignHtml } = await import('../src/emailService.js');
 const { config } = await import('../src/config.js');
 after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -667,4 +669,170 @@ test('makes Quick Email durable, idempotent, unsubscribe-safe and suppression-aw
   } finally {
     config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
   }
+});
+
+test('connects X with a one-time OAuth handshake, encrypts secrets, and durably synchronises posts', async () => {
+  const member = request.agent(app);
+  await member.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
+  await member.put('/api/integrations/x/app').send({ consumerKey: 'member-cannot-save', consumerSecret: 'member-cannot-save-secret' }).expect(403);
+  await request(app).get('/api/integrations/x').expect(401);
+  await request(app).get('/api/integrations/x/callback?oauth_token=junk-token&oauth_verifier=junk-verifier').expect(303)
+    .expect('Location', '/social-listening?x=failed').expect('Cache-Control', 'no-store').expect('Referrer-Policy', 'no-referrer');
+
+  const owner = request.agent(app);
+  await owner.post('/api/auth/login').send({ email: 'researcher@example.com', password: 'Researcher-Reset-2026' }).expect(200);
+  const sentinels = {
+    consumerKey: 'test-consumer-key-12345', consumerSecret: 'test-consumer-secret-67890', bearerToken: 'test-bearer-token-123456',
+    accessToken: 'test-access-token-123456', accessTokenSecret: 'test-access-secret-123456'
+  };
+  const configured = await owner.put('/api/integrations/x/app').send({ consumerKey: sentinels.consumerKey, consumerSecret: sentinels.consumerSecret, bearerToken: sentinels.bearerToken }).expect(200);
+  assert.equal(configured.body.app.configured, true); assert.equal(configured.body.app.bearerTokenConfigured, true);
+  const configurationJson = JSON.stringify(configured.body);
+  for (const value of Object.values(sentinels)) assert.doesNotMatch(configurationJson, new RegExp(value));
+  const storedApp = db.prepare('SELECT * FROM x_apps WHERE id=?').get('workspace-x-app') as any;
+  assert.notEqual(storedApp.consumer_key_enc, sentinels.consumerKey); assert.notEqual(storedApp.consumer_secret_enc, sentinels.consumerSecret);
+  assert.notEqual(storedApp.bearer_token_enc, sentinels.bearerToken);
+
+  const originalFetch = globalThis.fetch; const requests: Array<{ url: string; authorization: string; method: string }> = [];
+  let requestTokenCalls = 0; let holdNextTimeline = false; let releaseTimeline: ((response: Response) => void) | null = null;
+  let holdNextSearch = false; let releaseSearch: ((response: Response) => void) | null = null;
+  let holdNextAccessExchange = false; let releaseAccessExchange: ((response: Response) => void) | null = null;
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input); const authorization = String(new Headers(init?.headers).get('authorization') || ''); const method = String(init?.method || 'GET');
+    requests.push({ url, authorization, method });
+    const rateHeaders = { 'content-type': 'application/json', 'x-rate-limit-limit': '450', 'x-rate-limit-remaining': '449', 'x-rate-limit-reset': String(Math.floor(Date.now() / 1000) + 900) };
+    if (url.includes('/oauth/request_token')) {
+      requestTokenCalls += 1; const suffix = requestTokenCalls === 1 ? '12345' : '67890';
+      return new Response(`oauth_token=request-token-${suffix}&oauth_token_secret=request-secret-${suffix}&oauth_callback_confirmed=true`, { status: 200, headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+    }
+    if (url.endsWith('/oauth/access_token') && holdNextAccessExchange) {
+      holdNextAccessExchange = false;
+      return await new Promise<Response>((resolve) => { releaseAccessExchange = resolve; });
+    }
+    if (url.endsWith('/oauth/access_token')) return new Response('oauth_token=test-access-token-123456&oauth_token_secret=test-access-secret-123456&user_id=1221648900181962758&screen_name=research_owner', { status: 200, headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+    if (url.includes('/2/users/me')) return new Response(JSON.stringify({ data: { id: '1221648900181962758', username: 'research_owner', name: 'Research Owner', profile_image_url: 'https://pbs.twimg.com/profile_images/test.png' } }), { status: 200, headers: rateHeaders });
+    if (url.includes('/2/users/1221648900181962758/tweets') && holdNextTimeline) {
+      holdNextTimeline = false;
+      return await new Promise<Response>((resolve) => { releaseTimeline = resolve; });
+    }
+    if (url.includes('/2/users/1221648900181962758/tweets') && url.includes('pagination_token=posts-page-2')) return new Response(JSON.stringify({ data: [
+      { id: '1004', text: 'Second paginated account post', created_at: '2026-07-28T13:00:00.000Z', lang: 'en', author_id: '1221648900181962758' }
+    ], includes: { users: [{ id: '1221648900181962758', username: 'research_owner', name: 'Research Owner' }] }, meta: { newest_id: '1004' } }), { status: 200, headers: rateHeaders });
+    if (url.includes('/2/users/1221648900181962758/tweets')) return new Response(JSON.stringify({ data: [
+      { id: '1001', text: '<script>untrusted post text</script>', created_at: '2026-07-28T10:00:00.000Z', lang: 'en', author_id: '1221648900181962758', public_metrics: { like_count: 2 } }
+    ], includes: { users: [{ id: '1221648900181962758', username: 'research_owner', name: 'Research Owner' }] }, meta: { newest_id: '1004', next_token: 'posts-page-2' } }), { status: 200, headers: rateHeaders });
+    if (url.includes('/2/users/1221648900181962758/mentions')) return new Response(JSON.stringify({ data: [
+      { id: '1002', text: 'A public mention for the connected account', created_at: '2026-07-28T11:00:00.000Z', lang: 'en', author_id: '200', public_metrics: { reply_count: 1 } }
+    ], includes: { users: [{ id: '200', username: 'customer_voice', name: 'Customer Voice' }] }, meta: { newest_id: '1002' } }), { status: 200, headers: rateHeaders });
+    if (url.includes('/2/tweets/search/recent') && holdNextSearch) {
+      holdNextSearch = false;
+      return await new Promise<Response>((resolve) => { releaseSearch = resolve; });
+    }
+    if (url.includes('/2/tweets/search/recent')) return new Response(JSON.stringify({ data: [
+      { id: '1002', text: 'A public mention for the connected account', created_at: '2026-07-28T11:00:00.000Z', lang: 'en', author_id: '200' },
+      { id: '1003', text: 'A matching brand search result', created_at: '2026-07-28T12:00:00.000Z', lang: 'en', author_id: '201' }
+    ], includes: { users: [{ id: '200', username: 'customer_voice', name: 'Customer Voice' }, { id: '201', username: 'market_watch', name: 'Market Watch' }] }, meta: { newest_id: '1003' } }), { status: 200, headers: rateHeaders });
+    return new Response('{}', { status: 404, headers: rateHeaders });
+  };
+
+  try {
+    const started = await owner.post('/api/integrations/x/connect').send({}).expect(201);
+    assert.equal(started.body.authorizeUrl, 'https://api.x.invalid/oauth/authenticate?oauth_token=request-token-12345');
+    const setCookies = started.headers['set-cookie'] as unknown as string[]; const handshakeCookie = setCookies.find((value) => value.startsWith('seemplify_x_oauth='))!;
+    assert.match(handshakeCookie, /HttpOnly/); assert.match(handshakeCookie, /SameSite=Lax/); assert.match(handshakeCookie, /Path=\/api\/integrations\/x\/callback/);
+    const cookiePair = handshakeCookie.split(';')[0];
+    const callback = await request(app).get('/api/integrations/x/callback?oauth_token=request-token-12345&oauth_verifier=approved-verifier-12345').set('Cookie', cookiePair).expect(303);
+    assert.equal(callback.headers.location, '/social-listening?x=connected');
+    await request(app).get('/api/integrations/x/callback?oauth_token=request-token-12345&oauth_verifier=approved-verifier-12345').set('Cookie', cookiePair).expect(303).expect('Location', '/social-listening?x=failed');
+    const connectionRow = db.prepare('SELECT * FROM x_connections WHERE user_id=(SELECT id FROM users WHERE email=?)').get('researcher@example.com') as any;
+    assert.ok(connectionRow); assert.notEqual(connectionRow.access_token_enc, sentinels.accessToken); assert.notEqual(connectionRow.access_token_secret_enc, sentinels.accessTokenSecret);
+
+    await owner.post('/api/integrations/x/queries').send({ label: 'Seemplify brand', query: '"Seemplify" -is:retweet', enabled: true }).expect(201);
+    db.exec(`CREATE TRIGGER fail_x_analysis_handoff BEFORE INSERT ON ai_jobs
+      WHEN NEW.kind='social.analyze' AND json_extract(NEW.input_json,'$.source')='x-sync'
+      BEGIN SELECT RAISE(ABORT,'simulated analysis handoff crash'); END`);
+    const queued = await owner.post('/api/integrations/x/sync').send({}).expect(202); assert.equal(queued.body.created, true);
+    let retrying: any = null;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const snapshot = await owner.get('/api/integrations/x').expect(200); retrying = snapshot.body.syncJobs[0];
+      if (retrying?.state === 'queued' && retrying?.stage === 'retrying') break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(retrying?.stage, 'retrying');
+    assert.equal((await owner.get('/api/integrations/x/mentions?limit=1000').expect(200)).body.length, 0);
+    const rolledBack = db.prepare('SELECT last_post_id,last_mention_id FROM x_connections WHERE id=?').get(retrying.connectionId) as any;
+    assert.equal(rolledBack.last_post_id, null); assert.equal(rolledBack.last_mention_id, null);
+    assert.equal((db.prepare('SELECT since_id FROM x_listening_queries WHERE connection_id=?').get(retrying.connectionId) as any).since_id, null);
+    db.exec('DROP TRIGGER fail_x_analysis_handoff');
+    db.prepare("UPDATE x_sync_jobs SET run_after=datetime('now','-1 second') WHERE id=?").run(retrying.id);
+    await xSyncRunner.pump();
+    let terminal: any = null;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const snapshot = await owner.get('/api/integrations/x').expect(200); terminal = snapshot.body.syncJobs[0];
+      if (terminal && ['completed', 'failed'].includes(terminal.state)) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(terminal?.state, 'completed', terminal?.error); assert.equal(terminal.postsFetched, 2); assert.equal(terminal.mentionsFetched, 1);
+    assert.equal(terminal.searchFetched, 2); assert.equal(terminal.importedCount, 4);
+    const xMentions = (await owner.get('/api/social/mentions?limit=1000').expect(200)).body.filter((mention: any) => mention.externalId);
+    assert.deepEqual(xMentions.map((mention: any) => mention.externalId).sort(), ['1001', '1002', '1003', '1004']);
+    const ownerScopedMentions = (await owner.get('/api/integrations/x/mentions?limit=1000').expect(200)).body;
+    assert.deepEqual(ownerScopedMentions.map((mention: any) => mention.externalId).sort(), ['1001', '1002', '1003', '1004']);
+    assert.deepEqual((await member.get('/api/integrations/x/mentions?limit=1000').expect(200)).body, []);
+    assert.equal(xMentions.find((mention: any) => mention.externalId === '1001').content, '<script>untrusted post text</script>');
+    const duplicate = ownerScopedMentions.find((mention: any) => mention.externalId === '1002'); assert.deepEqual(duplicate.metadata.x.streams.sort(), ['mention', 'search']);
+    assert.ok(requests.some((item) => item.url.includes('/oauth/request_token?x_auth_access_type=read') && item.authorization.includes('oauth_callback') && !item.authorization.includes('x_auth_access_type')));
+    assert.ok(requests.some((item) => item.url.includes('/2/users/1221648900181962758/tweets') && item.authorization.startsWith('OAuth ')));
+    assert.ok(requests.some((item) => item.url.includes('/2/tweets/search/recent') && item.authorization === `Bearer ${sentinels.bearerToken}`));
+    for (const item of requests) assert.doesNotMatch(item.url, /test-consumer-secret|test-access-secret/);
+
+    const query = (await owner.get('/api/integrations/x').expect(200)).body.queries[0];
+    db.prepare("UPDATE x_sync_jobs SET created_at=datetime('now','-2 minutes') WHERE id=?").run(terminal.id);
+    holdNextSearch = true; await owner.post('/api/integrations/x/sync').send({}).expect(202);
+    for (let attempt = 0; attempt < 100 && !releaseSearch; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(releaseSearch, 'search request did not start');
+    await owner.patch(`/api/integrations/x/queries/${query.id}`).send({ query: '"Renamed query" -is:retweet' }).expect(200);
+    releaseSearch!(new Response(JSON.stringify({ data: [{ id: '3001', text: 'result from stale query', author_id: '300' }], meta: { newest_id: '3001' } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const snapshot = await owner.get('/api/integrations/x').expect(200);
+      if (snapshot.body.syncJobs[0]?.state === 'completed') break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal((db.prepare("SELECT COUNT(*) count FROM social_mentions WHERE source='x' AND external_id='3001'").get() as any).count, 0);
+    const changedQuery = db.prepare('SELECT since_id,last_error FROM x_listening_queries WHERE id=?').get(query.id) as any;
+    assert.equal(changedQuery.since_id, null); assert.match(changedQuery.last_error, /changed while this search/i);
+
+    const pendingReconnect = await owner.post('/api/integrations/x/connect').send({}).expect(201);
+    assert.equal(pendingReconnect.body.authorizeUrl, 'https://api.x.invalid/oauth/authenticate?oauth_token=request-token-67890');
+    const pendingCookie = (pendingReconnect.headers['set-cookie'] as unknown as string[]).find((value) => value.startsWith('seemplify_x_oauth='))!.split(';')[0];
+    holdNextAccessExchange = true;
+    const staleCallback = request(app).get('/api/integrations/x/callback?oauth_token=request-token-67890&oauth_verifier=approved-verifier-67890')
+      .set('Cookie', pendingCookie).then((response) => response);
+    for (let attempt = 0; attempt < 100 && !releaseAccessExchange; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(releaseAccessExchange, 'OAuth access-token exchange did not start');
+    await owner.delete('/api/integrations/x/connection').expect(204);
+    releaseAccessExchange!(new Response('oauth_token=test-access-token-123456&oauth_token_secret=test-access-secret-123456&user_id=1221648900181962758&screen_name=research_owner', { status: 200, headers: { 'content-type': 'application/x-www-form-urlencoded' } }));
+    const staleResult = await staleCallback; assert.equal(staleResult.status, 303); assert.equal(staleResult.headers.location, '/social-listening?x=failed');
+    const disconnected = await owner.get('/api/integrations/x').expect(200); assert.equal(disconnected.body.connection.status, 'disconnected');
+    assert.equal((await owner.get('/api/integrations/x/mentions?limit=1000').expect(200)).body.length, 4);
+    await owner.post('/api/integrations/x/sync').send({}).expect(409);
+    const deleted = await owner.delete('/api/integrations/x/history').expect(200); assert.equal(deleted.body.unlinked, 4);
+    assert.deepEqual((await owner.get('/api/integrations/x/mentions?limit=1000').expect(200)).body, []);
+
+    await owner.put('/api/integrations/x/app').send({ accessToken: sentinels.accessToken, accessTokenSecret: sentinels.accessTokenSecret }).expect(200);
+    holdNextTimeline = true;
+    await owner.post('/api/integrations/x/sync').send({}).expect(202);
+    for (let attempt = 0; attempt < 100 && !releaseTimeline; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(releaseTimeline, 'timeline request did not start');
+    await owner.delete('/api/integrations/x/connection').expect(204);
+    releaseTimeline!(new Response(JSON.stringify({ data: [{ id: '2001', text: 'must be discarded after disconnect', author_id: '1221648900181962758' }], meta: { newest_id: '2001' } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    let cancelled: any = null;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const snapshot = await owner.get('/api/integrations/x').expect(200); cancelled = snapshot.body.syncJobs[0];
+      if (cancelled?.state === 'cancelled') break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(cancelled?.state, 'cancelled');
+    assert.deepEqual((await owner.get('/api/integrations/x/mentions?limit=1000').expect(200)).body, []);
+  } finally { globalThis.fetch = originalFetch; }
 });

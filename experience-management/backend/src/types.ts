@@ -88,6 +88,9 @@ export type AiJobKind =
 export interface SocialMention {
   id: string;
   source: 'x' | 'google_play' | 'app_store' | 'review' | 'forum' | 'other';
+  externalId?: string | null;
+  xConnectionId?: string | null;
+  ingestionKind?: 'account_post' | 'mention' | 'search' | null;
   author: string;
   content: string;
   url: string;

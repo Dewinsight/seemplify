@@ -18,6 +18,7 @@ const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ def
 const SignupPage = lazy(() => import('@/pages/SignupPage').then((module) => ({ default: module.SignupPage })));
 const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage').then((module) => ({ default: module.ResetPasswordPage })));
+const LegalPage = lazy(() => import('@/pages/LegalPage').then((module) => ({ default: module.LegalPage })));
 function Admin({ children }: { children: ReactNode }) { return <AppShell>{children}</AppShell>; }
 
 export function App() {
@@ -27,6 +28,8 @@ export function App() {
     <Route path="/signup"><SignupPage /></Route>
     <Route path="/forgot-password"><ForgotPasswordPage /></Route>
     <Route path="/reset-password"><ResetPasswordPage /></Route>
+    <Route path="/legal/terms"><LegalPage kind="terms" /></Route>
+    <Route path="/legal/privacy"><LegalPage kind="privacy" /></Route>
     <Route path="/surveys/new"><Admin><CreateSurveyPage /></Admin></Route>
     <Route path="/surveys/:id"><Admin><SurveyStudioPage /></Admin></Route>
     <Route path="/surveys"><Admin><SurveysPage /></Admin></Route>

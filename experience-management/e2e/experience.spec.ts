@@ -206,8 +206,8 @@ test('survey editor selects, reorders across pages, and accepts a dragged questi
   await page.evaluate((id) => fetch(`/api/surveys/${id}`, { method: 'DELETE' }), blankSurvey.id);
 });
 
-test('imports a feedback file and runs a sequenced survey campaign through completion', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop project exercises file upload and campaign delivery');
+test('runs a sequenced survey campaign through completion', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop project exercises campaign delivery');
   test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'Outbound campaign delivery is exercised only against the local log-mode provider');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
@@ -216,15 +216,6 @@ test('imports a feedback file and runs a sequenced survey campaign through compl
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
   const suffix = `${Date.now()}`;
-  await page.goto('/social-listening');
-  await page.getByLabel('Mention source').selectOption('review');
-  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({
-    name: `feedback-${suffix}.csv`, mimeType: 'text/csv',
-    buffer: Buffer.from(`content,author,publishedAt\n\"The new checkout is much faster ${suffix}\",Ada,2026-07-20T10:00:00Z`)
-  });
-  await page.getByRole('button', { name: 'Import file and analyze' }).click();
-  await expect(page.getByRole('table').getByText(`The new checkout is much faster ${suffix}`)).toBeVisible();
-
   const setup = await page.evaluate(async (id) => {
     const json = (method: string, body: unknown) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const questionId = `campaign-question-${id}`;
@@ -374,7 +365,7 @@ test('conditional respondent logic skips a page and opens a recovery case', asyn
   await expect(page.getByText(`Follow up: ${setup.sourceTitle}`)).toBeVisible();
 });
 
-test('social listening and journey maps remain visible while Terra work waits durably', async ({ page }, testInfo) => {
+test('X social listening setup and journey maps remain visible while Terra work waits durably', async ({ page }, testInfo) => {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
   await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
@@ -383,13 +374,48 @@ test('social listening and journey maps remain visible while Terra work waits du
 
   await page.goto('/social-listening');
   await expect(page.getByRole('heading', { name: 'Social listening' })).toBeVisible();
-  await page.getByLabel('Mention source').selectOption('google_play');
   const suffix = `${testInfo.project.name}-${Date.now()}`;
-  await page.getByLabel('Public mentions').fill(`Setup remained confusing ${suffix}\nSupport fixed the problem quickly ${suffix}`);
-  await page.getByRole('button', { name: 'Import pasted text' }).click();
-  const mentionHistory = testInfo.project.name === 'mobile-chromium' ? page.locator('article') : page.locator('tbody');
-  await expect(mentionHistory.getByText(`Setup remained confusing ${suffix}`)).toBeVisible();
-  await expect(mentionHistory.getByText(`Support fixed the problem quickly ${suffix}`)).toBeVisible();
+  await expect(page.getByText('X connection')).toBeVisible();
+  await expect(page.getByText('Setup required')).toBeVisible();
+  await page.route('**/api/integrations/x/mentions?limit=1000', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test mentions outage.' }) }));
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.getByText(/Some live data could not refresh/)).toBeVisible();
+  await expect(page.getByText('Setup required')).toBeVisible();
+  await page.unroute('**/api/integrations/x/mentions?limit=1000');
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByText(/Some live data could not refresh/)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Configure X API' }).click();
+  await expect(page.getByRole('dialog').getByText('Configure the X developer app')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('http://127.0.0.1:5412/api/integrations/x/callback')).toBeVisible();
+  await expect(page.getByLabel('API / Consumer key')).toHaveValue('');
+  await expect(page.getByLabel('Bearer token')).toHaveValue('');
+  await page.getByLabel('API / Consumer key').fill('incomplete-key');
+  await expect(page.getByText('Enter the consumer key and consumer secret together.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save securely' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('button', { name: 'Configure X API' }).click();
+  await expect(page.getByLabel('API / Consumer key')).toHaveValue('');
+  await page.getByRole('button', { name: 'Close' }).click();
+
+  await page.evaluate(async () => {
+    const update = (body: Record<string, string>) => fetch('/api/integrations/x/app', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    await update({ consumerKey: 'playwright-consumer-key', consumerSecret: 'playwright-consumer-secret', accessToken: 'playwright-access-token', accessTokenSecret: 'playwright-access-secret' });
+    await update({ consumerKey: 'playwright-consumer-key-rotated', consumerSecret: 'playwright-consumer-secret-rotated' });
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Reconnect with X' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sync now' })).toHaveCount(0);
+  await page.evaluate(() => fetch('/api/integrations/x/connection', { method: 'DELETE' }));
+  await page.reload();
+  await expect(page.getByText('OAuth access is off')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reconnect with X' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete history' })).toBeDisabled();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening-disconnected.png'), fullPage: true });
+  await page.getByRole('button', { name: 'API settings' }).click();
+  await expect(page.getByRole('button', { name: 'Remove X developer app' })).toBeVisible();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: 'Remove X developer app' }).click();
+  await expect(page.getByText('Setup required')).toBeVisible();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening.png'), fullPage: true });
 
   const journey = await page.evaluate(async (id) => {
@@ -413,6 +439,5 @@ test('social listening and journey maps remain visible while Terra work waits du
   await expect(page.getByText('Journey audit queued with Terra.')).toBeVisible();
 
   await page.goto('/ai-queue');
-  await expect(page.getByText('Social listening analysis').first()).toBeVisible();
   await expect(page.getByText('Journey optimization').first()).toBeVisible();
 });
