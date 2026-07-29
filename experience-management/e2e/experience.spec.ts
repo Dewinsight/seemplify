@@ -97,8 +97,9 @@ test('social listening and journey maps remain visible while Terra work waits du
   const suffix = `${testInfo.project.name}-${Date.now()}`;
   await page.getByLabel('Public mentions').fill(`Setup remained confusing ${suffix}\nSupport fixed the problem quickly ${suffix}`);
   await page.getByRole('button', { name: 'Import and analyze' }).click();
-  await expect(page.getByText(`Setup remained confusing ${suffix}`)).toBeVisible();
-  await expect(page.getByText(`Support fixed the problem quickly ${suffix}`)).toBeVisible();
+  const mentionHistory = testInfo.project.name === 'mobile-chromium' ? page.locator('article') : page.locator('tbody');
+  await expect(mentionHistory.getByText(`Setup remained confusing ${suffix}`)).toBeVisible();
+  await expect(mentionHistory.getByText(`Support fixed the problem quickly ${suffix}`)).toBeVisible();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening.png'), fullPage: true });
 
   const journey = await page.evaluate(async (id) => {
