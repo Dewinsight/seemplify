@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { ClipboardList, Gauge, Inbox, LogOut, Menu, Plus, Radar, RadioTower, Route, Sparkles, X } from 'lucide-react';
+import { ClipboardList, Gauge, Inbox, LogOut, Megaphone, Menu, Plus, Radar, RadioTower, Route, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge';
 const navigation = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
   { to: '/surveys', label: 'Surveys', icon: ClipboardList },
+  { to: '/campaigns', label: 'Campaigns', icon: Megaphone },
   { to: '/social-listening', label: 'Social listening', icon: Radar },
-  { to: '/journeys', label: 'Journeys', icon: Route },
+  { to: '/journeys', label: 'Journey maps', icon: Route },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
   { to: '/tickets', label: 'Service recovery', icon: Inbox }
 ];
@@ -47,7 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
   useEffect(() => { api<any>('/api/runtime').then(setRuntime).catch(() => setRuntime({ terra: { reachable: false } })); const timer = setInterval(() => api<any>('/api/runtime').then(setRuntime).catch(() => null), 30_000); return () => clearInterval(timer); }, []);
-  const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
+  const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
   const terraReady = runtime?.terra?.ready === true;
   const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
   return <div className="min-h-screen bg-background">

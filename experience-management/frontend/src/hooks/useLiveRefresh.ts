@@ -7,6 +7,7 @@ export function useLiveRefresh(onRefresh: () => void) {
     stream.addEventListener('data-changed', refresh);
     stream.addEventListener('response', refresh);
     stream.addEventListener('ai-job', refresh);
+    stream.addEventListener('campaign', refresh);
     return () => stream.close();
   }, [onRefresh]);
 }

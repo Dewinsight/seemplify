@@ -12,6 +12,8 @@ const AiQueuePage = lazy(() => import('@/pages/AiQueuePage').then((module) => ({
 const TicketsPage = lazy(() => import('@/pages/TicketsPage').then((module) => ({ default: module.TicketsPage })));
 const SocialListeningPage = lazy(() => import('@/pages/SocialListeningPage').then((module) => ({ default: module.SocialListeningPage })));
 const JourneysPage = lazy(() => import('@/pages/JourneysPage').then((module) => ({ default: module.JourneysPage })));
+const CampaignsPage = lazy(() => import('@/pages/CampaignsPage').then((module) => ({ default: module.CampaignsPage })));
+const CampaignWorkspacePage = lazy(() => import('@/pages/CampaignWorkspacePage').then((module) => ({ default: module.CampaignWorkspacePage })));
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const SignupPage = lazy(() => import('@/pages/SignupPage').then((module) => ({ default: module.SignupPage })));
 const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })));
@@ -28,6 +30,8 @@ export function App() {
     <Route path="/surveys/new"><Admin><CreateSurveyPage /></Admin></Route>
     <Route path="/surveys/:id"><Admin><SurveyStudioPage /></Admin></Route>
     <Route path="/surveys"><Admin><SurveysPage /></Admin></Route>
+    <Route path="/campaigns/:id"><Admin><CampaignWorkspacePage /></Admin></Route>
+    <Route path="/campaigns"><Admin><CampaignsPage /></Admin></Route>
     <Route path="/social-listening"><Admin><SocialListeningPage /></Admin></Route>
     <Route path="/journeys"><Admin><JourneysPage /></Admin></Route>
     <Route path="/ai-queue"><Admin><AiQueuePage /></Admin></Route>

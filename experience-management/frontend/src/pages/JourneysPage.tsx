@@ -78,14 +78,14 @@ export function JourneysPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-      <div><h1 className="page-title">Customer journeys</h1><p className="page-description">Map every stage, touchpoint, emotion, friction point, and measure—then ask Terra to expose gaps and strengthen the plan.</p></div>
+      <div><h1 className="page-title">Journey maps</h1><p className="page-description">Analyse how a customer moves from discovery to outcome across touchpoints, emotions, friction and measures. Journey maps diagnose the experience; campaigns distribute surveys.</p></div>
       <div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => void load()}><RefreshCw />Refresh</Button>{activeJobs.length > 0 && <Badge variant="warning">{activeJobs.length} Terra job{activeJobs.length === 1 ? '' : 's'} active</Badge>}</div>
     </div>
 
     <div className="grid items-start gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
       <div className="space-y-6">
         <Card>
-          <CardHeader><CardTitle>Generate a journey</CardTitle><CardDescription>Describe the real customer lifecycle and the decision this map needs to support.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Generate a journey map</CardTitle><CardDescription>Describe the real customer lifecycle and the decision this analysis needs to support. This does not contact customers or send a survey.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2"><Label htmlFor="journey-brief">Journey brief</Label><Textarea id="journey-brief" rows={5} value={brief} onChange={(event) => setBrief(event.target.value)} /></div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1"><div className="space-y-2"><Label htmlFor="journey-audience">Audience</Label><Input id="journey-audience" value={audience} onChange={(event) => setAudience(event.target.value)} /></div><div className="space-y-2"><Label htmlFor="journey-industry">Industry</Label><Input id="journey-industry" value={industry} onChange={(event) => setIndustry(event.target.value)} /></div></div>

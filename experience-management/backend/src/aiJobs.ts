@@ -8,7 +8,7 @@ import {
 import { computeAnalytics } from './analytics.js';
 import {
   claimNextJob, createCollector, db, getJob, getJourney, getResponse, getSurvey, insertInsight,
-  listInsights, listResponses, listSocialMentions, saveJourney, saveSurvey, setResponseAnalysis,
+  listInsights, listResponses, listSocialMentions, listSocialMentionsByIds, saveJourney, saveSurvey, setResponseAnalysis,
   setSocialMentionAnalysis, updateJob
 } from './database.js';
 import { publishEvent } from './events.js';
@@ -80,8 +80,8 @@ async function execute(job: AiJob): Promise<JobOutput> {
     return { ...result, output: { survey, collector } };
   }
   if (job.kind === 'social.analyze') {
-    const requestedIds = Array.isArray(job.input.mentionIds) ? new Set(job.input.mentionIds.map(String)) : null;
-    const mentions = listSocialMentions(500).filter((mention) => !requestedIds || requestedIds.has(mention.id)).slice(0, 180);
+    const requestedIds = Array.isArray(job.input.mentionIds) ? job.input.mentionIds.map(String) : null;
+    const mentions = (requestedIds ? listSocialMentionsByIds(requestedIds) : listSocialMentions(200)).slice(0, 200);
     if (!mentions.length) throw new TerraError('No social mentions are available for analysis.', 'MENTIONS_REQUIRED', 400, false);
     const result = await structured(job, 'experience.social_listening', 'experience_social_listening', aiJsonSchemas.socialListening, socialListeningResult,
       `Analyze these imported public mentions as a bounded social-listening dataset. Detect sentiment, emotions, themes, emerging trends, reputation risks, and actionable opportunities. Sentiment values must be mention counts and must sum to ${mentions.length}. Include exactly one analysis item for each supplied mention ID. Use mention IDs and exact short evidence. Do not claim platform-wide prevalence or invent missing context.\nMentions: ${JSON.stringify(mentions.map((mention) => ({ id: mention.id, source: mention.source, publishedAt: mention.publishedAt, language: mention.language, content: mention.content })))}`);

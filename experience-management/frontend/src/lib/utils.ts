@@ -8,6 +8,13 @@ export function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 }
 
+export function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  }).format(new Date(value));
+}
+
 export function formatDuration(value?: number | null) {
   if (value == null) return '—';
   if (value < 60) return `${Math.round(value)}s`;

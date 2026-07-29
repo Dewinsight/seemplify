@@ -12,10 +12,17 @@ import { config } from './config.js';
 import {
   createCollector, createJob, createResponse, db, deleteJourney, deleteSurvey, getCollectorBySlug, getJob,
   getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJobs,
-  listJourneys, listResponses, listSocialMentions, listSurveys, saveJourney, saveSurvey
+  listJourneys, listResponses, listSocialMentions, listSocialMentionsByIds, listSurveys, saveJourney, saveSurvey
 } from './database.js';
 import { attachEventStream, publishEvent } from './events.js';
-import { emailStatus, listRecipients, sendInvitations } from './emailService.js';
+import { emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations } from './emailService.js';
+import {
+  addCampaignContacts, campaignTemplates, createCampaign, getCampaignDetail, launchCampaign, listCampaignSummaries,
+  getCampaignUnsubscribePreview, markCampaignContactResponded, pauseCampaign, replaceCampaignSteps, resumeCampaign,
+  sendCampaignTest, suppressCampaignContact, suppressEmailGlobally, unsubscribeCampaignContact, updateCampaign
+} from './campaigns.js';
+import { authenticateBrevoWebhook, parseBrevoWebhookPayload, processBrevoWebhookEvents } from './brevoWebhook.js';
+import { parseSocialMentionImport } from './socialImport.js';
 import { getTerraStatus } from './terraClient.js';
 import { templates } from './templates.js';
 import { QUESTION_TYPES, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
@@ -34,6 +41,11 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024, files: 1 },
   fileFilter: (_request, file, callback) => callback(null, /^(image|audio|video)\//.test(file.mimetype) || file.mimetype === 'application/pdf')
 });
+const socialImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_request, file, callback) => callback(null, /\.(csv|json|txt)$/i.test(file.originalname))
+});
 app.use('/uploads', express.static(config.uploadDir, { index: false, maxAge: '1d' }));
 
 app.post('/api/auth/login', login);
@@ -43,7 +55,8 @@ app.post('/api/auth/reset-password', resetPassword);
 app.post('/api/auth/logout', logout);
 app.get('/api/auth/session', session);
 app.use('/api', (request, response, next) => {
-  const publicRoute = request.path.startsWith('/public/collectors/') || request.path === '/uploads';
+  const publicRoute = request.path.startsWith('/public/collectors/') || request.path.startsWith('/public/campaigns/unsubscribe/')
+    || request.path === '/webhooks/brevo/transactional' || request.path === '/uploads';
   return publicRoute ? next() : requireAdmin(request, response, next);
 });
 
@@ -66,6 +79,17 @@ function sendError(response: express.Response, error: unknown, status = 400) {
   if (error instanceof z.ZodError) return response.status(status).json({ error: 'Validation failed', details: error.issues });
   const message = error instanceof Error ? error.message : String(error);
   return response.status(status).json({ error: message });
+}
+
+function publicHtml(value: unknown) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function unsubscribePage(input: { title: string; message: string; action?: string; confirmed?: boolean }) {
+  const form = input.action && !input.confirmed
+    ? `<form method="post" action="${publicHtml(input.action)}"><button type="submit">Unsubscribe</button></form>`
+    : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${publicHtml(input.title)}</title><style>body{margin:0;background:#f5f6f4;color:#20211f;font:16px/1.55 system-ui,sans-serif}.card{max-width:560px;margin:10vh auto;padding:32px;background:#fff;border:1px solid #dfe2dd}h1{font-size:24px;margin:0 0 12px}p{color:#59605b;margin:0 0 24px}button{border:0;background:#26352e;color:#fff;padding:11px 18px;font:600 14px system-ui,sans-serif;cursor:pointer}</style></head><body><main class="card"><h1>${publicHtml(input.title)}</h1><p>${publicHtml(input.message)}</p>${form}</main></body></html>`;
 }
 
 function requireSurvey(id: string) {
@@ -171,6 +195,41 @@ app.post('/api/social/mentions', (request, response) => {
   publishEvent('data-changed', { reason: 'social-mentions-imported', count: mentions.length });
   return response.status(job ? 202 : 201).json({ mentions, jobId: job?.id || null, state: job?.state || null });
 });
+app.post('/api/social/mentions/import', socialImportUpload.single('file'), (request, response) => {
+  try {
+    if (!request.file) return response.status(400).json({ error: 'Attach one UTF-8 CSV, JSON, or TXT file.' });
+    const fields = z.object({
+      defaultSource: z.enum(['x', 'google_play', 'app_store', 'review', 'forum', 'other']).default('other'),
+      analyze: z.enum(['true', 'false']).optional(), mapping: z.string().max(5000).optional()
+    }).parse(request.body || {});
+    let mapping: Record<string, string> = {};
+    if (fields.mapping) {
+      const value = JSON.parse(fields.mapping);
+      mapping = z.record(z.string(), z.string()).parse(value);
+    }
+    const parsed = parseSocialMentionImport({ buffer: request.file.buffer, fileName: request.file.originalname, defaultSource: fields.defaultSource, mapping });
+    const validated = z.array(mentionInput.extend({ id: z.string().uuid() })).min(1).max(200).parse(parsed.mentions);
+    const existingIds = new Set(listSocialMentionsByIds(validated.map((mention) => mention.id)).map((mention) => mention.id));
+    const mentions = insertSocialMentions(validated as Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>);
+    const importedIds = mentions.map((mention) => mention.id).filter((id) => !existingIds.has(id));
+    const job = fields.analyze === 'false' || !importedIds.length ? null : queueJob('social.analyze', { mentionIds: importedIds });
+    const summary = { ...parsed.summary, imported: importedIds.length, skipped: validated.length - importedIds.length, replayed: importedIds.length === 0 };
+    publishEvent('data-changed', { reason: 'social-mentions-file-imported', count: importedIds.length, batchId: parsed.summary.batchId, replayed: summary.replayed });
+    return response.status(job ? 202 : 201).json({ mentions, jobId: job?.id || null, state: job?.state || null, summary });
+  } catch (error) { return sendError(response, error); }
+});
+
+app.post('/api/webhooks/brevo/transactional', (request, response) => {
+  const authentication = authenticateBrevoWebhook(request.get('authorization'));
+  if (!authentication.configured) return response.status(503).json({ error: 'Webhook authentication is not configured.' });
+  if (!authentication.authorized) return response.status(401).json({ error: 'Unauthorized.' });
+  let events;
+  try {
+    events = parseBrevoWebhookPayload(request.body);
+  } catch { return response.status(400).json({ error: 'Invalid transactional webhook payload.' }); }
+  try { processBrevoWebhookEvents(events); return response.status(204).end(); }
+  catch { return response.status(500).json({ error: 'Transactional webhook processing failed.' }); }
+});
 app.post('/api/social/analyze', (request, response) => {
   const parsed = z.object({ mentionIds: z.array(z.string()).min(1).max(500).optional() }).safeParse(request.body || {});
   if (!parsed.success) return sendError(response, parsed.error);
@@ -228,6 +287,123 @@ app.post('/api/templates/:templateId/create', (request, response) => {
   const collector = createCollector(survey.id, { name: 'Public web link', type: 'web' });
   publishEvent('data-changed', { surveyId: survey.id, reason: 'survey-created' });
   return response.status(201).json({ survey, collector });
+});
+
+const campaignStepInput = z.object({
+  id: z.string().uuid().optional(), delayMinutes: z.number().int().min(0).max(525_600),
+  subject: z.string().min(1).max(250), mode: z.enum(['plain', 'html']).default('plain'),
+  bodyText: z.string().max(30_000).default(''), bodyHtml: z.string().max(100_000).optional(),
+  embedQuestionId: z.string().max(200).nullable().optional()
+});
+app.get('/api/campaign-templates', noStore, (_request, response) => response.json(campaignTemplates.map((template) => ({
+  ...template, ...template.steps[0]
+}))));
+app.get('/api/campaigns', noStore, (_request, response) => response.json(listCampaignSummaries()));
+app.post('/api/campaigns', (request, response) => {
+  try {
+    const input = z.object({
+      name: z.string().min(2).max(180), surveyId: z.string().min(1), collectorId: z.string().optional(),
+      stopOnResponse: z.boolean().optional(), startAt: z.string().datetime().nullable().optional(), templateId: z.string().max(100).optional()
+    }).parse(request.body);
+    return response.status(201).json(createCampaign(input));
+  } catch (error) { return sendError(response, error); }
+});
+app.get('/api/campaigns/:id', noStore, (request, response) => {
+  try { return response.json(getCampaignDetail(String(request.params.id))); }
+  catch (error) { return sendError(response, error, 404); }
+});
+app.put('/api/campaigns/:id', (request, response) => {
+  try {
+    const input = z.object({
+      name: z.string().min(2).max(180).optional(), stopOnResponse: z.boolean().optional(),
+      startAt: z.string().datetime().nullable().optional(), surveyId: z.string().optional(), collectorId: z.string().optional(),
+      settings: z.object({ stopOnResponse: z.boolean().optional() }).passthrough().optional()
+    }).parse(request.body);
+    return response.json(updateCampaign(String(request.params.id), { ...input, stopOnResponse: input.stopOnResponse ?? input.settings?.stopOnResponse }));
+  } catch (error) { return sendError(response, error); }
+});
+app.put('/api/campaigns/:id/steps', (request, response) => {
+  try {
+    const input = z.object({ steps: z.array(campaignStepInput).min(1).max(12) }).parse(request.body);
+    return response.json(replaceCampaignSteps(String(request.params.id), input.steps as any));
+  } catch (error) { return sendError(response, error); }
+});
+app.post('/api/campaigns/:id/contacts', (request, response) => {
+  try {
+    const input = z.object({ contacts: z.array(z.object({
+      email: z.string().email().max(320), firstName: z.string().max(150).optional(), lastName: z.string().max(150).optional(),
+      company: z.string().max(250).optional(), customData: z.record(z.string(), z.unknown()).optional()
+    })).min(1).max(1000) }).parse(request.body);
+    return response.status(201).json(addCampaignContacts(String(request.params.id), input.contacts));
+  } catch (error) { return sendError(response, error); }
+});
+app.delete('/api/campaigns/:id/contacts/:contactId', (request, response) => {
+  try {
+    return suppressCampaignContact(String(request.params.id), String(request.params.contactId))
+      ? response.status(204).end() : response.status(404).json({ error: 'Campaign contact not found.' });
+  } catch (error) { return sendError(response, error, 404); }
+});
+app.post('/api/campaigns/:id/launch', (request, response) => {
+  try {
+    const input = z.object({ startAt: z.string().datetime().nullable().optional() }).parse(request.body || {});
+    if (input.startAt !== undefined) updateCampaign(String(request.params.id), { startAt: input.startAt });
+    return response.json(launchCampaign(String(request.params.id)));
+  } catch (error) { return sendError(response, error); }
+});
+app.post('/api/campaigns/:id/pause', (request, response) => {
+  try { return response.json(pauseCampaign(String(request.params.id))); }
+  catch (error) { return sendError(response, error); }
+});
+app.post('/api/campaigns/:id/resume', (request, response) => {
+  try { return response.json(resumeCampaign(String(request.params.id))); }
+  catch (error) { return sendError(response, error); }
+});
+app.post('/api/campaigns/:id/test', async (request, response) => {
+  try {
+    const input = z.object({ email: z.string().email().optional(), emails: z.array(z.string().email()).max(10).optional() }).refine((value) => Boolean(value.email || value.emails?.length), 'Add at least one test email.').parse(request.body);
+    const emails = [...new Set([...(input.emails || []), ...(input.email ? [input.email] : [])])];
+    const result = await sendCampaignTest(String(request.params.id), emails);
+    const failures = result.outcomes.filter((outcome) => outcome.status === 'failed').length;
+    return response.status(failures === result.outcomes.length ? 502 : failures ? 207 : 200).json(result);
+  } catch (error) { return sendError(response, error); }
+});
+
+app.get('/api/public/campaigns/unsubscribe/:token', noStore, (request, response) => {
+  const token = String(request.params.token || ''); const preview = getCampaignUnsubscribePreview(token);
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  if (!preview) return response.status(404).type('html').send(unsubscribePage({ title: 'Link unavailable', message: 'This unsubscribe link is invalid or no longer available.' }));
+  if (preview.alreadyUnsubscribed) return response.type('html').send(unsubscribePage({ title: 'Already unsubscribed', message: `${preview.email} will not receive future survey campaign messages.`, confirmed: true }));
+  return response.type('html').send(unsubscribePage({
+    title: 'Unsubscribe from survey emails',
+    message: `Confirm that ${preview.email} should stop receiving survey campaign messages, including future campaigns.`,
+    action: `/api/public/campaigns/unsubscribe/${encodeURIComponent(token)}`
+  }));
+});
+
+app.post('/api/public/campaigns/unsubscribe/:token', (request, response) => {
+  const result = unsubscribeCampaignContact(String(request.params.token || ''));
+  response.setHeader('Cache-Control', 'no-store'); response.setHeader('Referrer-Policy', 'no-referrer');
+  if (!result) return response.status(404).type('html').send(unsubscribePage({ title: 'Link unavailable', message: 'This unsubscribe link is invalid or no longer available.' }));
+  return response.type('html').send(unsubscribePage({ title: 'You are unsubscribed', message: `${result.email} will not receive future survey campaign messages.`, confirmed: true }));
+});
+
+app.get('/api/public/collectors/unsubscribe/:token', noStore, (request, response) => {
+  const token = String(request.params.token || ''); const preview = getRecipientUnsubscribePreview(token);
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  if (!preview) return response.status(404).type('html').send(unsubscribePage({ title: 'Link unavailable', message: 'This unsubscribe link is invalid or no longer available.' }));
+  if (preview.alreadyUnsubscribed) return response.type('html').send(unsubscribePage({ title: 'Already unsubscribed', message: `${preview.email} will not receive future survey emails.`, confirmed: true }));
+  return response.type('html').send(unsubscribePage({
+    title: 'Unsubscribe from survey emails', message: `Confirm that ${preview.email} should stop receiving survey emails, including future campaigns.`,
+    action: `/api/public/collectors/unsubscribe/${encodeURIComponent(token)}`
+  }));
+});
+
+app.post('/api/public/collectors/unsubscribe/:token', (request, response) => {
+  const recipient = markRecipientUnsubscribed(String(request.params.token || ''));
+  response.setHeader('Cache-Control', 'no-store'); response.setHeader('Referrer-Policy', 'no-referrer');
+  if (!recipient) return response.status(404).type('html').send(unsubscribePage({ title: 'Link unavailable', message: 'This unsubscribe link is invalid or no longer available.' }));
+  suppressEmailGlobally({ email: recipient.email, reason: 'Recipient unsubscribed', source: 'collector', contactStatus: 'unsubscribed' });
+  return response.type('html').send(unsubscribePage({ title: 'You are unsubscribed', message: `${recipient.maskedEmail} will not receive future survey emails.`, confirmed: true }));
 });
 
 app.get('/api/surveys', noStore, (_request, response) => response.json(listSurveys()));
@@ -331,7 +507,10 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
   });
   if (stored.status === 'completed') {
     const recipient = request.query.recipient || input.data.respondentToken;
-    if (recipient) db.prepare(`UPDATE recipients SET status='responded',responded_at=? WHERE token=?`).run(new Date().toISOString(), String(recipient));
+    if (recipient) {
+      db.prepare(`UPDATE recipients SET status='responded',responded_at=? WHERE token=?`).run(new Date().toISOString(), String(recipient));
+      markCampaignContactResponded(String(recipient));
+    }
     createRuleTickets(survey, stored);
     queueJob('response.analyze', {}, survey.id, stored.id);
   }

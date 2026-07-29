@@ -12,6 +12,7 @@ $ActiveProjectFile = Join-Path $RuntimeDir 'active-project-path'
 $PidFile = Join-Path $RuntimeDir 'server.pid'
 $PasswordFile = Join-Path $RuntimeDir 'admin-password'
 $SessionSecretFile = Join-Path $RuntimeDir 'session-secret'
+$BrevoWebhookSecretFile = Join-Path $RuntimeDir 'brevo-webhook-secret'
 $StdoutLog = Join-Path $RuntimeDir 'server.stdout.log'
 $StderrLog = Join-Path $RuntimeDir 'server.stderr.log'
 $StartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Seemplify Experience.lnk'
@@ -32,6 +33,7 @@ function New-RandomSecret([int]$Bytes = 32) { $value = New-Object byte[] $Bytes;
 function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $PasswordFile)) { Set-Content -LiteralPath $PasswordFile -Value (New-RandomSecret 24) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
   $envFile = Join-Path $SourceProjectDir 'backend\.env'
   if (-not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath (Join-Path $SourceProjectDir 'backend\.env.example') -Destination $envFile }
 }
@@ -49,6 +51,7 @@ function Start-Server {
   if (-not (Test-Path (Join-Path $ProjectDir 'backend\dist\server.js'))) { & npm.cmd run build --prefix $ProjectDir; if ($LASTEXITCODE -ne 0) { throw 'Experience build failed.' } }
   $env:HOST='127.0.0.1'; $env:PORT='5410'; $env:PUBLIC_URL='https://experience.aiinnigeria.com'
   $env:ADMIN_PASSWORD_FILE=$PasswordFile; $env:SESSION_SECRET_FILE=$SessionSecretFile
+  $env:BREVO_WEBHOOK_SECRET_FILE=$BrevoWebhookSecretFile
   $env:DATABASE_PATH=(Join-Path $RuntimeDir 'experience.sqlite'); $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
   $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
   $sharedBrevo = Join-Path (Split-Path -Parent $RepositoryDir) 'crm\Xplorer-Full-backend\.env'
@@ -66,7 +69,7 @@ function Set-AutoStart([bool]$Enabled) {
 function Get-Status {
   $process = Get-ServerProcess; $healthy = $false; try { $healthy = (Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:5410/health' -TimeoutSec 3).StatusCode -eq 200 } catch {}
   $project = Get-ProjectDir
-  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
+  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
 }
 switch ($Action) { 'initialize' { Initialize-Runtime }; 'start' { Start-Server }; 'stop' { Stop-Server }; 'restart' { Stop-Server; Start-Server }; 'enable-auto-start' { Initialize-Runtime; Set-AutoStart $true }; 'disable-auto-start' { Set-AutoStart $false }; 'status' {} }
 $status = Get-Status; if ($Json) { $status | ConvertTo-Json -Compress } else { [pscustomobject]$status | Format-List }

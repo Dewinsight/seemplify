@@ -31,7 +31,7 @@ function isVisible(question: Question, answers: Record<string, any>) {
 }
 
 function QuestionInput({ question, value, onChange }: { question: Question; value: any; onChange: (value: any) => void }) {
-  const min = question.settings?.min ?? 1;
+  const min = question.settings?.min ?? (['nps', 'multi_nps'].includes(question.type) ? 0 : 1);
   const max = question.settings?.max ?? (['nps', 'multi_nps'].includes(question.type) ? 10 : question.type === 'ces' ? 7 : 5);
   if (question.type === 'statement') return <div className="border-l-2 border-primary bg-muted/35 px-4 py-3 text-sm leading-6">{question.description || question.title}</div>;
   if (question.type === 'long_text') return <Textarea rows={5} value={value || ''} onChange={(event) => onChange(event.target.value)} />;
@@ -63,6 +63,15 @@ export function PublicSurveyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [complete, setComplete] = useState(false);
   useEffect(() => { api<{ survey: Survey; collector: Collector }>(`/api/public/collectors/${slug}`).then(setData).catch((reason) => setError(reason.message)); }, [slug]);
+  useEffect(() => {
+    if (!data) return;
+    const questionId = params.get('answerQuestion'); const rawValue = params.get('answerValue');
+    if (!questionId || rawValue == null) return;
+    const question = (data.survey.questions || []).find((item) => item.id === questionId && item.page === 1);
+    if (!question) return;
+    const value = ['nps', 'csat', 'ces', 'rating', 'graphical_rating'].includes(question.type) && /^-?\d+(\.\d+)?$/.test(rawValue) ? Number(rawValue) : rawValue;
+    setAnswers((current) => ({ ...current, [question.id]: value }));
+  }, [data, params]);
   const pages = useMemo(() => data ? Math.max(1, ...(data.survey.questions || []).map((question) => question.page || 1)) : 1, [data]);
   const allQuestions = data?.survey.questions || [];
   const questions = allQuestions.filter((question) => (question.page || 1) === page && isVisible(question, answers));

@@ -10,6 +10,7 @@ Object.assign(process.env, {
   ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', AI_WORKER_CONCURRENCY: '1', LOCAL_LLM_BASE_URL: 'http://127.0.0.1:9'
 });
 const { app } = await import('../src/app.js'); const { aiJobRunner } = await import('../src/aiJobs.js');
-aiJobRunner.start();
+const { campaignRunner } = await import('../src/campaigns.js');
+aiJobRunner.start(); campaignRunner.start();
 const server = app.listen(5412, '127.0.0.1', () => console.log('E2E server ready on 5412'));
-for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => { aiJobRunner.stop(); server.close(() => process.exit(0)); });
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => { aiJobRunner.stop(); campaignRunner.stop(); server.close(() => process.exit(0)); });

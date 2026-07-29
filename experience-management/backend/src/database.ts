@@ -80,6 +80,8 @@ db.exec(`
     responded_at TEXT,
     message_id TEXT,
     error TEXT,
+    first_attempt_at TEXT,
+    updated_at TEXT,
     created_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS responses (
@@ -159,7 +161,111 @@ db.exec(`
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS campaigns (
+    id TEXT PRIMARY KEY,
+    survey_id TEXT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+    collector_id TEXT NOT NULL REFERENCES collectors(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    stop_on_response INTEGER NOT NULL DEFAULT 1,
+    start_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    launched_at TEXT,
+    paused_at TEXT,
+    completed_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS campaigns_status_updated ON campaigns(status, updated_at DESC);
+  CREATE TABLE IF NOT EXISTS campaign_steps (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    delay_minutes INTEGER NOT NULL DEFAULT 0,
+    subject TEXT NOT NULL,
+    content_mode TEXT NOT NULL DEFAULT 'plain',
+    body_text TEXT NOT NULL DEFAULT '',
+    body_html TEXT NOT NULL DEFAULT '',
+    embed_question_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(campaign_id, position)
+  );
+  CREATE TABLE IF NOT EXISTS campaign_contacts (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    email TEXT NOT NULL COLLATE NOCASE,
+    first_name TEXT NOT NULL DEFAULT '',
+    last_name TEXT NOT NULL DEFAULT '',
+    company TEXT NOT NULL DEFAULT '',
+    token TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'active',
+    custom_json TEXT NOT NULL DEFAULT '{}',
+    current_step INTEGER NOT NULL DEFAULT -1,
+    last_sent_at TEXT,
+    responded_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(campaign_id, email)
+  );
+  CREATE INDEX IF NOT EXISTS campaign_contacts_campaign_status ON campaign_contacts(campaign_id, status, created_at);
+  CREATE TABLE IF NOT EXISTS campaign_deliveries (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    step_id TEXT NOT NULL REFERENCES campaign_steps(id) ON DELETE CASCADE,
+    contact_id TEXT NOT NULL REFERENCES campaign_contacts(id) ON DELETE CASCADE,
+    step_position INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'queued',
+    scheduled_at TEXT NOT NULL,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 5,
+    first_attempt_at TEXT,
+    provider_message_id TEXT,
+    provider_status TEXT,
+    delivered_at TEXT,
+    opened_at TEXT,
+    clicked_at TEXT,
+    bounced_at TEXT,
+    complained_at TEXT,
+    unsubscribed_at TEXT,
+    provider_updated_at TEXT,
+    error TEXT,
+    sent_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(contact_id, step_id)
+  );
+  CREATE INDEX IF NOT EXISTS campaign_deliveries_dispatch ON campaign_deliveries(state, scheduled_at, created_at);
+  CREATE TABLE IF NOT EXISTS email_suppressions (
+    email TEXT PRIMARY KEY COLLATE NOCASE,
+    reason TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS campaign_delivery_events (
+    id TEXT PRIMARY KEY,
+    delivery_id TEXT NOT NULL REFERENCES campaign_deliveries(id) ON DELETE CASCADE,
+    provider_event_id TEXT,
+    provider_message_id TEXT,
+    event_type TEXT NOT NULL,
+    event_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS campaign_delivery_events_delivery ON campaign_delivery_events(delivery_id,event_at);
+  CREATE INDEX IF NOT EXISTS campaign_deliveries_provider_message ON campaign_deliveries(provider_message_id);
 `);
+
+const campaignDeliveryColumns = new Set((db.prepare('PRAGMA table_info(campaign_deliveries)').all() as any[]).map((column) => String(column.name)));
+for (const column of [
+  'first_attempt_at', 'provider_status', 'delivered_at', 'opened_at', 'clicked_at', 'bounced_at',
+  'complained_at', 'unsubscribed_at', 'provider_updated_at'
+]) {
+  if (!campaignDeliveryColumns.has(column)) db.exec(`ALTER TABLE campaign_deliveries ADD COLUMN ${column} TEXT`);
+}
+const recipientColumns = new Set((db.prepare('PRAGMA table_info(recipients)').all() as any[]).map((column) => String(column.name)));
+for (const column of ['first_attempt_at', 'updated_at']) {
+  if (!recipientColumns.has(column)) db.exec(`ALTER TABLE recipients ADD COLUMN ${column} TEXT`);
+}
 
 const parseJson = <T>(value: unknown, fallback: T): T => {
   try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; }
@@ -242,6 +348,11 @@ export function listCollectors(surveyId: string) {
 
 export function getCollectorBySlug(slug: string): Collector | null {
   const row = db.prepare('SELECT * FROM collectors WHERE slug=?').get(slug) as any;
+  return row ? rowCollector(row) : null;
+}
+
+export function getCollector(id: string): Collector | null {
+  const row = db.prepare('SELECT * FROM collectors WHERE id=?').get(id) as any;
   return row ? rowCollector(row) : null;
 }
 
@@ -353,8 +464,17 @@ export function listSocialMentions(limit = 500) {
   return (db.prepare('SELECT * FROM social_mentions ORDER BY published_at DESC LIMIT ?').all(limit) as any[]).map(rowMention);
 }
 
+export function listSocialMentionsByIds(ids: string[]) {
+  const unique = [...new Set(ids)].slice(0, 200);
+  if (!unique.length) return [];
+  const placeholders = unique.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT * FROM social_mentions WHERE id IN (${placeholders})`).all(...unique) as any[];
+  const byId = new Map(rows.map((row) => [row.id, rowMention(row)]));
+  return unique.map((id) => byId.get(id)).filter((item): item is SocialMention => Boolean(item));
+}
+
 export const insertSocialMentions = db.transaction((items: Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>) => {
-  const insert = db.prepare(`INSERT INTO social_mentions (id,source,author,content,url,language,published_at,metadata_json,analysis_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  const insert = db.prepare(`INSERT OR IGNORE INTO social_mentions (id,source,author,content,url,language,published_at,metadata_json,analysis_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
   const now = new Date().toISOString();
   return items.map((item) => {
     const id = item.id || crypto.randomUUID();
@@ -384,3 +504,4 @@ export function saveJourney(input: Partial<Journey> & { name: string }) {
 export function deleteJourney(id: string) { return db.prepare('DELETE FROM journeys WHERE id=?').run(id).changes > 0; }
 
 db.prepare(`UPDATE ai_jobs SET state='queued',stage='recovered_after_restart',progress=0,started_at=NULL,retry_at=NULL,updated_at=? WHERE state='processing'`).run(new Date().toISOString());
+db.prepare("UPDATE campaigns SET status='active' WHERE status='running'").run();

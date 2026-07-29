@@ -140,3 +140,85 @@ export interface AiJob {
   completedAt: string | null;
   updatedAt: string;
 }
+
+export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed';
+export type CampaignContentMode = 'plain' | 'html';
+export type CampaignContactStatus = 'active' | 'responded' | 'completed' | 'failed' | 'suppressed' | 'unsubscribed';
+export type CampaignDeliveryState = 'queued' | 'sending' | 'sent' | 'failed' | 'skipped';
+
+export interface Campaign {
+  id: string;
+  surveyId: string;
+  collectorId: string;
+  name: string;
+  status: CampaignStatus;
+  stopOnResponse: boolean;
+  startAt: string | null;
+  startsAt?: string | null;
+  settings?: { stopOnResponse: boolean };
+  createdAt: string;
+  updatedAt: string;
+  launchedAt: string | null;
+  pausedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface CampaignStep {
+  id: string;
+  campaignId: string;
+  position: number;
+  delayMinutes: number;
+  subject: string;
+  mode: CampaignContentMode;
+  bodyText: string;
+  bodyHtml: string;
+  embedQuestionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CampaignContact {
+  id: string;
+  campaignId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  token: string;
+  status: CampaignContactStatus;
+  customData: Record<string, unknown>;
+  currentStep: number;
+  lastSentAt: string | null;
+  respondedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  recipientId?: string;
+  nextSendAt?: string | null;
+}
+
+export interface CampaignDelivery {
+  id: string;
+  campaignId: string;
+  stepId: string;
+  contactId: string;
+  stepPosition: number;
+  state: CampaignDeliveryState;
+  scheduledAt: string;
+  attempt: number;
+  maxAttempts: number;
+  firstAttemptAt?: string | null;
+  providerMessageId: string | null;
+  providerStatus?: string | null;
+  deliveredAt?: string | null;
+  openedAt?: string | null;
+  clickedAt?: string | null;
+  bouncedAt?: string | null;
+  complainedAt?: string | null;
+  unsubscribedAt?: string | null;
+  providerUpdatedAt?: string | null;
+  messageId?: string | null;
+  error: string | null;
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

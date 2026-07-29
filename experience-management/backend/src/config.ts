@@ -39,6 +39,11 @@ function resolveFromBackend(value: string) {
   return path.isAbsolute(value) ? value : path.resolve(backendDir, value);
 }
 
+function boundedNumber(value: unknown, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number(value);
+  return Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? parsed : fallback));
+}
+
 export const config = {
   host: process.env.HOST || '127.0.0.1',
   port: Math.max(1, Number(process.env.PORT || 5410)),
@@ -64,6 +69,12 @@ export const config = {
   brevoFromEmail: process.env.BREVO_FROM_EMAIL || 'no-reply@seemplifyai.com',
   brevoFromName: process.env.BREVO_FROM_NAME || 'Seemplify Experience',
   emailMode: String(process.env.EMAIL_MODE || 'send').toLowerCase(),
+  // Brevo currently retains an idempotency key for 30 minutes. Keep one minute
+  // of safety margin so no retry is dispatched at the documented boundary.
+  brevoIdempotencyTtlMinutes: boundedNumber(process.env.BREVO_IDEMPOTENCY_TTL_MINUTES, 29, 5, 29),
+  brevoWebhookSecretFile: resolveFromBackend(
+    process.env.BREVO_WEBHOOK_SECRET_FILE || '../../.local-runtime/experience-management/brevo-webhook-secret'
+  ),
   adminEmail: String(process.env.ADMIN_EMAIL || 'admin@seemplify.local').trim().toLowerCase(),
   adminPasswordFile: resolveFromBackend(process.env.ADMIN_PASSWORD_FILE || '../../.local-runtime/experience-management/admin-password'),
   sessionSecretFile: resolveFromBackend(process.env.SESSION_SECRET_FILE || '../../.local-runtime/experience-management/session-secret'),

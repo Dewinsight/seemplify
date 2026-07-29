@@ -65,7 +65,7 @@ test('admin builds, publishes and receives a survey response through the public 
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
 
-  await page.getByRole('tab', { name: 'Collect' }).click();
+  await page.getByRole('tab', { name: 'Distribute' }).click();
   const publicUrl = await page.getByLabel('Survey URL').inputValue();
   expect(publicUrl).toMatch(/\/s\//);
   const studioUrl = page.url();
@@ -83,6 +83,181 @@ test('admin builds, publishes and receives a survey response through the public 
   await expect(page.getByRole('button', { name: 'Open' }).first()).toBeVisible();
   await page.goto('/ai-queue');
   await expect(page.getByText('Response analysis').first()).toBeVisible();
+});
+
+test('survey editor selects, reorders across pages, and accepts a dragged question type', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop exercises precise pointer and keyboard drag interactions');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  const suffix = `${Date.now()}`;
+  const titles = {
+    first: `First editor question ${suffix}`,
+    second: `Second editor question ${suffix}`,
+    third: `Third editor question ${suffix}`
+  };
+  const survey = await page.evaluate(async ({ suffix, titles }) => {
+    const response = await fetch('/api/surveys', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        title: `Editor interactions ${suffix}`, purpose: 'customer_experience', primaryMetric: 'custom',
+        questions: [
+          { id: `editor-first-${suffix}`, page: 1, position: 0, type: 'short_text', title: titles.first, required: true, options: [], settings: {}, logic: [] },
+          { id: `editor-second-${suffix}`, page: 2, position: 1, type: 'long_text', title: titles.second, required: false, options: [], settings: {}, logic: [] },
+          { id: `editor-third-${suffix}`, page: 2, position: 2, type: 'rating', title: titles.third, required: true, options: [], settings: {}, logic: [] }
+        ]
+      })
+    });
+    return response.json();
+  }, { suffix, titles });
+
+  await page.goto(`/surveys/${survey.id}`);
+  const questionList = page.getByRole('list', { name: 'Survey questions' });
+  await expect(questionList.locator('[data-selected="true"]')).toContainText(titles.first);
+  await expect(page.getByText('Question 1 settings', { exact: true })).toBeVisible();
+
+  const secondSelection = questionList.getByRole('button', { name: new RegExp(`2\\. ${titles.second}`) });
+  await secondSelection.click();
+  await expect(secondSelection).toHaveAttribute('aria-pressed', 'true');
+  await expect(questionList.locator('[data-selected="true"]')).toContainText(titles.second);
+  await expect(page.getByText('Question 2 settings', { exact: true })).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('survey-editor-selected.png'), fullPage: true });
+
+  const secondHandle = questionList.getByRole('button', { name: `Reorder question 2: ${titles.second}` });
+  await secondHandle.focus();
+  await secondHandle.press('Space');
+  await page.waitForTimeout(100);
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(100);
+  await page.keyboard.press('Space');
+  await expect(questionList.locator('li').first()).toContainText(titles.second);
+  await expect(questionList.locator('li').first()).toContainText('Page 1');
+  await expect(page.getByText('Question 1 settings', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('button', { name: 'Saved' })).toBeVisible();
+  await page.reload();
+  await expect(questionList.locator('li').first()).toContainText(titles.second);
+  await expect(questionList.locator('li').first()).toContainText('Page 1');
+
+  const longTextHandle = page.getByRole('button', { name: 'Drag Long text into the question list' });
+  await longTextHandle.dragTo(questionList.locator('li').nth(1));
+  await expect(questionList.locator('li')).toHaveCount(4);
+  const insertedQuestion = questionList.locator('[data-selected="true"]');
+  await expect(insertedQuestion).toContainText('Untitled question');
+  await expect(insertedQuestion).toContainText('long text');
+  const insertedIndex = await questionList.locator('li').evaluateAll((items) => items.findIndex((item) => item.getAttribute('data-selected') === 'true'));
+  await expect(page.getByText(`Question ${insertedIndex + 1} settings`, { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('button', { name: 'Saved' })).toBeVisible();
+  await page.reload();
+  await expect(questionList.locator('li')).toHaveCount(4);
+  await expect(questionList.locator('li').nth(insertedIndex)).toContainText('Untitled question');
+  await expect(questionList.locator('li').nth(insertedIndex)).toContainText('long text');
+
+  await page.evaluate((id) => fetch(`/api/surveys/${id}`, { method: 'DELETE' }), survey.id);
+
+  const blankSurvey = await page.evaluate(async (id) => {
+    const response = await fetch('/api/surveys', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: `Blank drag target ${id}`, purpose: 'customer_experience', primaryMetric: 'custom', questions: [] })
+    });
+    return response.json();
+  }, suffix);
+  await page.goto(`/surveys/${blankSurvey.id}`);
+  const emptyTypeHandle = page.getByRole('button', { name: 'Drag Long text into the question list' });
+  const emptyDropZone = page.locator('[aria-label="Question drop zone"]');
+  const sourceBox = await emptyTypeHandle.boundingBox();
+  const targetBox = await emptyDropZone.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error('Question type handle or empty drop zone is not visible.');
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+  await expect(page.getByText('Drop to add this question', { exact: true })).toBeVisible();
+  await page.mouse.up();
+  const blankQuestionList = page.getByRole('list', { name: 'Survey questions' });
+  await expect(blankQuestionList.locator('li')).toHaveCount(1);
+  await expect(blankQuestionList.locator('[data-selected="true"]')).toContainText('long text');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('button', { name: 'Saved' })).toBeVisible();
+  await page.reload();
+  await expect(blankQuestionList.locator('li')).toHaveCount(1);
+  await expect(blankQuestionList.locator('li')).toContainText('long text');
+  await page.evaluate((id) => fetch(`/api/surveys/${id}`, { method: 'DELETE' }), blankSurvey.id);
+});
+
+test('imports a feedback file and runs a sequenced survey campaign through completion', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop project exercises file upload and campaign delivery');
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'Outbound campaign delivery is exercised only against the local log-mode provider');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  const suffix = `${Date.now()}`;
+  await page.goto('/social-listening');
+  await page.getByLabel('Mention source').selectOption('review');
+  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({
+    name: `feedback-${suffix}.csv`, mimeType: 'text/csv',
+    buffer: Buffer.from(`content,author,publishedAt\n\"The new checkout is much faster ${suffix}\",Ada,2026-07-20T10:00:00Z`)
+  });
+  await page.getByRole('button', { name: 'Import file and analyze' }).click();
+  await expect(page.getByRole('table').getByText(`The new checkout is much faster ${suffix}`)).toBeVisible();
+
+  const setup = await page.evaluate(async (id) => {
+    const json = (method: string, body: unknown) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const questionId = `campaign-question-${id}`;
+    const created = await fetch('/api/surveys', json('POST', {
+      title: `Campaign survey ${id}`, purpose: 'customer_experience', primaryMetric: 'csat',
+      questions: [{ id: questionId, page: 1, position: 0, type: 'single_choice', title: 'How was your experience?', required: true, options: ['Great', 'Needs work'], settings: {}, logic: [] }]
+    }));
+    const survey = await created.json();
+    await fetch(`/api/surveys/${survey.id}/publish`, json('POST', { status: 'live' }));
+    return { surveyId: survey.id, questionId };
+  }, suffix);
+
+  await page.goto(`/campaigns?survey=${setup.surveyId}`);
+  await expect(page.getByRole('heading', { name: 'Campaigns', exact: true })).toBeVisible();
+  const campaignName = `Follow-up campaign ${suffix}`;
+  await page.getByLabel('Name').fill(campaignName);
+  await page.getByLabel('Survey').selectOption(setup.surveyId);
+  await page.getByRole('button', { name: 'Create campaign' }).click();
+  await expect(page.getByRole('heading', { name: campaignName })).toBeVisible();
+
+  await page.getByLabel('Contacts').fill(`email,first name,last name,company\nada-${suffix}@example.com,Ada,Lovelace,Analytical Engines`);
+  await page.getByRole('button', { name: 'Import contacts' }).click();
+  await expect(page.getByText(`ada-${suffix}@example.com`)).toBeVisible();
+  await page.getByRole('tab', { name: 'Sequence' }).click();
+  await expect(page.getByText('Step 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Step 2', { exact: true })).toBeVisible();
+  await page.getByLabel('Step 1 embedded question').selectOption(setup.questionId);
+  await page.getByRole('button', { name: 'Save sequence' }).click();
+  await expect(page.getByText('Sequence saved')).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('campaign-sequence.png'), fullPage: true });
+
+  await page.getByRole('button', { name: 'Launch campaign' }).click();
+  await expect(page.getByText('active', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Activity' }).click();
+  const deliveryHistory = page.locator('table').filter({ has: page.getByRole('columnheader', { name: 'Lifecycle' }) });
+  await expect(deliveryHistory.locator('tbody')).toContainText('accepted', { timeout: 15_000 });
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('campaign-activity.png'), fullPage: true });
+
+  const campaignId = new URL(page.url()).pathname.split('/').pop()!;
+  await page.evaluate(async ({ campaignId, questionId }) => {
+    const detail = await fetch(`/api/campaigns/${campaignId}`).then((response) => response.json());
+    const contact = detail.contacts[0];
+    await fetch(`/api/public/collectors/${detail.collector.slug}/responses?recipient=${encodeURIComponent(contact.token)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ answers: { [questionId]: 'Great' }, status: 'completed' })
+    });
+  }, { campaignId, questionId: setup.questionId });
+  await expect(page.getByText('completed', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Responses', { exact: true }).locator('..').getByText('1', { exact: true })).toBeVisible();
+  await page.evaluate((surveyId) => fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' }), setup.surveyId);
 });
 
 test('admin surface and public survey remain usable at a narrow mobile viewport', async ({ page }, testInfo) => {
@@ -147,7 +322,7 @@ test('social listening and journey maps remain visible while Terra work waits du
   await page.getByLabel('Mention source').selectOption('google_play');
   const suffix = `${testInfo.project.name}-${Date.now()}`;
   await page.getByLabel('Public mentions').fill(`Setup remained confusing ${suffix}\nSupport fixed the problem quickly ${suffix}`);
-  await page.getByRole('button', { name: 'Import and analyze' }).click();
+  await page.getByRole('button', { name: 'Import pasted text' }).click();
   const mentionHistory = testInfo.project.name === 'mobile-chromium' ? page.locator('article') : page.locator('tbody');
   await expect(mentionHistory.getByText(`Setup remained confusing ${suffix}`)).toBeVisible();
   await expect(mentionHistory.getByText(`Support fixed the problem quickly ${suffix}`)).toBeVisible();
@@ -165,7 +340,7 @@ test('social listening and journey maps remain visible while Terra work waits du
     return response.json();
   }, suffix);
   await page.goto('/journeys');
-  await expect(page.getByRole('heading', { name: 'Customer journeys' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Journey maps' })).toBeVisible();
   await expect(page.getByText(journey.name).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Discover' })).toBeVisible();
   await expect(page.getByText('Time to value')).toBeVisible();

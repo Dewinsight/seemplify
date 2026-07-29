@@ -10,3 +10,40 @@ export interface SurveyDetail { survey: Survey; collectors: Collector[]; insight
 export interface SocialMention { id: string; source: 'x' | 'google_play' | 'app_store' | 'review' | 'forum' | 'other'; author: string; content: string; url: string; language: string; publishedAt: string; metadata: Record<string, any>; analysis: any; createdAt: string }
 export interface JourneyStage { name: string; goal: string; touchpoints: string[]; customerActions: string[]; emotions: string[]; painPoints: string[]; metrics: string[]; opportunities: string[]; recommendedActions: string[] }
 export interface Journey { id: string; name: string; audience: string; objective: string; industry: string; stages: JourneyStage[]; summary: string; createdAt: string; updatedAt: string }
+export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed';
+export interface Campaign {
+  id: string; surveyId: string; collectorId: string; name: string; status: CampaignStatus;
+  startsAt: string | null; settings: { stopOnResponse?: boolean; [key: string]: any };
+  createdAt: string; updatedAt: string; launchedAt: string | null;
+  surveyTitle?: string; contactCount?: number; sentCount?: number; failedCount?: number; respondedCount?: number; queuedCount?: number;
+}
+export interface CampaignStep {
+  id: string; campaignId: string; position: number; delayMinutes: number; subject: string;
+  mode: 'plain' | 'html'; bodyText: string; bodyHtml: string; embedQuestionId: string | null;
+  createdAt?: string; updatedAt?: string;
+}
+export interface CampaignContact {
+  id: string; campaignId: string; recipientId: string; email: string; firstName: string; lastName: string;
+  company: string; status: 'pending' | 'active' | 'completed' | 'responded' | 'unsubscribed' | 'suppressed' | 'failed';
+  currentStep: number; nextSendAt: string | null; customData: Record<string, any>; createdAt: string; updatedAt: string;
+}
+export interface CampaignDelivery {
+  id: string; campaignId: string; contactId: string; stepId: string; stepPosition: number;
+  state: 'queued' | 'sending' | 'sent' | 'failed' | 'skipped'; attempt: number; scheduledAt: string;
+  sentAt: string | null; messageId: string | null; error: string | null; email?: string; subject?: string; updatedAt: string;
+  providerStatus?: string | null; providerUpdatedAt?: string | null; deliveredAt?: string | null; openedAt?: string | null;
+  clickedAt?: string | null; bouncedAt?: string | null; complainedAt?: string | null; unsubscribedAt?: string | null;
+}
+export interface CampaignMetrics {
+  contacts: number; queued: number; sent: number; failed: number; skipped: number; responded: number; completed: number;
+  totalContacts?: number; totalDeliveries?: number; responseRate?: number; lastActivityAt?: string | null;
+}
+export interface CampaignDetail {
+  campaign: Campaign; survey: Survey; collector: Collector; steps: CampaignStep[]; contacts: CampaignContact[];
+  deliveries: CampaignDelivery[]; metrics: CampaignMetrics;
+}
+export interface CampaignTemplate {
+  id: string; name: string; description: string;
+  subject: string; bodyText: string; bodyHtml: string; mode: 'plain' | 'html';
+  steps?: Array<Pick<CampaignStep, 'delayMinutes' | 'subject' | 'mode' | 'bodyText' | 'bodyHtml' | 'embedQuestionId'>>;
+}
