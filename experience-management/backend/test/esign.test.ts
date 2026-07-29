@@ -45,9 +45,14 @@ test('securely completes a routed two-signer envelope and verifies its certifica
   const created = await owner.post('/api/esign/envelopes').send({ title: 'Employment agreement', message: 'Please review and sign this employment agreement.', routingMode: 'sequential', expiresInDays: 14, reminderIntervalHours: 48 }).expect(201);
   const envelopeId = created.body.envelope.id;
   assert.equal(created.body.readiness.sections.documents.complete, false);
+  assert.equal(created.body.readiness.sections.recipients.complete, false);
+  assert.equal(created.body.readiness.sections.fields.complete, false);
+  assert.match(created.body.readiness.sections.fields.issues[0], /signer or approver/i);
 
   const uploaded = await owner.post(`/api/esign/envelopes/${envelopeId}/documents`).attach('file', await samplePdf(), { filename: '../agreement.pdf', contentType: 'application/pdf' }).expect(201);
   const document = uploaded.body.documents[0]; assert.equal(document.pageCount, 2); assert.equal(document.name, 'agreement.pdf');
+  assert.equal(uploaded.body.readiness.sections.documents.complete, true);
+  assert.equal(uploaded.body.readiness.sections.fields.complete, false);
   const storedDocument = db.prepare('SELECT storage_key FROM esign_documents WHERE id=?').get(document.id) as any;
   assert.equal(fs.readFileSync(path.join(root, 'esign', storedDocument.storage_key)).subarray(0, 5).toString(), 'SEEMS');
   const recipientsResponse = await owner.put(`/api/esign/envelopes/${envelopeId}/recipients`).send({ recipients: [
@@ -56,6 +61,13 @@ test('securely completes a routed two-signer envelope and verifies its certifica
   ] }).expect(200);
   const [ada, ben] = recipientsResponse.body.recipients;
   assert.equal(ada.accessCodeSet, true);
+  assert.equal(recipientsResponse.body.readiness.sections.fields.complete, false);
+  const textOnly = await owner.put(`/api/esign/envelopes/${envelopeId}/fields`).send({ fields: [
+    { documentId: document.id, recipientId: ada.id, type: 'text', page: 1, x: 0.1, y: 0.6, width: 0.35, height: 0.06, required: true, label: 'Employee note' },
+    { documentId: document.id, recipientId: ben.id, type: 'text', page: 2, x: 0.1, y: 0.6, width: 0.35, height: 0.06, required: true, label: 'Employer note' }
+  ] }).expect(200);
+  assert.equal(textOnly.body.readiness.sections.fields.complete, false);
+  assert.match(textOnly.body.readiness.sections.fields.issues[0], /signature or initials/i);
   const fields = [
     { id: crypto.randomUUID(), documentId: document.id, recipientId: ada.id, type: 'signature', page: 1, x: 0.1, y: 0.75, width: 0.35, height: 0.08, required: true, label: 'Employee signature' },
     { id: crypto.randomUUID(), documentId: document.id, recipientId: ben.id, type: 'signature', page: 2, x: 0.1, y: 0.75, width: 0.35, height: 0.08, required: true, label: 'Employer signature' }

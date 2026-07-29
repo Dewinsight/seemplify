@@ -28,12 +28,15 @@ test('ships the native agreement preparation and signing workspaces', () => {
   const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
   const workspace = fs.readFileSync(path.join(source, 'pages', 'AgreementWorkspacePage.tsx'), 'utf8');
   const prepare = fs.readFileSync(path.join(source, 'pages', 'AgreementPreparePage.tsx'), 'utf8');
+  const fields = fs.readFileSync(path.join(source, 'components', 'esign', 'AgreementFieldsStep.tsx'), 'utf8');
   const editor = fs.readFileSync(path.join(source, 'components', 'esign', 'PdfAgreementEditor.tsx'), 'utf8');
   const signing = fs.readFileSync(path.join(source, 'pages', 'PublicSigningPage.tsx'), 'utf8');
   assert.match(shell, /Agreements/);
   for (const section of ['Documents', 'Recipients', 'Fields', 'Message', 'Review']) assert.match(workspace, new RegExp(section));
   for (const activity of ['Recipient progress', 'Email delivery', 'retry-finalization', 'Retry finalization']) assert.match(workspace, new RegExp(activity));
-  for (const feature of ['PdfAgreementEditor', 'Save fields', 'Unsaved changes']) assert.match(prepare, new RegExp(feature));
+  for (const feature of ['Agreement preparation', 'Next:', 'Review and send', 'fieldDirty']) assert.match(workspace, new RegExp(feature));
+  assert.match(prepare, /step=fields/);
+  for (const feature of ['PdfAgreementEditor', 'Save fields', 'Unsaved changes']) assert.match(fields, new RegExp(feature));
   for (const feature of ['pdfjs-dist', 'DndContext', 'PointerSensor', 'KeyboardSensor', 'DragOverlay', 'placementType']) assert.match(editor, new RegExp(feature));
   for (const feature of ['access-code', 'consent', 'SignatureCanvas', 'Next required', 'Decline agreement', 'Finish']) assert.match(signing, new RegExp(feature));
 });

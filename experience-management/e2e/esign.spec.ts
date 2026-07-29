@@ -148,12 +148,20 @@ test('creates, prepares and completes a protected three-signer agreement with or
   await page.getByRole('button', { name: 'Create draft' }).click();
   await expect(page.getByRole('heading', { name: title })).toBeVisible();
   const envelopeId = new URL(page.url()).pathname.split('/').at(-1)!;
+  const preparation = page.getByRole('tablist', { name: 'Agreement preparation' });
+  const headerReview = page.getByRole('button', { name: 'Review and send', exact: true });
+  await expect(preparation).toBeVisible();
+  await expect(headerReview).toBeDisabled();
+  await expect(preparation.getByRole('tab', { name: /3.*Fields.*Needs attention/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Next: Recipients' })).toBeDisabled();
 
   await page.locator('input[type=file][accept*="pdf"]').setInputFiles(pdfPath);
   await expect(page.getByText(`routed-agreement-${suffix}.pdf`)).toBeVisible();
   await expect.poll(async () => (await envelopeDetail(page, envelopeId)).documents[0]?.pageCount).toBe(3);
+  await expect(page.getByRole('button', { name: 'Next: Recipients' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Next: Recipients' }).click();
+  await expect(page.getByRole('heading', { name: 'Recipients and signing order' })).toBeFocused();
 
-  await page.getByRole('tab', { name: /2\. Recipients/ }).click();
   await page.getByRole('button', { name: 'Add recipient' }).click();
   await page.getByRole('button', { name: 'Add recipient' }).click();
   await page.getByRole('button', { name: 'Add recipient' }).click();
@@ -164,14 +172,18 @@ test('creates, prepares and completes a protected three-signer agreement with or
   await names.nth(0).fill('Ada First'); await emails.nth(0).fill(`ada-${suffix}@example.com`); await orders.nth(0).fill('1'); await codes.nth(0).fill(accessCode);
   await names.nth(1).fill('Ben Parallel'); await emails.nth(1).fill(`ben-${suffix}@example.com`); await orders.nth(1).fill('2');
   await names.nth(2).fill('Chi Parallel'); await emails.nth(2).fill(`chi-${suffix}@example.com`); await orders.nth(2).fill('2');
+  await expect(page.getByRole('button', { name: 'Next: Fields' })).toBeDisabled();
+  await expect(headerReview).toBeDisabled();
   await page.getByRole('button', { name: 'Save recipients' }).click();
   await expect(page.getByText('Recipients saved')).toBeVisible();
 
   let detail = await envelopeDetail(page, envelopeId);
   expect(detail.recipients).toHaveLength(3);
-  await page.getByRole('link', { name: 'Prepare fields' }).click();
-  await expect(page.getByText('Prepare signing fields')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Next: Fields' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Next: Fields' }).click();
+  await expect(page.getByRole('heading', { name: 'Place signing fields' })).toBeFocused();
   await expect(page.getByLabel('Document page 3')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('link', { name: /Open field editor/i })).toHaveCount(0);
   const assignee = page.getByLabel('Assign new fields to');
   const placeField = async (recipientName: string, fieldLabel: string, pageNumber: number, position: { x: number; y: number }) => {
     const optionValue = await assignee.locator('option').filter({ hasText: recipientName }).getAttribute('value');
@@ -187,11 +199,17 @@ test('creates, prepares and completes a protected three-signer agreement with or
   await placeField('Ada First', 'Dropdown', 1, { x: 120, y: 280 });
   await placeField('Ben Parallel', 'Signature', 2, { x: 120, y: 560 });
   await placeField('Chi Parallel', 'Signature', 3, { x: 120, y: 560 });
+  await expect(page.getByRole('button', { name: 'Next: Message' })).toBeDisabled();
   await page.getByRole('button', { name: 'Save fields' }).click();
-  await expect(page.getByRole('button', { name: 'Saved' })).toBeVisible();
-  await page.getByRole('link', { name: 'Review' }).click();
+  await expect(page.getByRole('button', { name: 'Fields saved' })).toBeVisible();
   await expect(page.getByText('Every required step is complete.')).toBeVisible();
-  await page.getByRole('button', { name: 'Review and send' }).click();
+  await expect(headerReview).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Next: Message' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Next: Message' }).click();
+  await expect(page.getByRole('heading', { name: 'Email and delivery' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Next: Review' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Next: Review' }).click();
+  await expect(page.getByRole('heading', { name: 'Review and send' })).toBeFocused();
   await page.getByRole('button', { name: 'Send for signature' }).click();
   await expect(page.getByText('Sent', { exact: true })).toBeVisible();
 
@@ -268,7 +286,7 @@ test('creates, prepares and completes a protected three-signer agreement with or
   expect(JSON.stringify(verificationBody)).not.toContain('ada-');
 
   await page.reload();
-  await page.getByRole('tab', { name: 'Activity' }).click();
+  await page.getByRole('button', { name: 'Activity' }).click();
   await expect(page.getByRole('heading', { name: 'Signing history' })).toBeVisible();
   await expect(page.getByRole('link', { name: /completed\.pdf/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /certificate\.pdf/i })).toBeVisible();
@@ -377,6 +395,60 @@ test('copy recipients receive completed documents without being asked to sign or
   await copy.context.close();
   const completed = await envelopeDetail(page, setup.envelopeId);
   expect(completed.recipients.find((recipient) => recipient.email === setup.copyEmail)?.status).toBe('notified');
+});
+
+test('mobile agreement preparation embeds the PDF editor and retains an unsaved field draft', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile project verifies the responsive sender workflow.');
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'The local API is used to create an isolated preparation fixture.');
+  await login(page);
+  const suffix = `${Date.now()}`;
+  const pdfPath = testInfo.outputPath(`mobile-preparation-${suffix}.pdf`);
+  await syntheticPdf(pdfPath, `Mobile preparation ${suffix}`, 1);
+  const fileBytes = fs.readFileSync(pdfPath).toString('base64');
+  const envelopeId = await page.evaluate(async ({ suffix, fileBytes }) => {
+    const json = (method: string, body: unknown) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const created = await fetch('/api/esign/envelopes', json('POST', {
+      title: `Mobile preparation ${suffix}`,
+      subject: 'Please sign the mobile fixture',
+      message: 'Review and sign this test agreement.',
+      routingMode: 'sequential'
+    })).then((response) => response.json());
+    const bytes = Uint8Array.from(atob(fileBytes), (character) => character.charCodeAt(0));
+    const form = new FormData();
+    form.append('file', new File([bytes], `mobile-preparation-${suffix}.pdf`, { type: 'application/pdf' }));
+    await fetch(`/api/esign/envelopes/${created.envelope.id}/documents`, { method: 'POST', body: form });
+    await fetch(`/api/esign/envelopes/${created.envelope.id}/recipients`, json('PUT', {
+      recipients: [{ name: 'Mobile Workflow Signer', email: `mobile-workflow-${suffix}@example.com`, role: 'signer', routingOrder: 1 }]
+    }));
+    return created.envelope.id as string;
+  }, { suffix, fileBytes });
+
+  await page.goto(`/agreements/${envelopeId}/prepare`);
+  await expect(page).toHaveURL(new RegExp(`/agreements/${envelopeId}\\?step=fields$`));
+  await expect(page.getByRole('tablist', { name: 'Agreement preparation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Place signing fields' })).toBeVisible();
+  await expect(page.getByLabel('Assign new fields to')).toBeVisible();
+  await expect(page.getByLabel('Document page 1')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('link', { name: /Open field editor/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Review and send', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Next: Message' })).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
+  await page.locator('[data-page-number="1"]').click({ position: { x: 120, y: 220 } });
+  await expect(page.getByRole('button', { name: 'Save fields' })).toBeVisible();
+  await page.getByRole('tab', { name: /4.*Message/i }).click();
+  await page.getByRole('tab', { name: /3.*Fields/i }).click();
+  await expect(page.getByRole('button', { name: 'Save fields' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+
+  let leaveWarning = '';
+  page.once('dialog', async (dialog) => {
+    leaveWarning = dialog.message();
+    await dialog.dismiss();
+  });
+  await page.getByRole('link', { name: 'All agreements' }).click();
+  expect(leaveWarning).toMatch(/discard your unsaved changes/i);
+  await expect(page).toHaveURL(new RegExp(`/agreements/${envelopeId}\\?step=fields$`));
 });
 
 test('mobile signer completes a multi-page agreement without horizontal overflow', async ({ page }, testInfo) => {

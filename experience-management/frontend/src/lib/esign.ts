@@ -22,12 +22,18 @@ export function esignStatusLabel(status: ESignEnvelopeStatus) {
 }
 
 function fallbackReadiness(detail: Omit<ESignEnvelopeDetail, 'readiness'> & { readiness?: ESignReadiness }): ESignReadiness {
-  const signingRecipients = detail.recipients.filter((recipient) => signingRoles.has(recipient.role));
+  const actionRecipients = detail.recipients.filter((recipient) => signingRoles.has(recipient.role));
+  const signers = actionRecipients.filter((recipient) => recipient.role === 'signer');
+  const fieldsIssues = !actionRecipients.length
+    ? ['Add a signer or approver before placing fields.']
+    : signers.every((recipient) => detail.fields.some((field) => field.recipientId === recipient.id && ['signature', 'initials'].includes(field.type)))
+      ? []
+      : ['Assign a signature or initials field to every signer.'];
   const issues: Record<ESignWorkflowSectionKey, string[]> = {
     documents: detail.documents.length ? [] : ['Upload at least one PDF document.'],
-    recipients: signingRecipients.length ? [] : ['Add at least one signer or approver.'],
-    fields: signingRecipients.length && signingRecipients.every((recipient) => detail.fields.some((field) => field.recipientId === recipient.id)) ? [] : ['Place at least one field for every signer or approver.'],
-    message: detail.envelope.subject?.trim() && detail.envelope.message?.trim() ? [] : ['Add an email subject and message.']
+    recipients: actionRecipients.length ? [] : ['Add at least one signer or approver.'],
+    fields: fieldsIssues,
+    message: detail.envelope.title?.trim() && detail.envelope.subject?.trim() && detail.envelope.message?.trim() ? [] : ['Add an agreement name, email subject and message.']
   };
   const sections = Object.fromEntries((Object.keys(issues) as ESignWorkflowSectionKey[]).map((key) => [key, { key, complete: issues[key].length === 0, issues: issues[key] }])) as ESignReadiness['sections'];
   const completedSections = Object.values(sections).filter((section) => section.complete).length;

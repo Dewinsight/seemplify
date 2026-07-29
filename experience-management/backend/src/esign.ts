@@ -202,7 +202,9 @@ function readiness(envelopeId: string) {
   if (documents.some((item) => item.state !== 'ready')) sectionIssues.documents.push('Wait for every document to be ready.');
   const actionRecipients = recipients.filter((item) => ACTION_ROLES.has(item.role));
   if (!actionRecipients.length) sectionIssues.recipients.push('Add at least one signer or approver.');
-  if (actionRecipients.some((item) => item.role === 'signer' && !fields.some((field) => field.recipient_id === item.id && ['signature', 'initials'].includes(field.type)))) {
+  if (!actionRecipients.length) {
+    sectionIssues.fields.push('Add a signer or approver before placing fields.');
+  } else if (actionRecipients.some((item) => item.role === 'signer' && !fields.some((field) => field.recipient_id === item.id && ['signature', 'initials'].includes(field.type)))) {
     sectionIssues.fields.push('Assign a signature or initials field to every signer.');
   }
   if (fields.some((field) => !recipients.some((recipient) => recipient.id === field.recipient_id) || !documents.some((document) => document.id === field.document_id))) {
