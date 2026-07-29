@@ -26,8 +26,6 @@ function loadSharedBrevoEnvironment() {
     if (!fs.existsSync(candidate)) continue;
     const parsed = dotenv.parse(fs.readFileSync(candidate));
     if (!process.env.BREVO_API_KEY && parsed.BREVO_API_KEY) { process.env.BREVO_API_KEY = parsed.BREVO_API_KEY; source = candidate; }
-    if (!process.env.BREVO_FROM_EMAIL && (parsed.BREVO_FROM_EMAIL || parsed.BREVO_SENDER_EMAIL)) process.env.BREVO_FROM_EMAIL = parsed.BREVO_FROM_EMAIL || parsed.BREVO_SENDER_EMAIL;
-    if (!process.env.BREVO_FROM_NAME && (parsed.BREVO_FROM_NAME || parsed.BREVO_SENDER_NAME)) process.env.BREVO_FROM_NAME = parsed.BREVO_FROM_NAME || parsed.BREVO_SENDER_NAME;
     if (!process.env.BREVO_API_URL && parsed.BREVO_API_URL) process.env.BREVO_API_URL = parsed.BREVO_API_URL;
   }
   return source;

@@ -81,6 +81,9 @@ function Start-Server {
   $env:X_SEED_BEARER_TOKEN_FILE=$XBearerTokenFile; $env:X_SEED_ACCESS_TOKEN_FILE=$XAccessTokenFile; $env:X_SEED_ACCESS_TOKEN_SECRET_FILE=$XAccessTokenSecretFile
   $env:DATABASE_PATH=(Join-Path $RuntimeDir 'experience.sqlite'); $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
   $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
+  # The shared CRM file supplies Brevo credentials only. Experience owns its
+  # sender identity so an isolated deployment cannot inherit another product's branding.
+  $env:BREVO_FROM_NAME='Seemplify Experience'; $env:BREVO_FROM_EMAIL='no-reply@seemplifyai.com'
   $sharedBrevo = Join-Path (Split-Path -Parent $RepositoryDir) 'crm\Xplorer-Full-backend\.env'
   if (Test-Path -LiteralPath $sharedBrevo) { $env:BREVO_ENV_FILE=$sharedBrevo }
   $process = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList @('backend/dist/server.js') -WorkingDirectory $ProjectDir -WindowStyle Hidden -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog -PassThru

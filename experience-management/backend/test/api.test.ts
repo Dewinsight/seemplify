@@ -508,6 +508,7 @@ test('uses UUID idempotency keys and reports all-failed and mixed test-send outc
     };
     const failed = await agent.post(`/api/campaigns/${id}/test`).send({ email: 'failed-preview@example.com' }).expect(502);
     assert.equal(failed.body.outcomes[0].status, 'failed');
+    assert.deepEqual(requests[0].sender, { name: 'Seemplify Experience', email: 'no-reply@seemplifyai.com' });
     assert.match(requests[0].headers.idempotencyKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
     let call = 0; requests.length = 0;

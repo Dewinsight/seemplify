@@ -13,6 +13,7 @@ export function emailStatus() {
     mode: config.emailMode,
     provider: 'brevo',
     sender: config.brevoFromEmail,
+    senderName: config.brevoFromName,
     source: config.brevoApiKey ? 'seemplify-shared-environment' : 'not-configured'
   };
 }
