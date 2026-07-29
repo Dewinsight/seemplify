@@ -20,7 +20,7 @@ function Brand() {
   </Link>;
 }
 
-function SidebarContent({ close }: { close?: () => void }) {
+function SidebarContent({ close, terraReady }: { close?: () => void; terraReady: boolean }) {
   async function signOut() { try { await api('/api/auth/logout', { method: 'POST' }); } finally { window.location.assign('/login'); } }
   return <>
     <Brand />
@@ -30,7 +30,10 @@ function SidebarContent({ close }: { close?: () => void }) {
       </NavLink>)}
     </nav>
     <div className="border-t p-4">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground"><RadioTower className="h-3.5 w-3.5" /> Hosted locally</div>
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-2"><RadioTower className="h-3.5 w-3.5" />Hosted locally</span>
+        <span className={terraReady ? 'text-emerald-700' : 'text-amber-700'} aria-live="polite">Terra {terraReady ? 'ready' : 'unavailable'}</span>
+      </div>
       <button onClick={signOut} className="mt-3 flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"><LogOut className="h-3.5 w-3.5" />Sign out</button>
     </div>
   </>;
@@ -45,10 +48,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
   const terraReady = runtime?.terra?.reachable && runtime?.terra?.health?.ok !== false;
   return <div className="min-h-screen bg-background">
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] flex-col border-r bg-card md:flex"><SidebarContent /></aside>
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] flex-col border-r bg-card md:flex"><SidebarContent terraReady={terraReady} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
-      <button aria-label="Close navigation" className="absolute inset-0 bg-foreground/30" onClick={() => setMobileOpen(false)} />
-      <aside className="relative flex h-full w-[278px] flex-col border-r bg-card shadow-panel"><button className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent close={() => setMobileOpen(false)} /></aside>
+      <button aria-label="Dismiss navigation" className="absolute inset-0 bg-foreground/30" onClick={() => setMobileOpen(false)} />
+      <aside className="relative flex h-full w-[278px] flex-col border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent close={() => setMobileOpen(false)} terraReady={terraReady} /></aside>
     </div>}
     <div className="md:pl-[236px]">
       <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6">

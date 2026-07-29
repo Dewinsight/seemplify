@@ -12,11 +12,12 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
-  await expect(page.getByText(/Terra (ready|unavailable)/)).toBeVisible();
+  const mobile = testInfo.project.name === 'mobile-chromium';
+  if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
+  await expect(page.getByRole('complementary').getByText(/Terra (ready|unavailable)/)).toBeVisible();
+  if (mobile) await page.getByRole('button', { name: 'Close navigation' }).click();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-dashboard.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Sign out' }).click().catch(async () => {
-    await page.getByRole('button', { name: 'Open navigation' }).click();
-    await page.getByRole('button', { name: 'Sign out' }).click();
-  });
+  if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
