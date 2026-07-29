@@ -1,0 +1,127 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { config } from './config.js';
+
+export class TerraError extends Error {
+  code: string;
+  status: number;
+  retryable: boolean;
+
+  constructor(message: string, code = 'TERRA_ERROR', status = 500, retryable = false) {
+    super(message);
+    this.name = 'TerraError';
+    this.code = code;
+    this.status = status;
+    this.retryable = retryable;
+  }
+}
+
+function readSecret() {
+  try {
+    const value = fs.readFileSync(config.localLlmSecretFile, 'utf8').trim();
+    if (!value) throw new Error('empty');
+    return value;
+  } catch {
+    throw new TerraError('The shared Terra service secret is not configured.', 'TERRA_NOT_CONFIGURED', 503, true);
+  }
+}
+
+function usageIdentity(requestId: string) {
+  const eventId = `usage_${crypto.createHash('sha256').update(`experience:${requestId}`).digest('hex').slice(0, 48)}`;
+  const gatewayExecutionId = `localexec_${crypto.createHash('sha256').update(eventId).digest('hex').slice(0, 48)}`;
+  return { eventId, gatewayExecutionId };
+}
+
+function signedHeaders(secret: string, body: string, requestPath: string) {
+  const timestamp = String(Date.now());
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  const signature = crypto.createHmac('sha256', secret)
+    .update(`${timestamp}\n${nonce}\nPOST\n${requestPath}\n${body}`)
+    .digest('base64url');
+  return {
+    'content-type': 'application/json',
+    'x-seemplify-timestamp': timestamp,
+    'x-seemplify-nonce': nonce,
+    'x-seemplify-signature': signature
+  };
+}
+
+export interface TerraCompletionInput {
+  activity: string;
+  requestId: string;
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+  jsonSchema?: Record<string, unknown>;
+  schemaName?: string;
+  reasoningEffort?: 'low' | 'medium' | 'high';
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+}
+
+export async function completeWithTerra(input: TerraCompletionInput) {
+  const secret = readSecret();
+  const requestPath = '/v1/complete';
+  const identity = usageIdentity(input.requestId);
+  const body = JSON.stringify({
+    activity: input.activity,
+    executionMode: 'local-only',
+    messages: input.messages,
+    jsonSchema: input.jsonSchema,
+    schemaName: input.schemaName,
+    reasoningEffort: input.reasoningEffort || 'medium',
+    maxTokens: input.maxTokens || 5000,
+    temperature: input.temperature ?? 0.15,
+    timeoutMs: input.timeoutMs || 240_000,
+    requestSource: 'experience-management',
+    metering: {
+      record: true,
+      ...identity,
+      requestId: input.requestId,
+      sourceApp: 'experience-management'
+    }
+  });
+  let response: globalThis.Response;
+  try {
+    response = await fetch(`${config.localLlmBaseUrl}${requestPath}`, {
+      method: 'POST',
+      headers: signedHeaders(secret, body, requestPath),
+      body,
+      signal: AbortSignal.timeout(input.timeoutMs || 250_000)
+    });
+  } catch (error) {
+    throw new TerraError(`Terra is unreachable: ${error instanceof Error ? error.message : String(error)}`, 'TERRA_UNAVAILABLE', 503, true);
+  }
+  const payload = await response.json().catch(() => ({})) as any;
+  if (!response.ok) {
+    throw new TerraError(
+      payload.message || payload.error || `Terra returned HTTP ${response.status}`,
+      payload.code || 'TERRA_REQUEST_FAILED',
+      response.status,
+      payload.retryable !== false && response.status >= 429
+    );
+  }
+  return {
+    data: payload.data,
+    content: String(payload.content || ''),
+    runtime: {
+      id: payload.id, provider: payload.provider, providerLabel: payload.providerLabel,
+      engine: payload.engine, model: payload.model, usage: payload.usage,
+      latencyMs: payload.metrics?.latencyMs, queueWaitMs: payload.metrics?.queueWaitMs
+    }
+  };
+}
+
+export async function getTerraStatus() {
+  try {
+    const secret = readSecret();
+    const requestPath = '/v1/status';
+    const body = JSON.stringify({ operation: 'status', source: 'experience-management' });
+    const response = await fetch(`${config.localLlmBaseUrl}${requestPath}`, {
+      method: 'POST', headers: signedHeaders(secret, body, requestPath), body, signal: AbortSignal.timeout(8000)
+    });
+    const payload = await response.json().catch(() => ({})) as any;
+    return { reachable: response.ok, ...payload };
+  } catch (error) {
+    return { reachable: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}

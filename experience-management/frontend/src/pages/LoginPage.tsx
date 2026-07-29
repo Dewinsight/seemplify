@@ -1,0 +1,14 @@
+import { FormEvent, useState } from 'react';
+import { Loader2, LockKeyhole } from 'lucide-react';
+import { useNavigate } from '@/lib/router';
+import { api, json } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+
+export function LoginPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [working, setWorking] = useState(false);
+  async function submit(event: FormEvent) { event.preventDefault(); try { setWorking(true); setError(''); await api('/api/auth/login', json('POST', { email, password })); navigate('/'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not sign in'); } finally { setWorking(false); } }
+  return <main className="grid min-h-screen place-items-center bg-background p-5"><div className="w-full max-w-sm"><div className="mb-8 flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">S</div><div><div className="text-sm font-semibold">Seemplify</div><div className="text-xs text-muted-foreground">Experience management</div></div></div><div className="border bg-card p-6 shadow-panel"><div className="flex items-center gap-2"><LockKeyhole className="h-4 w-4 text-primary" /><h1 className="text-lg font-semibold">Admin sign in</h1></div><p className="mt-2 text-sm leading-6 text-muted-foreground">Survey responses and research intelligence are restricted to the local admin account.</p><form className="mt-6 space-y-4" onSubmit={submit}><div><Label className="field-label" htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required /></div><div><Label className="field-label" htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<Button className="w-full" disabled={working}>{working ? <Loader2 className="animate-spin" /> : <LockKeyhole />}{working ? 'Signing in' : 'Sign in'}</Button></form></div><p className="mt-4 text-center text-xs text-muted-foreground">Published survey links do not require an admin sign-in.</p></div></main>;
+}

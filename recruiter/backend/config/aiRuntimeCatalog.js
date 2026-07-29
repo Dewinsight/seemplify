@@ -84,6 +84,66 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'analytics.jobs': { label: 'Job analytics', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
   'analytics.hiring': { label: 'Hiring analytics', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
   'report.analysis': { label: 'Report analysis', group: 'Analytics', model: GROQ_120B, reasoningEffort: 'medium' },
+  'experience.survey_generation': {
+    label: 'Experience survey generation',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.response_analysis': {
+    label: 'Experience response analysis',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.insight_generation': {
+    label: 'Experience insight generation',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'high',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.analyst_chat': {
+    label: 'Experience analyst chat',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.report_generation': {
+    label: 'Experience report generation',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'high',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.translation': {
+    label: 'Experience survey translation',
+    group: 'Experience Management',
+    model: LOCAL_MANAGED_MODEL,
+    provider: LOCAL_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
   'interview.questions': {
     label: 'Interview question generation',
     group: 'Interviews',

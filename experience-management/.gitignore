@@ -1,0 +1,17 @@
+node_modules/
+backend/dist/
+frontend/dist/
+playwright-report/
+test-results/
+.env
+.env.local
+data/
+uploads/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+runtime/

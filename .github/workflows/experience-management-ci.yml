@@ -1,0 +1,29 @@
+name: Experience Management CI
+on:
+  push:
+    branches: [main]
+    paths: ['experience-management/**', 'recruiter/backend/config/aiRuntimeCatalog.js', '.github/workflows/experience-management-ci.yml']
+  pull_request:
+    paths: ['experience-management/**', 'recruiter/backend/config/aiRuntimeCatalog.js', '.github/workflows/experience-management-ci.yml']
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experience-management
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: experience-management/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:all
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: experience-playwright-report
+          path: experience-management/playwright-report
+          if-no-files-found: ignore
