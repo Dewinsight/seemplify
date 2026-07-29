@@ -27,6 +27,23 @@ test('reloads once and recovers when a lazy chunk is stale during deployment', a
   expect(loginDocuments).toBe(2);
 });
 
+test('authenticated live refresh stream connects and emits its handshake', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project verifies the shared event stream');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const result = await page.evaluate(() => new Promise<{ connected: boolean; readyState: number }>((resolve) => {
+    const stream = new EventSource('/api/events');
+    const finish = (connected: boolean) => { window.clearTimeout(timer); const readyState = stream.readyState; stream.close(); resolve({ connected, readyState }); };
+    const timer = window.setTimeout(() => finish(false), 5000);
+    stream.addEventListener('connected', () => finish(true), { once: true });
+    stream.addEventListener('error', () => finish(false), { once: true });
+  }));
+  expect(result.connected, `Event stream failed with readyState ${result.readyState}`).toBe(true);
+});
+
 test('account signup and forgot-password entry points are complete', async ({ page }, testInfo) => {
   const email = `experience-${testInfo.project.name}-${Date.now()}@example.com`;
   await page.goto('/login');

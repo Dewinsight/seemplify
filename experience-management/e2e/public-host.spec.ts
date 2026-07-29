@@ -23,6 +23,14 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const liveRefresh = await page.evaluate(() => new Promise<{ connected: boolean; readyState: number }>((resolve) => {
+    const stream = new EventSource('/api/events');
+    const finish = (connected: boolean) => { window.clearTimeout(timer); const readyState = stream.readyState; stream.close(); resolve({ connected, readyState }); };
+    const timer = window.setTimeout(() => finish(false), 5000);
+    stream.addEventListener('connected', () => finish(true), { once: true });
+    stream.addEventListener('error', () => finish(false), { once: true });
+  }));
+  expect(liveRefresh.connected, `Event stream failed with readyState ${liveRefresh.readyState}`).toBe(true);
   const mobile = testInfo.project.name === 'mobile-chromium';
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await expect(page.getByRole('complementary').getByText(/Terra .* (ready|unavailable)/)).toBeVisible();
