@@ -44,6 +44,26 @@ async function sendBrevoEmail(input: { to: string; name?: string; subject: strin
   return { ...payload, mode: 'brevo' };
 }
 
+export async function sendTransactionalEmail(input: {
+  to: string;
+  name?: string;
+  subject: string;
+  html: string;
+  text: string;
+  idempotencyKey: string;
+  correlation: string;
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(input.idempotencyKey)) throw new Error('Email idempotency key must be a UUID.');
+  return sendBrevoEmail({
+    to: input.to.trim().toLowerCase(),
+    name: input.name?.trim(),
+    subject: input.subject.replace(/[\r\n]+/g, ' ').slice(0, 250),
+    html: input.html,
+    text: input.text,
+    headers: { idempotencyKey: input.idempotencyKey, 'X-Mailin-custom': input.correlation.slice(0, 500) }
+  });
+}
+
 function personalize(value: string, variables: Record<string, string>, html = false) {
   return String(value || '').replace(/\{\{\s*([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)?)\s*\}\}/gi, (token, key: string) => {
     const normalized = key.toLowerCase();

@@ -14,6 +14,12 @@ const SocialListeningPage = lazy(() => import('@/pages/SocialListeningPage').the
 const JourneysPage = lazy(() => import('@/pages/JourneysPage').then((module) => ({ default: module.JourneysPage })));
 const CampaignsPage = lazy(() => import('@/pages/CampaignsPage').then((module) => ({ default: module.CampaignsPage })));
 const CampaignWorkspacePage = lazy(() => import('@/pages/CampaignWorkspacePage').then((module) => ({ default: module.CampaignWorkspacePage })));
+const AgreementsPage = lazy(() => import('@/pages/AgreementsPage').then((module) => ({ default: module.AgreementsPage })));
+const NewAgreementPage = lazy(() => import('@/pages/NewAgreementPage').then((module) => ({ default: module.NewAgreementPage })));
+const AgreementWorkspacePage = lazy(() => import('@/pages/AgreementWorkspacePage').then((module) => ({ default: module.AgreementWorkspacePage })));
+const AgreementPreparePage = lazy(() => import('@/pages/AgreementPreparePage').then((module) => ({ default: module.AgreementPreparePage })));
+const PublicSigningPage = lazy(() => import('@/pages/PublicSigningPage').then((module) => ({ default: module.PublicSigningPage })));
+const CertificateVerificationPage = lazy(() => import('@/pages/CertificateVerificationPage').then((module) => ({ default: module.CertificateVerificationPage })));
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const SignupPage = lazy(() => import('@/pages/SignupPage').then((module) => ({ default: module.SignupPage })));
 const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })));
@@ -24,6 +30,9 @@ function Admin({ children }: { children: ReactNode }) { return <AppShell>{childr
 export function App() {
   return <Suspense fallback={<PageLoader />}><Switch>
     <Route path="/s/:slug"><PublicSurveyPage /></Route>
+    <Route path="/sign/:token"><PublicSigningPage /></Route>
+    <Route path="/sign"><PublicSigningPage /></Route>
+    <Route path="/verify/:certificateId"><CertificateVerificationPage /></Route>
     <Route path="/login"><LoginPage /></Route>
     <Route path="/signup"><SignupPage /></Route>
     <Route path="/forgot-password"><ForgotPasswordPage /></Route>
@@ -35,6 +44,10 @@ export function App() {
     <Route path="/surveys"><Admin><SurveysPage /></Admin></Route>
     <Route path="/campaigns/:id"><Admin><CampaignWorkspacePage /></Admin></Route>
     <Route path="/campaigns"><Admin><CampaignsPage /></Admin></Route>
+    <Route path="/agreements/new"><Admin><NewAgreementPage /></Admin></Route>
+    <Route path="/agreements/:id/prepare"><Admin><AgreementPreparePage /></Admin></Route>
+    <Route path="/agreements/:id"><Admin><AgreementWorkspacePage /></Admin></Route>
+    <Route path="/agreements"><Admin><AgreementsPage /></Admin></Route>
     <Route path="/social-listening"><Admin><SocialListeningPage /></Admin></Route>
     <Route path="/journeys"><Admin><JourneysPage /></Admin></Route>
     <Route path="/ai-queue"><Admin><AiQueuePage /></Admin></Route>

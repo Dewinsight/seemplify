@@ -4,12 +4,14 @@ import { config } from './config.js';
 import { campaignRunner } from './campaigns.js';
 import { bootstrapAdminAccount } from './auth.js';
 import { seedXIntegrationForAdmin, xSyncRunner } from './xIntegration.js';
+import { esignWorker } from './esign.js';
 
 aiJobRunner.start();
 campaignRunner.start();
 bootstrapAdminAccount();
 seedXIntegrationForAdmin();
 xSyncRunner.start();
+esignWorker.start();
 const server = app.listen(config.port, config.host, () => {
   console.log(`Seemplify Experience is running at http://${config.host}:${config.port}`);
 });
@@ -21,8 +23,9 @@ async function shutdown(signal: string) {
   const forceExit = setTimeout(() => process.exit(1), 10_000); forceExit.unref();
   aiJobRunner.stop();
   xSyncRunner.stop();
-  const drained = await campaignRunner.stop(8_000);
-  if (!drained) console.warn('Campaign worker did not drain before the shutdown deadline.');
+  const [campaignDrained, esignDrained] = await Promise.all([campaignRunner.stop(8_000), esignWorker.stop(8_000)]);
+  if (!campaignDrained) console.warn('Campaign worker did not drain before the shutdown deadline.');
+  if (!esignDrained) console.warn('E-sign worker did not drain before the shutdown deadline.');
   server.close(() => { clearTimeout(forceExit); process.exit(0); });
 }
 

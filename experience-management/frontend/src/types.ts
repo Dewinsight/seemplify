@@ -62,3 +62,70 @@ export interface CampaignTemplate {
   subject: string; bodyText: string; bodyHtml: string; mode: 'plain' | 'html';
   steps?: Array<Pick<CampaignStep, 'delayMinutes' | 'subject' | 'mode' | 'bodyText' | 'bodyHtml' | 'embedQuestionId'>>;
 }
+
+export type ESignEnvelopeStatus = 'draft' | 'sent' | 'in_progress' | 'finalizing' | 'completed' | 'declined' | 'voided' | 'expired' | 'failed';
+export type ESignRecipientRole = 'signer' | 'approver' | 'cc' | 'viewer';
+export type ESignRecipientStatus = 'pending' | 'waiting' | 'ready' | 'sent' | 'viewed' | 'in_progress' | 'completed' | 'notified' | 'declined' | 'delivery_failed';
+export type ESignFieldType = 'signature' | 'initials' | 'name' | 'email' | 'date_signed' | 'text' | 'checkbox' | 'radio' | 'dropdown';
+export type ESignSignatureValue = { mode: 'typed' | 'drawn' | 'uploaded'; value?: string; dataUrl?: string };
+
+export interface ESignEnvelope {
+  id: string; title: string; status: ESignEnvelopeStatus; subject: string; message: string;
+  routingMode: 'sequential' | 'parallel'; expiresInDays: number; reminderIntervalHours: number;
+  createdAt: string; updatedAt: string; sentAt: string | null; completedAt: string | null; expiresAt?: string | null;
+  finalizationAttempt?: number; finalizationRetryAt?: string | null; finalizationError?: string | null;
+  documentCount?: number; recipientCount?: number; completedRecipientCount?: number;
+}
+export interface ESignDocument {
+  id: string; envelopeId: string; name: string; mimeType: string; size: number; pageCount: number;
+  createdAt: string; contentUrl?: string;
+}
+export interface ESignRecipient {
+  id: string; envelopeId: string; name: string; email: string; role: ESignRecipientRole; routingOrder: number;
+  status: ESignRecipientStatus; accessCodeSet: boolean; requiresAccessCode?: boolean; sentAt?: string | null; viewedAt?: string | null;
+  completedAt?: string | null; declinedAt?: string | null;
+}
+export interface ESignField {
+  id: string; envelopeId: string; documentId: string; recipientId: string; type: ESignFieldType;
+  page: number; x: number; y: number; width: number; height: number; required: boolean;
+  label: string; placeholder: string; options: string[]; value?: string | boolean | string[] | ESignSignatureValue | null; hasValue?: boolean;
+}
+export interface ESignArtifact {
+  id: string; envelopeId: string; kind: 'completed_document' | 'certificate' | string; name: string;
+  mimeType: string; size?: number; sha256?: string; fileName?: string; certificateId?: string | null; publicId?: string | null; createdAt: string; contentUrl?: string;
+}
+export interface ESignAuditEvent {
+  id: string; envelopeId: string; sequence?: number; action: string; eventType?: string; actorType?: string; actorName?: string;
+  recipientId?: string | null; detail?: string | Record<string, unknown> | null; createdAt: string;
+}
+export interface ESignEmailDelivery {
+  id: string; envelopeId: string; recipientId: string; recipientName: string; recipientEmail: string;
+  kind: 'invitation' | 'reminder' | 'completed' | 'voided' | string; state: string; attempts: number;
+  scheduledAt: string; providerMessageId: string | null; providerStatus: string | null; providerUpdatedAt: string | null;
+  deliveredAt: string | null; openedAt: string | null; bouncedAt: string | null; error: string | null;
+  createdAt: string; updatedAt: string; sentAt: string | null;
+}
+export type ESignWorkflowSectionKey = 'documents' | 'recipients' | 'fields' | 'message';
+export interface ESignReadinessSection { key: ESignWorkflowSectionKey; complete: boolean; issues: string[] }
+export interface ESignReadiness {
+  ready: boolean; completedSections: number; totalSections: number;
+  sections: Record<ESignWorkflowSectionKey, ESignReadinessSection>; issues: string[];
+}
+export interface ESignEnvelopeDetail {
+  envelope: ESignEnvelope; documents: ESignDocument[]; recipients: ESignRecipient[]; fields: ESignField[];
+  artifacts: ESignArtifact[]; audit: ESignAuditEvent[]; deliveries: ESignEmailDelivery[]; readiness: ESignReadiness;
+}
+export interface ESignPublicSession {
+  recipient: Pick<ESignRecipient, 'id' | 'name' | 'email' | 'role' | 'status'>;
+  envelope: Pick<ESignEnvelope, 'id' | 'title' | 'status'>;
+  requiresAccessCode: boolean; authenticated: boolean; consented: boolean;
+  disclosure: { version: string; text: string; sha256: string };
+}
+export interface ESignPublicDetail extends ESignPublicSession {
+  documents: ESignDocument[]; fields: ESignField[]; artifacts: ESignArtifact[];
+}
+export interface ESignCertificateVerification {
+  valid: boolean; certificateId: string; envelopeId: string; status: ESignEnvelopeStatus;
+  completedAt: string | null; documentHash: string; certificateHash: string;
+  participants: Array<{ maskedEmail: string; initials?: string; status: string; completedAt: string | null }>;
+}

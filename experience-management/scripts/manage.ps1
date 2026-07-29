@@ -14,6 +14,8 @@ $PasswordFile = Join-Path $RuntimeDir 'admin-password'
 $SessionSecretFile = Join-Path $RuntimeDir 'session-secret'
 $BrevoWebhookSecretFile = Join-Path $RuntimeDir 'brevo-webhook-secret'
 $XCredentialEncryptionKeyFile = Join-Path $RuntimeDir 'x-credential-encryption-key'
+$EsignEncryptionKeyFile = Join-Path $RuntimeDir 'esign-encryption-key'
+$EsignStorageDir = Join-Path $RuntimeDir 'esign'
 $XConsumerKeyFile = Join-Path $RuntimeDir 'x-consumer-key'
 $XConsumerSecretFile = Join-Path $RuntimeDir 'x-consumer-secret'
 $XBearerTokenFile = Join-Path $RuntimeDir 'x-bearer-token'
@@ -53,8 +55,10 @@ function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $XCredentialEncryptionKeyFile)) { Set-Content -LiteralPath $XCredentialEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $EsignEncryptionKeyFile)) { Set-Content -LiteralPath $EsignEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
+  New-Item -ItemType Directory -Force $EsignStorageDir | Out-Null
   foreach ($secretFile in @(
-    $PasswordFile, $SessionSecretFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile,
+    $PasswordFile, $SessionSecretFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
     $XConsumerKeyFile, $XConsumerSecretFile, $XBearerTokenFile, $XAccessTokenFile,
     $XAccessTokenSecretFile, $CloudflareTunnelTokenFile
   )) { Protect-RuntimeSecret $secretFile }
@@ -77,6 +81,7 @@ function Start-Server {
   $env:ADMIN_PASSWORD_FILE=$PasswordFile; $env:SESSION_SECRET_FILE=$SessionSecretFile
   $env:BREVO_WEBHOOK_SECRET_FILE=$BrevoWebhookSecretFile
   $env:X_CREDENTIAL_ENCRYPTION_KEY_FILE=$XCredentialEncryptionKeyFile
+  $env:ESIGN_ENCRYPTION_KEY_FILE=$EsignEncryptionKeyFile; $env:ESIGN_STORAGE_DIR=$EsignStorageDir
   $env:X_SEED_CONSUMER_KEY_FILE=$XConsumerKeyFile; $env:X_SEED_CONSUMER_SECRET_FILE=$XConsumerSecretFile
   $env:X_SEED_BEARER_TOKEN_FILE=$XBearerTokenFile; $env:X_SEED_ACCESS_TOKEN_FILE=$XAccessTokenFile; $env:X_SEED_ACCESS_TOKEN_SECRET_FILE=$XAccessTokenSecretFile
   $env:DATABASE_PATH=(Join-Path $RuntimeDir 'experience.sqlite'); $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
@@ -99,7 +104,7 @@ function Set-AutoStart([bool]$Enabled) {
 function Get-Status {
   $process = Get-ServerProcess; $healthy = $false; try { $healthy = (Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:5410/health' -TimeoutSec 3).StatusCode -eq 200 } catch {}
   $project = Get-ProjectDir
-  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
+  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); esignEncryptionConfigured=(Test-Path $EsignEncryptionKeyFile); xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
 }
 switch ($Action) { 'initialize' { Initialize-Runtime }; 'start' { Start-Server }; 'stop' { Stop-Server }; 'restart' { Stop-Server; Start-Server }; 'enable-auto-start' { Initialize-Runtime; Set-AutoStart $true }; 'disable-auto-start' { Set-AutoStart $false }; 'status' {} }
 $status = Get-Status; if ($Json) { $status | ConvertTo-Json -Compress } else { [pscustomobject]$status | Format-List }

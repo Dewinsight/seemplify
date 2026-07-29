@@ -25,6 +25,7 @@ import { authenticateBrevoWebhook, parseBrevoWebhookPayload, processBrevoWebhook
 import { parseSocialMentionImport } from './socialImport.js';
 import { getTerraStatus } from './terraClient.js';
 import { templates } from './templates.js';
+import { esignPublicRouter, esignRouter } from './esignRoutes.js';
 import { QUESTION_TYPES, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
 import {
   clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXSync,
@@ -61,6 +62,7 @@ app.post('/api/auth/logout', logout);
 app.get('/api/auth/session', session);
 app.use('/api', (request, response, next) => {
   const publicRoute = request.path.startsWith('/public/collectors/') || request.path.startsWith('/public/campaigns/unsubscribe/')
+    || request.path.startsWith('/public/esign/')
     || request.path === '/webhooks/brevo/transactional' || request.path === '/integrations/x/callback' || request.path === '/uploads';
   return publicRoute ? next() : requireAdmin(request, response, next);
 });
@@ -177,6 +179,8 @@ function noStore(_request: express.Request, response: express.Response, next: ex
 }
 
 app.get('/health', (_request, response) => response.json({ status: 'ok', service: 'seemplify-experience', database: 'sqlite', at: new Date().toISOString() }));
+app.use('/api/esign', esignRouter);
+app.use('/api/public/esign', esignPublicRouter);
 app.get('/api/events', attachEventStream);
 app.get('/api/runtime', noStore, async (_request, response) => response.json({ terra: await getTerraStatus(), email: emailStatus(), worker: aiJobRunner.status() }));
 app.get('/api/bootstrap', noStore, (_request, response) => {

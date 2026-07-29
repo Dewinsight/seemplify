@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { ClipboardList, Gauge, Inbox, LogOut, Megaphone, Menu, Plus, Radar, RadioTower, Route, Sparkles, X } from 'lucide-react';
+import { ClipboardList, FileSignature, Gauge, Inbox, LogOut, Megaphone, Menu, Plus, Radar, RadioTower, Route, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -10,6 +10,7 @@ const navigation = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
   { to: '/surveys', label: 'Surveys', icon: ClipboardList },
   { to: '/campaigns', label: 'Campaigns', icon: Megaphone },
+  { to: '/agreements', label: 'Agreements', icon: FileSignature },
   { to: '/social-listening', label: 'Social listening', icon: Radar },
   { to: '/journeys', label: 'Journey maps', icon: Route },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
@@ -49,9 +50,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
   useEffect(() => { api<any>('/api/runtime').then(setRuntime).catch(() => setRuntime({ terra: { reachable: false } })); const timer = setInterval(() => api<any>('/api/runtime').then(setRuntime).catch(() => null), 30_000); return () => clearInterval(timer); }, []);
-  const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
+  const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(location.pathname);
+  const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
   const terraReady = runtime?.terra?.ready === true;
   const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
+  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex h-[52px] items-center justify-between border-b bg-card px-4"><Link to="/agreements" className="flex items-center gap-2"><div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="text-sm font-semibold">Seemplify Experience</span></Link><span className="text-xs font-medium text-muted-foreground">Agreement field editor</span></header><main>{children}</main></div>;
   return <div className="min-h-screen bg-background">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] flex-col border-r bg-card md:flex"><SidebarContent terraReady={terraReady} runtimeLabel={runtimeLabel} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
@@ -63,7 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-3"><Button className="md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="text-sm font-semibold">{title}</div></div>
         <div className="flex items-center gap-2">
           <Badge variant={terraReady ? 'success' : 'warning'} className="hidden sm:inline-flex">{runtimeLabel} {terraReady ? 'ready' : 'unavailable'}</Badge>
-          <Button asChild size="sm"><Link to="/surveys/new"><Plus />New survey</Link></Button>
+          <Button asChild size="sm"><Link to={location.pathname.startsWith('/agreements') ? '/agreements/new' : '/surveys/new'}><Plus />{location.pathname.startsWith('/agreements') ? 'New agreement' : 'New survey'}</Link></Button>
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>

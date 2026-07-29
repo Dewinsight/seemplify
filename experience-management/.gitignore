@@ -3,6 +3,7 @@ backend/dist/
 frontend/dist/
 playwright-report/
 test-results/
+tmp/
 .env
 .env.local
 data/

@@ -7,13 +7,15 @@ import request from 'supertest';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-experience-api-'));
 const passwordFile = path.join(root, 'admin-password'); const sessionFile = path.join(root, 'session-secret'); const webhookSecretFile = path.join(root, 'brevo-webhook-secret'); const xKeyFile = path.join(root, 'x-credential-encryption-key');
+const esignKeyFile = path.join(root, 'esign-encryption-key');
 const frontendDist = path.join(root, '.release', 'frontend', 'dist');
 fs.mkdirSync(frontendDist, { recursive: true }); fs.writeFileSync(path.join(frontendDist, 'index.html'), '<!doctype html><title>Experience test shell</title>');
 fs.mkdirSync(path.join(frontendDist, 'assets'), { recursive: true });
 fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-a1b2c3.js'), 'globalThis.__experienceAssetLoaded = true;');
 fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-d4e5f6.css'), ':root { color: rgb(1 2 3); }');
-fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(sessionFile, 'test-session-secret-that-is-long-and-random-enough'); fs.writeFileSync(webhookSecretFile, 'test-brevo-webhook-secret-that-is-long-enough'); fs.writeFileSync(xKeyFile, Buffer.alloc(32, 9).toString('base64url'));
+fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(sessionFile, 'test-session-secret-that-is-long-and-random-enough'); fs.writeFileSync(webhookSecretFile, 'test-brevo-webhook-secret-that-is-long-enough'); fs.writeFileSync(xKeyFile, Buffer.alloc(32, 9).toString('base64url')); fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 10).toString('base64url'));
 Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile, BREVO_WEBHOOK_SECRET_FILE: webhookSecretFile, BREVO_IDEMPOTENCY_TTL_MINUTES: '120', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, X_API_BASE_URL: 'https://api.x.invalid', X_OAUTH_BASE_URL: 'https://api.x.invalid',
+  ESIGN_STORAGE_DIR: path.join(root, 'esign'), ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, ESIGN_WORKER_POLL_MS: '250',
   X_SEED_CONSUMER_KEY_FILE: path.join(root, 'no-x-consumer-key'), X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'no-x-consumer-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(root, 'no-x-bearer-token'), X_SEED_ACCESS_TOKEN_FILE: path.join(root, 'no-x-access-token'), X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(root, 'no-x-access-token-secret') });
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');

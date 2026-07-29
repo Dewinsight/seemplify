@@ -52,6 +52,18 @@ export const config = {
   uploadDir: resolveFromBackend(
     process.env.UPLOAD_DIR || '../../.local-runtime/experience-management/uploads'
   ),
+  esignStorageDir: resolveFromBackend(
+    process.env.ESIGN_STORAGE_DIR || '../../.local-runtime/experience-management/esign'
+  ),
+  esignEncryptionKeyFile: resolveFromBackend(
+    process.env.ESIGN_ENCRYPTION_KEY_FILE || '../../.local-runtime/experience-management/esign-encryption-key'
+  ),
+  esignMaxDocumentBytes: boundedNumber(process.env.ESIGN_MAX_DOCUMENT_BYTES, 50 * 1024 * 1024, 1024, 100 * 1024 * 1024),
+  esignMaxDocumentPages: boundedNumber(process.env.ESIGN_MAX_DOCUMENT_PAGES, 300, 1, 1000),
+  esignMaxEnvelopeBytes: boundedNumber(process.env.ESIGN_MAX_ENVELOPE_BYTES, 200 * 1024 * 1024, 1024, 1024 * 1024 * 1024),
+  esignMaxEnvelopeDocuments: boundedNumber(process.env.ESIGN_MAX_ENVELOPE_DOCUMENTS, 20, 1, 100),
+  esignWorkerPollMs: boundedNumber(process.env.ESIGN_WORKER_POLL_MS, 1000, 250, 60_000),
+  esignSigningSessionHours: boundedNumber(process.env.ESIGN_SIGNING_SESSION_HOURS, 12, 1, 72),
   frontendDist: resolveFromBackend(process.env.FRONTEND_DIST || '../frontend/dist'),
   terraGatewayBaseUrl: String(
     process.env.TERRA_GATEWAY_BASE_URL || process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435'
@@ -102,3 +114,4 @@ export const config = {
 
 fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
 fs.mkdirSync(config.uploadDir, { recursive: true });
+fs.mkdirSync(config.esignStorageDir, { recursive: true });

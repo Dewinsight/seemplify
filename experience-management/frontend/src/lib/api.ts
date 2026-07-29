@@ -11,7 +11,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     ...options,
     headers: options.body instanceof FormData ? options.headers : { 'content-type': 'application/json', ...options.headers }
   });
-  if (response.status === 401 && !path.startsWith('/api/auth/') && window.location.pathname !== '/login') {
+  if (response.status === 401 && !path.startsWith('/api/auth/') && !path.startsWith('/api/public/') && window.location.pathname !== '/login') {
     window.location.assign('/login');
     throw new ApiError('Authentication required.', 401);
   }

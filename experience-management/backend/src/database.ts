@@ -353,6 +353,237 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS campaign_deliveries_provider_message ON campaign_deliveries(provider_message_id);
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+  );
+`);
+
+const applyEsignSchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(1);
+  if (applied) return;
+  db.exec(`
+    CREATE TABLE esign_envelopes (
+      id TEXT PRIMARY KEY,
+      created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      source_envelope_id TEXT REFERENCES esign_envelopes(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      routing_mode TEXT NOT NULL DEFAULT 'sequential',
+      expires_at TEXT,
+      expiration_days INTEGER,
+      reminder_interval_hours INTEGER,
+      last_reminder_at TEXT,
+      finalization_attempt INTEGER NOT NULL DEFAULT 0,
+      finalization_retry_at TEXT,
+      finalization_error TEXT,
+      revision INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      sent_at TEXT,
+      completed_at TEXT,
+      declined_at TEXT,
+      voided_at TEXT,
+      void_reason TEXT
+    );
+    CREATE INDEX esign_envelopes_owner_updated ON esign_envelopes(created_by_user_id,updated_at DESC);
+    CREATE INDEX esign_envelopes_worker ON esign_envelopes(status,expires_at,updated_at);
+
+    CREATE TABLE esign_documents (
+      id TEXT PRIMARY KEY,
+      envelope_id TEXT NOT NULL REFERENCES esign_envelopes(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      page_count INTEGER NOT NULL,
+      storage_key TEXT NOT NULL UNIQUE,
+      sha256 TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'ready',
+      error TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(envelope_id,position)
+    );
+    CREATE INDEX esign_documents_envelope ON esign_documents(envelope_id,position);
+
+    CREATE TABLE esign_recipients (
+      id TEXT PRIMARY KEY,
+      envelope_id TEXT NOT NULL REFERENCES esign_envelopes(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      routing_order INTEGER NOT NULL DEFAULT 1,
+      role TEXT NOT NULL DEFAULT 'signer',
+      name TEXT NOT NULL,
+      email TEXT NOT NULL COLLATE NOCASE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      access_token_hash TEXT NOT NULL UNIQUE,
+      access_token_enc TEXT NOT NULL,
+      access_code_hash TEXT,
+      code_failed_attempts INTEGER NOT NULL DEFAULT 0,
+      code_locked_until TEXT,
+      invitation_sent_at TEXT,
+      viewed_at TEXT,
+      authenticated_at TEXT,
+      consented_at TEXT,
+      completed_at TEXT,
+      declined_at TEXT,
+      decline_reason TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(envelope_id,position)
+    );
+    CREATE INDEX esign_recipients_route ON esign_recipients(envelope_id,routing_order,status,position);
+    CREATE INDEX esign_recipients_email ON esign_recipients(email,envelope_id);
+
+    CREATE TABLE esign_fields (
+      id TEXT PRIMARY KEY,
+      envelope_id TEXT NOT NULL REFERENCES esign_envelopes(id) ON DELETE CASCADE,
+      document_id TEXT NOT NULL REFERENCES esign_documents(id) ON DELETE CASCADE,
+      recipient_id TEXT NOT NULL REFERENCES esign_recipients(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      page INTEGER NOT NULL,
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      width REAL NOT NULL,
+      height REAL NOT NULL,
+      required INTEGER NOT NULL DEFAULT 1,
+      label TEXT NOT NULL DEFAULT '',
+      placeholder TEXT NOT NULL DEFAULT '',
+      tab_order INTEGER NOT NULL DEFAULT 0,
+      options_json TEXT NOT NULL DEFAULT '[]',
+      validation_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX esign_fields_envelope ON esign_fields(envelope_id,document_id,page,tab_order);
+    CREATE INDEX esign_fields_recipient ON esign_fields(recipient_id,tab_order);
+
+    CREATE TABLE esign_signature_assets (
+      id TEXT PRIMARY KEY,
+      envelope_id TEXT NOT NULL REFERENCES esign_envelopes(id) ON DELETE CASCADE,
+      recipient_id TEXT NOT NULL REFERENCES esign_recipients(id) ON DELETE CASCADE,
+      mode TEXT NOT NULL,
+      mime_type TEXT,
+      display_text TEXT,
+      storage_key TEXT UNIQUE,
+      sha256 TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE esign_field_values (
+      field_id TEXT PRIMARY KEY REFERENCES esign_fields(id) ON DELETE CASCADE,
+      recipient_id TEXT NOT NULL REFERENCES esign_recipients(id) ON DELETE CASCADE,
+      value_json TEXT NOT NULL DEFAULT '{}',
+      signature_asset_id TEXT REFERENCES esign_signature_assets(id) ON DELETE SET NULL,
+      completed_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE esign_signing_sessions (
+      id TEXT PRIMARY KEY,
+      recipient_id TEXT NOT NULL REFERENCES esign_recipients(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      authenticated INTEGER NOT NULL DEFAULT 0,
+      consented_at TEXT,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+    CREATE INDEX esign_signing_sessions_lookup ON esign_signing_sessions(token_hash,expires_at,revoked_at);
+
+    CREATE TABLE esign_email_deliveries (
+      id TEXT PRIMARY KEY,
+      envelope_id TEXT NOT NULL REFERENCES esign_envelopes(id) ON DELETE CASCADE,
+      recipient_id TEXT NOT NULL REFERENCES esign_recipients(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'queued',
+      scheduled_at TEXT NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 4,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      provider_message_id TEXT,
+      provider_status TEXT,
+      provider_updated_at TEXT,
+      delivered_at TEXT,
+      opened_at TEXT,
+      bounced_at TEXT,
+      debug_link_enc TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      sent_at TEXT
+    );
+    CREATE INDEX esign_email_dispatch ON esign_email_deliveries(state,scheduled_at,created_at);
+
+    CREATE TABLE esign_email_events (
+      id TEXT PRIMARY KEY,
+      delivery_id TEXT NOT NULL REFERENCES esign_email_deliveries(id) ON DELETE CASCADE,
+      provider_event_id TEXT,
+      provider_message_id TEXT,
+      event_type TEXT NOT NULL,
+      event_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX esign_email_events_delivery ON esign_email_events(delivery_id,event_at);
+
+    CREATE TABLE esign_artifacts (
+      id TEXT PRIMARY KEY,
+      envelope_id TEXT NOT NULL REFERENCES esign_envelopes(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+      size_bytes INTEGER NOT NULL,
+      page_count INTEGER NOT NULL,
+      storage_key TEXT NOT NULL UNIQUE,
+      sha256 TEXT NOT NULL,
+      public_id TEXT UNIQUE,
+      state TEXT NOT NULL DEFAULT 'ready',
+      created_at TEXT NOT NULL,
+      UNIQUE(envelope_id,kind)
+    );
+    CREATE INDEX esign_artifacts_envelope ON esign_artifacts(envelope_id,kind);
+
+    CREATE TABLE esign_audit_events (
+      id TEXT PRIMARY KEY,
+      envelope_id TEXT NOT NULL REFERENCES esign_envelopes(id) ON DELETE CASCADE,
+      recipient_id TEXT REFERENCES esign_recipients(id) ON DELETE SET NULL,
+      actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      actor_type TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      previous_hash TEXT,
+      event_hash TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX esign_audit_envelope ON esign_audit_events(envelope_id,created_at,id);
+  `);
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(1, 'native_esign_core', new Date().toISOString());
+});
+applyEsignSchema();
+const esignEnvelopeColumns = new Set((db.prepare('PRAGMA table_info(esign_envelopes)').all() as any[]).map((column) => String(column.name)));
+if (!esignEnvelopeColumns.has('expiration_days')) db.exec('ALTER TABLE esign_envelopes ADD COLUMN expiration_days INTEGER');
+if (!esignEnvelopeColumns.has('finalization_attempt')) db.exec('ALTER TABLE esign_envelopes ADD COLUMN finalization_attempt INTEGER NOT NULL DEFAULT 0');
+if (!esignEnvelopeColumns.has('finalization_retry_at')) db.exec('ALTER TABLE esign_envelopes ADD COLUMN finalization_retry_at TEXT');
+if (!esignEnvelopeColumns.has('finalization_error')) db.exec('ALTER TABLE esign_envelopes ADD COLUMN finalization_error TEXT');
+db.prepare(`UPDATE esign_envelopes SET expiration_days=MAX(1,CAST(julianday(expires_at)-julianday(created_at) AS INTEGER))
+  WHERE expiration_days IS NULL AND expires_at IS NOT NULL AND status='draft'`).run();
+const esignEmailColumns = new Set((db.prepare('PRAGMA table_info(esign_email_deliveries)').all() as any[]).map((column) => String(column.name)));
+for (const column of ['provider_status', 'provider_updated_at', 'delivered_at', 'opened_at', 'bounced_at']) {
+  if (!esignEmailColumns.has(column)) db.exec(`ALTER TABLE esign_email_deliveries ADD COLUMN ${column} TEXT`);
+}
+db.exec(`CREATE TABLE IF NOT EXISTS esign_email_events (
+  id TEXT PRIMARY KEY, delivery_id TEXT NOT NULL REFERENCES esign_email_deliveries(id) ON DELETE CASCADE,
+  provider_event_id TEXT, provider_message_id TEXT, event_type TEXT NOT NULL, event_at TEXT NOT NULL, created_at TEXT NOT NULL
+); CREATE INDEX IF NOT EXISTS esign_email_events_delivery ON esign_email_events(delivery_id,event_at);`);
+db.prepare('INSERT OR IGNORE INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)').run(2, 'native_esign_hardening', new Date().toISOString());
+
 const campaignDeliveryColumns = new Set((db.prepare('PRAGMA table_info(campaign_deliveries)').all() as any[]).map((column) => String(column.name)));
 for (const column of [
   'first_attempt_at', 'provider_status', 'delivered_at', 'opened_at', 'clicked_at', 'bounced_at',

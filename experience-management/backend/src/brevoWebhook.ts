@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { reconcileCampaignCompletion } from './campaigns.js';
 import { config } from './config.js';
 import { db } from './database.js';
+import { recordEsignAudit } from './esign.js';
 import { publishEvent } from './events.js';
 
 const DELIVERY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -84,7 +85,22 @@ function eventTimestamp(event: BrevoWebhookEvent) {
 function correlation(event: BrevoWebhookEvent) {
   const custom = event['X-Mailin-custom'] || event['x-mailin-custom'] || '';
   const deliveryId = custom.match(/(?:^|[\s,;|])campaign_delivery:([0-9a-f-]{36})(?:$|[\s,;|])/i)?.[1] || '';
-  return { deliveryId: DELIVERY_ID.test(deliveryId) ? deliveryId : '', messageId: String(event['message-id'] || event.messageId || '').trim() };
+  const esignDeliveryId = custom.match(/(?:^|[\s,;|])esign_delivery:([0-9a-f-]{36})(?:$|[\s,;|])/i)?.[1] || '';
+  return { deliveryId: DELIVERY_ID.test(deliveryId) ? deliveryId : '', esignDeliveryId: DELIVERY_ID.test(esignDeliveryId) ? esignDeliveryId : '', messageId: String(event['message-id'] || event.messageId || '').trim() };
+}
+
+function findEsignDelivery(event: BrevoWebhookEvent) {
+  const identifier = correlation(event); let row: any = null;
+  if (identifier.esignDeliveryId) row = db.prepare(`SELECT d.*,r.email recipient_email,r.status recipient_status,r.role recipient_role
+    FROM esign_email_deliveries d JOIN esign_recipients r ON r.id=d.recipient_id WHERE d.id=?`).get(identifier.esignDeliveryId);
+  if (!row && identifier.messageId) {
+    const normalized = identifier.messageId.replace(/^<|>$/g, '');
+    row = db.prepare(`SELECT d.*,r.email recipient_email,r.status recipient_status,r.role recipient_role FROM esign_email_deliveries d
+      JOIN esign_recipients r ON r.id=d.recipient_id WHERE d.provider_message_id=? OR REPLACE(REPLACE(d.provider_message_id,'<',''),'>','')=?
+      ORDER BY d.sent_at DESC LIMIT 1`).get(identifier.messageId, normalized);
+  }
+  if (!row || String(row.recipient_email).trim().toLowerCase() !== event.email.trim().toLowerCase()) return null;
+  return row;
 }
 
 function findDelivery(event: BrevoWebhookEvent) {
@@ -111,9 +127,33 @@ const statusTimestampColumn: Record<string, string | undefined> = {
 const globallySuppressive = new Set(['hard_bounce', 'complaint', 'invalid', 'blocked', 'unsubscribed']);
 
 const persistEvents = db.transaction((events: BrevoWebhookEvent[]) => {
-  const affectedCampaigns = new Map<string, Set<string>>(); let accepted = 0; let replayed = 0; let ignored = 0;
+  const affectedCampaigns = new Map<string, Set<string>>(); const affectedEnvelopes = new Map<string, Set<string>>(); let accepted = 0; let replayed = 0; let ignored = 0;
   const now = new Date().toISOString();
   for (const event of events) {
+    const esignDelivery = findEsignDelivery(event);
+    if (esignDelivery) {
+      const status = normalizedEventName(event.event); const eventAt = eventTimestamp(event);
+      const providerMessageId = String(event['message-id'] || event.messageId || '').trim();
+      const eventId = crypto.createHash('sha256').update(JSON.stringify([esignDelivery.id, status, eventAt, providerMessageId, String(event.id ?? '')])).digest('hex');
+      const inserted = db.prepare(`INSERT OR IGNORE INTO esign_email_events
+        (id,delivery_id,provider_event_id,provider_message_id,event_type,event_at,created_at) VALUES (?,?,?,?,?,?,?)`)
+        .run(eventId, esignDelivery.id, String(event.id ?? ''), providerMessageId, status, eventAt, now).changes;
+      if (!inserted) { replayed += 1; continue; }
+      accepted += 1;
+      const esignTimestampColumn: Record<string, string | undefined> = { delivered: 'delivered_at', opened: 'opened_at', soft_bounce: 'bounced_at', hard_bounce: 'bounced_at', invalid: 'bounced_at', blocked: 'bounced_at', complaint: 'bounced_at' };
+      const timestampColumn = esignTimestampColumn[status];
+      if (timestampColumn) db.prepare(`UPDATE esign_email_deliveries SET provider_status=?,provider_updated_at=?,provider_message_id=COALESCE(NULLIF(?,''),provider_message_id),${timestampColumn}=COALESCE(${timestampColumn},?),updated_at=? WHERE id=?`)
+        .run(status, eventAt, providerMessageId, eventAt, now, esignDelivery.id);
+      else db.prepare('UPDATE esign_email_deliveries SET provider_status=?,provider_updated_at=?,provider_message_id=COALESCE(NULLIF(?,\'\'),provider_message_id),updated_at=? WHERE id=?')
+        .run(status, eventAt, providerMessageId, now, esignDelivery.id);
+      if (new Set(['hard_bounce', 'invalid', 'blocked', 'complaint', 'error']).has(status)) {
+        db.prepare("UPDATE esign_email_deliveries SET state='failed',error=?,updated_at=? WHERE id=?").run(`Brevo ${status.replace(/_/g, ' ')}`, now, esignDelivery.id);
+        db.prepare("UPDATE esign_recipients SET status='delivery_failed',updated_at=? WHERE id=? AND status IN ('ready','sent','waiting','notified')").run(now, esignDelivery.recipient_id);
+      }
+      recordEsignAudit(esignDelivery.envelope_id, `email.provider_${status}`, { actorType: 'system', recipientId: esignDelivery.recipient_id }, { deliveryId: esignDelivery.id, providerMessageId: providerMessageId || null, eventAt });
+      const envelopeEvents = affectedEnvelopes.get(String(esignDelivery.envelope_id)) || new Set<string>(); envelopeEvents.add(status); affectedEnvelopes.set(String(esignDelivery.envelope_id), envelopeEvents);
+      continue;
+    }
     const delivery = findDelivery(event); if (!delivery) { ignored += 1; continue; }
     const status = normalizedEventName(event.event); const eventAt = eventTimestamp(event);
     const providerMessageId = String(event['message-id'] || event.messageId || '').trim();
@@ -168,7 +208,11 @@ const persistEvents = db.transaction((events: BrevoWebhookEvent[]) => {
         .run(now, delivery.contact_id);
     }
   }
-  return { accepted, replayed, ignored, affectedCampaigns: [...affectedCampaigns].map(([campaignId, statuses]) => ({ campaignId, statuses: [...statuses] })) };
+  return {
+    accepted, replayed, ignored,
+    affectedCampaigns: [...affectedCampaigns].map(([campaignId, statuses]) => ({ campaignId, statuses: [...statuses] })),
+    affectedEnvelopes: [...affectedEnvelopes].map(([envelopeId, statuses]) => ({ envelopeId, statuses: [...statuses] }))
+  };
 });
 
 export function processBrevoWebhookEvents(events: BrevoWebhookEvent[]) {
@@ -177,6 +221,7 @@ export function processBrevoWebhookEvents(events: BrevoWebhookEvent[]) {
     publishEvent('campaign', { campaignId: campaign.campaignId, reason: 'provider-status-updated', statuses: campaign.statuses });
     reconcileCampaignCompletion(campaign.campaignId);
   }
+  for (const envelope of result.affectedEnvelopes) publishEvent('esign', { envelopeId: envelope.envelopeId, reason: 'provider-status-updated', statuses: envelope.statuses });
   if (result.accepted) publishEvent('data-changed', { reason: 'campaign-provider-events', count: result.accepted });
   return result;
 }
