@@ -17,6 +17,17 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   await expect(page.getByRole('complementary').getByText(/Terra (ready|unavailable)/)).toBeVisible();
   if (mobile) await page.getByRole('button', { name: 'Close navigation' }).click();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-dashboard.png'), fullPage: true });
+
+  if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Social listening' }).click();
+  await expect(page.getByRole('heading', { name: 'Social listening' })).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-social-listening.png'), fullPage: true });
+
+  if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Journeys' }).click();
+  await expect(page.getByRole('heading', { name: 'Customer journeys' })).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-journeys.png'), fullPage: true });
+
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
