@@ -661,6 +661,9 @@ function sendJson(response, status, payload, extraHeaders = {}) {
 function validateSchemaValue(value, schema, location = '$') {
   const errors = [];
   if (!schema || typeof schema !== 'object') return [`${location} has no schema`];
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
+    errors.push(`${location} must be one of the allowed values`);
+  }
   if (schema.type === 'object') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return [`${location} must be an object`];
     for (const key of schema.required || []) {
@@ -671,6 +674,8 @@ function validateSchemaValue(value, schema, location = '$') {
     }
   } else if (schema.type === 'array') {
     if (!Array.isArray(value)) return [`${location} must be an array`];
+    if (Number.isFinite(schema.minItems) && value.length < schema.minItems) errors.push(`${location} must contain at least ${schema.minItems} items`);
+    if (Number.isFinite(schema.maxItems) && value.length > schema.maxItems) errors.push(`${location} must contain at most ${schema.maxItems} items`);
     value.forEach((item, index) => errors.push(...validateSchemaValue(item, schema.items || {}, `${location}[${index}]`)));
   } else if (schema.type === 'string' && typeof value !== 'string') {
     errors.push(`${location} must be a string`);
@@ -680,6 +685,10 @@ function validateSchemaValue(value, schema, location = '$') {
     errors.push(`${location} must be an integer`);
   } else if (schema.type === 'boolean' && typeof value !== 'boolean') {
     errors.push(`${location} must be a boolean`);
+  }
+  if ((schema.type === 'number' || schema.type === 'integer') && typeof value === 'number') {
+    if (Number.isFinite(schema.minimum) && value < schema.minimum) errors.push(`${location} must be at least ${schema.minimum}`);
+    if (Number.isFinite(schema.maximum) && value > schema.maximum) errors.push(`${location} must be at most ${schema.maximum}`);
   }
   return errors;
 }
@@ -977,7 +986,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   try {
     const data = await analyzeWithEngine({ ...input, signal: controller.signal }, executionState);
     const schemaErrors = input.jsonSchema ? validateSchemaValue(data.data, input.jsonSchema) : [];
-    if (schemaErrors.length && !data.toolCalls?.length) {
+    if (schemaErrors.length) {
       const error = new Error(`Inference engine returned invalid structured data: ${schemaErrors.slice(0, 5).join('; ')}`);
       error.code = 'LOCAL_LLM_SCHEMA_INVALID';
       error.usageEnvelope = {

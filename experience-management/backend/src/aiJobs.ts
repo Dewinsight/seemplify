@@ -136,7 +136,7 @@ async function execute(job: AiJob): Promise<JobOutput> {
   const analytics = computeAnalytics(survey, responses);
   if (job.kind === 'insights.generate') {
     const result = await structured(job, 'experience.insight_generation', 'experience_insights', aiJsonSchemas.insights, insightResult,
-      `Produce decision-ready insights. Numeric analytics are authoritative; do not recalculate them. Distinguish correlation from causation and mark insufficient evidence.\nSurvey: ${JSON.stringify(compactSurvey(survey))}\nAnalytics: ${JSON.stringify(analytics)}\nResponses: ${JSON.stringify(compactResponses(survey, responses))}`);
+      `Produce decision-ready insights. Numeric analytics are authoritative; do not recalculate them. Distinguish correlation from causation and mark insufficient evidence. healthScore must be from 0 to 100. Every driver strength and forecast confidence must be a decimal from 0 to 1, never a percentage from 0 to 100.\nSurvey: ${JSON.stringify(compactSurvey(survey))}\nAnalytics: ${JSON.stringify(analytics)}\nResponses: ${JSON.stringify(compactResponses(survey, responses))}`);
     insertInsight(survey.id, 'ai_insights', result.output);
     return result;
   }

@@ -7,14 +7,20 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   const unauthenticated = await page.goto('/api/bootstrap');
   expect(unauthenticated?.status()).toBe(401);
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Admin sign in' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Create an account' }).click();
+  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+  await page.getByRole('link', { name: 'Sign in' }).click();
+  await page.getByRole('link', { name: 'Forgot password?' }).click();
+  await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
+  await page.getByRole('link', { name: 'Back to sign in' }).click();
   await page.getByLabel('Email').fill('admin@seemplify.local');
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
   const mobile = testInfo.project.name === 'mobile-chromium';
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
-  await expect(page.getByRole('complementary').getByText(/Terra (ready|unavailable)/)).toBeVisible();
+  await expect(page.getByRole('complementary').getByText(/Terra .* (ready|unavailable)/)).toBeVisible();
   if (mobile) await page.getByRole('button', { name: 'Close navigation' }).click();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-dashboard.png'), fullPage: true });
 

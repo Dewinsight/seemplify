@@ -115,6 +115,10 @@ export const journeyResult = z.object({
 
 const string = { type: 'string' } as const;
 const number = { type: 'number' } as const;
+const unitNumber = { type: 'number', minimum: 0, maximum: 1 } as const;
+const signedUnitNumber = { type: 'number', minimum: -1, maximum: 1 } as const;
+const percentageNumber = { type: 'number', minimum: 0, maximum: 100 } as const;
+const nonNegativeInteger = { type: 'integer', minimum: 0 } as const;
 const boolean = { type: 'boolean' } as const;
 const strings = { type: 'array', items: string } as const;
 const finiteObject = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({
@@ -124,7 +128,7 @@ const arrayOf = (items: unknown) => ({ type: 'array', items });
 
 const generatedQuestionJson = finiteObject({
   type: { type: 'string', enum: [...QUESTION_TYPES] }, title: string, description: string,
-  required: boolean, options: strings, page: { type: 'integer' }
+  required: boolean, options: strings, page: { type: 'integer', minimum: 1 }
 });
 
 export const aiJsonSchemas = {
@@ -135,20 +139,20 @@ export const aiJsonSchemas = {
     language: string, estimatedMinutes: number, questions: arrayOf(generatedQuestionJson)
   }),
   responseAnalysis: finiteObject({
-    language: string, sentiment: { type: 'string', enum: ['very_negative', 'negative', 'neutral', 'positive', 'very_positive'] }, sentimentScore: number, confidence: number, emotions: strings,
+    language: string, sentiment: { type: 'string', enum: ['very_negative', 'negative', 'neutral', 'positive', 'very_positive'] }, sentimentScore: signedUnitNumber, confidence: unitNumber, emotions: strings,
     intent: string, urgency: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, summary: string,
     topics: arrayOf(finiteObject({ name: string, sentiment: { type: 'string', enum: ['negative', 'neutral', 'positive', 'mixed'] }, evidence: string })),
     recommendedActions: strings, flags: strings
   }),
   insights: finiteObject({
-    executiveSummary: string, healthScore: number,
+    executiveSummary: string, healthScore: percentageNumber,
     keyFindings: arrayOf(finiteObject({ title: string, detail: string, evidence: strings, impact: { type: 'string', enum: ['low', 'medium', 'high'] } })),
-    themes: arrayOf(finiteObject({ name: string, frequency: number, sentiment: string, evidence: strings })),
-    drivers: arrayOf(finiteObject({ name: string, direction: { type: 'string', enum: ['positive', 'negative', 'mixed'] }, strength: number, explanation: string })),
+    themes: arrayOf(finiteObject({ name: string, frequency: nonNegativeInteger, sentiment: string, evidence: strings })),
+    drivers: arrayOf(finiteObject({ name: string, direction: { type: 'string', enum: ['positive', 'negative', 'mixed'] }, strength: unitNumber, explanation: string })),
     risks: arrayOf(finiteObject({ title: string, detail: string, evidence: strings, impact: { type: 'string', enum: ['low', 'medium', 'high'] } })),
     opportunities: arrayOf(finiteObject({ title: string, detail: string, evidence: strings, impact: { type: 'string', enum: ['low', 'medium', 'high'] } })),
     recommendations: arrayOf(finiteObject({ action: string, owner: string, priority: { type: 'string', enum: ['now', 'next', 'later'] }, rationale: string })),
-    forecast: finiteObject({ direction: { type: 'string', enum: ['improving', 'stable', 'declining', 'insufficient_data'] }, confidence: number, explanation: string })
+    forecast: finiteObject({ direction: { type: 'string', enum: ['improving', 'stable', 'declining', 'insufficient_data'] }, confidence: unitNumber, explanation: string })
   }),
   analystChat: finiteObject({
     answer: string,
@@ -156,7 +160,7 @@ export const aiJsonSchemas = {
     caveats: strings, suggestedQuestions: strings
   }),
   improvement: finiteObject({
-    qualityScore: number,
+    qualityScore: percentageNumber,
     issues: arrayOf(finiteObject({ severity: { type: 'string', enum: ['low', 'medium', 'high'] }, questionTitle: string, issue: string })),
     improvements: strings, revisedTitle: string, revisedDescription: string,
     revisedQuestions: arrayOf(generatedQuestionJson)
@@ -173,12 +177,12 @@ export const aiJsonSchemas = {
   }),
   socialListening: finiteObject({
     executiveSummary: string,
-    sentiment: finiteObject({ negative: number, neutral: number, positive: number, mixed: number }),
-    themes: arrayOf(finiteObject({ name: string, mentions: number, sentiment: string, evidence: strings })),
+    sentiment: finiteObject({ negative: nonNegativeInteger, neutral: nonNegativeInteger, positive: nonNegativeInteger, mixed: nonNegativeInteger }),
+    themes: arrayOf(finiteObject({ name: string, mentions: nonNegativeInteger, sentiment: string, evidence: strings })),
     emergingTrends: arrayOf(finiteObject({ trend: string, direction: { type: 'string', enum: ['rising', 'stable', 'falling'] }, evidence: strings })),
     risks: arrayOf(finiteObject({ issue: string, severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, evidence: strings, action: string })),
     opportunities: arrayOf(finiteObject({ opportunity: string, evidence: strings, action: string })),
-    mentions: arrayOf(finiteObject({ mentionId: string, sentiment: { type: 'string', enum: ['negative', 'neutral', 'positive', 'mixed'] }, sentimentScore: number, emotions: strings, themes: strings, summary: string, risk: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] } }))
+    mentions: arrayOf(finiteObject({ mentionId: string, sentiment: { type: 'string', enum: ['negative', 'neutral', 'positive', 'mixed'] }, sentimentScore: signedUnitNumber, emotions: strings, themes: strings, summary: string, risk: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] } }))
   }),
   journey: finiteObject({
     name: string, audience: string, objective: string, industry: string, summary: string,

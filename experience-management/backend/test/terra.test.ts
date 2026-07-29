@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
+import { aiJsonSchemas } from '../src/aiSchemas.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-terra-signing-'));
 const secretFile = path.join(root, 'secret'); const secret = 'terra-test-secret-that-is-long-enough'; fs.writeFileSync(secretFile, secret);
@@ -11,6 +12,13 @@ process.env.TERRA_GATEWAY_SHARED_SECRET_FILE = secretFile;
 const { completeWithTerra, TerraError } = await import('../src/terraClient.js');
 const originalFetch = globalThis.fetch;
 after(() => { globalThis.fetch = originalFetch; fs.rmSync(root, { recursive: true, force: true }); });
+
+test('Experience schemas constrain confidence and strength to decimal unit values', () => {
+  const insights = aiJsonSchemas.insights as any;
+  assert.deepEqual(insights.properties.drivers.items.properties.strength, { type: 'number', minimum: 0, maximum: 1 });
+  assert.deepEqual(insights.properties.forecast.properties.confidence, { type: 'number', minimum: 0, maximum: 1 });
+  assert.deepEqual(insights.properties.healthScore, { type: 'number', minimum: 0, maximum: 100 });
+});
 
 test('signs Terra requests and supplies durable metering identity', async () => {
   const eventIds: string[] = [];

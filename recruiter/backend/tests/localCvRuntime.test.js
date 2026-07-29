@@ -169,6 +169,9 @@ test('gateway completion logs include workload provenance and token composition'
   assert.match(gateway, /outputTokens/);
   assert.match(gateway, /reasoningTokens/);
   assert.match(gateway, /totalTokens/);
+  assert.match(gateway, /Number\.isFinite\(schema\.maximum\)/);
+  assert.match(gateway, /if \(schemaErrors\.length\)/);
+  assert.doesNotMatch(gateway, /schemaErrors\.length && !data\.toolCalls/);
   assert.match(gateway, /fs\.promises\.appendFile/);
   assert.doesNotMatch(gateway, /fs\.appendFileSync\(logFile/);
 });
