@@ -18,6 +18,29 @@ $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
 function Write-DeployLog([string]$Message) { Add-Content -LiteralPath $LogFile -Value "$(Get-Date -Format o) $Message" }
+function Merge-RetainedFrontendAssets([string]$ReleaseProject) {
+  $destinationAssets = Join-Path $ReleaseProject 'frontend\dist\assets'
+  if (-not (Test-Path -LiteralPath $destinationAssets -PathType Container)) { throw "Frontend asset directory was not produced: $destinationAssets" }
+  $destinationRoot = [IO.Path]::GetFullPath($destinationAssets).TrimEnd([char[]]'\/')
+  $copied = 0
+  $deployments = @(Get-ChildItem -LiteralPath $DeploymentsDir -Directory -Force | Sort-Object LastWriteTimeUtc -Descending)
+  foreach ($deployment in $deployments) {
+    $sourceAssets = Join-Path $deployment.FullName 'frontend\dist\assets'
+    if (-not (Test-Path -LiteralPath $sourceAssets -PathType Container)) { continue }
+    $sourceRoot = [IO.Path]::GetFullPath($sourceAssets).TrimEnd([char[]]'\/')
+    if ([string]::Equals($sourceRoot, $destinationRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
+    foreach ($file in @(Get-ChildItem -LiteralPath $sourceRoot -File -Recurse -Force)) {
+      $relativePath = $file.FullName.Substring($sourceRoot.Length + 1)
+      $destinationFile = Join-Path $destinationRoot $relativePath
+      if (Test-Path -LiteralPath $destinationFile) { continue }
+      $destinationDirectory = Split-Path -Parent $destinationFile
+      New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
+      Copy-Item -LiteralPath $file.FullName -Destination $destinationFile
+      $copied += 1
+    }
+  }
+  return $copied
+}
 function Get-Watcher {
   if (-not (Test-Path $PidFile)) { return $null }
   $processId = [int](Get-Content -LiteralPath $PidFile -Raw)
@@ -56,6 +79,8 @@ function Invoke-Deployment([switch]$ForceDeploy) {
       & npm.cmd run typecheck; if ($LASTEXITCODE -ne 0) { throw 'typecheck failed' }
       & npm.cmd test; if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
       & npm.cmd run build; if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+      $retainedAssetCount = Merge-RetainedFrontendAssets -ReleaseProject $releaseProject
+      Write-DeployLog "Retained $retainedAssetCount versioned frontend asset(s) from earlier releases."
       $previousProject = if (Test-Path $ActiveProjectFile) { (Get-Content $ActiveProjectFile -Raw).Trim() } else { '' }
       Set-Content -LiteralPath $ActiveProjectFile -Value $releaseProject -Encoding utf8
       try {

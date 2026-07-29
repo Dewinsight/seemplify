@@ -9,12 +9,39 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-experience-api-'))
 const passwordFile = path.join(root, 'admin-password'); const sessionFile = path.join(root, 'session-secret');
 const frontendDist = path.join(root, '.release', 'frontend', 'dist');
 fs.mkdirSync(frontendDist, { recursive: true }); fs.writeFileSync(path.join(frontendDist, 'index.html'), '<!doctype html><title>Experience test shell</title>');
+fs.mkdirSync(path.join(frontendDist, 'assets'), { recursive: true });
+fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-a1b2c3.js'), 'globalThis.__experienceAssetLoaded = true;');
+fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-d4e5f6.css'), ':root { color: rgb(1 2 3); }');
 fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(sessionFile, 'test-session-secret-that-is-long-and-random-enough');
 Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile });
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
 const { issuePasswordResetToken } = await import('../src/auth.js');
 after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
+
+test('serves versioned assets immutably and never substitutes HTML for a missing asset', async () => {
+  const asset = await request(app).get('/assets/current-build-a1b2c3.js').expect(200);
+  assert.match(String(asset.headers['content-type']), /javascript/);
+  assert.match(String(asset.headers['cache-control']), /public/);
+  assert.match(String(asset.headers['cache-control']), /max-age=31536000/);
+  assert.match(String(asset.headers['cache-control']), /immutable/);
+  assert.match(asset.text, /__experienceAssetLoaded/);
+  const stylesheet = await request(app).get('/assets/current-build-d4e5f6.css?cache=bust').expect(200);
+  assert.match(String(stylesheet.headers['content-type']), /text\/css/);
+  assert.match(String(stylesheet.headers['cache-control']), /immutable/);
+
+  const missing = await request(app).get('/assets/retired-build-deadbeef.js').expect(404);
+  assert.match(String(missing.headers['content-type']), /text\/plain/);
+  assert.equal(missing.headers['cache-control'], 'no-store');
+  assert.doesNotMatch(missing.text, /Experience test shell/);
+  await request(app).head('/assets/retired-build-deadbeef.js').expect(404).expect('Cache-Control', 'no-store');
+
+  const html = await request(app).get('/surveys/new').expect(200);
+  assert.match(String(html.headers['content-type']), /text\/html/);
+  assert.equal(html.headers['cache-control'], 'no-store');
+  assert.match(html.text, /Experience test shell/);
+  await request(app).get('/index.html').expect(200).expect('Cache-Control', 'no-store');
+});
 
 test('supports shared-workspace signup and one-time password recovery', async () => {
   const email = 'researcher@example.com'; const originalPassword = 'Researcher-Start-2026';

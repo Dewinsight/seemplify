@@ -1,5 +1,32 @@
 import { expect, test } from '@playwright/test';
 
+test('reloads once and recovers when a lazy chunk is stale during deployment', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project exercises deployment recovery');
+  let chunkRequests = 0;
+  let loginDocuments = 0;
+  page.on('request', (request) => {
+    if (request.isNavigationRequest() && new URL(request.url()).pathname === '/login') loginDocuments += 1;
+  });
+  await page.route('**/assets/LoginPage-*.js', async (route) => {
+    chunkRequests += 1;
+    if (chunkRequests === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        headers: { 'cache-control': 'no-store' },
+        body: '<!doctype html><title>Retired deployment shell</title>'
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  expect(chunkRequests).toBe(2);
+  expect(loginDocuments).toBe(2);
+});
+
 test('account signup and forgot-password entry points are complete', async ({ page }, testInfo) => {
   const email = `experience-${testInfo.project.name}-${Date.now()}@example.com`;
   await page.goto('/login');

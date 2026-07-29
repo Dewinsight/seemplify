@@ -419,8 +419,29 @@ app.get('/api/surveys/:id/export.:format', (request, response) => {
 function compactExportSurvey(survey: Survey) { return { id: survey.id, title: survey.title, purpose: survey.purpose, primaryMetric: survey.primaryMetric, questions: survey.questions }; }
 
 if (fs.existsSync(config.frontendDist)) {
-  app.use(express.static(config.frontendDist, { maxAge: '1h', index: false }));
-  app.get(/^(?!\/api|\/health|\/uploads).*/, (_request, response) => response.sendFile('index.html', { root: config.frontendDist, dotfiles: 'allow' }));
+  const frontendAssets = path.join(config.frontendDist, 'assets');
+  app.use('/assets', express.static(frontendAssets, {
+    immutable: true,
+    index: false,
+    maxAge: '1y',
+    redirect: false
+  }));
+  app.use('/assets', (_request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    return response.status(404).type('text/plain').send('Frontend asset not found.');
+  });
+  app.use(express.static(config.frontendDist, {
+    index: false,
+    maxAge: 0,
+    redirect: false,
+    setHeaders: (response, filePath) => {
+      if (path.basename(filePath).toLowerCase() === 'index.html') response.setHeader('Cache-Control', 'no-store');
+    }
+  }));
+  app.get(/^(?!\/api|\/health|\/uploads).*/, (_request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    return response.sendFile('index.html', { root: config.frontendDist, dotfiles: 'allow' });
+  });
 }
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {

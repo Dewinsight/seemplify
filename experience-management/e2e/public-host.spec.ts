@@ -4,6 +4,11 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   test.skip(!process.env.PLAYWRIGHT_EXTERNAL_URL, 'Runs only against the deployed hostname');
   const password = process.env.EXPERIENCE_E2E_PASSWORD;
   if (!password) throw new Error('EXPERIENCE_E2E_PASSWORD is required.');
+  const missingAsset = await page.request.get(`/assets/intentionally-missing-${testInfo.project.name}-${Date.now()}.js`);
+  expect(missingAsset.status()).toBe(404);
+  expect(missingAsset.headers()['content-type']).toContain('text/plain');
+  expect(missingAsset.headers()['cache-control']).toBe('no-store');
+  expect(await missingAsset.text()).not.toContain('<!doctype html>');
   const unauthenticated = await page.goto('/api/bootstrap');
   expect(unauthenticated?.status()).toBe(401);
   await page.goto('/login');
