@@ -390,7 +390,7 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await expect(page.getByText('X connection')).toBeVisible();
   await expect(page.getByText('Setup required')).toBeVisible();
   await page.route('**/api/integrations/x/mentions?limit=1000', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test mentions outage.' }) }));
-  await page.getByRole('button', { name: 'Refresh' }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByText(/Some live data could not refresh/)).toBeVisible();
   await expect(page.getByText('Setup required')).toBeVisible();
   await page.unroute('**/api/integrations/x/mentions?limit=1000');
@@ -443,13 +443,120 @@ test('X social listening setup and journey maps remain visible while Terra work 
   }, suffix);
   await page.goto('/journeys');
   await expect(page.getByRole('heading', { name: 'Journey maps' })).toBeVisible();
-  await expect(page.getByText(journey.name).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: journey.name, exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Discover' })).toBeVisible();
+  await expect(page.getByText('Evidence level: hypothesis')).toBeVisible();
+  await expect(page.getByText('Clarify plans')).toBeVisible();
   await expect(page.getByText('Time to value')).toBeVisible();
+
+  const viewportFits = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
+  expect(viewportFits.documentWidth).toBeLessThanOrEqual(viewportFits.viewportWidth + 1);
+
+  const renamedJourney = `Activation evidence map ${suffix}`;
+  await page.getByRole('button', { name: 'Edit details' }).click();
+  const detailsDialog = page.getByRole('dialog', { name: 'Edit journey details' });
+  await detailsDialog.getByLabel('Map name').fill(renamedJourney);
+  await detailsDialog.getByLabel('Map summary').fill('An editable, evidence-aware path from discovery to product adoption.');
+  await detailsDialog.getByRole('button', { name: 'Save details' }).click();
+  await expect(page.getByRole('heading', { name: renamedJourney })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Stage 2: Activate' }).click();
+  await expect(page.getByRole('heading', { name: 'Activate', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit stage' }).click();
+  const stageDialog = page.getByRole('dialog', { name: 'Edit stage 2' });
+  await stageDialog.getByLabel('Opportunities').fill('Progressive setup\nContextual guidance\nGuided checklist\nRole-based defaults\nSetup health score');
+  await stageDialog.getByRole('button', { name: 'Save stage' }).click();
+  await expect(page.getByText('Setup health score')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Move stage earlier' }).click();
+  await expect(page.getByRole('button', { name: 'Stage 1: Activate' })).toHaveAttribute('aria-current', 'step');
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Stage 1: Activate' })).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByText('Setup health score')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Add stage' }).first().click();
+  const addStageDialog = page.getByRole('dialog', { name: 'Add journey stage' });
+  await addStageDialog.getByLabel('Stage name').fill('Expand');
+  await addStageDialog.getByLabel('Customer goal').fill('Introduce the product to another team');
+  await addStageDialog.getByLabel('Opportunities').fill('Make successful adoption repeatable');
+  await addStageDialog.getByLabel('Measures').fill('Teams invited per account');
+  await addStageDialog.getByRole('button', { name: 'Add stage' }).click();
+  await expect(page.getByRole('heading', { name: 'Expand', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stage 4: Expand' })).toHaveAttribute('aria-current', 'step');
+
+  const csvDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV' }).click();
+  const csvDownload = await csvDownloadPromise;
+  expect(csvDownload.suggestedFilename()).toMatch(/journey-map-[a-f0-9]{16}\.csv$/);
+  const jsonDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export JSON' }).click();
+  const jsonDownload = await jsonDownloadPromise;
+  expect(jsonDownload.suggestedFilename()).toMatch(/journey-map-[a-f0-9]{16}\.json$/);
+
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('journey-map.png'), fullPage: true });
+  await expect(page.getByRole('heading', { name: 'Version history' })).toBeVisible();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: /^Restore / }).first().click();
+  await expect(page.getByText('Earlier journey version restored. The displaced version is still available.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stage 4: Expand' })).toHaveCount(0);
+
   await page.getByRole('button', { name: 'Audit and improve' }).click();
   await expect(page.getByText('Journey audit queued with Terra.')).toBeVisible();
 
   await page.goto('/ai-queue');
   await expect(page.getByText('Journey optimization').first()).toBeVisible();
+  const currentJourney = await page.request.get(`/api/journeys/${journey.id}`);
+  expect(currentJourney.status()).toBe(200);
+  const deleted = await page.request.delete(`/api/journeys/${journey.id}`, { data: { expectedUpdatedAt: (await currentJourney.json()).updatedAt } });
+  expect(deleted.status()).toBe(204);
+});
+
+test('journey live refresh never lets an older response overwrite a newer edit', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project exercises the ordered refresh guard');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  const journey = await page.evaluate(async (suffix) => {
+    const response = await fetch('/api/journeys', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        name: `Refresh race journey ${suffix}`, audience: 'New customers', objective: 'Keep realtime edits ordered', industry: 'Software',
+        summary: 'Summary captured by the deliberately delayed response.',
+        stages: [{ name: 'Start', goal: 'Begin the journey', touchpoints: ['Website'], customerActions: ['Read'], emotions: ['Curious'], painPoints: [], metrics: ['Starts'], opportunities: [], recommendedActions: [] }]
+      })
+    });
+    return response.json();
+  }, Date.now());
+  await page.goto('/journeys');
+  await expect(page.getByText(journey.summary)).toBeVisible();
+
+  let releaseOld!: () => void;
+  let oldCaptured!: () => void;
+  const releaseOldResponse = new Promise<void>((resolve) => { releaseOld = resolve; });
+  const oldResponseCaptured = new Promise<void>((resolve) => { oldCaptured = resolve; });
+  let heldOneResponse = false;
+  await page.route('**/api/journeys', async (route) => {
+    if (heldOneResponse) { await route.continue(); return; }
+    heldOneResponse = true;
+    const staleResponse = await route.fetch();
+    oldCaptured();
+    await releaseOldResponse;
+    await route.fulfill({ response: staleResponse });
+  });
+
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await oldResponseCaptured;
+  const newerSummary = 'This newer SSE-driven edit must remain visible.';
+  const edited = await page.request.patch(`/api/journeys/${journey.id}`, { data: { expectedUpdatedAt: journey.updatedAt, summary: newerSummary } });
+  expect(edited.status()).toBe(200);
+  await expect(page.getByText(newerSummary)).toBeVisible();
+  releaseOld();
+  await expect(page.getByText(newerSummary)).toBeVisible();
+  await expect(page.getByText(journey.summary)).toHaveCount(0);
+
+  const current = await page.request.get(`/api/journeys/${journey.id}`);
+  const deleted = await page.request.delete(`/api/journeys/${journey.id}`, { data: { expectedUpdatedAt: (await current.json()).updatedAt } });
+  expect(deleted.status()).toBe(204);
 });

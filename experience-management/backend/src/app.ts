@@ -10,9 +10,9 @@ import { currentSessionUser, forgotPassword, login, logout, requireAdmin, resetP
 import { computeAnalytics } from './analytics.js';
 import { config } from './config.js';
 import {
-  createCollector, createJob, createResponse, db, deleteJourney, deleteSurvey, getCollectorBySlug, getJob,
-  getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJobs,
-  listJourneys, listResponses, listSocialMentions, listSocialMentionsByIds, listSurveys, saveJourney, saveSurvey
+  createCollector, createJob, createJourney, createResponse, db, deleteJourney, deleteSurvey, findActiveJourneyOptimization, getCollectorBySlug, getJob,
+  getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJobs, listJourneyVersionSummaries,
+  listJourneys, listResponses, listSocialMentions, listSocialMentionsByIds, listSurveys, restoreJourneyVersion, saveSurvey, updateJourney
 } from './database.js';
 import { attachEventStream, publishEvent } from './events.js';
 import { emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations } from './emailService.js';
@@ -26,7 +26,7 @@ import { parseSocialMentionImport } from './socialImport.js';
 import { getTerraStatus } from './terraClient.js';
 import { templates } from './templates.js';
 import { esignPublicRouter, esignRouter } from './esignRoutes.js';
-import { QUESTION_TYPES, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
+import { QUESTION_TYPES, type AiJob, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
 import {
   clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXSync,
   finishXOAuth, getXIntegrationStatus, listXCollectedMentions, saveXConfiguration, startXOAuth, updateXConnectionSettings, updateXQuery,
@@ -337,37 +337,151 @@ app.delete('/api/social/mentions/:id', (request, response) => {
   return response.status(204).end();
 });
 
-const journeyInput = z.object({
-  id: z.string().optional(), name: z.string().min(2).max(180), audience: z.string().max(500).optional(), objective: z.string().max(2000).optional(),
-  industry: z.string().max(200).optional(), summary: z.string().max(5000).optional(), stages: z.array(z.object({
-    name: z.string().min(1).max(200), goal: z.string().max(1000), touchpoints: z.array(z.string().max(500)).max(50), customerActions: z.array(z.string().max(500)).max(50),
-    emotions: z.array(z.string().max(200)).max(30), painPoints: z.array(z.string().max(1000)).max(50), metrics: z.array(z.string().max(500)).max(50),
-    opportunities: z.array(z.string().max(1000)).max(50), recommendedActions: z.array(z.string().max(1000)).max(50)
-  })).max(20).optional()
+const journeyText = (maximum: number) => z.string().trim().min(1).max(maximum);
+const journeyList = (maximumItems: number, maximumLength: number) => z.array(journeyText(maximumLength)).max(maximumItems);
+const journeyStageInput = z.object({
+  name: journeyText(200), goal: journeyText(1000), touchpoints: journeyList(50, 500), customerActions: journeyList(50, 500),
+  emotions: journeyList(30, 200), painPoints: journeyList(50, 1000), metrics: journeyList(50, 500),
+  opportunities: journeyList(50, 1000), recommendedActions: journeyList(50, 1000)
 });
+const journeyInput = z.object({
+  id: z.string().uuid().optional(), name: journeyText(180), audience: z.string().trim().max(500).optional(),
+  objective: z.string().trim().max(2000).optional(), industry: z.string().trim().max(200).optional(),
+  summary: z.string().trim().max(5000).optional(), stages: z.array(journeyStageInput).min(1).max(20)
+});
+const journeyUpdateInput = journeyInput.omit({ id: true }).partial().extend({ expectedUpdatedAt: z.string().datetime() })
+  .refine((value) => Object.keys(value).some((key) => key !== 'expectedUpdatedAt'), { message: 'Include at least one journey field to update.' });
+function journeyCsvCell(value: unknown) {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+  const text = /^[\p{White_Space}\p{Cc}\p{Cf}]*[=+\-@]/u.test(raw) ? `'${raw}` : raw;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+function journeyExportFilename(id: string, extension: 'json' | 'csv') {
+  return `journey-map-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}.${extension}`;
+}
+function normalizeJourneyFocus(value: unknown) { return String(value || '').trim().replace(/\s+/gu, ' '); }
+function journeyFocusKey(value: unknown) { return normalizeJourneyFocus(value).toLocaleLowerCase('en-US'); }
+function activeJourneyOptimizationConflict(job: AiJob, reason: 'different_focus' | 'stale_snapshot') {
+  return {
+    error: reason === 'stale_snapshot'
+      ? 'An optimization for an older journey version is still active. Wait for it to finish before requesting another audit.'
+      : 'A different optimization is already active for this journey. Wait for it to finish before requesting another audit.',
+    code: 'JOURNEY_OPTIMIZATION_ACTIVE', reason, activeJobId: job.id, activeState: job.state,
+    statusUrl: `/api/ai/jobs/${job.id}`
+  };
+}
 app.get('/api/journeys', noStore, (_request, response) => response.json(listJourneys()));
 app.get('/api/journeys/:id', noStore, (request, response) => { const journey = getJourney(String(request.params.id)); return journey ? response.json(journey) : response.status(404).json({ error: 'Journey not found.' }); });
 app.post('/api/journeys', (request, response) => {
   const parsed = journeyInput.safeParse(request.body); if (!parsed.success) return sendError(response, parsed.error);
-  const journey = saveJourney(parsed.data as any); publishEvent('data-changed', { reason: 'journey-saved', id: journey.id });
-  return response.status(201).json(journey);
+  if (parsed.data.id && getJourney(parsed.data.id)) return response.status(409).json({ error: 'A journey with this ID already exists.' });
+  try {
+    const journey = createJourney({ ...parsed.data, provenance: {
+      origin: 'workspace', lastModifiedBy: 'workspace', evidenceBasis: 'workspace_authored', evidenceLevel: 'hypothesis',
+      generatedAt: null, optimizedAt: null
+    } });
+    publishEvent('data-changed', { reason: 'journey-created', id: journey.id });
+    return response.status(201).json(journey);
+  } catch (error: any) {
+    if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) return response.status(409).json({ error: 'A journey with this ID already exists.' });
+    throw error;
+  }
+});
+app.patch('/api/journeys/:id', (request, response) => {
+  const parsed = journeyUpdateInput.safeParse(request.body); if (!parsed.success) return sendError(response, parsed.error);
+  const id = String(request.params.id); const current = getJourney(id);
+  if (!current) return response.status(404).json({ error: 'Journey not found.' });
+  const { expectedUpdatedAt, ...changes } = parsed.data;
+  const journey = updateJourney(id, {
+    ...changes,
+    provenance: { ...current.provenance, lastModifiedBy: 'workspace', evidenceLevel: 'hypothesis' }
+  }, expectedUpdatedAt, { reason: 'workspace_edit', actor: 'workspace' });
+  if (!journey) return response.status(409).json({ error: 'This journey changed since it was opened. Refresh it before saving.', current: getJourney(id) });
+  publishEvent('data-changed', { reason: 'journey-updated', id: journey.id });
+  return response.json(journey);
 });
 app.delete('/api/journeys/:id', (request, response) => {
-  if (!deleteJourney(String(request.params.id))) return response.status(404).json({ error: 'Journey not found.' });
-  publishEvent('data-changed', { reason: 'journey-deleted', id: String(request.params.id) });
+  const parsed = z.object({ expectedUpdatedAt: z.string().datetime() }).safeParse(request.body || {});
+  if (!parsed.success) return sendError(response, parsed.error);
+  const id = String(request.params.id); const deleted = deleteJourney(id, parsed.data.expectedUpdatedAt);
+  if (deleted === 'not_found') return response.status(404).json({ error: 'Journey not found.' });
+  if (deleted === 'conflict') return response.status(409).json({ error: 'This journey changed since it was opened. Refresh it before deleting.', current: getJourney(id) });
+  publishEvent('data-changed', { reason: 'journey-deleted', id });
   return response.status(204).end();
 });
 app.post('/api/ai/journeys', (request, response) => {
-  const parsed = z.object({ brief: z.string().min(10).max(8000), audience: z.string().max(500).optional(), industry: z.string().max(200).optional(), objective: z.string().max(2000).optional() }).safeParse(request.body);
+  const parsed = z.object({ brief: z.string().trim().min(10).max(8000), audience: z.string().trim().max(500).optional(), industry: z.string().trim().max(200).optional(), objective: z.string().trim().max(2000).optional() }).safeParse(request.body);
   if (!parsed.success) return sendError(response, parsed.error);
   const job = queueJob('journey.generate', parsed.data);
   return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
 });
 app.post('/api/journeys/:id/ai/optimize', (request, response) => {
-  if (!getJourney(String(request.params.id))) return response.status(404).json({ error: 'Journey not found.' });
-  const parsed = z.object({ focus: z.string().max(2000).optional() }).safeParse(request.body || {}); if (!parsed.success) return sendError(response, parsed.error);
-  const job = queueJob('journey.optimize', { journeyId: String(request.params.id), focus: parsed.data.focus || '' });
-  return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+  const journey = getJourney(String(request.params.id));
+  if (!journey) return response.status(404).json({ error: 'Journey not found.' });
+  const parsed = z.object({ focus: z.string().trim().max(2000).optional() }).safeParse(request.body || {}); if (!parsed.success) return sendError(response, parsed.error);
+  const focus = normalizeJourneyFocus(parsed.data.focus);
+  const existing = findActiveJourneyOptimization(journey.id);
+  if (existing) {
+    const sameSnapshot = String(existing.input.journeyUpdatedAt || '') === journey.updatedAt;
+    const sameFocus = journeyFocusKey(existing.input.focus) === journeyFocusKey(focus);
+    if (sameSnapshot && sameFocus) return response.status(202).json({ jobId: existing.id, state: existing.state, statusUrl: `/api/ai/jobs/${existing.id}`, deduplicated: true });
+    return response.status(409).json(activeJourneyOptimizationConflict(existing, sameSnapshot ? 'different_focus' : 'stale_snapshot'));
+  }
+  try {
+    const job = queueJob('journey.optimize', { journeyId: journey.id, journeyUpdatedAt: journey.updatedAt, focus });
+    return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}`, deduplicated: false });
+  } catch (error: any) {
+    const raced = String(error?.code || '').startsWith('SQLITE_CONSTRAINT') ? findActiveJourneyOptimization(journey.id) : null;
+    if (raced) {
+      const sameSnapshot = String(raced.input.journeyUpdatedAt || '') === journey.updatedAt;
+      const sameFocus = journeyFocusKey(raced.input.focus) === journeyFocusKey(focus);
+      if (sameSnapshot && sameFocus) return response.status(202).json({ jobId: raced.id, state: raced.state, statusUrl: `/api/ai/jobs/${raced.id}`, deduplicated: true });
+      return response.status(409).json(activeJourneyOptimizationConflict(raced, sameSnapshot ? 'different_focus' : 'stale_snapshot'));
+    }
+    throw error;
+  }
+});
+
+app.get('/api/journeys/:id/versions', noStore, (request, response) => {
+  const id = String(request.params.id);
+  if (!getJourney(id)) return response.status(404).json({ error: 'Journey not found.' });
+  const parsed = z.coerce.number().int().min(1).max(20).safeParse(request.query.limit ?? 10);
+  if (!parsed.success) return sendError(response, parsed.error);
+  return response.json(listJourneyVersionSummaries(id, parsed.data));
+});
+app.post('/api/journeys/:id/versions/:versionId/restore', (request, response) => {
+  const parsed = z.object({ expectedUpdatedAt: z.string().datetime() }).safeParse(request.body || {});
+  if (!parsed.success) return sendError(response, parsed.error);
+  const id = String(request.params.id);
+  const restored = restoreJourneyVersion(id, String(request.params.versionId), parsed.data.expectedUpdatedAt);
+  if (restored.status === 'not_found') return response.status(404).json({ error: 'Journey not found.' });
+  if (restored.status === 'version_not_found') return response.status(404).json({ error: 'Journey version not found.' });
+  if (restored.status === 'conflict') return response.status(409).json({ error: 'This journey changed since it was opened. Refresh it before restoring.', current: restored.current });
+  if (restored.status === 'restored') {
+    publishEvent('data-changed', { reason: 'journey-version-restored', id, versionId: String(request.params.versionId) });
+    return response.json(restored.journey);
+  }
+  return response.status(500).json({ error: 'Journey version could not be restored.' });
+});
+
+app.get('/api/journeys/:id/export.:format', noStore, (request, response) => {
+  const journey = getJourney(String(request.params.id));
+  if (!journey) return response.status(404).json({ error: 'Journey not found.' });
+  const format = String(request.params.format).toLowerCase();
+  if (format === 'json') {
+    response.setHeader('Content-Disposition', `attachment; filename="${journeyExportFilename(journey.id, 'json')}"`);
+    return response.json(journey);
+  }
+  if (format !== 'csv') return response.status(400).json({ error: 'Use csv or json.' });
+  const categories: Array<[string, keyof Pick<typeof journey.stages[number], 'touchpoints' | 'customerActions' | 'emotions' | 'painPoints' | 'metrics' | 'opportunities' | 'recommendedActions'>]> = [
+    ['touchpoint', 'touchpoints'], ['customer_action', 'customerActions'], ['emotion', 'emotions'], ['pain_point', 'painPoints'],
+    ['metric', 'metrics'], ['opportunity', 'opportunities'], ['recommended_action', 'recommendedActions']
+  ];
+  const rows: unknown[][] = [['stage_number', 'stage_name', 'stage_goal', 'category', 'value']];
+  journey.stages.forEach((stage, index) => categories.forEach(([category, key]) => stage[key].forEach((value) => rows.push([index + 1, stage.name, stage.goal, category, value]))));
+  response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  response.setHeader('Content-Disposition', `attachment; filename="${journeyExportFilename(journey.id, 'csv')}"`);
+  return response.send(`\ufeff${rows.map((row) => row.map(journeyCsvCell).join(',')).join('\n')}`);
 });
 
 app.get('/api/templates', (_request, response) => response.json(templates));

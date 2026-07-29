@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { config } from './config.js';
-import type { AiJob, Collector, Journey, Question, ResponseRecord, SocialMention, Survey } from './types.js';
+import type { AiJob, Collector, Journey, JourneyProvenance, JourneyVersion, JourneyVersionSummary, Question, ResponseRecord, SocialMention, Survey } from './types.js';
 
 export const db = new Database(config.databasePath);
 db.pragma('journal_mode = WAL');
@@ -255,9 +255,33 @@ db.exec(`
     industry TEXT NOT NULL DEFAULT '',
     stages_json TEXT NOT NULL DEFAULT '[]',
     summary TEXT NOT NULL DEFAULT '',
+    provenance_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS journey_versions (
+    id TEXT PRIMARY KEY,
+    journey_id TEXT NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    source_job_id TEXT,
+    snapshot_json TEXT NOT NULL,
+    snapshot_name TEXT NOT NULL,
+    stage_count INTEGER NOT NULL,
+    snapshot_bytes INTEGER NOT NULL,
+    snapshot_updated_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(journey_id,snapshot_updated_at)
+  );
+  CREATE INDEX IF NOT EXISTS journey_versions_history ON journey_versions(journey_id,created_at DESC);
+  CREATE TABLE IF NOT EXISTS journey_ai_applications (
+    job_id TEXT PRIMARY KEY REFERENCES ai_jobs(id) ON DELETE CASCADE,
+    journey_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS journey_ai_applications_journey ON journey_ai_applications(journey_id,created_at DESC);
   CREATE TABLE IF NOT EXISTS campaigns (
     id TEXT PRIMARY KEY,
     survey_id TEXT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
@@ -601,6 +625,34 @@ const socialMentionColumns = new Set((db.prepare('PRAGMA table_info(social_menti
 if (!socialMentionColumns.has('external_id')) db.exec('ALTER TABLE social_mentions ADD COLUMN external_id TEXT');
 if (!socialMentionColumns.has('x_connection_id')) db.exec('ALTER TABLE social_mentions ADD COLUMN x_connection_id TEXT');
 if (!socialMentionColumns.has('ingestion_kind')) db.exec('ALTER TABLE social_mentions ADD COLUMN ingestion_kind TEXT');
+const journeyColumns = new Set((db.prepare('PRAGMA table_info(journeys)').all() as any[]).map((column) => String(column.name)));
+if (!journeyColumns.has('provenance_json')) db.exec("ALTER TABLE journeys ADD COLUMN provenance_json TEXT NOT NULL DEFAULT '{}'");
+const journeyVersionColumns = new Set((db.prepare('PRAGMA table_info(journey_versions)').all() as any[]).map((column) => String(column.name)));
+if (!journeyVersionColumns.has('snapshot_name')) db.exec("ALTER TABLE journey_versions ADD COLUMN snapshot_name TEXT NOT NULL DEFAULT ''");
+if (!journeyVersionColumns.has('stage_count')) db.exec('ALTER TABLE journey_versions ADD COLUMN stage_count INTEGER NOT NULL DEFAULT 0');
+if (!journeyVersionColumns.has('snapshot_bytes')) db.exec('ALTER TABLE journey_versions ADD COLUMN snapshot_bytes INTEGER NOT NULL DEFAULT 0');
+for (const row of db.prepare('SELECT id,snapshot_json FROM journey_versions WHERE snapshot_bytes=0 OR snapshot_name=?').all('') as Array<{ id: string; snapshot_json: string }>) {
+  let name = ''; let stageCount = 0;
+  try { const snapshot = JSON.parse(row.snapshot_json); name = String(snapshot?.name || ''); stageCount = Array.isArray(snapshot?.stages) ? snapshot.stages.length : 0; } catch { /* retain safe migration defaults for corrupt legacy snapshots */ }
+  db.prepare('UPDATE journey_versions SET snapshot_name=?,stage_count=?,snapshot_bytes=? WHERE id=?')
+    .run(name, stageCount, Buffer.byteLength(row.snapshot_json, 'utf8'), row.id);
+}
+const activeJourneyOptimizations = db.prepare(`SELECT id,state,input_json FROM ai_jobs
+  WHERE kind='journey.optimize' AND state IN ('queued','processing')
+  ORDER BY CASE state WHEN 'processing' THEN 0 ELSE 1 END,created_at,id`).all() as Array<{ id: string; state: string; input_json: string }>;
+const retainedJourneyOptimizations = new Set<string>();
+for (const row of activeJourneyOptimizations) {
+  let journeyId = '';
+  try { journeyId = String(JSON.parse(row.input_json || '{}').journeyId || ''); } catch { /* malformed legacy jobs cannot be deduplicated */ }
+  if (!journeyId || !retainedJourneyOptimizations.has(journeyId)) { if (journeyId) retainedJourneyOptimizations.add(journeyId); continue; }
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE ai_jobs SET state='failed',stage='duplicate_journey_optimization',progress=100,
+    error='A duplicate optimization was removed during queue recovery.',retry_at=NULL,completed_at=?,updated_at=? WHERE id=?`)
+    .run(now, now, row.id);
+}
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ai_jobs_one_active_journey_optimize
+  ON ai_jobs(CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END)
+  WHERE kind='journey.optimize' AND state IN ('queued','processing')`);
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS social_mentions_x_external ON social_mentions(source,external_id) WHERE external_id IS NOT NULL');
 const xConnectionColumns = new Set((db.prepare('PRAGMA table_info(x_connections)').all() as any[]).map((column) => String(column.name)));
 if (!xConnectionColumns.has('last_post_id')) db.exec('ALTER TABLE x_connections ADD COLUMN last_post_id TEXT');
@@ -830,22 +882,179 @@ export function setSocialMentionAnalysis(id: string, analysis: unknown) {
   db.prepare('UPDATE social_mentions SET analysis_json=? WHERE id=?').run(JSON.stringify(analysis), id);
 }
 
+const legacyJourneyProvenance: JourneyProvenance = {
+  origin: 'legacy', lastModifiedBy: 'unknown', evidenceBasis: 'unknown', evidenceLevel: 'hypothesis',
+  generatedAt: null, optimizedAt: null
+};
+
+function journeyProvenance(value: unknown): JourneyProvenance {
+  const parsed = parseJson(value, {} as Partial<JourneyProvenance>);
+  return { ...legacyJourneyProvenance, ...parsed, evidenceLevel: 'hypothesis' };
+}
+
 const rowJourney = (row: any): Journey => ({
   id: row.id, name: row.name, audience: row.audience, objective: row.objective, industry: row.industry,
-  stages: parseJson(row.stages_json, []), summary: row.summary, createdAt: row.created_at, updatedAt: row.updated_at
+  stages: parseJson(row.stages_json, []), summary: row.summary, provenance: journeyProvenance(row.provenance_json),
+  createdAt: row.created_at, updatedAt: row.updated_at
 });
 
 export function listJourneys() { return (db.prepare('SELECT * FROM journeys ORDER BY updated_at DESC').all() as any[]).map(rowJourney); }
 export function getJourney(id: string): Journey | null { const row = db.prepare('SELECT * FROM journeys WHERE id=?').get(id) as any; return row ? rowJourney(row) : null; }
-export function saveJourney(input: Partial<Journey> & { name: string }) {
+export function createJourney(input: Partial<Journey> & { name: string }) {
   const now = new Date().toISOString(); const id = input.id || crypto.randomUUID();
-  db.prepare(`INSERT INTO journeys (id,name,audience,objective,industry,stages_json,summary,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name,audience=excluded.audience,objective=excluded.objective,industry=excluded.industry,stages_json=excluded.stages_json,summary=excluded.summary,updated_at=excluded.updated_at`)
-    .run(id, input.name.trim(), input.audience || '', input.objective || '', input.industry || '', JSON.stringify(input.stages || []), input.summary || '', input.createdAt || now, now);
+  db.prepare(`INSERT INTO journeys (id,name,audience,objective,industry,stages_json,summary,provenance_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, input.name.trim(), input.audience || '', input.objective || '', input.industry || '', JSON.stringify(input.stages || []),
+      input.summary || '', JSON.stringify(input.provenance || legacyJourneyProvenance), input.createdAt || now, now);
   return getJourney(id)!;
 }
-export function deleteJourney(id: string) { return db.prepare('DELETE FROM journeys WHERE id=?').run(id).changes > 0; }
 
+type JourneyVersionMetadata = Pick<JourneyVersion, 'reason' | 'actor'> & { sourceJobId?: string | null };
+type JourneyJobOutput = { output: unknown; runtime: unknown };
+
+const rowJourneyVersion = (row: any): JourneyVersion => ({
+  id: row.id, journeyId: row.journey_id, reason: row.reason, actor: row.actor, sourceJobId: row.source_job_id,
+  snapshot: parseJson(row.snapshot_json, null as unknown as Journey), snapshotUpdatedAt: row.snapshot_updated_at, createdAt: row.created_at
+});
+
+const rowJourneyVersionSummary = (row: any): JourneyVersionSummary => ({
+  id: row.id, journeyId: row.journey_id, reason: row.reason, actor: row.actor, sourceJobId: row.source_job_id,
+  name: row.snapshot_name, stageCount: Number(row.stage_count), snapshotUpdatedAt: row.snapshot_updated_at, createdAt: row.created_at
+});
+
+export function listJourneyVersionSummaries(journeyId: string, limit = 10) {
+  return (db.prepare(`SELECT id,journey_id,reason,actor,source_job_id,snapshot_name,stage_count,snapshot_updated_at,created_at
+    FROM journey_versions WHERE journey_id=? ORDER BY snapshot_updated_at DESC,id DESC LIMIT ?`).all(journeyId, limit) as any[]).map(rowJourneyVersionSummary);
+}
+
+export function getJourneyVersion(journeyId: string, versionId: string): JourneyVersion | null {
+  const row = db.prepare('SELECT * FROM journey_versions WHERE journey_id=? AND id=?').get(journeyId, versionId) as any;
+  return row ? rowJourneyVersion(row) : null;
+}
+
+function insertJourneyVersion(journey: Journey, metadata: JourneyVersionMetadata) {
+  const now = new Date().toISOString(); const snapshot = JSON.stringify(journey); const snapshotBytes = Buffer.byteLength(snapshot, 'utf8');
+  if (snapshotBytes > JOURNEY_VERSION_MAX_BYTES) throw new Error('Journey is too large to version safely.');
+  db.prepare(`INSERT INTO journey_versions (id,journey_id,reason,actor,source_job_id,snapshot_json,snapshot_name,stage_count,snapshot_bytes,snapshot_updated_at,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(crypto.randomUUID(), journey.id, metadata.reason, metadata.actor, metadata.sourceJobId || null,
+    snapshot, journey.name, journey.stages.length, snapshotBytes, journey.updatedAt, now);
+  pruneJourneyVersions(journey.id);
+}
+
+const JOURNEY_VERSION_MAX_COUNT = 20;
+const JOURNEY_VERSION_MAX_BYTES = 16 * 1024 * 1024;
+function pruneJourneyVersions(journeyId: string) {
+  const rows = db.prepare(`SELECT id,snapshot_bytes FROM journey_versions WHERE journey_id=?
+    ORDER BY snapshot_updated_at DESC,id DESC`).all(journeyId) as Array<{ id: string; snapshot_bytes: number }>;
+  let kept = 0; let bytes = 0; let exhausted = false; const remove: string[] = [];
+  for (const row of rows) {
+    const size = Math.max(0, Number(row.snapshot_bytes || 0));
+    if (!exhausted && (kept === 0 || (kept < JOURNEY_VERSION_MAX_COUNT && bytes + size <= JOURNEY_VERSION_MAX_BYTES))) { kept += 1; bytes += size; }
+    else { exhausted = true; remove.push(row.id); }
+  }
+  const removeVersion = db.prepare('DELETE FROM journey_versions WHERE journey_id=? AND id=?');
+  for (const id of remove) removeVersion.run(journeyId, id);
+}
+
+function pruneAllJourneyVersions() {
+  const journeys = db.prepare('SELECT DISTINCT journey_id FROM journey_versions').all() as Array<{ journey_id: string }>;
+  for (const row of journeys) pruneJourneyVersions(row.journey_id);
+}
+
+function updateJourneyRecord(id: string, input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, metadata: JourneyVersionMetadata): Journey | null {
+  const current = getJourney(id);
+  if (!current || current.updatedAt !== expectedUpdatedAt) return null;
+  insertJourneyVersion(current, metadata);
+  const currentTime = Date.parse(current.updatedAt);
+  const updatedAt = new Date(Math.max(Date.now(), Number.isFinite(currentTime) ? currentTime + 1 : 0)).toISOString();
+  const changed = db.prepare(`UPDATE journeys SET name=?,audience=?,objective=?,industry=?,stages_json=?,summary=?,provenance_json=?,updated_at=?
+    WHERE id=? AND updated_at=?`).run(
+    input.name === undefined ? current.name : input.name.trim(), input.audience === undefined ? current.audience : input.audience,
+    input.objective === undefined ? current.objective : input.objective, input.industry === undefined ? current.industry : input.industry,
+    JSON.stringify(input.stages === undefined ? current.stages : input.stages), input.summary === undefined ? current.summary : input.summary,
+    JSON.stringify(input.provenance === undefined ? current.provenance : input.provenance), updatedAt, id, expectedUpdatedAt
+  ).changes;
+  if (!changed) throw new Error('Journey changed while its version snapshot was being saved.');
+  return getJourney(id);
+}
+
+export const updateJourney = db.transaction((id: string, input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, metadata: JourneyVersionMetadata): Journey | null => {
+  return updateJourneyRecord(id, input, expectedUpdatedAt, metadata);
+});
+
+export function getJourneyAiApplication(jobId: string): JourneyJobOutput | null {
+  const row = db.prepare('SELECT result_json FROM journey_ai_applications WHERE job_id=?').get(jobId) as { result_json: string } | undefined;
+  if (!row) return null;
+  const result = JSON.parse(row.result_json) as JourneyJobOutput;
+  if (!result || typeof result !== 'object' || !('output' in result) || !('runtime' in result)) throw new Error('Recorded journey AI application is invalid.');
+  return result;
+}
+
+export const applyGeneratedJourney = db.transaction((jobId: string, input: Partial<Journey> & { name: string }, runtime: unknown): JourneyJobOutput => {
+  const previous = getJourneyAiApplication(jobId);
+  if (previous) return previous;
+  const journey = createJourney(input);
+  const result: JourneyJobOutput = { output: { journey }, runtime };
+  db.prepare(`INSERT INTO journey_ai_applications (job_id,journey_id,kind,result_json,created_at) VALUES (?,?,'journey.generate',?,?)`)
+    .run(jobId, journey.id, JSON.stringify(result), new Date().toISOString());
+  return getJourneyAiApplication(jobId)!;
+});
+
+export const applyOptimizedJourney = db.transaction((jobId: string, journeyId: string,
+  input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, runtime: unknown):
+  { status: 'applied' | 'replayed'; result: JourneyJobOutput } | { status: 'conflict' | 'not_found' } => {
+  const previous = getJourneyAiApplication(jobId);
+  if (previous) return { status: 'replayed', result: previous };
+  const current = getJourney(journeyId);
+  if (!current) return { status: 'not_found' };
+  if (current.updatedAt !== expectedUpdatedAt) return { status: 'conflict' };
+  const journey = updateJourneyRecord(journeyId, input, expectedUpdatedAt, { reason: 'terra_optimize', actor: 'terra', sourceJobId: jobId });
+  if (!journey) return { status: 'conflict' };
+  const result: JourneyJobOutput = { output: { journey }, runtime };
+  db.prepare(`INSERT INTO journey_ai_applications (job_id,journey_id,kind,result_json,created_at) VALUES (?,?,'journey.optimize',?,?)`)
+    .run(jobId, journey.id, JSON.stringify(result), new Date().toISOString());
+  return { status: 'applied', result: getJourneyAiApplication(jobId)! };
+});
+
+export const restoreJourneyVersion = db.transaction((journeyId: string, versionId: string, expectedUpdatedAt: string):
+  { status: 'restored'; journey: Journey } | { status: 'not_found' | 'version_not_found' | 'conflict'; current?: Journey } => {
+  const current = getJourney(journeyId);
+  if (!current) return { status: 'not_found' };
+  const version = getJourneyVersion(journeyId, versionId);
+  if (!version) return { status: 'version_not_found' };
+  if (current.updatedAt !== expectedUpdatedAt) return { status: 'conflict', current };
+  const target = version.snapshot;
+  const journey = updateJourneyRecord(journeyId, {
+    name: target.name, audience: target.audience, objective: target.objective, industry: target.industry,
+    stages: target.stages, summary: target.summary,
+    provenance: { ...target.provenance, lastModifiedBy: 'workspace', evidenceLevel: 'hypothesis' }
+  }, expectedUpdatedAt, { reason: 'restore_displaced', actor: 'workspace' });
+  if (!journey) return { status: 'conflict', current: getJourney(journeyId) || undefined };
+  return { status: 'restored', journey };
+});
+
+export function findActiveJourneyOptimization(journeyId: string): AiJob | null {
+  const row = db.prepare(`SELECT * FROM ai_jobs WHERE kind='journey.optimize' AND state IN ('queued','processing')
+    AND CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END=?
+    ORDER BY CASE state WHEN 'processing' THEN 0 ELSE 1 END,created_at,id LIMIT 1`).get(journeyId) as any;
+  return row ? rowJob(row) : null;
+}
+
+export const deleteJourney = db.transaction((id: string, expectedUpdatedAt: string): 'deleted' | 'not_found' | 'conflict' => {
+  const current = getJourney(id);
+  if (!current) return 'not_found';
+  if (current.updatedAt !== expectedUpdatedAt) return 'conflict';
+  db.prepare(`DELETE FROM ai_jobs WHERE kind IN ('journey.generate','journey.optimize') AND (
+    id IN (SELECT job_id FROM journey_ai_applications WHERE journey_id=?)
+    OR CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END=?
+    OR CASE WHEN json_valid(result_json) THEN json_extract(result_json,'$.output.journey.id') END=?
+  )`).run(id, id, id);
+  db.prepare('DELETE FROM journey_ai_applications WHERE journey_id=?').run(id);
+  const deleted = db.prepare('DELETE FROM journeys WHERE id=? AND updated_at=?').run(id, expectedUpdatedAt).changes;
+  if (!deleted) throw new Error('Journey changed while it was being deleted.');
+  return 'deleted';
+});
+
+pruneAllJourneyVersions();
 db.prepare(`UPDATE ai_jobs SET state='queued',stage='recovered_after_restart',progress=0,started_at=NULL,retry_at=NULL,updated_at=? WHERE state='processing'`).run(new Date().toISOString());
 db.prepare(`UPDATE x_sync_jobs SET state='queued',stage='recovered_after_restart',progress=0,started_at=NULL,run_after=NULL,updated_at=? WHERE state='processing'`).run(new Date().toISOString());
 db.prepare("UPDATE campaigns SET status='active' WHERE status='running'").run();

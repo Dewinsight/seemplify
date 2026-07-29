@@ -140,21 +140,88 @@ test('persists social mentions and journey maps before Terra work is dispatched'
 
   const created = await agent.post('/api/journeys').send({
     name: 'Customer onboarding journey', audience: 'New customers', industry: 'Software', objective: 'Improve activation', summary: 'A measurable onboarding lifecycle.',
-    stages: [{ name: 'Discover', goal: 'Understand value', touchpoints: ['Website'], customerActions: ['Compare options'], emotions: ['Curious'], painPoints: ['Unclear pricing'], metrics: ['Visit-to-demo conversion'], opportunities: ['Clarify plans'], recommendedActions: ['Publish a plan comparison'] }]
+    stages: [{ name: 'Discover', goal: 'Understand value', touchpoints: ['Website'], customerActions: ['Compare options'], emotions: ['Curious'], painPoints: ['Unclear pricing'], metrics: ['Visit-to-demo conversion'], opportunities: ['Clarify plans'], recommendedActions: ['Publish a plan comparison', '=WEBSERVICE("https://invalid.example")'] }]
   }).expect(201);
+  assert.equal(created.body.provenance.origin, 'workspace');
+  assert.equal(created.body.provenance.evidenceLevel, 'hypothesis');
+  await request(app).get(`/api/journeys/${created.body.id}`).expect(401);
+  await agent.post('/api/journeys').send({ ...created.body }).expect(409);
+  await agent.post('/api/journeys').send({ name: '   ', stages: created.body.stages }).expect(400);
+  await agent.post('/api/ai/journeys').send({ brief: '          ' }).expect(400);
   const journeys = await agent.get('/api/journeys').expect(200);
   assert.equal(journeys.body[0].id, created.body.id);
   assert.equal(journeys.body[0].stages[0].metrics[0], 'Visit-to-demo conversion');
 
+  const conflict = await agent.patch(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: '2020-01-01T00:00:00.000Z', summary: 'Stale edit' }).expect(409);
+  assert.equal(conflict.body.current.summary, created.body.summary);
+  const updated = await agent.patch(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: created.body.updatedAt, summary: '  A clearer measurable onboarding lifecycle.  ' }).expect(200);
+  assert.equal(updated.body.summary, 'A clearer measurable onboarding lifecycle.');
+  assert.notEqual(updated.body.updatedAt, created.body.updatedAt);
+  assert.equal(updated.body.provenance.lastModifiedBy, 'workspace');
+  await agent.patch(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: created.body.updatedAt, objective: 'Overwrite a newer edit' }).expect(409);
+
+  await request(app).get(`/api/journeys/${created.body.id}/versions`).expect(401);
+  const versionsAfterEdit = await agent.get(`/api/journeys/${created.body.id}/versions`).expect(200);
+  assert.equal(versionsAfterEdit.body.length, 1);
+  assert.equal(versionsAfterEdit.body[0].reason, 'workspace_edit');
+  assert.equal(versionsAfterEdit.body[0].name, created.body.name);
+  assert.equal(versionsAfterEdit.body[0].stageCount, 1);
+  assert.equal(versionsAfterEdit.body[0].snapshotUpdatedAt, created.body.updatedAt);
+  assert.equal('snapshot' in versionsAfterEdit.body[0], false);
+  await agent.post(`/api/journeys/${created.body.id}/versions/${versionsAfterEdit.body[0].id}/restore`)
+    .send({ expectedUpdatedAt: created.body.updatedAt }).expect(409);
+  const restored = await agent.post(`/api/journeys/${created.body.id}/versions/${versionsAfterEdit.body[0].id}/restore`)
+    .send({ expectedUpdatedAt: updated.body.updatedAt }).expect(200);
+  assert.equal(restored.body.summary, created.body.summary);
+  assert.notEqual(restored.body.updatedAt, updated.body.updatedAt);
+  const versionsAfterRestore = await agent.get(`/api/journeys/${created.body.id}/versions`).expect(200);
+  assert.equal(versionsAfterRestore.body.length, 2);
+  const displaced = versionsAfterRestore.body.find((version: any) => version.reason === 'restore_displaced');
+  assert.equal(displaced.snapshotUpdatedAt, updated.body.updatedAt);
+
+  const exportedJson = await agent.get(`/api/journeys/${created.body.id}/export.json`).expect(200);
+  assert.equal(exportedJson.body.id, created.body.id);
+  assert.match(String(exportedJson.headers['content-disposition']), /journey-map-[a-f0-9]{16}\.json/);
+  const exportedCsv = await agent.get(`/api/journeys/${created.body.id}/export.csv`).expect(200);
+  assert.match(String(exportedCsv.headers['content-type']), /text\/csv/);
+  assert.match(exportedCsv.text, /"metric","Visit-to-demo conversion"/);
+  assert.match(exportedCsv.text, /"recommended_action","'=WEBSERVICE/);
+
   const optimized = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: 'Ownership and metrics' }).expect(202);
+  assert.equal(optimized.body.deduplicated, false);
+  const duplicateOptimization = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: '  ownership   AND metrics  ' }).expect(202);
+  assert.equal(duplicateOptimization.body.deduplicated, true);
+  assert.equal(duplicateOptimization.body.jobId, optimized.body.jobId);
+  const differentOptimization = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: 'A different audit' }).expect(409);
+  assert.equal(differentOptimization.body.code, 'JOURNEY_OPTIMIZATION_ACTIVE');
+  assert.equal(differentOptimization.body.reason, 'different_focus');
+  assert.equal(differentOptimization.body.activeJobId, optimized.body.jobId);
+  assert.equal(differentOptimization.body.statusUrl, `/api/ai/jobs/${optimized.body.jobId}`);
   const optimizationJob = await agent.get(`/api/ai/jobs/${optimized.body.jobId}`).expect(200);
   assert.equal(optimizationJob.body.kind, 'journey.optimize');
   assert.equal(optimizationJob.body.input.journeyId, created.body.id);
+  assert.equal(optimizationJob.body.input.journeyUpdatedAt, restored.body.updatedAt);
+  assert.equal(optimizationJob.body.input.focus, 'Ownership and metrics');
+  const changedWhileActive = await agent.patch(`/api/journeys/${created.body.id}`).send({
+    expectedUpdatedAt: restored.body.updatedAt, summary: 'A newer version while the audit is still queued.'
+  }).expect(200);
+  const staleOptimization = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: 'Ownership and metrics' }).expect(409);
+  assert.equal(staleOptimization.body.reason, 'stale_snapshot');
+  assert.equal(staleOptimization.body.activeJobId, optimized.body.jobId);
+  assert.equal((db.prepare(`SELECT COUNT(*) count FROM ai_jobs WHERE kind='journey.optimize'
+    AND CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END=?`).get(created.body.id) as any).count, 1);
   const generated = await agent.post('/api/ai/journeys').send({ brief: 'Map the complete onboarding lifecycle for a new software customer.', audience: 'New customers' }).expect(202);
   const generationJob = await agent.get(`/api/ai/jobs/${generated.body.jobId}`).expect(200);
   assert.equal(generationJob.body.kind, 'journey.generate');
 
-  await agent.delete(`/api/journeys/${created.body.id}`).expect(204);
+  await agent.delete(`/api/journeys/${created.body.id}`).send({}).expect(400);
+  const staleDelete = await agent.delete(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: restored.body.updatedAt }).expect(409);
+  assert.equal(staleDelete.body.current.updatedAt, changedWhileActive.body.updatedAt);
+  await agent.delete(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: changedWhileActive.body.updatedAt }).expect(204);
+  await agent.get(`/api/journeys/${created.body.id}`).expect(404);
+  await agent.get(`/api/ai/jobs/${optimized.body.jobId}`).expect(404);
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_versions WHERE journey_id=?').get(created.body.id) as any).count, 0);
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_ai_applications WHERE journey_id=?').get(created.body.id) as any).count, 0);
   await agent.delete(`/api/social/mentions/${imported.body.mentions[0].id}`).expect(204);
 });
 

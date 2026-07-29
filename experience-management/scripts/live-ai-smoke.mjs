@@ -86,7 +86,12 @@ try {
   console.log('LIVE_AI_SMOKE_PASS');
 } finally {
   if (surveyId) await call(`/api/surveys/${surveyId}`, { method: 'DELETE' }).catch(() => null);
-  for (const journeyId of journeyIds) await call(`/api/journeys/${journeyId}`, { method: 'DELETE' }).catch(() => null);
+  for (const journeyId of journeyIds) {
+    const current = await call(`/api/journeys/${journeyId}`).catch(() => null);
+    if (current?.updatedAt) {
+      await call(`/api/journeys/${journeyId}`, { method: 'DELETE', body: JSON.stringify({ expectedUpdatedAt: current.updatedAt }) }).catch(() => null);
+    }
+  }
   for (const mentionId of mentionIds) await call(`/api/social/mentions/${mentionId}`, { method: 'DELETE' }).catch(() => null);
   if (baseUrl.startsWith('http://127.0.0.1') && smokeJobIds.length) {
     const databasePath = process.env.DATABASE_PATH || path.join(repository, '.local-runtime', 'experience-management', 'experience.sqlite');

@@ -104,13 +104,16 @@ export const socialListeningResult = z.object({
   mentions: z.array(socialMentionAnalysis)
 });
 
+const journeyString = (maximum: number, minimum = 1) => z.string().trim().min(minimum).max(maximum);
+const journeyStrings = (maximumItems: number, maximumLength: number) => z.array(journeyString(maximumLength)).max(maximumItems);
 const journeyStage = z.object({
-  name: z.string(), goal: z.string(), touchpoints: z.array(z.string()), customerActions: z.array(z.string()),
-  emotions: z.array(z.string()), painPoints: z.array(z.string()), metrics: z.array(z.string()),
-  opportunities: z.array(z.string()), recommendedActions: z.array(z.string())
+  name: journeyString(200), goal: journeyString(1000), touchpoints: journeyStrings(50, 500), customerActions: journeyStrings(50, 500),
+  emotions: journeyStrings(30, 200), painPoints: journeyStrings(50, 1000), metrics: journeyStrings(50, 500),
+  opportunities: journeyStrings(50, 1000), recommendedActions: journeyStrings(50, 1000)
 });
 export const journeyResult = z.object({
-  name: z.string(), audience: z.string(), objective: z.string(), industry: z.string(), summary: z.string(), stages: z.array(journeyStage).min(3).max(12)
+  name: journeyString(180, 2), audience: z.string().trim().max(500), objective: z.string().trim().max(2000),
+  industry: z.string().trim().max(200), summary: z.string().trim().max(5000), stages: z.array(journeyStage).min(3).max(12)
 });
 
 const string = { type: 'string' } as const;
@@ -185,7 +188,17 @@ export const aiJsonSchemas = {
     mentions: arrayOf(finiteObject({ mentionId: string, sentiment: { type: 'string', enum: ['negative', 'neutral', 'positive', 'mixed'] }, sentimentScore: signedUnitNumber, emotions: strings, themes: strings, summary: string, risk: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] } }))
   }),
   journey: finiteObject({
-    name: string, audience: string, objective: string, industry: string, summary: string,
-    stages: arrayOf(finiteObject({ name: string, goal: string, touchpoints: strings, customerActions: strings, emotions: strings, painPoints: strings, metrics: strings, opportunities: strings, recommendedActions: strings }))
+    name: { type: 'string', minLength: 2, maxLength: 180 }, audience: { type: 'string', maxLength: 500 },
+    objective: { type: 'string', maxLength: 2000 }, industry: { type: 'string', maxLength: 200 }, summary: { type: 'string', maxLength: 5000 },
+    stages: { type: 'array', minItems: 3, maxItems: 12, items: finiteObject({
+      name: { type: 'string', minLength: 1, maxLength: 200 }, goal: { type: 'string', minLength: 1, maxLength: 1000 },
+      touchpoints: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 500 } },
+      customerActions: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 500 } },
+      emotions: { type: 'array', maxItems: 30, items: { type: 'string', minLength: 1, maxLength: 200 } },
+      painPoints: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 1000 } },
+      metrics: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 500 } },
+      opportunities: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 1000 } },
+      recommendedActions: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 1000 } }
+    }) }
   })
 };

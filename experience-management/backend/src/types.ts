@@ -113,6 +113,15 @@ export interface JourneyStage {
   recommendedActions: string[];
 }
 
+export interface JourneyProvenance {
+  origin: 'workspace' | 'terra' | 'legacy';
+  lastModifiedBy: 'workspace' | 'terra' | 'unknown';
+  evidenceBasis: 'workspace_authored' | 'brief_only' | 'unknown';
+  evidenceLevel: 'hypothesis';
+  generatedAt: string | null;
+  optimizedAt: string | null;
+}
+
 export interface Journey {
   id: string;
   name: string;
@@ -121,8 +130,32 @@ export interface Journey {
   industry: string;
   stages: JourneyStage[];
   summary: string;
+  provenance: JourneyProvenance;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface JourneyVersion {
+  id: string;
+  journeyId: string;
+  reason: 'workspace_edit' | 'terra_optimize' | 'restore_displaced';
+  actor: 'workspace' | 'terra';
+  sourceJobId: string | null;
+  snapshot: Journey;
+  snapshotUpdatedAt: string;
+  createdAt: string;
+}
+
+export interface JourneyVersionSummary {
+  id: string;
+  journeyId: string;
+  reason: JourneyVersion['reason'];
+  actor: JourneyVersion['actor'];
+  sourceJobId: string | null;
+  name: string;
+  stageCount: number;
+  snapshotUpdatedAt: string;
+  createdAt: string;
 }
 
 export interface AiJob {

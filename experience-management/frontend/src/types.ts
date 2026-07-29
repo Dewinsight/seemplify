@@ -18,7 +18,23 @@ export interface XIntegrationStatus {
   counts: { collected: number; accountPosts: number; mentions: number; searchResults: number; analyzed: number };
 }
 export interface JourneyStage { name: string; goal: string; touchpoints: string[]; customerActions: string[]; emotions: string[]; painPoints: string[]; metrics: string[]; opportunities: string[]; recommendedActions: string[] }
-export interface Journey { id: string; name: string; audience: string; objective: string; industry: string; stages: JourneyStage[]; summary: string; createdAt: string; updatedAt: string }
+export interface JourneyProvenance {
+  origin: 'workspace' | 'terra' | 'legacy';
+  lastModifiedBy: 'workspace' | 'terra' | 'unknown';
+  evidenceBasis: 'brief_only' | 'workspace_authored' | 'unknown';
+  evidenceLevel: 'hypothesis';
+  generatedAt: string | null;
+  optimizedAt: string | null;
+}
+export interface Journey {
+  id: string; name: string; audience: string; objective: string; industry: string; stages: JourneyStage[]; summary: string;
+  createdAt: string; updatedAt: string; provenance?: JourneyProvenance;
+}
+export interface JourneyVersion {
+  id: string; journeyId: string; reason: 'workspace_edit' | 'terra_optimize' | 'restore_displaced';
+  actor: 'workspace' | 'terra'; sourceJobId: string | null; name: string; stageCount: number;
+  snapshotUpdatedAt: string; createdAt: string;
+}
 export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed';
 export interface Campaign {
   id: string; surveyId: string; collectorId: string; name: string; status: CampaignStatus;

@@ -57,6 +57,16 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Journey maps' }).click();
   await expect(page.getByRole('heading', { name: 'Journey maps', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'How this workspace works' })).toBeVisible();
+  const journeys = await page.request.get('/api/journeys');
+  expect(journeys.status()).toBe(200);
+  const journeyList = await journeys.json();
+  if (journeyList.length > 0) {
+    await expect(page.getByText('Evidence level: hypothesis')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Version history' })).toBeVisible();
+  }
+  const journeyViewport = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
+  expect(journeyViewport.documentWidth).toBeLessThanOrEqual(journeyViewport.viewportWidth + 1);
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-journeys.png'), fullPage: true });
 
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
