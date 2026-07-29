@@ -7,13 +7,16 @@ import request from 'supertest';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-experience-api-'));
 const passwordFile = path.join(root, 'admin-password'); const sessionFile = path.join(root, 'session-secret');
+const frontendDist = path.join(root, '.release', 'frontend', 'dist');
+fs.mkdirSync(frontendDist, { recursive: true }); fs.writeFileSync(path.join(frontendDist, 'index.html'), '<!doctype html><title>Experience test shell</title>');
 fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(sessionFile, 'test-session-secret-that-is-long-and-random-enough');
-Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile });
+Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile });
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
 after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
 
 test('protects admin APIs while allowing a complete public survey workflow', async () => {
+  await request(app).get('/login').expect(200).expect(/Experience test shell/);
   await request(app).get('/api/bootstrap').expect(401);
   await request(app).post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'wrong-password-long-enough' }).expect(401);
   const agent = request.agent(app);

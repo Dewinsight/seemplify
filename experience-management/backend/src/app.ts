@@ -353,7 +353,7 @@ function compactExportSurvey(survey: Survey) { return { id: survey.id, title: su
 
 if (fs.existsSync(config.frontendDist)) {
   app.use(express.static(config.frontendDist, { maxAge: '1h', index: false }));
-  app.get(/^(?!\/api|\/health|\/uploads).*/, (_request, response) => response.sendFile(path.join(config.frontendDist, 'index.html')));
+  app.get(/^(?!\/api|\/health|\/uploads).*/, (_request, response) => response.sendFile('index.html', { root: config.frontendDist, dotfiles: 'allow' }));
 }
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {

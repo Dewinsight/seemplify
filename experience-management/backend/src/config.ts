@@ -49,7 +49,7 @@ export const config = {
   uploadDir: resolveFromBackend(
     process.env.UPLOAD_DIR || '../../.local-runtime/experience-management/uploads'
   ),
-  frontendDist: path.join(projectDir, 'frontend', 'dist'),
+  frontendDist: resolveFromBackend(process.env.FRONTEND_DIST || '../frontend/dist'),
   localLlmBaseUrl: String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, ''),
   localLlmSecretFile: resolveFromBackend(
     process.env.LOCAL_LLM_SHARED_SECRET_FILE || '../../.local-runtime/llm/service-secret'
