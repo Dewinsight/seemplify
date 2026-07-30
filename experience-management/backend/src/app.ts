@@ -6,7 +6,10 @@ import helmet from 'helmet';
 import multer from 'multer';
 import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
-import { currentSessionUser, forgotPassword, login, logout, requireAdmin, resetPassword, session, signup } from './auth.js';
+import {
+  accountProfile, completeAccountOnboarding, currentSessionUser, forgotPassword, login, logout,
+  requireAdmin, resendEmailVerification, resetPassword, session, signup, updateAccountProfile, verifyEmail
+} from './auth.js';
 import { computeAnalytics } from './analytics.js';
 import { config } from './config.js';
 import {
@@ -15,7 +18,7 @@ import {
   listJobsForSpace, listJourneys, listResponses, listSocialMentionsByIds, listSocialMentionsByIdsForSpace, listSocialMentionsForSpace, listSurveys, restoreJourneyVersion, saveSurvey, updateJourney
 } from './database.js';
 import { attachEventStream, publishEvent } from './events.js';
-import { emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations, sendSpaceInvitationEmail } from './emailService.js';
+import { EMAIL_SENDER_NAME_MAX_LENGTH, emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations, sendSpaceInvitationEmail } from './emailService.js';
 import {
   addCampaignContacts, campaignTemplates, createCampaign, getCampaignDetail, launchCampaign, listCampaignSummaries,
   getCampaignUnsubscribePreview, markCampaignContactResponded, pauseCampaign, replaceCampaignSteps, resumeCampaign,
@@ -30,11 +33,15 @@ import {
   listSocialReplyDrafts, updateSocialReplyDraft
 } from './intelligence.js';
 import { templates } from './templates.js';
-import { esignPublicRouter, esignRouter } from './esignRoutes.js';
+import { esignPublicRouter, esignRecipientRouter, esignRouter } from './esignRoutes.js';
+import { getKnowledgeRuntimeStatus } from './knowledgeClient.js';
+import { knowledgeJobRunner } from './knowledgeJobs.js';
+import { knowledgeJobRoute, knowledgeRouter, surveyKnowledgeRoutes } from './knowledgeRoutes.js';
+import { KnowledgeError, resolveKnowledgeBaseRefs, surveyKnowledgeBaseIds } from './knowledgeRepository.js';
 import { QUESTION_TYPES, type AiJob, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
 import {
-  clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXSync,
-  finishXOAuth, getXIntegrationStatus, listXCollectedMentions, saveXConfiguration, startXOAuth, updateXConnectionSettings, updateXQuery,
+  clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXExpansion, enqueueXSync,
+  estimateXExpansion, finishXOAuth, getXIntegrationStatus, listXCollectedMentions, saveXConfiguration, startXOAuth, updateXConnectionSettings, updateXQuery,
   XIntegrationError, xOAuthCookieFromHeader
 } from './xIntegration.js';
 import {
@@ -42,6 +49,7 @@ import {
   listSpaceMembers, listSpacesForUser, removeSpaceMember, renameSpace, resolveRequestSpace, revokeSpaceInvitation,
   setActiveSpace, SpaceError, spaceSession, updateSpaceMember
 } from './spaces.js';
+import { tutorialProgressRouter } from './tutorialProgress.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -64,12 +72,34 @@ const socialImportUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (_request, file, callback) => callback(null, /\.(csv|json|txt)$/i.test(file.originalname))
 });
-app.post('/api/auth/login', login);
-app.post('/api/auth/signup', signup);
-app.post('/api/auth/forgot-password', forgotPassword);
-app.post('/api/auth/reset-password', resetPassword);
-app.post('/api/auth/logout', logout);
+app.post('/api/auth/login', noStore, login);
+app.post('/api/auth/signup', noStore, signup);
+app.post('/api/auth/verify-email', noStore, verifyEmail);
+app.post('/api/auth/resend-verification', noStore, resendEmailVerification);
+app.post('/api/auth/forgot-password', noStore, forgotPassword);
+app.post('/api/auth/reset-password', noStore, resetPassword);
+app.post('/api/auth/logout', noStore, logout);
 app.get('/api/auth/session', noStore, session);
+app.get('/api/account/profile', noStore, accountProfile);
+app.put('/api/account/profile', noStore, updateAccountProfile);
+app.post('/api/account/onboarding', noStore, completeAccountOnboarding);
+// Recipient document access needs a verified account, but never requires
+// membership in the sender's space or completion of workspace onboarding.
+app.use('/api/recipient-documents', esignRecipientRouter);
+// A verified invitee may accept their invitation before completing the first-run
+// profile. This preserves the invitation through the onboarding redirect while
+// every workspace data route remains protected by requireAdmin below.
+app.post('/api/spaces/invitations/:token/accept', noStore, (request, response) => {
+  const user = currentSessionUser(request);
+  if (!user) return response.status(401).json({ error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
+  if (!user.emailVerifiedAt) {
+    return response.status(403).json({ error: 'Verify your email address first.', code: 'EMAIL_VERIFICATION_REQUIRED' });
+  }
+  try {
+    const activeSpace = acceptSpaceInvitation(user, String(request.params.token));
+    return response.json({ activeSpace, spaces: listSpacesForUser(user.id) });
+  } catch (error) { return sendError(response, error); }
+});
 app.use('/api', (request, response, next) => {
   const publicRoute = request.path.startsWith('/public/collectors/') || request.path.startsWith('/public/campaigns/unsubscribe/')
     || request.path.startsWith('/public/esign/') || request.path.startsWith('/public/spaces/invitations/') || request.path.startsWith('/public/uploads/')
@@ -99,6 +129,7 @@ const surveyInput = z.object({
 function sendError(response: express.Response, error: unknown, status = 400) {
   if (error instanceof z.ZodError) return response.status(status).json({ error: 'Validation failed', details: error.issues });
   if (error instanceof SpaceError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
   const message = error instanceof Error ? error.message : String(error);
   return response.status(status).json({ error: message });
 }
@@ -111,6 +142,7 @@ function xError(response: express.Response, error: unknown) {
 function intelligenceError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return sendError(response, error);
   if (error instanceof IntelligenceError) return response.status(error.status).json({ error: error.message });
+  if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
   return response.status(500).json({ error: error instanceof Error ? error.message : 'The intelligence request could not be completed.' });
 }
 
@@ -355,7 +387,14 @@ function createRuleTickets(survey: Survey, responseRecord: ResponseRecord) {
 }
 
 function queueJob(kind: AiJobKind, input: Record<string, unknown>, spaceId: string, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
-  const job = createJob(kind, input, spaceId, surveyId, responseId, requestedBy);
+  const queuedInput = { ...input };
+  delete queuedInput.knowledgeBaseRefs;
+  const refs = resolveKnowledgeBaseRefs(spaceId, queuedInput.knowledgeBaseIds, {
+    requireTerra: true, viewerUserId: requestedBy || undefined, allowPrivate: false
+  });
+  delete queuedInput.knowledgeBaseIds;
+  if (refs.length) queuedInput.knowledgeBaseRefs = refs;
+  const job = createJob(kind, queuedInput, spaceId, surveyId, responseId, requestedBy);
   publishEvent('ai-job', job, spaceId);
   void aiJobRunner.pump();
   return job;
@@ -374,17 +413,23 @@ function noStore(_request: express.Request, response: express.Response, next: ex
 app.get('/health', (_request, response) => response.json({ status: 'ok', service: 'seemplify-experience', database: 'sqlite', at: new Date().toISOString() }));
 app.use('/api/esign', esignRouter);
 app.use('/api/public/esign', esignPublicRouter);
+app.use('/api/tutorials', tutorialProgressRouter);
+app.use('/api/knowledge-bases', knowledgeRouter);
+knowledgeJobRoute(app);
+surveyKnowledgeRoutes(app);
 app.get('/api/events', (request, response) => {
   const user = authenticatedUser(request);
   const space = resolveRequestSpace(request, user.id);
   return attachEventStream(request, response, space.id, () => {
     const current = currentSessionUser(request);
     return Boolean(current && current.id === user.id && getSpaceForUser(user.id, space.id));
-  });
+  }, user.id);
 });
 app.get('/api/runtime', noStore, async (request, response) => {
   const space = authenticatedSpace(request);
-  response.json({ terra: await getTerraStatus(), email: emailStatus(), worker: aiJobRunner.status(space.id) });
+  const [terra, knowledgeRuntime] = await Promise.all([getTerraStatus(), getKnowledgeRuntimeStatus()]);
+  response.json({ terra, email: emailStatus(), worker: aiJobRunner.status(space.id),
+    knowledge: { runtime: knowledgeRuntime, worker: knowledgeJobRunner.status(space.id) } });
 });
 app.get('/api/bootstrap', noStore, (request, response) => {
   const space = authenticatedSpace(request);
@@ -499,14 +544,6 @@ app.get('/api/public/spaces/invitations/:token', noStore, (request, response) =>
   try { return response.json(invitationPreview(String(request.params.token))); }
   catch (error) { return sendError(response, error); }
 });
-app.post('/api/spaces/invitations/:token/accept', (request, response) => {
-  try {
-    const user = authenticatedUser(request);
-    const activeSpace = acceptSpaceInvitation(user, String(request.params.token));
-    return response.json({ activeSpace, spaces: listSpacesForUser(user.id) });
-  } catch (error) { return sendError(response, error); }
-});
-
 const xConfigurationInput = z.object({
   consumerKey: z.string().min(8).max(2000).optional(), consumerSecret: z.string().min(8).max(2000).optional(),
   clientId: z.string().min(8).max(2000).optional(), clientSecret: z.string().min(8).max(2000).optional(),
@@ -515,6 +552,13 @@ const xConfigurationInput = z.object({
 }).strict();
 const xQueryInput = z.object({ label: z.string().trim().min(2).max(100), query: z.string().trim().min(2).max(512), enabled: z.boolean().optional() }).strict();
 const xQueryUpdateInput = xQueryInput.partial().refine((value) => Object.keys(value).length > 0, 'Provide at least one change.');
+const xCollectionStream = z.enum(['account_posts', 'mentions', 'searches']);
+const allXCollectionStreams: Array<z.infer<typeof xCollectionStream>> = ['account_posts', 'mentions', 'searches'];
+const xExpansionInput = z.object({
+  limit: z.number().int().min(51).max(500).default(200),
+  streams: z.array(xCollectionStream).min(1).max(3).optional(),
+  planFingerprint: z.string().regex(/^xplan_[a-f0-9]{64}$/)
+}).strict();
 
 app.get('/api/integrations/x/callback', noStore, async (request, response) => {
   response.setHeader('Referrer-Policy', 'no-referrer');
@@ -587,6 +631,22 @@ app.post('/api/integrations/x/queries', (request, response) => {
 app.post('/api/integrations/x/connections/:connectionId/sync', (request, response) => {
   try { return response.status(202).json(enqueueXSync(authenticatedUser(request), authenticatedSpace(request).id, String(request.params.connectionId))); }
   catch (error) { return xError(response, error); }
+});
+app.get('/api/integrations/x/connections/:connectionId/expansion-estimate', noStore, (request, response) => {
+  try {
+    const limit = z.coerce.number().int().min(51).max(500).default(200).parse(request.query.limit);
+    const streams = request.query.streams === undefined ? allXCollectionStreams
+      : z.array(xCollectionStream).min(1).max(3).parse(String(request.query.streams).split(',').map((value) => value.trim()).filter(Boolean));
+    return response.json(estimateXExpansion(authenticatedUser(request), authenticatedSpace(request).id, String(request.params.connectionId), limit, streams));
+  } catch (error) { return xError(response, error); }
+});
+app.post('/api/integrations/x/connections/:connectionId/expand', (request, response) => {
+  try {
+    const input = xExpansionInput.parse(request.body || {}); const streams = input.streams || allXCollectionStreams;
+    const queued = enqueueXExpansion(authenticatedUser(request), authenticatedSpace(request).id, String(request.params.connectionId),
+      { limit: input.limit, streams, planFingerprint: input.planFingerprint, idempotencyKey: idempotencyKey(request) });
+    return response.status(202).json(queued);
+  } catch (error) { return xError(response, error); }
 });
 app.patch('/api/integrations/x/connections/:connectionId', (request, response) => {
   try {
@@ -671,10 +731,10 @@ app.post('/api/webhooks/brevo/transactional', (request, response) => {
   catch { return response.status(500).json({ error: 'Transactional webhook processing failed.' }); }
 });
 app.post('/api/social/analyze', (request, response) => {
-  const parsed = z.object({ mentionIds: z.array(z.string().uuid()).min(1).max(200).optional() }).safeParse(request.body || {});
+  const parsed = z.object({ mentionIds: z.array(z.string().uuid()).min(1).max(50).optional() }).safeParse(request.body || {});
   if (!parsed.success) return sendError(response, parsed.error);
   const user = authenticatedUser(request); const space = authenticatedSpace(request); const requested = parsed.data.mentionIds;
-  const mentions = requested ? listSocialMentionsByIdsForSpace(requested, space.id) : listSocialMentionsForSpace(space.id, 200);
+  const mentions = requested ? listSocialMentionsByIdsForSpace(requested, space.id) : listSocialMentionsForSpace(space.id, 50);
   if (requested && mentions.length !== new Set(requested).size) return response.status(404).json({ error: 'One or more social mentions are not available to this account.' });
   if (!mentions.length) return response.status(409).json({ error: 'Import or collect at least one social mention before running analysis.' });
   const job = queueJob('social.analyze', { mentionIds: mentions.map((mention) => mention.id) }, space.id, null, null, user.id);
@@ -745,9 +805,13 @@ app.get('/api/intelligence/reports/:id', noStore, (request, response) => {
 app.post('/api/intelligence/reports', (request, response) => {
   try {
     const input = z.object({ title: z.string().trim().min(2).max(180), objective: z.string().trim().max(1000).optional(),
-      sourceRefs: z.array(z.string().trim().min(3).max(200)).min(2).max(12) }).strict().parse(request.body || {});
-    const space = authenticatedSpace(request);
-    const created = createIntelligenceReport(authenticatedUser(request), space.id, { ...input, idempotencyKey: idempotencyKey(request) });
+      sourceRefs: z.array(z.string().trim().min(3).max(200)).min(2).max(12),
+      knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).strict().parse(request.body || {});
+    const user = authenticatedUser(request); const space = authenticatedSpace(request);
+    const knowledgeBaseRefs = resolveKnowledgeBaseRefs(space.id, input.knowledgeBaseIds, {
+      requireTerra: true, viewerUserId: user.id, allowPrivate: false
+    });
+    const created = createIntelligenceReport(user, space.id, { ...input, knowledgeBaseRefs, idempotencyKey: idempotencyKey(request) });
     publishEvent('ai-job', created.job, space.id); void aiJobRunner.pump();
     return response.status(202).json({ report: created.report, jobId: created.job.id, state: created.job.state, deduplicated: !created.created, statusUrl: `/api/ai/jobs/${created.job.id}` });
   } catch (error) { return intelligenceError(response, error); }
@@ -777,10 +841,18 @@ function journeyExportFilename(id: string, extension: 'json' | 'csv') {
 }
 function normalizeJourneyFocus(value: unknown) { return String(value || '').trim().replace(/\s+/gu, ' '); }
 function journeyFocusKey(value: unknown) { return normalizeJourneyFocus(value).toLocaleLowerCase('en-US'); }
-function activeJourneyOptimizationConflict(job: AiJob, reason: 'different_focus' | 'stale_snapshot') {
+function knowledgeRefsKey(value: unknown) {
+  if (!Array.isArray(value)) return '[]';
+  return JSON.stringify(value.map((item) => item && typeof item === 'object'
+    ? `${String((item as Record<string, unknown>).id || '')}@${Number((item as Record<string, unknown>).indexVersion || 0)}`
+    : '').filter(Boolean).sort());
+}
+function activeJourneyOptimizationConflict(job: AiJob, reason: 'different_focus' | 'different_knowledge' | 'stale_snapshot') {
   return {
     error: reason === 'stale_snapshot'
       ? 'An optimization for an older journey version is still active. Wait for it to finish before requesting another audit.'
+      : reason === 'different_knowledge'
+        ? 'An optimization with a different knowledge snapshot is already active for this journey. Wait for it to finish before requesting another audit.'
       : 'A different optimization is already active for this journey. Wait for it to finish before requesting another audit.',
     code: 'JOURNEY_OPTIMIZATION_ACTIVE', reason, activeJobId: job.id, activeState: job.state,
     statusUrl: `/api/ai/jobs/${job.id}`
@@ -827,34 +899,48 @@ app.delete('/api/journeys/:id', (request, response) => {
   return response.status(204).end();
 });
 app.post('/api/ai/journeys', (request, response) => {
-  const parsed = z.object({ brief: z.string().trim().min(10).max(8000), audience: z.string().trim().max(500).optional(), industry: z.string().trim().max(200).optional(), objective: z.string().trim().max(2000).optional() }).safeParse(request.body);
+  const parsed = z.object({ brief: z.string().trim().min(10).max(8000), audience: z.string().trim().max(500).optional(), industry: z.string().trim().max(200).optional(), objective: z.string().trim().max(2000).optional(),
+    knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).safeParse(request.body);
   if (!parsed.success) return sendError(response, parsed.error);
-  const space = authenticatedSpace(request);
-  const job = queueJob('journey.generate', parsed.data, space.id, null, null, authenticatedUser(request).id);
-  return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+  try {
+    const space = authenticatedSpace(request);
+    const job = queueJob('journey.generate', parsed.data, space.id, null, null, authenticatedUser(request).id);
+    return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+  } catch (error) { return sendError(response, error); }
 });
 app.post('/api/journeys/:id/ai/optimize', (request, response) => {
   const space = authenticatedSpace(request); const journey = getJourney(String(request.params.id), space.id);
   if (!journey) return response.status(404).json({ error: 'Journey not found.' });
-  const parsed = z.object({ focus: z.string().trim().max(2000).optional() }).safeParse(request.body || {}); if (!parsed.success) return sendError(response, parsed.error);
+  const parsed = z.object({ focus: z.string().trim().max(2000).optional(), knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).safeParse(request.body || {}); if (!parsed.success) return sendError(response, parsed.error);
   const focus = normalizeJourneyFocus(parsed.data.focus);
+  let requestedKnowledgeKey = '[]';
+  try {
+    requestedKnowledgeKey = knowledgeRefsKey(resolveKnowledgeBaseRefs(space.id, parsed.data.knowledgeBaseIds, {
+      requireTerra: true, viewerUserId: authenticatedUser(request).id, allowPrivate: false
+    }));
+  } catch (error) { return sendError(response, error); }
   const existing = findActiveJourneyOptimization(journey.id, space.id);
   if (existing) {
     const sameSnapshot = String(existing.input.journeyUpdatedAt || '') === journey.updatedAt;
     const sameFocus = journeyFocusKey(existing.input.focus) === journeyFocusKey(focus);
-    if (sameSnapshot && sameFocus) return response.status(202).json({ jobId: existing.id, state: existing.state, statusUrl: `/api/ai/jobs/${existing.id}`, deduplicated: true });
-    return response.status(409).json(activeJourneyOptimizationConflict(existing, sameSnapshot ? 'different_focus' : 'stale_snapshot'));
+    const sameKnowledge = knowledgeRefsKey(existing.input.knowledgeBaseRefs) === requestedKnowledgeKey;
+    if (sameSnapshot && sameFocus && sameKnowledge) return response.status(202).json({ jobId: existing.id, state: existing.state, statusUrl: `/api/ai/jobs/${existing.id}`, deduplicated: true });
+    return response.status(409).json(activeJourneyOptimizationConflict(existing,
+      !sameSnapshot ? 'stale_snapshot' : !sameFocus ? 'different_focus' : 'different_knowledge'));
   }
   try {
-    const job = queueJob('journey.optimize', { journeyId: journey.id, journeyUpdatedAt: journey.updatedAt, focus }, space.id, null, null, authenticatedUser(request).id);
+    const job = queueJob('journey.optimize', { journeyId: journey.id, journeyUpdatedAt: journey.updatedAt, focus,
+      knowledgeBaseIds: parsed.data.knowledgeBaseIds }, space.id, null, null, authenticatedUser(request).id);
     return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}`, deduplicated: false });
   } catch (error: any) {
     const raced = String(error?.code || '').startsWith('SQLITE_CONSTRAINT') ? findActiveJourneyOptimization(journey.id, space.id) : null;
     if (raced) {
       const sameSnapshot = String(raced.input.journeyUpdatedAt || '') === journey.updatedAt;
       const sameFocus = journeyFocusKey(raced.input.focus) === journeyFocusKey(focus);
-      if (sameSnapshot && sameFocus) return response.status(202).json({ jobId: raced.id, state: raced.state, statusUrl: `/api/ai/jobs/${raced.id}`, deduplicated: true });
-      return response.status(409).json(activeJourneyOptimizationConflict(raced, sameSnapshot ? 'different_focus' : 'stale_snapshot'));
+      const sameKnowledge = knowledgeRefsKey(raced.input.knowledgeBaseRefs) === requestedKnowledgeKey;
+      if (sameSnapshot && sameFocus && sameKnowledge) return response.status(202).json({ jobId: raced.id, state: raced.state, statusUrl: `/api/ai/jobs/${raced.id}`, deduplicated: true });
+      return response.status(409).json(activeJourneyOptimizationConflict(raced,
+        !sameSnapshot ? 'stale_snapshot' : !sameFocus ? 'different_focus' : 'different_knowledge'));
     }
     throw error;
   }
@@ -950,6 +1036,9 @@ const campaignContactInput = z.object({
   company: z.string().trim().max(250).optional(),
   customData: campaignCustomData.optional()
 });
+const campaignSenderNameInput = z.string().max(EMAIL_SENDER_NAME_MAX_LENGTH)
+  .refine((value) => !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value), 'Sender name cannot contain control characters.')
+  .transform((value) => value.trim());
 app.get('/api/campaign-templates', noStore, (_request, response) => response.json(campaignTemplates.map((template) => ({
   ...template, ...template.steps[0]
 }))));
@@ -958,7 +1047,7 @@ app.post('/api/campaigns', (request, response) => {
   try {
     const input = z.object({
       name: z.string().trim().min(2).max(180), surveyId: z.string().min(1), collectorId: z.string().optional(),
-      stopOnResponse: z.boolean().optional(), startAt: z.string().datetime().nullable().optional(), templateId: z.string().max(100).optional()
+      senderName: campaignSenderNameInput.optional(), stopOnResponse: z.boolean().optional(), startAt: z.string().datetime().nullable().optional(), templateId: z.string().max(100).optional()
     }).parse(request.body);
     return response.status(201).json(createCampaign(input, authenticatedSpace(request).id));
   } catch (error) { return sendError(response, error); }
@@ -971,7 +1060,7 @@ app.put('/api/campaigns/:id', (request, response) => {
   try {
     const input = z.object({
       name: z.string().trim().min(2).max(180).optional(), stopOnResponse: z.boolean().optional(),
-      startAt: z.string().datetime().nullable().optional(), surveyId: z.string().min(1).optional(), collectorId: z.string().optional(),
+      senderName: campaignSenderNameInput.optional(), startAt: z.string().datetime().nullable().optional(), surveyId: z.string().min(1).optional(), collectorId: z.string().optional(),
       settings: z.object({ stopOnResponse: z.boolean().optional() }).passthrough().optional()
     }).parse(request.body);
     return response.json(updateCampaign(String(request.params.id), { ...input, stopOnResponse: input.stopOnResponse ?? input.settings?.stopOnResponse }, authenticatedSpace(request).id));
@@ -1077,11 +1166,14 @@ app.post('/api/surveys', (request, response) => {
   } catch (error) { return sendError(response, error); }
 });
 app.post('/api/ai/surveys', (request, response) => {
-  const brief = z.object({ brief: z.string().min(10).max(8000), purpose: z.string().optional(), audience: z.string().optional(), language: z.string().optional(), numberOfQuestions: z.number().int().min(2).max(40).optional() }).safeParse(request.body);
+  const brief = z.object({ brief: z.string().min(10).max(8000), purpose: z.string().optional(), audience: z.string().optional(), language: z.string().optional(), numberOfQuestions: z.number().int().min(2).max(40).optional(),
+    knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).safeParse(request.body);
   if (!brief.success) return sendError(response, brief.error);
-  const space = authenticatedSpace(request);
-  const job = queueJob('survey.generate', brief.data, space.id, null, null, authenticatedUser(request).id);
-  return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+  try {
+    const space = authenticatedSpace(request);
+    const job = queueJob('survey.generate', brief.data, space.id, null, null, authenticatedUser(request).id);
+    return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+  } catch (error) { return sendError(response, error); }
 });
 app.get('/api/surveys/:id', noStore, (request, response) => {
   const survey = getSurvey(String(request.params.id), authenticatedSpace(request).id);
@@ -1212,7 +1304,13 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
       markCampaignContactResponded(String(recipient), survey.id);
     }
     createRuleTickets(survey, stored);
-    queueJob('response.analyze', {}, owningSpaceId, survey.id, stored.id);
+    try {
+      queueJob('response.analyze', { knowledgeBaseIds: surveyKnowledgeBaseIds(survey.id, owningSpaceId, 'response.analyze') }, owningSpaceId, survey.id, stored.id);
+    } catch (error) {
+      // The response is authoritative and must not be rolled back because an
+      // optional knowledge attachment was revoked between publish and submit.
+      queueJob('response.analyze', {}, owningSpaceId, survey.id, stored.id);
+    }
   }
   publishEvent('response', { surveyId: survey.id, responseId: stored.id, status: stored.status }, owningSpaceId);
   return response.status(201).json({ responseId: stored.id, status: stored.status, thankYouMessage: survey.thankYouMessage });
@@ -1286,8 +1384,11 @@ app.post('/api/responses/:id/analyze', (request, response) => {
   const item = getResponse(String(request.params.id));
   const space = authenticatedSpace(request);
   if (!item || !getSurvey(item.surveyId, space.id)) return response.status(404).json({ error: 'Response not found.' });
-  const job = queueJob('response.analyze', {}, space.id, item.surveyId, item.id, authenticatedUser(request).id);
-  return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+  try {
+    const job = queueJob('response.analyze', { knowledgeBaseIds: surveyKnowledgeBaseIds(item.surveyId, space.id, 'response.analyze') },
+      space.id, item.surveyId, item.id, authenticatedUser(request).id);
+    return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
+  } catch (error) { return sendError(response, error); }
 });
 app.get('/api/surveys/:id/analytics', noStore, (request, response) => {
   try {
@@ -1307,7 +1408,11 @@ for (const route of [
     try {
       const space = authenticatedSpace(request);
       requireSurvey(String(request.params.id), space.id);
-      const job = queueJob(route.kind, request.body || {}, space.id, String(request.params.id), null, authenticatedUser(request).id);
+      const requested = request.body && Array.isArray(request.body.knowledgeBaseIds)
+        ? request.body.knowledgeBaseIds
+        : surveyKnowledgeBaseIds(String(request.params.id), space.id, route.kind);
+      const job = queueJob(route.kind, { ...(request.body || {}), knowledgeBaseIds: requested }, space.id,
+        String(request.params.id), null, authenticatedUser(request).id);
       return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
     } catch (error) { return sendError(response, error, 404); }
   });

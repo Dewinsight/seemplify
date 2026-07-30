@@ -52,6 +52,24 @@ export const config = {
   uploadDir: resolveFromBackend(
     process.env.UPLOAD_DIR || '../../.local-runtime/experience-management/uploads'
   ),
+  knowledgeStorageDir: resolveFromBackend(
+    process.env.KNOWLEDGE_STORAGE_DIR || '../../.local-runtime/experience-management/knowledge'
+  ),
+  knowledgeRuntimeBaseUrl: String(
+    process.env.KNOWLEDGE_RUNTIME_BASE_URL || 'http://127.0.0.1:11540'
+  ).replace(/\/+$/, ''),
+  knowledgeRuntimeSecretFile: resolveFromBackend(
+    process.env.KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE || '../../.local-runtime/knowledge/service-secret'
+  ),
+  knowledgeEmbeddingModel: String(process.env.KNOWLEDGE_EMBEDDING_MODEL || 'Qwen/Qwen3-Embedding-4B').trim(),
+  knowledgeEmbeddingDimension: boundedNumber(process.env.KNOWLEDGE_EMBEDDING_DIMENSION, 2560, 128, 8192),
+  knowledgeChunkerVersion: String(process.env.KNOWLEDGE_CHUNKER_VERSION || 'docling-hybrid-v1').trim(),
+  knowledgeMaxDocumentBytes: boundedNumber(process.env.KNOWLEDGE_MAX_DOCUMENT_BYTES, 50 * 1024 * 1024, 1024, 50 * 1024 * 1024),
+  knowledgeMaxSpaceBytes: boundedNumber(process.env.KNOWLEDGE_MAX_SPACE_BYTES, 20 * 1024 * 1024 * 1024, 100 * 1024 * 1024, 500 * 1024 * 1024 * 1024),
+  knowledgeWorkerConcurrency: boundedNumber(process.env.KNOWLEDGE_WORKER_CONCURRENCY, 1, 1, 4),
+  knowledgeWorkerPollMs: boundedNumber(process.env.KNOWLEDGE_WORKER_POLL_MS, 750, 250, 60_000),
+  knowledgeRetrieveTopK: boundedNumber(process.env.KNOWLEDGE_RETRIEVE_TOP_K, 10, 2, 20),
+  knowledgeContextMaxBytes: boundedNumber(process.env.KNOWLEDGE_CONTEXT_MAX_BYTES, 64 * 1024, 8 * 1024, 256 * 1024),
   esignStorageDir: resolveFromBackend(
     process.env.ESIGN_STORAGE_DIR || '../../.local-runtime/experience-management/esign'
   ),
@@ -122,4 +140,5 @@ export const config = {
 
 fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
 fs.mkdirSync(config.uploadDir, { recursive: true });
+fs.mkdirSync(config.knowledgeStorageDir, { recursive: true });
 fs.mkdirSync(config.esignStorageDir, { recursive: true });

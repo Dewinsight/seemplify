@@ -453,6 +453,85 @@ const experienceFixtures = [
     output: { executiveSummary: 'Support is praised while billing clarity creates risk.', sentiment: { positive: 1, neutral: 0, mixed: 0, negative: 1 }, themes: ['Support quality', 'Billing clarity'], risks: ['Confusing billing'], opportunities: ['Clarify billing guidance'], mentions: [{ mentionId: 'm-1', sentiment: 'positive', summary: 'Praises support.' }, { mentionId: 'm-2', sentiment: 'negative', summary: 'Reports confusing billing.' }] }
   },
   {
+    id: 'experience-social-reply-draft', activity: 'experience.social_reply_draft',
+    prompt: 'Draft a concise, human-reviewed reply to this supplied post: “Setup was confusing, but support helped quickly.”',
+    schema: strictObject({ reply: { type: 'string', maxLength: 280 }, rationale: { type: 'string' }, safetyFlags: stringArray }),
+    keywords: ['support', 'setup'],
+    output: { reply: 'Thanks for sharing this. We are glad support helped, and we will use your feedback to make setup clearer.', rationale: 'Acknowledges both the setup problem and the positive support experience without making unsupported promises.', safetyFlags: [] }
+  },
+  {
+    id: 'experience-cross-source-intelligence', activity: 'experience.cross_source_intelligence',
+    prompt: 'Synthesize supplied survey report s-1 and social report x-1. Both identify confusing setup guidance.',
+    schema: strictObject({
+      title: { type: 'string' }, executiveSummary: { type: 'string' }, confidence: { type: 'number', minimum: 0, maximum: 1 },
+      themes: { type: 'array' }, convergence: { type: 'array' }, divergence: { type: 'array' }, risks: { type: 'array' }, opportunities: { type: 'array' },
+      recommendations: { type: 'array' }, limitations: stringArray
+    }),
+    keywords: ['setup', 's-1', 'x-1'],
+    output: {
+      title: 'Setup clarity across feedback sources',
+      executiveSummary: 'Survey and social evidence both identify confusing setup guidance.',
+      confidence: 0.9,
+      themes: [],
+      convergence: [{ title: 'Setup clarity', detail: 'Both supplied sources identify unclear setup guidance.', evidence: [{ sourceRef: 's-1', excerpt: 'setup guidance was confusing', relevance: 'Survey evidence.' }, { sourceRef: 'x-1', excerpt: 'the setup instructions were unclear', relevance: 'Social evidence.' }], confidence: 0.9 }],
+      divergence: [], risks: [], opportunities: [],
+      recommendations: [{ action: 'Simplify setup guidance.', priority: 'now', rationale: 'Both supplied sources identify the same friction.', evidence: [{ sourceRef: 's-1', excerpt: 'setup guidance was confusing', relevance: 'Supports the action.' }, { sourceRef: 'x-1', excerpt: 'the setup instructions were unclear', relevance: 'Confirms the issue.' }] }],
+      limitations: ['Only two supplied reports were compared.']
+    }
+  },
+  {
+    id: 'experience-knowledge-answer', activity: 'experience.knowledge_answer',
+    prompt: 'Answer only from this supplied knowledge excerpt. [doc-1:p1:c1] The onboarding checklist has three required steps. How many required steps are there?',
+    schema: strictObject({
+      answer: { type: 'string' },
+      citationSourceRefs: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 20 }
+    }),
+    keywords: ['three', 'doc-1:p1:c1'],
+    output: {
+      answer: 'The onboarding checklist has three required steps [doc-1:p1:c1].',
+      citationSourceRefs: ['doc-1:p1:c1']
+    }
+  },
+  {
+    id: 'experience-knowledge-graph-extract', activity: 'experience.knowledge_graph_extract',
+    prompt: 'Extract only grounded graph facts from: Acme uses Atlas for onboarding.',
+    schema: strictObject({
+      entities: {
+        type: 'array',
+        items: strictObject({
+          localId: { type: 'string' }, type: { type: 'string' }, name: { type: 'string' }, aliases: stringArray,
+          mentions: { type: 'array', items: strictObject({ quote: { type: 'string' }, start: { type: 'integer' }, end: { type: 'integer' } }) }
+        })
+      },
+      claims: {
+        type: 'array',
+        items: strictObject({
+          localId: { type: 'string' }, subjectEntityId: { type: 'string' }, predicate: { type: 'string' },
+          objectText: { type: ['string', 'null'] }, objectEntityId: { type: ['string', 'null'] }, confidence: { type: 'number' },
+          mentions: { type: 'array', items: strictObject({ quote: { type: 'string' }, start: { type: 'integer' }, end: { type: 'integer' } }) }
+        })
+      },
+      relations: {
+        type: 'array',
+        items: strictObject({
+          sourceEntityId: { type: 'string' }, type: { type: 'string' }, targetEntityId: { type: 'string' }, confidence: { type: 'number' },
+          mentions: { type: 'array', items: strictObject({ quote: { type: 'string' }, start: { type: 'integer' }, end: { type: 'integer' } }) }
+        })
+      }
+    }),
+    keywords: ['Acme', 'Atlas', 'uses'],
+    output: {
+      entities: [
+        { localId: 'e-acme', type: 'organization', name: 'Acme', aliases: [], mentions: [{ quote: 'Acme', start: 0, end: 4 }] },
+        { localId: 'e-atlas', type: 'product', name: 'Atlas', aliases: [], mentions: [{ quote: 'Atlas', start: 10, end: 15 }] }
+      ],
+      claims: [{ localId: 'c-1', subjectEntityId: 'e-acme', predicate: 'uses', objectText: null, objectEntityId: 'e-atlas', confidence: 1,
+        mentions: [{ quote: 'Acme uses Atlas', start: 0, end: 15 }] }],
+      relations: [{ sourceEntityId: 'e-acme', type: 'uses', targetEntityId: 'e-atlas', confidence: 1,
+        mentions: [{ quote: 'Acme uses Atlas', start: 0, end: 15 }] }]
+    }
+  },
+  {
     id: 'experience-journey-mapping', activity: 'experience.journey_mapping',
     prompt: 'Map a software customer journey from discovery through onboarding and adoption.',
     schema: strictObject({ name: { type: 'string' }, audience: { type: 'string' }, objective: { type: 'string' }, industry: { type: 'string' }, summary: { type: 'string' }, stages: { type: 'array', items: strictObject({ name: { type: 'string' }, touchpoints: stringArray, painPoints: stringArray, metrics: stringArray, recommendedActions: stringArray }) } }),

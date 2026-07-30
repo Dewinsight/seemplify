@@ -93,6 +93,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
 export function json(method: string, body?: unknown): RequestInit { return { method, body: body === undefined ? undefined : JSON.stringify(body) }; }
 
+export function multipart(method: string, body: FormData): RequestInit { return { method, body }; }
+
 export async function waitForJob(jobId: string, onUpdate?: (job: AiJob) => void, timeoutMs = 360_000): Promise<AiJob> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {

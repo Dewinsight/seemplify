@@ -177,6 +177,9 @@ function createSpaceSchema() {
   if (!uploadColumns.has('response_id')) db.exec('ALTER TABLE uploads ADD COLUMN response_id TEXT REFERENCES responses(id) ON DELETE CASCADE');
   if (!uploadColumns.has('expires_at')) db.exec('ALTER TABLE uploads ADD COLUMN expires_at TEXT');
   if (!uploadColumns.has('claimed_at')) db.exec('ALTER TABLE uploads ADD COLUMN claimed_at TEXT');
+  if (!columns('intelligence_reports').has('knowledge_refs_json')) {
+    db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
+  }
   db.exec('CREATE INDEX IF NOT EXISTS uploads_expiry ON uploads(expires_at) WHERE response_id IS NULL');
 }
 
@@ -679,7 +682,7 @@ function backfillExistingArtifacts() {
     CREATE UNIQUE INDEX IF NOT EXISTS social_intelligence_reports_idempotency
       ON social_intelligence_reports(space_id,user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_one_active_request
-      ON intelligence_reports(space_id,user_id,title,objective,source_refs_json) WHERE state='queued';
+      ON intelligence_reports(space_id,user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued';
     CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_idempotency
       ON intelligence_reports(space_id,user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;`);
 
@@ -804,6 +807,14 @@ export function renameSpace(context: SpaceContext, nameValue: unknown) {
   return getSpaceForUser(context.userId, context.id)!;
 }
 
+export function renamePersonalSpaceForUser(userId: string, nameValue: unknown) {
+  const row = db.prepare(`SELECT s.*,m.role,m.user_id FROM spaces s
+    JOIN space_memberships m ON m.space_id=s.id
+    WHERE s.personal_for_user_id=? AND m.user_id=?`).get(userId, userId) as any;
+  if (!row) throw new SpaceError('This account does not have a personal space.', 404, 'PERSONAL_SPACE_NOT_FOUND');
+  return renameSpace({ ...rowSpace(row), userId }, nameValue);
+}
+
 export function listSpaceMembers(context: SpaceContext) {
   return db.prepare(`SELECT u.id,u.name,u.email,m.role,m.joined_at joinedAt
     FROM space_memberships m JOIN users u ON u.id=m.user_id
@@ -847,6 +858,20 @@ function normalizedEmail(value: unknown) {
 
 function invitationTokenHash(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+export function pendingSpaceInvitationForSignup(emailValue: string, token: string) {
+  const email = normalizedEmail(emailValue);
+  const tokenHash = invitationTokenHash(String(token || ''));
+  const row = db.prepare(`SELECT id,email,expires_at FROM space_invitations
+    WHERE token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL`).get(tokenHash) as any;
+  if (!row || Date.parse(row.expires_at) <= Date.now()) {
+    throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+  }
+  if (String(row.email).toLowerCase() !== email) {
+    throw new SpaceError(`This invitation was sent to ${row.email}. Create the account with that email address.`, 403, 'INVITATION_EMAIL_MISMATCH');
+  }
+  return { id: String(row.id), expiresAt: String(row.expires_at) };
 }
 
 export function createSpaceInvitation(context: SpaceContext, input: { email?: unknown; role?: unknown }) {
@@ -902,11 +927,20 @@ export function invitationPreview(token: string) {
 }
 
 export function acceptSpaceInvitation(user: { id: string; email: string }, token: string) {
+  const tokenHash = invitationTokenHash(String(token || ''));
+  const row = db.prepare(`SELECT id FROM space_invitations
+    WHERE token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL`).get(tokenHash) as { id: string } | undefined;
+  if (!row) throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+  const accepted = acceptPendingSpaceInvitation(user, row.id);
+  if (!accepted) throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+  return accepted;
+}
+
+export function acceptPendingSpaceInvitation(user: { id: string; email: string }, invitationId: string) {
   return db.transaction(() => {
-    const tokenHash = invitationTokenHash(String(token || ''));
     const row = db.prepare(`SELECT * FROM space_invitations
-      WHERE token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL`).get(tokenHash) as any;
-    if (!row || Date.parse(row.expires_at) <= Date.now()) throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+      WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL`).get(invitationId) as any;
+    if (!row || Date.parse(row.expires_at) <= Date.now()) return null;
     if (String(row.email).toLowerCase() !== user.email.toLowerCase()) {
       throw new SpaceError(`This invitation was sent to ${row.email}. Sign in with that email address to accept it.`, 403, 'INVITATION_EMAIL_MISMATCH');
     }

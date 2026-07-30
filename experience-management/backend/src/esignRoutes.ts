@@ -7,15 +7,20 @@ import { config } from './config.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
 import {
   addEnvelopeDocument, authenticateSigningAccessCode, cloneEnvelope, completePublicSigning, consentToElectronicSigning,
-  createEnvelope, declinePublicSigning, deleteEnvelope, EsignError, exchangeSigningToken, getEnvelopeDetail,
+  createAccountSavedSignature, createEnvelope, createPublicSavedSignature, declinePublicSigning, deleteAccountSavedSignature,
+  deleteEnvelope, deletePublicSavedSignature, EsignError, exchangeSigningToken, getAccountSavedSignatureContent, getEnvelopeDetail,
   getOwnedArtifactContent, getOwnedDocumentContent, getPublicArtifactContent, getPublicDocumentContent, getPublicEnvelope,
-  getSigningSessionSummary, listEnvelopes, listLogModeOutbox, remindEnvelope, removeEnvelopeDocument,
-  replaceEnvelopeFields, replaceEnvelopeRecipients, retryEnvelopeFinalization, revokeSigningSession, savePublicField, sendEnvelope, updateEnvelope,
+  getPublicFieldSignatureContent, getPublicSavedSignatureContent, getRecipientAccountInvitation, getRecipientArtifactContent,
+  getSigningSessionSummary, listAccountSavedSignatures, listEnvelopes, listLogModeOutbox, listPublicSavedSignatures,
+  listRecipientDocumentActivity, listRecipientDocuments, remindEnvelope, removeEnvelopeDocument,
+  replaceAccountSavedSignature, replaceEnvelopeFields, replaceEnvelopeRecipients, replacePublicSavedSignature,
+  retryEnvelopeFinalization, revokeSigningSession, savePublicField, sendEnvelope, updateEnvelope,
   verifyPublicCertificate, voidEnvelope
 } from './esign.js';
 
 export const esignRouter = express.Router();
 export const esignPublicRouter = express.Router();
+export const esignRecipientRouter = express.Router();
 
 const pdfUpload = multer({
   storage: multer.memoryStorage(),
@@ -32,6 +37,16 @@ function authenticatedScope(request: Request) {
   const user = currentSessionUser(request);
   if (!user) throw new EsignError('Authentication required.', 401);
   return { userId: user.id, spaceId: resolveRequestSpace(request, user.id).id };
+}
+function verifiedRecipientAccount(request: Request) {
+  const user = currentSessionUser(request);
+  if (!user) throw new EsignError('Authentication required.', 401, 'AUTHENTICATION_REQUIRED');
+  if (!user.emailVerifiedAt) throw new EsignError('Verify your email address first.', 403, 'EMAIL_VERIFICATION_REQUIRED');
+  return user;
+}
+function optionalSignatureAccount(request: Request) {
+  const user = currentSessionUser(request);
+  return user?.emailVerifiedAt ? { userId: user.id, email: user.email } : null;
 }
 function error(response: Response, caught: unknown) {
   if (caught instanceof z.ZodError) return response.status(400).json({ error: 'Validation failed.', details: caught.issues });
@@ -80,6 +95,15 @@ const fieldInput = z.object({
   required: z.boolean().optional(), label: z.string().max(200).optional(), placeholder: z.string().max(200).optional(), tabOrder: z.number().int().min(0).optional(),
   options: z.array(z.string().max(200)).max(50).optional(), validation: z.record(z.string(), z.unknown()).optional()
 });
+const savedSignatureInput = z.object({
+  mode: z.enum(['typed', 'drawn', 'uploaded']),
+  label: z.string().trim().max(80).optional(),
+  value: z.string().max(100).optional(),
+  dataUrl: z.string().max(3_000_000).optional()
+}).strict().superRefine((value, context) => {
+  if (value.mode === 'typed' && !value.value?.trim()) context.addIssue({ code: 'custom', path: ['value'], message: 'Enter a typed signature.' });
+  if (value.mode !== 'typed' && !value.dataUrl) context.addIssue({ code: 'custom', path: ['dataUrl'], message: 'Add a PNG or JPEG signature image.' });
+});
 
 esignRouter.use((_request, response, next) => { response.setHeader('Cache-Control', 'no-store'); next(); });
 esignRouter.get('/outbox', (request, response) => { try { const scope = authenticatedScope(request); return response.json(listLogModeOutbox(scope.spaceId, request.query.envelopeId ? String(request.query.envelopeId) : undefined)); } catch (caught) { return error(response, caught); } });
@@ -105,7 +129,51 @@ esignRouter.post('/envelopes/:id/clone', (request, response) => { try { const sc
 esignRouter.post('/envelopes/:id/retry-finalization', (request, response) => { try { const scope = authenticatedScope(request); return response.status(202).json(retryEnvelopeFinalization(String(request.params.id), scope.spaceId, scope.userId, actor(request))); } catch (caught) { return error(response, caught); } });
 esignRouter.get('/envelopes/:id/artifacts/:artifactId/content', (request, response) => { try { const scope = authenticatedScope(request); return fileResponse(response, getOwnedArtifactContent(String(request.params.id), String(request.params.artifactId), scope.spaceId), 'attachment'); } catch (caught) { return error(response, caught); } });
 
+esignRecipientRouter.use((_request, response, next) => { response.setHeader('Cache-Control', 'private, no-store'); next(); });
+esignRecipientRouter.get('/', (request, response) => {
+  try {
+    const user = verifiedRecipientAccount(request);
+    return response.json(listRecipientDocuments(user.email, Number(request.query.limit || 200)));
+  } catch (caught) { return error(response, caught); }
+});
+esignRecipientRouter.get('/signatures', (request, response) => {
+  try { const user = verifiedRecipientAccount(request); return response.json(listAccountSavedSignatures(user.id)); }
+  catch (caught) { return error(response, caught); }
+});
+esignRecipientRouter.post('/signatures', asyncRoute(async (request, response) => {
+  const user = verifiedRecipientAccount(request); const input = savedSignatureInput.parse(request.body);
+  return response.status(201).json(await createAccountSavedSignature(user.id, user.email, input, actor(request)));
+}));
+esignRecipientRouter.put('/signatures/:id', asyncRoute(async (request, response) => {
+  const user = verifiedRecipientAccount(request); const input = savedSignatureInput.parse(request.body);
+  return response.json(await replaceAccountSavedSignature(user.id, String(request.params.id), input, actor(request)));
+}));
+esignRecipientRouter.delete('/signatures/:id', (request, response) => {
+  try { const user = verifiedRecipientAccount(request); deleteAccountSavedSignature(user.id, String(request.params.id), actor(request)); return response.status(204).end(); }
+  catch (caught) { return error(response, caught); }
+});
+esignRecipientRouter.get('/signatures/:id/content', (request, response) => {
+  try { const user = verifiedRecipientAccount(request); return fileResponse(response, getAccountSavedSignatureContent(user.id, String(request.params.id))); }
+  catch (caught) { return error(response, caught); }
+});
+esignRecipientRouter.get('/envelopes/:id/activity', (request, response) => {
+  try {
+    const user = verifiedRecipientAccount(request);
+    return response.json(listRecipientDocumentActivity(user.email, String(request.params.id), Number(request.query.limit || 100)));
+  } catch (caught) { return error(response, caught); }
+});
+esignRecipientRouter.get('/envelopes/:id/artifacts/:artifactId/content', (request, response) => {
+  try {
+    const user = verifiedRecipientAccount(request);
+    return fileResponse(response, getRecipientArtifactContent(user.email, String(request.params.id), String(request.params.artifactId), {
+      userId: user.id, actorType: 'user', ip: request.ip || null,
+      userAgent: String(request.headers['user-agent'] || '').slice(0, 500) || null
+    }), 'attachment');
+  } catch (caught) { return error(response, caught); }
+});
+
 esignPublicRouter.use((_request, response, next) => { response.setHeader('Cache-Control', 'no-store'); response.setHeader('Referrer-Policy', 'no-referrer'); next(); });
+esignPublicRouter.get('/account-invitations/:token', (request, response) => { try { return response.json(getRecipientAccountInvitation(String(request.params.token))); } catch (caught) { return error(response, caught); } });
 esignPublicRouter.get('/certificates/:publicId', (request, response) => { try { return response.json(verifyPublicCertificate(String(request.params.publicId))); } catch (caught) { return error(response, caught); } });
 esignPublicRouter.post('/session', (request, response) => {
   try {
@@ -120,10 +188,41 @@ esignPublicRouter.post('/logout', (request, response) => { revokeSigningSession(
 esignPublicRouter.get('/envelope', (request, response) => { try { return response.json(getPublicEnvelope(signingToken(request))); } catch (caught) { return error(response, caught); } });
 esignPublicRouter.post('/access-code', (request, response) => { try { const { code } = z.object({ code: z.string().min(1).max(64) }).parse(request.body); return response.json(authenticateSigningAccessCode(signingToken(request), code, recipientActor(request))); } catch (caught) { return error(response, caught); } });
 esignPublicRouter.post('/consent', (request, response) => { try { const { agreed } = z.object({ agreed: z.literal(true) }).parse(request.body); return response.json(consentToElectronicSigning(signingToken(request), agreed, recipientActor(request))); } catch (caught) { return error(response, caught); } });
-esignPublicRouter.put('/fields/:fieldId', asyncRoute(async (request, response) => {
-  const input = z.object({ value: z.unknown().optional(), signature: z.object({ mode: z.enum(['typed', 'drawn', 'uploaded']), value: z.string().max(100).optional(), dataUrl: z.string().max(3_000_000).optional() }).optional() }).refine((value) => value.value !== undefined || value.signature !== undefined, 'A field value is required.').parse(request.body);
-  return response.json(await savePublicField(signingToken(request), String(request.params.fieldId), input, recipientActor(request)));
+esignPublicRouter.get('/signatures', (request, response) => {
+  try { return response.json(listPublicSavedSignatures(signingToken(request), optionalSignatureAccount(request))); }
+  catch (caught) { return error(response, caught); }
+});
+esignPublicRouter.post('/signatures', asyncRoute(async (request, response) => {
+  const input = savedSignatureInput.parse(request.body);
+  return response.status(201).json(await createPublicSavedSignature(signingToken(request), input, optionalSignatureAccount(request), recipientActor(request)));
 }));
+esignPublicRouter.put('/signatures/:id', asyncRoute(async (request, response) => {
+  const input = savedSignatureInput.parse(request.body);
+  return response.json(await replacePublicSavedSignature(signingToken(request), String(request.params.id), input, optionalSignatureAccount(request), recipientActor(request)));
+}));
+esignPublicRouter.delete('/signatures/:id', (request, response) => {
+  try { deletePublicSavedSignature(signingToken(request), String(request.params.id), optionalSignatureAccount(request), recipientActor(request)); return response.status(204).end(); }
+  catch (caught) { return error(response, caught); }
+});
+esignPublicRouter.get('/signatures/:id/content', (request, response) => {
+  try { return fileResponse(response, getPublicSavedSignatureContent(signingToken(request), String(request.params.id), optionalSignatureAccount(request))); }
+  catch (caught) { return error(response, caught); }
+});
+esignPublicRouter.put('/fields/:fieldId', asyncRoute(async (request, response) => {
+  const input = z.object({
+    value: z.unknown().optional(),
+    signature: z.object({ mode: z.enum(['typed', 'drawn', 'uploaded']), value: z.string().max(100).optional(), dataUrl: z.string().max(3_000_000).optional() }).optional(),
+    savedSignatureId: z.string().uuid().optional()
+  }).superRefine((value, context) => {
+    const supplied = [value.value !== undefined, value.signature !== undefined, value.savedSignatureId !== undefined].filter(Boolean).length;
+    if (supplied !== 1) context.addIssue({ code: 'custom', message: 'Provide exactly one field value or signature source.' });
+  }).parse(request.body);
+  return response.json(await savePublicField(signingToken(request), String(request.params.fieldId), input, recipientActor(request), optionalSignatureAccount(request)));
+}));
+esignPublicRouter.get('/fields/:fieldId/signature/content', (request, response) => {
+  try { return fileResponse(response, getPublicFieldSignatureContent(signingToken(request), String(request.params.fieldId))); }
+  catch (caught) { return error(response, caught); }
+});
 esignPublicRouter.post('/complete', (request, response) => { try { return response.json(completePublicSigning(signingToken(request), recipientActor(request))); } catch (caught) { return error(response, caught); } });
 esignPublicRouter.post('/decline', (request, response) => { try { const { reason } = z.object({ reason: z.string().trim().min(2).max(1000) }).parse(request.body); return response.json(declinePublicSigning(signingToken(request), reason, recipientActor(request))); } catch (caught) { return error(response, caught); } });
 esignPublicRouter.get('/documents/:documentId/content', (request, response) => { try { return fileResponse(response, getPublicDocumentContent(signingToken(request), String(request.params.documentId))); } catch (caught) { return error(response, caught); } });

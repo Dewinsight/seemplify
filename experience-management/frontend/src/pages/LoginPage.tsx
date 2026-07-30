@@ -1,46 +1,78 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Loader2, LockKeyhole } from 'lucide-react';
 import { Link } from '@/lib/router';
-import { api, json, storeActiveSpaceId } from '@/lib/api';
+import { ApiError, api, json, storeActiveSpaceId } from '@/lib/api';
+import { AuthLayout } from '@/components/auth/AuthLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { AuthSession, SpaceInvitationPreview, SpaceSession } from '@/types';
+import type { AuthSession, ESignAccountInvitation, SpaceInvitationPreview } from '@/types';
 
 export function LoginPage() {
-  const inviteToken = new URLSearchParams(window.location.search).get('invite') || '';
-  const inviteQuery = inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : '';
+  const params = new URLSearchParams(window.location.search);
+  const inviteToken = params.get('invite') || '';
+  const esignAccountToken = params.get('esign') || '';
+  const returnTo = esignAccountToken || params.get('returnTo') === '/my-documents' ? '/my-documents' : '';
+  const inviteQuery = esignAccountToken ? `?esign=${encodeURIComponent(esignAccountToken)}` : inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : returnTo ? '?returnTo=%2Fmy-documents' : '';
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [working, setWorking] = useState(false);
   const [invitation, setInvitation] = useState<SpaceInvitationPreview | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(Boolean(inviteToken));
+  const [inviteError, setInviteError] = useState('');
+  const [accountInvitation, setAccountInvitation] = useState<ESignAccountInvitation | null>(null);
+  const [accountLoading, setAccountLoading] = useState(Boolean(esignAccountToken));
+  const [accountError, setAccountError] = useState('');
   useEffect(() => {
     if (!inviteToken) return;
     void api<SpaceInvitationPreview>(`/api/public/spaces/invitations/${encodeURIComponent(inviteToken)}`).then((preview) => {
       setInvitation(preview); setEmail((current) => current || preview.email);
-    }).catch(() => null);
+    }).catch((reason) => setInviteError(reason instanceof Error ? reason.message : 'This invitation is unavailable.'))
+      .finally(() => setInviteLoading(false));
   }, [inviteToken]);
+  useEffect(() => {
+    if (!esignAccountToken) return;
+    void api<ESignAccountInvitation>(`/api/public/esign/account-invitations/${encodeURIComponent(esignAccountToken)}`).then((preview) => {
+      setAccountInvitation(preview); setEmail(preview.recipient.email);
+    }).catch((reason) => setAccountError(reason instanceof Error ? reason.message : 'This document invitation is unavailable.'))
+      .finally(() => setAccountLoading(false));
+  }, [esignAccountToken]);
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if ((inviteToken && !invitation) || (esignAccountToken && !accountInvitation)) {
+      setError(inviteError || accountError || 'Wait while we check this invitation.');
+      return;
+    }
     let signedIn: AuthSession;
     try {
       setWorking(true); setError('');
       signedIn = await api<AuthSession>('/api/auth/login', json('POST', { email, password }));
     } catch (reason) {
+      if (reason instanceof ApiError && reason.code === 'EMAIL_VERIFICATION_REQUIRED') {
+        const next = returnTo ? '&returnTo=%2Fmy-documents' : '';
+        window.location.assign(`/verify-email?email=${encodeURIComponent(email)}${next}`);
+        return;
+      }
       setError(reason instanceof Error ? reason.message : 'Could not sign in'); setWorking(false); return;
     }
 
     storeActiveSpaceId(signedIn.activeSpace?.id || null, false);
-    if (!inviteToken) {
-      window.location.replace('/');
-      return;
-    }
-
-    try {
-      const joined = await api<SpaceSession>(`/api/spaces/invitations/${encodeURIComponent(inviteToken)}/accept`, json('POST', {}));
-      storeActiveSpaceId(joined.activeSpace.id, false);
-      window.location.replace('/');
-    } catch {
-      window.location.replace(`/join/${encodeURIComponent(inviteToken)}?signedIn=1&accept=failed`);
-    }
+    const destination = inviteToken
+      ? `/join/${encodeURIComponent(inviteToken)}`
+      : returnTo || (signedIn.onboardingRequired ? '/onboarding' : '/');
+    window.location.replace(destination);
   }
-  return <main className="grid min-h-screen place-items-center bg-background p-5"><div className="w-full max-w-sm"><div className="mb-8 flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">S</div><div><div className="text-sm font-semibold">Seemplify</div><div className="text-xs text-muted-foreground">Experience management</div></div></div><div className="border bg-card p-6 shadow-panel"><div className="flex items-center gap-2"><LockKeyhole className="h-4 w-4 text-primary" /><h1 className="text-lg font-semibold">Sign in</h1></div><p className="mt-2 text-sm leading-6 text-muted-foreground">{invitation ? `Sign in as ${invitation.email} to join ${invitation.space.name}.` : 'Open your Experience spaces and research intelligence.'}</p><form className="mt-6 space-y-4" onSubmit={submit}><div><Label className="field-label" htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required /></div><div><div className="flex items-center justify-between"><Label className="field-label" htmlFor="password">Password</Label><Link className="text-xs font-medium text-foreground underline-offset-4 hover:underline" to="/forgot-password">Forgot password?</Link></div><Input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<Button className="w-full" disabled={working}>{working ? <Loader2 className="animate-spin" /> : <LockKeyhole />}{working ? 'Signing in' : 'Sign in'}</Button></form></div><p className="mt-4 text-center text-xs text-muted-foreground">New to Experience? <Link className="font-medium text-foreground underline-offset-4 hover:underline" to={`/signup${inviteQuery}`}>Create an account</Link></p><p className="mt-2 text-center text-xs text-muted-foreground">Published survey links do not require sign-in.</p><p className="mt-4 flex justify-center gap-4 text-center text-xs text-muted-foreground"><Link className="hover:text-foreground hover:underline" to="/legal/terms">Terms</Link><Link className="hover:text-foreground hover:underline" to="/legal/privacy">Privacy</Link></p></div></main>;
+  return <AuthLayout image="research"><div>
+    <div className="flex h-9 w-9 items-center justify-center border bg-card text-primary"><LockKeyhole className="h-4 w-4" /></div>
+    <h1 className="mt-5 text-2xl font-semibold tracking-[-0.03em]">Welcome back</h1>
+    <p className="mt-2 text-sm leading-6 text-muted-foreground">{accountLoading ? 'Checking this completed agreement before you sign in…' : accountInvitation ? `Sign in as ${accountInvitation.recipient.email} to open My documents and view “${accountInvitation.envelope.title}”.` : inviteLoading ? 'Checking this workspace invitation before you sign in...' : invitation ? `Sign in as ${invitation.email}. You will review the invitation to ${invitation.space.name} before joining.` : returnTo ? 'Sign in to view the completed agreements addressed to your verified email.' : 'Sign in to continue to your research, listening, and experience intelligence.'}</p>
+    {inviteError && <div className="mt-5 border border-destructive/35 bg-destructive/5 px-3 py-2.5 text-sm leading-6 text-destructive" role="alert">{inviteError} <Link className="font-medium underline" to="/login">Sign in without this invitation.</Link></div>}
+    {accountError && <div className="mt-5 border border-destructive/35 bg-destructive/5 px-3 py-2.5 text-sm leading-6 text-destructive" role="alert">{accountError} <Link className="font-medium underline" to="/login?returnTo=%2Fmy-documents">Sign in to My documents instead.</Link></div>}
+    <form className="mt-7 space-y-5" onSubmit={submit}>
+      <div><Label className="field-label" htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} readOnly={Boolean(invitation || accountInvitation)} required autoFocus /></div>
+      <div><div className="flex items-center justify-between"><Label className="field-label" htmlFor="password">Password</Label><Link className="mb-1.5 text-xs font-medium text-foreground underline-offset-4 hover:underline" to="/forgot-password">Forgot password?</Link></div><Input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+      {error && <div className="border border-destructive/35 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert">{error}</div>}
+      <Button className="h-10 w-full" disabled={working || inviteLoading || accountLoading || Boolean(inviteError || accountError)}>{working ? <Loader2 className="animate-spin" /> : <LockKeyhole />}{working ? 'Signing in' : 'Sign in'}</Button>
+    </form>
+    <div className="mt-6 border-t pt-5 text-center text-sm text-muted-foreground">New to Experience Management? <Link className="font-medium text-foreground underline-offset-4 hover:underline" to={`/signup${inviteQuery}`}>Create an account</Link></div>
+    <p className="mt-3 text-center text-xs text-muted-foreground">{returnTo ? 'Signing and downloading from the original completion page never requires an account.' : 'Published survey links never require sign-in.'}</p>
+  </div></AuthLayout>;
 }

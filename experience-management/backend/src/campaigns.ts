@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { config } from './config.js';
 import { createCollector, db, getCollector, getSurvey } from './database.js';
-import { sendCampaignEmail } from './emailService.js';
+import { normalizeEmailSenderName, sendCampaignEmail } from './emailService.js';
 import { publishEvent } from './events.js';
 import type {
   Campaign, CampaignContact, CampaignDelivery, CampaignReadiness, CampaignStep, Collector, Question, Survey
@@ -57,6 +57,7 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 
 const rowCampaign = (row: any): Campaign => ({
   id: row.id, surveyId: row.survey_id, collectorId: row.collector_id, name: row.name,
+  senderName: normalizeEmailSenderName(row.sender_name), senderEmail: config.brevoFromEmail,
   status: row.status === 'running' ? 'active' : row.status, stopOnResponse: Boolean(row.stop_on_response), startAt: row.start_at,
   startsAt: row.start_at, settings: { stopOnResponse: Boolean(row.stop_on_response) },
   createdAt: row.created_at, updatedAt: row.updated_at, launchedAt: row.launched_at,
@@ -211,22 +212,25 @@ function resolveEmailCollector(surveyId: string, collectorId?: string) {
   return existing ? getCollector(existing.id)! : createCollector(surveyId, { name: 'Email campaign', type: 'email' });
 }
 
-export function createCampaign(input: { name: string; surveyId: string; collectorId?: string; stopOnResponse?: boolean; startAt?: string | null; templateId?: string }, spaceId: string) {
+export function createCampaign(input: { name: string; surveyId: string; collectorId?: string; senderName?: string; stopOnResponse?: boolean; startAt?: string | null; templateId?: string }, spaceId: string) {
   if (!getSurvey(input.surveyId, spaceId)) throw new Error('Survey not found.');
   const collector = resolveEmailCollector(input.surveyId, input.collectorId);
   const id = crypto.randomUUID(); const now = new Date().toISOString();
-  db.prepare(`INSERT INTO campaigns (id,space_id,survey_id,collector_id,name,status,stop_on_response,start_at,created_at,updated_at)
-    VALUES (?,?,?,?,?,'draft',?,?,?,?)`).run(id, spaceId, input.surveyId, collector.id, input.name.trim(), input.stopOnResponse === false ? 0 : 1, input.startAt || null, now, now);
+  db.prepare(`INSERT INTO campaigns (id,space_id,survey_id,collector_id,name,sender_name,status,stop_on_response,start_at,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,'draft',?,?,?,?)`).run(id, spaceId, input.surveyId, collector.id, input.name.trim(), normalizeEmailSenderName(input.senderName),
+      input.stopOnResponse === false ? 0 : 1, input.startAt || null, now, now);
   const template = campaignTemplates.find((item) => item.id === input.templateId) || campaignTemplates[0];
   replaceCampaignSteps(id, template.steps, spaceId);
   publishCampaign(id, { reason: 'created' });
   return getCampaignDetail(id, spaceId);
 }
 
-export function updateCampaign(id: string, input: { name?: string; stopOnResponse?: boolean; startAt?: string | null; surveyId?: string; collectorId?: string }, spaceId?: string) {
+export function updateCampaign(id: string, input: { name?: string; senderName?: string; stopOnResponse?: boolean; startAt?: string | null; surveyId?: string; collectorId?: string }, spaceId?: string) {
   const current = requireCampaign(id, spaceId);
   if (current.status === 'completed') throw new Error('Completed campaigns cannot be edited.');
   if (current.launchedAt && input.startAt !== undefined && input.startAt !== current.startAt) throw new Error('The start time cannot be changed after launch.');
+  const senderName = input.senderName === undefined ? current.senderName : normalizeEmailSenderName(input.senderName);
+  if (current.launchedAt && senderName !== current.senderName) throw new Error('The sender name cannot be changed after launch.');
   let surveyId = current.surveyId; let collectorId = current.collectorId;
   let surveyChanged = false;
   if (input.surveyId && input.surveyId !== current.surveyId) {
@@ -241,8 +245,8 @@ export function updateCampaign(id: string, input: { name?: string; stopOnRespons
   }
   const now = new Date().toISOString();
   db.transaction(() => {
-    db.prepare(`UPDATE campaigns SET survey_id=?,collector_id=?,name=?,stop_on_response=?,start_at=?,updated_at=? WHERE id=?`).run(
-      surveyId, collectorId, input.name?.trim() || current.name, input.stopOnResponse === undefined ? (current.stopOnResponse ? 1 : 0) : (input.stopOnResponse ? 1 : 0),
+    db.prepare(`UPDATE campaigns SET survey_id=?,collector_id=?,name=?,sender_name=?,stop_on_response=?,start_at=?,updated_at=? WHERE id=?`).run(
+      surveyId, collectorId, input.name?.trim() || current.name, senderName, input.stopOnResponse === undefined ? (current.stopOnResponse ? 1 : 0) : (input.stopOnResponse ? 1 : 0),
       input.startAt === undefined ? current.startAt : input.startAt, now, id
     );
     if (surveyChanged) db.prepare('UPDATE campaign_steps SET embed_question_id=NULL,updated_at=? WHERE campaign_id=?').run(now, id);
@@ -651,6 +655,7 @@ async function processDelivery(delivery: CampaignDelivery) {
   try {
     const sent = await sendCampaignEmail({
       deliveryId: delivery.id, to: contact.email, name: [contact.firstName, contact.lastName].filter(Boolean).join(' '),
+      senderName: campaign.senderName,
       subject: step.subject, mode: step.mode, bodyText: step.bodyText, bodyHtml: step.bodyHtml,
       variables: contactVariables(contact, survey.title, surveyUrl),
       embeddedQuestionHtml: embedded.html, embeddedQuestionText: embedded.text,
@@ -743,7 +748,7 @@ export async function sendCampaignTest(campaignId: string, emails: string[], spa
   for (const email of emails) {
     try {
       const sent = await sendCampaignEmail({
-        deliveryId: crypto.randomUUID(), to: email, subject: step.subject, mode: step.mode,
+        deliveryId: crypto.randomUUID(), to: email, senderName: detail.campaign.senderName, subject: step.subject, mode: step.mode,
         bodyText: step.bodyText, bodyHtml: step.bodyHtml,
         variables: { first_name: 'Test', last_name: 'Recipient', position: 'Customer Success Lead', job_title: 'Customer Success Lead', company: 'Example company', survey_title: survey.title, survey_link: surveyUrl, 'custom.segment': 'Enterprise' },
         embeddedQuestionHtml: embedded.html, embeddedQuestionText: embedded.text

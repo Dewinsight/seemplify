@@ -1,7 +1,16 @@
 export type SpaceRole = 'owner' | 'admin' | 'member';
 export interface SpaceSummary { id: string; name: string; slug: string; role: SpaceRole; isPersonal: boolean; createdAt: string; updatedAt: string }
 export interface SessionUser { id: string; email: string; name: string; role: string }
-export interface AuthSession { authenticated: boolean; email: string | null; user: SessionUser | null; spaces: SpaceSummary[]; activeSpace: SpaceSummary | null }
+export type ProfileGoal = 'customer_experience' | 'employee_experience' | 'market_research' | 'all_experience' | null;
+export interface UserProfile {
+  name: string; email: string; jobTitle: string; organizationName: string; timezone: string;
+  primaryGoal: ProfileGoal; onboardingVersion: number; completedAt: string | null;
+}
+export interface AuthSession {
+  authenticated: boolean; email: string | null; user: SessionUser | null;
+  emailVerified: boolean; onboardingRequired: boolean; profile: UserProfile | null;
+  spaces: SpaceSummary[]; activeSpace: SpaceSummary | null;
+}
 export interface SpaceSession { spaces: SpaceSummary[]; activeSpace: SpaceSummary }
 export interface SpaceMember { id: string; name: string; email: string; role: SpaceRole; joinedAt: string }
 export interface SpaceInvitation {
@@ -23,11 +32,52 @@ export interface AiJob { id: string; kind: string; surveyId: string | null; resp
 export interface Template { id: string; name: string; description: string; purpose: Survey['purpose']; primaryMetric: Survey['primaryMetric']; audience: string; questions: Partial<Question>[] }
 export interface SurveyDetail { survey: Survey; collectors: Collector[]; insights: { id: string; kind: string; payload: any; createdAt: string }[] }
 export interface SocialMention { id: string; source: 'x' | 'google_play' | 'app_store' | 'review' | 'forum' | 'other'; externalId?: string | null; xConnectionId?: string | null; ingestionKind?: 'account_post' | 'mention' | 'search' | null; author: string; content: string; url: string; language: string; publishedAt: string; metadata: Record<string, any>; analysis: any; createdAt: string }
-export interface XListeningQuery { id: string; label: string; query: string; enabled: boolean; sinceId: string | null; lastSyncAt: string | null; lastSuccessAt: string | null; lastError: string | null; createdAt: string; updatedAt: string }
-export interface XSyncJob { id: string; connectionId: string; trigger: 'manual' | 'scheduled'; state: 'queued' | 'processing' | 'waiting_rate_limit' | 'waiting_billing' | 'completed' | 'failed' | 'cancelled'; stage: string; progress: number; attempt: number; creditProbe: boolean; runAfter: string | null; postsFetched: number; mentionsFetched: number; searchFetched: number; importedCount: number; analysisJobId: string | null; error: string | null; createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string }
-export interface XConnection { id: string; status: string; authType: 'oauth1' | 'oauth2'; scopes: string[]; tokenExpiresAt: string | null; account: null | { id: string; username: string | null; name: string | null; profileImageUrl: string | null }; autoSync: boolean; syncIntervalMinutes: number; nextSyncAt: string | null; lastSyncAt: string | null; lastSuccessAt: string | null; lastError: string | null; rateLimits: Record<string, { limit: number | null; remaining: number | null; resetAt: string | null; observedAt: string }>; createdAt: string; updatedAt: string; counts?: { collected: number; accountPosts: number; mentions: number; searchResults: number; analyzed: number } }
+export interface XListeningQuery {
+  id: string; label: string; query: string; enabled: boolean; configurationVersion: number;
+  sinceId: string | null; oldestId: string | null; catchUpPending: boolean; historyExhausted: boolean;
+  lastSyncAt: string | null; lastSuccessAt: string | null; lastError: string | null; createdAt: string; updatedAt: string;
+}
+export type XCollectionStream = 'account_posts' | 'mentions' | 'searches';
+export interface XSyncTarget {
+  key: string; stream: XCollectionStream; queryId: string | null; budget: number; fetchedCount: number; remaining: number;
+  state: 'queued' | 'processing' | 'completed' | 'skipped'; hasMore: boolean; updatedAt: string; completedAt: string | null;
+}
+export interface XSyncJob {
+  id: string; connectionId: string; trigger: 'manual' | 'scheduled' | 'expansion'; mode?: 'incremental' | 'expansion';
+  state: 'queued' | 'processing' | 'waiting_rate_limit' | 'waiting_billing' | 'completed' | 'failed' | 'cancelled';
+  stage: string; progress: number; attempt: number; creditProbe: boolean; runAfter: string | null;
+  requestedLimit?: number; maximumPostsRead?: number; providerRequests?: number; reusedCount?: number; newCount?: number;
+  streams?: XCollectionStream[]; hasMore?: boolean; deferredSearchQueries?: number; selectedQueryIds?: string[]; targets?: XSyncTarget[];
+  postsFetched: number; mentionsFetched: number; searchFetched: number; importedCount: number;
+  analysisJobId: string | null; error: string | null; createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string;
+}
+export interface XExpansionEstimate {
+  connectionId: string; mode: 'expansion'; requestedLimit: number; boundedLimit: number; planFingerprint: string;
+  minimumLimit: number; maximumLimit: number; normalSyncLimit: number; streams: XCollectionStream[];
+  storedCount: number; canManagePaidCollection: boolean; alreadyStoredExcluded: boolean; cachedPostsDeduplicatedAfterFetch: boolean;
+  estimated: {
+    maximumNewPosts: number; maximumProviderRows: number; maximumUniqueNewPosts: number; providerRequests: number; payablePostsUpperBound: number;
+    budgets?: Record<string, number>;
+    standardPostReadUsd?: number; maximumEstimatedCostUsd?: number; ownedPostReadUsd?: number; pricingBasis?: string;
+  };
+  cache?: { strategy: string; incrementalHighWater: boolean; historicalLowWater: boolean; providerCursorAvoidance: boolean; crossStreamOverlapPossible: boolean };
+  selectedQueryIds?: string[]; selectedQueryCount: number; deferredSearchQueryIds?: string[]; deferredQueryCount: number;
+  exhaustedTargets?: string[]; historyExhaustedStreams: string[]; eligibleTargets?: string[];
+  pricingCheckedAt?: string; disclaimer?: string; ownedReadNote?: string; generatedAt: string;
+}
+export interface XConnection {
+  id: string; status: string; authType: 'oauth1' | 'oauth2'; scopes: string[]; tokenExpiresAt: string | null;
+  account: null | { id: string; username: string | null; name: string | null; profileImageUrl: string | null };
+  autoSync: boolean; syncIntervalMinutes: number; nextSyncAt: string | null; lastSyncAt: string | null; lastSuccessAt: string | null; lastError: string | null;
+  cursors?: { latestPostId: string | null; latestMentionId: string | null; oldestPostId: string | null; oldestMentionId: string | null };
+  catchUp?: { accountPosts: { pending: boolean; lowId: string | null }; mentions: { pending: boolean; lowId: string | null } };
+  history?: { accountPostsExhausted: boolean; mentionsExhausted: boolean };
+  rateLimits: Record<string, { limit: number | null; remaining: number | null; resetAt: string | null; observedAt: string }>;
+  createdAt: string; updatedAt: string; counts?: { collected: number; accountPosts: number; mentions: number; searchResults: number; analyzed: number };
+}
 export interface XIntegrationStatus {
-  provider: 'x'; callbackUrl: string; canManageAppCredentials: boolean;
+  provider: 'x'; callbackUrl: string; canManageAppCredentials: boolean; canManagePaidCollection: boolean;
+  collectionPolicy?: { normalSyncLimit: number; minimumExpansionLimit: number; maximumExpansionLimit: number; cacheStrategy: string; alreadyStoredPostsAreNotReanalyzed: boolean; incrementalSearchStrategy: string };
   app: { configured: boolean; oauth2Configured: boolean; consumerCredentialsConfigured: boolean; bearerTokenConfigured: boolean; credentialVersion: number; updatedAt: string | null; billing: { status: 'ready' | 'credits_depleted' | 'checking_credits' | 'unknown'; problemType: string | null; checkedAt: string | null } };
   connections: XConnection[]; selectedConnectionId: string | null; connection: XConnection | null;
   queries: XListeningQuery[]; syncJobs: XSyncJob[];
@@ -38,6 +88,46 @@ export interface SocialReplyDraft { id: string; mentionId: string; connectionId:
 export interface SocialIntelligenceReport { id: string; connectionId: string | null; title: string; mentionIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
 export interface IntelligenceSource { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string }
 export interface IntelligenceReport { id: string; title: string; objective: string; sourceRefs: { survey: string[]; social: string[] }; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export type KnowledgeBasePrivacy = 'private' | 'space';
+export type KnowledgeBaseState = 'empty' | 'indexing' | 'ready' | 'degraded' | 'failed' | 'deleting';
+export interface KnowledgeBase {
+  id: string; name: string; description: string; privacy: KnowledgeBasePrivacy; terraContextEnabled: boolean;
+  state: KnowledgeBaseState; documentCount: number; readyDocumentCount: number; chunkCount: number;
+  entityCount: number; relationshipCount: number; storageBytes: number; createdBy?: string | null;
+  createdAt: string; updatedAt: string; lastIndexedAt: string | null;
+}
+export type KnowledgeDocumentState = 'queued' | 'extracting' | 'indexing' | 'chunking' | 'embedding' | 'ready' | 'failed' | 'deleting' | 'deleted';
+export interface KnowledgeBaseDocument {
+  id: string; knowledgeBaseId: string; name: string; mimeType: string; size: number; state: KnowledgeDocumentState;
+  progress: number; pageCount: number | null; chunkCount: number; entityCount: number; error: string | null;
+  createdAt: string; updatedAt: string; indexedAt: string | null;
+}
+export type KnowledgeIndexingJobState = 'queued' | 'processing' | 'waiting_for_terra' | 'completed' | 'failed' | 'cancelled';
+export interface KnowledgeIndexingJob {
+  id: string; knowledgeBaseId: string; documentId: string | null; documentName?: string | null;
+  state: KnowledgeIndexingJobState; stage: string; progress: number; attempt: number; error: string | null;
+  createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string;
+}
+export interface KnowledgeCitation {
+  id?: string; sourceRef?: string; knowledgeBaseId?: string; documentId: string; documentName: string; page: number | null; chunkId?: string | null;
+  excerpt: string; score?: number | null; section?: string | null;
+}
+export interface KnowledgeSearchMatch extends KnowledgeCitation { text?: string; metadata?: Record<string, unknown> }
+export interface KnowledgeSearchResult {
+  query: string; answer: string | null; citations: KnowledgeCitation[]; matches: KnowledgeSearchMatch[];
+  tookMs?: number; runtime?: Record<string, unknown> | null;
+}
+export interface KnowledgeGraphNode {
+  id: string; label: string; kind: string; documentIds?: string[]; mentions?: number; metadata?: Record<string, unknown>;
+}
+export interface KnowledgeGraphEdge {
+  id: string; source: string; target: string; label: string; confidence?: number | null;
+  documentId?: string | null; documentName?: string | null; page?: number | null; excerpt?: string | null;
+}
+export interface KnowledgeGraph {
+  stats: { documents: number; chunks: number; entities: number; relationships: number };
+  nodes: KnowledgeGraphNode[]; edges: KnowledgeGraphEdge[]; updatedAt: string | null;
+}
 export interface JourneyStage { name: string; goal: string; touchpoints: string[]; customerActions: string[]; emotions: string[]; painPoints: string[]; metrics: string[]; opportunities: string[]; recommendedActions: string[] }
 export interface JourneyProvenance {
   origin: 'workspace' | 'terra' | 'legacy';
@@ -58,7 +148,7 @@ export interface JourneyVersion {
 }
 export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed';
 export interface Campaign {
-  id: string; surveyId: string; collectorId: string; name: string; status: CampaignStatus;
+  id: string; surveyId: string; collectorId: string; name: string; senderName: string; senderEmail: string; status: CampaignStatus;
   startsAt: string | null; settings: { stopOnResponse?: boolean; [key: string]: any };
   createdAt: string; updatedAt: string; launchedAt: string | null;
   surveyTitle?: string; contactCount?: number; sentCount?: number; failedCount?: number; respondedCount?: number; queuedCount?: number;
@@ -104,7 +194,21 @@ export type ESignEnvelopeStatus = 'draft' | 'sent' | 'in_progress' | 'finalizing
 export type ESignRecipientRole = 'signer' | 'approver' | 'cc' | 'viewer';
 export type ESignRecipientStatus = 'pending' | 'waiting' | 'ready' | 'sent' | 'viewed' | 'in_progress' | 'completed' | 'notified' | 'declined' | 'delivery_failed';
 export type ESignFieldType = 'signature' | 'initials' | 'name' | 'email' | 'date_signed' | 'text' | 'checkbox' | 'radio' | 'dropdown';
-export type ESignSignatureValue = { mode: 'typed' | 'drawn' | 'uploaded'; value?: string; dataUrl?: string };
+export type ESignSignatureMode = 'typed' | 'drawn' | 'uploaded';
+export type ESignSignatureValue = {
+  mode: ESignSignatureMode; value?: string; dataUrl?: string;
+  displayText?: string | null; previewUrl?: string | null;
+};
+export interface ESignSavedSignature {
+  id: string; mode: ESignSignatureMode; label: string; mimeType: string | null;
+  displayText: string | null; previewUrl: string | null; scope: 'account' | 'recipient'; updatedAt: string;
+  canManage?: boolean;
+}
+export interface ESignSignatureLibrary {
+  signatures: ESignSavedSignature[];
+  identity: { maskedEmail: string; accountLinked: boolean };
+  maxSignatures: number;
+}
 
 export interface ESignEnvelope {
   id: string; title: string; status: ESignEnvelopeStatus; subject: string; message: string;
@@ -126,6 +230,7 @@ export interface ESignField {
   id: string; envelopeId: string; documentId: string; recipientId: string; type: ESignFieldType;
   page: number; x: number; y: number; width: number; height: number; required: boolean;
   label: string; placeholder: string; options: string[]; value?: string | boolean | string[] | ESignSignatureValue | null; hasValue?: boolean;
+  signaturePreview?: { mode: ESignSignatureMode; displayText: string | null; previewUrl: string | null } | null;
 }
 export interface ESignArtifact {
   id: string; envelopeId: string; kind: 'completed_document' | 'certificate' | string; name: string;
@@ -158,9 +263,34 @@ export interface ESignPublicSession {
   requiresAccessCode: boolean; authenticated: boolean; consented: boolean;
   disclosure: { version: string; text: string; sha256: string };
 }
+export interface ESignAccountInvitation {
+  recipient: { name: string; email: string };
+  envelope: Pick<ESignEnvelope, 'id' | 'title' | 'status'>;
+  state: 'ready' | 'waiting_for_others';
+  signupPath: string; loginPath: string; documentsPath: string;
+}
 export interface ESignPublicDetail extends ESignPublicSession {
   documents: ESignDocument[]; fields: ESignField[]; artifacts: ESignArtifact[];
+  recipients: Array<Pick<ESignRecipient, 'id' | 'name' | 'role' | 'status' | 'completedAt'> & { routingOrder: number }>;
+  locked: boolean; canAct: boolean;
+  accountOption?: ESignAccountInvitation | null;
 }
+export interface RecipientDocument {
+  id: string; title: string; status: ESignEnvelopeStatus;
+  accessState: 'ready' | 'waiting_for_others' | 'finalization_failed';
+  sentAt: string | null; signedAt: string | null; completedAt: string | null; updatedAt: string;
+  recipient: { name: string; role: ESignRecipientRole; status: ESignRecipientStatus };
+  sender: { name: string; spaceName: string };
+  artifacts: ESignArtifact[]; activityUrl?: string;
+}
+export interface RecipientDocumentLibrary {
+  documents: RecipientDocument[];
+  summary: { total: number; ready: number; waitingForOthers: number; needsAttention: number };
+}
+export interface RecipientDocumentActivityEvent {
+  id: string; eventType: string; createdAt: string; detail: Record<string, unknown>;
+}
+export interface RecipientDocumentActivity { activity: RecipientDocumentActivityEvent[] }
 export interface ESignCertificateVerification {
   valid: boolean; certificateId: string; envelopeId: string; status: ESignEnvelopeStatus;
   completedAt: string | null; documentHash: string; certificateHash: string;

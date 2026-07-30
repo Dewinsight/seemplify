@@ -41,6 +41,10 @@ legacy.exec(`
     app_id TEXT NOT NULL REFERENCES x_apps(id) ON DELETE CASCADE,
     access_token_enc TEXT NOT NULL,
     access_token_secret_enc TEXT,
+    refresh_token_enc TEXT,
+    auth_type TEXT NOT NULL DEFAULT 'oauth1',
+    scopes_json TEXT NOT NULL DEFAULT '[]',
+    token_expires_at TEXT,
     x_user_id TEXT,
     username TEXT,
     display_name TEXT,
@@ -130,11 +134,11 @@ legacy.prepare(`INSERT INTO x_apps (
   id,consumer_key_enc,consumer_secret_enc,bearer_token_enc,billing_status,billing_problem_type,billing_checked_at,credential_version,configured_by,created_at,updated_at
 ) VALUES ('probe-app','enc:probe-consumer-key','enc:probe-consumer-secret','enc:probe-bearer-token','checking_credits','credits-depleted',?,3,'probe-user',?,?)`).run(now, now, now);
 legacy.prepare(`INSERT INTO x_connections (
-  id,user_id,app_id,access_token_enc,access_token_secret_enc,x_user_id,username,display_name,profile_image_url,status,
+  id,user_id,app_id,access_token_enc,access_token_secret_enc,refresh_token_enc,auth_type,scopes_json,token_expires_at,x_user_id,username,display_name,profile_image_url,status,
   auto_sync,sync_interval_minutes,next_sync_at,last_sync_at,last_success_at,last_error,
   rate_limit_json,created_at,updated_at
 ) VALUES (
-  'legacy-connection','legacy-user','legacy-app','enc:access-token','enc:access-secret','100000000000000001',
+  'legacy-connection','legacy-user','legacy-app','enc:access-token','enc:access-secret','enc:refresh-token','oauth2','["tweet.read","users.read","offline.access"]','2026-01-02T00:00:00.000Z','100000000000000001',
   'legacy_account','Legacy Account','https://images.example.test/legacy.png','connected',1,30,
   '2026-01-01T01:00:00.000Z','2025-12-31T23:55:00.000Z','2025-12-31T23:56:00.000Z',
   'legacy transient error','{"remaining":17}',?,?
@@ -158,6 +162,13 @@ legacy.prepare(`INSERT INTO x_sync_jobs (
 ) VALUES (
   'probe-sync','probe-connection','manual','queued','retrying',10,2,'2026-01-01T00:10:00.000Z',
   0,0,0,0,NULL,'temporary provider failure',?,NULL,NULL,?
+)`).run(now, now);
+legacy.prepare(`INSERT INTO x_sync_jobs (
+  id,connection_id,trigger_type,state,stage,progress,attempt,run_after,posts_fetched,mentions_fetched,search_fetched,
+  imported_count,analysis_job_id,error,created_at,started_at,completed_at,updated_at
+) VALUES (
+  'legacy-expansion','legacy-connection','expansion','waiting_billing','credits_required',0,0,NULL,
+  0,0,0,0,NULL,'waiting for credits',?,NULL,NULL,?
 )`).run(now, now);
 legacy.prepare(`INSERT INTO x_sync_jobs (
   id,connection_id,trigger_type,state,stage,progress,attempt,run_after,posts_fetched,mentions_fetched,search_fetched,
@@ -219,11 +230,18 @@ test('legacy single-account X schema migrates without losing account history or 
 
   const syncJob = db.prepare(`SELECT * FROM x_sync_jobs WHERE id='legacy-sync'`).get() as any;
   assert.equal(syncJob.connection_id, 'legacy-connection');
-  assert.equal(syncJob.state, 'waiting_billing');
+  assert.equal(syncJob.state, 'cancelled');
+  assert.equal(syncJob.stage, 'cursor_upgrade_required');
   assert.equal(syncJob.attempt, 3);
   assert.equal(syncJob.imported_count, 7);
   assert.equal(syncJob.analysis_job_id, 'legacy-analysis-job');
   assert.equal(syncJob.credit_probe, 0);
+  assert.ok(syncJob.completed_at);
+  assert.match(syncJob.error, /predates immutable cursor checkpoints/i);
+  const legacyExpansion = db.prepare(`SELECT state,stage,completed_at FROM x_sync_jobs WHERE id='legacy-expansion'`).get() as any;
+  assert.equal(legacyExpansion.state, 'cancelled', 'legacy paid plans without frozen checkpoints must never be rebuilt from mutable cursors');
+  assert.equal(legacyExpansion.stage, 'cursor_upgrade_required');
+  assert.ok(legacyExpansion.completed_at);
   const recoveredProbe = db.prepare(`SELECT s.state,s.stage,s.credit_probe,a.billing_status FROM x_sync_jobs s
     JOIN x_connections c ON c.id=s.connection_id JOIN x_apps a ON a.id=c.app_id WHERE s.id='probe-sync'`).get() as any;
   assert.deepEqual(recoveredProbe, { state: 'queued', stage: 'retrying', credit_probe: 1, billing_status: 'checking_credits' });
@@ -238,15 +256,22 @@ test('legacy single-account X schema migrates without losing account history or 
 
   const columns = new Set((db.prepare('PRAGMA table_info(x_connections)').all() as any[])
     .map((column) => String(column.name)));
-  for (const column of ['refresh_token_enc', 'auth_type', 'scopes_json', 'token_expires_at']) {
+  for (const column of ['refresh_token_enc', 'auth_type', 'scopes_json', 'token_expires_at', 'oldest_post_id', 'oldest_mention_id']) {
     assert.ok(columns.has(column), `migrated X connection is missing ${column}`);
   }
   const syncColumns = new Set((db.prepare('PRAGMA table_info(x_sync_jobs)').all() as any[]).map((column) => String(column.name)));
-  assert.ok(syncColumns.has('credit_probe'));
-  assert.equal(connection.refresh_token_enc, null);
-  assert.equal(connection.auth_type, 'oauth1');
-  assert.equal(connection.scopes_json, '[]');
-  assert.equal(connection.token_expires_at, null);
+  for (const column of ['credit_probe', 'requested_limit', 'streams_json', 'reused_count', 'provider_requests', 'maximum_posts_read', 'has_more', 'idempotency_key', 'estimate_json']) {
+    assert.ok(syncColumns.has(column), `migrated X sync job is missing ${column}`);
+  }
+  assert.equal(connection.refresh_token_enc, 'enc:refresh-token');
+  assert.equal(connection.auth_type, 'oauth2');
+  assert.equal(connection.scopes_json, '["tweet.read","users.read","offline.access"]');
+  assert.equal(connection.token_expires_at, '2026-01-02T00:00:00.000Z');
+
+  const checkpointColumns = new Set((db.prepare('PRAGMA table_info(x_sync_target_checkpoints)').all() as any[]).map((column) => String(column.name)));
+  for (const column of ['query_version', 'last_low_id', 'token_fallback_used', 'empty_page_hops', 'page_requests']) {
+    assert.ok(checkpointColumns.has(column), `migrated X checkpoint is missing ${column}`);
+  }
 
   assert.doesNotThrow(() => db.prepare(`INSERT INTO x_connections (
     id,user_id,app_id,access_token_enc,access_token_secret_enc,x_user_id,username,status,created_at,updated_at
@@ -256,12 +281,12 @@ test('legacy single-account X schema migrates without losing account history or 
   )`).run(now, now));
   assert.equal((db.prepare(`SELECT COUNT(*) count FROM x_connections WHERE user_id='legacy-user'`).get() as any).count, 2);
 
-  const activeIndex = db.prepare(`SELECT sql FROM sqlite_master
-    WHERE type='index' AND name='x_sync_jobs_one_active'`).get() as any;
-  assert.match(String(activeIndex.sql), /waiting_billing/i);
-  assert.throws(() => db.prepare(`INSERT INTO x_sync_jobs (
+  const queueIndex = db.prepare(`SELECT sql FROM sqlite_master
+    WHERE type='index' AND name='x_sync_jobs_connection_state'`).get() as any;
+  assert.match(String(queueIndex.sql), /connection_id,state,created_at/i);
+  assert.doesNotThrow(() => db.prepare(`INSERT INTO x_sync_jobs (
     id,connection_id,trigger_type,state,stage,created_at,updated_at
-  ) VALUES ('duplicate-active-sync','legacy-connection','manual','queued','queued',?,?)`).run(now, now), /UNIQUE constraint failed/);
+  ) VALUES ('queued-expansion','legacy-connection','expansion','queued','queued',?,?)`).run(now, now));
 
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
 });

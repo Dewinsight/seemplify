@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { accountPassword, submitSignup, verifyEmailAndOnboard } from './auth';
 
 test('reloads once and recovers when a lazy chunk is stale during deployment', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project exercises deployment recovery');
@@ -22,7 +23,7 @@ test('reloads once and recovers when a lazy chunk is stale during deployment', a
   });
 
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
   expect(chunkRequests).toBe(2);
   expect(loginDocuments).toBe(2);
 });
@@ -102,19 +103,32 @@ test('sidebar runtime identity stays readable and opens the AI queue', async ({ 
   if (mobile) expect(await page.evaluate(() => window.getComputedStyle(document.body).overflow)).not.toBe('hidden');
 });
 
-test('account signup and forgot-password entry points are complete', async ({ page }, testInfo) => {
+test('account signup, email verification, onboarding, and recovery entry points are complete', async ({ page }, testInfo) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'The deterministic verification-token helper exists only on the local E2E server.');
   const email = `experience-${testInfo.project.name}-${Date.now()}@example.com`;
   await page.goto('/login');
   await expect(page.getByRole('link', { name: 'Create an account' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Forgot password?' })).toBeVisible();
   await page.getByRole('link', { name: 'Create an account' }).click();
   await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
-  await page.getByLabel('Name', { exact: true }).fill('Experience Researcher');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill('Experience-Account-2026');
-  await page.getByLabel('Confirm password').fill('Experience-Account-2026');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const account = {
+    name: 'Experience Researcher', email, spaceName: 'Experience research',
+    jobTitle: 'Customer insight lead', organizationName: 'Evidence Studio'
+  };
+  await submitSignup(page, account);
+
+  await page.goto('/login');
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(accountPassword);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+
+  await verifyEmailAndOnboard(page, account);
+  await page.goto('/settings/profile');
+  await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
+  await expect(page.getByLabel('Full name', { exact: true })).toHaveValue(account.name);
+  await expect(page.getByLabel('Job title (optional)', { exact: true })).toHaveValue(account.jobTitle);
+  await expect(page.getByLabel('Organisation (optional)', { exact: true })).toHaveValue(account.organizationName);
   await page.evaluate(() => fetch('/api/auth/logout', { method: 'POST' }));
   await page.goto('/forgot-password');
   await page.getByLabel('Email').fill(email);
@@ -304,12 +318,19 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   await expect(page.getByRole('heading', { name: campaignName })).toBeVisible();
 
   await page.getByRole('tab', { name: /Setup/ }).click();
+  const senderName = `Research team ${suffix}`;
+  await expect(page.getByLabel('Sender display name')).toBeEditable();
+  const verifiedSenderEmail = await page.getByLabel('Verified sender email').inputValue();
+  expect(verifiedSenderEmail).toMatch(/^[^@\s]+@[^@\s]+$/);
+  await page.getByLabel('Sender display name').fill(senderName);
   await page.locator('#campaign-settings-survey').selectOption(setup.alternateSurveyId);
   await page.getByRole('tab', { name: /Schedule/ }).click();
   await expect(page.getByText('Start time required')).toBeVisible();
   await page.getByRole('tab', { name: /Setup/ }).click();
   await page.getByRole('button', { name: 'Save setup' }).click();
   await expect(page.locator('.page-description')).toContainText(setup.alternateSurveyTitle);
+  await page.reload();
+  await expect(page.getByLabel('Sender display name')).toHaveValue(senderName);
   await page.locator('#campaign-settings-survey').selectOption(setup.surveyId);
   await page.getByRole('button', { name: 'Save setup' }).click();
   await expect(page.locator('.page-description')).toContainText(setup.surveyTitle);
@@ -361,8 +382,11 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   await expect(page.getByText('Campaign schedule saved')).toBeVisible();
   await page.getByRole('tab', { name: /Review/ }).click();
   await expect(page.getByText('All required steps are complete. Review the campaign before launch.')).toBeVisible();
+  await expect(page.getByText(`From: ${senderName} <${verifiedSenderEmail}>`, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Launch campaign' }).click();
   await expect(page.getByText('active', { exact: true }).first()).toBeVisible();
+  await page.getByRole('tab', { name: /Setup/ }).click();
+  await expect(page.getByLabel('Sender display name')).toBeDisabled();
   await page.getByRole('tab', { name: 'Activity' }).click();
   const deliveryHistory = page.locator('table').filter({ has: page.getByRole('columnheader', { name: 'Lifecycle' }) });
   await expect(deliveryHistory.locator('tbody')).toContainText('accepted', { timeout: 15_000 });
@@ -478,7 +502,7 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await expect(page.getByRole('button', { name: 'Add X account' })).toBeEnabled();
   await expect(page.getByText('Pending account')).toBeVisible();
   await expect(page.getByText('pending verification', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sync now' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sync latest 50' })).toBeVisible();
   for (const section of ['Listening (0)', 'Queries (0)', 'Intelligence (0)', 'Reply drafts (0)', 'Sync history', 'Connection']) {
     await expect(page.getByRole('button', { name: section })).toBeVisible();
   }
@@ -491,7 +515,7 @@ test('X social listening setup and journey maps remain visible while Terra work 
   }));
   await page.reload();
   await expect(page.getByText('reauthorization required', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sync now' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Sync latest 50' })).toHaveCount(0);
   await page.evaluate(() => fetch('/api/integrations/x/connection', { method: 'DELETE' }));
   await page.reload();
   await expect(page.getByText('disconnected', { exact: true })).toBeVisible();

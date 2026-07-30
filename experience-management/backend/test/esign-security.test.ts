@@ -40,6 +40,7 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
 const { config } = await import('../src/config.js');
+const { issueEmailVerificationToken } = await import('../src/auth.js');
 const { esignWorker } = await import('../src/esign.js');
 esignWorker.start();
 
@@ -65,7 +66,12 @@ async function signup(label: string) {
   identity += 1;
   const agent = request.agent(app);
   const email = `${label}-${identity}@example.com`;
-  await agent.post('/api/auth/signup').set('x-forwarded-for', `198.51.100.${identity}`).send({ name: `${label} user`, email, password: 'Security-Account-2026!' }).expect(201);
+  await agent.post('/api/auth/signup').set('x-forwarded-for', `198.51.100.${identity}`).send({ name: `${label} user`, email, password: 'Security-Account-2026!' }).expect(202);
+  const verification = issueEmailVerificationToken(email); assert.ok(verification);
+  await agent.post('/api/auth/verify-email').send({ token: verification.token }).expect(200);
+  await agent.post('/api/account/onboarding').send({
+    name: `${label} user`, timezone: 'UTC', primaryGoal: 'customer_experience'
+  }).expect(200);
   return { agent, email };
 }
 

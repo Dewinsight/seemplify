@@ -192,6 +192,8 @@ export interface Campaign {
   surveyId: string;
   collectorId: string;
   name: string;
+  senderName: string;
+  senderEmail: string;
   status: CampaignStatus;
   stopOnResponse: boolean;
   startAt: string | null;

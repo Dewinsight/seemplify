@@ -140,6 +140,26 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     lockedProvider: true,
     failoverPolicy: 'wait_local'
   },
+  'experience.knowledge_answer': {
+    label: 'Experience knowledge answer',
+    group: 'Experience Management',
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
+    reasoningEffort: 'high',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.knowledge_graph_extract': {
+    label: 'Experience knowledge graph extraction',
+    group: 'Experience Management',
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
+    reasoningEffort: 'high',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
   'experience.report_generation': {
     label: 'Experience report generation',
     group: 'Experience Management',
@@ -162,6 +182,26 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   },
   'experience.social_listening': {
     label: 'Experience social listening',
+    group: 'Experience Management',
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
+    reasoningEffort: 'high',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.social_reply_draft': {
+    label: 'Experience social reply draft',
+    group: 'Experience Management',
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
+    reasoningEffort: 'medium',
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  },
+  'experience.cross_source_intelligence': {
+    label: 'Experience cross-source intelligence',
     group: 'Experience Management',
     model: TERRA_MODEL,
     provider: TERRA_PROVIDER,

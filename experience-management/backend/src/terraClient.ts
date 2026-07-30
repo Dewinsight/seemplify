@@ -96,9 +96,17 @@ export async function completeWithTerra(input: TerraCompletionInput) {
   }
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) {
+    const gatewayCode = typeof payload.code === 'string' && payload.code.trim()
+      ? payload.code.trim()
+      : 'TERRA_REQUEST_FAILED';
+    const gatewayMessage = typeof payload.message === 'string' && payload.message.trim()
+      ? payload.message.trim()
+      : typeof payload.error === 'string' && payload.error.trim()
+        ? payload.error.trim()
+        : `${gatewayCode} (HTTP ${response.status})`;
     throw new TerraError(
-      payload.message || payload.error || `Terra returned HTTP ${response.status}`,
-      payload.code || 'TERRA_REQUEST_FAILED',
+      `Terra rejected ${input.activity}: ${gatewayMessage}`,
+      gatewayCode,
       response.status,
       payload.retryable !== false && response.status >= 429
     );

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { after, test } from 'node:test';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import request from 'supertest';
+import { signupVerifyAndOnboard } from './authTestHelper.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-esign-'));
 const passwordFile = path.join(root, 'admin-password'); const sessionFile = path.join(root, 'session-secret');
@@ -22,7 +23,7 @@ Object.assign(process.env, {
 
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
-const { esignWorker } = await import('../src/esign.js');
+const { esignWorker, renderEsignDeliveryEmail } = await import('../src/esign.js');
 esignWorker.start();
 after(async () => { await esignWorker.stop(); db.close(); fs.rmSync(root, { recursive: true, force: true }); });
 
@@ -41,7 +42,7 @@ async function waitFor<T>(read: () => Promise<T>, accepted: (value: T) => boolea
 
 test('securely completes a routed two-signer envelope and verifies its certificate', async () => {
   const owner = request.agent(app);
-  await owner.post('/api/auth/signup').send({ name: 'Envelope Owner', email: 'owner@example.com', password: 'Envelope-Owner-2026' }).expect(201);
+  await signupVerifyAndOnboard(owner, { name: 'Envelope Owner', email: 'owner@example.com', password: 'Envelope-Owner-2026' });
   const created = await owner.post('/api/esign/envelopes').send({ title: 'Employment agreement', message: 'Please review and sign this employment agreement.', routingMode: 'sequential', expiresInDays: 14, reminderIntervalHours: 48 }).expect(201);
   const envelopeId = created.body.envelope.id;
   assert.equal(created.body.readiness.sections.documents.complete, false);
@@ -113,9 +114,54 @@ test('securely completes a routed two-signer envelope and verifies its certifica
   assert.equal(verification.body.valid, true); assert.equal(verification.body.participants[0].maskedEmail, 'a***@example.com');
   assert.equal(JSON.stringify(verification.body).includes('Ada First'), false);
 
-  const outsider = request.agent(app); await outsider.post('/api/auth/signup').send({ name: 'Other User', email: 'other@example.com', password: 'Other-User-2026' }).expect(201);
+  const outsider = request.agent(app); await signupVerifyAndOnboard(outsider, { name: 'Other User', email: 'other@example.com', password: 'Other-User-2026' });
   await outsider.get(`/api/esign/envelopes/${envelopeId}`).expect(404);
   await request(app).get(`/api/public/esign/documents/${document.id}/content`).expect(401);
+
+  const accountInvitation = await request(app).get(`/api/public/esign/account-invitations/${adaToken}`).expect(200);
+  assert.equal(accountInvitation.body.recipient.email, 'ada@example.com');
+  assert.equal(accountInvitation.body.envelope.id, envelopeId);
+  assert.match(accountInvitation.body.signupPath, /^\/signup\?esign=/);
+  assert.equal(JSON.stringify(accountInvitation.body).includes(ada.id), false);
+  const completedMail = renderEsignDeliveryEmail({
+    kind: 'completed', title: '<script>Unsafe title</script>', name: '<img src=x onerror=alert(1)>'
+  }, String(adaToken));
+  assert.match(completedMail.subject, /^Completed:/);
+  assert.match(completedMail.text, /View and download the completed files now/);
+  assert.match(completedMail.text, /Optional: create an account/);
+  assert.match(completedMail.text, /Already have an account\? Sign in/);
+  assert.match(completedMail.html, /Creating an account is optional/);
+  assert.match(completedMail.html, />Create an account</);
+  assert.match(completedMail.html, />Sign in</);
+  assert.doesNotMatch(completedMail.html, /<script>|<img src=x/);
+  await request(app).post('/api/auth/signup').set('x-forwarded-for', '198.51.100.199').send({
+    name: 'Wrong Recipient', email: 'wrong-recipient@example.com', password: 'Wrong-Recipient-2026', esignAccountToken: adaToken
+  }).expect(400).expect(({ body }) => assert.equal(body.code, 'ESIGN_ACCOUNT_EMAIL_MISMATCH'));
+
+  const recipientAccount = request.agent(app);
+  const accountSignup = await recipientAccount.post('/api/auth/signup').send({
+    name: 'Ada First', email: 'ada@example.com', password: 'Ada-Documents-2026', esignAccountToken: adaToken
+  }).expect(202);
+  assert.equal(accountSignup.body.returnTo, '/my-documents');
+  const { issueEmailVerificationToken } = await import('../src/auth.js');
+  const accountVerification = issueEmailVerificationToken('ada@example.com', { requestId: accountSignup.body.verificationRequestId }); assert.ok(accountVerification);
+  const verifiedAccount = await recipientAccount.post('/api/auth/verify-email').send({ token: accountVerification.token }).expect(200);
+  assert.equal(verifiedAccount.body.onboardingRequired, true);
+  assert.equal(verifiedAccount.body.returnTo, '/my-documents');
+
+  const recipientLibrary = await recipientAccount.get('/api/recipient-documents').expect(200);
+  assert.equal(recipientLibrary.body.summary.ready, 1);
+  assert.equal(recipientLibrary.body.documents.length, 1);
+  assert.equal(recipientLibrary.body.documents[0].id, envelopeId);
+  assert.equal(recipientLibrary.body.documents[0].recipient.role, 'signer');
+  assert.equal(recipientLibrary.body.documents[0].artifacts.length, 2);
+  assert.equal(JSON.stringify(recipientLibrary.body).includes('ben@example.com'), false);
+  assert.equal(JSON.stringify(recipientLibrary.body).includes('storage_key'), false);
+  assert.equal(JSON.stringify(recipientLibrary.body).includes('spaceId'), false);
+  await recipientAccount.get(`/api/recipient-documents/envelopes/${envelopeId}/artifacts/${completedPdf.id}/content`).expect(200).expect('Content-Type', /application\/pdf/);
+  await recipientAccount.get(`/api/esign/envelopes/${envelopeId}`).expect(428);
+  await outsider.get('/api/recipient-documents').expect(200).expect(({ body }) => assert.equal(body.documents.length, 0));
+  await outsider.get(`/api/recipient-documents/envelopes/${envelopeId}/artifacts/${completedPdf.id}/content`).expect(404);
 
   db.prepare("UPDATE esign_envelopes SET status='failed',finalization_attempt=4,finalization_error='Synthetic finalization fault' WHERE id=?").run(envelopeId);
   const retried = await owner.post(`/api/esign/envelopes/${envelopeId}/retry-finalization`).send({}).expect(202);

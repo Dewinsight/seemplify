@@ -24,6 +24,7 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /path="\/agreements\/:id"/);
   assert.match(app, /path="\/agreements\/:id\/prepare"/);
   assert.match(app, /path="\/sign"/);
+  assert.match(app, /path="\/my-documents"/);
   assert.match(app, /CertificateVerificationPage/);
   assert.match(app, /path="\/join\/:token"/);
   assert.match(app, /path="\/settings\/space"/);
@@ -55,6 +56,7 @@ test('ships the native agreement preparation and signing workspaces', () => {
   const fields = fs.readFileSync(path.join(source, 'components', 'esign', 'AgreementFieldsStep.tsx'), 'utf8');
   const editor = fs.readFileSync(path.join(source, 'components', 'esign', 'PdfAgreementEditor.tsx'), 'utf8');
   const signing = fs.readFileSync(path.join(source, 'pages', 'PublicSigningPage.tsx'), 'utf8');
+  const recipientDocuments = fs.readFileSync(path.join(source, 'pages', 'MyDocumentsPage.tsx'), 'utf8');
   assert.match(shell, /Agreements/);
   for (const section of ['Documents', 'Recipients', 'Fields', 'Message', 'Review']) assert.match(workspace, new RegExp(section));
   for (const activity of ['Recipient progress', 'Email delivery', 'retry-finalization', 'Retry finalization']) assert.match(workspace, new RegExp(activity));
@@ -63,6 +65,10 @@ test('ships the native agreement preparation and signing workspaces', () => {
   for (const feature of ['PdfAgreementEditor', 'Save fields', 'Unsaved changes']) assert.match(fields, new RegExp(feature));
   for (const feature of ['pdfjs-dist', 'DndContext', 'PointerSensor', 'KeyboardSensor', 'DragOverlay', 'placementType']) assert.match(editor, new RegExp(feature));
   for (const feature of ['access-code', 'consent', 'SignatureCanvas', 'Next required', 'Decline agreement', 'Finish']) assert.match(signing, new RegExp(feature));
+  for (const feature of ['Create optional account', 'An account is not required', 'Keep your signed documents together']) assert.match(signing, new RegExp(feature));
+  for (const feature of ['/api/recipient-documents', 'My documents', 'Waiting for others', 'Completed document', 'Completion certificate']) assert.match(recipientDocuments, new RegExp(feature.replaceAll('/', '\\/')));
+  assert.match(shell, /My signed documents/);
+  assert.doesNotMatch(recipientDocuments, /spaceScopedApiUrl|X-Seemplify-Space/);
 });
 test('exposes multi-account X listening, human-reviewed replies, cross-source intelligence, and journey mapping', () => {
   const social = fs.readFileSync(path.join(source, 'pages', 'SocialListeningPage.tsx'), 'utf8');
@@ -71,9 +77,14 @@ test('exposes multi-account X listening, human-reviewed replies, cross-source in
   const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
   for (const endpoint of ['/api/integrations/x', '/api/integrations/x/connect', '/api/integrations/x/mentions', '/api/social/reports', '/api/social/reply-drafts']) assert.match(social, new RegExp(endpoint.replaceAll('/', '\\/')));
   assert.match(social, /connections\/\$\{connection\.id\}\/sync/);
+  assert.match(social, /connections\/\$\{selectedConnectionId\}\/expansion-estimate/);
+  assert.match(social, /connections\/\$\{connection\.id\}\/expand/);
+  assert.match(social, /planFingerprint: expansionEstimate\.planFingerprint/);
   assert.match(social, /connections\/\$\{connection\.id\}\/queries/);
   assert.match(social, /mentions\/\$\{replyMention\.id\}\/reply-drafts/);
-  for (const feature of ['X accounts', 'Add X account', 'X API credits are depleted', 'Listening queries', 'Reply assistant', 'Draft a reply with Terra', 'Draft only', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Platform X settings', 'Remove platform X app', 'waiting_billing']) assert.match(social, new RegExp(feature));
+  for (const feature of ['X accounts', 'Add X account', 'X API credits are depleted', 'Sync latest 50', 'posts saved in this space', 'Estimate &amp; fetch older', 'Fetch older posts from X', 'Payable-post upper bound', 'Latest 50 saved (default)', 'Show {Math.min', 'Listening queries', 'Reply assistant', 'Draft a reply with Terra', 'Draft only', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Platform X settings', 'Remove platform X app', 'waiting_billing']) assert.match(social, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(social, /mentionIds: reportMentionIds/);
+  assert.doesNotMatch(social, /latest 200 posts/);
   assert.match(social, /Promise\.allSettled/);
   assert.match(social, /selectedConnectionId/);
   assert.match(social, /selectedConnectionRef/);
@@ -91,8 +102,45 @@ test('publishes public X-aware terms and privacy links at authentication surface
   const legal = fs.readFileSync(path.join(source, 'pages', 'LegalPage.tsx'), 'utf8');
   const login = fs.readFileSync(path.join(source, 'pages', 'LoginPage.tsx'), 'utf8');
   const signup = fs.readFileSync(path.join(source, 'pages', 'SignupPage.tsx'), 'utf8');
+  const authLayout = fs.readFileSync(path.join(source, 'components', 'auth', 'AuthLayout.tsx'), 'utf8');
   for (const phrase of ['X credentials and data', 'Terms of Service', 'Privacy Policy', 'support@seemplify.com']) assert.match(legal, new RegExp(phrase));
-  for (const page of [login, signup]) { assert.match(page, /\/legal\/terms/); assert.match(page, /\/legal\/privacy/); }
+  for (const page of [login, signup]) assert.match(page, /AuthLayout/);
+  assert.match(authLayout, /\/legal\/terms/);
+  assert.match(authLayout, /\/legal\/privacy/);
+});
+test('ships branded authentication, verified signup, onboarding, and profile management', () => {
+  const app = fs.readFileSync(path.join(source, 'App.tsx'), 'utf8');
+  const layout = fs.readFileSync(path.join(source, 'components', 'auth', 'AuthLayout.tsx'), 'utf8');
+  const brand = fs.readFileSync(path.join(source, 'components', 'brand', 'ExperienceBrand.tsx'), 'utf8');
+  const signup = fs.readFileSync(path.join(source, 'pages', 'SignupPage.tsx'), 'utf8');
+  const verification = fs.readFileSync(path.join(source, 'pages', 'EmailVerificationPage.tsx'), 'utf8');
+  const passwordSetup = fs.readFileSync(path.join(source, 'pages', 'ResetPasswordPage.tsx'), 'utf8');
+  const onboarding = fs.readFileSync(path.join(source, 'pages', 'OnboardingPage.tsx'), 'utf8');
+  const profile = fs.readFileSync(path.join(source, 'pages', 'ProfilePage.tsx'), 'utf8');
+  const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  for (const route of ['/verify-email', '/onboarding', '/settings/profile']) assert.match(app, new RegExp(route.replaceAll('/', '\\/')));
+  for (const asset of ['/images/auth-research.webp', '/images/auth-listening.webp']) assert.match(layout, new RegExp(asset.replaceAll('/', '\\/')));
+  assert.match(brand, /Experience Management/);
+  assert.match(brand, /experience-mark\.png/);
+  assert.match(signup, /EMAIL_VERIFICATION_REQUIRED/);
+  assert.match(signup, /formStep/);
+  assert.match(signup, /delivery=failed/);
+  assert.match(verification, /\/api\/auth\/verify-email/);
+  assert.match(verification, /\/api\/auth\/resend-verification/);
+  assert.match(verification, /deliveryFailed/);
+  for (const claimFeature of ['claimPasswordRequired', 'passwordSetupToken', 'claim=1']) assert.match(verification, new RegExp(claimFeature));
+  assert.match(verification, /Confirm email address/);
+  assert.match(verification, /experience:password-setup-token/);
+  assert.doesNotMatch(verification, /reset-password\?token=/);
+  assert.match(passwordSetup, /isAccountClaim/);
+  assert.match(passwordSetup, /Secure your account/);
+  assert.match(onboarding, /\/api\/account\/onboarding/);
+  assert.match(profile, /\/api\/account\/profile/);
+  assert.match(shell, /nextSession\.onboardingRequired/);
+  assert.match(shell, /to="\/settings\/profile"/);
+  for (const asset of ['brand/experience-mark.png', 'images/auth-research.webp', 'images/auth-listening.webp']) {
+    assert.ok(fs.statSync(path.resolve(source, '..', 'public', asset)).size > 5_000);
+  }
 });
 test('ships a survey-specific email campaign workspace with audience, sequencing and delivery history', () => {
   const list = fs.readFileSync(path.join(source, 'pages', 'CampaignsPage.tsx'), 'utf8');
@@ -110,6 +158,9 @@ test('ships a survey-specific email campaign workspace with audience, sequencing
   assert.match(workspace, /providerStatus/);
   assert.match(workspace, /campaign-settings-survey/);
   assert.match(workspace, /surveyId: selectedSurveyId/);
+  assert.match(workspace, /Sender display name/);
+  assert.match(workspace, /senderName/);
+  assert.match(workspace, /senderEmail/);
   assert.match(workspace, /Start time required/);
   assert.match(workspace, /Set a campaign start time/);
   assert.match(workspace, /aria-required="true"/);
@@ -123,6 +174,56 @@ test('ships a survey-specific email campaign workspace with audience, sequencing
 test('keeps every Experience AI action visible in the survey workspace', () => {
   const ai = fs.readFileSync(path.join(source, 'components', 'survey', 'AiTab.tsx'), 'utf8');
   for (const action of ['improve', 'insights', 'report', 'translate', 'ask']) assert.match(ai, new RegExp(`['\"]${action}['\"]`));
+});
+test('ships explicit knowledge grounding with durable indexing, retrieval citations, and graph provenance', () => {
+  const app = fs.readFileSync(path.join(source, 'App.tsx'), 'utf8');
+  const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  const picker = fs.readFileSync(path.join(source, 'components', 'knowledge', 'KnowledgeBasePicker.tsx'), 'utf8');
+  const list = fs.readFileSync(path.join(source, 'pages', 'KnowledgeBasesPage.tsx'), 'utf8');
+  const workspace = fs.readFileSync(path.join(source, 'pages', 'KnowledgeBaseWorkspacePage.tsx'), 'utf8');
+  const knowledgeApi = fs.readFileSync(path.join(source, 'lib', 'knowledgeBases.ts'), 'utf8');
+  const api = fs.readFileSync(path.join(source, 'lib', 'api.ts'), 'utf8');
+  const live = fs.readFileSync(path.join(source, 'hooks', 'useLiveRefresh.ts'), 'utf8');
+  const createSurvey = fs.readFileSync(path.join(source, 'pages', 'CreateSurveyPage.tsx'), 'utf8');
+  const surveyAi = fs.readFileSync(path.join(source, 'components', 'survey', 'AiTab.tsx'), 'utf8');
+  const intelligence = fs.readFileSync(path.join(source, 'pages', 'IntelligencePage.tsx'), 'utf8');
+  const journeys = fs.readFileSync(path.join(source, 'pages', 'JourneysPage.tsx'), 'utf8');
+
+  assert.match(app, /path="\/knowledge-bases"/);
+  assert.match(app, /path="\/knowledge-bases\/:id"/);
+  assert.match(shell, /label: 'Knowledge bases'/);
+  for (const feature of ['New knowledge base', 'Allow as Terra context', 'Everyone in this space', 'Private to me']) assert.match(list, new RegExp(feature));
+  for (const feature of ['Drop files here', 'Upload and index', 'Search & test', 'Citations', 'Graph & provenance', 'Relationship provenance', 'Indexing history', 'Durable attempts remain visible']) assert.match(workspace, new RegExp(feature));
+  for (const endpoint of ['/api/knowledge-bases', '/documents', '/indexing-jobs', '/search', '/graph']) assert.match(knowledgeApi, new RegExp(endpoint.replaceAll('/', '\\/')));
+  assert.match(api, /export function multipart/);
+  assert.match(knowledgeApi, /multipart\('POST', body\)/);
+  assert.match(live, /knowledge-base/);
+  assert.match(live, /knowledge-job/);
+  assert.match(live, /knowledge-indexing-job/);
+
+  assert.match(picker, /max = 5/);
+  assert.match(picker, /Nothing is selected automatically/);
+  assert.match(picker, /item\.privacy === 'space'/);
+  assert.doesNotMatch(picker, /knowledgeBases\[0\]/);
+  assert.match(list, /terraContextEnabled: false/);
+  assert.match(list, /relevant excerpts may be sent to the Terra local-cloud runtime/);
+  assert.match(workspace, /\.png,\.jpg,\.jpeg,\.tif,\.tiff/);
+  assert.doesNotMatch(workspace, /\.doc,\.docx|\.ppt,\.pptx|\.xls,\.xlsx|\.rtf|\.json/);
+  for (const consumer of [createSurvey, surveyAi, intelligence, journeys]) {
+    assert.match(consumer, /useState<string\[\]>\(\[\]\)/);
+    assert.match(consumer, /knowledgeBaseIds/);
+    assert.match(consumer, /KnowledgeBasePicker/);
+  }
+  assert.match(surveyAi, /path === 'translate' \? body : \{ \.\.\.body, knowledgeBaseIds \}/);
+
+  for (const deterministicFile of [
+    path.join(source, 'components', 'survey', 'AnalyticsTab.tsx'),
+    path.join(source, 'pages', 'CampaignWorkspacePage.tsx'),
+    path.join(source, 'pages', 'AgreementWorkspacePage.tsx')
+  ]) {
+    const deterministicSource = fs.readFileSync(deterministicFile, 'utf8');
+    assert.doesNotMatch(deterministicSource, /KnowledgeBasePicker|knowledgeBaseIds/);
+  }
 });
 test('recovers a stale lazy-loaded deployment asset at most once per recovery window', () => {
   const main = fs.readFileSync(path.join(source, 'main.tsx'), 'utf8');
@@ -158,4 +259,21 @@ test('makes survey questions visibly selectable and accessibly draggable', () =>
   assert.match(builder, /Drag \$\{definition\.label\} into the question list/);
   assert.match(builder, /destinationPage = questions\[to\]\.page/);
   assert.match(builder, /page: destinationPage/);
+});
+test('ships persistent section tutorials with every referenced lesson image', () => {
+  const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  const component = fs.readFileSync(path.join(source, 'components', 'tutorials', 'SectionTutorial.tsx'), 'utf8');
+  const registry = fs.readFileSync(path.join(source, 'lib', 'tutorials.ts'), 'utf8');
+  assert.match(shell, /SectionTutorial/);
+  assert.match(shell, /tutorialForPath\(location\.pathname\)/);
+  for (const feature of ['/api/tutorials/progress', 'Maybe later', 'Previous', 'Next', 'Finish tutorial', 'aria-label="Tutorial"']) {
+    assert.match(component, new RegExp(feature.replaceAll('/', '\\/')));
+  }
+  const keys = ['overview', 'surveys', 'campaigns', 'agreements', 'social-listening', 'intelligence', 'knowledge-bases', 'journey-maps', 'ai-queue', 'service-recovery', 'space-settings'];
+  for (const key of keys) {
+    assert.match(registry, new RegExp(`key: ['"]${key}['"]`));
+    const image = path.resolve(source, '..', 'public', 'tutorials', `${key}.png`);
+    assert.ok(fs.existsSync(image), `tutorial image is missing for ${key}`);
+    assert.ok(fs.statSync(image).size > 5_000, `tutorial image is unexpectedly small for ${key}`);
+  }
 });

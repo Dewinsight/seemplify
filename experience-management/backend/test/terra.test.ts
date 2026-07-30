@@ -71,3 +71,18 @@ test('rejects a successful gateway response that did not honor the Experience pr
       && error.retryable === true
   );
 });
+
+test('preserves the gateway code and activity when a Terra route is rejected', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({ code: 'ACTIVITY_NOT_ALLOWED', retryable: false }), {
+    status: 403,
+    headers: { 'content-type': 'application/json' }
+  });
+  await assert.rejects(
+    () => completeWithTerra({ activity: 'experience.social_reply_draft', requestId: 'blocked-route', messages: [{ role: 'user', content: 'Draft a reply' }] }),
+    (error: unknown) => error instanceof TerraError
+      && error.code === 'ACTIVITY_NOT_ALLOWED'
+      && error.status === 403
+      && error.retryable === false
+      && error.message === 'Terra rejected experience.social_reply_draft: ACTIVITY_NOT_ALLOWED (HTTP 403)'
+  );
+});

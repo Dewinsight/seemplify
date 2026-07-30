@@ -728,11 +728,15 @@ test('default catalog keeps CV and question generation local and pins every Expe
   const terraRoutes = settings.routes.filter((route) => route.provider === TERRA_PROVIDER);
   assert.deepEqual(terraRoutes.map((route) => route.activity).sort(), [
     'experience.analyst_chat',
+    'experience.cross_source_intelligence',
     'experience.insight_generation',
     'experience.journey_mapping',
+    'experience.knowledge_answer',
+    'experience.knowledge_graph_extract',
     'experience.report_generation',
     'experience.response_analysis',
     'experience.social_listening',
+    'experience.social_reply_draft',
     'experience.survey_generation',
     'experience.translation'
   ]);

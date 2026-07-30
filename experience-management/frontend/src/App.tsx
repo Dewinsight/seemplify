@@ -12,6 +12,8 @@ const AiQueuePage = lazy(() => import('@/pages/AiQueuePage').then((module) => ({
 const TicketsPage = lazy(() => import('@/pages/TicketsPage').then((module) => ({ default: module.TicketsPage })));
 const SocialListeningPage = lazy(() => import('@/pages/SocialListeningPage').then((module) => ({ default: module.SocialListeningPage })));
 const IntelligencePage = lazy(() => import('@/pages/IntelligencePage').then((module) => ({ default: module.IntelligencePage })));
+const KnowledgeBasesPage = lazy(() => import('@/pages/KnowledgeBasesPage').then((module) => ({ default: module.KnowledgeBasesPage })));
+const KnowledgeBaseWorkspacePage = lazy(() => import('@/pages/KnowledgeBaseWorkspacePage').then((module) => ({ default: module.KnowledgeBaseWorkspacePage })));
 const JourneysPage = lazy(() => import('@/pages/JourneysPage').then((module) => ({ default: module.JourneysPage })));
 const CampaignsPage = lazy(() => import('@/pages/CampaignsPage').then((module) => ({ default: module.CampaignsPage })));
 const CampaignWorkspacePage = lazy(() => import('@/pages/CampaignWorkspacePage').then((module) => ({ default: module.CampaignWorkspacePage })));
@@ -20,9 +22,13 @@ const NewAgreementPage = lazy(() => import('@/pages/NewAgreementPage').then((mod
 const AgreementWorkspacePage = lazy(() => import('@/pages/AgreementWorkspacePage').then((module) => ({ default: module.AgreementWorkspacePage })));
 const AgreementPreparePage = lazy(() => import('@/pages/AgreementPreparePage').then((module) => ({ default: module.AgreementPreparePage })));
 const PublicSigningPage = lazy(() => import('@/pages/PublicSigningPage').then((module) => ({ default: module.PublicSigningPage })));
+const MyDocumentsPage = lazy(() => import('@/pages/MyDocumentsPage').then((module) => ({ default: module.MyDocumentsPage })));
 const CertificateVerificationPage = lazy(() => import('@/pages/CertificateVerificationPage').then((module) => ({ default: module.CertificateVerificationPage })));
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const SignupPage = lazy(() => import('@/pages/SignupPage').then((module) => ({ default: module.SignupPage })));
+const EmailVerificationPage = lazy(() => import('@/pages/EmailVerificationPage').then((module) => ({ default: module.EmailVerificationPage })));
+const OnboardingPage = lazy(() => import('@/pages/OnboardingPage').then((module) => ({ default: module.OnboardingPage })));
+const ProfilePage = lazy(() => import('@/pages/ProfilePage').then((module) => ({ default: module.ProfilePage })));
 const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage').then((module) => ({ default: module.ResetPasswordPage })));
 const LegalPage = lazy(() => import('@/pages/LegalPage').then((module) => ({ default: module.LegalPage })));
@@ -35,10 +41,13 @@ export function App() {
     <Route path="/s/:slug"><PublicSurveyPage /></Route>
     <Route path="/sign/:token"><PublicSigningPage /></Route>
     <Route path="/sign"><PublicSigningPage /></Route>
+    <Route path="/my-documents"><MyDocumentsPage /></Route>
     <Route path="/verify/:certificateId"><CertificateVerificationPage /></Route>
     <Route path="/join/:token"><JoinSpacePage /></Route>
     <Route path="/login"><LoginPage /></Route>
     <Route path="/signup"><SignupPage /></Route>
+    <Route path="/verify-email"><EmailVerificationPage /></Route>
+    <Route path="/onboarding"><OnboardingPage /></Route>
     <Route path="/forgot-password"><ForgotPasswordPage /></Route>
     <Route path="/reset-password"><ResetPasswordPage /></Route>
     <Route path="/legal/terms"><LegalPage kind="terms" /></Route>
@@ -54,10 +63,13 @@ export function App() {
     <Route path="/agreements"><Admin><AgreementsPage /></Admin></Route>
     <Route path="/social-listening"><Admin><SocialListeningPage /></Admin></Route>
     <Route path="/intelligence"><Admin><IntelligencePage /></Admin></Route>
+    <Route path="/knowledge-bases/:id"><Admin><KnowledgeBaseWorkspacePage /></Admin></Route>
+    <Route path="/knowledge-bases"><Admin><KnowledgeBasesPage /></Admin></Route>
     <Route path="/journeys"><Admin><JourneysPage /></Admin></Route>
     <Route path="/ai-queue"><Admin><AiQueuePage /></Admin></Route>
     <Route path="/tickets"><Admin><TicketsPage /></Admin></Route>
     <Route path="/settings/space"><Admin><SpaceSettingsPage /></Admin></Route>
+    <Route path="/settings/profile"><Admin><ProfilePage /></Admin></Route>
     <Route path="/"><Admin><DashboardPage /></Admin></Route>
     <Route><Navigate to="/" /></Route>
   </Switch></Suspense>;

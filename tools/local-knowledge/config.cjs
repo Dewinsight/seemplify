@@ -1,0 +1,74 @@
+const path = require('node:path');
+
+const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
+const RUNTIME_ROOT = path.join(REPOSITORY_ROOT, '.local-runtime', 'knowledge');
+const DATA_ROOT = path.resolve(process.env.SEEMPLIFY_KNOWLEDGE_DATA_ROOT || 'D:\\SeemplifyKnowledge');
+
+const CONFIG = Object.freeze({
+  host: '127.0.0.1',
+  ports: Object.freeze({ runtime: 11540, embedding: 11541, reranker: 11542, docling: 11543, arango: 8529 }),
+  images: Object.freeze({
+    arango: Object.freeze({ tag: 'arangodb:3.12.9.4', reference: 'arangodb@sha256:bf5eabc0fb3a16a13d0d4de00cddfbf2209e3d25630e5331832efb206519ff8f' }),
+    tei: Object.freeze({ tag: 'ghcr.io/huggingface/text-embeddings-inference:1.8.0', reference: 'ghcr.io/huggingface/text-embeddings-inference@sha256:8aeb97215f29e0ed48647384af89661c36cee04120c2d4e86b5a3aead47611fa' }),
+    docling: Object.freeze({ tag: 'quay.io/docling-project/docling-serve-cpu:v1.28.0', reference: 'quay.io/docling-project/docling-serve-cpu@sha256:cc207e1eb768878456ed98042c5d84fae56af3729a9c03d3e5c8fef393902956' }),
+  }),
+  models: Object.freeze({
+    embedding: Object.freeze({
+      id: 'Qwen/Qwen3-Embedding-4B',
+      revision: '5cf2132abc99cad020ac570b19d031efec650f2b',
+      dimension: 2560,
+    }),
+    reranker: Object.freeze({
+      id: 'BAAI/bge-reranker-v2-m3',
+      revision: '953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e',
+    }),
+  }),
+  supportedMimeTypes: Object.freeze([
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain', 'text/markdown', 'text/html', 'text/csv',
+    'image/png', 'image/jpeg', 'image/tiff',
+  ]),
+  database: Object.freeze({
+    appUser: 'seemplify_knowledge_app',
+    provisionerUser: 'seemplify_knowledge_provisioner',
+    prefix: 'exp_',
+  }),
+  paths: Object.freeze({
+    repository: REPOSITORY_ROOT,
+    runtime: RUNTIME_ROOT,
+    secrets: path.join(RUNTIME_ROOT, 'secrets'),
+    state: path.join(RUNTIME_ROOT, 'state.json'),
+    pid: path.join(RUNTIME_ROOT, 'runtime.pid'),
+    stdout: path.join(RUNTIME_ROOT, 'runtime.stdout.log'),
+    stderr: path.join(RUNTIME_ROOT, 'runtime.stderr.log'),
+    data: DATA_ROOT,
+    staging: path.join(DATA_ROOT, 'staging'),
+    storage: path.join(DATA_ROOT, 'storage'),
+    models: path.join(DATA_ROOT, 'models'),
+    backups: path.join(DATA_ROOT, 'backups'),
+    logs: path.join(DATA_ROOT, 'logs'),
+  }),
+  limits: Object.freeze({
+    requestBytes: 1024 * 1024,
+    sourceBytes: 50 * 1024 * 1024,
+    extractedCharacters: 600_000,
+    graphWindowCharacters: 18_000,
+    chunksPerDocument: 2_000,
+    chunkCharacters: 3_200,
+    chunkTargetTokens: 750,
+    chunkMaxTokens: 900,
+    chunkOverlapTokens: 100,
+    candidateChunks: 180,
+    citations: 24,
+    excerptCharacters: 900,
+    queueDepth: 256,
+    requestsPerMinute: 180,
+    clockSkewMs: 5 * 60_000,
+    nonceTtlMs: 10 * 60_000,
+  }),
+});
+
+module.exports = { CONFIG };

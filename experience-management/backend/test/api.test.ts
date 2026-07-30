@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import request from 'supertest';
+import { signupVerifyAndOnboard } from './authTestHelper.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-experience-api-'));
 const passwordFile = path.join(root, 'admin-password'); const sessionFile = path.join(root, 'session-secret'); const webhookSecretFile = path.join(root, 'brevo-webhook-secret'); const xKeyFile = path.join(root, 'x-credential-encryption-key');
@@ -53,14 +54,18 @@ test('serves versioned assets immutably and never substitutes HTML for a missing
 test('supports shared-workspace signup and one-time password recovery', async () => {
   const email = 'researcher@example.com'; const originalPassword = 'Researcher-Start-2026';
   const created = request.agent(app);
-  await created.post('/api/auth/signup').send({ name: 'Research Owner', email, password: originalPassword }).expect(201)
-    .expect(({ body }) => {
-      assert.equal(body.authenticated, true);
-      assert.equal(body.user.email, email);
-      assert.equal(body.user.role, 'owner');
-    });
+  const account = await signupVerifyAndOnboard(created, { name: 'Research Owner', email, password: originalPassword });
+  assert.equal(account.signup.body.authenticated, false);
+  assert.equal(account.signup.body.code, 'EMAIL_VERIFICATION_REQUIRED');
+  assert.equal(account.verified.body.user.email, email);
+  assert.equal(account.verified.body.user.role, 'owner');
+  assert.equal(account.body.onboardingRequired, false);
   await created.get('/api/bootstrap').expect(200);
-  await request(app).post('/api/auth/signup').send({ name: 'Duplicate User', email, password: originalPassword }).expect(409);
+  const duplicate = await request(app).post('/api/auth/signup').send({ name: 'Duplicate User', email, password: originalPassword }).expect(202);
+  assert.equal(duplicate.body.authenticated, false);
+  assert.equal(duplicate.body.code, 'EMAIL_VERIFICATION_REQUIRED');
+  assert.equal(duplicate.body.email, email);
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM users WHERE email=?').get(email) as any).count, 1);
   const unknown = await request(app).post('/api/auth/forgot-password').send({ email: 'missing@example.com' }).expect(202);
   const known = await request(app).post('/api/auth/forgot-password').send({ email }).expect(202);
   assert.equal(known.body.message, unknown.body.message);
@@ -557,7 +562,7 @@ test('fails stale ambiguous delivery leases instead of risking duplicate sends',
   assert.equal(contact.status, 'failed');
 });
 
-test('uses UUID idempotency keys and reports all-failed and mixed test-send outcomes', async () => {
+test('persists the campaign sender name, keeps the verified sender email, and reports provider outcomes', async () => {
   assert.equal(config.brevoIdempotencyTtlMinutes, 29);
   const agent = request.agent(app);
   await agent.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
@@ -565,8 +570,27 @@ test('uses UUID idempotency keys and reports all-failed and mixed test-send outc
     title: 'Provider outcome survey', purpose: 'market_research', status: 'draft', primaryMetric: 'custom',
     questions: [{ id: 'provider-answer', page: 1, position: 0, type: 'short_text', title: 'Comment', required: false, options: [], settings: {}, logic: [] }]
   }).expect(201);
-  const campaign = await agent.post('/api/campaigns').send({ name: 'Provider outcome campaign', surveyId: survey.body.id }).expect(201);
+  const defaultCampaign = await agent.post('/api/campaigns').send({ name: 'Default sender campaign', surveyId: survey.body.id }).expect(201);
+  assert.equal(defaultCampaign.body.campaign.senderName, config.brevoFromName);
+  assert.equal(defaultCampaign.body.campaign.senderEmail, config.brevoFromEmail);
+  const senderName = 'Provider outcome research team';
+  const campaign = await agent.post('/api/campaigns').send({
+    name: 'Provider outcome campaign', surveyId: survey.body.id, senderName: `  ${senderName}  `
+  }).expect(201);
   const id = campaign.body.campaign.id;
+  assert.equal(campaign.body.campaign.senderName, senderName);
+  assert.equal(campaign.body.campaign.senderEmail, config.brevoFromEmail);
+  const reloaded = await agent.get(`/api/campaigns/${id}`).expect(200);
+  assert.equal(reloaded.body.campaign.senderName, senderName);
+  assert.equal(reloaded.body.campaign.senderEmail, config.brevoFromEmail);
+  const reset = await agent.put(`/api/campaigns/${id}`).send({ senderName: '   ' }).expect(200);
+  assert.equal(reset.body.campaign.senderName, config.brevoFromName);
+  const saved = await agent.put(`/api/campaigns/${id}`).send({ senderName: `  ${senderName}  ` }).expect(200);
+  assert.equal(saved.body.campaign.senderName, senderName);
+  await agent.put(`/api/campaigns/${id}`).send({ senderName: 'Unsafe\r\nBcc: attacker@example.com' }).expect(400)
+    .expect(({ body }) => assert.match(JSON.stringify(body.details), /control characters/i));
+  await agent.put(`/api/campaigns/${id}`).send({ senderName: 'x'.repeat(151) }).expect(400)
+    .expect(({ body }) => assert.match(JSON.stringify(body.details), /150|too_big/i));
   const originalMode = config.emailMode; const originalKey = config.brevoApiKey; const originalFetch = globalThis.fetch;
   config.emailMode = 'send'; config.brevoApiKey = 'test-key';
   try {
@@ -577,7 +601,7 @@ test('uses UUID idempotency keys and reports all-failed and mixed test-send outc
     };
     const failed = await agent.post(`/api/campaigns/${id}/test`).send({ email: 'failed-preview@example.com' }).expect(502);
     assert.equal(failed.body.outcomes[0].status, 'failed');
-    assert.deepEqual(requests[0].sender, { name: 'Seemplify Experience', email: 'no-reply@seemplifyai.com' });
+    assert.deepEqual(requests[0].sender, { name: senderName, email: config.brevoFromEmail });
     assert.match(requests[0].headers.idempotencyKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
     let call = 0; requests.length = 0;
@@ -598,6 +622,23 @@ test('uses UUID idempotency keys and reports all-failed and mixed test-send outc
     const duplicate = await agent.post(`/api/campaigns/${id}/test`).send({ email: 'idempotent@example.com' }).expect(200);
     assert.equal(duplicate.body.outcomes[0].status, 'sent');
     assert.match(duplicate.body.outcomes[0].messageId, /^idempotent:/);
+
+    requests.length = 0;
+    globalThis.fetch = async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body || '{}')));
+      return new Response(JSON.stringify({ messageId: 'campaign-message' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    };
+    await agent.post(`/api/surveys/${survey.body.id}/publish`).send({ status: 'live' }).expect(200);
+    await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'sender-delivery@example.com' }] }).expect(201);
+    await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
+    await campaignRunner.pump();
+    const campaignRequest = requests.find((item) => item.to?.[0]?.email === 'sender-delivery@example.com');
+    assert.ok(campaignRequest, 'the launched campaign should reach the email provider');
+    assert.deepEqual(campaignRequest.sender, { name: senderName, email: config.brevoFromEmail });
+    await agent.put(`/api/campaigns/${id}`).send({ senderName: 'Changed after launch' }).expect(400)
+      .expect(({ body }) => assert.match(body.error, /cannot be changed after launch/i));
+    const locked = await agent.get(`/api/campaigns/${id}`).expect(200);
+    assert.equal(locked.body.campaign.senderName, senderName);
   } finally {
     config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
   }

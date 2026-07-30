@@ -48,7 +48,7 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
     const selected = requestedId === betaId ? beta : alpha;
     const collected = selected.counts.collected;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-      provider: 'x', callbackUrl: 'http://127.0.0.1:5412/api/integrations/x/callback', canManageAppCredentials: true,
+      provider: 'x', callbackUrl: 'http://127.0.0.1:5412/api/integrations/x/callback', canManageAppCredentials: true, canManagePaidCollection: true,
       app: { configured: true, oauth2Configured: true, consumerCredentialsConfigured: false, bearerTokenConfigured: true,
         credentialVersion: 3, updatedAt: now, billing: { status: 'credits_depleted', problemType: 'usage-capped', checkedAt: now } },
       connections: [alpha, beta], selectedConnectionId: selected.id, connection: selected,
@@ -132,6 +132,159 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
   const viewport = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
   expect(viewport.documentWidth).toBeLessThanOrEqual(viewport.viewportWidth + 1);
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-multi-account-replies.png'), fullPage: true });
+});
+
+test('saved X history defaults reports to 50 and requires confirmation before a larger provider read', async ({ page }) => {
+  const account = {
+    ...connection(alphaId, 'researchalpha', 'Research Alpha', 211),
+    catchUp: {
+      accountPosts: { pending: true, lowId: '8999950' },
+      mentions: { pending: false, lowId: null }
+    }
+  };
+  const savedPosts = Array.from({ length: 211 }, (_, index) => mention(
+    `30000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    alphaId,
+    `@saved_${index + 1}`,
+    `Saved X post ${String(index + 1).padStart(3, '0')}`
+  )).map((item, index) => ({
+    ...item,
+    analysis: null,
+    externalId: String(9_000_000 - index),
+    publishedAt: new Date(Date.parse(now) - index * 60_000).toISOString()
+  })).reverse();
+  const expectedLatestIds = [...savedPosts]
+    .sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt))
+    .slice(0, 50)
+    .map((item) => item.id);
+  const estimateRequests: Array<{ limit: number; streams: string }> = [];
+  const expansionRequests: any[] = [];
+  const expansionIdempotencyKeys: string[] = [];
+  const reportRequests: any[] = [];
+  let reports: any[] = [];
+  let canManagePaidCollection = true;
+
+  await page.route(/\/api\/integrations\/x(?:\?.*)?$/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+    provider: 'x', callbackUrl: 'http://127.0.0.1:5412/api/integrations/x/callback', canManageAppCredentials: true, canManagePaidCollection,
+    collectionPolicy: { normalSyncLimit: 50, minimumExpansionLimit: 51, maximumExpansionLimit: 500,
+      cacheStrategy: 'since-and-until-cursors', alreadyStoredPostsAreNotReanalyzed: true,
+      incrementalSearchStrategy: 'one-oldest-or-catch-up-query-per-run' },
+    app: { configured: true, oauth2Configured: true, consumerCredentialsConfigured: false, bearerTokenConfigured: true,
+      credentialVersion: 3, updatedAt: now, billing: { status: 'ready', problemType: null, checkedAt: now } },
+    connections: [account], selectedConnectionId: account.id, connection: account, queries: [], syncJobs: [],
+    counts: account.counts, aggregateCounts: account.counts
+  }) }));
+  await page.route(/\/api\/integrations\/x\/mentions(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(savedPosts)
+  }));
+  await page.route(/\/api\/integrations\/x\/connections\/[^/]+\/expansion-estimate(?:\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const limit = Number(url.searchParams.get('limit'));
+    const streams = url.searchParams.get('streams') || '';
+    estimateRequests.push({ limit, streams });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      connectionId: alphaId, mode: 'expansion', requestedLimit: limit, boundedLimit: limit,
+      planFingerprint: `xplan_${String(limit).padStart(64, '0')}`,
+      minimumLimit: 51, maximumLimit: 500, normalSyncLimit: 50,
+      streams: streams.split(','), storedCount: savedPosts.length, canManagePaidCollection,
+      alreadyStoredExcluded: false, cachedPostsDeduplicatedAfterFetch: true,
+      estimated: { maximumNewPosts: limit, maximumProviderRows: limit, maximumUniqueNewPosts: limit,
+        providerRequests: Math.ceil(limit / 100) * 3, payablePostsUpperBound: limit,
+        standardPostReadUsd: 0.005, maximumEstimatedCostUsd: limit * 0.005,
+        pricingBasis: 'standard-post-read-upper-bound' },
+      cache: { strategy: 'since-and-until-cursors', incrementalHighWater: true, historicalLowWater: true,
+        providerCursorAvoidance: true, crossStreamOverlapPossible: true },
+      selectedQueryCount: 0, deferredQueryCount: 0, historyExhaustedStreams: [],
+      disclaimer: 'Upper-bound estimate only. X may return fewer posts; exact availability is intentionally not probed because an estimate request can itself consume paid API capacity.',
+      generatedAt: now
+    }) });
+  });
+  await page.route(/\/api\/integrations\/x\/connections\/[^/]+\/expand$/, async (route) => {
+    const body = route.request().postDataJSON(); expansionRequests.push(body);
+    expansionIdempotencyKeys.push(await route.request().headerValue('idempotency-key') || '');
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({
+      created: true,
+      estimate: {
+        connectionId: alphaId, mode: 'expansion', requestedLimit: body.limit, boundedLimit: body.limit,
+        planFingerprint: body.planFingerprint,
+        minimumLimit: 51, maximumLimit: 500, normalSyncLimit: 50, streams: body.streams,
+        storedCount: savedPosts.length, canManagePaidCollection: true,
+        alreadyStoredExcluded: false, cachedPostsDeduplicatedAfterFetch: true,
+        estimated: { maximumNewPosts: body.limit, maximumProviderRows: body.limit, maximumUniqueNewPosts: body.limit,
+          providerRequests: 6, payablePostsUpperBound: body.limit },
+        selectedQueryCount: 0, deferredQueryCount: 0, historyExhaustedStreams: [], generatedAt: now
+      }
+    }) });
+  });
+  await page.route(/\/api\/social\/reports(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON(); reportRequests.push(body);
+      const report = { id: `report-${reportRequests.length}`, connectionId: alphaId, title: body.title,
+        mentionIds: body.mentionIds, state: 'queued', result: null, runtime: null, aiJobId: `job-${reportRequests.length}`,
+        error: null, createdAt: now, completedAt: null, updatedAt: now };
+      reports = [report, ...reports];
+      await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ report, jobId: report.aiJobId, state: 'queued' }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reports) });
+  });
+  await page.route(/\/api\/social\/reply-drafts$/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+
+  await signIn(page);
+  await page.goto('/social-listening');
+  await expect(page.getByRole('button', { name: 'Sync latest 50' })).toBeVisible();
+  await expect(page.getByText('211 posts saved in this space')).toBeVisible();
+  await expect(page.getByText(/Each routine sync reads at most 50 provider results/)).toBeVisible();
+  await expect(page.getByText('Catch-up pending', { exact: true })).toBeVisible();
+  await expect(page.getByText('Next sync resumes account posts from the saved checkpoint.')).toBeVisible();
+  await expect(page.locator('article')).toHaveCount(50);
+  await expect(page.getByText('Saved X post 001')).toBeVisible();
+  await expect(page.getByText('Saved X post 051')).toHaveCount(0);
+  await expect(page.getByText('Not analyzed')).toHaveCount(50);
+  await expect(page.getByText('Terra analysis queued')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Show 50 more saved' }).click();
+  await expect(page.locator('article')).toHaveCount(100);
+  await expect(page.getByText('Saved X post 100')).toBeVisible();
+  expect(estimateRequests).toHaveLength(0);
+  expect(expansionRequests).toHaveLength(0);
+
+  const reportScope = page.getByLabel('Posts for this report');
+  await expect(reportScope).toHaveValue('50');
+  await expect(reportScope.locator('option')).toHaveCount(3);
+  await expect(page.getByText('50 saved posts will be sent to Terra.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Estimate & fetch older' }).click();
+  const expansionDialog = page.getByRole('dialog', { name: 'Fetch older posts from X' });
+  await expect(expansionDialog).toBeVisible();
+  await expect(expansionDialog.getByLabel('Maximum X results to read').getByRole('option', { name: 'Up to 100 provider results' })).toHaveCount(1);
+  await expect(expansionDialog.getByText('Already saved').locator('..')).toContainText('211');
+  await expect(expansionDialog.getByText('Maximum provider results').last().locator('..')).toContainText('100');
+  await expect(expansionDialog.getByText('At most 100 can be newly saved')).toBeVisible();
+  await expect(expansionDialog.getByText('Stored IDs are deduplicated after fetch, but X can return overlap across streams before Seemplify removes it.')).toBeVisible();
+  await expect(expansionDialog.getByText(/Upper-bound estimate only\. X may return fewer posts/)).toBeVisible();
+  expect(expansionRequests).toHaveLength(0);
+  await expansionDialog.getByLabel('Maximum X results to read').selectOption('200');
+  await expect(expansionDialog.getByRole('button', { name: 'Confirm & read up to 200' })).toBeEnabled();
+  await expansionDialog.getByRole('button', { name: 'Confirm & read up to 200' }).click();
+  await expect(page.getByText('Expansion queued for up to 200 X results. Saved IDs will be deduplicated locally.')).toBeVisible();
+  expect(estimateRequests.at(-1)).toEqual({ limit: 200, streams: 'account_posts,mentions,searches' });
+  expect(expansionRequests).toEqual([{
+    limit: 200, streams: ['account_posts', 'mentions', 'searches'], planFingerprint: `xplan_${String(200).padStart(64, '0')}`
+  }]);
+  expect(expansionIdempotencyKeys).toHaveLength(1);
+  expect(expansionIdempotencyKeys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
+  await page.getByRole('button', { name: 'Generate report' }).click();
+  await expect(page.getByText('Social-intelligence report queued with 50 saved posts.')).toBeVisible();
+  expect(reportRequests).toHaveLength(1);
+  expect(reportRequests[0].mentionIds).toEqual(expectedLatestIds);
+  await expect(page.getByText('50 posts', { exact: false })).toBeVisible();
+
+  canManagePaidCollection = false;
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Estimate & fetch older' })).toHaveCount(0);
+  await expect(page.getByText('A space owner or admin can approve additional paid history reads.')).toBeVisible();
 });
 
 test('Intelligence combines immutable survey and social report snapshots into saved analysis', async ({ page }, testInfo) => {

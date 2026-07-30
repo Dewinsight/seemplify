@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import request from 'supertest';
+import { signupVerifyAndOnboard } from './authTestHelper.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-spaces-'));
 const files = {
@@ -43,6 +44,7 @@ Object.assign(process.env, {
 
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
+const { issueEmailVerificationToken } = await import('../src/auth.js');
 
 after(() => {
   db.close();
@@ -54,22 +56,22 @@ const passwordB = 'Owner-B-Private-Password-2026!';
 
 test('isolates independent accounts, shares only invited spaces, and attributes public work to the owning space', async () => {
   const accountA = request.agent(app);
-  const signupA = await accountA.post('/api/auth/signup').send({
+  const signupA = await signupVerifyAndOnboard(accountA, {
     name: 'Owner Alpha',
     email: 'owner-a@example.test',
     password: passwordA,
     spaceName: 'Alpha research'
-  }).expect(201);
+  });
   const spaceA = signupA.body.activeSpace;
   assert.equal(spaceA.name, 'Alpha research');
   assert.equal(spaceA.role, 'owner');
 
   const accountB = request.agent(app);
-  const signupB = await accountB.post('/api/auth/signup').send({
+  const signupB = await signupVerifyAndOnboard(accountB, {
     name: 'Owner Beta',
     email: 'owner-b@example.test',
     password: passwordB
-  }).expect(201);
+  });
   const spaceB = signupB.body.activeSpace;
   assert.notEqual(spaceB.id, spaceA.id);
   assert.equal(spaceB.role, 'owner');
@@ -207,14 +209,53 @@ test('rejects an invitation during signup atomically when its email does not mat
   }).expect(403);
   assert.equal((db.prepare('SELECT COUNT(*) count FROM users WHERE email=?').get('wrong-recipient@example.test') as any).count, 0);
 
-  const acceptedSignup = await request(app).post('/api/auth/signup').send({
+  const invitedAccount = request.agent(app);
+  const signup = await invitedAccount.post('/api/auth/signup').send({
     name: 'Expected Recipient',
     email: 'expected@example.test',
     password: 'Expected-Recipient-Password-2026!',
     inviteToken: token,
     spaceName: 'Expected private'
-  }).expect(201);
+  }).expect(202);
+  const pendingUser = db.prepare('SELECT id FROM users WHERE email=?').get('expected@example.test') as { id: string };
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM space_memberships WHERE user_id=?').get(pendingUser.id) as any).count, 1);
+  assert.equal((db.prepare('SELECT accepted_at FROM space_invitations WHERE id=?').get(invited.body.invitation.id) as any).accepted_at, null);
+  const verification = issueEmailVerificationToken('expected@example.test', {
+    requestId: signup.body.verificationRequestId
+  });
+  assert.ok(verification);
+  const verifiedSignup = await invitedAccount.post('/api/auth/verify-email').send({ token: verification.token }).expect(200);
+  assert.notEqual(verifiedSignup.body.activeSpace.id, sessionA.body.activeSpace.id);
+  assert.equal(verifiedSignup.body.spaces.length, 1);
+  const acceptedSignup = await invitedAccount.post(`/api/spaces/invitations/${encodeURIComponent(token!)}/accept`).send({}).expect(200);
   assert.equal(acceptedSignup.body.activeSpace.id, sessionA.body.activeSpace.id);
   assert.equal(acceptedSignup.body.spaces.length, 2);
   assert.ok(acceptedSignup.body.spaces.some((space: any) => space.name === 'Expected private' && space.isPersonal));
+});
+
+test('lets a verified invitee join before completing onboarding', async () => {
+  const owner = request.agent(app);
+  await owner.post('/api/auth/login').send({ email: 'owner-a@example.test', password: passwordA }).expect(200);
+  const ownerSession = await owner.get('/api/auth/session').expect(200);
+  const invited = await owner.post(`/api/spaces/${ownerSession.body.activeSpace.id}/invitations`).send({
+    email: 'onboarding-invitee@example.test',
+    role: 'member'
+  }).expect(201);
+  const token = new URL(invited.body.inviteUrl).pathname.split('/').at(-1);
+
+  const invitee = request.agent(app);
+  await invitee.post('/api/auth/signup').send({
+    name: 'Onboarding Invitee',
+    email: 'onboarding-invitee@example.test',
+    password: 'Onboarding-Invitee-Password-2026!'
+  }).expect(202);
+  const verification = issueEmailVerificationToken('onboarding-invitee@example.test');
+  assert.ok(verification);
+  const verified = await invitee.post('/api/auth/verify-email').send({ token: verification.token }).expect(200);
+  assert.equal(verified.body.onboardingRequired, true);
+
+  const accepted = await invitee.post(`/api/spaces/invitations/${token}/accept`).send({}).expect(200);
+  assert.equal(accepted.body.activeSpace.id, ownerSession.body.activeSpace.id);
+  assert.ok(accepted.body.spaces.some((space: any) => space.id === ownerSession.body.activeSpace.id));
+  await invitee.get('/api/bootstrap').expect(428);
 });

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { KnowledgeBasePicker } from '@/components/knowledge/KnowledgeBasePicker';
 import type { IntelligenceReport, IntelligenceSource } from '@/types';
 
 function formatDate(value?: string | null) {
@@ -24,6 +25,7 @@ export function IntelligencePage() {
   const [reports, setReports] = useState<IntelligenceReport[]>([]);
   const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [knowledgeBaseIds, setKnowledgeBaseIds] = useState<string[]>([]);
   const [title, setTitle] = useState('Combined experience intelligence');
   const [objective, setObjective] = useState('Identify the strongest shared signals, disagreements, risks, and actions across the selected research.');
   const [search, setSearch] = useState(''); const [loading, setLoading] = useState(true); const [working, setWorking] = useState(false);
@@ -61,7 +63,7 @@ export function IntelligencePage() {
     if (selectedRefs.length < 2) return toast.error('Select at least two historical reports.');
     setWorking(true);
     try {
-      const body = { title, objective, sourceRefs: selectedRefs };
+      const body = { title, objective, sourceRefs: selectedRefs, knowledgeBaseIds };
       const fingerprint = JSON.stringify(body);
       if (reportRequest.current.fingerprint !== fingerprint) reportRequest.current = { fingerprint, key: crypto.randomUUID() };
       const result = await api<{ report: IntelligenceReport }>('/api/intelligence/reports', { ...json('POST', body), headers: { 'idempotency-key': reportRequest.current.key } });
@@ -79,6 +81,7 @@ export function IntelligencePage() {
 
     <div className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
       <aside className="space-y-4">
+        <div className="border bg-card p-4"><KnowledgeBasePicker value={knowledgeBaseIds} onChange={setKnowledgeBaseIds} disabled={working} description="Optional context for terminology and policy. Historical reports remain the primary evidence." /></div>
         <Card><CardHeader className="border-b"><CardTitle>Build an analysis</CardTitle><CardDescription>Choose 2–12 saved reports. Source snapshots are captured before the Terra job is queued.</CardDescription></CardHeader><CardContent className="space-y-4 pt-5"><div><Label htmlFor="intelligence-title">Report title</Label><Input id="intelligence-title" value={title} maxLength={180} onChange={(event) => setTitle(event.target.value)} /></div><div><Label htmlFor="intelligence-objective">Analysis objective</Label><Textarea id="intelligence-objective" value={objective} maxLength={1000} onChange={(event) => setObjective(event.target.value)} /></div><div><Label htmlFor="source-search">Find reports</Label><div className="relative mt-2"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input id="source-search" className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Survey, report, topic…" /></div></div><div className="max-h-[430px] overflow-y-auto border"><SourceGroup title="Survey reports" icon={ClipboardList} sources={surveySources} selected={selectedRefs} toggle={toggle} /><SourceGroup title="Social reports" icon={BarChart3} sources={socialSources} selected={selectedRefs} toggle={toggle} /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{selectedRefs.length} of 12 selected</span><Button disabled={working || selectedRefs.length < 2 || title.trim().length < 2} onClick={() => void createReport()}>{working ? <Loader2 className="animate-spin" /> : <FileSearch />}Run analysis</Button></div></CardContent></Card>
       </aside>
 

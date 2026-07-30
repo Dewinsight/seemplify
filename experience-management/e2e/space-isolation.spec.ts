@@ -1,16 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import { signUpAndOnboard } from './auth';
 
 const password = 'Space-Isolation-2026!';
 
 async function signUp(page: Page, values: { name: string; email: string; spaceName: string }) {
-  await page.goto('/signup');
-  await page.getByLabel('Name', { exact: true }).fill(values.name);
-  await page.getByLabel('Email').fill(values.email);
-  await page.getByLabel('Personal space name (optional)', { exact: true }).fill(values.spaceName);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByLabel('Confirm password').fill(password);
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  await signUpAndOnboard(page, { ...values, password });
 }
 
 async function activeSpace(page: Page) {
@@ -33,6 +27,7 @@ async function switchSpace(page: Page, spaceId: string) {
 
 test('spaces isolate surveys until invitation acceptance and revoke access after removal', async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop browser exercises the complete multi-account flow.');
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'The deterministic verification-token helper exists only on the local E2E server.');
 
   const suffix = `${Date.now()}-${testInfo.workerIndex}`;
   const accountA = {

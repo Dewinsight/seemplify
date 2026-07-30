@@ -1,7 +1,17 @@
 import crypto from 'node:crypto';
 import type { SessionUser } from './auth.js';
+import type { KnowledgeBaseRef } from './knowledgeRepository.js';
 import { createJob, db, getJob, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
+import './spaces.js';
+
+const intelligenceColumns = new Set((db.prepare('PRAGMA table_info(intelligence_reports)').all() as Array<{ name: string }>).map((column) => column.name));
+if (!intelligenceColumns.has('knowledge_refs_json')) {
+  db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
+}
+db.exec(`DROP INDEX IF EXISTS intelligence_reports_one_active_request;
+  CREATE UNIQUE INDEX intelligence_reports_one_active_request
+    ON intelligence_reports(space_id,user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued'`);
 
 export class IntelligenceError extends Error {
   status: number;
@@ -177,7 +187,9 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
   if (!spaceOwnsConnection(spaceId, input.connectionId)) throw new IntelligenceError('X connection not found.', 404);
   if ((input.mentionIds || []).length > 200) throw new IntelligenceError('Select no more than 200 X posts for one report.');
   let ids = [...new Set(input.mentionIds || [])].slice(0, 200);
-  if (!ids.length) ids = (db.prepare(`SELECT mention_id id FROM x_connection_mentions WHERE connection_id=? ORDER BY last_seen_at DESC LIMIT 200`)
+  if (!ids.length) ids = (db.prepare(`SELECT cm.mention_id id FROM x_connection_mentions cm
+      JOIN social_mentions m ON m.id=cm.mention_id WHERE cm.connection_id=?
+      ORDER BY m.published_at DESC,m.created_at DESC,m.id DESC LIMIT 50`)
     .all(input.connectionId) as Array<{ id: string }>).map((row) => row.id);
   if (!ids.length) throw new IntelligenceError('Collect at least one X post before generating intelligence.', 409);
   const allowed = new Set((db.prepare(`SELECT mention_id id FROM x_connection_mentions WHERE connection_id=? AND mention_id IN (${ids.map(() => '?').join(',')})`)
@@ -279,7 +291,9 @@ export function getIntelligenceReport(_user: SessionUser, spaceId: string, id: s
   if (!row) throw new IntelligenceError('Intelligence report not found.', 404);
   return rowIntelligenceReport(row);
 }
-export function createIntelligenceReport(user: SessionUser, spaceId: string, input: { title: string; objective?: string; sourceRefs: string[]; idempotencyKey?: string }) {
+export function createIntelligenceReport(user: SessionUser, spaceId: string, input: {
+  title: string; objective?: string; sourceRefs: string[]; knowledgeBaseRefs?: KnowledgeBaseRef[]; idempotencyKey?: string;
+}) {
   const requested = [...new Set(input.sourceRefs)].slice(0, 12).sort();
   if (requested.length < 2) throw new IntelligenceError('Select at least two historical reports to synthesize.');
   const sources = availableSources(spaceId, true); const byRef = new Map(sources.map((source) => [source.ref, source]));
@@ -292,7 +306,13 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
   const refs = { survey: snapshot.filter((source) => source.type === 'survey').map((source) => source.ref),
     social: snapshot.filter((source) => source.type === 'social').map((source) => source.ref) };
   const title = cleanText(input.title, 180) || 'Combined intelligence'; const objective = cleanText(input.objective, 1000);
-  const refsJson = JSON.stringify(refs); const id = crypto.randomUUID(); const timestamp = now();
+  const refsJson = JSON.stringify(refs);
+  const knowledgeRefsJson = JSON.stringify((input.knowledgeBaseRefs || []).slice().sort((left, right) => left.id.localeCompare(right.id)));
+  const jobKnowledgeRefsJson = (job: ReturnType<typeof artifactJob>) => JSON.stringify(
+    (Array.isArray(job?.input.knowledgeBaseRefs) ? job.input.knowledgeBaseRefs : []).slice()
+      .sort((left: any, right: any) => String(left?.id || '').localeCompare(String(right?.id || '')))
+  );
+  const id = crypto.randomUUID(); const timestamp = now();
   const created = db.transaction(() => {
     if (input.idempotencyKey) {
       const replay = db.prepare('SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND idempotency_key=?').get(spaceId, user.id, input.idempotencyKey) as any;
@@ -300,20 +320,25 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
         if (replay.title !== title || replay.objective !== objective || replay.source_refs_json !== refsJson) throw new IntelligenceError('This idempotency key was already used for a different intelligence report.', 409);
         const job = artifactJob(replay);
         if (!job) throw new IntelligenceError('The original idempotent intelligence report is no longer available.', 409);
+        if (jobKnowledgeRefsJson(job) !== knowledgeRefsJson) throw new IntelligenceError('This idempotency key was already used with a different knowledge selection.', 409);
         return { report: rowIntelligenceReport(replay), job, created: false };
       }
     }
-    const existing = db.prepare(`SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND title=? AND objective=? AND source_refs_json=? AND state='queued'
-      ORDER BY created_at LIMIT 1`).get(spaceId, user.id, title, objective, refsJson) as any;
+    const existing = db.prepare(`SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND title=? AND objective=? AND source_refs_json=?
+      AND knowledge_refs_json=? AND state='queued' ORDER BY created_at LIMIT 1`)
+      .get(spaceId, user.id, title, objective, refsJson, knowledgeRefsJson) as any;
     if (existing) {
       const job = artifactJob(existing);
       if (job && ['queued', 'processing'].includes(job.state)) return { report: rowIntelligenceReport(existing), job, created: false };
       db.prepare("UPDATE intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
-    db.prepare(`INSERT INTO intelligence_reports (id,space_id,user_id,title,objective,source_refs_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, title, objective, refsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('intelligence.synthesize', { reportId: id }, spaceId, null, null, user.id);
+    db.prepare(`INSERT INTO intelligence_reports (id,space_id,user_id,title,objective,source_refs_json,source_snapshot_json,knowledge_refs_json,state,idempotency_key,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, title, objective, refsJson, snapshotJson,
+        knowledgeRefsJson, input.idempotencyKey || null, timestamp, timestamp);
+    const job = createJob('intelligence.synthesize', {
+      reportId: id, ...(input.knowledgeBaseRefs?.length ? { knowledgeBaseRefs: input.knowledgeBaseRefs } : {})
+    }, spaceId, null, null, user.id);
     db.prepare('UPDATE intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { report: rowIntelligenceReport(db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id)), job, created: true };
   })();

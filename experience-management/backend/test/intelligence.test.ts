@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import request from 'supertest';
+import { signupVerifyAndOnboard } from './authTestHelper.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-intelligence-'));
 const passwordFile = path.join(root, 'admin-password');
@@ -57,7 +58,7 @@ async function completeQueuedJob(jobId: string, data: unknown) {
 
 test('saves Terra reply drafts and social intelligence without any automatic X posting capability', async () => {
   const owner = request.agent(app);
-  await owner.post('/api/auth/signup').send({ name: 'Research Owner', email: 'intelligence@seemplify.local', password: 'Intelligence-Test-Password-2026!' }).expect(201);
+  await signupVerifyAndOnboard(owner, { name: 'Research Owner', email: 'intelligence@seemplify.local', password: 'Intelligence-Test-Password-2026!' });
   const user = db.prepare('SELECT id,active_space_id FROM users WHERE email=?').get('intelligence@seemplify.local') as { id: string; active_space_id: string };
   const connectionId = crypto.randomUUID(); const mentionId = crypto.randomUUID(); const timestamp = new Date().toISOString();
   db.prepare(`INSERT INTO x_apps (id,credential_version,configured_by,created_at,updated_at) VALUES ('workspace-x-app',1,?,?,?)`)
@@ -136,7 +137,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   updateJob(journaledDraft.job.id, { state: 'completed', stage: 'completed', progress: 100, result: recovered, completedAt: new Date().toISOString() });
 
   const member = request.agent(app);
-  await member.post('/api/auth/signup').send({ name: 'Research Member', email: 'research-member@seemplify.local', password: 'Research-Member-Password-2026!' }).expect(201);
+  await signupVerifyAndOnboard(member, { name: 'Research Member', email: 'research-member@seemplify.local', password: 'Research-Member-Password-2026!' });
   await member.get(`/api/ai/jobs/${queuedDraft.body.jobId}`).expect(404);
   await member.post('/api/social/analyze').send({ mentionIds: [mentionId] }).expect(404);
   assert.deepEqual((await member.get('/api/social/reply-drafts').expect(200)).body, []);
