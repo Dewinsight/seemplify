@@ -2,6 +2,7 @@ const Job = require('../models/Job');
 const Department = require('../models/Department');
 const Notification = require('../models/Notification');
 const Candidate = require('../models/Candidate');
+const CVProcessingJob = require('../models/CVProcessingJob');
 const Organization = require('../models/Organization');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
@@ -13,6 +14,7 @@ const pipelineProgressionService = require('../services/pipelineProgressionServi
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
 const pipelineReportExportService = require('../services/pipelineReportExportService');
 const publicJobCreditService = require('../services/publicJobCreditService');
+const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const interviewController = require('./interviewController');
 
@@ -173,6 +175,10 @@ exports.getAllJobs = async (req, res) => {
 exports.getJobById = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
+    await publicApplicationCapacityService.reconcileInflatedCount({
+      jobId: req.params.id,
+      organizationId
+    });
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId })
       .populate('department', 'name description')
       .populate('hiringManager', 'firstName lastName email')
@@ -703,7 +709,7 @@ exports.addCandidateToShortlist = async (req, res) => {
       query.organization = organizationId;
     }
     
-    const job = await Job.findOne(query);
+    let job = await Job.findOne(query);
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
@@ -721,67 +727,110 @@ exports.addCandidateToShortlist = async (req, res) => {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
-    // Check if candidate is already in the shortlist or pipeline
+    // Public retries are idempotent: the first successful submission already
+    // owns the slot, so a network retry must not look like a failure.
     if (job.shortlist.some(item => item.candidate.toString() === candidateId)) {
+      if (isPublicApplication) {
+        return res.status(200).json({
+          msg: 'Application already submitted',
+          shortlist: job.shortlist,
+          duplicate: true
+        });
+      }
       return res.status(400).json({ msg: 'Candidate already in shortlist' });
     }
     if (job.applicants.some(item => item.candidate.toString() === candidateId)) {
       return res.status(400).json({ msg: 'Candidate already in pipeline' });
     }
 
-    if (isPublicApplication && typeof isOrganizationStaff !== 'undefined') {
-      const staffValue = typeof isOrganizationStaff === 'string'
-        ? isOrganizationStaff.toLowerCase() === 'true'
-        : Boolean(isOrganizationStaff);
-      candidate.isInternalCandidate = staffValue;
-      await candidate.save();
+    if (isPublicApplication) {
+      if (!job.isPublic || job.status !== 'active') {
+        return res.status(403).json({
+          msg: 'This job is not accepting public applications',
+          code: 'PUBLIC_JOB_NOT_PUBLIC'
+        });
+      }
+
+      // Undo slots consumed by CV parses that never became submitted
+      // applications, then atomically commit this real application.
+      await publicApplicationCapacityService.reconcileInflatedCount({
+        jobId: job._id,
+        organizationId: job.organization
+      });
+      const processingPublicId = candidate.processingMetadata?.cvProcessingJobId;
+      const processingJob = processingPublicId
+        ? await CVProcessingJob.findOne({
+          publicId: processingPublicId,
+          organization: job.organization,
+          jobAppliedFor: job._id,
+          source: 'public'
+        }).select('_id publicId')
+        : null;
+
+      // Candidates created before durable processing jobs still get a stable,
+      // replay-safe reservation identity.
+      const capacity = await publicApplicationCapacityService.commit({
+        jobId: job._id,
+        organizationId: job.organization,
+        candidateId: candidate._id,
+        processingJobId: processingJob?._id || candidate._id,
+        processingJobPublicId: processingJob?.publicId || `legacy-candidate:${candidate._id}`
+      });
+      job = Job.hydrate(capacity.job);
+
+      if (typeof isOrganizationStaff !== 'undefined') {
+        const staffValue = typeof isOrganizationStaff === 'string'
+          ? isOrganizationStaff.toLowerCase() === 'true'
+          : Boolean(isOrganizationStaff);
+        await Candidate.updateOne(
+          { _id: candidate._id, organization: job.organization },
+          { $set: { isInternalCandidate: staffValue } }
+        );
+      }
+
+      try {
+        await job.populate([
+          { path: 'organization' },
+          { path: 'department', select: 'name' }
+        ]);
+        await candidateEmailNotificationService.sendApplicationConfirmationEmail({
+          candidate,
+          job
+        });
+        if (capacity.limitReached && !capacity.duplicate) {
+          await candidateEmailNotificationService.sendJobApplicationLimitReachedEmail({ job });
+        }
+      } catch (emailError) {
+        console.error('Error sending public application email:', emailError);
+      }
+
+      return res.status(capacity.duplicate ? 200 : 201).json({
+        msg: capacity.duplicate
+          ? 'Application already submitted'
+          : 'Candidate added to shortlist successfully',
+        shortlist: job.shortlist,
+        duplicate: capacity.duplicate,
+        applicationCount: capacity.applicationCount,
+        limitReached: capacity.limitReached,
+        emailSent: true
+      });
     }
 
     job.shortlist.push({ candidate: candidateId, addedBy: req.user?.id });
-    
-    // For public applications, also update analytics
-    if (isPublicApplication) {
-      if (!job.analytics) job.analytics = {};
-      job.analytics.publicApplications = (job.analytics.publicApplications || 0) + 1;
-      job.analytics.applications = (job.analytics.applications || 0) + 1;
-    }
-    
     await job.save();
-
-    // Send application confirmation email for public applications
-    if (isPublicApplication) {
-      try {
-        // Get candidate data
-        const Candidate = require('../models/Candidate');
-        const candidate = await Candidate.findById(candidateId);
-        
-        if (candidate) {
-          // Populate job organization and department for email service
-          await job.populate([
-            { path: 'organization' },
-            { path: 'department', select: 'name' }
-          ]);
-          
-                  console.log(`📧 Sending application confirmation email for public job application`);
-                  await candidateEmailNotificationService.sendApplicationConfirmationEmail({
-                    candidate,
-                    job
-                  });
-        }
-      } catch (emailError) {
-        console.error('❌ Error sending application confirmation email:', emailError);
-        // Don't fail the application if email fails - just log the error
-      }
-    }
 
     res.status(201).json({ 
       msg: 'Candidate added to shortlist successfully', 
       shortlist: job.shortlist,
-      emailSent: isPublicApplication // Let frontend know if email was attempted
+      emailSent: false
     });
   } catch (error) {
     console.error('❌ Error adding candidate to shortlist:', error);
-    res.status(500).json({ msg: 'Server error adding candidate to shortlist', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error adding candidate to shortlist',
+      code: error.code,
+      error: error.message
+    });
   }
 };
 

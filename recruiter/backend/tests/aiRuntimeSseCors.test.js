@@ -92,6 +92,8 @@ test('production CORS permits authenticated SSE preflight and Last-Event-ID reco
     );
     assert.equal(allowedHeaders.has('authorization'), true);
     assert.equal(allowedHeaders.has('last-event-id'), true);
+    assert.equal(allowedHeaders.has('idempotency-key'), true);
+    assert.equal(allowedHeaders.has('x-cv-status-token'), true);
 
     const reconnected = await readFirstSseFrame(url, {
       Origin: productionOrigin,

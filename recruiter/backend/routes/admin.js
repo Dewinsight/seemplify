@@ -2,13 +2,16 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
+const Job = require('../models/Job');
 const { adminAuth, requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const currencyConversionService = require('../services/currencyConversionService');
+const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
 const {
   PLATFORM_FEATURE_DEFINITIONS,
   PLATFORM_FEATURE_KEYS
@@ -500,6 +503,95 @@ router.get('/organizations', adminAuth, requirePermission('manageOrganizations')
   } catch (err) {
     console.error('Error fetching organizations:', err);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   GET /api/admin/organizations/:id/jobs
+// @desc    Get jobs belonging to one organization, including public application links
+// @access  Private (Admin with manageOrganizations permission)
+router.get('/organizations/:id/jobs', adminAuth, requirePermission('manageOrganizations'), async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(404).json({ msg: 'Organization not found' });
+    }
+
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(10, Number.parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+    const organizationId = new mongoose.Types.ObjectId(req.params.id);
+    const query = { organization: organizationId };
+
+    const [organization, totalJobs, initialJobs] = await Promise.all([
+      Organization.findById(organizationId).select('name').lean(),
+      Job.countDocuments(query),
+      Job.find(query)
+        .select(
+          'title department location status isPublic publicSlug publicUrl ' +
+          'candidateApplyLimit publicApplicationCount analytics.publicApplications ' +
+          'applicationDeadline createdAt updatedAt'
+        )
+        .populate('department', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    if (!organization) {
+      return res.status(404).json({ msg: 'Organization not found' });
+    }
+
+    const reconciliations = await Promise.all(
+      initialJobs
+        .filter((job) => job.isPublic)
+        .map(async (job) => {
+          try {
+            return await publicApplicationCapacityService.reconcileInflatedCount({
+              jobId: job._id,
+              organizationId
+            });
+          } catch (reconciliationError) {
+            console.warn(`Could not reconcile public application count for job ${job._id}:`, reconciliationError.message);
+            return null;
+          }
+        })
+    );
+    const repairedCount = reconciliations.filter((result) => result?.repaired).length;
+    const jobs = repairedCount > 0
+      ? await Job.find(query)
+        .select(
+          'title department location status isPublic publicSlug publicUrl ' +
+          'candidateApplyLimit publicApplicationCount analytics.publicApplications ' +
+          'applicationDeadline createdAt updatedAt'
+        )
+        .populate('department', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+      : initialJobs;
+
+    return res.json({
+      organization,
+      jobs: jobs.map((job) => ({
+        ...job,
+        publicUrl: job.isPublic
+          ? (job.publicUrl || `/public/jobs/${job.publicSlug || job._id}`)
+          : null,
+        applicationCount: Number(job.publicApplicationCount || 0),
+        submittedApplications: Number(job.analytics?.publicApplications || 0)
+      })),
+      pagination: {
+        total: totalJobs,
+        page,
+        pages: Math.max(1, Math.ceil(totalJobs / limit)),
+        limit
+      },
+      repairedPublicApplicationCounts: repairedCount
+    });
+  } catch (err) {
+    console.error('Error fetching organization jobs:', err);
+    return res.status(500).json({ msg: 'Server error' });
   }
 });
 

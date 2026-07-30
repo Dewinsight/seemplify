@@ -4,10 +4,11 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const file = formData.get('resume') as File
+    const jobId = String(formData.get('jobId') || '').trim()
     
-    if (!file) {
+    if (!file || !jobId) {
       return NextResponse.json(
-        { error: 'No CV file provided' },
+        { error: !file ? 'No CV file provided' : 'No public job ID provided' },
         { status: 400 }
       )
     }
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
     // Forward the file to the backend candidate upload service
     const backendFormData = new FormData()
     backendFormData.append('resume', file)
+    backendFormData.append('jobId', jobId)
 
     // Increase timeout to 10 minutes for CV processing
     const controller = new AbortController()
@@ -26,6 +28,11 @@ export async function POST(request: NextRequest) {
         (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
       const backendResponse = await fetch(`${backendBaseUrl}/api/candidates/public/upload-cv`, {
         method: 'POST',
+        headers: {
+          ...(request.headers.get('idempotency-key')
+            ? { 'Idempotency-Key': request.headers.get('idempotency-key') as string }
+            : {}),
+        },
         body: backendFormData,
         signal: controller.signal,
       })
@@ -41,7 +48,7 @@ export async function POST(request: NextRequest) {
       }
 
       const candidateData = await backendResponse.json()
-      return NextResponse.json(candidateData)
+      return NextResponse.json(candidateData, { status: backendResponse.status })
     } catch (error: any) {
       clearTimeout(timeoutId)
       if (error.name === 'AbortError') {

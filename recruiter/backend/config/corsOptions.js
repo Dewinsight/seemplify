@@ -54,10 +54,12 @@ const corsOptions = {
     'x-trace-id',
     'x-caller-id',
     'x-organization-id',
+    'Idempotency-Key',
+    'X-CV-Status-Token',
     'X-Nylas-Signature',
     'x-admin-auth-token'
   ],
-  exposedHeaders: ['X-Session-ID'],
+  exposedHeaders: ['X-Session-ID', 'Location', 'X-CV-Status-Token'],
   optionsSuccessStatus: 200
 };
 

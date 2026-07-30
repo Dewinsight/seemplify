@@ -86,6 +86,11 @@ function uploadRequest({ file, organizationId, actorId, jobId, idempotencyKey, c
 function responseRecorder() {
   return {
     statusCode: 200,
+    headers: {},
+    set(name, value) {
+      this.headers[String(name).toLowerCase()] = value;
+      return this;
+    },
     status(code) {
       this.statusCode = code;
       return this;
@@ -581,6 +586,10 @@ test('valid public ingestion persists the job-derived organization and binds rep
   }), accepted);
   assert.equal(accepted.statusCode, 202);
   assert.equal(accepted.body.billing.status, 'not_required');
+  assert.equal(accepted.body.statusUrl, accepted.body.tracking.statusUrl);
+  assert.equal(accepted.body.statusToken, accepted.body.tracking.statusToken);
+  assert.equal(accepted.headers.location, accepted.body.statusUrl);
+  assert.equal(accepted.headers['x-cv-status-token'], accepted.body.statusToken);
 
   const stored = await CVProcessingJob.findOne({ idempotencyKey }).lean();
   assert.equal(String(stored.organization), String(organizationId));
@@ -673,7 +682,7 @@ test('public capacity reservation is atomic, replay-safe, and cannot overrun slo
   assert.equal(creditBoundStored.publicApplicationReservations.length, 1);
 });
 
-test('a public candidate is not inserted when atomic capacity reservation fails', async () => {
+test('queued CV parsing does not consume another application slot before final submission', async () => {
   const { organizationId, actorId } = await seedBilling();
   const fullJobId = await seedPublicJob({
     organizationId,
@@ -702,12 +711,10 @@ test('a public candidate is not inserted when atomic capacity reservation fails'
     }
   });
 
-  await assert.rejects(
-    () => cvQueue._processJobForTests(bullJob(queued)),
-    (error) => error.code === 'PUBLIC_APPLICATION_LIMIT_REACHED'
-  );
-  assert.equal(await Candidate.countDocuments({}), 0);
-  assert.equal((await CVProcessingJob.findById(queued._id)).state, 'failed');
+  await cvQueue._processJobForTests(bullJob(queued));
+  assert.equal(await Candidate.countDocuments({}), 1);
+  assert.equal((await Job.findById(fullJobId)).publicApplicationCount, 1);
+  assert.equal((await CVProcessingJob.findById(queued._id)).state, 'completed');
 });
 
 test('completion delivery restores one durable candidate-uploaded notification per recipient', async () => {

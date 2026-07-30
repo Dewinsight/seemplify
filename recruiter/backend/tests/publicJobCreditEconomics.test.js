@@ -140,6 +140,80 @@ test('creating a public job funds and locks its pool in the same transaction', a
   assert.equal(publicLedger(organization).length, 1);
 });
 
+test('a CV upload consumes application capacity only when the application is submitted', async () => {
+  const { actorId, organizationId } = await seedBilling({ unitCost: 3 });
+  const job = await publicCredits.createJob({
+    jobData: jobFields(organizationId, {
+      isPublic: true,
+      candidateApplyLimit: 2
+    }),
+    actorId
+  });
+  const candidateId = new mongoose.Types.ObjectId();
+  const processingJobId = new mongoose.Types.ObjectId();
+
+  const committed = await publicCapacity.commit({
+    jobId: job._id,
+    organizationId,
+    candidateId,
+    processingJobId,
+    processingJobPublicId: `cv-submit-${processingJobId}`
+  });
+  assert.equal(committed.duplicate, false);
+  assert.equal(committed.applicationCount, 1);
+
+  const replay = await publicCapacity.commit({
+    jobId: job._id,
+    organizationId,
+    candidateId,
+    processingJobId,
+    processingJobPublicId: `cv-submit-${processingJobId}`
+  });
+  assert.equal(replay.duplicate, true);
+
+  const stored = await Job.findById(job._id).lean();
+  assert.equal(stored.publicApplicationCount, 1);
+  assert.equal(stored.analytics.publicApplications, 1);
+  assert.equal(stored.shortlist.length, 1);
+  assert.equal(stored.publicApplicationReservations.length, 1);
+});
+
+test('queue-inflated legacy counters reconcile to submitted applications', async () => {
+  const { organizationId } = await seedBilling({ unitCost: 3 });
+  const reservations = Array.from({ length: 10 }, (_, index) => {
+    const processingJobId = new mongoose.Types.ObjectId();
+    return {
+      processingJob: processingJobId,
+      processingJobPublicId: `legacy-queue-${processingJobId}`,
+      creditCost: 3,
+      applicationCount: index + 1,
+      limitReached: index === 9,
+      reservedAt: new Date()
+    };
+  });
+  const job = await Job.create(jobFields(organizationId, {
+    isPublic: true,
+    candidateApplyLimit: 10,
+    reservedCredits: 30,
+    publicApplicationCreditUnitCost: 3,
+    publicApplicationCount: 10,
+    publicApplicationReservations: reservations,
+    analytics: { publicApplications: 2, applications: 2 }
+  }));
+
+  const result = await publicCapacity.reconcileInflatedCount({
+    jobId: job._id,
+    organizationId
+  });
+  assert.equal(result.repaired, true);
+  assert.equal(result.previousCount, 10);
+  assert.equal(result.applicationCount, 2);
+
+  const stored = await Job.findById(job._id).lean();
+  assert.equal(stored.publicApplicationCount, 2);
+  assert.equal(stored.publicApplicationReservations.length, 0);
+});
+
 test('concurrent publish and limit replays reserve each target delta exactly once', async () => {
   const { actorId, organizationId } = await seedBilling({ unitCost: 3 });
   const job = await seedPrivateJob(organizationId);

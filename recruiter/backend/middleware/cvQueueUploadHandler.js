@@ -21,11 +21,23 @@ function queueUpload(source, queueService = cvAnalysisQueue) {
           result.job.billing.lastError = finalization.billing.error;
         }
       }
+      if (!result?.job?.publicId || !result?.statusToken) {
+        const trackingError = new Error('CV upload was queued without valid tracking metadata');
+        trackingError.code = 'CV_QUEUE_TRACKING_METADATA_MISSING';
+        trackingError.statusCode = 503;
+        throw trackingError;
+      }
       const state = queueService.publicState(result.job);
+      const tracking = {
+        statusToken: result.statusToken,
+        statusUrl: `/api/candidates/cv-jobs/${result.job.publicId}`
+      };
+      res.set('Location', tracking.statusUrl);
+      res.set('X-CV-Status-Token', tracking.statusToken);
       return res.status(202).json({
         ...state,
-        statusToken: result.statusToken,
-        statusUrl: `/api/candidates/cv-jobs/${result.job.publicId}`,
+        ...tracking,
+        tracking,
         duplicate: result.duplicate,
         idempotentReplay: result.duplicate,
         queueAvailable: !finalization.enqueueDeferred,
