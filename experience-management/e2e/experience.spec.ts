@@ -691,10 +691,20 @@ test('a completed survey translation opens in saved intelligence and survives a 
   const savedInsight = { id: `saved-translation-${suffix}`, kind: 'translation', payload: translation, createdAt: new Date().toISOString() };
   let insightsRequestCount = 0;
   let translationQueued = false;
+  let translationSubmissionCount = 0;
+  let jobPollCount = 0;
   let releaseInitial!: () => void;
   let markInitialSeen!: () => void;
+  let releaseTranslationPost!: () => void;
+  let markTranslationPostSeen!: () => void;
+  let releaseFirstJobPoll!: () => void;
+  let markFirstJobPollSeen!: () => void;
   const initialRelease = new Promise<void>((resolve) => { releaseInitial = resolve; });
   const initialSeen = new Promise<void>((resolve) => { markInitialSeen = resolve; });
+  const translationPostRelease = new Promise<void>((resolve) => { releaseTranslationPost = resolve; });
+  const translationPostSeen = new Promise<void>((resolve) => { markTranslationPostSeen = resolve; });
+  const firstJobPollRelease = new Promise<void>((resolve) => { releaseFirstJobPoll = resolve; });
+  const firstJobPollSeen = new Promise<void>((resolve) => { markFirstJobPollSeen = resolve; });
 
   await page.route(`**/api/surveys/${setup.survey.id}/insights*`, async (route) => {
     insightsRequestCount += 1;
@@ -709,27 +719,73 @@ test('a completed survey translation opens in saved intelligence and survives a 
     releaseInitial();
   });
   await page.route(`**/api/surveys/${setup.survey.id}/ai/translate`, async (route) => {
+    translationSubmissionCount += 1;
+    if (translationSubmissionCount > 1) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Translation test failure.' }) });
+      return;
+    }
     translationQueued = true;
+    markTranslationPostSeen();
+    await translationPostRelease;
     await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ jobId: `translation-job-${suffix}`, state: 'queued' }) });
   });
-  await page.route(`**/api/ai/jobs/translation-job-${suffix}`, (route) => route.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify({
-      id: `translation-job-${suffix}`, kind: 'survey.translate', surveyId: setup.survey.id,
-      state: 'completed', stage: 'completed', progress: 100, attempt: 1,
-      input: { language: 'Spanish' }, result: { output: translation, runtime: {} }, error: null,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completedAt: new Date().toISOString()
-    })
-  }));
+  await page.route(`**/api/ai/jobs/translation-job-${suffix}`, async (route) => {
+    jobPollCount += 1;
+    if (jobPollCount === 1) {
+      markFirstJobPollSeen();
+      await firstJobPollRelease;
+    }
+    const completed = jobPollCount > 1;
+    await route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({
+        id: `translation-job-${suffix}`, kind: 'survey.translate', surveyId: setup.survey.id,
+        state: completed ? 'completed' : 'processing', stage: completed ? 'completed' : 'running_terra', progress: completed ? 100 : 35, attempt: 1,
+        input: { language: 'Spanish' }, result: completed ? { output: translation, runtime: {} } : null, error: null,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completedAt: completed ? new Date().toISOString() : null
+      })
+    });
+  });
 
   await page.goto(`/surveys/${setup.survey.id}`);
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  const surveyDetails = page.getByRole('heading', { name: 'Survey details' }).locator('..').locator('..');
+  await surveyDetails.getByRole('textbox').first().fill(`Translation viewer edited ${suffix}`);
   await page.getByRole('tab', { name: 'Terra AI' }).click();
+  await expect(page.getByText('Save changes before using Terra so it works from the latest survey.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Translate', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Quality review/ })).toBeDisabled();
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.getByText('Save changes before using Terra so it works from the latest survey.', { exact: true })).toHaveCount(0);
   await initialSeen;
   await page.getByLabel('Translate survey').fill('  Spanish  ');
   await page.getByRole('button', { name: 'Translate', exact: true }).click();
+  const translationSection = page.getByLabel('Translate survey').locator('..').locator('..');
+  await translationPostSeen;
+  const queuingButton = page.getByRole('button', { name: 'Queuing', exact: true });
+  await expect(queuingButton).toBeVisible();
+  await expect(queuingButton).toBeDisabled();
+  await expect(queuingButton).toHaveAttribute('aria-busy', 'true');
+  await expect(translationSection.getByRole('status')).toContainText('Sending the Spanish translation request.');
+
+  releaseTranslationPost();
+  await firstJobPollSeen;
+  await expect(page.getByRole('button', { name: 'Queued', exact: true })).toBeDisabled();
+  await expect(translationSection.getByRole('status')).toContainText('Spanish translation queued. Waiting for Terra.');
+
+  releaseFirstJobPoll();
+  const translatingButton = page.getByRole('button', { name: 'Translating', exact: true });
+  await expect(translatingButton).toBeVisible();
+  await expect(translatingButton).toBeDisabled();
+  await expect(translatingButton).toHaveAttribute('aria-busy', 'true');
+  await expect(translationSection.getByRole('status')).toContainText('Translating survey into Spanish');
+  await expect(translationSection.getByRole('status')).toContainText('35%');
 
   const savedRow = page.getByRole('button', { name: /Spanish translation/ });
   await expect(savedRow).toBeVisible();
   await expect(savedRow).toHaveAttribute('aria-expanded', 'true');
+  await expect(translationSection.getByRole('status')).toContainText('Spanish translation saved.');
+  const viewSavedTranslation = page.getByRole('button', { name: 'View saved translation', exact: true });
+  await expect(viewSavedTranslation).toBeVisible();
   await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
   await expect(page.getByText(translation.questions[0].title, { exact: false })).toBeVisible();
   await page.waitForTimeout(250);
@@ -740,8 +796,29 @@ test('a completed survey translation opens in saved intelligence and survives a 
   await savedRow.click();
   await expect(savedRow).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByText(translation.title, { exact: true })).toHaveCount(0);
-  await savedRow.click();
+  await viewSavedTranslation.click();
+  await expect(savedRow).toBeFocused();
+  await expect(savedRow).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
 
+  await page.getByLabel('Translate survey').fill('German');
+  await page.getByRole('button', { name: 'Translate', exact: true }).click();
+  await expect(translationSection.getByRole('alert')).toContainText('Translation test failure.');
+  await expect(page.getByRole('button', { name: 'Translate', exact: true })).toBeEnabled();
+
   await page.evaluate((surveyId) => fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' }), setup.survey.id);
+
+  const emptySurvey = await page.evaluate(async (value) => {
+    const response = await fetch('/api/surveys', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        title: `Empty translation guard ${value}`, purpose: 'customer_experience', primaryMetric: 'custom', questions: []
+      })
+    });
+    return response.json();
+  }, suffix);
+  await page.goto(`/surveys/${emptySurvey.id}`);
+  await page.getByRole('tab', { name: 'Terra AI' }).click();
+  await expect(page.getByText('Add at least one question before translating.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Translate', exact: true })).toBeDisabled();
+  await page.evaluate((surveyId) => fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' }), emptySurvey.id);
 });
