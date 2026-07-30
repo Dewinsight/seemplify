@@ -1106,18 +1106,20 @@ export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, s
 
 export const claimNextJob = db.transaction((): AiJob | null => {
   const now = new Date().toISOString();
+  // JavaScript timestamps have millisecond precision, so rowid preserves
+  // insertion-order FIFO when several durable jobs are enqueued together.
   const row = db.prepare(`SELECT candidate.* FROM ai_jobs candidate
     WHERE candidate.state='queued' AND (candidate.retry_at IS NULL OR candidate.retry_at<=?)
       AND candidate.id=(
         SELECT queued.id FROM ai_jobs queued
         WHERE queued.space_id=candidate.space_id AND queued.state='queued' AND (queued.retry_at IS NULL OR queued.retry_at<=?)
-        ORDER BY queued.created_at,queued.id LIMIT 1
+        ORDER BY queued.created_at,queued.rowid LIMIT 1
       )
     ORDER BY
       (SELECT COUNT(*) FROM ai_jobs active WHERE active.space_id=candidate.space_id AND active.state='processing'),
       COALESCE((SELECT MAX(started_at) FROM ai_jobs served
         WHERE served.space_id=candidate.space_id AND served.started_at IS NOT NULL),''),
-      candidate.created_at,candidate.id
+      candidate.created_at,candidate.rowid
     LIMIT 1`).get(now, now) as any;
   if (!row) return null;
   const changed = db.prepare(`UPDATE ai_jobs SET state='processing',stage='dispatching',progress=5,attempt=attempt+1,started_at=?,updated_at=? WHERE id=? AND state='queued'`).run(now, now, row.id).changes;
