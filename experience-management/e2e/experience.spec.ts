@@ -1,6 +1,60 @@
 import { expect, test } from '@playwright/test';
 import { accountPassword, signUpAndOnboard, submitSignup, verifyEmailAndOnboard } from './auth';
 
+test('space settings renders safely when stored timestamps are malformed', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop browser covers malformed legacy timestamps.');
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'This test replaces local API responses with malformed legacy data.');
+
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  await page.route(/\/api\/spaces\/[^/]+\/members(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{
+      id: 'legacy-member', name: 'Legacy member', email: 'legacy-member@example.com', role: 'member', joinedAt: 'not-a-timestamp'
+    }])
+  }));
+  await page.route(/\/api\/spaces\/[^/]+\/invitations(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{
+      id: 'legacy-invitation', email: 'legacy-invitation@example.com', role: 'member', expiresAt: '',
+      acceptedAt: null, revokedAt: null, createdAt: 'not-a-timestamp', invitedBy: 'Legacy owner'
+    }])
+  }));
+  await page.route(/\/api\/subscriptions\/requests(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ requests: [{
+      id: 'legacy-request', requestType: 'change', requestedPlanCode: 'team',
+      requestedPlan: { code: 'team', name: 'Legacy team', description: '', requestable: true, features: {}, limits: {} },
+      requestNote: 'Legacy request', status: 'rejected', reviewNote: '', version: 1,
+      createdAt: 'invalid', decisionAt: 'invalid'
+    }] })
+  }));
+
+  await page.goto('/settings/space');
+  await expect(page.getByRole('heading', { name: 'Space settings' })).toBeVisible();
+
+  const memberRow = page.getByRole('row').filter({ hasText: 'legacy-member@example.com' });
+  await expect(memberRow.getByText('Not recorded', { exact: true })).toBeVisible();
+
+  const invitationRow = page.getByRole('row').filter({ hasText: 'legacy-invitation@example.com' });
+  await expect(invitationRow.getByText('Unavailable', { exact: true })).toBeVisible();
+  await expect(invitationRow.getByText('Not recorded', { exact: true })).toBeVisible();
+
+  const requestRow = page.getByRole('row').filter({ hasText: 'Legacy team' });
+  await expect(requestRow.getByText('Not recorded', { exact: true })).toHaveCount(2);
+  expect(pageErrors.filter((message) => message.includes('Invalid time value'))).toEqual([]);
+});
+
 test('reloads once and recovers when a lazy chunk is stale during deployment', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project exercises deployment recovery');
   let chunkRequests = 0;

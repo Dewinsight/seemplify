@@ -8,15 +8,26 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { AuthSession, SpaceInvitation, SpaceMember, SpaceRole, SpaceSummary } from '@/types';
 
+const mediumDateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+
+function parseTimestamp(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function invitationState(invitation: SpaceInvitation) {
   if (invitation.acceptedAt) return 'Accepted';
   if (invitation.revokedAt) return 'Revoked';
-  if (Date.parse(invitation.expiresAt) <= Date.now()) return 'Expired';
+  const expiresAt = parseTimestamp(invitation.expiresAt);
+  if (expiresAt === null) return 'Unavailable';
+  if (expiresAt <= Date.now()) return 'Expired';
   return 'Pending';
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
+function formatDate(value: unknown) {
+  const timestamp = parseTimestamp(value);
+  return timestamp === null ? 'Not recorded' : mediumDateFormatter.format(timestamp);
 }
 
 type SubscriptionPlan = {
