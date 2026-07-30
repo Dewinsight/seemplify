@@ -956,13 +956,13 @@ export function getKnowledgeQuerySnapshot(requestId: string, spaceId: string) {
 
 export function listKnowledgeAudit(spaceId: string, knowledgeBaseId?: string, limit = 200) {
   const rows = knowledgeBaseId
-    ? db.prepare(`SELECT id,knowledge_base_id knowledgeBaseId,document_id documentId,job_id jobId,actor_user_id actorUserId,
-        ai_job_id aiJobId,
-        action,detail_json detail,created_at createdAt FROM knowledge_audit_events
+    ? db.prepare(`SELECT id,knowledge_base_id AS "knowledgeBaseId",document_id AS "documentId",job_id AS "jobId",actor_user_id AS "actorUserId",
+        ai_job_id AS "aiJobId",
+        action,detail_json detail,created_at AS "createdAt" FROM knowledge_audit_events
         WHERE space_id=? AND knowledge_base_id=? ORDER BY created_at DESC LIMIT ?`).all(spaceId, knowledgeBaseId, limit)
-    : db.prepare(`SELECT id,knowledge_base_id knowledgeBaseId,document_id documentId,job_id jobId,actor_user_id actorUserId,
-        ai_job_id aiJobId,
-        action,detail_json detail,created_at createdAt FROM knowledge_audit_events
+    : db.prepare(`SELECT id,knowledge_base_id AS "knowledgeBaseId",document_id AS "documentId",job_id AS "jobId",actor_user_id AS "actorUserId",
+        ai_job_id AS "aiJobId",
+        action,detail_json detail,created_at AS "createdAt" FROM knowledge_audit_events
         WHERE space_id=? ORDER BY created_at DESC LIMIT ?`).all(spaceId, limit);
   return (rows as Array<Record<string, unknown>>).map((row) => ({ ...row, detail: parseJson(row.detail, {}) }));
 }

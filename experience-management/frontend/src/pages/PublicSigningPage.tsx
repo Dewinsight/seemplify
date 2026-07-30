@@ -101,6 +101,7 @@ export function PublicSigningPage() {
   const [completed, setCompleted] = useState(false);
   const [pendingSaves, setPendingSaves] = useState(0);
   const pendingSavesRef = useRef(0);
+  const signatureWorkingRef = useRef(false);
 
   async function loadDetail() {
     const next = await api<ESignPublicDetail>('/api/public/esign/envelope');
@@ -261,14 +262,13 @@ export function PublicSigningPage() {
     };
   }
 
-  async function applySavedSignature(signature: ESignSavedSignature, field = signatureField) {
-    if (!field) return;
+  async function persistSavedSignature(signature: ESignSavedSignature, field: ESignField) {
     localField(field.id, optimisticSavedValue(signature));
-    setSignatureField(null);
     beginFieldSave();
     try {
       await api(`/api/public/esign/fields/${field.id}`, json('PUT', { savedSignatureId: signature.id }));
       await loadDetail();
+      setSignatureField(null);
       toast.success('Signature applied');
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : 'The saved signature could not be applied.');
@@ -278,19 +278,41 @@ export function PublicSigningPage() {
     }
   }
 
+  async function applySavedSignature(signature: ESignSavedSignature, field = signatureField) {
+    if (!field || signatureWorkingRef.current) return;
+    signatureWorkingRef.current = true;
+    setSignatureWorking(true);
+    try {
+      await persistSavedSignature(signature, field);
+    } finally {
+      signatureWorkingRef.current = false;
+      setSignatureWorking(false);
+    }
+  }
+
   async function applySignatureOnce() {
+    if (signatureWorkingRef.current) return;
     if (!signatureField || !signatureReady()) return toast.error('Add a signature before applying it.');
     const field = signatureField;
     const signature = currentSignatureValue();
-    localField(field.id, signature);
-    setSignatureField(null);
-    await saveField(field.id, signature);
+    signatureWorkingRef.current = true;
+    setSignatureWorking(true);
+    try {
+      localField(field.id, signature);
+      await saveField(field.id, signature);
+      setSignatureField(null);
+    } finally {
+      signatureWorkingRef.current = false;
+      setSignatureWorking(false);
+    }
   }
 
   async function saveAndApplySignature() {
+    if (signatureWorkingRef.current) return;
     if (!signatureField || !signatureReady()) return toast.error('Add a signature before saving it.');
     const field = signatureField;
     try {
+      signatureWorkingRef.current = true;
       setSignatureWorking(true);
       const result = editingSignatureId
         ? await api<{ signature: ESignSavedSignature }>(`/api/public/esign/signatures/${editingSignatureId}`, json('PUT', signatureInput()))
@@ -301,16 +323,18 @@ export function PublicSigningPage() {
           ? current.signatures.map((item) => item.id === result.signature.id ? result.signature : item)
           : [result.signature, ...current.signatures]
       } : current);
-      await applySavedSignature(result.signature, field);
+      await persistSavedSignature(result.signature, field);
       await loadSignatureLibrary();
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : 'The signature could not be saved for reuse.');
     } finally {
+      signatureWorkingRef.current = false;
       setSignatureWorking(false);
     }
   }
 
   function editSavedSignature(signature: ESignSavedSignature) {
+    if (signatureWorkingRef.current) return;
     setEditingSignatureId(signature.id);
     setSignatureMode(signature.mode);
     setSignatureLabel(signature.label);
@@ -320,8 +344,10 @@ export function PublicSigningPage() {
   }
 
   async function removeSavedSignature(signature: ESignSavedSignature) {
+    if (signatureWorkingRef.current) return;
     if (!window.confirm(`Remove “${signature.label}” from your saved signatures? Signatures already applied to documents will not change.`)) return;
     try {
+      signatureWorkingRef.current = true;
       setSignatureWorking(true);
       await api(`/api/public/esign/signatures/${signature.id}`, { method: 'DELETE' });
       setSignatureLibrary((current) => current ? { ...current, signatures: current.signatures.filter((item) => item.id !== signature.id) } : current);
@@ -330,6 +356,7 @@ export function PublicSigningPage() {
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : 'The saved signature could not be removed.');
     } finally {
+      signatureWorkingRef.current = false;
       setSignatureWorking(false);
     }
   }
@@ -488,7 +515,7 @@ export function PublicSigningPage() {
       </div>
     </main>
 
-    <Dialog open={Boolean(signatureField)} onOpenChange={(open) => { if (!open) setSignatureField(null); }}>
+    <Dialog open={Boolean(signatureField)} onOpenChange={(open) => { if (!open && !signatureWorkingRef.current) setSignatureField(null); }}>
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader><DialogTitle>{signatureField?.type === 'initials' ? 'Choose your initials' : 'Choose your signature'}</DialogTitle><DialogDescription>Apply a saved choice or create one by typing, drawing or uploading an image. You can change it until you finish signing.</DialogDescription></DialogHeader>
 
@@ -522,7 +549,7 @@ export function PublicSigningPage() {
         </section>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => setSignatureField(null)}>Cancel</Button>
+          <Button variant="outline" disabled={signatureWorking} onClick={() => setSignatureField(null)}>Cancel</Button>
           {!editingSignatureId && <Button variant="outline" disabled={signatureWorking || !signatureReady()} onClick={() => void applySignatureOnce()}>{signatureWorking ? <Loader2 className="animate-spin" /> : <PenLine />}Apply once</Button>}
           <Button disabled={signatureWorking || libraryLoading || Boolean(libraryError) || !signatureReady() || atSignatureLimit} onClick={() => void saveAndApplySignature()}>{signatureWorking ? <Loader2 className="animate-spin" /> : <Library />}{signatureWorking ? 'Saving' : editingSignatureId ? 'Save changes and apply' : 'Save and apply'}</Button>
         </DialogFooter>

@@ -890,7 +890,7 @@ export function renamePersonalSpaceForUser(userId: string, nameValue: unknown) {
 }
 
 export function listSpaceMembers(context: SpaceContext) {
-  return db.prepare(`SELECT u.id,u.name,u.email,m.role,m.joined_at joinedAt
+  return db.prepare(`SELECT u.id,u.name,u.email,m.role,m.joined_at AS "joinedAt"
     FROM space_memberships m JOIN users u ON u.id=m.user_id
     WHERE m.space_id=? ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,u.name COLLATE NOCASE,u.id`)
     .all(context.id);
@@ -978,8 +978,8 @@ export function createSpaceInvitation(context: SpaceContext, input: { email?: un
 
 export function listSpaceInvitations(context: SpaceContext) {
   requireSpaceManager(context);
-  return db.prepare(`SELECT i.id,i.email,i.role,i.expires_at expiresAt,i.accepted_at acceptedAt,i.revoked_at revokedAt,
-      i.created_at createdAt,u.name invitedBy
+  return db.prepare(`SELECT i.id,i.email,i.role,i.expires_at AS "expiresAt",i.accepted_at AS "acceptedAt",i.revoked_at AS "revokedAt",
+      i.created_at AS "createdAt",u.name AS "invitedBy"
     FROM space_invitations i JOIN users u ON u.id=i.invited_by_user_id
     WHERE i.space_id=? ORDER BY i.created_at DESC`).all(context.id);
 }

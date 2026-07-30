@@ -18,12 +18,33 @@ const esignKeyFile = path.join(state, 'esign-encryption-key');
 const knowledgeSecretFile = liveKnowledge
   ? path.join(repositoryRoot, '.local-runtime', 'knowledge', 'service-secret')
   : path.join(state, 'knowledge-secret');
-const terraSecretFile = path.join(repositoryRoot, '.local-runtime', 'llm', 'service-secret');
+const terraSecretFile = liveKnowledge
+  ? path.join(repositoryRoot, '.local-runtime', 'llm', 'service-secret')
+  : path.join(state, 'terra-secret');
 const knowledgeRuntimeBaseUrl = String(process.env.KNOWLEDGE_RUNTIME_BASE_URL || 'http://127.0.0.1:11540').replace(/\/+$/, '');
 const terraGatewayBaseUrl = String(process.env.TERRA_GATEWAY_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
 const knowledgeStagingRoot = process.env.SEEMPLIFY_KNOWLEDGE_STAGING_DIR
   || path.join(path.resolve(process.env.SEEMPLIFY_KNOWLEDGE_DATA_ROOT || 'D:\\SeemplifyKnowledge'), 'staging');
 const knowledgeStorageDir = liveKnowledge ? path.join(knowledgeStagingRoot, `experience-e2e-${liveRunId}`) : path.join(state, 'knowledge');
+const e2eDatabaseProvider = String(process.env.EXPERIENCE_E2E_DATABASE_PROVIDER || 'sqlite');
+if (!['sqlite', 'postgres'].includes(e2eDatabaseProvider)) {
+  throw new Error(`Unsupported E2E database provider: ${e2eDatabaseProvider}.`);
+}
+if (e2eDatabaseProvider === 'postgres') {
+  const runId = String(process.env.EXPERIENCE_POSTGRES_E2E_RUN_ID || '');
+  const postgresHost = String(process.env.POSTGRES_HOST || '');
+  const postgresDatabase = String(process.env.POSTGRES_DATABASE || '');
+  const postgresUser = String(process.env.POSTGRES_USER || '');
+  const postgresPasswordFile = path.resolve(String(process.env.POSTGRES_PASSWORD_FILE || ''));
+  const temporaryRoot = path.resolve(os.tmpdir());
+  if (!/^[a-f0-9]{12}$/u.test(runId)
+    || !['127.0.0.1', '::1', 'localhost'].includes(postgresHost)
+    || postgresDatabase !== `experience_e2e_${runId}`
+    || postgresUser !== `experience_e2e_app_${runId}`
+    || !postgresPasswordFile.startsWith(`${temporaryRoot}${path.sep}experience-pg-e2e-`)) {
+    throw new Error('PostgreSQL E2E refused a database that was not provisioned by the isolated test harness.');
+  }
+}
 fs.writeFileSync(passwordFile, 'Playwright-Test-Password-2026!'); fs.writeFileSync(sessionFile, 'playwright-session-secret-longer-than-twenty-characters'); fs.writeFileSync(xKeyFile, Buffer.alloc(32, 11).toString('base64url')); fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 12).toString('base64url'));
 if (liveKnowledge) {
   for (const filename of [knowledgeSecretFile, terraSecretFile]) {
@@ -33,9 +54,11 @@ if (liveKnowledge) {
   }
 } else {
   fs.writeFileSync(knowledgeSecretFile, 'playwright-knowledge-secret-longer-than-thirty-two-characters');
+  fs.writeFileSync(terraSecretFile, 'playwright-terra-secret-longer-than-thirty-two-characters');
 }
 Object.assign(process.env, {
   HOST: '127.0.0.1', PORT: '5412', PUBLIC_URL: 'http://127.0.0.1:5412', DATABASE_PATH: path.join(state, 'e2e.sqlite'), UPLOAD_DIR: path.join(state, 'uploads'),
+  DATABASE_PROVIDER: e2eDatabaseProvider,
   SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
   ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', AI_WORKER_CONCURRENCY: '1', LOCAL_LLM_BASE_URL: 'http://127.0.0.1:9',
   ESIGN_STORAGE_DIR: path.join(state, 'esign'), ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, ESIGN_WORKER_POLL_MS: '250',
@@ -45,7 +68,11 @@ Object.assign(process.env, {
     TERRA_GATEWAY_BASE_URL: terraGatewayBaseUrl,
     TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
     LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile
-  } : {}),
+  } : {
+    TERRA_GATEWAY_BASE_URL: 'http://127.0.0.1:9',
+    TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
+    LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile
+  }),
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, X_SEED_CONSUMER_KEY_FILE: path.join(state, 'no-x-consumer-key'), X_SEED_CONSUMER_SECRET_FILE: path.join(state, 'no-x-consumer-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(state, 'no-x-bearer-token'), X_SEED_ACCESS_TOKEN_FILE: path.join(state, 'no-x-access-token'), X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(state, 'no-x-access-token-secret')
 });
 const { app } = await import('../src/app.js'); const { aiJobRunner } = await import('../src/aiJobs.js');
@@ -57,6 +84,10 @@ const { getKnowledgeRuntimeStatus } = await import('../src/knowledgeClient.js');
 const { knowledgeJobRunner } = await import('../src/knowledgeJobs.js');
 const { getTerraStatus } = await import('../src/terraClient.js');
 const { saveTutorialProgress, tutorialKeys } = await import('../src/tutorialProgress.js');
+
+if (db.provider !== e2eDatabaseProvider) {
+  throw new Error(`E2E database provider mismatch: expected ${e2eDatabaseProvider}, received ${db.provider}.`);
+}
 
 function remapBootstrapSpace(userId: string) {
   const current = db.prepare('SELECT active_space_id FROM users WHERE id=?').get(userId) as { active_space_id: string | null } | undefined;

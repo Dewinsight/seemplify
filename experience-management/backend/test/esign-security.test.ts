@@ -217,6 +217,27 @@ test('resets draft-relative expiry at send and makes concurrent sends idempotent
   assert.equal(Number(sentAudits.count), 1);
 });
 
+test('keeps only the ten newest active signing sessions', async () => {
+  const owner = await signup('session-cap-owner');
+  const fixture = await prepareEnvelope(owner.agent, 'Signing session cap', [{
+    name: 'Session Cap Signer', email: `session-cap-${identity}@example.com`
+  }]);
+  await owner.agent.post(`/api/esign/envelopes/${fixture.envelopeId}/send`).send({}).expect(200);
+  const invite = await invitation(owner.agent, fixture.envelopeId, fixture.recipients[0].id);
+
+  const sessions = [];
+  for (let index = 0; index < 12; index += 1) sessions.push(await openSigningSession(invite.token));
+
+  const counts = db.prepare(`SELECT
+    SUM(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) active_count,
+    SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) revoked_count
+    FROM esign_signing_sessions WHERE recipient_id=?`).get(fixture.recipients[0].id) as any;
+  assert.equal(Number(counts.active_count), 10);
+  assert.equal(Number(counts.revoked_count), 2);
+  for (const session of sessions.slice(0, 2)) await session.agent.get('/api/public/esign/session').expect(401);
+  for (const session of sessions.slice(2)) await session.agent.get('/api/public/esign/session').expect(200);
+});
+
 test('completes once across replayed sessions, encrypts supplied values, and detects evidence tampering', async () => {
   const owner = await signup('completion-owner');
   const outsider = await signup('completion-outsider');

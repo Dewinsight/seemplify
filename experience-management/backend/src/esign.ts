@@ -596,10 +596,16 @@ export function exchangeSigningToken(token: string, actor: EsignActor) {
   const authenticated = recipient.access_code_hash ? 0 : 1;
   const expiresAt = new Date(Date.now() + config.esignSigningSessionHours * 3_600_000).toISOString();
   db.transaction(() => {
+    const latestSession = db.prepare(`SELECT created_at FROM esign_signing_sessions
+      WHERE recipient_id=? ORDER BY created_at DESC LIMIT 1`).get(recipient.id) as { created_at: string } | undefined;
+    const latestCreatedAt = latestSession ? Date.parse(latestSession.created_at) : Number.NaN;
+    const createdAt = Number.isFinite(latestCreatedAt) && latestCreatedAt >= Date.parse(timestamp)
+      ? new Date(latestCreatedAt + 1).toISOString()
+      : timestamp;
     db.prepare(`INSERT INTO esign_signing_sessions (id,recipient_id,token_hash,authenticated,expires_at,created_at,last_seen_at)
-      VALUES (?,?,?,?,?,?,?)`).run(sessionId, recipient.id, hashToken(rawSession), authenticated, expiresAt, timestamp, timestamp);
-    const surplus = db.prepare(`SELECT id FROM esign_signing_sessions WHERE recipient_id=? AND revoked_at IS NULL AND expires_at>?
-      ORDER BY created_at DESC,id DESC LIMIT -1 OFFSET 10`).all(recipient.id, timestamp) as any[];
+      VALUES (?,?,?,?,?,?,?)`).run(sessionId, recipient.id, hashToken(rawSession), authenticated, expiresAt, createdAt, timestamp);
+    const surplus = db.prepare(`SELECT id FROM esign_signing_sessions WHERE recipient_id=? AND id<>? AND revoked_at IS NULL AND expires_at>?
+      ORDER BY created_at DESC,id DESC LIMIT 2147483647 OFFSET 9`).all(recipient.id, sessionId, timestamp) as any[];
     for (const stale of surplus) db.prepare('UPDATE esign_signing_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL').run(timestamp, stale.id);
     if (ACTIVE_RECIPIENT.has(recipient.status)) {
       db.prepare("UPDATE esign_recipients SET status=CASE WHEN status IN ('ready','sent') THEN 'viewed' ELSE status END,viewed_at=COALESCE(viewed_at,?),authenticated_at=CASE WHEN ?=1 THEN COALESCE(authenticated_at,?) ELSE authenticated_at END,updated_at=? WHERE id=?")

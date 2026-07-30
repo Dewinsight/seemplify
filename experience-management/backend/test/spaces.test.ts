@@ -115,6 +115,15 @@ test('isolates independent accounts, shares only invited spaces, and attributes 
     role: 'member'
   }).expect(201);
   assert.equal(invitation.body.delivery.state, 'sent');
+  const invitationHistory = await accountA.get(`/api/spaces/${spaceA.id}/invitations`).expect(200);
+  const invitationRecord = invitationHistory.body.find((item: any) => item.id === invitation.body.invitation.id);
+  assert.ok(invitationRecord);
+  assert.equal(Number.isFinite(Date.parse(invitationRecord.expiresAt)), true);
+  assert.equal(Number.isFinite(Date.parse(invitationRecord.createdAt)), true);
+  assert.equal(invitationRecord.invitedBy, 'Owner Alpha');
+  assert.equal(invitationRecord.acceptedAt, null);
+  assert.equal(invitationRecord.revokedAt, null);
+  assert.equal(invitationRecord.expiresat, undefined);
   const token = new URL(invitation.body.inviteUrl).pathname.split('/').at(-1);
   assert.ok(token);
   const preview = await request(app).get(`/api/public/spaces/invitations/${token}`).expect(200);
@@ -182,6 +191,8 @@ test('isolates independent accounts, shares only invited spaces, and attributes 
   const members = await accountA.get(`/api/spaces/${spaceA.id}/members`).expect(200);
   const memberB = members.body.find((member: any) => member.email === 'owner-b@example.test');
   assert.equal(memberB.role, 'member');
+  assert.equal(Number.isFinite(Date.parse(memberB.joinedAt)), true);
+  assert.equal(memberB.joinedat, undefined);
   await accountA.patch(`/api/spaces/${spaceA.id}/members/${memberB.id}`).send({ role: 'admin' }).expect(200);
   await accountA.delete(`/api/spaces/${spaceA.id}/members/${memberB.id}`).expect(204);
 

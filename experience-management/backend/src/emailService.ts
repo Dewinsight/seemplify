@@ -337,7 +337,7 @@ export async function sendInvitations(survey: Survey, collector: Collector, reci
 }
 
 export function listRecipients(collectorId: string) {
-  return db.prepare(`SELECT id,name,email,status,invite_sent_at inviteSentAt,reminder_sent_at reminderSentAt,responded_at respondedAt,message_id messageId,error,created_at createdAt FROM recipients WHERE collector_id=? ORDER BY created_at DESC`).all(collectorId);
+  return db.prepare(`SELECT id,name,email,status,invite_sent_at AS "inviteSentAt",reminder_sent_at AS "reminderSentAt",responded_at AS "respondedAt",message_id AS "messageId",error,created_at AS "createdAt" FROM recipients WHERE collector_id=? ORDER BY created_at DESC`).all(collectorId);
 }
 
 function maskRecipientEmail(email: string) {
