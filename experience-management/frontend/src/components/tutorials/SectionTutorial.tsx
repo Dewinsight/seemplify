@@ -64,6 +64,12 @@ export function SectionTutorial({ tutorial, className }: { tutorial: SectionTuto
   const pendingSaves = useRef(0);
 
   useEffect(() => {
+    if (!open) return;
+    document.documentElement.setAttribute('data-section-tutorial-open', 'true');
+    return () => { document.documentElement.removeAttribute('data-section-tutorial-open'); };
+  }, [open]);
+
+  useEffect(() => {
     let cancelled = false;
     void api<TutorialProgressResponse>('/api/tutorials/progress').then((result) => {
       if (cancelled) return;
@@ -159,7 +165,7 @@ export function SectionTutorial({ tutorial, className }: { tutorial: SectionTuto
       <CircleHelp /><span className="hidden sm:inline">Tutorial</span>
     </Button>
     <Dialog open={open} onOpenChange={(next) => { if (next) setOpen(true); else closeAsDismissed(); }}>
-      <DialogContent className="max-h-[calc(100vh-2rem)] max-w-5xl gap-0 overflow-y-auto p-0">
+      <DialogContent data-testid="section-tutorial-dialog" className="max-h-[calc(100dvh-1.5rem)] gap-0 overflow-x-hidden overflow-y-auto p-0 sm:w-[calc(100vw-3rem)] sm:max-w-[960px]">
         <DialogHeader className="border-b px-5 py-4 pr-12 sm:px-6">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
             <DialogTitle>{tutorial.section} lesson</DialogTitle>
@@ -168,11 +174,11 @@ export function SectionTutorial({ tutorial, className }: { tutorial: SectionTuto
           <DialogDescription>{tutorial.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.75fr)]">
-          <section className="border-b p-4 sm:p-6 lg:border-b-0 lg:border-r" aria-label="Lesson visual">
+        <div className="grid min-w-0 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.75fr)]">
+          <section className="min-w-0 border-b p-4 sm:p-6 lg:border-b-0 lg:border-r" aria-label="Lesson visual">
             <TutorialVisual step={step} />
           </section>
-          <section className="p-5 sm:p-6" aria-live="polite" aria-atomic="true">
+          <section className="min-w-0 p-5 sm:p-6" aria-live="polite" aria-atomic="true">
             <h2 className="text-base font-semibold tracking-[-0.01em]">{step.title}</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p>
             <ul className="mt-5 space-y-3">

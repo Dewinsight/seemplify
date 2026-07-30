@@ -55,6 +55,20 @@
   }
 }
 
+/* Radix delegates modal scroll locking to react-remove-scroll. Mobile browser
+   emulation can report a desktop-sized innerWidth while retaining the mobile
+   layout viewport, which is then mistaken for an 89px scrollbar. Scope the
+   zero-compensation fallback to this responsive lesson rather than changing
+   scrollbar handling for every desktop dialog. */
+@media (max-width: 767px) {
+  html[data-section-tutorial-open] { overflow-x: clip; }
+  html[data-section-tutorial-open] body[data-scroll-locked] {
+    --removed-body-scroll-bar-size: 0px !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
 @media print {
   .no-print { display: none !important; }
   body { background: white; }
