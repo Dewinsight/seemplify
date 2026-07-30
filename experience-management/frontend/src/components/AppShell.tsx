@@ -26,7 +26,7 @@ const navigation = [
 
 function Brand() {
   return <Link to="/" className="flex h-16 shrink-0 items-center gap-3 border-b px-5">
-    <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">S</div>
+    <img src="/brand/experience-mark.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" />
     <div><div className="text-sm font-semibold leading-4">Seemplify</div><div className="text-xs text-muted-foreground">Experience</div></div>
   </Link>;
 }

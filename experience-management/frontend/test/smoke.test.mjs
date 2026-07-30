@@ -139,6 +139,7 @@ test('ships branded authentication, verified signup, onboarding, and profile man
   assert.match(profile, /\/api\/account\/profile/);
   assert.match(shell, /nextSession\.onboardingRequired/);
   assert.match(shell, /to="\/settings\/profile"/);
+  assert.match(shell, /function Brand\(\)[\s\S]*?\/brand\/experience-mark\.png/);
   for (const asset of ['brand/experience-mark.png', 'images/auth-research.webp', 'images/auth-listening.webp']) {
     assert.ok(fs.statSync(path.resolve(source, '..', 'public', asset)).size > 5_000);
   }
