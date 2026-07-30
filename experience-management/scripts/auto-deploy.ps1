@@ -49,6 +49,19 @@ function Get-Watcher {
   if (-not $process -or $process.CommandLine -notlike '*auto-deploy.ps1*watch*') { Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue; return $null }
   return $process
 }
+function Test-CommitSupportsPostgres([string]$Commit) {
+  $requiredPaths = @(
+    'experience-management/backend/src/databaseAdapter.ts',
+    'experience-management/scripts/bootstrap-sqlite-store.mjs',
+    'experience-management/scripts/migrate-sqlite-to-postgres.mjs',
+    'experience-management/scripts/verify-postgres-runtime.mjs'
+  )
+  foreach ($requiredPath in $requiredPaths) {
+    $entry = (@(& git ls-tree --name-only $Commit -- $requiredPath 2>$null) -join '').Trim()
+    if ($LASTEXITCODE -ne 0 -or $entry -ne $requiredPath) { return $false }
+  }
+  return $true
+}
 function Invoke-Deployment([switch]$ForceDeploy) {
   Push-Location $RepositoryDir
   try {
@@ -59,6 +72,10 @@ function Invoke-Deployment([switch]$ForceDeploy) {
     $manifestPath = (@(& git ls-tree --name-only $commit -- experience-management/package.json 2>$null) -join '').Trim()
     if ($LASTEXITCODE -ne 0) { Write-DeployLog "Skipped: $DeploymentRef could not be inspected."; return }
     if ($manifestPath -ne 'experience-management/package.json') { Write-DeployLog "Skipped: $DeploymentRef does not contain Experience Management yet."; return }
+    if ((Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf) -and -not (Test-CommitSupportsPostgres -Commit $commit)) {
+      Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL cutover is committed and this release is SQLite-only."
+      return
+    }
     $tree = (& git rev-parse "${commit}:experience-management").Trim()
     $deployed = if (Test-Path $DeployedFile) { (Get-Content $DeployedFile -Raw).Trim() } else { '' }
     if ($tree -eq $deployed -and -not $ForceDeploy) { return }
