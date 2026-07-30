@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { Route, Switch } from 'wouter';
 import { AppShell } from '@/components/AppShell';
+import { PlatformAdminShell } from '@/components/platform-admin/PlatformAdminShell';
 import { Navigate, PageLoader } from '@/lib/router';
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
@@ -34,7 +35,19 @@ const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage').then((m
 const LegalPage = lazy(() => import('@/pages/LegalPage').then((module) => ({ default: module.LegalPage })));
 const JoinSpacePage = lazy(() => import('@/pages/JoinSpacePage').then((module) => ({ default: module.JoinSpacePage })));
 const SpaceSettingsPage = lazy(() => import('@/pages/SpaceSettingsPage').then((module) => ({ default: module.SpaceSettingsPage })));
+const PlatformAdminOverviewPage = lazy(() => import('@/pages/platform-admin/OverviewPage').then((module) => ({ default: module.PlatformAdminOverviewPage })));
+const PlatformAdminUsersPage = lazy(() => import('@/pages/platform-admin/UsersPage').then((module) => ({ default: module.PlatformAdminUsersPage })));
+const PlatformAdminUserDetailPage = lazy(() => import('@/pages/platform-admin/UserDetailPage').then((module) => ({ default: module.PlatformAdminUserDetailPage })));
+const PlatformAdminSpacesPage = lazy(() => import('@/pages/platform-admin/SpacesPage').then((module) => ({ default: module.PlatformAdminSpacesPage })));
+const PlatformAdminSpaceDetailPage = lazy(() => import('@/pages/platform-admin/SpaceDetailPage').then((module) => ({ default: module.PlatformAdminSpaceDetailPage })));
+const PlatformAdminSubscriptionsPage = lazy(() => import('@/pages/platform-admin/SubscriptionsPage').then((module) => ({ default: module.PlatformAdminSubscriptionsPage })));
+const PlatformAdminSubscriptionRequestsPage = lazy(() => import('@/pages/platform-admin/SubscriptionRequestsPage').then((module) => ({ default: module.PlatformAdminSubscriptionRequestsPage })));
+const PlatformAdminSubscriptionRequestDetailPage = lazy(() => import('@/pages/platform-admin/SubscriptionRequestDetailPage').then((module) => ({ default: module.PlatformAdminSubscriptionRequestDetailPage })));
+const PlatformAdminAnalyticsPage = lazy(() => import('@/pages/platform-admin/AnalyticsPage').then((module) => ({ default: module.PlatformAdminAnalyticsPage })));
+const PlatformAdminAuditPage = lazy(() => import('@/pages/platform-admin/AuditPage').then((module) => ({ default: module.PlatformAdminAuditPage })));
+const PlatformAdminAuditDetailPage = lazy(() => import('@/pages/platform-admin/AuditDetailPage').then((module) => ({ default: module.PlatformAdminAuditDetailPage })));
 function Admin({ children }: { children: ReactNode }) { return <AppShell>{children}</AppShell>; }
+function PlatformAdmin({ children }: { children: ReactNode }) { return <PlatformAdminShell>{children}</PlatformAdminShell>; }
 
 export function App() {
   return <Suspense fallback={<PageLoader />}><Switch>
@@ -52,6 +65,17 @@ export function App() {
     <Route path="/reset-password"><ResetPasswordPage /></Route>
     <Route path="/legal/terms"><LegalPage kind="terms" /></Route>
     <Route path="/legal/privacy"><LegalPage kind="privacy" /></Route>
+    <Route path="/admin/users/:id"><PlatformAdmin><PlatformAdminUserDetailPage /></PlatformAdmin></Route>
+    <Route path="/admin/users"><PlatformAdmin><PlatformAdminUsersPage /></PlatformAdmin></Route>
+    <Route path="/admin/spaces/:id"><PlatformAdmin><PlatformAdminSpaceDetailPage /></PlatformAdmin></Route>
+    <Route path="/admin/spaces"><PlatformAdmin><PlatformAdminSpacesPage /></PlatformAdmin></Route>
+    <Route path="/admin/subscriptions"><PlatformAdmin><PlatformAdminSubscriptionsPage /></PlatformAdmin></Route>
+    <Route path="/admin/subscription-requests/:id"><PlatformAdmin><PlatformAdminSubscriptionRequestDetailPage /></PlatformAdmin></Route>
+    <Route path="/admin/subscription-requests"><PlatformAdmin><PlatformAdminSubscriptionRequestsPage /></PlatformAdmin></Route>
+    <Route path="/admin/analytics"><PlatformAdmin><PlatformAdminAnalyticsPage /></PlatformAdmin></Route>
+    <Route path="/admin/audit/:id"><PlatformAdmin><PlatformAdminAuditDetailPage /></PlatformAdmin></Route>
+    <Route path="/admin/audit"><PlatformAdmin><PlatformAdminAuditPage /></PlatformAdmin></Route>
+    <Route path="/admin"><PlatformAdmin><PlatformAdminOverviewPage /></PlatformAdmin></Route>
     <Route path="/surveys/new"><Admin><CreateSurveyPage /></Admin></Route>
     <Route path="/surveys/:id"><Admin><SurveyStudioPage /></Admin></Route>
     <Route path="/surveys"><Admin><SurveysPage /></Admin></Route>

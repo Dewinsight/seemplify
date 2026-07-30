@@ -44,6 +44,17 @@ after(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('signup throttling keeps unrelated accounts behind one shared address independent', async () => {
+  const sharedAddress = '198.51.100.220';
+  for (let index = 0; index < 7; index += 1) {
+    await request(app).post('/api/auth/signup').set('x-forwarded-for', sharedAddress).send({
+      name: `Shared Network User ${index}`,
+      email: `shared-network-${index}@example.test`,
+      password: `Shared-Network-${index}-2026!`
+    }).expect(202);
+  }
+});
+
 test('requires mailbox verification and onboarding while keeping tokens one-time and profiles private', async () => {
   const alice = request.agent(app);
   const email = 'alice@example.test';

@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, Sparkles, X } from 'lucide-react';
+import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
@@ -117,6 +117,7 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
       </NavLink>)}
     </nav>
     <div className="relative z-10 shrink-0 border-t bg-card p-3">
+      {session?.permissions?.platformAdmin && <Link to="/admin" onClick={close} className="mb-1 flex h-9 items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><ShieldCheck className="h-4 w-4" />Platform administration</Link>}
       <Link to="/settings/profile" onClick={close} className="mb-2 block min-w-0 rounded-md px-2 py-1.5 hover:bg-muted/60" aria-label="Open your profile">
         <div className="truncate text-xs font-semibold text-foreground">{session?.user?.name || 'Signed in'}</div>
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={session?.user?.email || ''}>{session?.user?.email || 'Loading account…'}</div>
@@ -205,7 +206,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           window.location.assign('/login');
           return;
         }
-        setSession((current) => current ? { ...current, pendingSpaceInvitations: next.pendingSpaceInvitations } : current);
+        setSession((current) => current ? { ...current, permissions: next.permissions, pendingSpaceInvitations: next.pendingSpaceInvitations } : current);
       }).catch(() => undefined);
     }, 30_000);
     return () => window.clearInterval(timer);

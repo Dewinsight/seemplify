@@ -45,6 +45,16 @@
   .metric-value { @apply text-2xl font-semibold tracking-[-0.035em]; }
 }
 
+/* Touch browsers use overlay scrollbars. Prevent react-remove-scroll from
+   applying desktop scrollbar compensation that widens the mobile viewport. */
+@media (hover: none) and (pointer: coarse) {
+  html body[data-scroll-locked] {
+    --removed-body-scroll-bar-size: 0px !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
 @media print {
   .no-print { display: none !important; }
   body { background: white; }

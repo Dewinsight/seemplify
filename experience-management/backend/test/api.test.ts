@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -120,6 +121,64 @@ test('protects admin APIs while allowing a complete public survey workflow', asy
   const tickets = await agent.get(`/api/surveys/${conditional.body.id}/tickets`).expect(200);
   assert.equal(tickets.body.length, 1);
   assert.equal(tickets.body[0].priority, 'high');
+  const recoveryDetail = await agent.get(`/api/tickets/${tickets.body[0].id}`).expect(200);
+  assert.equal(recoveryDetail.body.response.id, tickets.body[0].response_id);
+  assert.equal(recoveryDetail.body.response.answers['logic-source'], 'Escalate');
+  assert.equal(recoveryDetail.body.events[0].eventType, 'created');
+  assert.equal(recoveryDetail.body.events[0].detail.source, 'survey_rule');
+});
+
+test('opens, isolates, and tracks manual recovery cases through closure', async () => {
+  await request(app).post('/api/tickets').send({}).expect(401);
+  const agent = request.agent(app);
+  await agent.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
+  const survey = await agent.post('/api/surveys').send({
+    title: 'Manual recovery workflow', purpose: 'customer_experience', primaryMetric: 'custom', questions: []
+  }).expect(201);
+  const created = await agent.post('/api/tickets').send({
+    surveyId: survey.body.id,
+    title: 'Customer requested a billing follow-up',
+    priority: 'high',
+    owner: 'Customer success',
+    notes: 'Confirm the disputed renewal before responding.'
+  }).expect(201);
+  assert.equal(created.body.status, 'open');
+  assert.equal(created.body.responseId, null);
+  assert.equal(created.body.survey.id, survey.body.id);
+  assert.equal(created.body.events.length, 1);
+  assert.equal(created.body.events[0].eventType, 'created');
+
+  const aggregate = await agent.get('/api/tickets').expect(200);
+  assert.ok(aggregate.body.some((item: any) => item.id === created.body.id && item.eventCount === 1));
+  const legacy = await agent.get(`/api/surveys/${survey.body.id}/tickets`).expect(200);
+  assert.ok(legacy.body.some((item: any) => item.id === created.body.id));
+
+  const updated = await agent.patch(`/api/tickets/${created.body.id}`).send({
+    status: 'in_progress', priority: 'urgent', owner: 'Michael', notes: 'Customer contacted; finance is reviewing.'
+  }).expect(200);
+  assert.equal(updated.body.status, 'in_progress');
+  assert.equal(updated.body.priority, 'urgent');
+  assert.equal(updated.body.events.length, 2);
+  assert.equal(updated.body.events[1].eventType, 'updated');
+
+  await agent.patch(`/api/tickets/${created.body.id}`).send({ status: 'closed' }).expect(200);
+  const closed = await agent.get('/api/tickets?status=closed&priority=urgent').expect(200);
+  assert.ok(closed.body.some((item: any) => item.id === created.body.id));
+  const detail = await agent.get(`/api/tickets/${created.body.id}`).expect(200);
+  assert.equal(detail.body.status, 'closed');
+  assert.equal(detail.body.events.at(-1).eventType, 'closed');
+
+  const outsider = request.agent(app);
+  await signupVerifyAndOnboard(outsider, {
+    name: 'Recovery Outsider', email: `recovery-outsider-${Date.now()}@example.com`, password: 'Recovery-Outsider-2026', spaceName: 'Separate recovery space'
+  });
+  await outsider.get(`/api/tickets/${created.body.id}`).expect(404);
+  const outsiderList = await outsider.get('/api/tickets').expect(200);
+  assert.equal(outsiderList.body.some((item: any) => item.id === created.body.id), false);
+  await outsider.patch(`/api/tickets/${created.body.id}`).send({ status: 'open' }).expect(404);
+
+  await agent.post('/api/tickets').send({ surveyId: survey.body.id, title: 'x' }).expect(400);
+  await agent.post('/api/tickets').send({ surveyId: survey.body.id, responseId: crypto.randomUUID(), title: 'Missing response' }).expect(404);
 });
 
 test('persists social mentions and journey maps before Terra work is dispatched', async () => {

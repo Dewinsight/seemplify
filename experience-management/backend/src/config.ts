@@ -42,6 +42,11 @@ function boundedNumber(value: unknown, fallback: number, minimum: number, maximu
   return Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? parsed : fallback));
 }
 
+function enabled(value: unknown, fallback = false) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
 function databaseProvider(value: unknown): 'sqlite' | 'postgres' {
   const normalized = String(value || 'sqlite').trim().toLowerCase();
   if (normalized !== 'sqlite' && normalized !== 'postgres') {
@@ -83,6 +88,7 @@ export const config = {
     ),
     ssl: postgresSsl(process.env.POSTGRES_SSL),
     schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 2, 1, 1_000_000),
     sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
   },
   uploadDir: resolveFromBackend(
@@ -129,6 +135,7 @@ export const config = {
       || '../../.local-runtime/llm/service-secret'
   ),
   aiWorkerConcurrency: Math.max(1, Math.min(16, Number(process.env.AI_WORKER_CONCURRENCY || 4))),
+  subscriptionEnforcementEnabled: enabled(process.env.SUBSCRIPTION_ENFORCEMENT_ENABLED),
   brevoApiKey: process.env.BREVO_API_KEY || '',
   brevoApiUrl: process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email',
   brevoFromEmail: process.env.BREVO_FROM_EMAIL || 'no-reply@seemplifyai.com',

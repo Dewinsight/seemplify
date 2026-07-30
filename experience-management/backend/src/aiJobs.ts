@@ -20,6 +20,7 @@ import {
 import { completeWithTerra, TerraError } from './terraClient.js';
 import { knowledgePromptContext, pinnedKnowledgeRefs } from './knowledgeContext.js';
 import { KnowledgeError, replaceSurveyKnowledgeBases } from './knowledgeRepository.js';
+import { recordRecoveryTicketEvent } from './recovery.js';
 import type { AiJob, Question, ResponseRecord, Survey } from './types.js';
 
 type JobOutput = { output: unknown; runtime: unknown };
@@ -81,10 +82,16 @@ function createRecoveryTicket(surveyId: string, responseId: string, analysis: z.
   const exists = db.prepare('SELECT id FROM tickets WHERE response_id=? AND status<>?').get(responseId, 'closed');
   if (exists) return;
   const now = new Date().toISOString();
-  db.prepare(`INSERT INTO tickets (id,survey_id,response_id,title,priority,status,notes,created_at,updated_at) VALUES (?,?,?,?,?,'open',?,?,?)`).run(
-    crypto.randomUUID(), surveyId, responseId, analysis.summary.slice(0, 160), analysis.urgency === 'critical' ? 'urgent' : 'high',
-    analysis.recommendedActions.join('\n'), now, now
-  );
+  const ticketId = crypto.randomUUID();
+  db.transaction(() => {
+    db.prepare(`INSERT INTO tickets (id,survey_id,response_id,title,priority,status,notes,created_at,updated_at) VALUES (?,?,?,?,?,'open',?,?,?)`).run(
+      ticketId, surveyId, responseId, analysis.summary.slice(0, 160), analysis.urgency === 'critical' ? 'urgent' : 'high',
+      analysis.recommendedActions.join('\n'), now, now
+    );
+    recordRecoveryTicketEvent(ticketId, null, 'created_by_terra', {
+      source: 'response_analysis', responseId, urgency: analysis.urgency, sentiment: analysis.sentiment
+    }, now);
+  })();
 }
 
 function generatedSurveyApplication(job: AiJob): JobOutput | null {

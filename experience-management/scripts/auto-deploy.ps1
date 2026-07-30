@@ -6,6 +6,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $ProjectDir = Split-Path -Parent $PSScriptRoot
+$RuntimeCompatibilityScript = Join-Path $PSScriptRoot 'postgres-runtime-compatibility.ps1'
+if (-not (Test-Path -LiteralPath $RuntimeCompatibilityScript -PathType Leaf)) { throw 'The PostgreSQL runtime compatibility contract is missing.' }
+. $RuntimeCompatibilityScript
 $RepositoryDir = Split-Path -Parent $ProjectDir
 $RuntimeDir = Join-Path $RepositoryDir '.local-runtime\experience-management'
 $PidFile = Join-Path $RuntimeDir 'auto-deploy.pid'
@@ -15,6 +18,8 @@ $WatcherErrorLog = Join-Path $RuntimeDir 'auto-deploy.stderr.log'
 $DeployedFile = Join-Path $RuntimeDir 'deployed-tree'
 $ActiveProjectFile = Join-Path $RuntimeDir 'active-project-path'
 $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
+$PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
+$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v2-started'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
@@ -62,6 +67,24 @@ function Test-CommitSupportsPostgres([string]$Commit) {
   }
   return $true
 }
+function Test-CommitSupportsPostgresRuntime2([string]$Commit) {
+  $requiredPaths = @(
+    'experience-management/backend/migrations/postgres/runtime-compatibility.json',
+    'experience-management/backend/migrations/postgres/0002_platform_administration.sql',
+    'experience-management/backend/migrations/postgres/runtime_privileges.sql',
+    'experience-management/scripts/upgrade-postgres-schema.mjs',
+    'experience-management/scripts/postgres-runtime-contract.mjs',
+    'experience-management/scripts/verify-postgres-runtime.mjs'
+  )
+  foreach ($requiredPath in $requiredPaths) {
+    $entry = (@(& git ls-tree --name-only $Commit -- $requiredPath 2>$null) -join '').Trim()
+    if ($LASTEXITCODE -ne 0 -or $entry -ne $requiredPath) { return $false }
+  }
+  try {
+    $metadata = ((@(& git show "${Commit}:experience-management/backend/migrations/postgres/runtime-compatibility.json" 2>$null) -join "`n") | ConvertFrom-Json)
+  } catch { return $false }
+  return [int]$metadata.minimumRuntimeSchemaVersion -le 2 -and [int]$metadata.maximumRuntimeSchemaVersion -ge 2
+}
 function Invoke-Deployment([switch]$ForceDeploy) {
   Push-Location $RepositoryDir
   try {
@@ -72,8 +95,14 @@ function Invoke-Deployment([switch]$ForceDeploy) {
     $manifestPath = (@(& git ls-tree --name-only $commit -- experience-management/package.json 2>$null) -join '').Trim()
     if ($LASTEXITCODE -ne 0) { Write-DeployLog "Skipped: $DeploymentRef could not be inspected."; return }
     if ($manifestPath -ne 'experience-management/package.json') { Write-DeployLog "Skipped: $DeploymentRef does not contain Experience Management yet."; return }
-    if ((Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf) -and -not (Test-CommitSupportsPostgres -Commit $commit)) {
-      Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL cutover is committed and this release is SQLite-only."
+    $postgresCutoverStarted = (Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf) -or
+      (Test-Path -LiteralPath $PostgresCutoverState -PathType Leaf)
+    if ($postgresCutoverStarted -and -not (Test-CommitSupportsPostgres -Commit $commit)) {
+      Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL cutover has started and this release is SQLite-only."
+      return
+    }
+    if ((Test-Path -LiteralPath $PostgresRuntimeUpgradeMarker -PathType Leaf) -and -not (Test-CommitSupportsPostgresRuntime2 -Commit $commit)) {
+      Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 2 has started and this release is runtime-v1-only."
       return
     }
     $tree = (& git rev-parse "${commit}:experience-management").Trim()
@@ -107,16 +136,21 @@ function Invoke-Deployment([switch]$ForceDeploy) {
         $previousSupportsPostgres = $previousProject -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'backend\dist\databaseAdapter.js') -PathType Leaf) -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'scripts\verify-postgres-runtime.mjs') -PathType Leaf)
-        if (-not (Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf) -or $previousSupportsPostgres) {
+        $previousSupportsRuntime2 = $previousProject -and (Test-ProjectSupportsPostgresRuntimeVersion $previousProject 2)
+        $cutoverCommitted = Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf
+        $cutoverStaged = Test-Path -LiteralPath $PostgresCutoverState -PathType Leaf
+        $runtime2Started = Test-Path -LiteralPath $PostgresRuntimeUpgradeMarker -PathType Leaf
+        $rollbackCompatible = if ($runtime2Started) { $previousSupportsRuntime2 } else { $previousSupportsPostgres }
+        if ((-not $cutoverCommitted -and -not $cutoverStaged -and -not $runtime2Started) -or
+            ($cutoverCommitted -and -not $cutoverStaged -and $rollbackCompatible)) {
           if ($previousProject) { Set-Content -LiteralPath $ActiveProjectFile -Value $previousProject -Encoding utf8 } else { Remove-Item -LiteralPath $ActiveProjectFile -Force -ErrorAction SilentlyContinue }
           & (Join-Path $PSScriptRoot 'manage.ps1') -Action restart | Out-Null
           throw "service restart failed; previous compatible deployment restored: $($_.Exception.Message)"
         }
-        # Once PostgreSQL has accepted writes, an older SQLite-only release is
-        # not a valid rollback target. Keep the new release selected for a
-        # repair/retry instead of silently forking production data.
+        # A staged base cutover and a started runtime-2 upgrade are both
+        # roll-forward-only. Runtime-v1 binaries cannot enforce v2 suspension.
         Set-Content -LiteralPath $ActiveProjectFile -Value $releaseProject -Encoding utf8
-        throw "service restart failed after PostgreSQL cutover; SQLite rollback was refused: $($_.Exception.Message)"
+        throw "service restart failed after PostgreSQL cutover; an incompatible runtime rollback was refused: $($_.Exception.Message)"
       }
       $tree | Set-Content -LiteralPath $DeployedFile -Encoding ascii
       Write-DeployLog "Deployed $tree from $DeploymentRef at $commit into isolated release $releaseDir."

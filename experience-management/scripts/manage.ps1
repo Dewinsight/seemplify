@@ -5,6 +5,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $SourceProjectDir = Split-Path -Parent $PSScriptRoot
+$RuntimeCompatibilityScript = Join-Path $PSScriptRoot 'postgres-runtime-compatibility.ps1'
+if (-not (Test-Path -LiteralPath $RuntimeCompatibilityScript -PathType Leaf)) { throw 'The PostgreSQL runtime compatibility contract is missing.' }
+. $RuntimeCompatibilityScript
 $RepositoryDir = Split-Path -Parent $SourceProjectDir
 $RuntimeDir = Join-Path $RepositoryDir '.local-runtime\experience-management'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
@@ -16,7 +19,10 @@ $PostgresContainer = 'xplorer-postgres'
 $PostgresDatabase = 'seemplify_experience'
 $PostgresRole = 'seemplify_experience_app'
 $PostgresOwnerRole = 'seemplify_experience_owner'
+$PostgresRuntimeSchemaVersion = 2
 $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
+$PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
+$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v2-started'
 $PostgresMigrationLog = Join-Path $RuntimeDir 'postgres-migration.log'
 $PidFile = Join-Path $RuntimeDir 'server.pid'
 $PasswordFile = Join-Path $RuntimeDir 'admin-password'
@@ -190,21 +196,28 @@ ALTER ROLE $PostgresOwnerRole LOGIN PASSWORD :'owner_password';
 }
 function Grant-PostgresRuntimePrivileges {
   $identity = Get-PostgresContainerIdentity
-  Invoke-PostgresAdminSql $identity $PostgresDatabase @"
-GRANT CONNECT ON DATABASE $PostgresDatabase TO $PostgresRole;
-GRANT USAGE ON SCHEMA public TO $PostgresRole;
-GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO $PostgresRole;
-GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA public TO $PostgresRole;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO $PostgresRole;
-CREATE INDEX IF NOT EXISTS space_invitations_account_pending
-  ON space_invitations(LOWER(email),created_at DESC)
-  WHERE accepted_at IS NULL AND revoked_at IS NULL;
-ALTER DEFAULT PRIVILEGES FOR ROLE $PostgresOwnerRole IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO $PostgresRole;
-ALTER DEFAULT PRIVILEGES FOR ROLE $PostgresOwnerRole IN SCHEMA public GRANT USAGE,SELECT,UPDATE ON SEQUENCES TO $PostgresRole;
-ALTER DEFAULT PRIVILEGES FOR ROLE $PostgresOwnerRole IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO $PostgresRole;
-REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-REVOKE CREATE ON SCHEMA public FROM $PostgresRole;
-"@
+  foreach ($identifier in @($PostgresDatabase,$PostgresRole,$PostgresOwnerRole)) {
+    if ($identifier -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { throw "Unsafe managed PostgreSQL identifier: $identifier" }
+  }
+  $privilegeFile = Join-Path $SourceProjectDir 'backend\migrations\postgres\runtime_privileges.sql'
+  if (-not (Test-Path -LiteralPath $privilegeFile -PathType Leaf)) { throw 'The atomic PostgreSQL runtime privilege contract is missing.' }
+  $privilegeSql = (Get-Content -LiteralPath $privilegeFile -Raw).
+    Replace('__DATABASE__',$PostgresDatabase).
+    Replace('__APP_ROLE__',$PostgresRole).
+    Replace('__OWNER_ROLE__',$PostgresOwnerRole)
+  Invoke-PostgresAdminSql $identity $PostgresDatabase $privilegeSql
+}
+function Invoke-PostgresRuntimeUpgrade([string]$ProjectDir, [System.Management.Automation.ApplicationInfo]$Node, [string]$SourceSha256) {
+  $upgrader = Join-Path $ProjectDir 'scripts\upgrade-postgres-schema.mjs'
+  if (-not (Test-Path -LiteralPath $upgrader -PathType Leaf)) { throw 'The PostgreSQL runtime upgrader is missing from this release.' }
+  if ($SourceSha256 -notmatch '^[a-f0-9]{64}$') { throw 'The PostgreSQL runtime upgrader requires the committed source digest.' }
+  Set-PostgresOwnerLogin $true
+  try {
+    $upgradeOutput = @(& $Node.Source $upgrader --target-version $PostgresRuntimeSchemaVersion --expected-source-version 1 --expected-source-sha256 $SourceSha256 --pg-host 127.0.0.1 --pg-port 5432 --pg-database $PostgresDatabase --pg-user $PostgresOwnerRole --pg-password-file $PostgresOwnerPasswordFile --json 2>&1)
+    $upgradeExitCode = $LASTEXITCODE
+  } finally { Set-PostgresOwnerLogin $false }
+  foreach ($line in $upgradeOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
+  if ($upgradeExitCode -ne 0) { throw "The PostgreSQL runtime schema upgrade failed. See $PostgresMigrationLog." }
 }
 function Get-PostgresCutoverMarker {
   if (-not (Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf)) { return $null }
@@ -213,6 +226,51 @@ function Get-PostgresCutoverMarker {
     throw 'The PostgreSQL cutover marker does not match the managed runtime.'
   }
   return $marker
+}
+function Write-PostgresCutoverDocument([string]$Path, [System.Collections.IDictionary]$Value) {
+  $temporaryPath = "$Path.pending-$PID"
+  try {
+    Set-Content -LiteralPath $temporaryPath -Value ($Value | ConvertTo-Json -Compress) -Encoding ascii
+    Move-Item -LiteralPath $temporaryPath -Destination $Path -Force
+  } finally { Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue }
+}
+function Get-PostgresRuntimeUpgradeMarker {
+  if (-not (Test-Path -LiteralPath $PostgresRuntimeUpgradeMarker -PathType Leaf)) { return $null }
+  try { $marker = Get-Content -LiteralPath $PostgresRuntimeUpgradeMarker -Raw | ConvertFrom-Json } catch { throw 'The PostgreSQL runtime-upgrade marker is malformed.' }
+  if ([int]$marker.runtimeSchemaVersion -ne $PostgresRuntimeSchemaVersion -or [string]$marker.database -ne $PostgresDatabase) {
+    throw 'The PostgreSQL runtime-upgrade marker does not match the managed runtime.'
+  }
+  return $marker
+}
+function Start-PostgresRuntimeUpgrade {
+  $existing = Get-PostgresRuntimeUpgradeMarker
+  if ($existing) { return }
+  $value = [ordered]@{ runtimeSchemaVersion=$PostgresRuntimeSchemaVersion; database=$PostgresDatabase; startedAt=[DateTime]::UtcNow.ToString('o') }
+  Write-PostgresCutoverDocument $PostgresRuntimeUpgradeMarker $value
+}
+function Get-PostgresCutoverState {
+  if (-not (Test-Path -LiteralPath $PostgresCutoverState -PathType Leaf)) { return $null }
+  try { $state = Get-Content -LiteralPath $PostgresCutoverState -Raw | ConvertFrom-Json } catch { throw 'The PostgreSQL cutover state is malformed.' }
+  if ([int]$state.schemaVersion -ne 1 -or [string]$state.database -ne $PostgresDatabase -or
+      [string]$state.phase -notin @('base_copy_started','base_committed') -or
+      ($state.phase -eq 'base_committed' -and [string]$state.sourceSha256 -notmatch '^[a-f0-9]{64}$')) {
+    throw 'The PostgreSQL cutover state does not match the managed runtime.'
+  }
+  return $state
+}
+function Set-PostgresCutoverState([string]$Phase, [string]$SourceSha256 = '') {
+  if ($Phase -notin @('base_copy_started','base_committed')) { throw "Unsupported PostgreSQL cutover phase: $Phase" }
+  if ($Phase -eq 'base_committed' -and $SourceSha256 -notmatch '^[a-f0-9]{64}$') { throw 'A committed base-copy state requires its source digest.' }
+  $existing = Get-PostgresCutoverState
+  $startedAt = if ($existing -and $existing.startedAt) { [string]$existing.startedAt } else { [DateTime]::UtcNow.ToString('o') }
+  $value = [ordered]@{ schemaVersion=1; database=$PostgresDatabase; phase=$Phase; sourceSha256=$SourceSha256; startedAt=$startedAt; updatedAt=[DateTime]::UtcNow.ToString('o') }
+  Write-PostgresCutoverDocument $PostgresCutoverState $value
+}
+function Complete-PostgresCutover([string]$SourceSha256) {
+  if ($SourceSha256 -notmatch '^[a-f0-9]{64}$') { throw 'The committed PostgreSQL cutover requires its source digest.' }
+  $markerValue = [ordered]@{ schemaVersion=1; database=$PostgresDatabase; sourceSha256=$SourceSha256; committedAt=[DateTime]::UtcNow.ToString('o') }
+  Write-PostgresCutoverDocument $PostgresCutoverMarker $markerValue
+  Remove-Item -LiteralPath $PostgresCutoverState -Force -ErrorAction SilentlyContinue
 }
 function Set-PostgresRuntimeEnvironment([string]$SourceSha256 = '') {
   $env:DATABASE_PROVIDER='postgres'
@@ -223,6 +281,8 @@ function Set-PostgresRuntimeEnvironment([string]$SourceSha256 = '') {
   $env:POSTGRES_PASSWORD_FILE=$PostgresPasswordFile
   $env:POSTGRES_SSL='false'
   $env:POSTGRES_SCHEMA_VERSION='1'
+  $env:POSTGRES_RUNTIME_SCHEMA_VERSION=[string]$PostgresRuntimeSchemaVersion
+  $env:SUBSCRIPTION_ENFORCEMENT_ENABLED='true'
   if ($SourceSha256) { $env:POSTGRES_SOURCE_SHA256=$SourceSha256 } else { Remove-Item Env:POSTGRES_SOURCE_SHA256 -ErrorAction SilentlyContinue }
   # Retained as the immutable migration/rollback source. PostgreSQL is the
   # only runtime database once the cutover marker has been written.
@@ -235,8 +295,9 @@ function Initialize-PostgresCutover([string]$ProjectDir) {
   $verifier = Join-Path $ProjectDir 'scripts\verify-postgres-runtime.mjs'
   $postgresCapable = (Test-Path -LiteralPath $migrator -PathType Leaf) -and (Test-Path -LiteralPath $adapter -PathType Leaf) -and
     (Test-Path -LiteralPath $bootstrapper -PathType Leaf) -and (Test-Path -LiteralPath $verifier -PathType Leaf)
+  $runtimeUpgradeCapable = Test-ProjectSupportsPostgresRuntimeVersion $ProjectDir $PostgresRuntimeSchemaVersion
   if (-not $postgresCapable) {
-    if (Get-PostgresCutoverMarker) { throw 'This release predates the committed PostgreSQL cutover and cannot be started safely.' }
+    if ((Get-PostgresCutoverMarker) -or (Get-PostgresCutoverState) -or (Get-PostgresRuntimeUpgradeMarker)) { throw 'This release predates the started PostgreSQL cutover and cannot be started safely.' }
     # Old isolated releases remain rollback-compatible with the untouched
     # SQLite source only until the PostgreSQL cutover is committed.
     $env:DATABASE_PROVIDER='sqlite'
@@ -248,50 +309,69 @@ function Initialize-PostgresCutover([string]$ProjectDir) {
   $node = Get-Command node.exe -ErrorAction Stop
   $marker = Get-PostgresCutoverMarker
   if ($marker) {
+    $runtimeUpgradeStarted = Get-PostgresRuntimeUpgradeMarker
+    if (-not $runtimeUpgradeCapable) {
+      if ($runtimeUpgradeStarted) { throw "PostgreSQL runtime schema $PostgresRuntimeSchemaVersion has started; this release only supports the legacy runtime schema and cannot be started." }
+      # Runtime schema 2 has not started, so a legacy PostgreSQL-v1 release may
+      # continue serving until a runtime-2-capable release begins the upgrade.
+      Set-PostgresRuntimeEnvironment ([string]$marker.sourceSha256)
+      return
+    }
+    Start-PostgresRuntimeUpgrade
+    Invoke-PostgresRuntimeUpgrade $ProjectDir $node ([string]$marker.sourceSha256)
     Grant-PostgresRuntimePrivileges
     Set-PostgresRuntimeEnvironment ([string]$marker.sourceSha256)
     $verifyOutput = @(& $node.Source $verifier --json 2>&1)
     foreach ($line in $verifyOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
     if ($LASTEXITCODE -ne 0) { throw "The committed PostgreSQL runtime failed verification. See $PostgresMigrationLog." }
+    Remove-Item -LiteralPath $PostgresCutoverState -Force -ErrorAction SilentlyContinue
     return
   }
 
-  if (-not (Test-Path -LiteralPath $SqliteDatabasePath -PathType Leaf)) {
-    $bootstrapOutput = @(& $node.Source $bootstrapper --sqlite $SqliteDatabasePath --json 2>&1)
-    foreach ($line in $bootstrapOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
-    if ($LASTEXITCODE -ne 0) { throw "The empty Experience database could not be bootstrapped. See $PostgresMigrationLog." }
-  }
-  $backupDir = Join-Path $RuntimeDir 'backups'
-  New-Item -ItemType Directory -Force $backupDir | Out-Null
-  Set-PostgresOwnerLogin $true
-  try {
-    $migrationOutput = @(& $node.Source $migrator --sqlite $SqliteDatabasePath --backup-dir $backupDir --mode migrate --pg-user $PostgresOwnerRole --pg-password-file $PostgresOwnerPasswordFile --json 2>&1)
-    $migrationExitCode = $LASTEXITCODE
-  } finally { Set-PostgresOwnerLogin $false }
-  foreach ($line in $migrationOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
-  if ($migrationExitCode -ne 0) {
-    throw "The SQLite to PostgreSQL migration failed. See $PostgresMigrationLog."
-  }
-  $completion = $null
-  foreach ($line in $migrationOutput) {
+  if (-not $runtimeUpgradeCapable) { throw 'The PostgreSQL cutover has started and requires a runtime-migration-capable release to roll forward.' }
+  $state = Get-PostgresCutoverState
+  $sourceSha256 = if ($state -and $state.phase -eq 'base_committed') { [string]$state.sourceSha256 } else { '' }
+  if (-not $sourceSha256) {
+    if (-not (Test-Path -LiteralPath $SqliteDatabasePath -PathType Leaf)) {
+      $bootstrapOutput = @(& $node.Source $bootstrapper --sqlite $SqliteDatabasePath --json 2>&1)
+      foreach ($line in $bootstrapOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
+      if ($LASTEXITCODE -ne 0) { throw "The empty Experience database could not be bootstrapped. See $PostgresMigrationLog." }
+    }
+    $backupDir = Join-Path $RuntimeDir 'backups'
+    New-Item -ItemType Directory -Force $backupDir | Out-Null
+    Set-PostgresCutoverState 'base_copy_started'
+    Set-PostgresOwnerLogin $true
     try {
-      $event = ([string]$line) | ConvertFrom-Json
-      if ($event.event -eq 'migration_complete') { $completion = $event }
-    } catch { }
+      $migrationOutput = @(& $node.Source $migrator --sqlite $SqliteDatabasePath --backup-dir $backupDir --mode migrate --pg-user $PostgresOwnerRole --pg-password-file $PostgresOwnerPasswordFile --json 2>&1)
+      $migrationExitCode = $LASTEXITCODE
+    } finally { Set-PostgresOwnerLogin $false }
+    foreach ($line in $migrationOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
+    if ($migrationExitCode -ne 0) {
+      throw "The SQLite to PostgreSQL migration failed. PostgreSQL cutover remains staged for a roll-forward retry. See $PostgresMigrationLog."
+    }
+    $completion = $null
+    foreach ($line in $migrationOutput) {
+      try {
+        $event = ([string]$line) | ConvertFrom-Json
+        if ($event.event -eq 'migration_complete') { $completion = $event }
+      } catch { }
+    }
+    if (-not $completion -or [string]$completion.sourceSha256 -notmatch '^[a-f0-9]{64}$') {
+      throw "The PostgreSQL migrator exited without a valid completion manifest. Cutover remains staged for a roll-forward retry. See $PostgresMigrationLog."
+    }
+    $sourceSha256 = [string]$completion.sourceSha256
+    # This durable state is the point of no return: SQLite must never accept
+    # runtime writes after the PostgreSQL base copy has committed.
+    Set-PostgresCutoverState 'base_committed' $sourceSha256
   }
-  if (-not $completion -or [string]$completion.sourceSha256 -notmatch '^[a-f0-9]{64}$') {
-    throw "The PostgreSQL migrator exited without a valid completion manifest. See $PostgresMigrationLog."
-  }
+  Start-PostgresRuntimeUpgrade
+  Invoke-PostgresRuntimeUpgrade $ProjectDir $node $sourceSha256
   Grant-PostgresRuntimePrivileges
-  Set-PostgresRuntimeEnvironment ([string]$completion.sourceSha256)
+  Set-PostgresRuntimeEnvironment $sourceSha256
   $verifyOutput = @(& $node.Source $verifier --json 2>&1)
   foreach ($line in $verifyOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
-  if ($LASTEXITCODE -ne 0) { throw "PostgreSQL was migrated but failed the read-only application verification. SQLite remains authoritative. See $PostgresMigrationLog." }
-
-  $markerValue = [ordered]@{ schemaVersion=1; database=$PostgresDatabase; sourceSha256=[string]$completion.sourceSha256; committedAt=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json -Compress
-  $markerTemp = "$PostgresCutoverMarker.pending"
-  Set-Content -LiteralPath $markerTemp -Value $markerValue -Encoding ascii
-  Move-Item -LiteralPath $markerTemp -Destination $PostgresCutoverMarker -Force
+  if ($LASTEXITCODE -ne 0) { throw "PostgreSQL cutover failed runtime verification and remains staged for a roll-forward retry. See $PostgresMigrationLog." }
+  Complete-PostgresCutover $sourceSha256
 }
 function Get-ServerProcess {
   if (-not (Test-Path -LiteralPath $PidFile)) { return $null }
@@ -345,7 +425,7 @@ function Get-Status {
     $healthy = $health.status -eq 'ok' -and $reportedDatabaseReady
   } catch {}
   $project = Get-ProjectDir
-  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); databaseProvider=if($health){$health.database}else{'unknown'}; databaseReady=if($health){$reportedDatabaseReady}else{$false}; databaseSchemaVersion=if($health){$health.databaseSchemaVersion}else{$null}; postgresDatabase=$PostgresDatabase; postgresRole=$PostgresRole; postgresOwnerRole=$PostgresOwnerRole; postgresCutoverCommitted=(Test-Path $PostgresCutoverMarker); postgresCredentialConfigured=((Test-Path $PostgresPasswordFile) -and (Test-Path $PostgresOwnerPasswordFile)); sqliteRecoverySource=$SqliteDatabasePath; authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); esignEncryptionConfigured=(Test-Path $EsignEncryptionKeyFile); knowledgeRuntimeConfigured=(Test-Path $KnowledgeRuntimeSecretFile); knowledgeRuntimeUrl='http://127.0.0.1:11540'; knowledgeStorageDir=$KnowledgeStorageDir; xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
+  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); databaseProvider=if($health){$health.database}else{'unknown'}; databaseReady=if($health){$reportedDatabaseReady}else{$false}; databaseSchemaVersion=if($health){$health.databaseSchemaVersion}else{$null}; postgresDatabase=$PostgresDatabase; postgresRole=$PostgresRole; postgresOwnerRole=$PostgresOwnerRole; postgresCutoverCommitted=(Test-Path $PostgresCutoverMarker); postgresCutoverStaged=(Test-Path $PostgresCutoverState); postgresRuntimeUpgradeStarted=(Test-Path $PostgresRuntimeUpgradeMarker); postgresCredentialConfigured=((Test-Path $PostgresPasswordFile) -and (Test-Path $PostgresOwnerPasswordFile)); sqliteRecoverySource=$SqliteDatabasePath; authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); esignEncryptionConfigured=(Test-Path $EsignEncryptionKeyFile); knowledgeRuntimeConfigured=(Test-Path $KnowledgeRuntimeSecretFile); knowledgeRuntimeUrl='http://127.0.0.1:11540'; knowledgeStorageDir=$KnowledgeStorageDir; xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
 }
 switch ($Action) { 'initialize' { Initialize-Runtime; Initialize-Postgres }; 'start' { Start-Server }; 'stop' { Stop-Server }; 'restart' { Stop-Server; Start-Server }; 'enable-auto-start' { Initialize-Runtime; Initialize-Postgres; Set-AutoStart $true }; 'disable-auto-start' { Set-AutoStart $false }; 'status' {} }
 $status = Get-Status; if ($Json) { $status | ConvertTo-Json -Compress } else { [pscustomobject]$status | Format-List }

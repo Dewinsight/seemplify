@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Copy, Loader2, Plus, Settings2, Trash2, UserPlus, Users } from 'lucide-react';
+import { Check, Copy, CreditCard, Loader2, Plus, Settings2, Trash2, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { activeSpaceId, api, json, storeActiveSpaceId } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
@@ -19,6 +19,20 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
 }
 
+type SubscriptionPlan = {
+  code: 'starter' | 'team' | 'enterprise'; name: string; description: string; requestable: boolean;
+  features: Record<string, boolean>; limits: Record<string, number>;
+};
+type ManagedSubscription = {
+  id: string; planCode: SubscriptionPlan['code']; status: 'active' | 'suspended' | 'cancelled';
+  effectiveAt: string; expiresAt: string | null; version: number;
+};
+type SubscriptionRequest = {
+  id: string; requestType: 'activate' | 'change' | 'cancel'; requestedPlanCode: SubscriptionPlan['code'] | null;
+  requestedPlan: SubscriptionPlan | null; requestNote: string; status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  reviewNote: string; version: number; createdAt: string; decisionAt: string | null;
+};
+
 export function SpaceSettingsPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [active, setActive] = useState<SpaceSummary | null>(null);
@@ -31,23 +45,37 @@ export function SpaceSettingsPage() {
   const [inviteUrl, setInviteUrl] = useState('');
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [subscription, setSubscription] = useState<ManagedSubscription | null>(null);
+  const [effectivePlan, setEffectivePlan] = useState<SubscriptionPlan | null>(null);
+  const [subscriptionRequests, setSubscriptionRequests] = useState<SubscriptionRequest[]>([]);
+  const [requestPlan, setRequestPlan] = useState<SubscriptionPlan['code']>('team');
+  const [requestNote, setRequestNote] = useState('');
 
   const load = useCallback(async () => {
     const nextSession = await api<AuthSession>('/api/auth/session');
     if (!nextSession.authenticated || !nextSession.user || !nextSession.activeSpace) return;
     const stored = activeSpaceId();
     const selected = nextSession.spaces.find((space) => space.id === stored) || nextSession.activeSpace;
-    const [nextMembers, nextInvitations] = await Promise.all([
+    const [nextMembers, nextInvitations, currentPlan, planOptions, requestHistory] = await Promise.all([
       api<SpaceMember[]>(`/api/spaces/${selected.id}/members`),
       selected.role === 'owner' || selected.role === 'admin'
         ? api<SpaceInvitation[]>(`/api/spaces/${selected.id}/invitations`)
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      api<{ subscription: ManagedSubscription | null; effectivePlan: SubscriptionPlan }>('/api/subscriptions/current'),
+      api<{ plans: SubscriptionPlan[] }>('/api/subscriptions/plans'),
+      api<{ requests: SubscriptionRequest[] }>('/api/subscriptions/requests')
     ]);
     setSession(nextSession);
     setActive(selected);
     setName(selected.name);
     setMembers(nextMembers);
     setInvitations(nextInvitations);
+    setSubscription(currentPlan.subscription);
+    setEffectivePlan(currentPlan.effectivePlan);
+    setPlans(planOptions.plans);
+    setSubscriptionRequests(requestHistory.requests);
+    setRequestPlan(currentPlan.effectivePlan.code === 'starter' ? 'team' : 'enterprise');
   }, []);
 
   useEffect(() => { void load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not load space settings.')); }, [load]);
@@ -55,6 +83,10 @@ export function SpaceSettingsPage() {
   const canManage = active?.role === 'owner' || active?.role === 'admin';
   const currentUserId = session?.user?.id;
   const pendingInvitations = useMemo(() => invitations.filter((item) => invitationState(item) === 'Pending'), [invitations]);
+  const pendingSubscriptionRequest = useMemo(
+    () => subscriptionRequests.find((item) => item.status === 'pending') || null,
+    [subscriptionRequests]
+  );
 
   async function switchSpace(space: SpaceSummary) {
     if (space.id === active?.id) return;
@@ -140,6 +172,43 @@ export function SpaceSettingsPage() {
     finally { setWorking(''); }
   }
 
+  async function requestSubscriptionChange(event: FormEvent) {
+    event.preventDefault();
+    try {
+      setWorking('subscription-request');
+      await api('/api/subscriptions/requests', json('POST', { requestType: 'change', planCode: requestPlan, note: requestNote }));
+      setRequestNote('');
+      toast.success('Subscription request sent for approval');
+      await load();
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Could not submit the subscription request.'); }
+    finally { setWorking(''); }
+  }
+
+  async function requestSubscriptionCancellation() {
+    if (!requestNote.trim() || !window.confirm('Send this subscription cancellation request for platform approval?')) return;
+    try {
+      setWorking('subscription-cancel');
+      await api('/api/subscriptions/requests', json('POST', { requestType: 'cancel', note: requestNote }));
+      setRequestNote('');
+      toast.success('Cancellation request sent for approval');
+      await load();
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Could not submit the cancellation request.'); }
+    finally { setWorking(''); }
+  }
+
+  async function cancelPendingSubscriptionRequest() {
+    if (!pendingSubscriptionRequest || !window.confirm('Cancel this pending subscription request?')) return;
+    try {
+      setWorking('subscription-withdraw');
+      await api(`/api/subscriptions/requests/${pendingSubscriptionRequest.id}/cancel`, json('POST', {
+        reason: 'Cancelled by the space administrator.', expectedVersion: pendingSubscriptionRequest.version
+      }));
+      toast.success('Pending request cancelled');
+      await load();
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Could not cancel the request.'); }
+    finally { setWorking(''); }
+  }
+
   if (error) return <div className="border border-destructive/40 bg-card p-5 text-sm text-destructive" role="alert">{error}</div>;
   if (!session || !active) return <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading space settings…</div>;
 
@@ -168,6 +237,29 @@ export function SpaceSettingsPage() {
             <div className="max-w-md flex-1"><Label className="field-label" htmlFor="space-name">Space name</Label><Input id="space-name" value={name} onChange={(event) => setName(event.target.value)} disabled={!canManage} minLength={2} maxLength={100} required /></div>
             {canManage && <Button variant="outline" disabled={working === 'rename' || name.trim() === active.name}>{working === 'rename' ? <Loader2 className="animate-spin" /> : <Check />}Save name</Button>}
           </form>
+        </section>
+
+        <section className="border bg-card" aria-labelledby="subscription-heading">
+          <div className="flex items-start gap-3 border-b px-5 py-4">
+            <CreditCard className="mt-0.5 h-4 w-4 text-muted-foreground" />
+            <div><h2 id="subscription-heading" className="text-sm font-semibold">Subscription</h2><p className="mt-1 text-xs text-muted-foreground">Plan changes are reviewed by a platform billing administrator before they take effect.</p></div>
+          </div>
+          <div className="grid border-b sm:grid-cols-3">
+            <div className="border-b px-5 py-4 sm:border-b-0 sm:border-r"><div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Effective plan</div><div className="mt-1 text-sm font-semibold">{effectivePlan?.name || 'Starter'}</div></div>
+            <div className="border-b px-5 py-4 sm:border-b-0 sm:border-r"><div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Managed status</div><div className="mt-1 text-sm font-semibold capitalize">{subscription?.status || 'Included'}</div></div>
+            <div className="px-5 py-4"><div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Approval</div><div className="mt-1 text-sm font-semibold">{pendingSubscriptionRequest ? 'Pending review' : 'No request pending'}</div></div>
+          </div>
+          {pendingSubscriptionRequest ? <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="text-sm font-medium">{pendingSubscriptionRequest.requestType === 'cancel' ? 'Cancellation' : pendingSubscriptionRequest.requestedPlan?.name || pendingSubscriptionRequest.requestedPlanCode} request</p><p className="mt-1 text-xs text-muted-foreground">Submitted {formatDate(pendingSubscriptionRequest.createdAt)} · {pendingSubscriptionRequest.requestNote}</p></div>
+            {canManage && <Button type="button" variant="outline" disabled={working === 'subscription-withdraw'} onClick={() => void cancelPendingSubscriptionRequest()}>{working === 'subscription-withdraw' ? <Loader2 className="animate-spin" /> : null}Cancel request</Button>}
+          </div> : canManage ? <form className="grid gap-4 p-5" onSubmit={requestSubscriptionChange}>
+            <div className="grid gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
+              <div><Label className="field-label" htmlFor="subscription-plan">Requested plan</Label><select id="subscription-plan" value={requestPlan} onChange={(event) => setRequestPlan(event.target.value as SubscriptionPlan['code'])} className="h-9 w-full rounded-md border-input bg-background px-3 text-sm focus:border-ring focus:ring-1 focus:ring-ring">{plans.filter((plan) => plan.requestable).map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select></div>
+              <div><Label className="field-label" htmlFor="subscription-note">Reason for the request</Label><Input id="subscription-note" value={requestNote} onChange={(event) => setRequestNote(event.target.value)} minLength={5} maxLength={2000} placeholder="Tell the billing team what your space needs" required /></div>
+            </div>
+            <div className="flex flex-wrap gap-2"><Button disabled={working === 'subscription-request' || working === 'subscription-cancel'}>{working === 'subscription-request' ? <Loader2 className="animate-spin" /> : null}Request plan change</Button>{subscription && subscription.status !== 'cancelled' && <Button type="button" variant="outline" disabled={working === 'subscription-request' || working === 'subscription-cancel' || requestNote.trim().length < 5} onClick={() => void requestSubscriptionCancellation()}>{working === 'subscription-cancel' ? <Loader2 className="animate-spin" /> : null}Request cancellation</Button>}</div>
+          </form> : <p className="p-5 text-sm text-muted-foreground">Space owners and administrators can submit subscription requests.</p>}
+          {subscriptionRequests.length > 0 && <div className="overflow-x-auto border-t"><table className="data-table"><thead><tr><th>Request</th><th>Status</th><th>Submitted</th><th>Decision</th></tr></thead><tbody>{subscriptionRequests.slice(0, 8).map((item) => <tr key={item.id}><td><span className="font-medium capitalize">{item.requestType}</span>{item.requestedPlan && <span className="ml-1 text-muted-foreground">· {item.requestedPlan.name}</span>}</td><td className="capitalize">{item.status}</td><td className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(item.createdAt)}</td><td className="max-w-xs text-xs text-muted-foreground">{item.reviewNote || (item.decisionAt ? formatDate(item.decisionAt) : 'Awaiting review')}</td></tr>)}</tbody></table></div>}
         </section>
 
         <section className="border bg-card" aria-labelledby="members-heading">

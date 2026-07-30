@@ -36,6 +36,7 @@ if (liveKnowledge) {
 }
 Object.assign(process.env, {
   HOST: '127.0.0.1', PORT: '5412', PUBLIC_URL: 'http://127.0.0.1:5412', DATABASE_PATH: path.join(state, 'e2e.sqlite'), UPLOAD_DIR: path.join(state, 'uploads'),
+  SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
   ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', AI_WORKER_CONCURRENCY: '1', LOCAL_LLM_BASE_URL: 'http://127.0.0.1:9',
   ESIGN_STORAGE_DIR: path.join(state, 'esign'), ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, ESIGN_WORKER_POLL_MS: '250',
   KNOWLEDGE_STORAGE_DIR: knowledgeStorageDir, KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: knowledgeSecretFile,

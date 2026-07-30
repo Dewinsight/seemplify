@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { accountPassword, submitSignup, verifyEmailAndOnboard } from './auth';
+import { accountPassword, signUpAndOnboard, submitSignup, verifyEmailAndOnboard } from './auth';
 
 test('reloads once and recovers when a lazy chunk is stale during deployment', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project exercises deployment recovery');
@@ -457,6 +457,169 @@ test('conditional respondent logic skips a page and opens a recovery case', asyn
   await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
   await page.goto('/tickets');
   await expect(page.getByText(`Follow up: ${setup.sourceTitle}`)).toBeVisible();
+});
+
+test('opens and tracks a manual recovery case from the service recovery workspace', async ({ page }, testInfo) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+  const surveyTitle = `Recovery source ${suffix}`;
+  const surveyResponse = await page.request.post('/api/surveys', { data: {
+    title: surveyTitle, purpose: 'customer_experience', primaryMetric: 'custom', questions: []
+  } });
+  expect(surveyResponse.status()).toBe(201);
+
+  await page.goto('/tickets');
+  await expect(page.getByRole('heading', { name: 'Service recovery' })).toBeVisible();
+  await page.getByRole('button', { name: 'New recovery case' }).first().click();
+  const createDialog = page.getByRole('dialog', { name: 'New recovery case' });
+  await createDialog.getByLabel('Survey').selectOption({ label: surveyTitle });
+  await createDialog.getByLabel('Case title').fill(`Billing follow-up ${suffix}`);
+  await createDialog.getByLabel('Priority').selectOption('high');
+  await createDialog.getByLabel('Owner (optional)').fill('Customer success');
+  await createDialog.getByLabel('Initial notes (optional)').fill('Confirm the renewal amount with finance.');
+  await createDialog.getByRole('button', { name: 'Open recovery case' }).click();
+
+  const detail = page.getByRole('dialog', { name: `Billing follow-up ${suffix}` });
+  await expect(detail).toBeVisible();
+  await expect(detail.getByText('This case was opened without a source response.')).toBeVisible();
+  await expect(detail.getByText('Created the recovery case')).toBeVisible();
+  await detail.getByRole('button', { name: 'Start work' }).click();
+  await expect(detail.getByRole('button', { name: 'Close case' })).toBeVisible();
+  await detail.getByRole('button', { name: 'Close case' }).click();
+  await expect(detail.getByRole('button', { name: 'Reopen case' })).toBeVisible();
+  await expect(detail.getByText('Closed the recovery case')).toBeVisible();
+  await detail.getByRole('button', { name: 'Reopen case' }).click();
+  await expect(detail.getByRole('button', { name: 'Start work' })).toBeVisible();
+  await expect(detail.getByText('Reopened the recovery case')).toBeVisible();
+  await detail.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await expect(page.getByText(`Billing follow-up ${suffix}`)).toBeVisible();
+  await page.getByLabel('Search recovery cases').fill(`Billing follow-up ${suffix}`);
+  await expect(page.getByRole('row').filter({ hasText: `Billing follow-up ${suffix}` })).toContainText('Open');
+});
+
+test('requests and approves a subscription through the workspace and platform administration', async ({ page }, testInfo) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  const current = await page.evaluate(async () => {
+    const [planResponse, requestsResponse] = await Promise.all([
+      fetch('/api/subscriptions/current'), fetch('/api/subscriptions/requests')
+    ]);
+    const plan = await planResponse.json();
+    const requests = await requestsResponse.json();
+    for (const request of requests.requests.filter((item: { status: string }) => item.status === 'pending')) {
+      await fetch(`/api/subscriptions/requests/${request.id}/cancel`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'Cancelled before the deterministic browser test.', expectedVersion: request.version })
+      });
+    }
+    return plan;
+  });
+  const targetPlan = current.effectivePlan.code === 'team' ? 'enterprise' : 'team';
+  const targetName = targetPlan === 'enterprise' ? 'Enterprise' : 'Team';
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+
+  await page.goto('/settings/space');
+  await expect(page.getByRole('heading', { name: 'Subscription' })).toBeVisible();
+  await page.getByLabel('Requested plan').selectOption(targetPlan);
+  await page.getByLabel('Reason for the request').fill(`Browser approval test ${suffix}`);
+  await page.getByRole('button', { name: 'Request plan change' }).click();
+  await expect(page.getByText('Pending review', { exact: true })).toBeVisible();
+
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: 'Platform overview' })).toBeVisible();
+  if (testInfo.project.name === 'mobile-chromium') {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  }
+  await expect(page.getByRole('link', { name: 'Subscriptions', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Users', exact: true })).toBeVisible();
+  if (testInfo.project.name === 'mobile-chromium') {
+    await page.getByRole('button', { name: 'Close navigation' }).click();
+  }
+  await page.goto('/admin/subscription-requests');
+  const pendingRow = page.getByRole('row').filter({ hasText: targetName }).filter({ hasText: 'Pending' }).first();
+  await expect(pendingRow).toBeVisible();
+  await pendingRow.getByRole('link', { name: 'Review' }).click();
+  await page.getByLabel('Review note').fill(`Approved by browser automation for ${suffix}.`);
+  const breakGlass = page.getByLabel('Use root break-glass approval');
+  if (await breakGlass.isVisible()) await breakGlass.check();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Approve request' }).click();
+  await expect(page.getByRole('region', { name: 'Request' }).getByText('approved', { exact: true })).toBeVisible();
+
+  await page.goto('/admin/subscriptions');
+  await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: targetName }).filter({ hasText: 'Active' }).first()).toBeVisible();
+
+  await page.goto('/settings/space');
+  await expect(page.getByText(targetName, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('No request pending', { exact: true })).toBeVisible();
+});
+
+test('root administration manages a user role and workspace access with an audit reason', async ({ page }, testInfo) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'Account provisioning is isolated to the local E2E runtime.');
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser covers destructive platform access controls.');
+  const suffix = Date.now();
+  const email = `platform-controls-${suffix}@example.com`;
+  await signUpAndOnboard(page, {
+    name: 'Platform Controls User',
+    email,
+    spaceName: `Controls workspace ${suffix}`
+  });
+  await page.request.post('/api/auth/logout');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  await page.goto('/admin/users');
+  await page.getByLabel('Search users').fill(email);
+  const userRow = page.getByRole('row').filter({ hasText: email });
+  await expect(userRow).toBeVisible();
+  await userRow.getByRole('link', { name: 'Open' }).click();
+
+  await page.getByLabel('Role to grant').selectOption('analyst');
+  await page.getByLabel('Required reason for role changes').fill('Temporary analytics access for the browser test.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Grant role' }).click();
+  await expect(page.getByText('analyst', { exact: true }).first()).toBeVisible();
+
+  await page.getByLabel('Required reason for role changes').fill('Remove temporary analytics access after verification.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Revoke analyst role' }).click();
+  await expect(page.getByText('revoked', { exact: true }).first()).toBeVisible();
+
+  await page.getByLabel('Account status').selectOption('suspended');
+  await page.getByLabel('Required reason', { exact: true }).fill('Suspend briefly to verify the platform control.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply status' }).click();
+  await expect(page.getByText('suspended', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('Account status').selectOption('active');
+  await page.getByLabel('Required reason', { exact: true }).fill('Restore the test account after access verification.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply status' }).click();
+  await expect(page.getByText('active', { exact: true }).first()).toBeVisible();
+
+  await page.getByRole('link', { name: 'Open' }).first().click();
+  await page.getByLabel('New space status').selectOption('suspended');
+  await page.getByLabel('Reason for space status change').fill('Suspend briefly to verify workspace enforcement.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply space status' }).click();
+  await expect(page.getByText('suspended', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('New space status').selectOption('active');
+  await page.getByLabel('Reason for space status change').fill('Restore the test workspace after enforcement verification.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply space status' }).click();
+  await expect(page.getByText('active', { exact: true }).first()).toBeVisible();
 });
 
 test('X social listening setup and journey maps remain visible while Terra work waits durably', async ({ page }, testInfo) => {

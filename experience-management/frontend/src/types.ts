@@ -9,6 +9,7 @@ export interface UserProfile {
 export interface AuthSession {
   authenticated: boolean; email: string | null; user: SessionUser | null;
   emailVerified: boolean; onboardingRequired: boolean; profile: UserProfile | null;
+  permissions?: { platformAdmin: boolean; rootPlatformAdmin: boolean; platformRoles: Array<'superadmin' | 'support' | 'billing_approver' | 'analyst'> };
   spaces: SpaceSummary[]; activeSpace: SpaceSummary | null; pendingSpaceInvitations: PendingSpaceInvitation[];
 }
 export interface SpaceSession { spaces: SpaceSummary[]; activeSpace: SpaceSummary }
@@ -32,6 +33,23 @@ export interface Question { id: string; surveyId: string; page: number; position
 export interface Survey { id: string; title: string; description: string; purpose: 'customer_experience' | 'employee_experience' | 'market_research'; audience: string; status: 'draft' | 'live' | 'closed'; primaryMetric: 'nps' | 'csat' | 'ces' | 'custom'; language: string; thankYouMessage: string; theme: Record<string, any>; settings: Record<string, any>; createdAt: string; updatedAt: string; publishedAt: string | null; questions?: Question[]; responseCount?: number; collectorCount?: number }
 export interface Collector { id: string; surveyId: string; name: string; type: 'web' | 'email' | 'api' | 'qr' | 'manual' | 'kiosk'; slug: string; status: 'open' | 'closed'; settings: Record<string, any>; createdAt: string; publicUrl: string; responseCount?: number; recipientCount?: number }
 export interface ResponseRecord { id: string; surveyId: string; collectorId: string; respondentToken: string; status: 'partial' | 'completed'; answers: Record<string, any>; metadata: Record<string, any>; startedAt: string; completedAt: string | null; durationSeconds: number | null; aiAnalysis: any; analyzedAt: string | null }
+export type RecoveryTicketStatus = 'open' | 'in_progress' | 'closed';
+export type RecoveryTicketPriority = 'normal' | 'high' | 'urgent';
+export interface RecoveryTicketEvent {
+  id: string; eventType: string; detail: Record<string, any>; createdAt: string;
+  actor: { id: string; name: string; email: string } | null;
+}
+export interface RecoveryTicket {
+  id: string; surveyId: string; responseId: string | null; title: string; priority: RecoveryTicketPriority;
+  status: RecoveryTicketStatus; owner: string; notes: string; createdAt: string; updatedAt: string;
+  survey: Pick<Survey, 'id' | 'title'>; respondent: { name: string; email: string } | null;
+  responseCompletedAt: string | null; eventCount: number;
+}
+export interface RecoveryTicketDetail extends RecoveryTicket {
+  survey: Survey;
+  response: null | Pick<ResponseRecord, 'id' | 'status' | 'answers' | 'metadata' | 'startedAt' | 'completedAt' | 'durationSeconds' | 'aiAnalysis' | 'analyzedAt'>;
+  events: RecoveryTicketEvent[];
+}
 export interface AiJob { id: string; kind: string; surveyId: string | null; responseId: string | null; state: 'queued' | 'processing' | 'completed' | 'failed'; stage: string; progress: number; attempt: number; input: Record<string, any>; result: any; error: string | null; retryAt: string | null; createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string }
 export interface Template { id: string; name: string; description: string; purpose: Survey['purpose']; primaryMetric: Survey['primaryMetric']; audience: string; questions: Partial<Question>[] }
 export interface SurveyDetail { survey: Survey; collectors: Collector[]; insights: { id: string; kind: string; payload: any; createdAt: string }[] }

@@ -266,6 +266,37 @@ test('ships the extended question library and executable respondent logic', () =
   for (const type of ['dropdown', 'multi_nps', 'multi_text', 'graphical_rating']) assert.match(types, new RegExp(`['"]${type}['"]`));
   for (const action of ['show', 'hide', 'skip_to']) assert.match(respondent, new RegExp(`['"]${action}['"]`));
 });
+test('ships a complete manual service recovery workflow', () => {
+  const tickets = fs.readFileSync(path.join(source, 'pages', 'TicketsPage.tsx'), 'utf8');
+  const types = fs.readFileSync(path.join(source, 'types.ts'), 'utf8');
+  for (const feature of [
+    'New recovery case', "api<RecoveryTicket[]>('/api/tickets')", "api<RecoveryTicketDetail>('/api/tickets'",
+    'Search recovery cases', 'Filter by status', 'Customer and response context', 'Activity', 'Reopen case',
+    'setResponses([])', 'Responses unavailable', 'Loading recovery case', '!loaded ? null'
+  ]) assert.match(tickets, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+  assert.match(tickets, /item\.responseId \?/);
+  assert.match(types, /interface RecoveryTicketDetail extends RecoveryTicket/);
+  assert.match(types, /events: RecoveryTicketEvent\[\]/);
+});
+test('ships capability-scoped platform administration and subscription controls', () => {
+  const app = fs.readFileSync(path.join(source, 'App.tsx'), 'utf8');
+  const shell = fs.readFileSync(path.join(source, 'components', 'platform-admin', 'PlatformAdminShell.tsx'), 'utf8');
+  const user = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'UserDetailPage.tsx'), 'utf8');
+  const subscriptions = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'SubscriptionsPage.tsx'), 'utf8');
+  const requestDetail = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'SubscriptionRequestDetailPage.tsx'), 'utf8');
+  const analytics = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'AnalyticsPage.tsx'), 'utf8');
+  for (const capability of ['readUsers', 'readSpaces', 'readSubscriptions', 'readAnalytics', 'readAudit']) assert.match(shell, new RegExp(capability));
+  assert.match(shell, /routeAllowed/);
+  assert.match(app, /\/admin\/subscriptions/);
+  assert.match(subscriptions, /\/api\/platform-admin\/subscriptions/);
+  assert.match(user, /Grant role/);
+  assert.match(user, /Revoke .* role/);
+  assert.match(user, /manageRoles/);
+  assert.match(requestDetail, /Use root break-glass approval/);
+  assert.match(requestDetail, /breakGlass:/);
+  assert.match(analytics, /<Legend/);
+  assert.match(analytics, /View accessible daily data/);
+});
 test('makes survey questions visibly selectable and accessibly draggable', () => {
   const builder = fs.readFileSync(path.join(source, 'components', 'survey', 'BuilderTab.tsx'), 'utf8');
   for (const feature of ['DndContext', 'PointerSensor', 'KeyboardSensor', 'sortableKeyboardCoordinates', 'SortableContext', 'DragOverlay']) assert.match(builder, new RegExp(feature));

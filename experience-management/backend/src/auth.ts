@@ -11,6 +11,8 @@ import {
   ensureDefaultSpaceForUser, listPendingSpaceInvitationsForAccount, pendingSpaceInvitationForSignup,
   renamePersonalSpaceForUser, spaceSession
 } from './spaces.js';
+import { ensureConfiguredRootPlatformRole } from './platformSchema.js';
+import { ensureConfiguredAdministratorEnterprise, ensureExistingSubscriptionsGrandfathered } from './subscriptionEntitlements.js';
 
 const cookieName = 'seemplify_experience_session';
 const resetLifetimeMs = 30 * 60_000;
@@ -22,8 +24,9 @@ export const currentOnboardingVersion = 1;
 const scryptParameters = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 type UserRow = {
   id: string; email: string; name: string; password_hash: string; role: string; session_version: number;
-  email_verified_at: string | null; password_claim_required: number;
+  email_verified_at: string | null; password_claim_required: number; account_status: string;
 };
+export type PlatformRole = 'superadmin' | 'support' | 'billing_approver' | 'analyst';
 export type SessionUser = {
   id: string; email: string; name: string; role: string; sessionVersion: number; emailVerifiedAt: string | null;
 };
@@ -118,9 +121,9 @@ export function currentSessionUser(request: Request): SessionUser | null {
   try {
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString());
     if (!parsed.sub || Number(parsed.exp) <= Date.now()) return null;
-    const user = db.prepare(`SELECT id,email,name,role,session_version,email_verified_at,password_claim_required
+    const user = db.prepare(`SELECT id,email,name,role,session_version,email_verified_at,password_claim_required,account_status
       FROM users WHERE id=?`).get(parsed.sub) as UserRow | undefined;
-    if (!user || user.email !== parsed.email || Number(user.session_version) !== Number(parsed.v)) return null;
+    if (!user || user.account_status !== 'active' || user.email !== parsed.email || Number(user.session_version) !== Number(parsed.v)) return null;
     return {
       id: user.id, email: user.email, name: user.name, role: user.role,
       sessionVersion: Number(user.session_version), emailVerifiedAt: user.email_verified_at
@@ -158,6 +161,7 @@ function onboardingRequired(profile: AccountProfile) {
 
 function sessionPayload(user: SessionUser) {
   const profile = profileForUser(user);
+  const platformRoles = platformRolesForUser(user.id);
   return {
     authenticated: true,
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -165,6 +169,11 @@ function sessionPayload(user: SessionUser) {
     emailVerified: Boolean(user.emailVerifiedAt),
     onboardingRequired: onboardingRequired(profile),
     profile,
+    permissions: {
+      platformAdmin: platformRoles.length > 0 || isRootPlatformAdmin(user.id),
+      rootPlatformAdmin: isRootPlatformAdmin(user.id),
+      platformRoles
+    },
     ...spaceSession(user.id),
     pendingSpaceInvitations: user.emailVerifiedAt ? listPendingSpaceInvitationsForAccount(user) : []
   };
@@ -176,9 +185,21 @@ function authenticatedResponse(response: Response, user: SessionUser, status = 2
 }
 
 const limits = new Map<string, number[]>();
-function rateLimitKey(request: Request, bucket: string) { return `${bucket}:${String(request.ip || 'unknown')}`; }
-function rateLimited(request: Request, bucket: string, maximum: number, windowMs = 15 * 60_000, record = true) {
-  const key = rateLimitKey(request, bucket);
+function rateLimitKey(request: Request, bucket: string, discriminator = '') {
+  const identity = discriminator
+    ? crypto.createHash('sha256').update(discriminator).digest('hex')
+    : '';
+  return `${bucket}:${String(request.ip || 'unknown')}${identity ? `:${identity}` : ''}`;
+}
+function rateLimited(
+  request: Request,
+  bucket: string,
+  maximum: number,
+  windowMs = 15 * 60_000,
+  record = true,
+  discriminator = ''
+) {
+  const key = rateLimitKey(request, bucket, discriminator);
   const now = Date.now(); const recent = (limits.get(key) || []).filter((time) => now - time < windowMs);
   if (recent.length >= maximum) return true;
   if (record) { recent.push(now); limits.set(key, recent); }
@@ -186,8 +207,24 @@ function rateLimited(request: Request, bucket: string, maximum: number, windowMs
 }
 
 function userByEmail(email: string) {
-  return db.prepare(`SELECT id,email,name,password_hash,role,session_version,email_verified_at,password_claim_required
+  return db.prepare(`SELECT id,email,name,password_hash,role,session_version,email_verified_at,password_claim_required,account_status
     FROM users WHERE email=?`).get(email) as UserRow | undefined;
+}
+
+export function platformRolesForUser(userId: string): PlatformRole[] {
+  const rows = db.prepare(`SELECT role FROM platform_role_assignments
+    WHERE user_id=? AND revoked_at IS NULL ORDER BY CASE role WHEN 'superadmin' THEN 0 ELSE 1 END,role`).all(userId) as Array<{ role: string }>;
+  return rows.map((row) => row.role).filter((role): role is PlatformRole =>
+    ['superadmin', 'support', 'billing_approver', 'analyst'].includes(role));
+}
+
+export function isRootPlatformAdmin(userId: string) {
+  const user = db.prepare('SELECT email FROM users WHERE id=?').get(userId) as { email: string } | undefined;
+  return user?.email.toLowerCase() === config.adminEmail || platformRolesForUser(userId).includes('superadmin');
+}
+
+export function isPlatformAdmin(userId: string) {
+  return isRootPlatformAdmin(userId) || platformRolesForUser(userId).length > 0;
 }
 
 function createUser(email: string, name: string, password: string, spaceName?: unknown, options: { verified?: boolean; onboarded?: boolean } = {}) {
@@ -223,14 +260,22 @@ function markBootstrapAccountReady(userId: string) {
 export function bootstrapAdminAccount() {
   const existing = userByEmail(config.adminEmail);
   if (existing) {
+    // The configured address remains an effective root identity, but bootstrap
+    // must never undo an explicit account suspension or disablement.
     if (existing.role !== 'owner') db.prepare("UPDATE users SET role='owner',updated_at=? WHERE id=?").run(new Date().toISOString(), existing.id);
     markBootstrapAccountReady(existing.id);
     ensureDefaultSpaceForUser({ id: existing.id, name: existing.name });
+    ensureConfiguredRootPlatformRole(existing.id);
+    ensureExistingSubscriptionsGrandfathered();
+    ensureConfiguredAdministratorEnterprise(existing.id);
     return existing.id;
   }
   const password = readRequired(config.adminPasswordFile, 'Admin password');
   const created = createUser(config.adminEmail, 'Workspace admin', password, undefined, { verified: true, onboarded: true });
   if (created.role !== 'owner') db.prepare("UPDATE users SET role='owner',updated_at=? WHERE id=?").run(new Date().toISOString(), created.id);
+  ensureConfiguredRootPlatformRole(created.id);
+  ensureExistingSubscriptionsGrandfathered();
+  ensureConfiguredAdministratorEnterprise(created.id);
   return created.id;
 }
 
@@ -293,7 +338,7 @@ function createEmailVerificationToken(
 
 export function issueEmailVerificationToken(emailValue: string, options: { enforceResendLimit?: boolean; requestId?: string } = {}) {
   const user = userByEmail(normalizeEmail(emailValue));
-  if (!user || user.email_verified_at) return null;
+  if (!user || user.account_status !== 'active' || user.email_verified_at) return null;
   const reference = options.requestId && /^[0-9a-f-]{36}$/i.test(options.requestId)
     ? db.prepare(`SELECT pending_invitation_id,requires_password_setup,return_path,delivery_failed_at,resend_exemption_used_at FROM email_verification_tokens
       WHERE id=? AND user_id=?`).get(options.requestId, user.id) as {
@@ -401,6 +446,12 @@ async function deliverExistingSignupAttempt(
   let expiresAt = new Date(Date.now() + verificationLifetimeMs).toISOString();
   let requestId: string = crypto.randomUUID();
   let state: 'sent' | 'failed' = 'sent';
+  if (user.account_status !== 'active') {
+    // Preserve account-enumeration resistance without issuing a credential or
+    // sending account mail for an identity explicitly restricted by support.
+    hashPassword(password);
+    return { expiresAt, requestId, state };
+  }
   const attemptId = beginAccountEmailAttempt(user.id, user.email_verified_at ? 'existing_notice' : 'claim');
   if (!attemptId) {
     // Keep the public response generic while the persistent per-account limit
@@ -438,7 +489,13 @@ async function deliverExistingSignupAttempt(
 
 export async function signup(request: Request, response: Response) {
   const startedAt = Date.now();
-  if (rateLimited(request, 'signup', 6, 60 * 60_000)) return response.status(429).json({ error: 'Too many sign-up attempts. Try again later.' });
+  // A shared office, university, or mobile network can legitimately create
+  // several unrelated accounts from one public address. Keep a broad IP
+  // ceiling for spray protection, then apply the tighter limit to one
+  // normalized email from that address after the payload is validated.
+  if (rateLimited(request, 'signup-ip', 60, 60 * 60_000)) {
+    return response.status(429).json({ error: 'Too many sign-up attempts. Try again later.' });
+  }
   const email = normalizeEmail(request.body?.email);
   const name = String(request.body?.name || '').trim().replace(/\s+/g, ' ');
   const password = String(request.body?.password || '');
@@ -465,6 +522,9 @@ export async function signup(request: Request, response: Response) {
   const spaceName = rawSpaceName === undefined ? undefined : String(rawSpaceName || '').trim().replace(/\s+/g, ' ');
   if (spaceName !== undefined && spaceName && (spaceName.length < 2 || spaceName.length > 100)) {
     return response.status(400).json({ error: 'Space name must be between 2 and 100 characters.' });
+  }
+  if (rateLimited(request, 'signup-identity', 6, 60 * 60_000, true, email)) {
+    return response.status(429).json({ error: 'Too many sign-up attempts. Try again later.' });
   }
   const pendingInvitation = inviteToken ? pendingSpaceInvitationForSignup(email, inviteToken) : null;
   const existing = userByEmail(email);
@@ -536,9 +596,12 @@ export function login(request: Request, response: Response) {
       valid = safeEqual(password, legacyPassword);
       if (valid) {
         const migrated = createUser(email, 'Workspace admin', password, undefined, { verified: true, onboarded: true });
+        ensureConfiguredRootPlatformRole(migrated.id);
+        ensureExistingSubscriptionsGrandfathered();
+        ensureConfiguredAdministratorEnterprise(migrated.id);
         user = {
           ...migrated, password_hash: hashPassword(password), session_version: migrated.sessionVersion,
-          email_verified_at: migrated.emailVerifiedAt, password_claim_required: 0
+          email_verified_at: migrated.emailVerifiedAt, password_claim_required: 0, account_status: 'active'
         };
       }
     } catch { valid = false; }
@@ -552,6 +615,12 @@ export function login(request: Request, response: Response) {
     return response.status(401).json({ error: 'Email or password is incorrect.' });
   }
   clearLoginIdentityFailures(identityHash);
+  if (user.account_status !== 'active') {
+    return response.status(403).json({
+      error: 'This account is not currently active. Contact platform support.',
+      code: 'ACCOUNT_RESTRICTED'
+    });
+  }
   if (!user.email_verified_at) {
     return response.status(403).json({
       error: 'Verify your email address before signing in.',
@@ -560,6 +629,7 @@ export function login(request: Request, response: Response) {
       verificationRequired: true
     });
   }
+  db.prepare('UPDATE users SET last_login_at=? WHERE id=?').run(new Date().toISOString(), user.id);
   return authenticatedResponse(response, {
     id: user.id, email: user.email, name: user.name, role: user.role,
     sessionVersion: Number(user.session_version), emailVerifiedAt: user.email_verified_at
@@ -631,11 +701,14 @@ export function verifyEmail(request: Request, response: Response) {
   }
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const verification = db.prepare(`SELECT t.id token_id,t.pending_invitation_id,t.requires_password_setup,t.return_path,t.expires_at,t.used_at,
-      u.id,u.email,u.name,u.role,u.session_version,u.email_verified_at,u.password_claim_required
+      u.id,u.email,u.name,u.role,u.session_version,u.email_verified_at,u.password_claim_required,u.account_status
     FROM email_verification_tokens t JOIN users u ON u.id=t.user_id
     WHERE t.token_hash=? AND u.email_verified_at IS NULL`).get(tokenHash) as any;
   if (!verification || verification.used_at) {
     return response.status(400).json({ error: 'This verification link is invalid or has already been used.', code: 'EMAIL_VERIFICATION_INVALID' });
+  }
+  if (verification.account_status !== 'active') {
+    return response.status(403).json({ error: 'This account is not currently active. Contact platform support.', code: 'ACCOUNT_RESTRICTED' });
   }
   if (Date.parse(verification.expires_at) <= Date.now()) {
     return response.status(400).json({ error: 'This verification link has expired. Request a new one.', code: 'EMAIL_VERIFICATION_EXPIRED' });
@@ -723,14 +796,15 @@ function createPasswordResetToken(user: UserRow, pendingInvitationId: string | n
 
 export function issuePasswordResetToken(email: string) {
   const user = userByEmail(normalizeEmail(email));
-  if (!user) return null;
+  if (!user || user.account_status !== 'active') return null;
   return createPasswordResetToken(user);
 }
 
 export async function forgotPassword(request: Request, response: Response) {
   const startedAt = Date.now();
   if (rateLimited(request, 'forgot', 5, 60 * 60_000)) return response.status(429).json({ error: 'Too many reset requests. Try again later.' });
-  const user = userByEmail(normalizeEmail(request.body?.email));
+  const candidate = userByEmail(normalizeEmail(request.body?.email));
+  const user = candidate?.account_status === 'active' ? candidate : undefined;
   const attemptId = user ? beginAccountEmailAttempt(user.id, 'password_reset', true) : null;
   if (user && attemptId) {
     const issued = createPasswordResetToken(user, null, false);
@@ -763,10 +837,13 @@ export function resetPassword(request: Request, response: Response) {
   if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) return response.status(400).json({ error: 'This password reset link is invalid or expired.' });
   if (invalidPassword) return response.status(400).json({ error: invalidPassword });
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex'); const now = new Date().toISOString();
-  const reset = db.prepare(`SELECT t.id token_id,t.pending_invitation_id,t.return_path,u.id,u.email,u.name,u.role,u.session_version,u.email_verified_at
+  const reset = db.prepare(`SELECT t.id token_id,t.pending_invitation_id,t.return_path,u.id,u.email,u.name,u.role,u.session_version,u.email_verified_at,u.account_status
     FROM password_reset_tokens t JOIN users u ON u.id=t.user_id
     WHERE t.token_hash=? AND t.used_at IS NULL AND t.expires_at>?`).get(tokenHash, now) as any;
   if (!reset) return response.status(400).json({ error: 'This password reset link is invalid or expired.' });
+  if (reset.account_status !== 'active') {
+    return response.status(403).json({ error: 'This account is not currently active. Contact platform support.', code: 'ACCOUNT_RESTRICTED' });
+  }
   const transaction = db.transaction(() => {
     const consumed = db.prepare('UPDATE password_reset_tokens SET used_at=? WHERE id=? AND used_at IS NULL').run(now, reset.token_id).changes;
     if (consumed !== 1) return false;
@@ -915,6 +992,7 @@ export function session(request: Request, response: Response) {
     emailVerified: false,
     onboardingRequired: false,
     profile: null,
+    permissions: { platformAdmin: false, rootPlatformAdmin: false, platformRoles: [] },
     spaces: [],
     activeSpace: null,
     pendingSpaceInvitations: []

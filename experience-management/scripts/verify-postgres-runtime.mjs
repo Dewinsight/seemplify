@@ -10,6 +10,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  RUNTIME_EXTENSION_TABLES,
+  assertRuntimePrivileges,
+  assertRuntimeSchemaContract
+} from './postgres-runtime-contract.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.resolve(scriptDir, '..');
@@ -38,8 +43,23 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function normalizedSql(value) {
+  return String(value).replace(/\r\n?/gu, '\n');
+}
+
 function quoteIdentifier(identifier) {
   return `"${String(identifier).replaceAll('"', '""')}"`;
+}
+
+function expectedRuntimeMigrations(targetVersion) {
+  const directory = path.join(projectDir, 'backend', 'migrations', 'postgres');
+  const migrations = fs.readdirSync(directory).filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/u.test(name)).sort()
+    .map((name) => ({ version: Number(name.slice(0, 4)), name, checksum: sha256(normalizedSql(fs.readFileSync(path.join(directory, name), 'utf8'))) }))
+    .filter((migration) => migration.version <= targetVersion);
+  if (!migrations.length || migrations.at(-1).version !== targetVersion) {
+    throw fail(`Runtime migration ${targetVersion} is not present in this release.`, 'RUNTIME_MIGRATION_MISSING');
+  }
+  return migrations;
 }
 
 function parseManifest(metadata, configuredVersion, configuredSourceSha256) {
@@ -116,7 +136,8 @@ async function main() {
     db = createDatabase(config);
     if (db.provider !== 'postgres') throw fail('The built runtime did not select PostgreSQL.', 'WRONG_DATABASE_PROVIDER');
     const health = db.health();
-    if (!health.ready || health.provider !== 'postgres' || health.schemaVersion !== config.postgres.schemaVersion) {
+    if (!health.ready || health.provider !== 'postgres' || health.schemaVersion !== config.postgres.schemaVersion
+        || health.runtimeSchemaVersion !== config.postgres.runtimeSchemaVersion) {
       throw fail(`PostgreSQL runtime health failed: ${health.error || 'schema/provider mismatch'}`, 'POSTGRES_HEALTH_FAILED');
     }
 
@@ -128,13 +149,25 @@ async function main() {
       config.postgres.schemaVersion,
       config.postgres.sourceSha256
     );
+    const expectedMigrations = expectedRuntimeMigrations(config.postgres.runtimeSchemaVersion);
+    const appliedMigrations = db.prepare(`SELECT version,name,checksum FROM experience_runtime_schema_version
+      WHERE version<=? ORDER BY version`).all(config.postgres.runtimeSchemaVersion);
+    if (stable(appliedMigrations) !== stable(expectedMigrations)) {
+      throw fail('Applied PostgreSQL runtime migrations do not match this release.', 'RUNTIME_MIGRATION_CHECKSUM_MISMATCH');
+    }
+    const runtimeQuery = async (sql) => ({ rows: db.prepare(sql).all() });
+    const schemaContract = await assertRuntimeSchemaContract(runtimeQuery, { schema: 'public' });
+    const privilegeContract = await assertRuntimePrivileges(runtimeQuery, config.postgres.user, { schema: 'public' });
 
-    const actualTableCount = Number(db.prepare(`SELECT COUNT(*)::integer AS count
+    const actualTableNames = (db.prepare(`SELECT table_name name
       FROM information_schema.tables
       WHERE table_schema=current_schema() AND table_type='BASE TABLE'
-        AND table_name<>'experience_schema_version'`).get()?.count || 0);
-    if (actualTableCount !== tableNames.length) {
-      throw fail('The PostgreSQL table count does not match the source manifest.', 'SOURCE_MANIFEST_MISMATCH');
+        AND table_name<>'experience_schema_version' ORDER BY table_name`).all()).map((row) => String(row.name));
+    const expectedTables = new Set([...tableNames, ...RUNTIME_EXTENSION_TABLES]);
+    const unknownTables = actualTableNames.filter((name) => !expectedTables.has(name));
+    const missingTables = [...expectedTables].filter((name) => !actualTableNames.includes(name));
+    if (unknownTables.length || missingTables.length) {
+      throw fail(`PostgreSQL tables differ from the source manifest plus runtime extensions (unknown: ${unknownTables.join(', ') || 'none'}; missing: ${missingTables.join(', ') || 'none'}).`, 'SOURCE_MANIFEST_MISMATCH');
     }
 
     let actualRows = 0;
@@ -187,8 +220,12 @@ async function main() {
       at: new Date().toISOString(),
       provider: db.provider,
       schemaVersion: health.schemaVersion,
+      runtimeSchemaVersion: health.runtimeSchemaVersion,
       sourceSha256: metadataSha256,
       tables: tableNames.length,
+      runtimeExtensionTables: [...RUNTIME_EXTENSION_TABLES].filter((name) => !tableNames.includes(name)).length,
+      runtimeContractIndexes: schemaContract.indexes,
+      protectedPrivilegeTables: privilegeContract.protectedTables,
       rows: actualRows,
       sourceRows: Number(manifest.rowCount),
       nestedTransactionRolledBack: true,

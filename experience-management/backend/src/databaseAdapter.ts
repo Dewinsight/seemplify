@@ -13,6 +13,7 @@ export type DatabaseHealth = {
   provider: DatabaseProvider;
   ready: boolean;
   schemaVersion?: number;
+  runtimeSchemaVersion?: number;
   error?: string;
 };
 
@@ -40,6 +41,7 @@ type PostgresSettings = {
   passwordFile: string;
   ssl: false | { rejectUnauthorized: boolean };
   schemaVersion: number;
+  runtimeSchemaVersion: number;
   sourceSha256?: string;
 };
 
@@ -376,6 +378,10 @@ class PostgresRuntime implements DatabaseRuntime {
     if (this.settings.sourceSha256 && row.source_sha256 !== this.settings.sourceSha256) {
       throw new Error('PostgreSQL source manifest does not match the committed cutover marker.');
     }
+    const runtime = this.command('SELECT COALESCE(MAX(version),0)::integer version FROM experience_runtime_schema_version').rows[0] as any;
+    if (Number(runtime?.version) !== this.settings.runtimeSchemaVersion) {
+      throw new Error(`PostgreSQL runtime schema version ${String(runtime?.version ?? 0)} does not match required version ${this.settings.runtimeSchemaVersion}.`);
+    }
   }
 
   prepare(sql: string) { return new PostgresStatement(this, sql); }
@@ -434,12 +440,16 @@ class PostgresRuntime implements DatabaseRuntime {
   health(): DatabaseHealth {
     try {
       const row = this.command('SELECT version,source_sha256 FROM experience_schema_version WHERE singleton=TRUE').rows[0] as any;
+      const runtime = this.command('SELECT COALESCE(MAX(version),0)::integer version FROM experience_runtime_schema_version').rows[0] as any;
       const version = Number(row?.version);
+      const runtimeVersion = Number(runtime?.version || 0);
       const sourceMatches = !this.settings.sourceSha256 || row?.source_sha256 === this.settings.sourceSha256;
-      return version === this.settings.schemaVersion && sourceMatches
-        ? { provider: this.provider, ready: true, schemaVersion: version }
-        : { provider: this.provider, ready: false, schemaVersion: version,
-          error: sourceMatches ? 'schema_version_mismatch' : 'source_manifest_mismatch' };
+      const runtimeMatches = runtimeVersion === this.settings.runtimeSchemaVersion;
+      return version === this.settings.schemaVersion && sourceMatches && runtimeMatches
+        ? { provider: this.provider, ready: true, schemaVersion: version, runtimeSchemaVersion: runtimeVersion }
+        : { provider: this.provider, ready: false, schemaVersion: version, runtimeSchemaVersion: runtimeVersion,
+          error: !sourceMatches ? 'source_manifest_mismatch'
+            : !runtimeMatches ? 'runtime_schema_version_mismatch' : 'schema_version_mismatch' };
     } catch {
       return { provider: this.provider, ready: false, error: 'database_unavailable' };
     }

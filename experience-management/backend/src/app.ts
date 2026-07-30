@@ -47,11 +47,18 @@ import {
 } from './xIntegration.js';
 import {
   acceptPendingSpaceInvitationForAccount, acceptSpaceInvitation, createSpace, createSpaceInvitation, getSpaceForUser,
-  invitationPreview, listPendingSpaceInvitationsForAccount, listSpaceInvitations, listSpaceMembers, listSpacesForUser,
+  assertSpaceOperationalById, invitationPreview, listPendingSpaceInvitationsForAccount, listSpaceInvitations, listSpaceMembers, listSpacesForUser,
   removeSpaceMember, renameSpace, resolveRequestSpace, revokeSpaceInvitation, setActiveSpace, SpaceError, spaceSession,
   updateSpaceMember
 } from './spaces.js';
 import { tutorialProgressRouter } from './tutorialProgress.js';
+import {
+  createRecoveryTicket, getRecoveryTicket, listRecoveryTickets, recordRecoveryTicketEvent, RecoveryTicketError, updateRecoveryTicket
+} from './recovery.js';
+import { platformAdminRouter, subscriptionRouter } from './platformAdmin.js';
+import {
+  assertCanQueueAiAction, assertSubscriptionQuota, SubscriptionEntitlementError
+} from './subscriptionEntitlements.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -148,12 +155,17 @@ function sendError(response: express.Response, error: unknown, status = 400) {
   if (error instanceof z.ZodError) return response.status(status).json({ error: 'Validation failed', details: error.issues });
   if (error instanceof SpaceError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof RecoveryTicketError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof SubscriptionEntitlementError) {
+    return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+  }
   const message = error instanceof Error ? error.message : String(error);
   return response.status(status).json({ error: message });
 }
 
 function xError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return sendError(response, error);
+  if (error instanceof SpaceError || error instanceof SubscriptionEntitlementError) return sendError(response, error);
   if (error instanceof XIntegrationError) return response.status(error.status).json({ error: error.message });
   return response.status(502).json({ error: 'The X integration request could not be completed.' });
 }
@@ -284,6 +296,8 @@ function admitPublicUpload(request: express.Request, response: express.Response,
   if (!collector || !survey || !spaceId || survey.status !== 'live' || collector.status !== 'open') {
     return response.status(410).json({ error: 'This survey is not accepting uploads.' });
   }
+  try { assertSpaceOperationalById(spaceId, 'surveys'); }
+  catch { return response.status(410).json({ error: 'This survey is not accepting uploads.' }); }
   const questionId = String(request.get('x-upload-question') || '').trim();
   const question = (survey.questions || []).find((item) => item.id === questionId && (item.type === 'file' || item.type === 'media'));
   if (!question) return response.status(400).json({ error: 'Choose a valid file or media question before uploading.' });
@@ -397,14 +411,23 @@ function createRuleTickets(survey: Survey, responseRecord: ResponseRecord) {
     if (existing) return;
     const source = questions.find((question) => question.id === rule.sourceQuestionId);
     const now = new Date().toISOString();
-    db.prepare(`INSERT INTO tickets (id,survey_id,response_id,title,priority,status,notes,created_at,updated_at) VALUES (?,?,?,?,?,'open',?,?,?)`).run(
-      crypto.randomUUID(), survey.id, responseRecord.id, `Follow up: ${source?.title || 'survey response'}`.slice(0, 160), 'high',
-      `Triggered when the answer ${rule.operator.replaceAll('_', ' ')} ${String(rule.value)}.`, now, now
-    );
+    const ticketId = crypto.randomUUID();
+    const title = `Follow up: ${source?.title || 'survey response'}`.slice(0, 160);
+    const notes = `Triggered when the answer ${rule.operator.replaceAll('_', ' ')} ${String(rule.value)}.`;
+    db.transaction(() => {
+      db.prepare(`INSERT INTO tickets (id,survey_id,response_id,title,priority,status,notes,created_at,updated_at) VALUES (?,?,?,?,?,'open',?,?,?)`).run(
+        ticketId, survey.id, responseRecord.id, title, 'high', notes, now, now
+      );
+      recordRecoveryTicketEvent(ticketId, null, 'created', {
+        source: 'survey_rule', title, priority: 'high', status: 'open', responseId: responseRecord.id,
+        rule: { questionId: rule.sourceQuestionId, operator: rule.operator, value: rule.value }
+      }, now);
+    })();
   }
 }
 
 function queueJob(kind: AiJobKind, input: Record<string, unknown>, spaceId: string, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
+  assertCanQueueAiAction(spaceId);
   const queuedInput = { ...input };
   delete queuedInput.knowledgeBaseRefs;
   const refs = resolveKnowledgeBaseRefs(spaceId, queuedInput.knowledgeBaseIds, {
@@ -433,10 +456,13 @@ app.get('/health', (_request, response) => {
   return response.status(database.ready ? 200 : 503).json({
     status: database.ready ? 'ok' : 'degraded', service: 'seemplify-experience',
     database: database.provider, databaseReady: database.ready,
-    databaseSchemaVersion: database.schemaVersion, databaseError: database.error,
+    databaseSchemaVersion: database.schemaVersion, databaseRuntimeSchemaVersion: database.runtimeSchemaVersion,
+    databaseError: database.error,
     at: new Date().toISOString()
   });
 });
+app.use('/api/platform-admin', platformAdminRouter);
+app.use('/api/subscriptions', subscriptionRouter);
 app.use('/api/esign', esignRouter);
 app.use('/api/public/esign', esignPublicRouter);
 app.use('/api/tutorials', tutorialProgressRouter);
@@ -1186,6 +1212,12 @@ app.post('/api/surveys', (request, response) => {
   try {
     const space = authenticatedSpace(request);
     const input = surveyInput.parse(request.body);
+    const existing = input.id ? getSurvey(input.id, space.id) : null;
+    if (!existing) {
+      const active = Number((db.prepare("SELECT COUNT(*) count FROM surveys WHERE space_id=? AND status<>'closed'")
+        .get(space.id) as { count?: number } | undefined)?.count || 0);
+      assertSubscriptionQuota(space.id, 'activeSurveys', active, 1);
+    }
     const survey = saveSurvey(input as any, input.questions as any, space.id);
     publishEvent('data-changed', { surveyId: survey.id, reason: 'survey-created' }, space.id);
     return response.status(201).json(survey);
@@ -1197,6 +1229,9 @@ app.post('/api/ai/surveys', (request, response) => {
   if (!brief.success) return sendError(response, brief.error);
   try {
     const space = authenticatedSpace(request);
+    const active = Number((db.prepare("SELECT COUNT(*) count FROM surveys WHERE space_id=? AND status<>'closed'")
+      .get(space.id) as { count?: number } | undefined)?.count || 0);
+    assertSubscriptionQuota(space.id, 'activeSurveys', active, 1);
     const job = queueJob('survey.generate', brief.data, space.id, null, null, authenticatedUser(request).id);
     return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
   } catch (error) { return sendError(response, error); }
@@ -1273,6 +1308,10 @@ app.get('/api/public/collectors/:slug', noStore, (request, response) => {
   if (!collector) return response.status(404).json({ error: 'Survey link not found.' });
   const survey = getSurvey(collector.surveyId);
   if (!survey || survey.status !== 'live' || collector.status !== 'open') return response.status(410).json({ error: 'This survey is not accepting responses.' });
+  const owningSpaceId = surveySpaceId(survey.id);
+  if (!owningSpaceId) return response.status(410).json({ error: 'This survey is not accepting responses.' });
+  try { assertSpaceOperationalById(owningSpaceId, 'surveys'); }
+  catch { return response.status(410).json({ error: 'This survey is not accepting responses.' }); }
   return response.json({ survey, collector, uploadGrant: issuePublicUploadGrant(collector.id) });
 });
 
@@ -1293,6 +1332,8 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
   if (!survey || survey.status !== 'live' || collector.status !== 'open') return response.status(410).json({ error: 'This survey is not accepting responses.' });
   const owningSpaceId = surveySpaceId(survey.id);
   if (!owningSpaceId) return response.status(410).json({ error: 'This survey is not accepting responses.' });
+  try { assertSpaceOperationalById(owningSpaceId, 'surveys'); }
+  catch { return response.status(410).json({ error: 'This survey is not accepting responses.' }); }
   const remote = String(request.ip || 'unknown');
   if (!allowSubmission(`${remote}:${collector.id}`)) return response.status(429).json({ error: 'Too many submissions. Please wait before trying again.' });
   const input = z.object({ answers: z.record(z.string(), z.unknown()), startedAt: z.string().datetime().optional(), respondentToken: z.string().max(200).optional(), status: z.enum(['partial', 'completed']).optional(), metadata: z.record(z.string(), z.unknown()).optional() }).safeParse(request.body);
@@ -1335,7 +1376,12 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
     } catch (error) {
       // The response is authoritative and must not be rolled back because an
       // optional knowledge attachment was revoked between publish and submit.
-      queueJob('response.analyze', {}, owningSpaceId, survey.id, stored.id);
+      if (!(error instanceof SubscriptionEntitlementError)) {
+        try { queueJob('response.analyze', {}, owningSpaceId, survey.id, stored.id); }
+        catch (fallbackError) {
+          if (!(fallbackError instanceof SubscriptionEntitlementError)) throw fallbackError;
+        }
+      }
     }
   }
   publishEvent('response', { surveyId: survey.id, responseId: stored.id, status: stored.status }, owningSpaceId);
@@ -1458,14 +1504,47 @@ app.get('/api/surveys/:id/tickets', noStore, (request, response) => {
   const survey = getSurvey(String(request.params.id), authenticatedSpace(request).id);
   return survey ? response.json(db.prepare('SELECT * FROM tickets WHERE survey_id=? ORDER BY created_at DESC').all(survey.id)) : response.status(404).json({ error: 'Survey not found.' });
 });
+const recoveryTicketCreateInput = z.object({
+  surveyId: z.string().uuid(), responseId: z.string().uuid().nullable().optional(), title: z.string().trim().min(2).max(160),
+  priority: z.enum(['normal', 'high', 'urgent']).optional(), owner: z.string().trim().max(150).optional(),
+  notes: z.string().trim().max(5000).optional()
+});
+const recoveryTicketUpdateInput = z.object({
+  title: z.string().trim().min(2).max(160).optional(), status: z.enum(['open', 'in_progress', 'closed']).optional(),
+  priority: z.enum(['normal', 'high', 'urgent']).optional(), owner: z.string().trim().max(150).optional(),
+  notes: z.string().trim().max(5000).optional()
+}).refine((value) => Object.keys(value).length > 0, { message: 'At least one recovery case field is required.' });
+const recoveryTicketFilterInput = z.object({
+  status: z.enum(['open', 'in_progress', 'closed']).optional(), priority: z.enum(['normal', 'high', 'urgent']).optional(),
+  owner: z.string().trim().max(150).optional(), q: z.string().trim().max(200).optional()
+});
+app.get('/api/tickets', noStore, (request, response) => {
+  try {
+    const space = authenticatedSpace(request); const input = recoveryTicketFilterInput.parse(request.query);
+    return response.json(listRecoveryTickets(space.id, {
+      status: input.status, priority: input.priority, owner: input.owner, query: input.q
+    }));
+  } catch (error) { return sendError(response, error); }
+});
+app.post('/api/tickets', (request, response) => {
+  try {
+    const space = authenticatedSpace(request); const user = authenticatedUser(request);
+    const ticket = createRecoveryTicket(space.id, user.id, recoveryTicketCreateInput.parse(request.body));
+    publishEvent('data-changed', { ticketId: ticket.id, surveyId: ticket.surveyId, reason: 'ticket-created' }, space.id);
+    return response.status(201).json(ticket);
+  } catch (error) { return sendError(response, error); }
+});
+app.get('/api/tickets/:id', noStore, (request, response) => {
+  const ticket = getRecoveryTicket(String(request.params.id), authenticatedSpace(request).id);
+  return ticket ? response.json(ticket) : response.status(404).json({ error: 'Recovery case not found.', code: 'RECOVERY_TICKET_NOT_FOUND' });
+});
 app.patch('/api/tickets/:id', (request, response) => {
-  const space = authenticatedSpace(request);
-  const current = db.prepare('SELECT t.* FROM tickets t JOIN surveys s ON s.id=t.survey_id WHERE t.id=? AND s.space_id=?').get(String(request.params.id), space.id) as any;
-  if (!current) return response.status(404).json({ error: 'Ticket not found.' });
-  const input = z.object({ status: z.enum(['open', 'in_progress', 'closed']).optional(), owner: z.string().max(150).optional(), notes: z.string().max(5000).optional(), priority: z.enum(['normal', 'high', 'urgent']).optional() }).parse(request.body);
-  db.prepare('UPDATE tickets SET status=?,owner=?,notes=?,priority=?,updated_at=? WHERE id=?').run(input.status || current.status, input.owner ?? current.owner, input.notes ?? current.notes, input.priority || current.priority, new Date().toISOString(), current.id);
-  publishEvent('data-changed', { surveyId: current.survey_id, reason: 'ticket-updated' }, space.id);
-  return response.json(db.prepare('SELECT * FROM tickets WHERE id=?').get(current.id));
+  try {
+    const space = authenticatedSpace(request); const user = authenticatedUser(request);
+    const ticket = updateRecoveryTicket(String(request.params.id), space.id, user.id, recoveryTicketUpdateInput.parse(request.body));
+    publishEvent('data-changed', { ticketId: ticket.id, surveyId: ticket.surveyId, reason: 'ticket-updated' }, space.id);
+    return response.json(ticket);
+  } catch (error) { return sendError(response, error); }
 });
 
 function csvCell(value: unknown) { const text = typeof value === 'string' ? value : JSON.stringify(value ?? ''); return `"${text.replace(/"/g, '""')}"`; }
