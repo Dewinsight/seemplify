@@ -44,7 +44,12 @@ import {
   CheckCircle,
   AlertCircle,
   Calendar,
-  Coins
+  Coins,
+  Briefcase,
+  ExternalLink,
+  Copy,
+  Loader2,
+  Check
 } from 'lucide-react';
 import { format } from 'date-fns';
 import OrganizationCreditsModal from '@/components/admin/OrganizationCreditsModal';
@@ -82,6 +87,31 @@ interface Organization {
   createdAt: string;
 }
 
+interface OrganizationJob {
+  _id: string;
+  title: string;
+  department?: {
+    _id: string;
+    name: string;
+  } | null;
+  location?: string;
+  status: 'draft' | 'active' | 'paused' | 'closed' | 'archived';
+  isPublic: boolean;
+  publicUrl?: string | null;
+  candidateApplyLimit: number;
+  applicationCount: number;
+  submittedApplications: number;
+  applicationDeadline?: string;
+  createdAt: string;
+}
+
+interface OrganizationJobsPagination {
+  total: number;
+  page: number;
+  pages: number;
+  limit: number;
+}
+
 const SUPPORTED_DISPLAY_CURRENCIES = [
   { code: 'USD', label: 'USD - US Dollar' },
   { code: 'NGN', label: 'NGN - Nigerian Naira' },
@@ -106,6 +136,17 @@ export default function AdminOrganizationsPage() {
   const [showLicenseDialog, setShowLicenseDialog] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const [showCreditsModal, setShowCreditsModal] = useState(false);
+  const [showJobsDialog, setShowJobsDialog] = useState(false);
+  const [organizationJobs, setOrganizationJobs] = useState<OrganizationJob[]>([]);
+  const [organizationJobsPagination, setOrganizationJobsPagination] = useState<OrganizationJobsPagination>({
+    total: 0,
+    page: 1,
+    pages: 1,
+    limit: 20
+  });
+  const [loadingOrganizationJobs, setLoadingOrganizationJobs] = useState(false);
+  const [organizationJobsError, setOrganizationJobsError] = useState<string | null>(null);
+  const [copiedJobId, setCopiedJobId] = useState<string | null>(null);
   const [availableOrgPlans, setAvailableOrgPlans] = useState<Array<{code: string, name: string}>>([]);
   const [loadingOrgPlans, setLoadingOrgPlans] = useState(false);
   const [licenseForm, setLicenseForm] = useState({
@@ -216,6 +257,85 @@ export default function AdminOrganizationsPage() {
   const handleManageCredits = (org: Organization) => {
     setSelectedOrg(org);
     setShowCreditsModal(true);
+  };
+
+  const fetchOrganizationJobs = async (organizationId: string, page = 1) => {
+    try {
+      setLoadingOrganizationJobs(true);
+      setOrganizationJobsError(null);
+      const token = localStorage.getItem('adminToken');
+      const response = await apiRequest(
+        `/api/admin/organizations/${organizationId}/jobs?page=${page}&limit=${organizationJobsPagination.limit}`,
+        {
+          headers: {
+            'x-admin-auth-token': token!
+          }
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.msg || 'Could not load jobs for this organization');
+      }
+
+      setOrganizationJobs(data.jobs || []);
+      setOrganizationJobsPagination(data.pagination || {
+        total: 0,
+        page: 1,
+        pages: 1,
+        limit: 20
+      });
+    } catch (error) {
+      console.error('Error fetching organization jobs:', error);
+      setOrganizationJobs([]);
+      setOrganizationJobsError(
+        error instanceof Error ? error.message : 'Could not load jobs for this organization'
+      );
+    } finally {
+      setLoadingOrganizationJobs(false);
+    }
+  };
+
+  const handleViewJobs = (org: Organization) => {
+    setSelectedOrg(org);
+    setOrganizationJobs([]);
+    setOrganizationJobsPagination({ total: 0, page: 1, pages: 1, limit: 20 });
+    setShowJobsDialog(true);
+    fetchOrganizationJobs(org._id, 1);
+  };
+
+  const handleJobsDialogChange = (open: boolean) => {
+    setShowJobsDialog(open);
+    if (!open) {
+      setOrganizationJobsError(null);
+      setCopiedJobId(null);
+    }
+  };
+
+  const getPublicJobUrl = (publicUrl?: string | null) => {
+    if (!publicUrl) return '';
+    if (typeof window === 'undefined') return publicUrl;
+    try {
+      return new URL(publicUrl, window.location.origin).toString();
+    } catch {
+      return '';
+    }
+  };
+
+  const handleCopyJobLink = async (job: OrganizationJob) => {
+    const publicJobUrl = getPublicJobUrl(job.publicUrl);
+    if (!publicJobUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(publicJobUrl);
+      setCopiedJobId(job._id);
+      window.setTimeout(() => {
+        setCopiedJobId((current) => current === job._id ? null : current);
+      }, 2000);
+    } catch (error) {
+      console.error('Error copying public job link:', error);
+      setOrganizationJobsError('Could not copy the link. You can still open it in a new tab.');
+    }
   };
 
   const handleSaveLicense = async () => {
@@ -485,6 +605,16 @@ export default function AdminOrganizationsPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end space-x-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleViewJobs(org)}
+                                className="text-gray-300 hover:text-white"
+                                title={`View jobs for ${org.name}`}
+                                aria-label={`View jobs for ${org.name}`}
+                              >
+                                <Briefcase className="h-4 w-4" />
+                              </Button>
                               {checkPermission('manageLicenses') && (
                                 <>
                                   <Button
@@ -569,6 +699,151 @@ export default function AdminOrganizationsPage() {
           </div>
         </main>
       </div>
+
+      {/* Organization Jobs Dialog */}
+      <Dialog open={showJobsDialog} onOpenChange={handleJobsDialogChange}>
+        <DialogContent className="bg-gray-800 border-gray-700 text-white max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Jobs at {selectedOrg?.name}</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {organizationJobsPagination.total} {organizationJobsPagination.total === 1 ? 'job' : 'jobs'} in this organization. Public links open the candidate-facing job page.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-0 overflow-auto border border-gray-700 rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-gray-700 hover:bg-transparent">
+                  <TableHead className="text-gray-400">Job</TableHead>
+                  <TableHead className="text-gray-400">Status</TableHead>
+                  <TableHead className="text-gray-400">Visibility</TableHead>
+                  <TableHead className="text-gray-400">Applications</TableHead>
+                  <TableHead className="text-gray-400">Created</TableHead>
+                  <TableHead className="text-gray-400 text-right">Public link</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loadingOrganizationJobs ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-10 text-center text-gray-400">
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading jobs...
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : organizationJobsError && organizationJobs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-10 text-center text-red-300">
+                      {organizationJobsError}
+                    </TableCell>
+                  </TableRow>
+                ) : organizationJobs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-10 text-center text-gray-400">
+                      This organization has no jobs.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  organizationJobs.map((job) => {
+                    const publicJobUrl = getPublicJobUrl(job.publicUrl);
+                    return (
+                      <TableRow key={job._id} className="border-gray-700">
+                        <TableCell>
+                          <div className="font-medium text-white">{job.title}</div>
+                          <div className="text-xs text-gray-500">
+                            {job.department?.name || 'No department'}
+                            {job.location ? ` - ${job.location}` : ''}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-300 capitalize">{job.status}</TableCell>
+                        <TableCell className="text-sm text-gray-300">
+                          {job.isPublic ? 'Public' : 'Private'}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-300 tabular-nums">
+                          {job.isPublic ? (
+                            <>
+                              {job.applicationCount}
+                              {job.candidateApplyLimit > 0 ? ` / ${job.candidateApplyLimit}` : ' / Unlimited'}
+                            </>
+                          ) : '--'}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-300">
+                          {format(new Date(job.createdAt), 'MMM d, yyyy')}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {job.isPublic && publicJobUrl ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleCopyJobLink(job)}
+                                className="text-gray-300 hover:text-white"
+                                title="Copy public job link"
+                                aria-label={`Copy public link for ${job.title}`}
+                              >
+                                {copiedJobId === job._id
+                                  ? <Check className="h-4 w-4 text-green-400" />
+                                  : <Copy className="h-4 w-4" />}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                asChild
+                                className="text-gray-300 hover:text-white"
+                              >
+                                <a
+                                  href={publicJobUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Open public job page"
+                                  aria-label={`Open public page for ${job.title}`}
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                </a>
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-500">Not available</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {organizationJobsError && organizationJobs.length > 0 && (
+            <p className="text-sm text-red-300">{organizationJobsError}</p>
+          )}
+
+          <DialogFooter className="items-center sm:justify-between sm:space-x-0">
+            <span className="text-sm text-gray-400">
+              Page {organizationJobsPagination.page} of {organizationJobsPagination.pages}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => selectedOrg && fetchOrganizationJobs(selectedOrg._id, organizationJobsPagination.page - 1)}
+                disabled={loadingOrganizationJobs || organizationJobsPagination.page <= 1}
+                className="bg-gray-800 border-gray-600 text-white hover:bg-gray-700"
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => selectedOrg && fetchOrganizationJobs(selectedOrg._id, organizationJobsPagination.page + 1)}
+                disabled={loadingOrganizationJobs || organizationJobsPagination.page >= organizationJobsPagination.pages}
+                className="bg-gray-800 border-gray-600 text-white hover:bg-gray-700"
+              >
+                Next
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* License Edit Dialog */}
       <Dialog open={showLicenseDialog} onOpenChange={setShowLicenseDialog}>

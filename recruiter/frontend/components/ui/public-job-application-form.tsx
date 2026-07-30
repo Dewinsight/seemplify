@@ -55,6 +55,65 @@ interface PublicJobApplicationFormProps {
   onSuccess: () => void
 }
 
+type QueueTracking = {
+  initialStatus: any
+  statusToken: string
+  statusUrl: string
+}
+
+const getQueuedUploadTracking = (payload: any, response: Response): QueueTracking => {
+  const containers = [
+    payload,
+    payload?.data,
+    payload?.result,
+    payload?.tracking,
+    payload?.data?.tracking,
+    payload?.processingJob,
+    payload?.job,
+  ].filter((value) => value && typeof value === 'object')
+
+  const firstString = (...keys: string[]) => {
+    for (const container of containers) {
+      for (const key of keys) {
+        const value = container[key]
+        if (typeof value === 'string' && value.trim() && value !== 'undefined') {
+          return value.trim()
+        }
+      }
+    }
+    return ''
+  }
+
+  const queuedJobId = firstString('jobId', 'publicId', 'processingJobId')
+  const statusToken = firstString('statusToken', 'token')
+    || response.headers.get('x-cv-status-token')?.trim()
+    || ''
+  const statusUrl = firstString('statusUrl')
+    || response.headers.get('location')?.trim()
+    || (queuedJobId ? `/api/candidates/cv-jobs/${encodeURIComponent(queuedJobId)}` : '')
+
+  if (!statusUrl.startsWith('/api/') || !statusToken) {
+    throw new Error(
+      'Your CV was received, but the server did not return valid processing details. Please refresh the page and try the upload again.'
+    )
+  }
+
+  const statusContainer = containers.find((value) => typeof value.state === 'string') || payload
+  return {
+    initialStatus: {
+      ...statusContainer,
+      state: statusContainer?.state || 'queued',
+    },
+    statusToken,
+    statusUrl,
+  }
+}
+
+const addStatusToken = (statusUrl: string, statusToken: string) => {
+  const separator = statusUrl.includes('?') ? '&' : '?'
+  return `${statusUrl}${separator}token=${encodeURIComponent(statusToken)}`
+}
+
 export function PublicJobApplicationForm({ 
   jobId, 
   jobTitle, 
@@ -112,6 +171,8 @@ export function PublicJobApplicationForm({
       const formData = new FormData()
       formData.append('resume', file) // Using 'resume' to match backend expectation
       formData.append('jobId', jobId) // Pass jobId to get organization from job
+      const uploadIdempotencyKey = globalThis.crypto?.randomUUID?.()
+        || `${jobId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
       // Show realistic progress for CV processing (can take several minutes)
       let progressValue = 0
@@ -129,6 +190,9 @@ export function PublicJobApplicationForm({
       // Use the existing candidate creation endpoint (public)
       const response = await apiRequest(`/api/candidates/public/upload-cv`, {
         method: 'POST',
+        headers: {
+          'Idempotency-Key': uploadIdempotencyKey,
+        },
         body: formData,
       })
 
@@ -152,11 +216,13 @@ export function PublicJobApplicationForm({
 
       let result = await response.json()
       if (response.status === 202) {
+        const tracking = getQueuedUploadTracking(result, response)
+        result = tracking.initialStatus
         setCvQueueStatus(result)
         while (!['completed', 'failed'].includes(result.state)) {
           setUploadProgress(result.state === 'processing' ? 75 : 45)
           await new Promise((resolve) => setTimeout(resolve, 2000))
-          const statusResponse = await apiRequest(`${result.statusUrl}?token=${encodeURIComponent(result.statusToken)}`)
+          const statusResponse = await apiRequest(addStatusToken(tracking.statusUrl, tracking.statusToken))
           if (!statusResponse.ok) throw new Error('Could not read CV processing status')
           result = await statusResponse.json()
           setCvQueueStatus(result)

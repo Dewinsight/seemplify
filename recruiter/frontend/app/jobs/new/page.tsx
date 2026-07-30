@@ -223,6 +223,10 @@ export default function CreateJobPage() {
         } : undefined,
         applicationDeadline: cleanedData.applicationDeadline,
         status: 'active',
+        isPublic: cleanedData.isPublic,
+        candidateApplyLimit: cleanedData.isPublic
+          ? cleanedData.candidateApplyLimit
+          : undefined,
       };
 
       // Step 2: Creating job posting

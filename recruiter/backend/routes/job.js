@@ -9,6 +9,7 @@ const path = require('path');
 const Job = require('../models/Job');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -227,7 +228,8 @@ router.get('/public', async (req, res) => {
 router.get('/public/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+
+    await publicApplicationCapacityService.reconcileInflatedCount({ jobId: id });
     const job = await Job.findOne({ 
       _id: id,
       isPublic: true,
@@ -562,24 +564,16 @@ router.post('/admin/fix-public-counts', authMiddleware, requireOrganization, asy
     const results = [];
     
     for (const job of publicJobs) {
-      // Count applicants with 'public' source
-      const publicApplicants = job.applicants.filter(app => 
-        app.source === 'public' || 
-        (app.statusHistory && app.statusHistory.some(h => h.notes?.includes('public') || h.notes?.includes('Public')))
-      );
-      
-      const actualCount = publicApplicants.length;
-      const currentCount = job.publicApplicationCount || 0;
-      
-      if (actualCount !== currentCount) {
-        job.publicApplicationCount = actualCount;
-        await job.save();
-        
+      const reconciliation = await publicApplicationCapacityService.reconcileInflatedCount({
+        jobId: job._id,
+        organizationId
+      });
+      if (reconciliation?.repaired) {
         results.push({
           jobId: job._id,
           title: job.title,
-          oldCount: currentCount,
-          newCount: actualCount,
+          oldCount: reconciliation.previousCount,
+          newCount: reconciliation.applicationCount,
           fixed: true
         });
         fixed++;

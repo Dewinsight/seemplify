@@ -1109,7 +1109,7 @@ async function resolveSubmissionContext(req, source) {
       );
     }
     const job = await Job.findById(jobId)
-      .select('_id organization isPublic')
+      .select('_id organization isPublic status candidateApplyLimit publicApplicationCount')
       .lean();
     if (!job) {
       throw submissionError('PUBLIC_JOB_NOT_FOUND', 'The public job was not found', 404);
@@ -1129,6 +1129,30 @@ async function resolveSubmissionContext(req, source) {
         'PUBLIC_JOB_ORGANIZATION_MISMATCH',
         'The public job does not belong to the supplied organization',
         403
+      );
+    }
+    const reconciliation = await publicApplicationCapacityService.reconcileInflatedCount({
+      jobId: job._id,
+      organizationId: job.organization
+    });
+    if (reconciliation?.repaired) {
+      job.publicApplicationCount = reconciliation.applicationCount;
+    }
+    if (job.status !== 'active') {
+      throw submissionError(
+        'PUBLIC_JOB_NOT_ACTIVE',
+        'This job is not accepting public applications',
+        403
+      );
+    }
+    if (
+      Number(job.candidateApplyLimit || 0) > 0
+      && Number(job.publicApplicationCount || 0) >= Number(job.candidateApplyLimit)
+    ) {
+      throw submissionError(
+        'PUBLIC_APPLICATION_LIMIT_REACHED',
+        'This job has reached its maximum number of public applications',
+        409
       );
     }
     return {
@@ -1997,45 +2021,6 @@ async function createCandidateOnce(processingJob, analysis) {
   }
 }
 
-async function reservePublicApplicationCapacity(processingJob) {
-  if (processingJob.source !== 'public') return null;
-  if (!processingJob.jobAppliedFor) {
-    throw submissionError(
-      'PUBLIC_JOB_REQUIRED',
-      'A public CV processing job must reference a job',
-      400
-    );
-  }
-
-  const reservation = await publicApplicationCapacityService.reserve({
-    jobId: processingJob.jobAppliedFor,
-    organizationId: processingJob.organization,
-    processingJobId: processingJob._id,
-    processingJobPublicId: processingJob.publicId
-  });
-  await CVProcessingJob.updateOne(
-    { _id: processingJob._id },
-    {
-      $set: {
-        publicApplicationReservation: {
-          reserved: true,
-          job: processingJob.jobAppliedFor,
-          creditCost: reservation.creditCost,
-          applicationCount: reservation.applicationCount,
-          limitReached: reservation.limitReached,
-          reservedAt: reservation.reservedAt || new Date()
-        }
-      }
-    }
-  );
-  processingJob.publicApplicationReservation = {
-    reserved: true,
-    job: processingJob.jobAppliedFor,
-    ...reservation
-  };
-  return reservation;
-}
-
 const COMPLETION_EFFECT_NAMES = [
   'candidateNotification',
   'gptCacheInvalidation',
@@ -2480,7 +2465,6 @@ async function processJob(bullJob, workerToken) {
       throw error;
     }
     await updateProcessingStage(processingJob, bullJob, 'finalizing', 80);
-    await reservePublicApplicationCapacity(processingJob);
     const candidate = await createCandidateOnce(processingJob, analysis);
     await CVProcessingJob.updateOne({ _id: processingJob._id }, {
       $set: {
@@ -3660,7 +3644,6 @@ module.exports = {
   _processJobForTests: processJob,
   _recoverCompletionEffectsForTests: recoverCompletionEffects,
   _retryStorageCleanupForTests: retryStorageCleanup,
-  _reservePublicApplicationCapacityForTests: reservePublicApplicationCapacity,
   _resetDependenciesForTests: resetDependenciesForTests,
   _setDependenciesForTests: setDependenciesForTests,
   _createGlobalDispatchCoordinator: createGlobalDispatchCoordinator,
