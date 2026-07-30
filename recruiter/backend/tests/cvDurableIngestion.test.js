@@ -461,7 +461,7 @@ test('offline and BUSY deliveries do not consume the five bounded failure attemp
   }
 });
 
-test('terminal failure removes an authenticated private asset and records cleanup', async () => {
+test('terminal failure retains private CV assets and exposes a retryable audit trail', async () => {
   const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
   await CVProcessingJob.updateOne(
     { _id: result.job._id },
@@ -501,18 +501,36 @@ test('terminal failure removes an authenticated private asset and records cleanu
   assert.equal(stored.state, 'failed');
   assert.equal(stored.boundedFailureAttempts, 5);
   assert.equal(delivery.discarded, true);
-  assert.ok(stored.expiresAt > stored.failedAt);
-  assert.equal(stored.cloudinary.cleanupState, 'deleted');
-  assert.ok(stored.cloudinary.releasedAt);
-  assert.ok(stored.durableFile.releasedAt);
-  assert.deepEqual(deletions, [[
-    `resumes/documents/${result.job.publicId}`,
-    'raw',
-    'authenticated'
-  ]]);
+  assert.equal(stored.expiresAt, undefined);
+  assert.equal(stored.cloudinary.cleanupState, 'retained');
+  assert.equal(stored.durableFile.cleanupState, 'retained');
+  assert.equal(stored.cloudinary.releasedAt, undefined);
+  assert.equal(stored.durableFile.releasedAt, undefined);
+  assert.ok(stored.retry.availableUntil > stored.failedAt);
+  assert.ok(stored.cloudinary.cleanupNextAttemptAt >= stored.retry.availableUntil);
+  assert.ok(stored.durableFile.cleanupNextAttemptAt >= stored.retry.availableUntil);
+  assert.deepEqual(deletions, []);
+
+  const detail = await cvQueue.getAdminJobDetail(result.job.publicId);
+  assert.equal(detail.retry.available, true);
+  assert.equal(detail.retry.canRetryParsing, true);
+  assert.equal(detail.retry.canRetryAnalysis, false);
+  assert.equal(detail.retry.storage.cloudinary, true);
+  assert.equal(detail.retry.storage.durable, true);
+  assert.equal(detail.attemptHistory.length, 1);
+  assert.equal(detail.attemptHistory[0].trigger, 'initial');
+  assert.equal(detail.attemptHistory[0].status, 'failed');
+  assert.equal(detail.attemptHistory[0].stage, 'extracting');
+  assert.equal(detail.attemptHistory[0].errorCode, 'CV_TEXT_EXTRACTION_FAILED');
+
+  const staleDelivery = await cvQueue._processJobForTests(bullJob(stored, 5));
+  assert.deepEqual(staleDelivery, { skipped: true });
+  const unchanged = await CVProcessingJob.findById(result.job._id);
+  assert.equal(unchanged.processingAttempts, 1);
+  assert.equal(unchanged.attemptHistory.length, 1);
 });
 
-test('failed Cloudinary cleanup remains durable and is retried before terminal TTL starts', async () => {
+test('retained failed assets are deleted only after retry availability expires', async () => {
   const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
   await CVProcessingJob.updateOne(
     { _id: result.job._id },
@@ -550,17 +568,37 @@ test('failed Cloudinary cleanup remains durable and is retried before terminal T
   );
 
   let stored = await CVProcessingJob.findById(result.job._id);
+  assert.equal(stored.state, 'failed');
+  assert.equal(stored.cloudinary.cleanupState, 'retained');
+  assert.equal(stored.expiresAt, undefined);
+  assert.equal(deletionAttempts, 0);
+  assert.equal(await CVStorageCleanupTask.countDocuments({}), 0);
+
+  const dueAt = new Date(Date.now() - 1_000);
+  await CVProcessingJob.updateOne(
+    { _id: result.job._id },
+    {
+      $set: {
+        'retry.availableUntil': dueAt,
+        'cloudinary.cleanupNextAttemptAt': dueAt,
+        'durableFile.cleanupNextAttemptAt': dueAt
+      }
+    }
+  );
+  await cvQueue._retryStorageCleanupForTests({ now: new Date() });
+
+  stored = await CVProcessingJob.findById(result.job._id);
   let cleanupTask = await CVStorageCleanupTask.findOne({
     provider: 'cloudinary',
     jobPublicId: result.job.publicId
   });
-  assert.equal(stored.state, 'failed');
+  assert.equal(deletionAttempts, 1);
   assert.equal(stored.cloudinary.cleanupState, 'failed');
+  assert.ok(stored.durableFile.releasedAt);
   assert.equal(stored.expiresAt, undefined);
   assert.equal(cleanupTask.state, 'failed');
   assert.equal(cleanupTask.expiresAt, undefined);
 
-  const dueAt = new Date(Date.now() - 1_000);
   await Promise.all([
     CVProcessingJob.updateOne(
       { _id: result.job._id },
@@ -580,6 +618,195 @@ test('failed Cloudinary cleanup remains durable and is retried before terminal T
   assert.ok(stored.expiresAt instanceof Date);
   assert.equal(cleanupTask.state, 'completed');
   assert.ok(cleanupTask.expiresAt instanceof Date);
+});
+
+test('manual analysis retry preserves the failed-to-success trail and candidate Cloudinary CV', async () => {
+  const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
+  await CVProcessingJob.updateOne(
+    { _id: result.job._id },
+    { $set: { boundedFailureAttempts: 4 } }
+  );
+  let analysisCalls = 0;
+  let cloudinaryDeletes = 0;
+  const queueRequests = [];
+  cvQueue._setDependenciesForTests({
+    enqueueJob: async (job, options) => {
+      queueRequests.push({ jobId: job.publicId, options });
+      return { id: job.publicId };
+    },
+    cloudinary: {
+      async uploadFile() {
+        return {
+          success: true,
+          resumeUrl: 'https://example.invalid/private-signed-cv',
+          publicId: `resumes/documents/${result.job.publicId}`,
+          resourceType: 'raw',
+          deliveryType: 'authenticated'
+        };
+      },
+      async deleteFile() {
+        cloudinaryDeletes += 1;
+        return { success: true, result: 'ok' };
+      }
+    },
+    cvParser: {
+      async parseCV() {
+        return extractedText;
+      },
+      async analyzeText() {
+        analysisCalls += 1;
+        if (analysisCalls === 1) {
+          throw Object.assign(new Error('Synthetic terminal analysis failure'), {
+            code: 'CV_SCHEMA_INVALID'
+          });
+        }
+        return successfulAnalysis();
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => cvQueue._processJobForTests(bullJob(result.job, 4)),
+    /Synthetic terminal analysis failure/
+  );
+  let stored = await CVProcessingJob.findById(result.job._id).select('+resumeText');
+  assert.equal(stored.state, 'failed');
+  assert.equal(stored.lastError.stage, 'analyzing');
+  assert.equal(stored.resumeText, extractedText);
+
+  const requestedBy = {
+    type: 'admin',
+    id: String(new mongoose.Types.ObjectId()),
+    name: 'Platform Operator',
+    email: 'operator@example.com'
+  };
+  const retry = await cvQueue.retryFailedJob(result.job.publicId, {
+    organizationId,
+    requestedBy,
+    stage: 'analysis'
+  });
+  assert.equal(retry.queueAvailable, true);
+  assert.equal(retry.effectiveStage, 'analysis');
+  assert.deepEqual(queueRequests, [{
+    jobId: result.job.publicId,
+    options: { replaceTerminal: true }
+  }]);
+
+  stored = await CVProcessingJob.findById(result.job._id).select('+resumeText');
+  assert.equal(stored.state, 'queued');
+  assert.equal(stored.stage, 'analyzing');
+  assert.equal(stored.retry.manualRequests, 1);
+  assert.equal(stored.retry.pendingTrigger, 'manual');
+  assert.equal(stored.retry.lastRequestedBy.email, requestedBy.email);
+  assert.equal(stored.resumeText, extractedText);
+
+  await assert.rejects(
+    () => cvQueue.retryFailedJob(result.job.publicId, {
+      organizationId,
+      requestedBy,
+      stage: 'analysis'
+    }),
+    (error) => error.code === 'CV_RETRY_NOT_FAILED'
+  );
+
+  await cvQueue._processJobForTests(bullJob(stored, 0));
+  stored = await CVProcessingJob.findById(result.job._id);
+  assert.equal(stored.state, 'completed');
+  assert.equal(stored.processingAttempts, 2);
+  assert.equal(stored.retry.manualRequests, 1);
+  assert.equal(stored.attemptHistory.length, 2);
+  assert.deepEqual(
+    stored.attemptHistory.map((attempt) => [attempt.trigger, attempt.status]),
+    [['initial', 'failed'], ['manual', 'completed']]
+  );
+  assert.equal(stored.attemptHistory[1].requestedBy.email, requestedBy.email);
+  assert.ok(stored.durableFile.releasedAt);
+  assert.equal(cloudinaryDeletes, 0);
+
+  const candidate = await Candidate.findOne({
+    'processingMetadata.cvProcessingJobId': result.job.publicId
+  }).lean();
+  assert.equal(candidate.resumeUrl, 'https://example.invalid/private-signed-cv');
+  assert.equal(candidate.cloudinaryPublicId, `resumes/documents/${result.job.publicId}`);
+
+  const detail = await cvQueue.getAdminJobDetail(result.job.publicId);
+  assert.equal(detail.state, 'completed');
+  assert.equal(detail.retry.manualRetries, 1);
+  assert.equal(detail.attemptHistory[0].errorCode, 'CV_SCHEMA_INVALID');
+  assert.equal(detail.attemptHistory[1].status, 'completed');
+
+  const audit = await CVProcessingAudit.findOne({ publicId: result.job.publicId }).lean();
+  assert.equal(audit.state, 'completed');
+  assert.equal(audit.retry.manualRequests, 1);
+  assert.deepEqual(
+    audit.attemptHistory.map((attempt) => [attempt.trigger, attempt.status]),
+    [['initial', 'failed'], ['manual', 'completed']]
+  );
+});
+
+test('manual parsing retry is organization-scoped and reuses the retained original', async () => {
+  const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
+  await CVProcessingJob.updateOne(
+    { _id: result.job._id },
+    { $set: { boundedFailureAttempts: 4 } }
+  );
+  const queueRequests = [];
+  cvQueue._setDependenciesForTests({
+    enqueueJob: async (job, options) => {
+      queueRequests.push({ jobId: job.publicId, options });
+      return { id: job.publicId };
+    },
+    cloudinary: {
+      async uploadFile() {
+        return {
+          success: true,
+          resumeUrl: 'https://example.invalid/private-signed-cv',
+          publicId: `resumes/documents/${result.job.publicId}`,
+          resourceType: 'raw',
+          deliveryType: 'authenticated'
+        };
+      }
+    },
+    cvParser: {
+      async parseCV() {
+        return '';
+      }
+    }
+  });
+  await assert.rejects(
+    () => cvQueue._processJobForTests(bullJob(result.job, 4)),
+    /Could not extract readable text/
+  );
+
+  await assert.rejects(
+    () => cvQueue.retryFailedJob(result.job.publicId, {
+      organizationId: new mongoose.Types.ObjectId(),
+      stage: 'parsing'
+    }),
+    (error) => error.code === 'CV_JOB_NOT_FOUND' && error.statusCode === 404
+  );
+  await assert.rejects(
+    () => cvQueue.retryFailedJob(result.job.publicId, {
+      organizationId,
+      stage: 'analysis'
+    }),
+    (error) => error.code === 'CV_RETRY_ANALYSIS_UNAVAILABLE'
+  );
+
+  const retry = await cvQueue.retryFailedJob(result.job.publicId, {
+    organizationId,
+    requestedBy: { type: 'user', id: String(new mongoose.Types.ObjectId()) },
+    stage: 'parsing'
+  });
+  assert.equal(retry.effectiveStage, 'parsing');
+  assert.equal(retry.job.stage, 'extracting');
+  assert.equal(retry.job.resumeText, '');
+  assert.equal(retry.job.durableFile.cleanupState, 'retained');
+  assert.equal(retry.job.cloudinary.cleanupState, 'retained');
+  assert.deepEqual(queueRequests, [{
+    jobId: result.job.publicId,
+    options: { replaceTerminal: true }
+  }]);
 });
 
 test('concurrent duplicate deliveries atomically create one candidate for one processing job', async () => {

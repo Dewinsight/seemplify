@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const AIAuditEventSchema = new mongoose.Schema({
-  category: { type: String, enum: ['configuration', 'credential', 'alert', 'health'], required: true, index: true },
+  category: { type: String, enum: ['configuration', 'credential', 'alert', 'health', 'operations'], required: true, index: true },
   action: { type: String, required: true, index: true },
   status: { type: String, enum: ['success', 'failed', 'sent', 'suppressed'], default: 'success' },
   actorAdmin: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },

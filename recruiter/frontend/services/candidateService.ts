@@ -46,10 +46,49 @@ interface CandidateData extends CandidateFormValues {
 export interface CVProcessingStatus {
   jobId: string;
   state: 'queued' | 'waiting_for_local_runtime' | 'processing' | 'completed' | 'failed';
+  stage?: 'ingesting' | 'uploading' | 'extracting' | 'analyzing' | 'finalizing' | 'completed' | 'failed' | null;
   progress: number;
   position: number | null;
   candidateId: string | null;
+  attempts?: number;
+  aiAttempts?: number;
+  retry?: {
+    available: boolean;
+    availableUntil?: string | null;
+    nextAttemptAt?: string | null;
+    requestedStage?: 'failed' | 'parsing' | 'analysis';
+    manualRequests?: number;
+    automaticRetries?: number;
+    manualRetries?: number;
+  };
+  attemptHistory?: Array<{
+    number: number;
+    trigger: 'initial' | 'automatic' | 'manual';
+    requestedStage: 'failed' | 'parsing' | 'analysis';
+    status: 'processing' | 'waiting_for_runtime' | 'failed' | 'completed';
+    stage?: string | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    errorCode?: string | null;
+  }>;
   error?: { code?: string; message?: string };
+}
+
+export interface AcceptedCVProcessing extends CVProcessingStatus {
+  statusToken: string;
+  statusUrl: string;
+}
+
+export class CVProcessingError extends Error {
+  status: CVProcessingStatus;
+  accepted: AcceptedCVProcessing;
+
+  constructor(message: string, status: CVProcessingStatus, accepted: AcceptedCVProcessing) {
+    super(message);
+    this.name = 'CVProcessingError';
+    this.status = status;
+    this.accepted = accepted;
+  }
 }
 
 interface UploadCVResponse {
@@ -88,7 +127,7 @@ const handleOrganizationError = (error: ApiError) => {
 };
 
 const waitForCVProcessing = async (
-  accepted: CVProcessingStatus & { statusToken: string; statusUrl: string },
+  accepted: AcceptedCVProcessing,
   onStatus?: (status: CVProcessingStatus) => void,
 ): Promise<UploadCVResponse> => {
   let status: CVProcessingStatus = accepted;
@@ -101,7 +140,7 @@ const waitForCVProcessing = async (
     onStatus?.(status);
   }
   if (status.state === 'failed' || !status.candidateId) {
-    throw new Error(status.error?.message || 'CV processing failed');
+    throw new CVProcessingError(status.error?.message || 'CV processing failed', status, accepted);
   }
   const candidate = await getCandidateById(status.candidateId);
   return {
@@ -115,6 +154,24 @@ const waitForCVProcessing = async (
       fieldsExtracted: Object.keys(candidate.parsedData || {}).length,
     },
   };
+};
+
+export const retryCVProcessing = async (
+  accepted: AcceptedCVProcessing,
+  onStatus?: (status: CVProcessingStatus) => void,
+  stage: 'failed' | 'parsing' | 'analysis' = 'failed',
+): Promise<UploadCVResponse> => {
+  const response = await apiRequest(`/api/candidates/cv-jobs/${encodeURIComponent(accepted.jobId)}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.msg || result.message || 'CV processing could not be retried');
+  }
+  onStatus?.(result as CVProcessingStatus);
+  return waitForCVProcessing(accepted, onStatus);
 };
 
 export const uploadCV = async (

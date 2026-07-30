@@ -1,5 +1,12 @@
 const mongoose = require('mongoose');
 
+const AuditRetryActorSchema = new mongoose.Schema({
+  type: String,
+  id: String,
+  name: String,
+  email: String
+}, { _id: false });
+
 const CVProcessingAuditSchema = new mongoose.Schema({
   publicId: { type: String, required: true, unique: true, index: true },
   producer: {
@@ -27,6 +34,27 @@ const CVProcessingAuditSchema = new mongoose.Schema({
   },
   progress: { type: Number, default: 0, min: 0, max: 100 },
   attempts: { type: Number, default: 0 },
+  processingAttempts: { type: Number, default: 0 },
+  retry: {
+    manualRequests: { type: Number, default: 0, min: 0 },
+    nextAttemptAt: Date,
+    availableUntil: Date,
+    requestedStage: String,
+    lastRequestedAt: Date,
+    lastRequestedBy: AuditRetryActorSchema
+  },
+  attemptHistory: [{
+    attemptId: String,
+    number: Number,
+    trigger: String,
+    requestedStage: String,
+    status: String,
+    stage: String,
+    startedAt: Date,
+    finishedAt: Date,
+    errorCode: String,
+    requestedBy: AuditRetryActorSchema
+  }],
   organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', index: true },
   organizationKey: { type: String, index: true },
   actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -64,6 +92,9 @@ const CVProcessingAuditSchema = new mongoose.Schema({
     },
     progress: { type: Number, min: 0, max: 100 },
     attempts: { type: Number, min: 0 },
+    processingAttempts: { type: Number, min: 0 },
+    trigger: String,
+    requestedStage: String,
     sequence: { type: Number, min: 0 },
     at: { type: Date, required: true },
     errorCode: String

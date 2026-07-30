@@ -203,6 +203,35 @@ interface LocalQueueTransition {
   errorCode: string | null;
 }
 
+interface LocalQueueAttempt {
+  attemptId?: string;
+  number: number;
+  trigger: 'initial' | 'automatic' | 'manual';
+  requestedStage: 'failed' | 'parsing' | 'analysis';
+  status: 'processing' | 'waiting_for_runtime' | 'failed' | 'completed';
+  stage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  errorCode: string | null;
+  errorMessage?: string;
+  requestedBy?: { type?: string; id?: string; name?: string; email?: string };
+}
+
+interface LocalQueueRetry {
+  available: boolean;
+  availableUntil: string | null;
+  nextAttemptAt: string | null;
+  requestedStage: 'failed' | 'parsing' | 'analysis';
+  manualRequests: number;
+  automaticRetries: number;
+  manualRetries: number;
+  lastRequestedAt?: string | null;
+  lastRequestedBy?: { type?: string; id?: string; name?: string; email?: string };
+  canRetryParsing?: boolean;
+  canRetryAnalysis?: boolean;
+  storage?: { cloudinary?: boolean; durable?: boolean; extractedText?: boolean };
+}
+
 interface LocalQueueJob {
   jobId: string;
   source: 'private' | 'public' | 'bulk' | 'ai-interview';
@@ -213,6 +242,8 @@ interface LocalQueueJob {
   stage?: string | null;
   progress: number;
   attempts: number;
+  aiAttempts?: number;
+  processingAttempts?: number;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -227,6 +258,8 @@ interface LocalQueueJob {
   candidate: { id: string; name: string; email: string } | null;
   file: { name: string; type: string; size: number };
   transitions?: LocalQueueTransition[];
+  retry?: LocalQueueRetry;
+  attemptHistory?: LocalQueueAttempt[];
 }
 
 interface LocalQueueStatus {
@@ -511,6 +544,9 @@ interface UsageRequest {
   errorCode?: string;
   errorMessage?: string;
   attemptErrors?: Array<{ code?: string; message?: string; providerStatus?: number; credentialLabel?: string }>;
+  cvProcessing?: Pick<LocalQueueJob,
+    'jobId' | 'producer' | 'state' | 'phase' | 'stage' | 'progress' | 'attempts' | 'aiAttempts' | 'processingAttempts' | 'updatedAt' | 'errorCode' | 'retry'
+  > | null;
 }
 
 interface RequestSummary extends MeteringCounts {
@@ -1310,6 +1346,39 @@ export default function AIRuntimeAdminPage() {
     }
   }
 
+  async function retryCVJob(jobId: string, stage: 'failed' | 'parsing' | 'analysis' = 'failed') {
+    setBusy(`cv-retry:${jobId}`);
+    try {
+      const result = await adminJson<{
+        success: true;
+        queueAvailable: boolean;
+        requestedStage: string;
+        job: LocalQueueJob;
+      }>(`/api/admin/ai-runtime/local/queue/jobs/${encodeURIComponent(jobId)}/retry`, {
+        method: 'POST',
+        body: JSON.stringify({ stage })
+      });
+      setDetailData((current) => current && String(current.jobId || '') === jobId
+        ? result.job as unknown as Record<string, unknown>
+        : current);
+      await Promise.all([loadLocalQueue(), loadLocalQueueHistory(), loadRequests(), loadAudits()]);
+      toast({
+        title: 'CV retry queued',
+        description: result.queueAvailable
+          ? `${stage === 'failed' ? 'Failed-stage' : stage} processing will run again.`
+          : 'The retry is saved and will start when the CV queue reconnects.'
+      });
+    } catch (error) {
+      toast({
+        title: 'CV retry failed',
+        description: error instanceof Error ? error.message : 'The CV job could not be retried.',
+        variant: 'destructive'
+      });
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function runLocalHealthCheck() {
     setBusy('local-health');
     try {
@@ -1985,6 +2054,7 @@ export default function AIRuntimeAdminPage() {
                           <TableHead>Queue wait</TableHead>
                           <TableHead>Processing</TableHead>
                           <TableHead>Updated</TableHead>
+                          <TableHead className="text-right">Retry</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2012,17 +2082,38 @@ export default function AIRuntimeAdminPage() {
                             <TableCell>
                               <div className={`font-medium ${queueStateClass(job.state)}`}>{job.state.replace(/_/g, ' ')}</div>
                               {job.errorCode && <div className="mt-1 font-mono text-xs text-red-300">{job.errorCode}</div>}
+                              {job.retry?.nextAttemptAt && <div className="mt-1 text-xs text-amber-300">Next {formatTime(job.retry.nextAttemptAt)}</div>}
+                              {job.state === 'completed' && (job.retry?.automaticRetries || job.retry?.manualRetries) ? (
+                                <div className="mt-1 text-xs text-green-300">Recovered after retry</div>
+                              ) : null}
                             </TableCell>
                             <TableCell>{formatNumber(job.progress)}%</TableCell>
                             <TableCell>{formatNumber(job.attempts)}</TableCell>
                             <TableCell>{formatDuration(job.waitMs)}</TableCell>
                             <TableCell>{formatDuration(job.processingMs)}</TableCell>
                             <TableCell>{formatTime(job.updatedAt)}</TableCell>
+                            <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                              {job.state === 'failed' && job.producer !== 'ai-interview' ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Retry CV processing job ${job.jobId}`}
+                                  title={job.retry?.available ? 'Retry failed CV stage' : 'Stored CV is no longer available'}
+                                  disabled={!canConfigure || !job.retry?.available || busy === `cv-retry:${job.jobId}`}
+                                  onClick={() => void retryCVJob(job.jobId)}
+                                >
+                                  {busy === `cv-retry:${job.jobId}`
+                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : <RotateCw className="h-4 w-4" />}
+                                </Button>
+                              ) : <span className="text-gray-600">-</span>}
+                            </TableCell>
                           </TableRow>
                         ))}
                         {!visibleQueueJobs.length && !queueHistoryLoading && (
                           <TableRow>
-                            <TableCell colSpan={10} className="h-20 text-center text-gray-500">
+                            <TableCell colSpan={11} className="h-20 text-center text-gray-500">
                               {queueViewMode === 'history' ? 'No processing history matches these filters.' : 'No recent CV processing jobs.'}
                             </TableCell>
                           </TableRow>
@@ -2239,7 +2330,63 @@ export default function AIRuntimeAdminPage() {
                 </section>
                 <section className="overflow-hidden rounded-md border border-gray-800 bg-gray-900"><div className="overflow-x-auto"><Table>
                   <TableHeader><TableRow className="border-gray-800"><TableHead>Time</TableHead><TableHead>Activity</TableHead><TableHead>Application</TableHead><TableHead>Organization / person</TableHead><TableHead>Model</TableHead><TableHead>Tokens</TableHead><TableHead>Est. cost</TableHead><TableHead>Attempts</TableHead><TableHead>Latency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>{requests.map((request) => <TableRow key={request._id} role="button" tabIndex={0} aria-haspopup="dialog" aria-label={`Inspect AI request ${request.requestId}`} className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset" onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)} onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`))}><TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell><TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell><TableCell>{request.sourceApp}</TableCell><TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell><TableCell><div className="text-xs text-gray-500">{providerUsageLabel(request.provider, request.model)}</div><div className="font-mono text-xs">{request.model}</div></TableCell><TableCell><div>{formatRecordedTokens(request.meteringStatus, request.totalTokens)}</div><div className="mt-1 text-[11px] text-gray-500">{request.meteringStatus?.replace('-', ' ') || 'legacy unknown'}</div></TableCell><TableCell>{formatRecordedCost(request.meteringStatus, request.totalTokens, request.estimatedCostUsd)}</TableCell><TableCell>{formatNumber(request.attempts)}</TableCell><TableCell>{formatNumber(request.latencyMs)} ms</TableCell><TableCell><StatusBadge status={request.status} />{request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}{request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>
+                    {requests.map((request) => (
+                      <TableRow
+                        key={request._id}
+                        role="button"
+                        tabIndex={0}
+                        aria-haspopup="dialog"
+                        aria-label={`Inspect AI request ${request.requestId}`}
+                        className="cursor-pointer border-gray-800 hover:bg-gray-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+                        onClick={() => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`)}
+                        onKeyDown={(event) => activateTableRow(event, () => void openOperationalDetail('request', request._id, `AI request ${request.requestId}`))}
+                      >
+                        <TableCell className="whitespace-nowrap text-gray-400">{formatDate(request.createdAt)}</TableCell>
+                        <TableCell><div>{definitions.get(request.activity)?.label || request.activity}</div><div className="font-mono text-xs text-gray-500">{request.requestId.slice(0, 12)}</div></TableCell>
+                        <TableCell>{request.sourceApp}</TableCell>
+                        <TableCell><div>{request.organizationName || 'Unresolved organization'}</div><div className="text-xs text-gray-500">{request.actorName || request.actorEmail || 'System'}</div></TableCell>
+                        <TableCell><div className="text-xs text-gray-500">{providerUsageLabel(request.provider, request.model)}</div><div className="font-mono text-xs">{request.model}</div></TableCell>
+                        <TableCell><div>{formatRecordedTokens(request.meteringStatus, request.totalTokens)}</div><div className="mt-1 text-[11px] text-gray-500">{request.meteringStatus?.replace('-', ' ') || 'legacy unknown'}</div></TableCell>
+                        <TableCell>{formatRecordedCost(request.meteringStatus, request.totalTokens, request.estimatedCostUsd)}</TableCell>
+                        <TableCell>{formatNumber(request.attempts)}</TableCell>
+                        <TableCell>{formatNumber(request.latencyMs)} ms</TableCell>
+                        <TableCell>
+                          <StatusBadge status={request.status} />
+                          {request.errorCode && <div className="mt-1 text-xs text-red-400">{request.errorCode}</div>}
+                          {request.cvProcessing && (
+                            <div className="mt-2 border-t border-gray-800 pt-2 text-xs">
+                              <div className={queueStateClass(request.cvProcessing.state)}>
+                                CV {request.cvProcessing.state.replace(/_/g, ' ')} · run {formatNumber(request.cvProcessing.attempts)}
+                              </div>
+                              {request.cvProcessing.state === 'completed' && (request.cvProcessing.retry?.automaticRetries || request.cvProcessing.retry?.manualRetries) ? (
+                                <div className="mt-1 text-green-300">Recovered after retry</div>
+                              ) : null}
+                              {request.cvProcessing.state === 'failed' && request.cvProcessing.producer !== 'ai-interview' && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="mt-1 h-7 px-2"
+                                  disabled={!canConfigure || !request.cvProcessing.retry?.available || busy === `cv-retry:${request.cvProcessing.jobId}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void retryCVJob(request.cvProcessing!.jobId);
+                                  }}
+                                >
+                                  {busy === `cv-retry:${request.cvProcessing.jobId}`
+                                    ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                    : <RotateCw className="mr-1.5 h-3.5 w-3.5" />}
+                                  Retry CV
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                          {request.errorMessage && <details className="mt-2 max-w-72 text-xs text-gray-400"><summary className="cursor-pointer text-gray-300">Error details</summary><p className="mt-1 whitespace-normal break-words">{request.errorMessage}</p>{request.attemptErrors?.map((attempt, index) => <p key={index} className="mt-1 break-words font-mono text-[11px]">{attempt.code || 'provider_error'}{attempt.providerStatus ? ` (${attempt.providerStatus})` : ''}: {attempt.message || 'No provider message'}</p>)}</details>}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
                 </Table></div>{!requests.length && <div className="py-16 text-center text-sm text-gray-500">No requests match these filters.</div>}</section>
                 <div className="flex items-center justify-end gap-2"><Button variant="outline" size="icon" aria-label="Previous request page" title="Previous request page" disabled={requestPage <= 1} onClick={() => setRequestPage((page) => page - 1)} className="border-gray-700"><ChevronLeft className="h-4 w-4" /></Button><span className="min-w-24 text-center text-sm text-gray-400">{requestPage} of {requestPages}</span><Button variant="outline" size="icon" aria-label="Next request page" title="Next request page" disabled={requestPage >= requestPages} onClick={() => setRequestPage((page) => page + 1)} className="border-gray-700"><ChevronRight className="h-4 w-4" /></Button></div>
               </TabsContent>
@@ -2272,7 +2419,13 @@ export default function AIRuntimeAdminPage() {
           {detailLoading
             ? <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-blue-400" /></div>
             : detailSelection && detailData
-              ? <OperationalDetail kind={detailSelection.kind} data={detailData} />
+              ? <OperationalDetail
+                  kind={detailSelection.kind}
+                  data={detailData}
+                  canConfigure={canConfigure}
+                  busy={busy}
+                  onRetryCV={(jobId, stage) => retryCVJob(jobId, stage)}
+                />
               : <div className="py-12 text-center text-sm text-gray-500">No detail is available.</div>}
         </DialogContent>
       </Dialog>
@@ -2534,7 +2687,110 @@ function DetailDatum({ label, value, mono = false }: { label: string; value: unk
   );
 }
 
-function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<string, unknown> }) {
+function CVRetryPanel({
+  data,
+  canConfigure,
+  busy,
+  onRetry
+}: {
+  data: Record<string, unknown>;
+  canConfigure: boolean;
+  busy: string;
+  onRetry: (jobId: string, stage: 'failed' | 'parsing' | 'analysis') => void;
+}) {
+  const [stage, setStage] = useState<'failed' | 'parsing' | 'analysis'>('failed');
+  const retry = recordValue(data.retry);
+  const storage = recordValue(retry.storage);
+  const attempts = Array.isArray(data.attemptHistory) ? data.attemptHistory.map(recordValue) : [];
+  const jobId = textValue(data.jobId, '');
+  const state = textValue(data.state, 'unknown');
+  const retrying = busy === `cv-retry:${jobId}`;
+  const recovered = state === 'completed'
+    && (Number(retry.automaticRetries || 0) > 0 || Number(retry.manualRetries || 0) > 0);
+
+  return (
+    <section className="overflow-hidden rounded-md border border-gray-800">
+      <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Retry status and trail</h3>
+          <p className="mt-1 text-xs text-gray-500">
+            {recovered
+              ? `Succeeded after ${formatNumber(attempts.length)} recorded runs.`
+              : retry.nextAttemptAt
+                ? `Automatic retry scheduled for ${formatDate(textValue(retry.nextAttemptAt, ''))}.`
+                : state === 'failed' ? 'Automatic retries ended.' : 'No retry is currently scheduled.'}
+          </p>
+        </div>
+        {state === 'failed' && data.producer !== 'ai-interview' && (
+          <div className="flex min-w-0 items-center gap-2">
+            <Select value={stage} onValueChange={(value) => setStage(value as 'failed' | 'parsing' | 'analysis')}>
+              <SelectTrigger aria-label="Choose CV retry stage" className="w-40 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="failed">Failed stage</SelectItem>
+                <SelectItem value="parsing" disabled={retry.canRetryParsing !== true}>Parsing</SelectItem>
+                <SelectItem value="analysis" disabled={retry.canRetryAnalysis !== true}>Analysis</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canConfigure || retry.available !== true || retrying}
+              onClick={() => onRetry(jobId, stage)}
+            >
+              {retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
+              Retry
+            </Button>
+          </div>
+        )}
+      </div>
+      <dl className="grid sm:grid-cols-2 lg:grid-cols-4">
+        <DetailDatum label="End-to-end runs" value={data.attempts} />
+        <DetailDatum label="AI calls" value={data.aiAttempts} />
+        <DetailDatum label="Automatic retries" value={retry.automaticRetries} />
+        <DetailDatum label="Manual retries" value={retry.manualRetries} />
+        <DetailDatum label="Retry available until" value={retry.availableUntil ? formatDate(textValue(retry.availableUntil, '')) : 'Not available'} />
+        <DetailDatum label="Cloudinary CV" value={storage.cloudinary === true ? 'Retained privately' : 'Not retained'} />
+        <DetailDatum label="Durable source" value={storage.durable === true ? 'Available' : 'Released'} />
+        <DetailDatum label="Last requested by" value={textValue(recordValue(retry.lastRequestedBy).email, 'System')} />
+      </dl>
+      <div className="overflow-x-auto border-t border-gray-800">
+        <Table>
+          <TableHeader><TableRow className="border-gray-800"><TableHead>Run</TableHead><TableHead>Trigger</TableHead><TableHead>Stage</TableHead><TableHead>Started</TableHead><TableHead>Result</TableHead><TableHead>Requested by</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {attempts.map((attempt, index) => {
+              const actor = recordValue(attempt.requestedBy);
+              return (
+                <TableRow key={textValue(attempt.attemptId, `${attempt.number}-${index}`)} className="border-gray-800">
+                  <TableCell>{formatNumber(Number(attempt.number || 0))}</TableCell>
+                  <TableCell>{textValue(attempt.trigger).replace(/_/g, ' ')}</TableCell>
+                  <TableCell>{textValue(attempt.stage, 'Not started').replace(/_/g, ' ')}</TableCell>
+                  <TableCell className="whitespace-nowrap text-gray-400">{formatDate(textValue(attempt.startedAt, ''))}</TableCell>
+                  <TableCell><div className={queueStateClass(textValue(attempt.status, ''))}>{textValue(attempt.status).replace(/_/g, ' ')}</div>{Boolean(attempt.errorCode) && <div className="font-mono text-xs text-red-300">{textValue(attempt.errorCode)}</div>}</TableCell>
+                  <TableCell>{textValue(actor.email || actor.name, attempt.trigger === 'manual' ? 'Admin' : 'System')}</TableCell>
+                </TableRow>
+              );
+            })}
+            {!attempts.length && <TableRow><TableCell colSpan={6} className="h-16 text-center text-gray-500">No end-to-end runs were recorded for this historical job.</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
+function OperationalDetail({
+  kind,
+  data,
+  canConfigure,
+  busy,
+  onRetryCV
+}: {
+  kind: DetailKind;
+  data: Record<string, unknown>;
+  canConfigure: boolean;
+  busy: string;
+  onRetryCV: (jobId: string, stage: 'failed' | 'parsing' | 'analysis') => void;
+}) {
   if (kind === 'queue') {
     const organization = recordValue(data.organization);
     const uploader = recordValue(data.uploader);
@@ -2555,6 +2811,7 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
             <DetailDatum label="Candidate created" value={candidate.name || 'Not yet'} />
           </dl>
         </section>
+        <CVRetryPanel data={data} canConfigure={canConfigure} busy={busy} onRetry={onRetryCV} />
         <section className="overflow-hidden rounded-md border border-gray-800">
           <div className="border-b border-gray-800 px-4 py-3"><h3 className="text-sm font-semibold text-white">Queue execution</h3></div>
           <dl className="grid sm:grid-cols-2">
@@ -2629,6 +2886,7 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
       </div>
     );
   }
+  const cvProcessing = recordValue(data.cvProcessing);
   return (
     <div className="space-y-5">
       <section className="overflow-hidden rounded-md border border-gray-800">
@@ -2665,6 +2923,9 @@ function OperationalDetail({ kind, data }: { kind: DetailKind; data: Record<stri
           <DetailDatum label="Quota group" value={data.quotaGroup} mono />
         </dl>
       </section>
+      {Boolean(cvProcessing.jobId) && (
+        <CVRetryPanel data={cvProcessing} canConfigure={canConfigure} busy={busy} onRetry={onRetryCV} />
+      )}
       {Boolean(data.errorCode || data.errorMessage || data.attemptErrors) && (
         <section className="rounded-md border border-red-900 bg-red-950/20 p-4">
           <h3 className="text-sm font-semibold text-red-200">{textValue(data.errorCode, 'Request failure')}</h3>

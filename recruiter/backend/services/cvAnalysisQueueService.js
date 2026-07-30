@@ -176,9 +176,21 @@ const TERMINAL_JOB_RETENTION_MS = (
     ? Math.max(1, configuredTerminalRetentionDays)
     : 30
 ) * 24 * 60 * 60 * 1000;
+const configuredFailedRetryRetentionDays = Number(
+  process.env.CV_FAILED_RETRY_RETENTION_DAYS || configuredTerminalRetentionDays || 30
+);
+const FAILED_RETRY_RETENTION_MS = (
+  Number.isFinite(configuredFailedRetryRetentionDays) && configuredFailedRetryRetentionDays > 0
+    ? Math.max(1, configuredFailedRetryRetentionDays)
+    : 30
+) * 24 * 60 * 60 * 1000;
 
 function terminalJobExpiry(now = Date.now()) {
   return new Date(now + TERMINAL_JOB_RETENTION_MS);
+}
+
+function failedRetryExpiry(now = Date.now()) {
+  return new Date(now + FAILED_RETRY_RETENTION_MS);
 }
 
 function cleanupRetryDelay(attempts) {
@@ -278,9 +290,83 @@ function percentile(values, ratio) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)];
 }
 
+function processingAttemptCount(job = {}) {
+  return Math.max(
+    0,
+    Number(job.processingAttempts || 0),
+    Number(job.attempts || 0)
+  );
+}
+
+function retryActor(value) {
+  if (!value) return null;
+  return {
+    type: value.type || 'system',
+    id: value.id ? String(value.id) : '',
+    name: String(value.name || '').slice(0, 200),
+    email: String(value.email || '').slice(0, 320)
+  };
+}
+
+function attemptTrail(job = {}, { includeActor = false } = {}) {
+  return (job.attemptHistory || []).map((attempt) => ({
+    attemptId: attempt.attemptId,
+    number: Number(attempt.number || 0),
+    trigger: attempt.trigger || 'automatic',
+    requestedStage: attempt.requestedStage || 'failed',
+    status: attempt.status || 'processing',
+    stage: attempt.stage || null,
+    startedAt: attempt.startedAt || null,
+    finishedAt: attempt.finishedAt || null,
+    errorCode: attempt.errorCode || null,
+    ...(includeActor && attempt.requestedBy ? { requestedBy: retryActor(attempt.requestedBy) } : {})
+  }));
+}
+
+function retrySummary(job = {}, { includeActor = false, includeCapabilities = false } = {}) {
+  const trail = attemptTrail(job);
+  const availableUntil = job.retry?.availableUntil || null;
+  const available = job.state === 'failed'
+    && availableUntil != null
+    && new Date(availableUntil).getTime() > Date.now();
+  const durableAvailable = Boolean(
+    job.durableFile?.fileId
+    && !job.durableFile?.releasedAt
+    && job.durableFile?.cleanupState !== 'deleted'
+  );
+  const cloudinaryAvailable = Boolean(
+    job.cloudinary?.publicId
+    && !job.cloudinary?.releasedAt
+    && job.cloudinary?.cleanupState !== 'deleted'
+  );
+  const extractedTextAvailable = Boolean(job.resumeText);
+  return {
+    available: available && (durableAvailable || extractedTextAvailable) && (cloudinaryAvailable || durableAvailable),
+    availableUntil,
+    nextAttemptAt: job.retry?.nextAttemptAt || null,
+    requestedStage: job.retry?.requestedStage || 'failed',
+    manualRequests: Number(job.retry?.manualRequests || 0),
+    automaticRetries: trail.filter((attempt) => attempt.trigger === 'automatic').length,
+    manualRetries: trail.filter((attempt) => attempt.trigger === 'manual').length,
+    lastRequestedAt: job.retry?.lastRequestedAt || null,
+    ...(includeActor && job.retry?.lastRequestedBy
+      ? { lastRequestedBy: retryActor(job.retry.lastRequestedBy) }
+      : {}),
+    ...(includeCapabilities ? {
+      canRetryParsing: available && durableAvailable && (cloudinaryAvailable || durableAvailable),
+      canRetryAnalysis: available && extractedTextAvailable && (cloudinaryAvailable || durableAvailable),
+      storage: {
+        cloudinary: cloudinaryAvailable,
+        durable: durableAvailable,
+        extractedText: extractedTextAvailable
+      }
+    } : {})
+  };
+}
+
 function lifecyclePhase(job) {
   if (['completed', 'failed'].includes(job.state)) return job.state;
-  if (Number(job.attempts || 0) > 1) return 'retrying';
+  if (processingAttemptCount(job) > 1) return 'retrying';
   return job.state;
 }
 
@@ -293,7 +379,9 @@ function operationalJob(job, sampledAt) {
     phase: lifecyclePhase(job),
     stage: job.stage || null,
     progress: Number(job.progress || 0),
-    attempts: Number(job.attempts || 0),
+    attempts: processingAttemptCount(job),
+    aiAttempts: Number(job.attempts || 0),
+    processingAttempts: Number(job.processingAttempts || 0),
     createdAt: job.createdAt,
     startedAt: job.startedAt || null,
     completedAt: job.completedAt || null,
@@ -309,7 +397,8 @@ function auditTransition(job) {
   const at = new Date(job.updatedAt || Date.now());
   const state = String(job.state || 'queued');
   const progress = Number(job.progress || 0);
-  const attempts = Number(job.attempts || 0);
+  const attempts = processingAttemptCount(job);
+  const latestAttempt = (job.attemptHistory || []).at?.(-1);
   const stage = job.stage || undefined;
   const sequence = job.sequence != null
     && Number.isSafeInteger(Number(job.sequence))
@@ -325,6 +414,9 @@ function auditTransition(job) {
     state,
     progress,
     attempts,
+    processingAttempts: Number(job.processingAttempts || 0),
+    trigger: job.retry?.pendingTrigger || latestAttempt?.trigger,
+    requestedStage: job.retry?.requestedStage || latestAttempt?.requestedStage,
     sequence: sequence == null ? undefined : sequence,
     at,
     errorCode: job.lastError?.code || undefined
@@ -342,6 +434,16 @@ function auditDocument(job) {
     stage: job.stage || undefined,
     progress: operational.progress,
     attempts: operational.attempts,
+    processingAttempts: operational.processingAttempts,
+    retry: {
+      manualRequests: Number(job.retry?.manualRequests || 0),
+      nextAttemptAt: job.retry?.nextAttemptAt,
+      availableUntil: job.retry?.availableUntil,
+      requestedStage: job.retry?.requestedStage,
+      lastRequestedAt: job.retry?.lastRequestedAt,
+      lastRequestedBy: retryActor(job.retry?.lastRequestedBy)
+    },
+    attemptHistory: attemptTrail(job, { includeActor: true }),
     organization: job.organization,
     organizationKey: String(job.organization || ''),
     actor: job.actor || undefined,
@@ -370,6 +472,9 @@ function operationalTransitions(transitions = []) {
     state: transition.state,
     progress: Number(transition.progress || 0),
     attempts: Number(transition.attempts || 0),
+    processingAttempts: Number(transition.processingAttempts || 0),
+    trigger: transition.trigger || null,
+    requestedStage: transition.requestedStage || null,
     sequence: transition.sequence != null && Number.isSafeInteger(Number(transition.sequence))
       ? Number(transition.sequence)
       : null,
@@ -391,6 +496,7 @@ function auditOperationalJob(job) {
     stage: job.stage,
     progress: job.progress,
     attempts: job.attempts,
+    processingAttempts: job.processingAttempts,
     createdAt: job.jobCreatedAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,
@@ -402,7 +508,19 @@ function auditOperationalJob(job) {
     ...operational,
     producer: job.producer || 'recruiter',
     queue: job.producer === 'ai-interview' ? 'ai-interview-cv-analysis-local' : queueName,
-    transitions: operationalTransitions(job.transitions)
+    transitions: operationalTransitions(job.transitions),
+    retry: {
+      available: false,
+      availableUntil: job.retry?.availableUntil || null,
+      nextAttemptAt: job.retry?.nextAttemptAt || null,
+      requestedStage: job.retry?.requestedStage || 'failed',
+      manualRequests: Number(job.retry?.manualRequests || 0),
+      automaticRetries: (job.attemptHistory || []).filter((attempt) => attempt.trigger === 'automatic').length,
+      manualRetries: (job.attemptHistory || []).filter((attempt) => attempt.trigger === 'manual').length,
+      lastRequestedAt: job.retry?.lastRequestedAt || null,
+      ...(job.retry?.lastRequestedBy ? { lastRequestedBy: retryActor(job.retry.lastRequestedBy) } : {})
+    },
+    attemptHistory: attemptTrail(job, { includeActor: true })
   };
 }
 
@@ -492,6 +610,7 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
     stage,
     progress: Math.min(100, Math.max(0, Number(job.progress || 0))),
     attempts: Math.max(0, Number(job.attempts || 0)),
+    processingAttempts: Math.max(0, Number(job.processingAttempts || job.attempts || 0)),
     organizationKey: externalQueueText(job.organizationId, 200),
     actorKey: externalQueueText(job.actorId, 200) || undefined,
     jobKey: externalQueueText(job.jobId, 200) || undefined,
@@ -511,6 +630,7 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
     stage,
     progress: normalized.progress,
     attempts: normalized.attempts,
+    processingAttempts: normalized.processingAttempts,
     sequence: producerSequence,
     updatedAt,
     lastError: normalized.errorCode ? { code: normalized.errorCode } : null
@@ -549,7 +669,7 @@ async function syncHistory(processingJobId) {
   const job = processingJobId && typeof processingJobId === 'object' && processingJobId.publicId
     ? processingJobId
     : await CVProcessingJob.findById(processingJobId)
-      .select('publicId source state stage progress attempts organization actor jobAppliedFor candidate originalName fileType fileSize createdAt startedAt completedAt failedAt updatedAt lastError.code')
+      .select('publicId source state stage progress attempts processingAttempts retry attemptHistory organization actor jobAppliedFor candidate originalName fileType fileSize durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt updatedAt lastError.code')
       .lean();
   if (!job) return false;
   const transition = auditTransition(job);
@@ -599,7 +719,7 @@ async function backfillHistory({ force = false } = {}) {
         }
       : {};
     const rows = await CVProcessingJob.find(cursorFilter)
-      .select('publicId source state stage progress attempts organization actor jobAppliedFor candidate originalName fileType fileSize createdAt startedAt completedAt failedAt updatedAt lastError.code')
+      .select('publicId source state stage progress attempts processingAttempts retry attemptHistory organization actor jobAppliedFor candidate originalName fileType fileSize durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt updatedAt lastError.code')
       .sort({ updatedAt: 1, _id: 1 })
       .limit(HISTORY_REPAIR_BATCH_SIZE)
       .lean();
@@ -754,6 +874,8 @@ function adminOperationalJob(job, sampledAt) {
     ...operational,
     producer: 'recruiter',
     queue: queueName,
+    retry: retrySummary(job, { includeActor: true, includeCapabilities: true }),
+    attemptHistory: attemptTrail(job, { includeActor: true }),
     organization: {
       id: String(organization?._id || job.organization || ''),
       name: organization?.name || 'Unknown organization'
@@ -894,6 +1016,7 @@ function idempotentStatusToken(organizationId, idempotencyKey) {
 
 function publicState(job) {
   const billingFailure = job.billing?.required === true && job.billing?.state === 'failed';
+  const retry = retrySummary(job);
   return {
     jobId: job.publicId,
     state: billingFailure ? 'failed' : job.state,
@@ -905,6 +1028,19 @@ function publicState(job) {
     completedAt: job.completedAt,
     failedAt: billingFailure ? job.billing.lastAttemptAt : job.failedAt,
     candidateId: job.candidate ? String(job.candidate) : null,
+    attempts: processingAttemptCount(job),
+    aiAttempts: Number(job.attempts || 0),
+    retry,
+    attemptHistory: attemptTrail(job).map((attempt) => ({
+      number: attempt.number,
+      trigger: attempt.trigger,
+      requestedStage: attempt.requestedStage,
+      status: attempt.status,
+      stage: attempt.stage,
+      startedAt: attempt.startedAt,
+      finishedAt: attempt.finishedAt,
+      errorCode: attempt.errorCode
+    })),
     error: billingFailure
       ? job.billing.lastError
       : job.state === 'failed' ? job.lastError : undefined
@@ -2065,6 +2201,131 @@ async function recoverCompletionEffects() {
   return jobs.length;
 }
 
+function normalizedRetryStage(value) {
+  const stage = String(value || 'failed').trim().toLowerCase();
+  if (!['failed', 'parsing', 'analysis'].includes(stage)) {
+    const error = new Error('Retry stage must be failed, parsing, or analysis');
+    error.code = 'CV_RETRY_STAGE_INVALID';
+    error.statusCode = 400;
+    throw error;
+  }
+  return stage;
+}
+
+async function beginProcessingAttempt(processingJob) {
+  const now = new Date();
+  const existingCount = Number(processingJob.processingAttempts || 0);
+  const trigger = ['initial', 'automatic', 'manual'].includes(processingJob.retry?.pendingTrigger)
+    ? processingJob.retry.pendingTrigger
+    : existingCount > 0 ? 'automatic' : 'initial';
+  const requestedStage = normalizedRetryStage(processingJob.retry?.requestedStage || 'failed');
+  const attemptId = `cva_${crypto.randomUUID()}`;
+  const updated = await CVProcessingJob.findOneAndUpdate(
+    {
+      _id: processingJob._id,
+      state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] }
+    },
+    {
+      $inc: { processingAttempts: 1 },
+      $set: { 'retry.requestedStage': requestedStage },
+      $unset: { 'retry.pendingTrigger': 1, 'retry.nextAttemptAt': 1 }
+    },
+    { new: true }
+  ).select('processingAttempts retry.lastRequestedBy');
+  if (!updated) return null;
+  const attempt = {
+    attemptId,
+    number: Number(updated.processingAttempts || existingCount + 1),
+    trigger,
+    requestedStage,
+    status: 'processing',
+    stage: processingJob.cloudinary?.publicId ? (processingJob.resumeText ? 'analyzing' : 'extracting') : 'uploading',
+    startedAt: now,
+    ...(trigger === 'manual' && updated.retry?.lastRequestedBy
+      ? { requestedBy: retryActor(updated.retry.lastRequestedBy) }
+      : {})
+  };
+  await CVProcessingJob.updateOne(
+    { _id: processingJob._id },
+    { $push: { attemptHistory: { $each: [attempt], $slice: -HISTORY_TRANSITION_LIMIT } } }
+  );
+  processingJob.processingAttempts = attempt.number;
+  processingJob.attemptHistory = [...(processingJob.attemptHistory || []), attempt].slice(-HISTORY_TRANSITION_LIMIT);
+  return attempt;
+}
+
+async function finishProcessingAttempt(processingJob, attempt, {
+  status,
+  stage,
+  error
+} = {}) {
+  if (!attempt?.attemptId) return false;
+  const finishedAt = new Date();
+  const update = {
+    'attemptHistory.$.status': status,
+    'attemptHistory.$.stage': stage || processingJob.stage || null,
+    'attemptHistory.$.finishedAt': finishedAt
+  };
+  if (error) {
+    update['attemptHistory.$.errorCode'] = String(error.code || 'CV_ANALYSIS_ERROR').slice(0, 120);
+    update['attemptHistory.$.errorMessage'] = String(error.message || error).slice(0, 1000);
+  }
+  await CVProcessingJob.updateOne(
+    { _id: processingJob._id, 'attemptHistory.attemptId': attempt.attemptId },
+    { $set: update }
+  );
+  const localAttempt = (processingJob.attemptHistory || []).find((item) => item.attemptId === attempt.attemptId);
+  if (localAttempt) Object.assign(localAttempt, {
+    status,
+    stage: stage || processingJob.stage || null,
+    finishedAt,
+    ...(error ? {
+      errorCode: String(error.code || 'CV_ANALYSIS_ERROR').slice(0, 120),
+      errorMessage: String(error.message || error).slice(0, 1000)
+    } : {})
+  });
+  return true;
+}
+
+async function retainFailedAssetsForRetry(processingJob, failedAt = new Date()) {
+  const availableUntil = failedRetryExpiry(failedAt.getTime());
+  const set = {
+    'retry.availableUntil': availableUntil
+  };
+  if (processingJob.durableFile?.fileId && !processingJob.durableFile?.releasedAt) {
+    set['durableFile.cleanupState'] = 'retained';
+    set['durableFile.cleanupNextAttemptAt'] = availableUntil;
+  }
+  if (processingJob.cloudinary?.publicId && !processingJob.cloudinary?.releasedAt) {
+    set['cloudinary.cleanupState'] = 'retained';
+    set['cloudinary.cleanupNextAttemptAt'] = availableUntil;
+  }
+  await CVProcessingJob.updateOne(
+    { _id: processingJob._id },
+    {
+      $set: set,
+      $unset: {
+        expiresAt: 1,
+        'retry.pendingTrigger': 1,
+        'retry.nextAttemptAt': 1,
+        'durableFile.cleanupError': 1,
+        'cloudinary.cleanupError': 1
+      }
+    }
+  );
+  processingJob.retry = { ...(processingJob.retry?.toObject?.() || processingJob.retry || {}), availableUntil };
+  if (processingJob.durableFile?.fileId && !processingJob.durableFile?.releasedAt) {
+    processingJob.durableFile.cleanupState = 'retained';
+    processingJob.durableFile.cleanupNextAttemptAt = availableUntil;
+  }
+  if (processingJob.cloudinary?.publicId && !processingJob.cloudinary?.releasedAt) {
+    processingJob.cloudinary.cleanupState = 'retained';
+    processingJob.cloudinary.cleanupNextAttemptAt = availableUntil;
+  }
+  await finalizeTerminalExpiry(processingJob);
+  return availableUntil;
+}
+
 async function processJob(bullJob, workerToken) {
   const processingJob = await CVProcessingJob.findById(bullJob.data.processingJobId).select('+resumeText +statusTokenHash');
   if (!processingJob) return { skipped: true };
@@ -2079,16 +2340,21 @@ async function processJob(bullJob, workerToken) {
     error.code = 'CV_CREDIT_CHARGE_PENDING';
     throw error;
   }
+  const processingAttempt = await beginProcessingAttempt(processingJob);
+  if (!processingAttempt) return { skipped: true };
+  const initialStage = !processingJob.cloudinary?.publicId
+    ? 'uploading'
+    : processingJob.resumeText ? 'analyzing' : 'extracting';
   await CVProcessingJob.updateOne({ _id: processingJob._id }, {
     $set: {
       state: 'processing',
-      stage: processingJob.cloudinary?.publicId ? 'extracting' : 'uploading',
+      stage: initialStage,
       progress: 15,
       startedAt: processingJob.startedAt || new Date()
     }
   });
   processingJob.state = 'processing';
-  processingJob.stage = processingJob.cloudinary?.publicId ? 'extracting' : 'uploading';
+  processingJob.stage = initialStage;
   processingJob.progress = 15;
   processingJob.startedAt = processingJob.startedAt || new Date();
   await syncHistorySafely(processingJob._id);
@@ -2230,6 +2496,10 @@ async function processJob(bullJob, workerToken) {
     processingJob.stage = 'completed';
     processingJob.progress = 100;
     processingJob.candidate = candidate._id;
+    await finishProcessingAttempt(processingJob, processingAttempt, {
+      status: 'completed',
+      stage: 'completed'
+    });
     await syncHistorySafely(processingJob._id);
     await bullJob.updateProgress(100);
     await releaseDurableFile(processingJob).catch((error) => {
@@ -2242,6 +2512,29 @@ async function processJob(bullJob, workerToken) {
     return { candidateId: String(candidate._id), jobId: processingJob.publicId };
   } catch (error) {
     if (error instanceof DelayedError || String(error?.code || '').startsWith('CV_GLOBAL_DISPATCH_')) {
+      const nextAttemptAt = new Date(Date.now() + cvBackoffDelay(Number(bullJob.attemptsMade || 0) + 1, error));
+      await CVProcessingJob.updateOne(
+        { _id: processingJob._id },
+        {
+          $set: {
+            'retry.pendingTrigger': 'automatic',
+            'retry.requestedStage': 'failed',
+            'retry.nextAttemptAt': nextAttemptAt
+          }
+        }
+      );
+      processingJob.retry = {
+        ...(processingJob.retry?.toObject?.() || processingJob.retry || {}),
+        pendingTrigger: 'automatic',
+        requestedStage: 'failed',
+        nextAttemptAt
+      };
+      await finishProcessingAttempt(processingJob, processingAttempt, {
+        status: 'waiting_for_runtime',
+        stage: processingJob.stage,
+        error
+      });
+      await syncHistorySafely(processingJob._id);
       throw error;
     }
     console.error('CV queue processing attempt failed:', {
@@ -2249,46 +2542,93 @@ async function processJob(bullJob, workerToken) {
       code: error.code || 'CV_ANALYSIS_ERROR',
       message: String(error.message).slice(0, 1000)
     });
+    const failedStage = processingJob.stage || 'ingesting';
     const unboundedDeferral = isUnboundedRuntimeDeferral(error);
     const boundedFailureAttempts = Number(processingJob.boundedFailureAttempts || 0)
       + (unboundedDeferral ? 0 : 1);
     const terminal = error.permanent === true
       || (!unboundedDeferral && boundedFailureAttempts >= MAX_BOUNDED_FAILURE_ATTEMPTS);
+    const failedAt = terminal ? new Date() : null;
+    const nextAttemptAt = terminal
+      ? null
+      : new Date(Date.now() + cvBackoffDelay(Number(bullJob.attemptsMade || 0) + 1, error));
     const failureUpdate = {
       $set: {
         state: terminal ? 'failed' : unboundedDeferral ? 'waiting_for_local_runtime' : 'queued',
         stage: terminal ? 'failed' : (processingJob.stage || 'ingesting'),
         progress: terminal ? processingJob.progress : Math.max(5, Number(processingJob.progress || 5)),
-        ...(terminal ? { failedAt: new Date() } : {}),
-        lastError: { code: error.code || 'CV_ANALYSIS_ERROR', message: String(error.message).slice(0, 1000), at: new Date() }
+        ...(terminal ? { failedAt } : {}),
+        ...(!terminal ? {
+          'retry.pendingTrigger': 'automatic',
+          'retry.requestedStage': 'failed',
+          'retry.nextAttemptAt': nextAttemptAt
+        } : {}),
+        lastError: {
+          code: error.code || 'CV_ANALYSIS_ERROR',
+          message: String(error.message).slice(0, 1000),
+          stage: failedStage,
+          at: new Date()
+        }
       }
     };
     failureUpdate.$unset = { expiresAt: 1 };
     if (!unboundedDeferral) failureUpdate.$inc = { boundedFailureAttempts: 1 };
     await CVProcessingJob.updateOne({ _id: processingJob._id }, failureUpdate);
     processingJob.boundedFailureAttempts = boundedFailureAttempts;
-    await syncHistorySafely(processingJob._id);
+    processingJob.state = terminal ? 'failed' : unboundedDeferral ? 'waiting_for_local_runtime' : 'queued';
+    processingJob.stage = terminal ? 'failed' : failedStage;
+    processingJob.failedAt = failedAt || processingJob.failedAt;
+    processingJob.lastError = {
+      code: error.code || 'CV_ANALYSIS_ERROR',
+      message: String(error.message).slice(0, 1000),
+      stage: failedStage,
+      at: new Date()
+    };
+    if (!terminal) {
+      processingJob.retry = {
+        ...(processingJob.retry?.toObject?.() || processingJob.retry || {}),
+        pendingTrigger: 'automatic',
+        requestedStage: 'failed',
+        nextAttemptAt
+      };
+    }
+    await finishProcessingAttempt(processingJob, processingAttempt, {
+      status: unboundedDeferral ? 'waiting_for_runtime' : 'failed',
+      stage: failedStage,
+      error
+    });
     if (terminal) {
-      await releaseCloudinaryAsset(processingJob).catch((cleanupError) => {
-        console.error('CV private asset cleanup after terminal failure failed:', cleanupError.message);
-      });
-      await releaseDurableFile(processingJob).catch((cleanupError) => {
-        console.error('CV durable file cleanup after terminal failure failed:', cleanupError.message);
+      await retainFailedAssetsForRetry(processingJob, failedAt).catch((retentionError) => {
+        console.error('CV failed asset retention could not be scheduled:', retentionError.message);
       });
     }
+    await syncHistorySafely(processingJob._id);
     publishTelemetrySoon();
     if (terminal) bullJob.discard?.();
     throw error;
   }
 }
 
-async function addQueueJob(job) {
+async function addQueueJob(job, { replaceTerminal = false } = {}) {
   if (job.billing?.required && job.billing.state !== 'charged') {
     const error = new Error('CV processing job is waiting for its credit charge');
     error.code = 'CV_CREDIT_CHARGE_PENDING';
     throw error;
   }
   const q = await getQueue();
+  if (replaceTerminal) {
+    const existing = await q.getJob(job.publicId);
+    if (existing) {
+      const state = await existing.getState();
+      if (['active', 'waiting', 'prioritized', 'delayed', 'waiting-children'].includes(state)) {
+        const error = new Error('This CV processing job is already queued or running');
+        error.code = 'CV_RETRY_ALREADY_RUNNING';
+        error.statusCode = 409;
+        throw error;
+      }
+      await existing.remove();
+    }
+  }
   const jobsAheadForOrganization = await CVProcessingJob.countDocuments({
     organization: job.organization,
     state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] },
@@ -2310,6 +2650,155 @@ async function enqueueExistingJob(processingJobId) {
   const job = await CVProcessingJob.findById(processingJobId);
   if (!job) throw new Error('CV processing job not found');
   return addQueueJob(job);
+}
+
+function manualRetryError(code, message, statusCode = 409) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+async function retryFailedJob(publicId, {
+  organizationId,
+  administrator = false,
+  requestedBy,
+  stage = 'failed'
+} = {}) {
+  const requestedStage = normalizedRetryStage(stage);
+  if (!administrator && !organizationId) {
+    throw manualRetryError('CV_RETRY_ORGANIZATION_REQUIRED', 'An organization is required to retry CV processing', 403);
+  }
+  const filter = {
+    publicId: String(publicId || ''),
+    ...(administrator ? {} : { organization: organizationId })
+  };
+  const job = await CVProcessingJob.findOne(filter).select('+resumeText');
+  if (!job) throw manualRetryError('CV_JOB_NOT_FOUND', 'CV processing job was not found', 404);
+  if (job.source === 'ai-interview') {
+    throw manualRetryError('CV_RETRY_EXTERNAL_JOB', 'AI Interview CV jobs must be retried by the AI Interview service');
+  }
+  if (job.state !== 'failed') {
+    throw manualRetryError(
+      'CV_RETRY_NOT_FAILED',
+      ['queued', 'waiting_for_local_runtime', 'processing'].includes(job.state)
+        ? 'This CV processing job is already queued or running'
+        : 'Only failed CV processing jobs can be retried'
+    );
+  }
+
+  const summary = retrySummary(job, { includeCapabilities: true });
+  if (!summary.available) {
+    throw manualRetryError(
+      'CV_RETRY_ASSET_UNAVAILABLE',
+      'The retained CV is no longer available. Upload the CV again to create a new processing job.',
+      410
+    );
+  }
+  if (requestedStage === 'parsing' && !summary.canRetryParsing) {
+    throw manualRetryError('CV_RETRY_PARSE_UNAVAILABLE', 'The original CV bytes are no longer available for parsing');
+  }
+  if (requestedStage === 'analysis' && !summary.canRetryAnalysis) {
+    throw manualRetryError('CV_RETRY_ANALYSIS_UNAVAILABLE', 'CV text must be extracted successfully before analysis can be retried');
+  }
+
+  const failedStage = String(job.lastError?.stage || '');
+  const effectiveStage = requestedStage === 'failed'
+    ? (failedStage === 'analyzing' && job.resumeText ? 'analysis' : job.resumeText ? 'analysis' : 'parsing')
+    : requestedStage;
+  const queueStage = effectiveStage === 'analysis'
+    ? 'analyzing'
+    : job.cloudinary?.publicId ? 'extracting' : 'uploading';
+  const progress = effectiveStage === 'analysis' ? 50 : queueStage === 'extracting' ? 30 : 10;
+  const actor = retryActor(requestedBy || { type: administrator ? 'admin' : 'user' });
+  const requestedAt = new Date();
+  const set = {
+    state: 'queued',
+    stage: queueStage,
+    progress,
+    boundedFailureAttempts: 0,
+    'retry.pendingTrigger': 'manual',
+    'retry.requestedStage': requestedStage,
+    'retry.lastRequestedAt': requestedAt,
+    'retry.lastRequestedBy': actor,
+    ...(job.durableFile?.fileId && !job.durableFile?.releasedAt
+      ? { 'durableFile.cleanupState': 'retained' }
+      : {}),
+    ...(job.cloudinary?.publicId && !job.cloudinary?.releasedAt
+      ? { 'cloudinary.cleanupState': 'retained' }
+      : {})
+  };
+  const unset = {
+    failedAt: 1,
+    completedAt: 1,
+    expiresAt: 1,
+    lastError: 1,
+    'retry.nextAttemptAt': 1,
+    'durableFile.cleanupNextAttemptAt': 1,
+    'durableFile.cleanupError': 1,
+    'cloudinary.cleanupNextAttemptAt': 1,
+    'cloudinary.cleanupError': 1,
+    ...(effectiveStage === 'parsing' ? { resumeText: 1 } : {})
+  };
+  const claimed = await CVProcessingJob.findOneAndUpdate(
+    { _id: job._id, state: 'failed', updatedAt: job.updatedAt },
+    {
+      $set: set,
+      $unset: unset,
+      $inc: { 'retry.manualRequests': 1 },
+      $max: { processingAttempts: Number(job.attempts || 0) }
+    },
+    { new: true }
+  ).select('+resumeText');
+  if (!claimed) {
+    throw manualRetryError('CV_RETRY_ALREADY_RUNNING', 'This CV processing job was retried by another request');
+  }
+
+  await CVStorageCleanupTask.updateMany(
+    { jobPublicId: job.publicId, state: { $in: ['pending', 'failed'] } },
+    {
+      $set: {
+        state: 'completed',
+        completedAt: requestedAt,
+        expiresAt: terminalJobExpiry(requestedAt.getTime()),
+        reason: 'cancelled-for-manual-retry'
+      },
+      $unset: { nextAttemptAt: 1, lastError: 1 }
+    }
+  );
+
+  let queueAvailable = true;
+  try {
+    await enqueueJob(claimed, { replaceTerminal: true });
+  } catch (error) {
+    if (error.code !== 'CV_RETRY_ALREADY_RUNNING') {
+      queueAvailable = false;
+      await CVProcessingJob.updateOne(
+        { _id: claimed._id, state: 'queued' },
+        {
+          $set: {
+            'retry.nextAttemptAt': new Date(Date.now() + 60_000),
+            lastError: {
+              code: error.code || 'CV_QUEUE_UNAVAILABLE',
+              message: String(error.message || error).slice(0, 1000),
+              stage: queueStage,
+              at: new Date()
+            }
+          }
+        }
+      );
+    }
+  }
+  await syncHistorySafely(claimed._id);
+  publishTelemetrySoon(0);
+  const refreshed = await CVProcessingJob.findById(claimed._id).select('+resumeText');
+  return {
+    job: refreshed || claimed,
+    queueAvailable,
+    requestedStage,
+    effectiveStage,
+    requestedAt
+  };
 }
 
 function cleanupIsDue(resource, now) {
@@ -2913,7 +3402,7 @@ function adminJobQuery(filter, limit) {
     .sort({ updatedAt: -1 });
   if (limit) query = query.limit(limit);
   return query
-    .select('publicId source state stage progress attempts createdAt startedAt completedAt failedAt updatedAt lastError originalName fileType fileSize organization actor jobAppliedFor candidate formData.firstName formData.lastName formData.email formData.position formData.location')
+    .select('publicId source state stage progress attempts processingAttempts boundedFailureAttempts retry attemptHistory durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt updatedAt lastError originalName fileType fileSize organization actor jobAppliedFor candidate formData.firstName formData.lastName formData.email formData.position formData.location')
     .populate('organization', 'name')
     .populate('actor', 'email profile.firstName profile.lastName profile.displayName')
     .populate('jobAppliedFor', 'title')
@@ -2972,6 +3461,43 @@ async function getAdminJobDetail(publicId) {
   }
   if (!audit) return null;
   return (await adminJobsFromAudits([audit]))[0] || null;
+}
+
+function compactAdminJob(job) {
+  if (!job) return null;
+  return {
+    jobId: job.jobId,
+    producer: job.producer,
+    state: job.state,
+    phase: job.phase,
+    stage: job.stage,
+    progress: job.progress,
+    attempts: job.attempts,
+    aiAttempts: job.aiAttempts,
+    processingAttempts: job.processingAttempts,
+    updatedAt: job.updatedAt,
+    errorCode: job.errorCode,
+    retry: job.retry
+  };
+}
+
+async function getAdminJobSummaries(publicIds = []) {
+  const ids = [...new Set(publicIds.map((value) => String(value || '')).filter(Boolean))].slice(0, 100);
+  if (!ids.length) return {};
+  const [jobs, audits] = await Promise.all([
+    adminJobQuery({ publicId: { $in: ids } }),
+    CVProcessingAudit.find({ publicId: { $in: ids } }).lean()
+  ]);
+  const auditById = new Map(audits.map((audit) => [audit.publicId, audit]));
+  const current = jobs.map((job) => ({
+    ...adminOperationalJob(job, new Date()),
+    transitions: operationalTransitions(auditById.get(job.publicId)?.transitions || [])
+  }));
+  const currentIds = new Set(current.map((job) => job.jobId));
+  const retained = await adminJobsFromAudits(audits.filter((audit) => !currentIds.has(audit.publicId)));
+  return Object.fromEntries(
+    [...current, ...retained].map((job) => [job.jobId, compactAdminJob(job)])
+  );
 }
 
 async function setPaused(paused) {
@@ -3149,6 +3675,7 @@ module.exports = {
   enqueueExistingJob,
   getBatchStatus,
   getAdminJobDetail,
+  getAdminJobSummaries,
   getStatus,
   finalizePrivateUploadSubmission,
   ingestExternalQueueEvent,
@@ -3156,6 +3683,7 @@ module.exports = {
   listAdminHistory,
   listHistory,
   publishTelemetry,
+  retryFailedJob,
   cvBackoffDelay,
   isBusyError,
   isOfflineError,

@@ -8,6 +8,9 @@ CV_STATUS_TOKEN_SECRET=
 CV_ANALYSIS_QUEUE_ENABLED=true
 CV_ANALYSIS_QUEUE_CONCURRENCY=1
 CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY=1
+# Failed jobs retain their private Cloudinary asset and durable original for
+# manual parsing or analysis retries before normal terminal cleanup begins.
+CV_FAILED_RETRY_RETENTION_DAYS=30
 CV_GLOBAL_DISPATCH_REDIS_URL=redis://127.0.0.1:6379/0
 CV_GLOBAL_DISPATCH_IDENTITY=seemplify-cv-inference
 CV_GLOBAL_DISPATCH_KEY_PREFIX=seemplify:cv:dispatch:v2

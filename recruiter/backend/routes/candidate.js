@@ -147,6 +147,37 @@ router.get('/cv-jobs/:jobId', async (req, res) => {
   }
 });
 
+router.post(
+  '/cv-jobs/:jobId/retry',
+  authMiddleware,
+  requireOrganization,
+  requirePermission('manage_candidates'),
+  async (req, res) => {
+    try {
+      const result = await cvAnalysisQueue.retryFailedJob(req.params.jobId, {
+        organizationId: req.user.currentOrganization,
+        stage: req.body?.stage,
+        requestedBy: {
+          type: 'user',
+          id: req.user.id,
+          name: req.user.name,
+          email: req.user.email
+        }
+      });
+      return res.status(202).json({
+        ...cvAnalysisQueue.publicState(result.job),
+        queueAvailable: result.queueAvailable,
+        requestedStage: result.requestedStage
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        code: error.code || 'CV_RETRY_FAILED',
+        msg: error.message || 'CV processing could not be retried'
+      });
+    }
+  }
+);
+
 // @route   POST api/candidates
 // @desc    Create a new candidate manually
 // @access  Private

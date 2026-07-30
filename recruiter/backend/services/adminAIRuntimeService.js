@@ -14,6 +14,7 @@ const {
 } = require('../config/aiRuntimeCatalog');
 const { CV_EXTRACTION_SCHEMA } = require('./aiModelService');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
+const cvAnalysisQueue = require('./cvAnalysisQueueService');
 const { encryptSecret, fingerprintSecret, maskSecret } = require('./aiRuntime/secretCrypto');
 const {
   PROJECTION_VERSION,
@@ -61,6 +62,22 @@ function serializeUsageEvent(event) {
         ? (raw.usageSource || 'legacy-unknown')
         : (raw.usageSource || 'unreported')
   };
+}
+
+function cvJobIdFromUsageEvent(event = {}) {
+  const requestId = String(event.requestId || '');
+  if (requestId.startsWith('cv-queue:')) return requestId.slice('cv-queue:'.length);
+  return null;
+}
+
+async function attachCvJobSummaries(events = []) {
+  const jobIds = events.map(cvJobIdFromUsageEvent).filter(Boolean);
+  if (!jobIds.length) return events;
+  const summaries = await cvAnalysisQueue.getAdminJobSummaries(jobIds);
+  return events.map((event) => {
+    const jobId = cvJobIdFromUsageEvent(event);
+    return jobId ? { ...event, cvProcessing: summaries[jobId] || null } : event;
+  });
 }
 
 function usageAccountingHealth(projectionLedger = {}) {
@@ -1209,8 +1226,9 @@ async function listRequests(query = {}) {
   ]);
   const summary = summaryRows[0] || {};
   const latencies = latencyRows.map((item) => Number(item.latencyMs || 0)).sort((a, b) => a - b);
+  const serializedItems = await attachCvJobSummaries(items.map(serializeUsageEvent));
   return {
-    items: items.map(serializeUsageEvent),
+    items: serializedItems,
     summary: {
       calls: Number(summary.calls || 0),
       successes: Number(summary.successes || 0),
@@ -1239,7 +1257,13 @@ async function getRequestDetail(id) {
   if (!/^[a-f\d]{24}$/i.test(String(id || ''))) throw notFound('AI request was not found');
   const item = await AIUsageEvent.findById(id).select('-rateLimit.providerPayload').lean();
   if (!item) throw notFound('AI request was not found');
-  return redactGroqApiKeys(serializeUsageEvent(item));
+  const serialized = serializeUsageEvent(item);
+  const cvJobId = cvJobIdFromUsageEvent(serialized);
+  const cvProcessing = cvJobId ? await cvAnalysisQueue.getAdminJobDetail(cvJobId) : null;
+  return redactGroqApiKeys({
+    ...serialized,
+    ...(cvJobId ? { cvProcessing } : {})
+  });
 }
 
 async function listAuditEvents(query = {}) {

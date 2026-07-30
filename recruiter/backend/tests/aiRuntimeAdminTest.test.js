@@ -264,6 +264,86 @@ test('failed queue controls write a safe failed audit', async () => {
   assert.equal(JSON.stringify(event).includes('redis://private-host'), false);
 });
 
+test('manual CV retry records the operator and returns the refreshed trail', async () => {
+  const retriedJob = {
+    publicId: 'cv_manual_retry_test',
+    organization: 'organization-1'
+  };
+  const detail = {
+    jobId: retriedJob.publicId,
+    state: 'queued',
+    retry: { manualRequests: 1 },
+    attemptHistory: [{ trigger: 'initial', status: 'failed' }]
+  };
+  const retry = mock.method(cvAnalysisQueue, 'retryFailedJob', async (_jobId, options) => ({
+    job: retriedJob,
+    queueAvailable: true,
+    requestedStage: options.stage,
+    effectiveStage: 'analysis'
+  }));
+  mock.method(cvAnalysisQueue, 'getAdminJobDetail', async () => detail);
+  const audit = mock.method(AIAuditEvent, 'create', async (event) => event);
+  const res = responseRecorder();
+
+  await adminRouteHandler('post', '/local/queue/jobs/:jobId/retry')(
+    {
+      ...request,
+      params: { jobId: retriedJob.publicId },
+      body: { stage: 'analysis' }
+    },
+    res
+  );
+
+  assert.equal(res.statusCode, 202);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.job, detail);
+  assert.deepEqual(retry.mock.calls[0].arguments, [retriedJob.publicId, {
+    administrator: true,
+    stage: 'analysis',
+    requestedBy: {
+      type: 'admin',
+      id: request.admin._id,
+      name: request.admin.name,
+      email: request.admin.email
+    }
+  }]);
+  const event = audit.mock.calls[0].arguments[0];
+  assert.equal(event.category, 'operations');
+  assert.equal(event.action, 'cv_job_manual_retry_requested');
+  assert.equal(event.targetId, retriedJob.publicId);
+  assert.equal(event.metadata.requestedStage, 'analysis');
+  assert.equal(event.metadata.effectiveStage, 'analysis');
+});
+
+test('manual CV retry reports expired retained assets without leaking the service error', async () => {
+  mock.method(cvAnalysisQueue, 'retryFailedJob', async () => {
+    throw Object.assign(new Error('The retained CV is no longer available'), {
+      code: 'CV_RETRY_ASSET_UNAVAILABLE',
+      statusCode: 410
+    });
+  });
+  const audit = mock.method(AIAuditEvent, 'create', async (event) => event);
+  const res = responseRecorder();
+
+  await adminRouteHandler('post', '/local/queue/jobs/:jobId/retry')(
+    {
+      ...request,
+      params: { jobId: 'cv_expired_retry_test' },
+      body: { stage: 'parsing' }
+    },
+    res
+  );
+
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body.code, 'CV_RETRY_ASSET_UNAVAILABLE');
+  assert.equal(res.body.msg, 'The retained CV is no longer available');
+  const event = audit.mock.calls[0].arguments[0];
+  assert.equal(event.action, 'cv_job_manual_retry_failed');
+  assert.equal(event.status, 'failed');
+  assert.equal(event.metadata.errorCode, 'CV_RETRY_ASSET_UNAVAILABLE');
+  assert.equal(JSON.stringify(event).includes('The retained CV is no longer available'), false);
+});
+
 test('route updates derive failover policy from the selected provider and ignore client policy', async () => {
   let settings = createDefaultRuntimeSettings();
   settings.models = settings.models.map((model) => (
@@ -828,11 +908,21 @@ test('request analytics summarize the complete filtered result set', async () =>
       async lean() {
         return latencyOnly
           ? [{ latencyMs: 900 }, { latencyMs: 100 }, { latencyMs: 400 }]
-          : [{ requestId: 'request-1', activity: 'interview.questions' }];
+          : [{ requestId: 'cv-queue:cv_request_summary', activity: 'interview.questions' }];
       }
     };
   });
   mock.method(AIUsageEvent, 'countDocuments', async () => 42);
+  const summaries = mock.method(cvAnalysisQueue, 'getAdminJobSummaries', async (jobIds) => {
+    assert.deepEqual(jobIds, ['cv_request_summary']);
+    return {
+      cv_request_summary: {
+        jobId: 'cv_request_summary',
+        state: 'failed',
+        retry: { available: true }
+      }
+    };
+  });
   mock.method(AIUsageEvent, 'aggregate', async (pipeline) => {
     assert.equal(pipeline[0].$match.activity, 'interview.questions');
     assert.equal(pipeline[0].$match.status, 'success');
@@ -864,7 +954,10 @@ test('request analytics summarize the complete filtered result set', async () =>
     limit: '10'
   });
 
-  assert.equal(result.items[0].requestId, 'request-1');
+  assert.equal(result.items[0].requestId, 'cv-queue:cv_request_summary');
+  assert.equal(result.items[0].cvProcessing.jobId, 'cv_request_summary');
+  assert.equal(result.items[0].cvProcessing.retry.available, true);
+  assert.equal(summaries.mock.calls.length, 1);
   assert.deepEqual(result.summary, {
     calls: 4,
     successes: 4,

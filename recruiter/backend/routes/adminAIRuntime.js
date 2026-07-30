@@ -42,7 +42,7 @@ const queueTelemetryStream = new LiveSnapshotBroadcaster({
 
 function handleError(res, error, fallback) {
   const knownRuntimeError = error?.name === 'AIRuntimeError' && String(error?.code || '').startsWith('AI_');
-  if (error instanceof TypeError || knownRuntimeError || [400, 404, 409].includes(error?.statusCode)) {
+  if (error instanceof TypeError || knownRuntimeError || [400, 403, 404, 409, 410].includes(error?.statusCode)) {
     return res.status(error.statusCode || 400).json({
       code: error.code || 'AI_RUNTIME_VALIDATION_ERROR',
       msg: error.message,
@@ -225,6 +225,56 @@ router.get('/local/queue/jobs/:jobId', ...analyticsAccess, async (req, res) => {
     res.json(job);
   } catch (error) {
     handleError(res, error, 'Failed to load CV processing job');
+  }
+});
+
+router.post('/local/queue/jobs/:jobId/retry', ...settingsAccess, async (req, res) => {
+  try {
+    const result = await cvAnalysisQueue.retryFailedJob(req.params.jobId, {
+      administrator: true,
+      stage: req.body?.stage,
+      requestedBy: {
+        type: 'admin',
+        id: req.admin?._id,
+        name: req.admin?.name,
+        email: req.admin?.email
+      }
+    });
+    await writeAudit(req, {
+      category: 'operations',
+      action: 'cv_job_manual_retry_requested',
+      targetType: 'CVProcessingJob',
+      targetId: result.job.publicId,
+      message: `Manual CV ${result.effectiveStage} retry requested`,
+      metadata: {
+        requestedStage: result.requestedStage,
+        effectiveStage: result.effectiveStage,
+        queueAvailable: result.queueAvailable,
+        organizationId: String(result.job.organization || '')
+      }
+    });
+    res.status(202).json({
+      success: true,
+      queueAvailable: result.queueAvailable,
+      requestedStage: result.requestedStage,
+      job: await cvAnalysisQueue.getAdminJobDetail(result.job.publicId)
+    });
+  } catch (error) {
+    await writeAudit(req, {
+      category: 'operations',
+      action: 'cv_job_manual_retry_failed',
+      status: 'failed',
+      targetType: 'CVProcessingJob',
+      targetId: String(req.params.jobId || '').slice(0, 120),
+      message: 'Manual CV retry request failed',
+      metadata: {
+        requestedStage: String(req.body?.stage || 'failed').slice(0, 40),
+        errorCode: operationalErrorCode(error, 'CV_RETRY_FAILED')
+      }
+    }).catch((auditError) => {
+      console.error('Failed to audit manual CV retry failure', auditError);
+    });
+    handleError(res, error, 'Failed to retry CV processing job');
   }
 });
 

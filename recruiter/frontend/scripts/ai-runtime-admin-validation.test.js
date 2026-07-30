@@ -8,6 +8,8 @@ const sourcePath = path.join(__dirname, '..', 'lib', 'aiRuntimeAdminValidation.t
 const source = fs.readFileSync(sourcePath, 'utf8');
 const streamSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'queueTelemetryStream.ts'), 'utf8');
 const pageSource = fs.readFileSync(path.join(__dirname, '..', 'app', 'admin', 'ai-runtime', 'page.tsx'), 'utf8');
+const candidatePageSource = fs.readFileSync(path.join(__dirname, '..', 'app', 'candidates', 'new', 'page.tsx'), 'utf8');
+const candidateServiceSource = fs.readFileSync(path.join(__dirname, '..', 'services', 'candidateService.ts'), 'utf8');
 const transpiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 });
@@ -229,6 +231,26 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
   assert.match(pageSource, /Previous CV history page/);
   assert.match(pageSource, /data\.transitions/);
   assert.match(pageSource, /No lifecycle transitions were recorded for this job/);
+  assert.match(pageSource, /\/local\/queue\/jobs\/\$\{encodeURIComponent\(jobId\)\}\/retry/);
+  assert.match(pageSource, /Choose CV retry stage/);
+  assert.match(pageSource, /Retry status and trail/);
+  assert.match(pageSource, /End-to-end runs/);
+  assert.match(pageSource, /Recovered after retry/);
+  assert.match(pageSource, /Cloudinary CV/);
+  assert.match(pageSource, /Durable source/);
+  assert.match(pageSource, /retryCVJob\(request\.cvProcessing!\.jobId/);
+  assert.match(pageSource, /onRetry\(jobId, stage\)/);
+});
+
+test('recruiter CV upload preserves failed job state and supports a tracked retry', () => {
+  assert.match(candidateServiceSource, /class CVProcessingError extends Error/);
+  assert.match(candidateServiceSource, /\/cv-jobs\/\$\{encodeURIComponent\(accepted\.jobId\)\}\/retry/);
+  assert.match(candidateServiceSource, /return waitForCVProcessing\(accepted, onStatus\)/);
+  assert.match(candidateServiceSource, /attemptHistory/);
+  assert.match(candidatePageSource, /Retry CV processing/);
+  assert.match(candidatePageSource, /Processing trail/);
+  assert.match(candidatePageSource, /failedProcessing\.accepted/);
+  assert.match(candidatePageSource, /retryCVProcessing/);
 });
 
 test('activity attempts use the recorded request field', () => {
@@ -282,7 +304,7 @@ test('live queue parser handles snapshots, heartbeats, and partial frames', () =
 
 test('credential removal is explicit, confirmed, and permission-aware', () => {
   assert.match(pageSource, /const canManageSecrets = canConfigure;/);
-  assert.match(pageSource, /\n\s+Remove\n\s+<\/Button>/);
+  assert.match(pageSource, /\r?\n\s+Remove\r?\n\s+<\/Button>/);
   assert.match(pageSource, /Remove Groq credential\?/);
   assert.match(pageSource, /erases its encrypted API key/);
   assert.match(pageSource, /disabled=\{!canManageSecrets \|\| busy === `revoke:/);

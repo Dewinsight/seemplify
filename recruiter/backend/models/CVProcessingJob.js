@@ -16,6 +16,45 @@ const CompletionEffectSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const RetryActorSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['system', 'user', 'admin']
+  },
+  id: String,
+  name: String,
+  email: String
+}, { _id: false });
+
+const ProcessingAttemptSchema = new mongoose.Schema({
+  attemptId: { type: String, required: true },
+  number: { type: Number, required: true, min: 1 },
+  trigger: {
+    type: String,
+    enum: ['initial', 'automatic', 'manual'],
+    required: true
+  },
+  requestedStage: {
+    type: String,
+    enum: ['failed', 'parsing', 'analysis'],
+    default: 'failed'
+  },
+  status: {
+    type: String,
+    enum: ['processing', 'waiting_for_runtime', 'failed', 'completed'],
+    default: 'processing'
+  },
+  stage: {
+    type: String,
+    enum: ['ingesting', 'uploading', 'extracting', 'analyzing', 'finalizing', 'completed', 'failed']
+  },
+  startedAt: { type: Date, required: true },
+  finishedAt: Date,
+  errorCode: String,
+  errorMessage: String,
+  requestedBy: RetryActorSchema
+}, { _id: false });
+
 const CVProcessingJobSchema = new mongoose.Schema({
   publicId: { type: String, required: true, unique: true, index: true },
   statusTokenHash: { type: String, required: true, select: false },
@@ -117,10 +156,33 @@ const CVProcessingJobSchema = new mongoose.Schema({
   },
   formData: { type: mongoose.Schema.Types.Mixed, default: {} },
   attempts: { type: Number, default: 0 },
+  processingAttempts: { type: Number, default: 0, min: 0 },
   boundedFailureAttempts: { type: Number, default: 0, min: 0 },
+  retry: {
+    pendingTrigger: {
+      type: String,
+      enum: ['initial', 'automatic', 'manual'],
+      default: 'initial'
+    },
+    requestedStage: {
+      type: String,
+      enum: ['failed', 'parsing', 'analysis'],
+      default: 'failed'
+    },
+    manualRequests: { type: Number, default: 0, min: 0 },
+    nextAttemptAt: Date,
+    availableUntil: Date,
+    lastRequestedAt: Date,
+    lastRequestedBy: RetryActorSchema
+  },
+  attemptHistory: {
+    type: [ProcessingAttemptSchema],
+    default: []
+  },
   lastError: {
     code: String,
     message: String,
+    stage: String,
     at: Date
   },
   candidate: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate' },
@@ -144,6 +206,7 @@ CVProcessingJobSchema.index({ updatedAt: -1 });
 CVProcessingJobSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 CVProcessingJobSchema.index({ state: 1, 'durableFile.cleanupNextAttemptAt': 1 });
 CVProcessingJobSchema.index({ state: 1, 'cloudinary.cleanupNextAttemptAt': 1 });
+CVProcessingJobSchema.index({ state: 1, 'retry.availableUntil': 1 });
 CVProcessingJobSchema.index({
   source: 1,
   'billing.state': 1,
