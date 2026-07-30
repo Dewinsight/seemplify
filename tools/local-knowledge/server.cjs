@@ -45,9 +45,18 @@ function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRunti
   const withinRateLimit = createRateLimiter({ limit: config.limits.requestsPerMinute, now });
   const handlers = Object.freeze({
     '/v1/index': (input) => runtime.index(input),
+    '/v1/backfill': (input) => runtime.backfill(input),
     '/v1/retrieve': (input) => runtime.retrieve(input),
     '/v1/delete': (input) => runtime.remove(input),
     '/v1/graph': (input) => runtime.graph(input),
+    '/v1/migration': (input) => runtime.migrationControl(input),
+    '/v1/shutdown': (input) => {
+      if (input?.source !== 'control-center' || input?.mode !== 'graceful') {
+        throw runtimeError('A recognized graceful shutdown request is required.', { code: 'INVALID_REQUEST', status: 400 });
+      }
+      setImmediate(() => server.emit('knowledge-shutdown-request'));
+      return { accepted: true, mode: 'graceful', pid: process.pid };
+    },
     '/v1/test/cleanup': (input) => runtime.cleanupTestTenant(input),
     '/v1/status': (input) => {
       if (!['experience-management', 'control-center', 'knowledge-live-benchmark'].includes(input?.source)) {
@@ -56,7 +65,7 @@ function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRunti
       return runtime.status();
     },
   });
-  return http.createServer(async (request, response) => {
+  const server = http.createServer(async (request, response) => {
     const requestPath = new URL(request.url, `http://${request.headers.host || `${config.host}:${config.ports.runtime}`}`).pathname;
     const started = Date.now();
     try {
@@ -79,16 +88,48 @@ function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRunti
       return sendJson(response, status, { code: error.code || 'KNOWLEDGE_RUNTIME_ERROR', message: error.message || 'Knowledge runtime request failed.', retryable: error.retryable === true });
     }
   });
+  server.knowledgeRuntime = runtime;
+  return server;
 }
 
 if (require.main === module) {
   const server = createKnowledgeServer();
-  server.listen(CONFIG.ports.runtime, CONFIG.host, () => {
-    process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), level: 'info', event: 'started', host: CONFIG.host, port: CONFIG.ports.runtime, pid: process.pid })}\n`);
+  Promise.resolve(server.knowledgeRuntime.start()).then(() => {
+    server.listen(CONFIG.ports.runtime, CONFIG.host, () => {
+      process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), level: 'info', event: 'started', host: CONFIG.host, port: CONFIG.ports.runtime, pid: process.pid })}\n`);
+    });
+  }).catch((error) => {
+    process.stderr.write(`${error.stack || error.message}\n`);
+    process.exitCode = 1;
   });
-  const shutdown = () => server.close(() => process.exit(0));
+  let shutdownPromise = null;
+  const shutdown = () => {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = (async () => {
+      const serverClosed = new Promise((resolve) => server.close(resolve));
+      const runtimeClosed = server.knowledgeRuntime.close({ timeoutMs: 30_000 });
+      const graceful = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(false), 35_000);
+        Promise.all([serverClosed, runtimeClosed]).then(
+          () => { clearTimeout(timer); resolve(true); },
+          (error) => { clearTimeout(timer); reject(error); },
+        );
+      });
+      if (!graceful) {
+        server.closeAllConnections?.();
+        await server.knowledgeRuntime.close({ timeoutMs: 0, force: true }).catch(() => undefined);
+        throw Object.assign(new Error('Knowledge runtime shutdown exceeded its hard deadline.'), { code: 'SHUTDOWN_TIMEOUT' });
+      }
+      process.exit(0);
+    })().catch((error) => {
+        process.stderr.write(`${error.stack || error.message}\n`);
+        process.exit(1);
+      });
+    return shutdownPromise;
+  };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  server.on('knowledge-shutdown-request', shutdown);
   server.on('error', (error) => {
     process.stderr.write(`${error.stack || error.message}\n`);
     process.exitCode = 1;

@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 const now = '2026-07-29T12:00:00.000Z';
 const alphaId = '11111111-1111-4111-8111-111111111111';
 const betaId = '22222222-2222-4222-8222-222222222222';
+const knowledgeBaseId = '33333333-3333-4333-8333-333333333333';
 
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -161,6 +162,7 @@ test('saved X history defaults reports to 50 and requires confirmation before a 
   const expansionRequests: any[] = [];
   const expansionIdempotencyKeys: string[] = [];
   const reportRequests: any[] = [];
+  const analysisRequests: any[] = [];
   let reports: any[] = [];
   let canManagePaidCollection = true;
 
@@ -228,6 +230,18 @@ test('saved X history defaults reports to 50 and requires confirmation before a 
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reports) });
   });
+  await page.route(/\/api\/social\/analyze$/, async (route) => {
+    analysisRequests.push(route.request().postDataJSON());
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ jobId: 'analysis-job', state: 'queued' }) });
+  });
+  await page.route(/\/api\/knowledge-bases(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ knowledgeBases: [{
+      id: knowledgeBaseId, name: 'Support playbook', description: 'Approved support and escalation policy',
+      privacy: 'space', terraContextEnabled: true, state: 'ready', documentCount: 2, readyDocumentCount: 2,
+      chunkCount: 18, entityCount: 4, relationshipCount: 3, storageBytes: 2048, createdAt: now, updatedAt: now,
+      lastIndexedAt: now
+    }] })
+  }));
   await page.route(/\/api\/social\/reply-drafts$/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
 
   await signIn(page);
@@ -249,10 +263,20 @@ test('saved X history defaults reports to 50 and requires confirmation before a 
   expect(estimateRequests).toHaveLength(0);
   expect(expansionRequests).toHaveLength(0);
 
-  const reportScope = page.getByLabel('Posts for this report');
+  const reportScope = page.getByLabel('Posts for analysis and reporting');
   await expect(reportScope).toHaveValue('50');
   await expect(reportScope.locator('option')).toHaveCount(3);
-  await expect(page.getByText('50 saved posts will be sent to Terra.')).toBeVisible();
+  await expect(page.getByText('Reports use all 50 selected saved posts.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Choose knowledge bases' }).click();
+  const knowledgeDialog = page.getByRole('dialog', { name: 'Select knowledge bases' });
+  await knowledgeDialog.getByRole('button', { name: /Support playbook/ }).click();
+  await knowledgeDialog.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByLabel('Selected knowledge bases')).toContainText('Support playbook');
+
+  await page.getByRole('button', { name: 'Analyze 50 posts' }).click();
+  await expect(page.getByText('50 saved posts queued for grounded analysis.')).toBeVisible();
+  expect(analysisRequests).toEqual([{ mentionIds: expectedLatestIds, knowledgeBaseIds: [knowledgeBaseId] }]);
 
   await page.getByRole('button', { name: 'Estimate & fetch older' }).click();
   const expansionDialog = page.getByRole('dialog', { name: 'Fetch older posts from X' });
@@ -279,6 +303,7 @@ test('saved X history defaults reports to 50 and requires confirmation before a 
   await expect(page.getByText('Social-intelligence report queued with 50 saved posts.')).toBeVisible();
   expect(reportRequests).toHaveLength(1);
   expect(reportRequests[0].mentionIds).toEqual(expectedLatestIds);
+  expect(reportRequests[0].knowledgeBaseIds).toEqual([knowledgeBaseId]);
   await expect(page.getByText('50 posts', { exact: false })).toBeVisible();
 
   canManagePaidCollection = false;

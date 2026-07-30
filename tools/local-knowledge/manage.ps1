@@ -9,25 +9,164 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$RuntimeDir = Join-Path $RepoRoot '.local-runtime\knowledge'
-$SecretsDir = Join-Path $RuntimeDir 'secrets'
-$StateFile = Join-Path $RuntimeDir 'state.json'
-$PidFile = Join-Path $RuntimeDir 'runtime.pid'
-$StdoutLog = Join-Path $RuntimeDir 'runtime.stdout.log'
-$StderrLog = Join-Path $RuntimeDir 'runtime.stderr.log'
-$DataRoot = if ($env:SEEMPLIFY_KNOWLEDGE_DATA_ROOT) { [IO.Path]::GetFullPath($env:SEEMPLIFY_KNOWLEDGE_DATA_ROOT) } else { 'D:\SeemplifyKnowledge' }
+$DefaultRuntimeDir = Join-Path $RepoRoot '.local-runtime\knowledge'
 $OwnerLabel = 'ai.seemplify.owner=local-knowledge'
-$Network = 'seemplify-knowledge'
 $Containers = [ordered]@{
   arango = 'seemplify-knowledge-arango'
   embedding = 'seemplify-knowledge-embedding'
   reranker = 'seemplify-knowledge-reranker'
   docling = 'seemplify-knowledge-docling'
 }
+
+function Resolve-KnowledgeRuntimeDir {
+  $configured = [string][Environment]::GetEnvironmentVariable('SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR')
+  if (-not [string]::IsNullOrWhiteSpace($configured)) { return [IO.Path]::GetFullPath($configured) }
+  try {
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    $raw = & docker.exe inspect $Containers.arango 2>$null
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    if ($exitCode -eq 0 -and $raw) {
+      $info = $raw | ConvertFrom-Json | Select-Object -First 1
+      $owned = [string]$info.Config.Labels.'ai.seemplify.owner' -eq 'local-knowledge'
+      $secretMount = $info.Mounts | Where-Object { [string]$_.Destination -eq '/run/secrets/arango-root' } | Select-Object -First 1
+      if ($owned -and $secretMount -and (Test-Path -LiteralPath ([string]$secretMount.Source) -PathType Leaf)) {
+        $secretsRoot = Split-Path -Parent ([string]$secretMount.Source)
+        $candidate = Split-Path -Parent $secretsRoot
+        if ((Split-Path -Leaf $secretsRoot) -eq 'secrets' -and (Split-Path -Leaf $candidate) -eq 'knowledge') {
+          return [IO.Path]::GetFullPath($candidate)
+        }
+      }
+    }
+  } catch { $ErrorActionPreference = 'Stop' }
+  return [IO.Path]::GetFullPath($DefaultRuntimeDir)
+}
+
+$RuntimeDir = Resolve-KnowledgeRuntimeDir
+$env:SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR = $RuntimeDir
+$SecretsDir = Join-Path $RuntimeDir 'secrets'
+$StateFile = Join-Path $RuntimeDir 'state.json'
+$PidFile = Join-Path $RuntimeDir 'runtime.pid'
+$StdoutLog = Join-Path $RuntimeDir 'runtime.stdout.log'
+$StderrLog = Join-Path $RuntimeDir 'runtime.stderr.log'
+$DataRoot = if ($env:SEEMPLIFY_KNOWLEDGE_DATA_ROOT) { [IO.Path]::GetFullPath($env:SEEMPLIFY_KNOWLEDGE_DATA_ROOT) } else { 'D:\SeemplifyKnowledge' }
+$Network = 'seemplify-knowledge'
 $Images = [ordered]@{
   arango = [ordered]@{ tag='arangodb:3.12.9.4'; reference='arangodb@sha256:bf5eabc0fb3a16a13d0d4de00cddfbf2209e3d25630e5331832efb206519ff8f' }
   tei = [ordered]@{ tag='ghcr.io/huggingface/text-embeddings-inference:1.8.0'; reference='ghcr.io/huggingface/text-embeddings-inference@sha256:8aeb97215f29e0ed48647384af89661c36cee04120c2d4e86b5a3aead47611fa' }
   docling = [ordered]@{ tag='quay.io/docling-project/docling-serve-cpu:v1.28.0'; reference='quay.io/docling-project/docling-serve-cpu@sha256:cc207e1eb768878456ed98042c5d84fae56af3729a9c03d3e5c8fef393902956' }
+}
+$EmbeddingProfiles = [ordered]@{
+  'qwen-tei' = [ordered]@{
+    provider='qwen-tei'; model='Qwen/Qwen3-Embedding-4B'; revision='5cf2132abc99cad020ac570b19d031efec650f2b';
+    dtype='float16'; dimensions=2560; vectorIndexVersion='qwen-v1'
+  }
+  'gte-node' = [ordered]@{
+    provider='gte-node'; model='Alibaba-NLP/gte-modernbert-base'; revision='e7f32e3c00f91d699e8c43b53106206bcc72bb22';
+    dtype='q8'; dimensions=768; vectorIndexVersion='gte-modernbert-v1'
+  }
+}
+$GtePackageName = '@huggingface/transformers'
+$GtePackageVersion = '4.2.0'
+$GtePackageManifest = Join-Path $PSScriptRoot 'package.json'
+$GtePackageLock = Join-Path $PSScriptRoot 'package-lock.json'
+$GteInstalledManifest = Join-Path $PSScriptRoot 'node_modules\@huggingface\transformers\package.json'
+
+function Get-BooleanEnvironment {
+  param([string]$Name, [bool]$Default = $false)
+  $raw = [Environment]::GetEnvironmentVariable($Name)
+  if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+  switch ($raw.Trim().ToLowerInvariant()) {
+    { $_ -in @('1','true','yes','on') } { return $true }
+    { $_ -in @('0','false','no','off') } { return $false }
+    default { throw "$Name must be true or false." }
+  }
+}
+
+function Get-IntegerEnvironment {
+  param([string]$Name, [int]$Default, [int]$Minimum, [int]$Maximum)
+  $raw = [Environment]::GetEnvironmentVariable($Name)
+  if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+  $value = 0
+  if (-not [int]::TryParse($raw, [ref]$value) -or $value -lt $Minimum -or $value -gt $Maximum) {
+    throw "$Name must be an integer between $Minimum and $Maximum."
+  }
+  return $value
+}
+
+function Get-EmbeddingConfiguration {
+  $forceQwen = Get-BooleanEnvironment 'EXPERIENCE_EMBEDDING_FORCE_QWEN' $false
+  if ($forceQwen) {
+    $provider = 'qwen-tei'
+    $dualWrite = $false
+    $qwenRollbackRetained = $true
+    $rolloutPercent = 0
+    $shadowPercent = 0
+    $concurrency = 8
+    $queueDepth = 256
+    $timeoutMs = 120000
+  } else {
+    $provider = [string][Environment]::GetEnvironmentVariable('EXPERIENCE_EMBEDDING_PROVIDER')
+    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = 'qwen-tei' }
+    $provider = $provider.Trim().ToLowerInvariant()
+    if ($provider -notin @('qwen-tei','gte-node')) { throw 'EXPERIENCE_EMBEDDING_PROVIDER must be qwen-tei or gte-node.' }
+    $dualWrite = Get-BooleanEnvironment 'EXPERIENCE_EMBEDDING_DUAL_WRITE' $false
+    $qwenRollbackRetained = Get-BooleanEnvironment 'EXPERIENCE_QWEN_ROLLBACK_RETAINED' $true
+    if (-not $qwenRollbackRetained) {
+      throw 'EXPERIENCE_QWEN_ROLLBACK_RETAINED=false is not supported during this gated release.'
+    }
+    $defaultRolloutPercent = if ($provider -eq 'gte-node') { 100 } else { 0 }
+    $rolloutPercent = Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT' $defaultRolloutPercent 0 100
+    $shadowPercent = Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_SHADOW_PERCENT' 0 0 100
+    $concurrency = Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_CONCURRENCY' 8 1 8
+    $queueDepth = Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_QUEUE_DEPTH' 256 8 4096
+    $timeoutMs = Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_TIMEOUT_MS' 120000 1000 1800000
+  }
+  if ($provider -eq 'gte-node' -and $qwenRollbackRetained -and -not $dualWrite) {
+    throw 'gte-node requires EXPERIENCE_EMBEDDING_DUAL_WRITE=true while the Qwen rollback index is retained.'
+  }
+  $profile = $EmbeddingProfiles[$provider]
+  $configuredFields = [ordered]@{
+    EXPERIENCE_EMBEDDING_MODEL=$profile.model
+    EXPERIENCE_EMBEDDING_MODEL_REVISION=$profile.revision
+    EXPERIENCE_EMBEDDING_DTYPE=$profile.dtype
+    EXPERIENCE_EMBEDDING_DIMENSIONS=[string]$profile.dimensions
+    EXPERIENCE_VECTOR_INDEX_VERSION=$profile.vectorIndexVersion
+  }
+  if (-not $forceQwen) {
+    foreach ($entry in $configuredFields.GetEnumerator()) {
+      $configured = [string][Environment]::GetEnvironmentVariable($entry.Key)
+      if (-not [string]::IsNullOrWhiteSpace($configured) -and $configured.Trim() -cne [string]$entry.Value) {
+        throw "$($entry.Key) must match the pinned $provider profile."
+      }
+    }
+  }
+  $gteRequired = $provider -eq 'gte-node' -or $dualWrite -or $rolloutPercent -gt 0 -or $shadowPercent -gt 0
+  return [ordered]@{
+    provider=$provider; model=$profile.model; revision=$profile.revision; dtype=$profile.dtype;
+    dimensions=$profile.dimensions; vectorIndexVersion=$profile.vectorIndexVersion;
+    concurrency=$concurrency; queueDepth=$queueDepth; timeoutMs=$timeoutMs;
+    dualWrite=$dualWrite; qwenRollbackRetained=$qwenRollbackRetained; rolloutPercent=$rolloutPercent; shadowPercent=$shadowPercent;
+    gteRequired=$gteRequired; forceQwenRollback=$forceQwen
+  }
+}
+
+function Set-EmbeddingEnvironment {
+  param([Collections.IDictionary]$Configuration)
+  $env:EXPERIENCE_EMBEDDING_PROVIDER = [string]$Configuration.provider
+  $env:EXPERIENCE_EMBEDDING_MODEL = [string]$Configuration.model
+  $env:EXPERIENCE_EMBEDDING_MODEL_REVISION = [string]$Configuration.revision
+  $env:EXPERIENCE_EMBEDDING_DTYPE = [string]$Configuration.dtype
+  $env:EXPERIENCE_EMBEDDING_DIMENSIONS = [string]$Configuration.dimensions
+  $env:EXPERIENCE_VECTOR_INDEX_VERSION = [string]$Configuration.vectorIndexVersion
+  $env:EXPERIENCE_EMBEDDING_CONCURRENCY = [string]$Configuration.concurrency
+  $env:EXPERIENCE_EMBEDDING_QUEUE_DEPTH = [string]$Configuration.queueDepth
+  $env:EXPERIENCE_EMBEDDING_TIMEOUT_MS = [string]$Configuration.timeoutMs
+  $env:EXPERIENCE_EMBEDDING_DUAL_WRITE = if ($Configuration.dualWrite) { 'true' } else { 'false' }
+  $env:EXPERIENCE_QWEN_ROLLBACK_RETAINED = if ($Configuration.qwenRollbackRetained) { 'true' } else { 'false' }
+  $env:EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT = [string]$Configuration.rolloutPercent
+  $env:EXPERIENCE_EMBEDDING_SHADOW_PERCENT = [string]$Configuration.shadowPercent
 }
 
 function ConvertTo-Hashtable {
@@ -94,10 +233,72 @@ function Ensure-DirectoriesAndSecrets {
     $value = if (Test-Path $legacySecret) { (Get-Content -LiteralPath $legacySecret -Raw).Trim() } else { New-StrongSecret }
     [IO.File]::WriteAllText($serviceSecret, $value, [Text.UTF8Encoding]::new($false))
   }
-  $llmSource = Join-Path $RepoRoot '.local-runtime\llm\service-secret'
+  $llmSource = Join-Path (Split-Path -Parent $RuntimeDir) 'llm\service-secret'
   $llmTarget = Join-Path $SecretsDir 'llm-service'
   if (-not (Test-Path $llmSource)) { throw 'The signed Terra gateway secret is missing. Start the Seemplify AI runtime once before starting knowledge indexing.' }
   [IO.File]::WriteAllText($llmTarget, (Get-Content -LiteralPath $llmSource -Raw).Trim(), [Text.UTF8Encoding]::new($false))
+}
+
+function Get-GteDependencyStatus {
+  $manifestVersion = $null
+  $lockDeclaredVersion = $null
+  $lockVersion = $null
+  $installedVersion = $null
+  try {
+    if (Test-Path -LiteralPath $GtePackageManifest -PathType Leaf) {
+      $manifest = Get-Content -LiteralPath $GtePackageManifest -Raw | ConvertFrom-Json
+      $manifestVersion = [string]$manifest.dependencies.$GtePackageName
+    }
+  } catch {}
+  try {
+    if (Test-Path -LiteralPath $GtePackageLock -PathType Leaf) {
+      $node = Get-Command node.exe -ErrorAction SilentlyContinue
+      if ($node) {
+        $readLockVersion = "const fs=require('node:fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(value.packages['']?.dependencies?.['@huggingface/transformers']||'')+'\n'+String(value.packages['node_modules/@huggingface/transformers']?.version||''));"
+        $lockOutput = @(& $node.Source -e $readLockVersion $GtePackageLock 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $lockOutput.Count -ge 2) {
+          $lockDeclaredVersion = [string]$lockOutput[0]
+          $lockVersion = [string]$lockOutput[1]
+        }
+      }
+    }
+  } catch {}
+  try {
+    if (Test-Path -LiteralPath $GteInstalledManifest -PathType Leaf) {
+      $installed = Get-Content -LiteralPath $GteInstalledManifest -Raw | ConvertFrom-Json
+      $installedVersion = [string]$installed.version
+    }
+  } catch {}
+  $manifestExact = $manifestVersion -ceq $GtePackageVersion
+  $lockExact = $lockDeclaredVersion -ceq $GtePackageVersion -and $lockVersion -ceq $GtePackageVersion
+  $installedExact = $installedVersion -ceq $GtePackageVersion
+  return [ordered]@{
+    package=$GtePackageName; requiredVersion=$GtePackageVersion;
+    manifestVersion=$manifestVersion; lockDeclaredVersion=$lockDeclaredVersion; lockVersion=$lockVersion; installedVersion=$installedVersion;
+    manifestExact=$manifestExact; lockExact=$lockExact; installedExact=$installedExact;
+    ready=($manifestExact -and $lockExact -and $installedExact)
+  }
+}
+
+function Ensure-GteDependencies {
+  $status = Get-GteDependencyStatus
+  if (-not $status.manifestExact -or -not $status.lockExact) {
+    throw "The GTE npm dependency contract must pin $GtePackageName exactly to $GtePackageVersion in package.json and package-lock.json."
+  }
+  $node = Get-Command node.exe -ErrorAction Stop
+  $nodeVersionOutput = & $node.Source --version
+  if ($LASTEXITCODE -ne 0 -or [string]$nodeVersionOutput -notmatch '^v(?<major>\d+)\.') { throw 'Node.js version detection failed.' }
+  if ([int]$Matches.major -lt 22) { throw 'The GTE embedding runtime requires Node.js 22 or newer.' }
+  if ($status.installedExact) { return $status }
+  $npm = Get-Command npm.cmd -ErrorAction Stop
+  Push-Location $PSScriptRoot
+  try {
+    $output = & $npm.Source ci --omit=dev --no-audit --no-fund 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Exact GTE dependency installation failed: $($output -join [Environment]::NewLine)" }
+  } finally { Pop-Location }
+  $status = Get-GteDependencyStatus
+  if (-not $status.ready) { throw "npm ci completed without installing exact $GtePackageName $GtePackageVersion." }
+  return $status
 }
 
 function Invoke-Docker {
@@ -249,6 +450,9 @@ function Wait-RuntimeReady {
 }
 
 function Start-Runtime {
+  $embeddingConfiguration = Get-EmbeddingConfiguration
+  Set-EmbeddingEnvironment $embeddingConfiguration
+  if ($embeddingConfiguration.gteRequired) { [void](Ensure-GteDependencies) }
   $current = Get-RuntimePid
   if ($current) { [void](Wait-RuntimeReady -ProcessId $current); return $current }
   foreach ($file in @($StdoutLog,$StderrLog)) { if (-not (Test-Path $file)) { [IO.File]::WriteAllText($file, '', [Text.UTF8Encoding]::new($false)) } }
@@ -261,7 +465,24 @@ function Start-Runtime {
 function Stop-Runtime {
   param([switch]$Force)
   $pidValue = Get-RuntimePid
-  if ($pidValue) { Stop-Process -Id $pidValue -Force:$Force -ErrorAction SilentlyContinue }
+  if ($pidValue -and -not $Force) {
+    try {
+      $output = & node.exe (Join-Path $PSScriptRoot 'client.cjs') shutdown 2>&1
+      if ($LASTEXITCODE -ne 0) { throw "Signed graceful shutdown failed: $($output -join [Environment]::NewLine)" }
+      $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+      if ($process) {
+        if (-not $process.WaitForExit(35000)) {
+          Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+          Write-Warning 'Knowledge runtime did not drain within 35 seconds and was force-stopped.'
+        }
+      }
+    } catch {
+      if (Get-Process -Id $pidValue -ErrorAction SilentlyContinue) { Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue }
+      Write-Warning "Knowledge runtime graceful shutdown failed and force-stop fallback was used: $($_.Exception.Message)"
+    }
+  } elseif ($pidValue) {
+    Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+  }
   Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
 }
 
@@ -304,8 +525,44 @@ function Get-DirectorySizeBytes {
   return [long]($measurement.Sum -as [long])
 }
 
+function Get-EmbeddingOperationalStatus {
+  param($RuntimeStatus, [Collections.IDictionary]$Configuration)
+  $runtimeQueue = if ($RuntimeStatus) { $RuntimeStatus.queue } else { $null }
+  $queuedBackfills = @()
+  if ($runtimeQueue -and $runtimeQueue.jobs) { $queuedBackfills = @($runtimeQueue.jobs | Where-Object { $_.type -eq 'backfill' }) }
+  $activeBackfills = 0
+  $backfillLimit = 0
+  if ($runtimeQueue -and $runtimeQueue.active -and $null -ne $runtimeQueue.active.backfill) { $activeBackfills = [int]$runtimeQueue.active.backfill }
+  if ($runtimeQueue -and $runtimeQueue.limits -and $null -ne $runtimeQueue.limits.backfill) { $backfillLimit = [int]$runtimeQueue.limits.backfill }
+  $gteQueueBackfills = 0
+  if ($RuntimeStatus -and $RuntimeStatus.gte -and $RuntimeStatus.gte.queue -and $RuntimeStatus.gte.queue.byPriority) {
+    $value = $RuntimeStatus.gte.queue.byPriority.backfill
+    if ($null -ne $value) { $gteQueueBackfills = [int]$value }
+  }
+  $runtimeWaitingTotal = if ($runtimeQueue -and $null -ne $runtimeQueue.waiting) { [int]$runtimeQueue.waiting } else { 0 }
+  return [ordered]@{
+    configured=[ordered]@{
+      provider=$Configuration.provider; model=$Configuration.model; revision=$Configuration.revision;
+      dtype=$Configuration.dtype; dimensions=$Configuration.dimensions; vectorIndexVersion=$Configuration.vectorIndexVersion;
+      dualWrite=$Configuration.dualWrite; qwenRollbackRetained=$Configuration.qwenRollbackRetained; rolloutPercent=$Configuration.rolloutPercent;
+      shadowPercent=$Configuration.shadowPercent; gteRequired=$Configuration.gteRequired;
+      forceQwenRollback=$Configuration.forceQwenRollback
+    };
+    signedRuntimeStatusAvailable=[bool]$RuntimeStatus;
+    activeProvider=if ($RuntimeStatus) { $RuntimeStatus.activeEmbeddingProvider } else { $null };
+    gte=if ($RuntimeStatus) { $RuntimeStatus.gte } else { [ordered]@{ state='stopped'; ready=$false; accepting=$false; queue=[ordered]@{ waiting=0; oldestWaitMs=0; byPriority=[ordered]@{ query=0; 'live-index'=0; backfill=0 } } } };
+    migration=if ($RuntimeStatus) { $RuntimeStatus.migration } else { $null };
+    backfill=[ordered]@{ active=$activeBackfills; runtimeQueuedVisible=$queuedBackfills.Count; runtimeWaitingTotal=$runtimeWaitingTotal; embeddingQueued=$gteQueueBackfills; limit=$backfillLimit; queuedJobs=$queuedBackfills };
+    queue=$runtimeQueue;
+    providers=if ($RuntimeStatus) { $RuntimeStatus.providers } else { $null };
+    resources=if ($RuntimeStatus) { $RuntimeStatus.resources } else { $null };
+  }
+}
+
 function Get-Status {
   $state = Read-State
+  $embeddingConfiguration = Get-EmbeddingConfiguration
+  $dependencyStatus = Get-GteDependencyStatus
   $dockerReady = Test-DockerReady
   $containerRows = @()
   foreach ($entry in $Containers.GetEnumerator()) {
@@ -335,14 +592,16 @@ function Get-Status {
   $modelRoot = Join-Path $DataRoot 'models'
   $embeddingCache = Join-Path $modelRoot 'models--Qwen--Qwen3-Embedding-4B'
   $rerankerCache = Join-Path $modelRoot 'models--BAAI--bge-reranker-v2-m3'
+  $gteCache = Join-Path $modelRoot 'transformers'
   return [ordered]@{
     checkedAt=(Get-Date).ToUniversalTime().ToString('o'); available=[bool]$runtimeStatus; desired=$state.desired; autoStart=[bool]$state.autoStart; modelsLoaded=[bool]$state.modelsLoaded;
     runtime=[ordered]@{ running=[bool](Get-RuntimePid); pid=Get-RuntimePid; status=$runtimeStatus };
-    containers=$containerRows; resources=[ordered]@{ containers=$resourceRows; gpu=$gpu; dataDrive=if ($drive) { [ordered]@{ root=$drive.Root; usedBytes=[long]$drive.Used; freeBytes=[long]$drive.Free } } else { $null }; modelCache=[ordered]@{ root=$modelRoot; totalBytes=(Get-DirectorySizeBytes $modelRoot); embedding=[ordered]@{ path=$embeddingCache; bytes=(Get-DirectorySizeBytes $embeddingCache); present=(Test-Path -LiteralPath $embeddingCache) }; reranker=[ordered]@{ path=$rerankerCache; bytes=(Get-DirectorySizeBytes $rerankerCache); present=(Test-Path -LiteralPath $rerankerCache) } } };
-    data=[ordered]@{ root=$DataRoot; staging=(Join-Path $DataRoot 'staging'); storage=(Join-Path $DataRoot 'storage'); models=(Join-Path $DataRoot 'models'); backups=(Join-Path $DataRoot 'backups') };
+    containers=$containerRows; resources=[ordered]@{ containers=$resourceRows; gpu=$gpu; dataDrive=if ($drive) { [ordered]@{ root=$drive.Root; usedBytes=[long]$drive.Used; freeBytes=[long]$drive.Free } } else { $null }; modelCache=[ordered]@{ root=$modelRoot; totalBytes=(Get-DirectorySizeBytes $modelRoot); embedding=[ordered]@{ path=$embeddingCache; bytes=(Get-DirectorySizeBytes $embeddingCache); present=(Test-Path -LiteralPath $embeddingCache) }; gte=[ordered]@{ path=$gteCache; bytes=(Get-DirectorySizeBytes $gteCache); present=(Test-Path -LiteralPath $gteCache) }; reranker=[ordered]@{ path=$rerankerCache; bytes=(Get-DirectorySizeBytes $rerankerCache); present=(Test-Path -LiteralPath $rerankerCache) } } };
+    embedding=(Get-EmbeddingOperationalStatus $runtimeStatus $embeddingConfiguration); dependencies=[ordered]@{ gte=$dependencyStatus };
+    data=[ordered]@{ runtimeRoot=$RuntimeDir; root=$DataRoot; staging=(Join-Path $DataRoot 'staging'); storage=(Join-Path $DataRoot 'storage'); models=(Join-Path $DataRoot 'models'); backups=(Join-Path $DataRoot 'backups') };
     images=$Images; ports=[ordered]@{ runtime=11540; arango=8529; embedding=11541; reranker=11542; docling=11543 }; publicRoute=$false;
     security=[ordered]@{ serviceSecretConfigured=(Test-Path (Join-Path $RuntimeDir 'service-secret')); canonicalSecret='runtime/service-secret'; credentialsExposed=$false };
-    controls=[ordered]@{ canStart=$true; canStop=[bool](Get-RuntimePid); canLoad=$true; canUnload=$true; rawModelLogs=$false };
+    controls=[ordered]@{ canStart=$true; canStop=[bool](Get-RuntimePid); canLoad=$true; canUnload=$true; canLoadGte=[bool]$dependencyStatus.manifestExact; gteConfigured=[bool]$embeddingConfiguration.gteRequired; rawModelLogs=$false };
     warning='ArangoDB Community Edition is configured for local development use. Review licensing and deployment architecture before any production use.';
   }
 }

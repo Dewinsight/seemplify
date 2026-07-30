@@ -50,7 +50,14 @@ export interface RecoveryTicketDetail extends RecoveryTicket {
   response: null | Pick<ResponseRecord, 'id' | 'status' | 'answers' | 'metadata' | 'startedAt' | 'completedAt' | 'durationSeconds' | 'aiAnalysis' | 'analyzedAt'>;
   events: RecoveryTicketEvent[];
 }
-export interface AiJob { id: string; kind: string; surveyId: string | null; responseId: string | null; state: 'queued' | 'processing' | 'completed' | 'failed'; stage: string; progress: number; attempt: number; input: Record<string, any>; result: any; error: string | null; retryAt: string | null; createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string }
+export interface AiJobKnowledgeContext {
+  query: string;
+  knowledgeBases: Array<{ id: string; name: string; indexVersion: number; embeddingProfile?: Record<string, any> }>;
+  citations: Array<{ sourceRef: string; knowledgeBaseId: string; documentId: string; documentName: string; excerpt: string; page?: number | null; score?: number | null }>;
+  metrics: Record<string, any>;
+  createdAt: string;
+}
+export interface AiJob { id: string; kind: string; surveyId: string | null; responseId: string | null; state: 'queued' | 'processing' | 'completed' | 'failed'; stage: string; progress: number; attempt: number; input: Record<string, any>; result: any; error: string | null; retryAt: string | null; createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string; knowledgeContext?: AiJobKnowledgeContext | null }
 export interface Template { id: string; name: string; description: string; purpose: Survey['purpose']; primaryMetric: Survey['primaryMetric']; audience: string; questions: Partial<Question>[] }
 export interface SurveyDetail { survey: Survey; collectors: Collector[]; insights: { id: string; kind: string; payload: any; createdAt: string }[] }
 export interface SocialMention { id: string; source: 'x' | 'google_play' | 'app_store' | 'review' | 'forum' | 'other'; externalId?: string | null; xConnectionId?: string | null; ingestionKind?: 'account_post' | 'mention' | 'search' | null; author: string; content: string; url: string; language: string; publishedAt: string; metadata: Record<string, any>; analysis: any; createdAt: string }
@@ -107,15 +114,52 @@ export interface XIntegrationStatus {
   aggregateCounts: { collected: number; accountPosts: number; mentions: number; searchResults: number; analyzed: number };
 }
 export interface SocialReplyDraft { id: string; mentionId: string; connectionId: string | null; tone: string; instructions: string; state: 'queued' | 'ready' | 'edited' | 'archived' | 'failed'; generatedContent: string; content: string; rationale: string; safetyFlags: string[]; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
-export interface SocialIntelligenceReport { id: string; connectionId: string | null; title: string; mentionIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export interface SocialIntelligenceReport { id: string; connectionId: string | null; title: string; mentionIds: string[]; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
 export interface IntelligenceSource { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string }
-export interface IntelligenceReport { id: string; title: string; objective: string; sourceRefs: { survey: string[]; social: string[] }; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export interface IntelligenceReport { id: string; title: string; objective: string; sourceRefs: { survey: string[]; social: string[] }; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export interface AssistantConnection {
+  id: string; email: string; provider: 'google' | 'microsoft' | string; status: 'connected' | 'degraded' | 'disconnected' | string;
+  displayName?: string | null; scopes?: string[]; lastHealthAt?: string | null; lastError?: string | null; createdAt?: string;
+}
+export interface AssistantThreadParticipant { name?: string | null; email: string }
+export interface AssistantThread {
+  id: string; subject: string; snippet: string; participants: Array<AssistantThreadParticipant | string>; messageCount: number;
+  lastMessageAt: string | null; unread?: boolean;
+}
+export type AssistantRunKind = 'assistant.email_summary' | 'assistant.email_draft' | 'assistant.knowledge_answer' | 'email_summary' | 'email_draft' | 'knowledge_answer';
+export interface AssistantDraft {
+  subject: string; body: string; generatedSubject?: string; generatedBody?: string; revision: number; updatedAt?: string;
+}
+export interface AssistantOutput {
+  summary?: string; answer?: string; subject?: string; body?: string; rationale?: string;
+  keyPoints?: unknown[]; actionItems?: unknown[]; openQuestions?: unknown[]; safetyFlags?: string[];
+  citations?: Array<{ sourceRef: string; excerpt: string }>;
+  limitations?: unknown[]; caveats?: unknown[];
+}
+export interface AssistantRuntime {
+  id?: string; provider?: string; providerLabel?: string; engine?: string; model?: string;
+  usage?: { totalTokens?: number; total_tokens?: number; [key: string]: unknown };
+  latencyMs?: number; queueWaitMs?: number;
+}
+export interface AssistantRun {
+  id: string; jobId: string; kind: AssistantRunKind; state: 'queued' | 'processing' | 'completed' | 'failed';
+  stage: string; progress: number; attempt?: number; connectionId?: string | null; subjectRef?: string | null; sourceRefs?: string[];
+  output?: AssistantOutput | null; runtime?: AssistantRuntime | null; draft?: AssistantDraft | null;
+  generatedDraft?: Pick<AssistantDraft, 'subject' | 'body'> | null; advisoryOnly?: boolean; externalDispatched?: boolean;
+  error: string | null; createdAt: string; startedAt?: string | null; completedAt: string | null; updatedAt: string;
+}
+export interface AssistantOverview {
+  configured: boolean; callbackUrl?: string; configurationError?: string | null; connections: AssistantConnection[];
+  worker?: { running: boolean; active: number; queued: number; concurrency: number };
+  terra?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
+}
 export type KnowledgeBasePrivacy = 'private' | 'space';
 export type KnowledgeBaseState = 'empty' | 'indexing' | 'ready' | 'degraded' | 'failed' | 'deleting';
 export interface KnowledgeBase {
   id: string; name: string; description: string; privacy: KnowledgeBasePrivacy; terraContextEnabled: boolean;
   state: KnowledgeBaseState; documentCount: number; readyDocumentCount: number; chunkCount: number;
   entityCount: number; relationshipCount: number; storageBytes: number; createdBy?: string | null;
+  embeddingProfile?: { provider: 'qwen-tei' | 'gte-node'; model: string; revision: string; dtype: string; dimensions: number; vectorIndexVersion: string };
   createdAt: string; updatedAt: string; lastIndexedAt: string | null;
 }
 export type KnowledgeDocumentState = 'queued' | 'extracting' | 'indexing' | 'chunking' | 'embedding' | 'ready' | 'failed' | 'deleting' | 'deleted';
@@ -154,7 +198,7 @@ export interface JourneyStage { name: string; goal: string; touchpoints: string[
 export interface JourneyProvenance {
   origin: 'workspace' | 'terra' | 'legacy';
   lastModifiedBy: 'workspace' | 'terra' | 'unknown';
-  evidenceBasis: 'brief_only' | 'workspace_authored' | 'unknown';
+  evidenceBasis: 'brief_only' | 'workspace_authored' | 'knowledge_grounded' | 'unknown';
   evidenceLevel: 'hypothesis';
   generatedAt: string | null;
   optimizedAt: string | null;

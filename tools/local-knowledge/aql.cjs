@@ -13,7 +13,8 @@ const AQL = Object.freeze({
       FILTER document.knowledgeBaseId == @knowledgeBaseId
       FILTER document.documentId == @documentId
       FILTER document.activeUntil == null
-      UPDATE document WITH { activeUntil: @indexVersion, updatedAt: @now } IN documents
+        OR (document.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', document.supersededByReceiptKey) == null)
+      UPDATE document WITH { activeUntil: @indexVersion, supersededByReceiptKey: @receiptKey, updatedAt: @now } IN documents
   `,
   closeChunkRevision: `
     FOR chunk IN chunks
@@ -21,7 +22,18 @@ const AQL = Object.freeze({
       FILTER chunk.knowledgeBaseId == @knowledgeBaseId
       FILTER chunk.documentId == @documentId
       FILTER chunk.activeUntil == null
-      UPDATE chunk WITH { activeUntil: @indexVersion, updatedAt: @now } IN chunks
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      UPDATE chunk WITH { activeUntil: @indexVersion, supersededByReceiptKey: @receiptKey, updatedAt: @now } IN chunks
+  `,
+  closeGteChunkRevision: `
+    FOR chunk IN experience_chunks_gte_v1
+      FILTER chunk.spaceId == @spaceId
+      FILTER chunk.knowledgeBaseId == @knowledgeBaseId
+      FILTER chunk.documentId == @documentId
+      FILTER chunk.activeUntil == null
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      UPDATE chunk WITH { activeUntil: @indexVersion, supersededByReceiptKey: @receiptKey, updatedAt: @now } IN experience_chunks_gte_v1
   `,
   closeClaimRevision: `
     FOR claim IN claims
@@ -29,7 +41,8 @@ const AQL = Object.freeze({
       FILTER claim.knowledgeBaseId == @knowledgeBaseId
       FILTER claim.documentId == @documentId
       FILTER claim.activeUntil == null
-      UPDATE claim WITH { activeUntil: @indexVersion, updatedAt: @now } IN claims
+        OR (claim.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', claim.supersededByReceiptKey) == null)
+      UPDATE claim WITH { activeUntil: @indexVersion, supersededByReceiptKey: @receiptKey, updatedAt: @now } IN claims
   `,
   closeRelationRevision: `
     FOR relation IN relations
@@ -37,7 +50,8 @@ const AQL = Object.freeze({
       FILTER relation.knowledgeBaseId == @knowledgeBaseId
       FILTER relation.documentId == @documentId
       FILTER relation.activeUntil == null
-      UPDATE relation WITH { activeUntil: @indexVersion, updatedAt: @now } IN relations
+        OR (relation.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', relation.supersededByReceiptKey) == null)
+      UPDATE relation WITH { activeUntil: @indexVersion, supersededByReceiptKey: @receiptKey, updatedAt: @now } IN relations
   `,
   upsertDocument: `
     UPSERT { _key: @key }
@@ -58,6 +72,60 @@ const AQL = Object.freeze({
         INSERT item
         UPDATE item
         IN chunks
+  `,
+  upsertGteChunks: `
+    FOR item IN @chunks
+      UPSERT { _key: item._key }
+        INSERT item
+        UPDATE item
+        IN experience_chunks_gte_v1
+  `,
+  upsertGteBackfillChunks: `
+    FOR item IN @chunks
+      LET source = DOCUMENT('chunks', item._key)
+      FILTER source != null
+      FILTER source.spaceId == item.spaceId
+      FILTER source.knowledgeBaseId == item.knowledgeBaseId
+      FILTER source.documentId == item.documentId
+      FILTER source.indexVersion == item.indexVersion
+      FILTER source.indexVersion == @sourceIndexVersion
+      FILTER source.activeUntil == null
+        OR (source.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', source.supersededByReceiptKey) == null)
+      FILTER source.contentHash == item.contentHash
+      FILTER source.sourceSha256 == null OR source.sourceSha256 == item.sourceSha256
+      LET sourceProfileMatches = (
+        source.embeddingProvider == null AND LENGTH(source.embedding || []) == @sourceEmbeddingDimensions
+      ) OR (
+        source.embeddingProvider == @sourceEmbeddingProvider
+        AND source.embeddingModel == @sourceEmbeddingModel
+        AND source.embeddingRevision == @sourceEmbeddingRevision
+        AND source.embeddingDtype == @sourceEmbeddingDtype
+        AND source.embeddingDimensions == @sourceEmbeddingDimensions
+        AND source.vectorIndexVersion == @sourceVectorIndexVersion
+      )
+      FILTER sourceProfileMatches
+      FILTER source.receiptKey == null OR DOCUMENT('operation_receipts', source.receiptKey) != null
+      LET sourceDocument = FIRST(
+        FOR document IN documents
+          FILTER document.spaceId == item.spaceId
+          FILTER document.knowledgeBaseId == item.knowledgeBaseId
+          FILTER document.documentId == item.documentId
+          FILTER document.indexVersion == @sourceIndexVersion
+          FILTER document.sha256 == @sourceSha256
+          FILTER document.chunkerVersion == @sourceChunkerVersion
+          FILTER document.embeddingModel == @sourceEmbeddingModel
+          FILTER document.embeddingDimension == @sourceEmbeddingDimensions
+          FILTER document.activeUntil == null
+            OR (document.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', document.supersededByReceiptKey) == null)
+          LIMIT 1
+          RETURN document._key
+      )
+      FILTER sourceDocument != null
+      UPSERT { _key: item._key }
+        INSERT MERGE(item, { activeUntil: null })
+        UPDATE MERGE(item, { activeUntil: null })
+        IN experience_chunks_gte_v1
+      RETURN NEW._key
   `,
   upsertEntity: `
     UPSERT { _key: @key }
@@ -120,6 +188,8 @@ const AQL = Object.freeze({
       FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
       FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
       FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
       LIMIT @candidateLimit
       RETURN KEEP(chunk, '_key', 'spaceId', 'knowledgeBaseId', 'documentId', 'documentName', 'indexVersion', 'text', 'page', 'section', 'embedding', 'entityRefs')
   `,
@@ -130,6 +200,22 @@ const AQL = Object.freeze({
         FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
         FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
         FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+          OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+        FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+        RETURN 1
+    )
+  `,
+  eligibleGteChunkCount: `
+    RETURN LENGTH(
+      FOR chunk IN experience_chunks_gte_v1
+        FILTER chunk.spaceId == @spaceId
+        FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
+        FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
+        FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+          OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+        FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+        FILTER chunk.embeddingProvider == 'gte-node'
+        FILTER chunk.vectorIndexVersion == @vectorIndexVersion
         RETURN 1
     )
   `,
@@ -139,6 +225,23 @@ const AQL = Object.freeze({
       FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
       FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
       FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      LET score = COSINE_SIMILARITY(chunk.embedding, @queryVector)
+      SORT score DESC
+      LIMIT @candidateLimit
+      RETURN MERGE(KEEP(chunk, '_key', 'knowledgeBaseId', 'documentId', 'documentName', 'text', 'page', 'section', 'entityRefs'), { channelScore: score })
+  `,
+  exactGteVectorChunks: `
+    FOR chunk IN experience_chunks_gte_v1
+      FILTER chunk.spaceId == @spaceId
+      FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
+      FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
+      FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      FILTER chunk.embeddingProvider == 'gte-node'
+      FILTER chunk.vectorIndexVersion == @vectorIndexVersion
       LET score = COSINE_SIMILARITY(chunk.embedding, @queryVector)
       SORT score DESC
       LIMIT @candidateLimit
@@ -146,13 +249,31 @@ const AQL = Object.freeze({
   `,
   annVectorChunks: `
     FOR chunk IN chunks
-      LET score = APPROX_NEAR_COSINE(chunk.embedding, @queryVector)
-      SORT score DESC
-      LIMIT @annProbeLimit
       FILTER chunk.spaceId == @spaceId
       FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
       FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
       FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      LET score = APPROX_NEAR_COSINE(chunk.embedding, @queryVector)
+      SORT score DESC
+      LIMIT @annProbeLimit
+      LIMIT @candidateLimit
+      RETURN MERGE(KEEP(chunk, '_key', 'knowledgeBaseId', 'documentId', 'documentName', 'text', 'page', 'section', 'entityRefs'), { channelScore: score })
+  `,
+  annGteVectorChunks: `
+    FOR chunk IN experience_chunks_gte_v1
+      FILTER chunk.spaceId == @spaceId
+      FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
+      FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
+      FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      FILTER chunk.embeddingProvider == 'gte-node'
+      FILTER chunk.vectorIndexVersion == @vectorIndexVersion
+      LET score = APPROX_NEAR_COSINE(chunk.embedding, @queryVector)
+      SORT score DESC
+      LIMIT @annProbeLimit
       LIMIT @candidateLimit
       RETURN MERGE(KEEP(chunk, '_key', 'knowledgeBaseId', 'documentId', 'documentName', 'text', 'page', 'section', 'entityRefs'), { channelScore: score })
   `,
@@ -163,6 +284,8 @@ const AQL = Object.freeze({
       FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
       FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
       FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
       LET score = BM25(chunk)
       SORT score DESC
       LIMIT @candidateLimit
@@ -186,6 +309,8 @@ const AQL = Object.freeze({
       FILTER relation.knowledgeBaseId IN @knowledgeBaseIds
       FILTER relation.indexVersion <= @watermarkByBase[relation.knowledgeBaseId]
       FILTER relation.activeUntil == null OR relation.activeUntil > @watermarkByBase[relation.knowledgeBaseId]
+        OR (relation.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', relation.supersededByReceiptKey) == null)
+      FILTER relation.receiptKey == null OR DOCUMENT('operation_receipts', relation.receiptKey) != null
       FILTER relation.confidence >= @minConfidence
       LET source = PARSE_IDENTIFIER(relation._from).key
       LET target = PARSE_IDENTIFIER(relation._to).key
@@ -201,6 +326,8 @@ const AQL = Object.freeze({
         FILTER relation.knowledgeBaseId IN @knowledgeBaseIds
         FILTER relation.indexVersion <= @watermarkByBase[relation.knowledgeBaseId]
         FILTER relation.activeUntil == null OR relation.activeUntil > @watermarkByBase[relation.knowledgeBaseId]
+          OR (relation.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', relation.supersededByReceiptKey) == null)
+        FILTER relation.receiptKey == null OR DOCUMENT('operation_receipts', relation.receiptKey) != null
         FILTER relation.confidence >= @minConfidence
         LET source = PARSE_IDENTIFIER(relation._from).key
         LET target = PARSE_IDENTIFIER(relation._to).key
@@ -213,6 +340,8 @@ const AQL = Object.freeze({
       FILTER relation.knowledgeBaseId IN @knowledgeBaseIds
       FILTER relation.indexVersion <= @watermarkByBase[relation.knowledgeBaseId]
       FILTER relation.activeUntil == null OR relation.activeUntil > @watermarkByBase[relation.knowledgeBaseId]
+        OR (relation.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', relation.supersededByReceiptKey) == null)
+      FILTER relation.receiptKey == null OR DOCUMENT('operation_receipts', relation.receiptKey) != null
       FILTER relation.confidence >= @minConfidence
       LET source = PARSE_IDENTIFIER(relation._from).key
       LET target = PARSE_IDENTIFIER(relation._to).key
@@ -227,6 +356,9 @@ const AQL = Object.freeze({
       FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
       FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
       FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
       LET overlap = LENGTH(INTERSECTION(chunk.entityRefs || [], @entityKeys))
       FILTER overlap > 0
       SORT overlap DESC
@@ -257,6 +389,13 @@ const AQL = Object.freeze({
         RETURN 1)
     }
   `,
+  purgeGteTargetCount: `
+    RETURN LENGTH(FOR chunk IN experience_chunks_gte_v1
+      FILTER chunk.spaceId == @spaceId
+      FILTER chunk.knowledgeBaseId == @knowledgeBaseId
+      FILTER @documentId == null OR chunk.documentId == @documentId
+      RETURN 1)
+  `,
   purgeRelations: `
     FOR relation IN relations
       FILTER relation.spaceId == @spaceId
@@ -277,6 +416,13 @@ const AQL = Object.freeze({
       FILTER chunk.knowledgeBaseId == @knowledgeBaseId
       FILTER @documentId == null OR chunk.documentId == @documentId
       REMOVE chunk IN chunks OPTIONS { waitForSync: true }
+  `,
+  purgeGteChunks: `
+    FOR chunk IN experience_chunks_gte_v1
+      FILTER chunk.spaceId == @spaceId
+      FILTER chunk.knowledgeBaseId == @knowledgeBaseId
+      FILTER @documentId == null OR chunk.documentId == @documentId
+      REMOVE chunk IN experience_chunks_gte_v1 OPTIONS { waitForSync: true }
   `,
   purgeDocuments: `
     FOR document IN documents
@@ -324,6 +470,8 @@ const AQL = Object.freeze({
         FILTER chunk.knowledgeBaseId == @knowledgeBaseId
         FILTER chunk.indexVersion <= @indexVersion
         FILTER chunk.activeUntil == null OR chunk.activeUntil > @indexVersion
+          OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+        FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
         RETURN chunk.entityRefs || []
     ))
     LET nodes = (
@@ -344,6 +492,8 @@ const AQL = Object.freeze({
         FILTER relation.knowledgeBaseId == @knowledgeBaseId
         FILTER relation.indexVersion <= @indexVersion
         FILTER relation.activeUntil == null OR relation.activeUntil > @indexVersion
+          OR (relation.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', relation.supersededByReceiptKey) == null)
+        FILTER relation.receiptKey == null OR DOCUMENT('operation_receipts', relation.receiptKey) != null
         FILTER PARSE_IDENTIFIER(relation._from).key IN nodeKeys
         FILTER PARSE_IDENTIFIER(relation._to).key IN nodeKeys
         LIMIT @edgeLimit
@@ -366,6 +516,271 @@ const AQL = Object.freeze({
       claims: LENGTH(claims),
       relations: LENGTH(relations)
     }
+  `,
+  gteCollectionCount: `
+    RETURN LENGTH(experience_chunks_gte_v1)
+  `,
+  gteBackfillSourceDocument: `
+    FOR document IN documents
+      FILTER document.spaceId == @spaceId
+      FILTER document.knowledgeBaseId == @knowledgeBaseId
+      FILTER document.documentId == @documentId
+      FILTER document.indexVersion == @sourceIndexVersion
+      FILTER document.sha256 == @sourceSha256
+      FILTER document.chunkerVersion == @sourceChunkerVersion
+      FILTER document.embeddingModel == @sourceEmbeddingModel
+      FILTER document.embeddingDimension == @sourceEmbeddingDimensions
+      FILTER document.activeUntil == null
+        OR (document.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', document.supersededByReceiptKey) == null)
+      FILTER document.receiptKey == null OR DOCUMENT('operation_receipts', document.receiptKey) != null
+      LIMIT 1
+      RETURN KEEP(document, '_key', 'indexVersion', 'sha256', 'chunkerVersion', 'embeddingModel', 'embeddingDimension')
+  `,
+  gteBackfillCandidates: `
+    FOR chunk IN chunks
+      FILTER chunk.spaceId == @spaceId
+      FILTER @knowledgeBaseId == null OR chunk.knowledgeBaseId == @knowledgeBaseId
+      FILTER @documentId == null OR chunk.documentId == @documentId
+      FILTER @sourceIndexVersion == null OR chunk.indexVersion == @sourceIndexVersion
+      FILTER chunk.activeUntil == null
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      FILTER @sourceSha256 == null OR chunk.sourceSha256 == null OR chunk.sourceSha256 == @sourceSha256
+      LET sourceProfileMatches = (
+        chunk.embeddingProvider == null AND LENGTH(chunk.embedding || []) == @sourceEmbeddingDimensions
+      ) OR (
+        chunk.embeddingProvider == @sourceEmbeddingProvider
+        AND chunk.embeddingModel == @sourceEmbeddingModel
+        AND chunk.embeddingRevision == @sourceEmbeddingRevision
+        AND chunk.embeddingDtype == @sourceEmbeddingDtype
+        AND chunk.embeddingDimensions == @sourceEmbeddingDimensions
+        AND chunk.vectorIndexVersion == @sourceVectorIndexVersion
+      )
+      FILTER sourceProfileMatches
+      LET source = FIRST(
+        FOR document IN documents
+          FILTER document.spaceId == chunk.spaceId
+          FILTER document.knowledgeBaseId == chunk.knowledgeBaseId
+          FILTER document.documentId == chunk.documentId
+          FILTER document.indexVersion == chunk.indexVersion
+          FILTER @sourceSha256 == null OR document.sha256 == @sourceSha256
+          FILTER @sourceChunkerVersion == null OR document.chunkerVersion == @sourceChunkerVersion
+          FILTER document.embeddingModel == @sourceEmbeddingModel
+          FILTER document.embeddingDimension == @sourceEmbeddingDimensions
+          FILTER document.activeUntil == null
+            OR (document.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', document.supersededByReceiptKey) == null)
+          LIMIT 1
+          RETURN { sha256: document.sha256, chunkerVersion: document.chunkerVersion }
+      )
+      FILTER source != null
+      FILTER chunk._key > @afterKey
+      LET target = DOCUMENT('experience_chunks_gte_v1', chunk._key)
+      FILTER target == null
+        OR (target.activeUntil != null AND (target.supersededByReceiptKey == null
+          OR DOCUMENT('operation_receipts', target.supersededByReceiptKey) != null))
+        OR target.indexVersion != chunk.indexVersion
+        OR target.contentHash != chunk.contentHash
+        OR target.sourceSha256 != source.sha256
+        OR target.embeddingProvider != @embeddingProvider
+        OR target.embeddingModel != @embeddingModel
+        OR target.embeddingRevision != @embeddingRevision
+        OR target.embeddingDtype != @embeddingDtype
+        OR target.embeddingDimensions != @embeddingDimensions
+        OR LENGTH(target.embedding || []) != @embeddingDimensions
+        OR target.vectorIndexVersion != @vectorIndexVersion
+      SORT chunk._key ASC
+      LIMIT @batchSize
+      RETURN MERGE(KEEP(chunk, '_key', 'spaceId', 'knowledgeBaseId', 'documentId', 'documentName', 'indexVersion', 'ordinal', 'text', 'contentHash', 'tokenEstimate', 'start', 'end', 'section', 'page', 'entityRefs', 'receiptKey', 'activeUntil', 'createdAt', 'updatedAt'), { sourceSha256: source.sha256, sourceChunkerVersion: source.chunkerVersion })
+  `,
+  gteBackfillRemaining: `
+    RETURN LENGTH(
+      FOR chunk IN chunks
+        FILTER chunk.spaceId == @spaceId
+        FILTER @knowledgeBaseId == null OR chunk.knowledgeBaseId == @knowledgeBaseId
+        FILTER @documentId == null OR chunk.documentId == @documentId
+        FILTER @sourceIndexVersion == null OR chunk.indexVersion == @sourceIndexVersion
+        FILTER chunk.activeUntil == null
+          OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+        FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+        FILTER @sourceSha256 == null OR chunk.sourceSha256 == null OR chunk.sourceSha256 == @sourceSha256
+        LET sourceProfileMatches = (
+          chunk.embeddingProvider == null AND LENGTH(chunk.embedding || []) == @sourceEmbeddingDimensions
+        ) OR (
+          chunk.embeddingProvider == @sourceEmbeddingProvider
+          AND chunk.embeddingModel == @sourceEmbeddingModel
+          AND chunk.embeddingRevision == @sourceEmbeddingRevision
+          AND chunk.embeddingDtype == @sourceEmbeddingDtype
+          AND chunk.embeddingDimensions == @sourceEmbeddingDimensions
+          AND chunk.vectorIndexVersion == @sourceVectorIndexVersion
+        )
+        FILTER sourceProfileMatches
+        LET sourceDocument = FIRST(
+          FOR document IN documents
+            FILTER document.spaceId == chunk.spaceId
+            FILTER document.knowledgeBaseId == chunk.knowledgeBaseId
+            FILTER document.documentId == chunk.documentId
+            FILTER document.indexVersion == chunk.indexVersion
+            FILTER @sourceSha256 == null OR document.sha256 == @sourceSha256
+            FILTER @sourceChunkerVersion == null OR document.chunkerVersion == @sourceChunkerVersion
+            FILTER document.embeddingModel == @sourceEmbeddingModel
+            FILTER document.embeddingDimension == @sourceEmbeddingDimensions
+            FILTER document.activeUntil == null
+              OR (document.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', document.supersededByReceiptKey) == null)
+            LIMIT 1
+            RETURN { _key: document._key, sha256: document.sha256, chunkerVersion: document.chunkerVersion }
+        )
+        FILTER sourceDocument != null
+        LET target = DOCUMENT('experience_chunks_gte_v1', chunk._key)
+        FILTER target == null
+          OR (target.activeUntil != null AND (target.supersededByReceiptKey == null
+            OR DOCUMENT('operation_receipts', target.supersededByReceiptKey) != null))
+          OR target.indexVersion != chunk.indexVersion
+          OR target.contentHash != chunk.contentHash
+          OR target.sourceSha256 != sourceDocument.sha256
+          OR target.embeddingProvider != @embeddingProvider
+          OR target.embeddingModel != @embeddingModel
+          OR target.embeddingRevision != @embeddingRevision
+          OR target.embeddingDtype != @embeddingDtype
+          OR target.embeddingDimensions != @embeddingDimensions
+          OR LENGTH(target.embedding || []) != @embeddingDimensions
+          OR target.vectorIndexVersion != @vectorIndexVersion
+        RETURN 1
+    )
+  `,
+  gteBackfillCoverage: `
+    LET canonical = (
+      FOR chunk IN chunks
+        FILTER chunk.spaceId == @spaceId
+        FILTER chunk.knowledgeBaseId == @knowledgeBaseId
+        FILTER chunk.documentId == @documentId
+        FILTER chunk.indexVersion == @sourceIndexVersion
+        FILTER chunk.activeUntil == null
+          OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+        FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+        RETURN chunk
+    )
+    LET validSource = (
+      FOR source IN canonical
+        FILTER source.sourceSha256 == null OR source.sourceSha256 == @sourceSha256
+        FILTER IS_STRING(source.contentHash) AND LENGTH(source.contentHash) > 0
+        FILTER IS_STRING(source.text)
+        LET sourceProfileMatches = (
+          source.embeddingProvider == null AND LENGTH(source.embedding || []) == @sourceEmbeddingDimensions
+        ) OR (
+          source.embeddingProvider == @sourceEmbeddingProvider
+          AND source.embeddingModel == @sourceEmbeddingModel
+          AND source.embeddingRevision == @sourceEmbeddingRevision
+          AND source.embeddingDtype == @sourceEmbeddingDtype
+          AND source.embeddingDimensions == @sourceEmbeddingDimensions
+          AND source.vectorIndexVersion == @sourceVectorIndexVersion
+        )
+        FILTER sourceProfileMatches
+        RETURN source
+    )
+    LET validTargetCount = LENGTH(
+      FOR source IN validSource
+        LET target = DOCUMENT('experience_chunks_gte_v1', source._key)
+        FILTER target != null
+        FILTER target.spaceId == @spaceId
+        FILTER target.knowledgeBaseId == @knowledgeBaseId
+        FILTER target.documentId == @documentId
+        FILTER target.indexVersion == @sourceIndexVersion
+        FILTER target.activeUntil == null
+          OR (target.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', target.supersededByReceiptKey) == null)
+        FILTER target.receiptKey == null OR DOCUMENT('operation_receipts', target.receiptKey) != null
+        FILTER target.contentHash == source.contentHash
+        FILTER target.sourceSha256 == @sourceSha256
+        FILTER target.embeddingProvider == @embeddingProvider
+        FILTER target.embeddingModel == @embeddingModel
+        FILTER target.embeddingRevision == @embeddingRevision
+        FILTER target.embeddingDtype == @embeddingDtype
+        FILTER target.embeddingDimensions == @embeddingDimensions
+        FILTER LENGTH(target.embedding || []) == @embeddingDimensions
+        FILTER target.vectorIndexVersion == @vectorIndexVersion
+        RETURN 1
+    )
+    LET targetCount = LENGTH(
+      FOR target IN experience_chunks_gte_v1
+        FILTER target.spaceId == @spaceId
+        FILTER target.knowledgeBaseId == @knowledgeBaseId
+        FILTER target.documentId == @documentId
+        FILTER target.indexVersion == @sourceIndexVersion
+        FILTER target.activeUntil == null
+          OR (target.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', target.supersededByReceiptKey) == null)
+        FILTER target.receiptKey == null OR DOCUMENT('operation_receipts', target.receiptKey) != null
+        RETURN 1
+    )
+    RETURN {
+      canonicalCount: LENGTH(canonical),
+      validSourceCount: LENGTH(validSource),
+      validTargetCount,
+      targetCount,
+      exact: LENGTH(canonical) == LENGTH(validSource)
+        AND LENGTH(validSource) == validTargetCount
+        AND validTargetCount == targetCount
+    }
+  `,
+  gteCoverageByBase: `
+    FOR knowledgeBaseId IN @knowledgeBaseIds
+      LET canonical = (
+        FOR chunk IN chunks
+          FILTER chunk.spaceId == @spaceId
+          FILTER chunk.knowledgeBaseId == knowledgeBaseId
+          FILTER chunk.indexVersion <= @watermarkByBase[knowledgeBaseId]
+          FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[knowledgeBaseId]
+            OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+          FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+          LET sourceDocument = FIRST(
+            FOR document IN documents
+              FILTER document.spaceId == chunk.spaceId
+              FILTER document.knowledgeBaseId == chunk.knowledgeBaseId
+              FILTER document.documentId == chunk.documentId
+              FILTER document.indexVersion == chunk.indexVersion
+              LIMIT 1
+              RETURN document.sha256
+          )
+          FILTER sourceDocument != null
+          RETURN MERGE(KEEP(chunk, '_key', 'indexVersion', 'contentHash'), { sourceSha256: chunk.sourceSha256 || sourceDocument })
+      )
+      LET valid = LENGTH(
+        FOR source IN canonical
+          LET target = DOCUMENT('experience_chunks_gte_v1', source._key)
+          FILTER target != null
+          FILTER target.spaceId == @spaceId
+          FILTER target.knowledgeBaseId == knowledgeBaseId
+          FILTER target.indexVersion == source.indexVersion
+          FILTER target.activeUntil == null OR target.activeUntil > @watermarkByBase[knowledgeBaseId]
+            OR (target.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', target.supersededByReceiptKey) == null)
+          FILTER target.receiptKey == null OR DOCUMENT('operation_receipts', target.receiptKey) != null
+          FILTER target.contentHash == source.contentHash
+          FILTER target.sourceSha256 == source.sourceSha256
+          FILTER target.embeddingProvider == @embeddingProvider
+          FILTER target.embeddingModel == @embeddingModel
+          FILTER target.embeddingRevision == @embeddingRevision
+          FILTER target.embeddingDtype == @embeddingDtype
+          FILTER target.embeddingDimensions == @embeddingDimensions
+          FILTER LENGTH(target.embedding || []) == @embeddingDimensions
+          FILTER target.vectorIndexVersion == @vectorIndexVersion
+          RETURN 1
+      )
+      LET targetCount = LENGTH(
+        FOR chunk IN experience_chunks_gte_v1
+          FILTER chunk.spaceId == @spaceId
+          FILTER chunk.knowledgeBaseId == knowledgeBaseId
+          FILTER chunk.indexVersion <= @watermarkByBase[knowledgeBaseId]
+          FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[knowledgeBaseId]
+            OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+          FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+          FILTER chunk.vectorIndexVersion == @vectorIndexVersion
+          RETURN 1
+      )
+      RETURN {
+        knowledgeBaseId,
+        canonical: LENGTH(canonical),
+        gte: targetCount,
+        valid,
+        complete: LENGTH(canonical) > 0 AND valid == LENGTH(canonical) AND targetCount == LENGTH(canonical)
+      }
   `,
   nextIndexVersion: `
     LET versions = (

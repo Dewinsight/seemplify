@@ -14,6 +14,7 @@ Seemplify Experience is a standalone experience-management application inspired 
 - Multi-account X social listening through OAuth 2.0 PKCE, with durable credit/rate-limit waits, account-specific cursors, posts, mentions, recent-search queries, and encrypted refresh tokens.
 - Human-reviewed Terra reply drafts that are editable and copyable but never posted automatically.
 - Saved social-intelligence reports and a cross-source Intelligence workspace that synthesizes selected survey and social report snapshots with traceable evidence and history.
+- A read-only personal assistant that connects Google or Microsoft mail through Nylas, summarises bounded thread snapshots, prepares editable human-reviewed drafts, and answers questions from selected saved Experience intelligence. It never sends mail or changes calendars.
 - Terra-generated customer journey maps covering stages, touchpoints, actions, emotions, friction, measures, opportunities, and a repeatable AI audit workflow.
 - Durable PostgreSQL AI jobs with fair, lock-safe parallel claims, retries, progress, operational history, and live Server-Sent Events.
 - CSV/JSON exports and service-recovery tickets generated from negative feedback.
@@ -45,6 +46,16 @@ Runtime secrets, uploads, and the pre-cutover SQLite recovery snapshot are store
 The first `initialize` or `start` creates random admin, session, PostgreSQL runtime, and migration-owner secrets outside Git. `start` snapshots SQLite, migrates it transactionally, validates every imported row through the built application adapter, records the immutable source manifest, and only then starts PostgreSQL-backed workers. The runtime login is DML-only: it cannot create or own database objects, while the separate migration owner is disabled outside a migration. The default admin email is `admin@seemplify.local`; the password remains in `.local-runtime/experience-management/admin-password` on the host.
 
 After the cutover marker is committed, the manager refuses to start a legacy SQLite-only release. The original SQLite database and timestamped backups remain untouched for recovery, but they are not used for new application writes.
+
+### Nylas read-only assistant setup
+
+The managed runtime looks for an explicitly protected `.local-runtime/experience-management/nylas.env`, then for the approved Recruiter hand-off in `recruiter/backend/.env`. `NYLAS_ENV_FILE` takes precedence. Experience never scans Xplorer or another product for an account-wide Nylas key. Configure Nylas v3 hosted OAuth with this exact callback:
+
+```text
+https://experience.aiinnigeria.com/api/integrations/nylas/callback
+```
+
+`manage.ps1 -Action initialize` creates an independent AES encryption key at `.local-runtime/experience-management/nylas-credential-encryption-key` and restricts its Windows ACL to the current user and SYSTEM. Grant IDs and assistant source snapshots are encrypted at rest; OAuth state is random, hashed, expiring, and single-use. Requested scopes are restricted to identity and read-only mail. There is deliberately no assistant send-mail or calendar-mutation route.
 
 ```powershell
 .\scripts\manage.ps1 -Action status

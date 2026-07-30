@@ -167,6 +167,8 @@ function EvidenceNotice({ journey }: { journey: Journey }) {
   const basis = journey.provenance?.evidenceBasis || 'unknown';
   const explanation = basis === 'brief_only'
     ? 'Terra created this map from the written brief. It has not analysed survey responses, interviews, tickets, or social posts for this map.'
+    : basis === 'knowledge_grounded'
+      ? 'Terra used the written brief or map together with the selected, version-pinned knowledge sources. The map remains a hypothesis until its claims are checked against customer evidence.'
     : basis === 'workspace_authored'
       ? 'Your team authored or edited this map. The statements are still working assumptions until they are checked against customer research.'
       : 'The evidence source for this older map is unknown. Treat its statements as assumptions until they are checked against customer research.';

@@ -17,5 +17,7 @@ function Test-ProjectSupportsPostgresRuntimeVersion([string]$ProjectDir, [int]$R
       if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $relativePath) -PathType Leaf)) { return $false }
     }
   }
+  if ($RequiredVersion -ge 3 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0003_knowledge_embedding_profiles.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 4 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0004_experience_assistant.sql') -PathType Leaf)) { return $false }
   return $true
 }

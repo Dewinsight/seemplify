@@ -33,6 +33,43 @@ function loadSharedBrevoEnvironment() {
 
 export const brevoEnvironmentSource = loadSharedBrevoEnvironment();
 
+const nylasEnvironmentKeys = [
+  'NYLAS_CLIENT_ID',
+  'NYLAS_API_KEY',
+  'NYLAS_API_URI',
+  'NYLAS_CONNECT_SCOPES',
+  'NYLAS_REDIRECT_URI',
+  'NYLAS_WEBHOOK_SECRET'
+] as const;
+
+function loadSharedNylasEnvironment() {
+  const configured = process.env.NYLAS_ENV_FILE
+    ? path.resolve(backendDir, process.env.NYLAS_ENV_FILE)
+    : null;
+  // Nylas is an Experience Management integration. The only supported
+  // shared hand-off is the explicitly approved Recruiter environment.
+  const candidates = [
+    configured,
+    path.join(repositoryDir, 'recruiter', 'backend', '.env')
+  ].filter((value): value is string => Boolean(value));
+  let source: string | null = null;
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    const parsed = dotenv.parse(fs.readFileSync(candidate));
+    let used = false;
+    for (const key of nylasEnvironmentKeys) {
+      if (!process.env[key] && parsed[key]) {
+        process.env[key] = parsed[key];
+        used = true;
+      }
+    }
+    if (used && !source) source = candidate;
+  }
+  return source;
+}
+
+export const nylasEnvironmentSource = loadSharedNylasEnvironment();
+
 function resolveFromBackend(value: string) {
   return path.isAbsolute(value) ? value : path.resolve(backendDir, value);
 }
@@ -41,6 +78,149 @@ function boundedNumber(value: unknown, fallback: number, minimum: number, maximu
   const parsed = Number(value);
   return Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? parsed : fallback));
 }
+
+export type KnowledgeEmbeddingProvider = 'qwen-tei' | 'gte-node';
+
+export interface KnowledgeEmbeddingProfile {
+  provider: KnowledgeEmbeddingProvider;
+  model: string;
+  revision: string;
+  dtype: string;
+  dimensions: number;
+  vectorIndexVersion: string;
+}
+
+export const qwenKnowledgeEmbeddingProfile: Readonly<KnowledgeEmbeddingProfile> = Object.freeze({
+  provider: 'qwen-tei',
+  model: 'Qwen/Qwen3-Embedding-4B',
+  revision: '5cf2132abc99cad020ac570b19d031efec650f2b',
+  dtype: 'float16',
+  dimensions: 2560,
+  vectorIndexVersion: 'qwen-v1'
+});
+
+export const gteKnowledgeEmbeddingProfile: Readonly<KnowledgeEmbeddingProfile> = Object.freeze({
+  provider: 'gte-node',
+  model: 'Alibaba-NLP/gte-modernbert-base',
+  revision: 'e7f32e3c00f91d699e8c43b53106206bcc72bb22',
+  dtype: 'q8',
+  dimensions: 768,
+  vectorIndexVersion: 'gte-modernbert-v1'
+});
+
+export const bgeKnowledgeRerankerProfile = Object.freeze({
+  model: 'BAAI/bge-reranker-v2-m3',
+  revision: '953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e'
+});
+
+function configuredInteger(value: unknown, fallback: number, minimum: number, maximum: number, name: string) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return parsed;
+}
+
+function configuredToken(value: unknown, fallback: string, name: string, maximum = 300) {
+  const normalized = String(value ?? fallback).trim();
+  if (!normalized || normalized.length > maximum || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+    throw new Error(`${name} is invalid.`);
+  }
+  return normalized;
+}
+
+function configuredBoolean(value: unknown, fallback: boolean, name: string) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  throw new Error(`${name} must be a boolean value.`);
+}
+
+/**
+ * Resolve one immutable embedding-space identity. Keeping this pure makes
+ * deployment configuration testable without importing the database runtime.
+ */
+export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.ProcessEnv = process.env) {
+  const forceQwen = configuredBoolean(environment.EXPERIENCE_EMBEDDING_FORCE_QWEN, false,
+    'EXPERIENCE_EMBEDDING_FORCE_QWEN');
+  const providerValue = forceQwen
+    ? 'qwen-tei'
+    : String(environment.EXPERIENCE_EMBEDDING_PROVIDER || 'qwen-tei').trim().toLowerCase();
+  if (providerValue !== 'qwen-tei' && providerValue !== 'gte-node') {
+    throw new Error('EXPERIENCE_EMBEDDING_PROVIDER must be either qwen-tei or gte-node.');
+  }
+  const provider = providerValue as KnowledgeEmbeddingProvider;
+  const defaults = provider === 'gte-node' ? gteKnowledgeEmbeddingProfile : qwenKnowledgeEmbeddingProfile;
+  const model = forceQwen ? qwenKnowledgeEmbeddingProfile.model : configuredToken(
+    environment.EXPERIENCE_EMBEDDING_MODEL
+      || (provider === 'qwen-tei' ? environment.KNOWLEDGE_EMBEDDING_MODEL : undefined),
+    defaults.model,
+    'EXPERIENCE_EMBEDDING_MODEL'
+  );
+  const revision = forceQwen ? qwenKnowledgeEmbeddingProfile.revision : configuredToken(
+    environment.EXPERIENCE_EMBEDDING_MODEL_REVISION || environment.EXPERIENCE_EMBEDDING_REVISION,
+    defaults.revision,
+    'EXPERIENCE_EMBEDDING_MODEL_REVISION',
+    80
+  ).toLowerCase();
+  if (!/^[a-f0-9]{40}$/u.test(revision)) {
+    throw new Error('EXPERIENCE_EMBEDDING_MODEL_REVISION must be a pinned 40-character hexadecimal revision.');
+  }
+  const dtype = forceQwen ? qwenKnowledgeEmbeddingProfile.dtype
+    : configuredToken(environment.EXPERIENCE_EMBEDDING_DTYPE, defaults.dtype,
+      'EXPERIENCE_EMBEDDING_DTYPE', 40).toLowerCase();
+  const dimensions = forceQwen ? qwenKnowledgeEmbeddingProfile.dimensions : configuredInteger(
+    environment.EXPERIENCE_EMBEDDING_DIMENSIONS
+      || (provider === 'qwen-tei' ? environment.KNOWLEDGE_EMBEDDING_DIMENSION : undefined),
+    defaults.dimensions,
+    128,
+    8192,
+    'EXPERIENCE_EMBEDDING_DIMENSIONS'
+  );
+  const vectorIndexVersion = forceQwen ? qwenKnowledgeEmbeddingProfile.vectorIndexVersion
+    : configuredToken(environment.EXPERIENCE_VECTOR_INDEX_VERSION,
+      defaults.vectorIndexVersion, 'EXPERIENCE_VECTOR_INDEX_VERSION', 100).toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._-]{0,99}$/u.test(vectorIndexVersion)) {
+    throw new Error('EXPERIENCE_VECTOR_INDEX_VERSION must be a stable lowercase identifier.');
+  }
+  const concurrency = configuredInteger(environment.EXPERIENCE_EMBEDDING_CONCURRENCY, 8, 1, 8,
+    'EXPERIENCE_EMBEDDING_CONCURRENCY');
+  const dualWrite = forceQwen ? false : configuredBoolean(environment.EXPERIENCE_EMBEDDING_DUAL_WRITE, false,
+    'EXPERIENCE_EMBEDDING_DUAL_WRITE');
+  const qwenRollbackRetained = configuredBoolean(environment.EXPERIENCE_QWEN_ROLLBACK_RETAINED, true,
+    'EXPERIENCE_QWEN_ROLLBACK_RETAINED');
+
+  if (provider === 'gte-node'
+      && (model !== gteKnowledgeEmbeddingProfile.model || revision !== gteKnowledgeEmbeddingProfile.revision
+        || dtype !== 'q8' || dimensions !== 768
+        || vectorIndexVersion !== gteKnowledgeEmbeddingProfile.vectorIndexVersion)) {
+    throw new Error('gte-node requires the pinned Alibaba-NLP/gte-modernbert-base q8 profile and index version.');
+  }
+  if (provider === 'qwen-tei'
+      && (model !== qwenKnowledgeEmbeddingProfile.model || revision !== qwenKnowledgeEmbeddingProfile.revision
+        || dtype !== 'float16' || dimensions !== 2560
+        || vectorIndexVersion !== qwenKnowledgeEmbeddingProfile.vectorIndexVersion)) {
+    throw new Error('qwen-tei requires the pinned Qwen/Qwen3-Embedding-4B float16 profile and index version.');
+  }
+  if (!qwenRollbackRetained) {
+    throw new Error('EXPERIENCE_QWEN_ROLLBACK_RETAINED must remain true during the gated GTE migration release.');
+  }
+  if (provider === 'gte-node' && !dualWrite) {
+    throw new Error('gte-node requires dual-write while the Qwen rollback index is retained.');
+  }
+
+  return {
+    profile: Object.freeze({ provider, model, revision, dtype, dimensions, vectorIndexVersion }) as Readonly<KnowledgeEmbeddingProfile>,
+    concurrency,
+    dualWrite,
+    qwenRollbackRetained,
+    forceQwen
+  };
+}
+
+const knowledgeEmbedding = resolveKnowledgeEmbeddingConfiguration();
 
 function enabled(value: unknown, fallback = false) {
   if (value === undefined || value === null || String(value).trim() === '') return fallback;
@@ -88,7 +268,7 @@ export const config = {
     ),
     ssl: postgresSsl(process.env.POSTGRES_SSL),
     schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
-    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 2, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 4, 1, 1_000_000),
     sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
   },
   uploadDir: resolveFromBackend(
@@ -103,13 +283,27 @@ export const config = {
   knowledgeRuntimeSecretFile: resolveFromBackend(
     process.env.KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE || '../../.local-runtime/knowledge/service-secret'
   ),
-  knowledgeEmbeddingModel: String(process.env.KNOWLEDGE_EMBEDDING_MODEL || 'Qwen/Qwen3-Embedding-4B').trim(),
-  knowledgeEmbeddingDimension: boundedNumber(process.env.KNOWLEDGE_EMBEDDING_DIMENSION, 2560, 128, 8192),
+  knowledgeEmbeddingProfile: knowledgeEmbedding.profile,
+  knowledgeEmbeddingProvider: knowledgeEmbedding.profile.provider,
+  knowledgeEmbeddingModel: knowledgeEmbedding.profile.model,
+  knowledgeEmbeddingRevision: knowledgeEmbedding.profile.revision,
+  knowledgeEmbeddingDtype: knowledgeEmbedding.profile.dtype,
+  knowledgeEmbeddingDimension: knowledgeEmbedding.profile.dimensions,
+  knowledgeEmbeddingConcurrency: knowledgeEmbedding.concurrency,
+  knowledgeEmbeddingDualWrite: knowledgeEmbedding.dualWrite,
+  knowledgeQwenRollbackRetained: knowledgeEmbedding.qwenRollbackRetained,
+  knowledgeEmbeddingForceQwen: knowledgeEmbedding.forceQwen,
+  knowledgeVectorIndexVersion: knowledgeEmbedding.profile.vectorIndexVersion,
   knowledgeChunkerVersion: String(process.env.KNOWLEDGE_CHUNKER_VERSION || 'docling-hybrid-v1').trim(),
   knowledgeMaxDocumentBytes: boundedNumber(process.env.KNOWLEDGE_MAX_DOCUMENT_BYTES, 50 * 1024 * 1024, 1024, 50 * 1024 * 1024),
   knowledgeMaxSpaceBytes: boundedNumber(process.env.KNOWLEDGE_MAX_SPACE_BYTES, 20 * 1024 * 1024 * 1024, 100 * 1024 * 1024, 500 * 1024 * 1024 * 1024),
   knowledgeWorkerConcurrency: boundedNumber(process.env.KNOWLEDGE_WORKER_CONCURRENCY, 1, 1, 4),
   knowledgeWorkerPollMs: boundedNumber(process.env.KNOWLEDGE_WORKER_POLL_MS, 750, 250, 60_000),
+  knowledgeWorkerLeaseMs: boundedNumber(process.env.KNOWLEDGE_WORKER_LEASE_MS, 300_000, 30_000, 30 * 60_000),
+  knowledgeWorkerHeartbeatMs: boundedNumber(process.env.KNOWLEDGE_WORKER_HEARTBEAT_MS, 30_000, 5_000, 5 * 60_000),
+  knowledgeBackfillPollMs: boundedNumber(process.env.KNOWLEDGE_BACKFILL_POLL_MS, 2_000, 250, 60_000),
+  knowledgeBackfillLeaseMs: boundedNumber(process.env.KNOWLEDGE_BACKFILL_LEASE_MS, 120_000, 30_000, 30 * 60_000),
+  knowledgeBackfillHeartbeatMs: boundedNumber(process.env.KNOWLEDGE_BACKFILL_HEARTBEAT_MS, 30_000, 5_000, 5 * 60_000),
   knowledgeRetrieveTopK: boundedNumber(process.env.KNOWLEDGE_RETRIEVE_TOP_K, 10, 2, 20),
   knowledgeContextMaxBytes: boundedNumber(process.env.KNOWLEDGE_CONTEXT_MAX_BYTES, 64 * 1024, 8 * 1024, 256 * 1024),
   esignStorageDir: resolveFromBackend(
@@ -135,6 +329,18 @@ export const config = {
       || '../../.local-runtime/llm/service-secret'
   ),
   aiWorkerConcurrency: Math.max(1, Math.min(16, Number(process.env.AI_WORKER_CONCURRENCY || 4))),
+  nylasClientId: String(process.env.NYLAS_CLIENT_ID || '').trim(),
+  nylasApiKey: String(process.env.NYLAS_API_KEY || '').trim(),
+  nylasApiUri: String(process.env.NYLAS_API_URI || 'https://api.us.nylas.com').replace(/\/+$/, ''),
+  nylasConnectScopes: String(process.env.NYLAS_CONNECT_SCOPES || '')
+    .split(/[\s,]+/).map((scope) => scope.trim()).filter(Boolean),
+  nylasRedirectUri: String(process.env.NYLAS_REDIRECT_URI || '').trim(),
+  nylasCredentialEncryptionKeyFile: resolveFromBackend(
+    process.env.NYLAS_CREDENTIAL_ENCRYPTION_KEY_FILE || '../../.local-runtime/experience-management/nylas-credential-encryption-key'
+  ),
+  nylasOAuthStateMinutes: boundedNumber(process.env.NYLAS_OAUTH_STATE_MINUTES, 10, 1, 30),
+  nylasRequestTimeoutMs: boundedNumber(process.env.NYLAS_REQUEST_TIMEOUT_MS, 20_000, 2_000, 60_000),
+  nylasMaxThreadMessages: boundedNumber(process.env.NYLAS_MAX_THREAD_MESSAGES, 16, 1, 30),
   subscriptionEnforcementEnabled: enabled(process.env.SUBSCRIPTION_ENFORCEMENT_ENABLED),
   brevoApiKey: process.env.BREVO_API_KEY || '',
   brevoApiUrl: process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email',
@@ -180,6 +386,13 @@ export const config = {
   sessionSecretFile: resolveFromBackend(process.env.SESSION_SECRET_FILE || '../../.local-runtime/experience-management/session-secret'),
   sessionHours: Math.max(1, Math.min(168, Number(process.env.SESSION_HOURS || 24)))
 };
+
+if (config.knowledgeBackfillHeartbeatMs * 2 >= config.knowledgeBackfillLeaseMs) {
+  throw new Error('KNOWLEDGE_BACKFILL_HEARTBEAT_MS must be less than half of KNOWLEDGE_BACKFILL_LEASE_MS.');
+}
+if (config.knowledgeWorkerHeartbeatMs * 2 >= config.knowledgeWorkerLeaseMs) {
+  throw new Error('KNOWLEDGE_WORKER_HEARTBEAT_MS must be less than half of KNOWLEDGE_WORKER_LEASE_MS.');
+}
 
 if (config.databaseProvider === 'sqlite') fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
 fs.mkdirSync(config.uploadDir, { recursive: true });

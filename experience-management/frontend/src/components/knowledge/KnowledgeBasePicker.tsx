@@ -52,6 +52,7 @@ export function KnowledgeBasePicker({
   useLiveRefresh(load);
 
   const selected = value.map((id) => knowledgeBases.find((item) => item.id === id)).filter(Boolean) as KnowledgeBase[];
+  const selectedProvider = selected.find((item) => item.embeddingProfile?.provider)?.embeddingProfile?.provider;
   const visible = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
     return term
@@ -61,6 +62,8 @@ export function KnowledgeBasePicker({
 
   function toggle(item: KnowledgeBase) {
     if (!canSelect(item)) return;
+    if (!value.includes(item.id) && selectedProvider && item.embeddingProfile?.provider
+      && selectedProvider !== item.embeddingProfile.provider) return;
     if (value.includes(item.id)) onChange(value.filter((id) => id !== item.id));
     else if (value.length < max) onChange([...value, item.id]);
   }
@@ -97,7 +100,9 @@ export function KnowledgeBasePicker({
         <div className="max-h-[360px] overflow-y-auto border">
           {visible.length ? <div className="divide-y">{visible.map((item) => {
             const active = value.includes(item.id);
-            const available = canSelect(item);
+            const compatible = active || !selectedProvider || !item.embeddingProfile?.provider
+              || selectedProvider === item.embeddingProfile.provider;
+            const available = canSelect(item) && compatible;
             const PrivacyIcon = item.privacy === 'private' ? LockKeyhole : Users;
             return <button
               type="button"
@@ -111,7 +116,7 @@ export function KnowledgeBasePicker({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{item.name}</span>
                 <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{item.description || 'No description'}</span>
-                <span className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground"><PrivacyIcon className="h-3 w-3" />{item.privacy === 'private' ? 'Private' : 'Space'} · {item.documentCount} documents · {available ? item.state === 'ready' ? 'Ready' : `${item.readyDocumentCount} ready while indexing` : item.privacy === 'private' ? 'Not shareable with this output' : item.terraContextEnabled ? item.state : 'Terra context off'}</span>
+                <span className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground"><PrivacyIcon className="h-3 w-3" />{item.privacy === 'private' ? 'Private' : 'Space'} · {item.documentCount} documents · {item.embeddingProfile?.provider === 'gte-node' ? 'GTE' : 'Qwen'} · {available ? item.state === 'ready' ? 'Ready' : `${item.readyDocumentCount} ready while indexing` : !compatible ? 'Uses a different embedding profile' : item.privacy === 'private' ? 'Not shareable with this output' : item.terraContextEnabled ? item.state : 'Terra context off'}</span>
               </span>
             </button>;
           })}</div> : <div className="px-4 py-10 text-center text-sm text-muted-foreground">No matching knowledge bases.</div>}

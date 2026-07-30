@@ -1,17 +1,36 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { config } from './config.js';
+import { config, qwenKnowledgeEmbeddingProfile } from './config.js';
 import { retrieveKnowledge } from './knowledgeClient.js';
 import {
   auditKnowledge, getKnowledgeBase, getKnowledgeContext, KnowledgeError, saveKnowledgeContext,
   type KnowledgeBaseRef, type KnowledgeCitation
 } from './knowledgeRepository.js';
-import type { AiJob } from './types.js';
+import type { AiJob, AiJobKind } from './types.js';
+
+const knowledgeGroundedJobKinds = new Set<AiJobKind>([
+  'survey.generate', 'survey.improve', 'response.analyze', 'insights.generate', 'analyst.chat',
+  'report.generate', 'social.analyze', 'social.report', 'intelligence.synthesize',
+  'journey.generate', 'journey.optimize'
+]);
+
+export function supportsKnowledgeContext(kind: AiJobKind) {
+  return knowledgeGroundedJobKinds.has(kind);
+}
+
+const embeddingProfileSchema = z.object({
+  provider: z.enum(['qwen-tei', 'gte-node']),
+  model: z.string().trim().min(1).max(300),
+  revision: z.string().regex(/^[a-f0-9]{40}$/u),
+  dtype: z.string().trim().min(1).max(40),
+  dimensions: z.number().int().min(128).max(8192),
+  vectorIndexVersion: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}$/u)
+});
 
 const knowledgeBaseRefSchema = z.object({
   id: z.string().uuid(), name: z.string().trim().min(1).max(180), indexVersion: z.number().int().positive(),
   embeddingModel: z.string().trim().min(1).max(300), embeddingDimension: z.number().int().min(128).max(8192),
-  chunkerVersion: z.string().trim().min(1).max(200)
+  chunkerVersion: z.string().trim().min(1).max(200), embeddingProfile: embeddingProfileSchema.optional()
 });
 
 export function pinnedKnowledgeRefs(input: Record<string, unknown>) {
@@ -22,7 +41,17 @@ export function pinnedKnowledgeRefs(input: Record<string, unknown>) {
   if (new Set(parsed.data.map((item) => item.id)).size !== parsed.data.length) {
     throw new KnowledgeError('The queued knowledge snapshot contains duplicate sources.', 409, 'KNOWLEDGE_SNAPSHOT_INVALID');
   }
-  return parsed.data satisfies KnowledgeBaseRef[];
+  const refs = parsed.data.map((item) => {
+    const embeddingProfile = item.embeddingProfile || { ...qwenKnowledgeEmbeddingProfile };
+    if (embeddingProfile.model !== item.embeddingModel || embeddingProfile.dimensions !== item.embeddingDimension) {
+      throw new KnowledgeError('The queued knowledge embedding snapshot is inconsistent.', 409, 'KNOWLEDGE_SNAPSHOT_INVALID');
+    }
+    return { ...item, embeddingProfile };
+  }) satisfies KnowledgeBaseRef[];
+  if (new Set(refs.map((item) => item.embeddingProfile.vectorIndexVersion)).size > 1) {
+    throw new KnowledgeError('The queued knowledge snapshot mixes embedding spaces.', 409, 'KNOWLEDGE_EMBEDDING_PROFILE_MISMATCH');
+  }
+  return refs;
 }
 
 function evidenceContext(refs: KnowledgeBaseRef[], citations: KnowledgeCitation[]) {
@@ -45,6 +74,10 @@ function evidenceContext(refs: KnowledgeBaseRef[], citations: KnowledgeCitation[
 export async function knowledgePromptContext(job: AiJob, query: string) {
   const refs = pinnedKnowledgeRefs(job.input);
   if (!refs.length) return null;
+  if (!supportsKnowledgeContext(job.kind)) {
+    throw new KnowledgeError(`AI activity "${job.kind}" does not accept knowledge context.`,
+      409, 'KNOWLEDGE_CONTEXT_ACTIVITY_UNSUPPORTED', false);
+  }
   const existing = getKnowledgeContext(job.id, job.spaceId);
   if (existing) return existing;
   for (const ref of refs) {

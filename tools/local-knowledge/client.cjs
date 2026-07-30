@@ -20,7 +20,10 @@ async function signedRequest(requestPath, input, { config = CONFIG, fetchImpl = 
 
 if (require.main === module) {
   const action = process.argv[2] || 'status';
-  const routes = { status: ['/v1/status', { source: 'control-center' }] };
+  const routes = {
+    status: ['/v1/status', { source: 'control-center' }],
+    shutdown: ['/v1/shutdown', { source: 'control-center', mode: 'graceful' }],
+  };
   if (!routes[action]) throw new Error(`Unsupported client action '${action}'.`);
   signedRequest(...routes[action]).then((payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)).catch((error) => {
     process.stderr.write(`${error.message}\n`);

@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "dataset": {
+    "id": "synthetic-qwen-gte-v1",
+    "kind": "synthetic",
+    "redaction": {
+      "status": "redacted",
+      "confirmedNoRawSensitiveText": true
+    }
+  },
+  "cases": [
+    {
+      "id": "ng-paye-policy",
+      "query": "Which internal guidance explains PAYE handling for a Lagos small business?",
+      "critical": true,
+      "noAnswer": false,
+      "multilingual": false,
+      "tags": ["nigerian-terms", "policy"],
+      "relevance": [{ "documentId": "doc-ng-paye-current", "gain": 3 }],
+      "providers": {
+        "qwen": {
+          "retrieved": [{ "documentId": "doc-ng-vat", "score": 0.82 }, { "documentId": "doc-ng-paye-current", "score": 0.79 }],
+          "reranked": [{ "documentId": "doc-ng-paye-current", "score": 0.96 }, { "documentId": "doc-ng-vat", "score": 0.41 }],
+          "abstained": false,
+          "latencyMs": { "queue": 2, "embedding": 31, "retrieval": 13, "reranker": 22, "total": 68 }
+        },
+        "gte": {
+          "retrieved": [{ "documentId": "doc-ng-paye-current", "score": 0.91 }, { "documentId": "doc-ng-vat", "score": 0.57 }],
+          "reranked": [{ "documentId": "doc-ng-paye-current", "score": 0.98 }, { "documentId": "doc-ng-vat", "score": 0.36 }],
+          "abstained": false,
+          "latencyMs": { "queue": 1, "embedding": 17, "retrieval": 9, "reranker": 19, "total": 46 }
+        }
+      }
+    },
+    {
+      "id": "paraphrase-refund",
+      "query": "A respondent wants their payment returned; what is the approved resolution path?",
+      "critical": false,
+      "noAnswer": false,
+      "multilingual": false,
+      "tags": ["paraphrase", "support"],
+      "relevance": [{ "documentId": "doc-refund-workflow", "gain": 2 }],
+      "providers": {
+        "qwen": {
+          "retrieved": [{ "documentId": "doc-billing-overview", "score": 0.75 }, { "documentId": "doc-refund-workflow", "score": 0.72 }],
+          "reranked": [{ "documentId": "doc-refund-workflow", "score": 0.93 }, { "documentId": "doc-billing-overview", "score": 0.51 }],
+          "abstained": false,
+          "latencyMs": { "queue": 3, "embedding": 34, "retrieval": 14, "reranker": 24, "total": 75 }
+        },
+        "gte": {
+          "retrieved": [{ "documentId": "doc-refund-workflow", "score": 0.88 }, { "documentId": "doc-billing-overview", "score": 0.61 }],
+          "reranked": [{ "documentId": "doc-refund-workflow", "score": 0.95 }, { "documentId": "doc-billing-overview", "score": 0.45 }],
+          "abstained": false,
+          "latencyMs": { "queue": 2, "embedding": 19, "retrieval": 10, "reranker": 20, "total": 51 }
+        }
+      }
+    },
+    {
+      "id": "near-duplicate-policy",
+      "query": "Find the currently approved retention policy rather than the superseded edition.",
+      "critical": true,
+      "noAnswer": false,
+      "multilingual": false,
+      "tags": ["near-duplicate", "versioning"],
+      "relevance": [
+        { "documentId": "doc-retention-current", "gain": 3 },
+        { "documentId": "doc-retention-archived", "gain": 1 }
+      ],
+      "providers": {
+        "qwen": {
+          "retrieved": [{ "documentId": "doc-retention-archived", "score": 0.92 }, { "documentId": "doc-retention-current", "score": 0.89 }],
+          "reranked": [{ "documentId": "doc-retention-current", "score": 0.97 }, { "documentId": "doc-retention-archived", "score": 0.68 }],
+          "abstained": false,
+          "latencyMs": { "queue": 1, "embedding": 36, "retrieval": 16, "reranker": 28, "total": 81 }
+        },
+        "gte": {
+          "retrieved": [{ "documentId": "doc-retention-current", "score": 0.94 }, { "documentId": "doc-retention-archived", "score": 0.91 }],
+          "reranked": [{ "documentId": "doc-retention-current", "score": 0.99 }, { "documentId": "doc-retention-archived", "score": 0.62 }],
+          "abstained": false,
+          "latencyMs": { "queue": 1, "embedding": 21, "retrieval": 11, "reranker": 22, "total": 55 }
+        }
+      }
+    },
+    {
+      "id": "yoruba-leave",
+      "query": "Iwe wo ni o salaye ilana isinmi fun osise?",
+      "critical": false,
+      "noAnswer": false,
+      "multilingual": true,
+      "tags": ["multilingual", "yoruba", "paraphrase"],
+      "relevance": [{ "documentId": "doc-staff-leave", "gain": 3 }],
+      "providers": {
+        "qwen": {
+          "retrieved": [{ "documentId": "doc-staff-handbook", "score": 0.73 }, { "documentId": "doc-staff-leave", "score": 0.7 }],
+          "reranked": [{ "documentId": "doc-staff-leave", "score": 0.9 }, { "documentId": "doc-staff-handbook", "score": 0.55 }],
+          "abstained": false,
+          "latencyMs": { "queue": 2, "embedding": 39, "retrieval": 17, "reranker": 30, "total": 88 }
+        },
+        "gte": {
+          "retrieved": [{ "documentId": "doc-staff-leave", "score": 0.86 }, { "documentId": "doc-staff-handbook", "score": 0.64 }],
+          "reranked": [{ "documentId": "doc-staff-leave", "score": 0.94 }, { "documentId": "doc-staff-handbook", "score": 0.49 }],
+          "abstained": false,
+          "latencyMs": { "queue": 1, "embedding": 23, "retrieval": 12, "reranker": 23, "total": 59 }
+        }
+      }
+    },
+    {
+      "id": "survey-export",
+      "query": "How should an analyst export an approved survey report for review?",
+      "critical": false,
+      "noAnswer": false,
+      "multilingual": false,
+      "tags": ["workflow", "survey"],
+      "relevance": [{ "documentId": "doc-survey-export", "gain": 2 }],
+      "providers": {
+        "qwen": {
+          "retrieved": [{ "documentId": "doc-survey-export", "score": 0.87 }, { "documentId": "doc-survey-create", "score": 0.69 }],
+          "reranked": [{ "documentId": "doc-survey-export", "score": 0.95 }, { "documentId": "doc-survey-create", "score": 0.42 }],
+          "abstained": false,
+          "latencyMs": { "queue": 4, "embedding": 33, "retrieval": 15, "reranker": 25, "total": 77 }
+        },
+        "gte": {
+          "retrieved": [{ "documentId": "doc-survey-export", "score": 0.9 }, { "documentId": "doc-survey-create", "score": 0.63 }],
+          "reranked": [{ "documentId": "doc-survey-export", "score": 0.97 }, { "documentId": "doc-survey-create", "score": 0.39 }],
+          "abstained": false,
+          "latencyMs": { "queue": 2, "embedding": 18, "retrieval": 9, "reranker": 18, "total": 47 }
+        }
+      }
+    },
+    {
+      "id": "no-answer-benefit",
+      "query": "What internal policy guarantees an unsupported fictional employee benefit?",
+      "critical": true,
+      "noAnswer": true,
+      "multilingual": false,
+      "tags": ["no-answer", "abstention"],
+      "relevance": [],
+      "providers": {
+        "qwen": {
+          "retrieved": [{ "documentId": "doc-benefits-overview", "score": 0.33 }],
+          "reranked": [{ "documentId": "doc-benefits-overview", "score": 0.21 }],
+          "abstained": true,
+          "latencyMs": { "queue": 2, "embedding": 32, "retrieval": 13, "reranker": 21, "total": 68 }
+        },
+        "gte": {
+          "retrieved": [{ "documentId": "doc-benefits-overview", "score": 0.29 }],
+          "reranked": [{ "documentId": "doc-benefits-overview", "score": 0.17 }],
+          "abstained": true,
+          "latencyMs": { "queue": 1, "embedding": 17, "retrieval": 8, "reranker": 17, "total": 43 }
+        }
+      }
+    }
+  ]
+}

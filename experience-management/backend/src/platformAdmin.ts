@@ -5,7 +5,14 @@ import { currentSessionUser, isPlatformAdmin, isRootPlatformAdmin, type SessionU
 import { config } from './config.js';
 import { db } from './database.js';
 import { isDatabaseConstraintError } from './databaseAdapter.js';
-import './knowledgeRepository.js';
+import { getKnowledgeRuntimeStatus } from './knowledgeClient.js';
+import {
+  approveKnowledgePromotionApproval, createKnowledgeBackfill, createKnowledgePromotionApprovalRequest,
+  getKnowledgePromotionApproval, knowledgeBackfillStatus, listKnowledgeBackfillItems,
+  pauseKnowledgeBackfill, promoteCompletedKnowledgeBackfill, promoteKnowledgeBaseToGte,
+  rejectKnowledgePromotionApproval, resumeKnowledgeBackfill, rollbackKnowledgeBaseToQwen
+} from './knowledgeBackfill.js';
+import { KnowledgeError } from './knowledgeRepository.js';
 import { resolveRequestSpace, type SpaceContext, SpaceError } from './spaces.js';
 import {
   effectiveSubscriptionForSpace, publicSubscriptionPlan, subscriptionCatalogVersion,
@@ -30,6 +37,21 @@ const planCodeSchema = z.enum(subscriptionPlanCodes);
 const uuidSchema = z.string().uuid();
 const reasonSchema = z.string().trim().min(5).max(1_000);
 const noteSchema = z.string().trim().min(5).max(2_000);
+const promotionGateSchema = z.object({
+  realDataEvaluation: z.object({
+    queryCount: z.number().int().min(100).max(10_000),
+    qwenRerankedMrr: z.number().min(0).max(1), gteRerankedMrr: z.number().min(0).max(1),
+    criticalRegressionCount: z.literal(0), hit5MinimumMet: z.literal(true),
+    materialDifferencesApproved: z.literal(true), reportSha256: z.string().regex(/^[a-f0-9]{64}$/u)
+  }).strict(),
+  shadow: z.object({ sampleCount: z.number().int().min(100), representedNormalAndPeakTraffic: z.literal(true),
+    sensitiveDataProtected: z.literal(true), sideEffectsIsolated: z.literal(true) }).strict(),
+  operating: z.object({ errorRate: z.number().min(0).max(0.01), p95Ms: z.number().min(0).max(500),
+    p99Ms: z.number().min(0).max(1_000), sustainedQueueGrowth: z.literal(false),
+    progressiveMemoryGrowth: z.literal(false), materialRelevanceRegression: z.literal(false),
+    monitoringAndAlertsActive: z.literal(true) }).strict(),
+  rollback: z.object({ rehearsed: z.literal(true), qwenReady: z.literal(true) }).strict()
+}).strict();
 const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
@@ -92,6 +114,9 @@ function sendPlatformError(response: Response, error: unknown) {
     return response.status(error.status).json({ error: error.message, code: error.code });
   }
   if (error instanceof SpaceError) {
+    return response.status(error.status).json({ error: error.message, code: error.code });
+  }
+  if (error instanceof KnowledgeError) {
     return response.status(error.status).json({ error: error.message, code: error.code });
   }
   if (isDatabaseConstraintError(error)) {
@@ -397,6 +422,116 @@ platformAdminRouter.get('/me', (request, response) => {
     effectiveRootCount: effectiveRootCount(),
     capabilities: platformCapabilities(actor)
   });
+});
+
+platformAdminRouter.get('/knowledge-runtime', async (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try { return response.json({ runtime: await getKnowledgeRuntimeStatus() }); }
+  catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.post('/knowledge-backfills', (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const input = z.object({ spaceId: uuidSchema.nullable().optional(), batchSize: z.number().int().min(1).max(128).optional() })
+      .strict().parse(request.body || {});
+    const result = createKnowledgeBackfill({ spaceId: input.spaceId || null, batchSize: input.batchSize,
+      requestedBy: actor.id });
+    recordAudit(request, actor, { action: 'knowledge_backfill.created', targetType: 'knowledge_backfill',
+      targetId: result.run.id, spaceId: input.spaceId || null, reason: 'GTE corpus migration requested.',
+      after: { state: result.run.state, batchSize: result.run.batchSize, deduplicated: result.deduplicated } });
+    return response.status(result.deduplicated ? 200 : 201).json(result);
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.get('/knowledge-backfills/:id', (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const id = uuidSchema.parse(request.params.id);
+    return response.json({ run: knowledgeBackfillStatus(id), items: listKnowledgeBackfillItems(id, 2_000) });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+for (const [action, operation] of [
+  ['pause', pauseKnowledgeBackfill], ['resume', resumeKnowledgeBackfill]
+] as const) {
+  platformAdminRouter.post(`/knowledge-backfills/:id/${action}`, (request, response) => {
+    const actor = requireRootActor(request, response); if (!actor) return;
+    try {
+      const id = uuidSchema.parse(request.params.id); const run = operation(id);
+      recordAudit(request, actor, { action: `knowledge_backfill.${action}`, targetType: 'knowledge_backfill',
+        targetId: id, spaceId: run.scopeSpaceId, reason: `Backfill ${action} requested.`, after: { state: run.state } });
+      return response.json({ run });
+    } catch (error) { return sendPlatformError(response, error); }
+  });
+}
+
+platformAdminRouter.post('/knowledge-backfills/:id/promotion-approvals', (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const id = uuidSchema.parse(request.params.id);
+    const input = z.object({ knowledgeBaseId: uuidSchema.nullable().optional(), spaceId: uuidSchema.nullable().optional(),
+      expiresInHours: z.number().int().min(1).max(168).optional(), gates: promotionGateSchema }).strict().parse(request.body);
+    const approval = createKnowledgePromotionApprovalRequest({ backfillRunId: id,
+      knowledgeBaseId: input.knowledgeBaseId || null, spaceId: input.spaceId || null,
+      expiresInHours: input.expiresInHours, gates: input.gates, requestedBy: actor.id });
+    recordAudit(request, actor, { action: 'knowledge_promotion.requested', targetType: 'knowledge_promotion_approval',
+      targetId: approval.id, spaceId: approval.spaceId, reason: 'Structured GTE promotion gates submitted.',
+      after: { backfillRunId: id, gatePayloadSha256: approval.gatePayloadSha256,
+        corpusManifestSha256: approval.corpusManifestSha256, expiresAt: approval.expiresAt } });
+    return response.status(201).json({ approval });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.post('/knowledge-promotion-approvals/:id/approve', (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const id = uuidSchema.parse(request.params.id);
+    const { reason } = z.object({ reason: z.string().trim().min(10).max(1_000) }).strict().parse(request.body);
+    const approval = approveKnowledgePromotionApproval(id, actor.id, reason);
+    recordAudit(request, actor, { action: 'knowledge_promotion.approved', targetType: 'knowledge_promotion_approval',
+      targetId: id, spaceId: approval.spaceId, reason,
+      after: { artifactSha256: approval.artifactSha256, expiresAt: approval.expiresAt } });
+    return response.json({ approval });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.post('/knowledge-promotion-approvals/:id/reject', (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const id = uuidSchema.parse(request.params.id); const { reason } = z.object({ reason: reasonSchema }).strict().parse(request.body);
+    const approval = rejectKnowledgePromotionApproval(id, actor.id, reason);
+    recordAudit(request, actor, { action: 'knowledge_promotion.rejected', targetType: 'knowledge_promotion_approval',
+      targetId: id, spaceId: approval.spaceId, reason, after: { state: approval.state } });
+    return response.json({ approval });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.post('/knowledge-promotion-approvals/:id/promote', (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const id = uuidSchema.parse(request.params.id); const approval = getKnowledgePromotionApproval(id);
+    if (!approval) throw new KnowledgeError('Promotion approval was not found.', 404, 'KNOWLEDGE_PROMOTION_APPROVAL_NOT_FOUND');
+    const result = approval.knowledgeBaseId && approval.spaceId
+      ? [promoteKnowledgeBaseToGte(approval.knowledgeBaseId, approval.spaceId, approval.id)]
+      : promoteCompletedKnowledgeBackfill(approval.backfillRunId, approval.id);
+    recordAudit(request, actor, { action: 'knowledge_promotion.committed', targetType: 'knowledge_promotion_approval',
+      targetId: id, spaceId: approval.spaceId, reason: approval.approvalReason || 'Approved GTE promotion.',
+      before: { state: approval.state }, after: { state: 'consumed', promotedBases: result.length } });
+    return response.json({ approval: getKnowledgePromotionApproval(id), knowledgeBases: result });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.post('/knowledge-bases/:id/embedding-rollback', (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const id = uuidSchema.parse(request.params.id);
+    const { spaceId, reason } = z.object({ spaceId: uuidSchema, reason: reasonSchema }).strict().parse(request.body);
+    const result = rollbackKnowledgeBaseToQwen(id, spaceId, actor.id);
+    recordAudit(request, actor, { action: 'knowledge_embedding.rollback', targetType: 'knowledge_base', targetId: id,
+      spaceId, reason, after: { provider: result.knowledgeBase.embeddingProfile.provider, changed: result.changed } });
+    return response.json(result);
+  } catch (error) { return sendPlatformError(response, error); }
 });
 
 function platformOverview() {

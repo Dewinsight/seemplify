@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
@@ -17,6 +17,7 @@ const navigation = [
   { to: '/agreements', label: 'Agreements', icon: FileSignature },
   { to: '/social-listening', label: 'Social listening', icon: Radar },
   { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit },
+  { to: '/assistant', label: 'Personal assistant', icon: MailCheck },
   { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText },
   { to: '/journeys', label: 'Journey maps', icon: Route },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
@@ -262,17 +263,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       <button aria-label="Dismiss navigation" className="absolute inset-0 bg-foreground/30" onClick={() => setMobileOpen(false)} />
       <aside className="relative flex h-full w-[278px] flex-col overflow-hidden border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent selectorId="active-space-mobile" close={() => setMobileOpen(false)} runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
     </div>}
-    <div className="md:pl-[248px]">
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6">
-        <div className="flex items-center gap-3"><Button className="md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="text-sm font-semibold">{title}</div></div>
-        <div className="flex items-center gap-2">
+    <div className="min-w-0 md:pl-[248px]">
+      <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between gap-2 overflow-hidden border-b bg-background/95 px-4 backdrop-blur sm:gap-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><Button className="shrink-0 md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</div></div>
+        <div className="flex shrink-0 items-center gap-2">
           <SectionTutorial tutorial={tutorial} />
           <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>
-          {creationAction && <Button asChild size="sm"><Link to={creationAction.to}><Plus />{creationAction.label}</Link></Button>}
+          {creationAction && <Button asChild size="sm" className="max-[439px]:w-8 max-[439px]:px-0"><Link to={creationAction.to} aria-label={creationAction.label} title={creationAction.label}><Plus /><span className="max-[439px]:sr-only">{creationAction.label}</span></Link></Button>}
         </div>
       </header>
       <PendingInvitationBar invitations={session?.pendingSpaceInvitations || []} acceptingId={acceptingInvitationId} error={invitationError} onAccept={(invitation) => void acceptInvitation(invitation)} />
-      <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <main className="mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
     </div>
   </div>;
 }

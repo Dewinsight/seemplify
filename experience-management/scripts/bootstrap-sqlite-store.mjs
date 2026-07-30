@@ -81,6 +81,7 @@ async function main() {
 
   let db;
   try {
+    const configModule = await import(pathToFileURL(path.join(backendDist, 'config.js')).href);
     const databaseModule = await import(pathToFileURL(path.join(backendDist, 'database.js')).href);
     db = databaseModule.db;
     await import(pathToFileURL(path.join(backendDist, 'spaces.js')).href);
@@ -102,10 +103,30 @@ async function main() {
     const tables = db.prepare(`SELECT name FROM sqlite_master
       WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all();
     const migration = db.prepare('SELECT COUNT(*) AS count,MAX(version) AS version FROM schema_migrations').get();
+    const seededProfiles = db.prepare(`SELECT vector_index_version,provider,model,revision,dtype,dimensions,state
+      FROM knowledge_embedding_profiles ORDER BY vector_index_version`).all();
+    const expectedProfiles = [
+      { ...configModule.qwenKnowledgeEmbeddingProfile, state: 'configured' },
+      {
+        ...configModule.gteKnowledgeEmbeddingProfile,
+        state: configModule.config.knowledgeEmbeddingProvider === 'gte-node' ? 'configured' : 'disabled'
+      }
+    ].map((profile) => ({
+      vector_index_version: profile.vectorIndexVersion,
+      provider: profile.provider,
+      model: profile.model,
+      revision: profile.revision,
+      dtype: profile.dtype,
+      dimensions: profile.dimensions,
+      state: profile.state
+    })).sort((left, right) => left.vector_index_version.localeCompare(right.vector_index_version));
+    if (JSON.stringify(seededProfiles) !== JSON.stringify(expectedProfiles)) {
+      throw fail('Bootstrap did not create exactly the two pinned embedding-profile registry rows.', 'SQLITE_PROFILE_SEED_INVALID');
+    }
     let applicationRows = 0;
     const nonemptyTables = [];
     for (const { name } of tables) {
-      if (name === 'schema_migrations') continue;
+      if (name === 'schema_migrations' || name === 'knowledge_embedding_profiles') continue;
       const row = db.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(name)}`).get();
       const count = Number(row?.count || 0);
       applicationRows += count;

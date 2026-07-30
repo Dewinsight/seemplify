@@ -174,7 +174,10 @@ export function completeSocialReplyDraft(id: string, output: { reply: string; ra
 
 function rowSocialReport(row: any) {
   const job = artifactJob(row);
+  const knowledgeBaseIds = (Array.isArray(job?.input.knowledgeBaseRefs) ? job.input.knowledgeBaseRefs : [])
+    .map((ref: any) => String(ref?.id || '')).filter(Boolean);
   return { id: row.id, connectionId: row.connection_id, title: row.title, mentionIds: parseJson<string[]>(row.mention_ids_json, []),
+    knowledgeBaseIds,
     state: job?.state === 'failed' ? 'failed' : row.state, result: parseJson(row.result_json, null), runtime: parseJson(row.runtime_json, null),
     aiJobId: row.ai_job_id, error: job?.error || row.error, createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at };
 }
@@ -185,7 +188,9 @@ export function listSocialIntelligenceReports(_user: SessionUser, spaceId: strin
   return (db.prepare(`SELECT r.* FROM social_intelligence_reports r WHERE r.space_id=?${connectionFilter} ORDER BY r.created_at DESC LIMIT 100`).all(...parameters) as any[]).map(rowSocialReport);
 }
 
-export function createSocialIntelligenceReport(user: SessionUser, spaceId: string, input: { connectionId: string; title: string; mentionIds?: string[]; idempotencyKey?: string }) {
+export function createSocialIntelligenceReport(user: SessionUser, spaceId: string, input: {
+  connectionId: string; title: string; mentionIds?: string[]; knowledgeBaseRefs?: KnowledgeBaseRef[]; idempotencyKey?: string;
+}) {
   if (!spaceOwnsConnection(spaceId, input.connectionId)) throw new IntelligenceError('X connection not found.', 404);
   if ((input.mentionIds || []).length > 200) throw new IntelligenceError('Select no more than 200 X posts for one report.');
   let ids = [...new Set(input.mentionIds || [])].slice(0, 200);
@@ -210,6 +215,12 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
   ids = [...ids].sort();
   const title = cleanText(input.title, 180) || 'X listening report';
   const idsJson = JSON.stringify(ids); const id = crypto.randomUUID(); const timestamp = now();
+  const knowledgeRefsJson = JSON.stringify((input.knowledgeBaseRefs || []).slice()
+    .sort((left, right) => left.id.localeCompare(right.id)));
+  const jobKnowledgeRefsJson = (job: ReturnType<typeof artifactJob>) => JSON.stringify(
+    (Array.isArray(job?.input.knowledgeBaseRefs) ? job.input.knowledgeBaseRefs : []).slice()
+      .sort((left: any, right: any) => String(left?.id || '').localeCompare(String(right?.id || '')))
+  );
   const created = db.transaction(() => {
     if (input.idempotencyKey) {
       const replay = db.prepare('SELECT * FROM social_intelligence_reports WHERE space_id=? AND user_id=? AND idempotency_key=?').get(spaceId, user.id, input.idempotencyKey) as any;
@@ -217,6 +228,7 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
         if (replay.connection_id !== input.connectionId || replay.title !== title || replay.mention_ids_json !== idsJson) throw new IntelligenceError('This idempotency key was already used for a different social report.', 409);
         const job = artifactJob(replay);
         if (!job) throw new IntelligenceError('The original idempotent social report is no longer available.', 409);
+        if (jobKnowledgeRefsJson(job) !== knowledgeRefsJson) throw new IntelligenceError('This idempotency key was already used with a different knowledge selection.', 409);
         return { report: rowSocialReport(replay), job, created: false };
       }
     }
@@ -224,13 +236,18 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
       ORDER BY created_at LIMIT 1`).get(spaceId, user.id, input.connectionId, title, idsJson) as any;
     if (existing) {
       const job = artifactJob(existing);
-      if (job && ['queued', 'processing'].includes(job.state)) return { report: rowSocialReport(existing), job, created: false };
+      if (job && ['queued', 'processing'].includes(job.state)) {
+        if (jobKnowledgeRefsJson(job) === knowledgeRefsJson) return { report: rowSocialReport(existing), job, created: false };
+        throw new IntelligenceError('An active report for this post selection uses a different knowledge selection.', 409);
+      }
       db.prepare("UPDATE social_intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
     db.prepare(`INSERT INTO social_intelligence_reports (id,space_id,user_id,connection_id,title,mention_ids_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, input.connectionId, title, idsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('social.report', { reportId: id }, spaceId, null, null, user.id);
+    const job = createJob('social.report', {
+      reportId: id, ...(input.knowledgeBaseRefs?.length ? { knowledgeBaseRefs: input.knowledgeBaseRefs } : {})
+    }, spaceId, null, null, user.id);
     db.prepare('UPDATE social_intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { report: rowSocialReport(db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id)), job, created: true };
   })();
@@ -243,7 +260,9 @@ export function socialReportExecutionInput(id: string, spaceId?: string) {
     ? db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
     : db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id) as any;
   if (!row) throw new IntelligenceError('Social intelligence report was deleted.', 404);
-  return { id: row.id, title: row.title, mentions: parseJson(row.source_snapshot_json, []) };
+  return { id: row.id, title: row.title, mentions: parseJson<Array<{
+    sourceRef: string; author: string; content: string; publishedAt: string; analysis: Record<string, unknown> | null;
+  }>>(row.source_snapshot_json, []) };
 }
 export function completeSocialIntelligenceReport(id: string, output: unknown, runtime: unknown, spaceId?: string) {
   const current = spaceId
@@ -263,7 +282,7 @@ export function completeSocialIntelligenceReport(id: string, output: unknown, ru
   return rowSocialReport(db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id));
 }
 
-type IntelligenceSource = { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string; payload?: unknown };
+export type IntelligenceSource = { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string; payload?: unknown };
 function availableSources(spaceId: string, withPayload = false): IntelligenceSource[] {
   const surveys = (db.prepare(`SELECT i.id,i.kind,i.payload_json,i.created_at,s.title survey_title FROM insights i JOIN surveys s ON s.id=i.survey_id
     WHERE s.space_id=? AND i.kind IN ('ai_insights','executive_report') ORDER BY i.created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
@@ -279,9 +298,20 @@ function availableSources(spaceId: string, withPayload = false): IntelligenceSou
 }
 export function listIntelligenceSources(_user: SessionUser, spaceId: string) { return availableSources(spaceId, false); }
 
+export function resolveIntelligenceSourceSnapshots(spaceId: string, sourceRefs: string[]) {
+  const requested = [...new Set(sourceRefs)];
+  const byRef = new Map(availableSources(spaceId, true).map((source) => [source.ref, source]));
+  const selected = requested.map((ref) => byRef.get(ref));
+  if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
+  return selected as IntelligenceSource[];
+}
+
 function rowIntelligenceReport(row: any) {
   const job = artifactJob(row);
+  const knowledgeBaseIds = parseJson<Array<{ id?: string }>>(row.knowledge_refs_json, [])
+    .map((ref) => String(ref?.id || '')).filter(Boolean);
   return { id: row.id, title: row.title, objective: row.objective, sourceRefs: parseJson<{ survey: string[]; social: string[] }>(row.source_refs_json, { survey: [], social: [] }),
+    knowledgeBaseIds,
     state: job?.state === 'failed' ? 'failed' : row.state, result: parseJson(row.result_json, null), runtime: parseJson(row.runtime_json, null),
     aiJobId: row.ai_job_id, error: job?.error || row.error, createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at };
 }
@@ -298,9 +328,7 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
 }) {
   const requested = [...new Set(input.sourceRefs)].slice(0, 12).sort();
   if (requested.length < 2) throw new IntelligenceError('Select at least two historical reports to synthesize.');
-  const sources = availableSources(spaceId, true); const byRef = new Map(sources.map((source) => [source.ref, source]));
-  const selected = requested.map((ref) => byRef.get(ref));
-  if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
+  const selected = resolveIntelligenceSourceSnapshots(spaceId, requested);
   const snapshot = selected.map((source) => ({ ref: source!.ref, type: source!.type, title: source!.title, kind: source!.kind,
     createdAt: source!.createdAt, payload: source!.payload }));
   const snapshotJson = JSON.stringify(snapshot);

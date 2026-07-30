@@ -148,7 +148,7 @@ async function main() {
         await client.query("SET LOCAL lock_timeout='10s'");
         await client.query("SET LOCAL idle_in_transaction_session_timeout='5min'");
         await client.query(migration.sql);
-        await assertRuntimeSchemaContract((sql) => client.query(sql), { schema: 'public' });
+        await assertRuntimeSchemaContract((sql) => client.query(sql), { schema: 'public', runtimeVersion: migration.version });
         await client.query(`INSERT INTO experience_runtime_schema_version(version,name,checksum,applied_at)
           VALUES ($1,$2,$3,$4)`, [migration.version, migration.name, migration.checksum, new Date().toISOString()]);
         await client.query('COMMIT');
@@ -160,7 +160,7 @@ async function main() {
     }
     const current = Number((await client.query('SELECT COALESCE(MAX(version),0)::integer version FROM experience_runtime_schema_version')).rows[0].version);
     if (current !== targetVersion) throw new UpgradeError('RUNTIME_SCHEMA_VERSION_MISMATCH', `Runtime schema is ${current}; expected ${targetVersion}.`);
-    await assertRuntimeSchemaContract((sql) => client.query(sql), { schema: 'public' });
+    await assertRuntimeSchemaContract((sql) => client.query(sql), { schema: 'public', runtimeVersion: current });
     emit('postgres_runtime_schema_ready', { version: current, migrations: migrations.filter((item) => item.version <= current).length });
   } finally {
     if (locked) {

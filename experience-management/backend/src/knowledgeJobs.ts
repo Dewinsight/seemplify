@@ -1,11 +1,12 @@
+import crypto from 'node:crypto';
 import { config } from './config.js';
 import { publishEvent } from './events.js';
 import { deleteKnowledgeIndex, indexKnowledgeDocument } from './knowledgeClient.js';
 import {
   claimNextKnowledgeJob, completeKnowledgeDelete, completeKnowledgeIndex, failKnowledgeJob,
-  getKnowledgeBase, getKnowledgeDocument, getKnowledgeJob, knowledgeDocumentSourcePath,
-  knowledgeJobAudienceUserId, knowledgeQueueStatus, KnowledgeError, markKnowledgeJobStage,
-  processKnowledgeFileCleanup, requeueKnowledgeJob,
+  getKnowledgeBase, getKnowledgeDocument, knowledgeDocumentSourcePath,
+  heartbeatKnowledgeJobLease, knowledgeJobAudienceUserId, knowledgeJobEmbeddingSnapshot, knowledgeQueueStatus, KnowledgeError, markKnowledgeJobStage,
+  processKnowledgeFileCleanup, recoverKnowledgeJobs, requeueKnowledgeJob,
   type KnowledgeJobRecord
 } from './knowledgeRepository.js';
 
@@ -18,6 +19,7 @@ async function executeKnowledgeJob(job: KnowledgeJobRecord) {
   const base = getKnowledgeBase(job.knowledgeBaseId, job.spaceId, true);
   if (!base) throw new KnowledgeError('Knowledge base not found.', 404, 'KNOWLEDGE_BASE_NOT_FOUND');
   if (!job.targetVersion) throw new KnowledgeError('Knowledge job has no target index version.', 500, 'KNOWLEDGE_JOB_INVALID');
+  const embeddingSnapshot = knowledgeJobEmbeddingSnapshot(job, base);
   if (job.kind === 'document.index' || job.kind === 'document.reindex') {
     if (!job.documentId) throw new KnowledgeError('Knowledge indexing job has no document.', 500, 'KNOWLEDGE_JOB_INVALID');
     const document = getKnowledgeDocument(job.documentId, job.knowledgeBaseId, job.spaceId, true);
@@ -29,10 +31,13 @@ async function executeKnowledgeJob(job: KnowledgeJobRecord) {
       ? job.input.metadata as Record<string, unknown> : {};
     const result = await indexKnowledgeDocument({
       jobId: job.id, spaceId: job.spaceId, targetVersion: job.targetVersion,
+      targetEmbeddingProfiles: embeddingSnapshot.targetEmbeddingProfiles,
+      dualWrite: embeddingSnapshot.dualWrite,
       knowledgeBase: {
         id: base.id, name: base.name, indexVersion: base.currentVersion,
-        embeddingModel: base.embeddingModel, embeddingDimension: base.embeddingDimension,
-        chunkerVersion: base.chunkerVersion
+        embeddingModel: embeddingSnapshot.embeddingProfile.model,
+        embeddingDimension: embeddingSnapshot.embeddingProfile.dimensions,
+        chunkerVersion: base.chunkerVersion, embeddingProfile: embeddingSnapshot.embeddingProfile
       },
       document: {
         id: document.id, sourcePath, originalName: document.originalName, mimeType: document.mimeType,
@@ -45,7 +50,9 @@ async function executeKnowledgeJob(job: KnowledgeJobRecord) {
     publishKnowledgeJob(updateDeleteStage(job));
     const result = await deleteKnowledgeIndex({
       jobId: job.id, spaceId: job.spaceId, knowledgeBaseId: job.knowledgeBaseId,
-      documentId: job.kind === 'document.delete' ? job.documentId : null, targetVersion: job.targetVersion
+      documentId: job.kind === 'document.delete' ? job.documentId : null, targetVersion: job.targetVersion,
+      embeddingProfile: embeddingSnapshot.embeddingProfile,
+      targetEmbeddingProfiles: embeddingSnapshot.targetEmbeddingProfiles
     });
     return completeKnowledgeDelete(job, result);
   }
@@ -62,6 +69,11 @@ export class KnowledgeJobRunner {
   private active = 0;
   private activeBySpace = new Map<string, number>();
   private stopped = true;
+  readonly ownerId: string;
+
+  constructor(ownerId = `experience-knowledge-${process.pid}-${crypto.randomUUID()}`) {
+    this.ownerId = ownerId;
+  }
 
   start() {
     if (!this.stopped) return;
@@ -74,9 +86,13 @@ export class KnowledgeJobRunner {
 
   async pump() {
     if (this.stopped) return;
+    // Recovery is lease-expiry based, so running it every poll makes a job
+    // available promptly after a crashed worker's lease expires without ever
+    // stealing a fresh claim from another replica.
+    recoverKnowledgeJobs();
     processKnowledgeFileCleanup();
     while (this.active < config.knowledgeWorkerConcurrency) {
-      const job = claimNextKnowledgeJob();
+      const job = claimNextKnowledgeJob(this.ownerId);
       if (!job) return;
       this.active += 1;
       this.activeBySpace.set(job.spaceId, (this.activeBySpace.get(job.spaceId) || 0) + 1);
@@ -91,13 +107,17 @@ export class KnowledgeJobRunner {
   }
 
   private async run(job: KnowledgeJobRecord) {
+    let leaseHeld = true;
+    const heartbeat = setInterval(() => { leaseHeld = heartbeatKnowledgeJobLease(job); },
+      config.knowledgeWorkerHeartbeatMs);
+    heartbeat.unref();
     try {
       const completed = await executeKnowledgeJob(job);
       publishKnowledgeJob(completed);
       publishEvent('data-changed', { reason: 'knowledge-changed' }, job.spaceId);
     } catch (error) {
+      if (!leaseHeld || (error instanceof KnowledgeError && error.code === 'KNOWLEDGE_JOB_LEASE_LOST')) return;
       const message = error instanceof Error ? error.message : String(error);
-      const current = getKnowledgeJob(job.id) || job;
       // Explicit runtime outages, rate limits and 5xx responses wait durably for
       // recovery regardless of the ordinary poison-job attempt ceiling. Invalid
       // documents, schemas and grounding failures are terminal. Unexpected
@@ -106,15 +126,21 @@ export class KnowledgeJobRunner {
         && (error.code === 'KNOWLEDGE_RUNTIME_UNAVAILABLE'
           || error.code === 'KNOWLEDGE_RUNTIME_NOT_CONFIGURED'
           || error.status === 429 || error.status >= 500);
-      const retryUnexpected = !(error instanceof KnowledgeError) && current.attempt < current.maxAttempts;
-      if (waitForRuntime || retryUnexpected) {
-        const delay = Math.min(5 * 60_000, 5_000 * (2 ** Math.min(6, Math.max(0, current.attempt - 1))));
-        const queued = requeueKnowledgeJob(current, 'waiting_for_knowledge_runtime', message,
-          new Date(Date.now() + delay).toISOString());
-        publishKnowledgeJob(queued);
-      } else {
-        publishKnowledgeJob(failKnowledgeJob(current, message));
+      const retryUnexpected = !(error instanceof KnowledgeError) && job.attempt < job.maxAttempts;
+      try {
+        if (waitForRuntime || retryUnexpected) {
+          const delay = Math.min(5 * 60_000, 5_000 * (2 ** Math.min(6, Math.max(0, job.attempt - 1))));
+          const queued = requeueKnowledgeJob(job, 'waiting_for_knowledge_runtime', message,
+            new Date(Date.now() + delay).toISOString());
+          publishKnowledgeJob(queued);
+        } else {
+          publishKnowledgeJob(failKnowledgeJob(job, message));
+        }
+      } catch (transitionError) {
+        if (!(transitionError instanceof KnowledgeError) || transitionError.code !== 'KNOWLEDGE_JOB_LEASE_LOST') throw transitionError;
       }
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 

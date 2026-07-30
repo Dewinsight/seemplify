@@ -19,20 +19,48 @@ $PostgresContainer = 'xplorer-postgres'
 $PostgresDatabase = 'seemplify_experience'
 $PostgresRole = 'seemplify_experience_app'
 $PostgresOwnerRole = 'seemplify_experience_owner'
-$PostgresRuntimeSchemaVersion = 2
+$PostgresRuntimeSchemaVersion = 4
 $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
 $PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
-$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v2-started'
+$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v4-started'
 $PostgresMigrationLog = Join-Path $RuntimeDir 'postgres-migration.log'
 $PidFile = Join-Path $RuntimeDir 'server.pid'
 $PasswordFile = Join-Path $RuntimeDir 'admin-password'
 $SessionSecretFile = Join-Path $RuntimeDir 'session-secret'
 $BrevoWebhookSecretFile = Join-Path $RuntimeDir 'brevo-webhook-secret'
 $XCredentialEncryptionKeyFile = Join-Path $RuntimeDir 'x-credential-encryption-key'
+$NylasCredentialEncryptionKeyFile = Join-Path $RuntimeDir 'nylas-credential-encryption-key'
 $EsignEncryptionKeyFile = Join-Path $RuntimeDir 'esign-encryption-key'
 $EsignStorageDir = Join-Path $RuntimeDir 'esign'
 $KnowledgeStorageDir = 'D:\SeemplifyKnowledge\staging'
-$KnowledgeRuntimeDir = Join-Path $RepositoryDir '.local-runtime\knowledge'
+
+function Resolve-KnowledgeRuntimeDir {
+  $configured = [string][Environment]::GetEnvironmentVariable('SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR')
+  if (-not [string]::IsNullOrWhiteSpace($configured)) { return [IO.Path]::GetFullPath($configured) }
+  try {
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    $raw = & docker.exe inspect 'seemplify-knowledge-arango' 2>$null
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    if ($exitCode -eq 0 -and $raw) {
+      $info = $raw | ConvertFrom-Json | Select-Object -First 1
+      $owned = [string]$info.Config.Labels.'ai.seemplify.owner' -eq 'local-knowledge'
+      $secretMount = $info.Mounts | Where-Object { [string]$_.Destination -eq '/run/secrets/arango-root' } | Select-Object -First 1
+      if ($owned -and $secretMount -and (Test-Path -LiteralPath ([string]$secretMount.Source) -PathType Leaf)) {
+        $secretsRoot = Split-Path -Parent ([string]$secretMount.Source)
+        $candidate = Split-Path -Parent $secretsRoot
+        if ((Split-Path -Leaf $secretsRoot) -eq 'secrets' -and (Split-Path -Leaf $candidate) -eq 'knowledge') {
+          return [IO.Path]::GetFullPath($candidate)
+        }
+      }
+    }
+  } catch { $ErrorActionPreference = 'Stop' }
+  return [IO.Path]::GetFullPath((Join-Path $RepositoryDir '.local-runtime\knowledge'))
+}
+
+$KnowledgeRuntimeDir = Resolve-KnowledgeRuntimeDir
+$env:SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR = $KnowledgeRuntimeDir
 $KnowledgeRuntimeSecretFile = Join-Path $KnowledgeRuntimeDir 'service-secret'
 $XConsumerKeyFile = Join-Path $RuntimeDir 'x-consumer-key'
 $XConsumerSecretFile = Join-Path $RuntimeDir 'x-consumer-secret'
@@ -42,9 +70,21 @@ $XAccessTokenSecretFile = Join-Path $RuntimeDir 'x-access-token-secret'
 $XClientIdFile = Join-Path $RuntimeDir 'x-client-id'
 $XClientSecretFile = Join-Path $RuntimeDir 'x-client-secret'
 $CloudflareTunnelTokenFile = Join-Path $RuntimeDir 'cloudflare-tunnel-token'
+$ExperienceNylasEnvFile = Join-Path $RuntimeDir 'nylas.env'
+$RecruiterNylasEnvFile = Join-Path $RepositoryDir 'recruiter\backend\.env'
 $StdoutLog = Join-Path $RuntimeDir 'server.stdout.log'
 $StderrLog = Join-Path $RuntimeDir 'server.stderr.log'
 $StartupShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Seemplify Experience.lnk'
+$EmbeddingProfiles = [ordered]@{
+  'qwen-tei' = [ordered]@{
+    provider='qwen-tei'; model='Qwen/Qwen3-Embedding-4B'; revision='5cf2132abc99cad020ac570b19d031efec650f2b';
+    dtype='float16'; dimensions=2560; vectorIndexVersion='qwen-v1'
+  }
+  'gte-node' = [ordered]@{
+    provider='gte-node'; model='Alibaba-NLP/gte-modernbert-base'; revision='e7f32e3c00f91d699e8c43b53106206bcc72bb22';
+    dtype='q8'; dimensions=768; vectorIndexVersion='gte-modernbert-v1'
+  }
+}
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
 function Get-ProjectDir {
@@ -59,6 +99,98 @@ function Get-ProjectDir {
 }
 
 function New-RandomSecret([int]$Bytes = 32) { $value = New-Object byte[] $Bytes; $generator = [Security.Cryptography.RandomNumberGenerator]::Create(); try { $generator.GetBytes($value) } finally { $generator.Dispose() }; return [Convert]::ToBase64String($value).TrimEnd('=').Replace('+','-').Replace('/','_') }
+function Get-EmbeddingBoolean([string]$Name, [bool]$Default = $false) {
+  $raw = [Environment]::GetEnvironmentVariable($Name)
+  if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+  switch ($raw.Trim().ToLowerInvariant()) {
+    { $_ -in @('1','true','yes','on') } { return $true }
+    { $_ -in @('0','false','no','off') } { return $false }
+    default { throw "$Name must be true or false." }
+  }
+}
+function Get-EmbeddingInteger([string]$Name, [int]$Default, [int]$Minimum, [int]$Maximum) {
+  $raw = [Environment]::GetEnvironmentVariable($Name)
+  if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+  $value = 0
+  if (-not [int]::TryParse($raw, [ref]$value) -or $value -lt $Minimum -or $value -gt $Maximum) {
+    throw "$Name must be an integer between $Minimum and $Maximum."
+  }
+  return $value
+}
+function Get-EmbeddingConfiguration {
+  $forceQwen = Get-EmbeddingBoolean 'EXPERIENCE_EMBEDDING_FORCE_QWEN' $false
+  if ($forceQwen) {
+    $provider = 'qwen-tei'
+    $dualWrite = $false
+    $qwenRollbackRetained = $true
+    $rolloutPercent = 0
+    $shadowPercent = 0
+    $concurrency = 8
+    $queueDepth = 256
+    $timeoutMs = 120000
+  } else {
+    $provider = [string][Environment]::GetEnvironmentVariable('EXPERIENCE_EMBEDDING_PROVIDER')
+    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = 'qwen-tei' }
+    $provider = $provider.Trim().ToLowerInvariant()
+    if ($provider -notin @('qwen-tei','gte-node')) { throw 'EXPERIENCE_EMBEDDING_PROVIDER must be qwen-tei or gte-node.' }
+    $dualWrite = Get-EmbeddingBoolean 'EXPERIENCE_EMBEDDING_DUAL_WRITE' $false
+    $qwenRollbackRetained = Get-EmbeddingBoolean 'EXPERIENCE_QWEN_ROLLBACK_RETAINED' $true
+    if (-not $qwenRollbackRetained) {
+      throw 'EXPERIENCE_QWEN_ROLLBACK_RETAINED=false is not supported during this gated release.'
+    }
+    $defaultRolloutPercent = if ($provider -eq 'gte-node') { 100 } else { 0 }
+    $rolloutPercent = Get-EmbeddingInteger 'EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT' $defaultRolloutPercent 0 100
+    $shadowPercent = Get-EmbeddingInteger 'EXPERIENCE_EMBEDDING_SHADOW_PERCENT' 0 0 100
+    $concurrency = Get-EmbeddingInteger 'EXPERIENCE_EMBEDDING_CONCURRENCY' 8 1 8
+    $queueDepth = Get-EmbeddingInteger 'EXPERIENCE_EMBEDDING_QUEUE_DEPTH' 256 8 4096
+    $timeoutMs = Get-EmbeddingInteger 'EXPERIENCE_EMBEDDING_TIMEOUT_MS' 120000 1000 1800000
+  }
+  if ($provider -eq 'gte-node' -and $qwenRollbackRetained -and -not $dualWrite) {
+    throw 'gte-node requires EXPERIENCE_EMBEDDING_DUAL_WRITE=true while the Qwen rollback index is retained.'
+  }
+  $profile = $EmbeddingProfiles[$provider]
+  $configuredFields = [ordered]@{
+    EXPERIENCE_EMBEDDING_MODEL=$profile.model
+    EXPERIENCE_EMBEDDING_MODEL_REVISION=$profile.revision
+    EXPERIENCE_EMBEDDING_DTYPE=$profile.dtype
+    EXPERIENCE_EMBEDDING_DIMENSIONS=[string]$profile.dimensions
+    EXPERIENCE_VECTOR_INDEX_VERSION=$profile.vectorIndexVersion
+  }
+  if (-not $forceQwen) {
+    foreach ($entry in $configuredFields.GetEnumerator()) {
+      $configured = [string][Environment]::GetEnvironmentVariable($entry.Key)
+      if (-not [string]::IsNullOrWhiteSpace($configured) -and $configured.Trim() -cne [string]$entry.Value) {
+        throw "$($entry.Key) must match the pinned $provider profile."
+      }
+    }
+  }
+  return [ordered]@{
+    provider=$provider; model=$profile.model; revision=$profile.revision; dtype=$profile.dtype;
+    dimensions=$profile.dimensions; vectorIndexVersion=$profile.vectorIndexVersion;
+    concurrency=$concurrency; queueDepth=$queueDepth; timeoutMs=$timeoutMs;
+    dualWrite=$dualWrite; qwenRollbackRetained=$qwenRollbackRetained; rolloutPercent=$rolloutPercent; shadowPercent=$shadowPercent;
+    gteRequired=($provider -eq 'gte-node' -or $dualWrite -or $rolloutPercent -gt 0 -or $shadowPercent -gt 0);
+    forceQwenRollback=$forceQwen
+  }
+}
+function Set-EmbeddingEnvironment([Collections.IDictionary]$Configuration) {
+  $env:EXPERIENCE_EMBEDDING_PROVIDER=[string]$Configuration.provider
+  $env:EXPERIENCE_EMBEDDING_MODEL=[string]$Configuration.model
+  $env:EXPERIENCE_EMBEDDING_MODEL_REVISION=[string]$Configuration.revision
+  $env:EXPERIENCE_EMBEDDING_DTYPE=[string]$Configuration.dtype
+  $env:EXPERIENCE_EMBEDDING_DIMENSIONS=[string]$Configuration.dimensions
+  $env:EXPERIENCE_VECTOR_INDEX_VERSION=[string]$Configuration.vectorIndexVersion
+  $env:EXPERIENCE_EMBEDDING_CONCURRENCY=[string]$Configuration.concurrency
+  $env:EXPERIENCE_EMBEDDING_QUEUE_DEPTH=[string]$Configuration.queueDepth
+  $env:EXPERIENCE_EMBEDDING_TIMEOUT_MS=[string]$Configuration.timeoutMs
+  $env:EXPERIENCE_EMBEDDING_DUAL_WRITE=if($Configuration.dualWrite){'true'}else{'false'}
+  $env:EXPERIENCE_QWEN_ROLLBACK_RETAINED=if($Configuration.qwenRollbackRetained){'true'}else{'false'}
+  $env:EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT=[string]$Configuration.rolloutPercent
+  $env:EXPERIENCE_EMBEDDING_SHADOW_PERCENT=[string]$Configuration.shadowPercent
+  # Keep the legacy Qwen aliases coherent while older isolated deployments drain.
+  $env:KNOWLEDGE_EMBEDDING_MODEL=[string]$Configuration.model
+  $env:KNOWLEDGE_EMBEDDING_DIMENSION=[string]$Configuration.dimensions
+}
 function Protect-RuntimeSecret([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
   $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -70,6 +202,16 @@ function Protect-RuntimeSecret([string]$Path) {
   }
   [IO.File]::SetAccessControl([IO.Path]::GetFullPath($Path), $acl)
 }
+function Get-NylasEnvironmentFile {
+  $configuredNylasEnvFile = [Environment]::GetEnvironmentVariable('NYLAS_ENV_FILE')
+  foreach ($candidate in @($configuredNylasEnvFile, $ExperienceNylasEnvFile, $RecruiterNylasEnvFile)) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+    $content = [IO.File]::ReadAllText($candidate)
+    if ($content -match '(?m)^\s*NYLAS_CLIENT_ID\s*=\s*.+$' -and $content -match '(?m)^\s*NYLAS_API_KEY\s*=\s*.+$') { return $candidate }
+  }
+  return $null
+}
 function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $PasswordFile)) { Set-Content -LiteralPath $PasswordFile -Value (New-RandomSecret 24) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
@@ -77,14 +219,15 @@ function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $PostgresOwnerPasswordFile)) { Set-Content -LiteralPath $PostgresOwnerPasswordFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $XCredentialEncryptionKeyFile)) { Set-Content -LiteralPath $XCredentialEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $NylasCredentialEncryptionKeyFile)) { Set-Content -LiteralPath $NylasCredentialEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $EsignEncryptionKeyFile)) { Set-Content -LiteralPath $EsignEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
   New-Item -ItemType Directory -Force $EsignStorageDir | Out-Null
   New-Item -ItemType Directory -Force $KnowledgeStorageDir | Out-Null
   New-Item -ItemType Directory -Force $KnowledgeRuntimeDir | Out-Null
   foreach ($secretFile in @(
-    $PasswordFile, $SessionSecretFile, $PostgresPasswordFile, $PostgresOwnerPasswordFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
+    $PasswordFile, $SessionSecretFile, $PostgresPasswordFile, $PostgresOwnerPasswordFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $NylasCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
     $XConsumerKeyFile, $XConsumerSecretFile, $XBearerTokenFile, $XAccessTokenFile,
-    $XAccessTokenSecretFile, $XClientIdFile, $XClientSecretFile, $CloudflareTunnelTokenFile
+    $XAccessTokenSecretFile, $XClientIdFile, $XClientSecretFile, $CloudflareTunnelTokenFile, $ExperienceNylasEnvFile
   )) { Protect-RuntimeSecret $secretFile }
   $envFile = Join-Path $SourceProjectDir 'backend\.env'
   if (-not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath (Join-Path $SourceProjectDir 'backend\.env.example') -Destination $envFile }
@@ -383,6 +526,8 @@ function Get-ServerProcess {
 function Start-Server {
   Initialize-Runtime
   if (Get-ServerProcess) { return }
+  $embeddingConfiguration = Get-EmbeddingConfiguration
+  Set-EmbeddingEnvironment $embeddingConfiguration
   $ProjectDir = Get-ProjectDir
   if (-not (Test-Path (Join-Path $ProjectDir 'backend\dist\server.js'))) { & npm.cmd run build --prefix $ProjectDir; if ($LASTEXITCODE -ne 0) { throw 'Experience build failed.' } }
   Initialize-PostgresCutover $ProjectDir
@@ -390,12 +535,14 @@ function Start-Server {
   $env:ADMIN_PASSWORD_FILE=$PasswordFile; $env:SESSION_SECRET_FILE=$SessionSecretFile
   $env:BREVO_WEBHOOK_SECRET_FILE=$BrevoWebhookSecretFile
   $env:X_CREDENTIAL_ENCRYPTION_KEY_FILE=$XCredentialEncryptionKeyFile
+  $env:NYLAS_CREDENTIAL_ENCRYPTION_KEY_FILE=$NylasCredentialEncryptionKeyFile
+  $env:NYLAS_REDIRECT_URI='https://experience.aiinnigeria.com/api/integrations/nylas/callback'
+  $nylasEnvironmentFile = Get-NylasEnvironmentFile
+  if ($nylasEnvironmentFile) { $env:NYLAS_ENV_FILE=$nylasEnvironmentFile } else { Remove-Item Env:NYLAS_ENV_FILE -ErrorAction SilentlyContinue }
   $env:ESIGN_ENCRYPTION_KEY_FILE=$EsignEncryptionKeyFile; $env:ESIGN_STORAGE_DIR=$EsignStorageDir
   $env:KNOWLEDGE_STORAGE_DIR=$KnowledgeStorageDir
   $env:KNOWLEDGE_RUNTIME_BASE_URL='http://127.0.0.1:11540'
   $env:KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE=$KnowledgeRuntimeSecretFile
-  $env:KNOWLEDGE_EMBEDDING_MODEL='Qwen/Qwen3-Embedding-4B'
-  $env:KNOWLEDGE_EMBEDDING_DIMENSION='2560'
   $env:KNOWLEDGE_WORKER_CONCURRENCY='1'
   $env:X_SEED_CONSUMER_KEY_FILE=$XConsumerKeyFile; $env:X_SEED_CONSUMER_SECRET_FILE=$XConsumerSecretFile
   $env:X_SEED_BEARER_TOKEN_FILE=$XBearerTokenFile; $env:X_SEED_ACCESS_TOKEN_FILE=$XAccessTokenFile; $env:X_SEED_ACCESS_TOKEN_SECRET_FILE=$XAccessTokenSecretFile
@@ -419,13 +566,24 @@ function Set-AutoStart([bool]$Enabled) {
 }
 function Get-Status {
   $process = Get-ServerProcess; $healthy = $false; $health = $null; $reportedDatabaseReady = $false
+  $embeddingConfiguration = Get-EmbeddingConfiguration
+  $knowledgeRuntimeStatus = $null
+  $nylasEnvironmentFile = Get-NylasEnvironmentFile
+  $nylasProcessConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('NYLAS_CLIENT_ID')) -and -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('NYLAS_API_KEY'))
   try {
     $health = Invoke-RestMethod 'http://127.0.0.1:5410/health' -TimeoutSec 3
     $reportedDatabaseReady = if ($health.PSObject.Properties.Name -contains 'databaseReady') { [bool]$health.databaseReady } else { $health.status -eq 'ok' }
     $healthy = $health.status -eq 'ok' -and $reportedDatabaseReady
   } catch {}
+  $knowledgeClient = Join-Path $RepositoryDir 'tools\local-knowledge\client.cjs'
+  if ((Test-Path -LiteralPath $KnowledgeRuntimeSecretFile -PathType Leaf) -and (Test-Path -LiteralPath $knowledgeClient -PathType Leaf)) {
+    try {
+      $runtimeOutput = & node.exe $knowledgeClient status 2>$null
+      if ($LASTEXITCODE -eq 0 -and $runtimeOutput) { $knowledgeRuntimeStatus = ($runtimeOutput | Select-Object -Last 1) | ConvertFrom-Json }
+    } catch {}
+  }
   $project = Get-ProjectDir
-  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); databaseProvider=if($health){$health.database}else{'unknown'}; databaseReady=if($health){$reportedDatabaseReady}else{$false}; databaseSchemaVersion=if($health){$health.databaseSchemaVersion}else{$null}; databaseRuntimeSchemaVersion=if($health){$health.databaseRuntimeSchemaVersion}else{$null}; postgresDatabase=$PostgresDatabase; postgresRole=$PostgresRole; postgresOwnerRole=$PostgresOwnerRole; postgresCutoverCommitted=(Test-Path $PostgresCutoverMarker); postgresCutoverStaged=(Test-Path $PostgresCutoverState); postgresRuntimeUpgradeStarted=(Test-Path $PostgresRuntimeUpgradeMarker); postgresCredentialConfigured=((Test-Path $PostgresPasswordFile) -and (Test-Path $PostgresOwnerPasswordFile)); sqliteRecoverySource=$SqliteDatabasePath; authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); esignEncryptionConfigured=(Test-Path $EsignEncryptionKeyFile); knowledgeRuntimeConfigured=(Test-Path $KnowledgeRuntimeSecretFile); knowledgeRuntimeUrl='http://127.0.0.1:11540'; knowledgeStorageDir=$KnowledgeStorageDir; xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
+  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); databaseProvider=if($health){$health.database}else{'unknown'}; databaseReady=if($health){$reportedDatabaseReady}else{$false}; databaseSchemaVersion=if($health){$health.databaseSchemaVersion}else{$null}; databaseRuntimeSchemaVersion=if($health){$health.databaseRuntimeSchemaVersion}else{$null}; postgresDatabase=$PostgresDatabase; postgresRole=$PostgresRole; postgresOwnerRole=$PostgresOwnerRole; postgresCutoverCommitted=(Test-Path $PostgresCutoverMarker); postgresCutoverStaged=(Test-Path $PostgresCutoverState); postgresRuntimeUpgradeStarted=(Test-Path $PostgresRuntimeUpgradeMarker); postgresCredentialConfigured=((Test-Path $PostgresPasswordFile) -and (Test-Path $PostgresOwnerPasswordFile)); sqliteRecoverySource=$SqliteDatabasePath; authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); nylasCredentialEncryptionConfigured=(Test-Path $NylasCredentialEncryptionKeyFile); nylasCredentialsConfigured=([bool]$nylasEnvironmentFile -or $nylasProcessConfigured); nylasEnvironmentSource=if($nylasEnvironmentFile){$nylasEnvironmentFile}else{$null}; esignEncryptionConfigured=(Test-Path $EsignEncryptionKeyFile); knowledgeRuntimeConfigured=(Test-Path $KnowledgeRuntimeSecretFile); knowledgeRuntimeUrl='http://127.0.0.1:11540'; knowledgeStorageDir=$KnowledgeStorageDir; embeddingConfiguration=$embeddingConfiguration; knowledgeRuntimeStatus=$knowledgeRuntimeStatus; xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
 }
 switch ($Action) { 'initialize' { Initialize-Runtime; Initialize-Postgres }; 'start' { Start-Server }; 'stop' { Stop-Server }; 'restart' { Stop-Server; Start-Server }; 'enable-auto-start' { Initialize-Runtime; Initialize-Postgres; Set-AutoStart $true }; 'disable-auto-start' { Set-AutoStart $false }; 'status' {} }
-$status = Get-Status; if ($Json) { $status | ConvertTo-Json -Compress } else { [pscustomobject]$status | Format-List }
+$status = Get-Status; if ($Json) { $status | ConvertTo-Json -Depth 16 -Compress } else { [pscustomobject]$status | Format-List }

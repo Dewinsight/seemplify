@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { KnowledgeBasePicker } from '@/components/knowledge/KnowledgeBasePicker';
 import type {
   SocialIntelligenceReport, SocialMention, SocialReplyDraft, XCollectionStream, XConnection, XExpansionEstimate,
   XIntegrationStatus, XListeningQuery, XSyncJob
@@ -72,6 +73,7 @@ export function SocialListeningPage() {
   const [queryDraft, setQueryDraft] = useState({ label: '', query: '', enabled: true });
   const [replyForm, setReplyForm] = useState({ tone: 'helpful', instructions: '' });
   const [reportTitle, setReportTitle] = useState('X listening intelligence');
+  const [knowledgeBaseIds, setKnowledgeBaseIds] = useState<string[]>([]);
   const [draftEdits, setDraftEdits] = useState<Record<string, string>>({});
   const replyRequest = useRef({ fingerprint: '', key: '' }); const reportRequest = useRef({ fingerprint: '', key: '' });
   const expansionRequest = useRef({ fingerprint: '', key: '' });
@@ -135,6 +137,7 @@ export function SocialListeningPage() {
   const visibleMentions = filteredMentions.slice(0, savedVisibleLimit);
   const defaultReportMentionIds = useMemo(() => newestMentions.slice(0, reportLimit).map((mention) => mention.id), [newestMentions, reportLimit]);
   const reportMentionIds = selectedMentions ?? defaultReportMentionIds;
+  const analysisMentionIds = reportMentionIds.slice(0, normalSyncLimit);
   const selected = new Set(reportMentionIds);
   const checkingCredits = status?.app.billing.status === 'checking_credits';
   const billingBlocked = ['credits_depleted', 'checking_credits'].includes(status?.app.billing.status || '') || latestSync?.state === 'waiting_billing';
@@ -285,10 +288,19 @@ export function SocialListeningPage() {
   function chooseReportLimit(value: 50 | 100 | 200) {
     setReportLimit(value); setSelectedMentions(null);
   }
+  async function analyzeSelected() {
+    if (analysisMentionIds.length === 0) return; setWorking('analyze');
+    try {
+      await api('/api/social/analyze', json('POST', { mentionIds: analysisMentionIds, knowledgeBaseIds }));
+      toast.success(`${analysisMentionIds.length} saved ${analysisMentionIds.length === 1 ? 'post' : 'posts'} queued for grounded analysis.`);
+      await load('manual');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not queue social analysis.'); }
+    finally { setWorking(''); }
+  }
   async function createReport() {
     if (!connection || reportMentionIds.length === 0) return; setWorking('report');
     try {
-      const body = { connectionId: connection.id, title: reportTitle, mentionIds: reportMentionIds };
+      const body = { connectionId: connection.id, title: reportTitle, mentionIds: reportMentionIds, knowledgeBaseIds };
       const fingerprint = JSON.stringify(body);
       if (reportRequest.current.fingerprint !== fingerprint) reportRequest.current = { fingerprint, key: crypto.randomUUID() };
       await api('/api/social/reports', { ...json('POST', body), headers: { 'idempotency-key': reportRequest.current.key } });
@@ -343,9 +355,15 @@ export function SocialListeningPage() {
       <CardHeader className="border-b"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><CardTitle>Collected X posts</CardTitle><CardDescription className="mt-1">The newest {savedPageSize} saved posts are shown first. Selecting a post changes the report to a custom snapshot.</CardDescription></div><div className="flex flex-wrap gap-1">{(['all', 'account_post', 'mention', 'search'] as Stream[]).map((key) => <Button key={key} size="sm" variant={stream === key ? 'secondary' : 'ghost'} onClick={() => { setStream(key); setSavedVisibleLimit(savedPageSize); }}>{key === 'all' ? 'All' : streamLabel(key)}</Button>)}</div></div></CardHeader>
       <CardContent className="p-0">{visibleMentions.length ? <div className="divide-y">{visibleMentions.map((mention) => <article className="flex gap-3 p-5" key={mention.id}><button className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground" aria-label={`${selected.has(mention.id) ? 'Deselect' : 'Select'} post by ${mention.author}`} onClick={() => toggleReportMention(mention.id)}>{selected.has(mention.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}</button><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 text-xs"><span className="font-semibold text-foreground">{mention.author || 'X user'}</span><Badge variant="outline">{streamLabel(mention.ingestionKind)}</Badge><span className="text-muted-foreground">{formatDate(mention.publishedAt)}</span></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{mention.content}</p><div className="mt-3 flex flex-wrap items-center gap-2">{mention.analysis ? <><Badge variant="secondary" className="capitalize">{mention.analysis.sentiment}</Badge>{mention.analysis.themes?.slice(0, 3).map((theme: string) => <Badge variant="outline" key={theme}>{theme}</Badge>)}</> : <Badge variant="outline">Not analyzed</Badge>}<Button size="sm" variant="outline" onClick={() => setReplyMention(mention)}><MessageSquareReply />Draft reply</Button><a className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline" href={mention.url} target="_blank" rel="noreferrer">Open on X <ExternalLink className="h-3 w-3" /></a></div></div></article>)}</div> : <div className="px-5 py-14 text-center"><MessageSquareText className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No X posts collected yet</div><p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{billingBlocked ? 'Add X API credits, then use Check credits and retry.' : 'Run the first sync to collect account posts and mentions.'}</p></div>}</CardContent>
       {filteredMentions.length > visibleMentions.length && <div className="flex flex-col justify-between gap-2 border-t px-5 py-3 sm:flex-row sm:items-center"><p className="text-xs text-muted-foreground">{visibleMentions.length} of {filteredMentions.length} saved posts shown. Loading more here uses the Seemplify cache and does not call X.</p><Button size="sm" variant="outline" onClick={() => setSavedVisibleLimit((current) => current + savedPageSize)}>Show {Math.min(savedPageSize, filteredMentions.length - visibleMentions.length)} more saved</Button></div>}
-      {mentions.length > 0 && <div className="flex flex-col justify-between gap-4 border-t bg-muted/20 px-5 py-4 lg:flex-row lg:items-end">
-        <div className="min-w-0"><Label htmlFor="social-report-scope">Posts for this report</Label><div className="mt-2 flex flex-wrap items-center gap-2"><select id="social-report-scope" aria-label="Posts for this report" value={selectedMentions === null ? String(reportLimit) : 'custom'} onChange={(event) => chooseReportLimit(Number(event.target.value) as 50 | 100 | 200)} className="h-9 rounded-md border border-input bg-background px-3 text-sm"><option value="50">Latest 50 saved (default)</option><option value="100">Up to latest 100 saved</option><option value="200">Up to latest 200 saved</option>{selectedMentions !== null && <option value="custom" disabled>Custom selection ({selectedMentions.length})</option>}</select>{selectedMentions !== null && <Button size="sm" variant="ghost" onClick={() => { setSelectedMentions(null); setReportLimit(normalSyncLimit); }}>Reset to latest 50</Button>}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{reportMentionIds.length} saved posts will be sent to Terra. Reports never include every retained post unless you explicitly choose that scope.</p></div>
-        <div className="flex flex-col gap-2 sm:flex-row"><Input aria-label="Social report title" className="w-full sm:w-64" value={reportTitle} onChange={(event) => setReportTitle(event.target.value)} /><Button size="sm" disabled={working === 'report' || reportTitle.trim().length < 2 || reportMentionIds.length === 0} onClick={() => void createReport()}>{working === 'report' ? <Loader2 className="animate-spin" /> : <BarChart3 />}Generate report</Button></div>
+      {mentions.length > 0 && <div className="space-y-5 border-t bg-muted/20 px-5 py-4">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
+          <div className="min-w-0"><Label htmlFor="social-report-scope">Posts for analysis and reporting</Label><div className="mt-2 flex flex-wrap items-center gap-2"><select id="social-report-scope" aria-label="Posts for analysis and reporting" value={selectedMentions === null ? String(reportLimit) : 'custom'} onChange={(event) => chooseReportLimit(Number(event.target.value) as 50 | 100 | 200)} className="h-9 rounded-md border border-input bg-background px-3 text-sm"><option value="50">Latest 50 saved (default)</option><option value="100">Up to latest 100 saved</option><option value="200">Up to latest 200 saved</option>{selectedMentions !== null && <option value="custom" disabled>Custom selection ({selectedMentions.length})</option>}</select>{selectedMentions !== null && <Button size="sm" variant="ghost" onClick={() => { setSelectedMentions(null); setReportLimit(normalSyncLimit); }}>Reset to latest 50</Button>}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Reports use all {reportMentionIds.length} selected saved posts. Manual analysis is bounded to the first {analysisMentionIds.length} of this selection.</p></div>
+          <KnowledgeBasePicker value={knowledgeBaseIds} onChange={setKnowledgeBaseIds} disabled={working === 'analyze' || working === 'report'} description="Optional. Ground manual post analysis and saved reports in up to five shared sources. Reply drafts remain based only on their X post." />
+        </div>
+        <div className="flex flex-col justify-between gap-3 border-t pt-4 sm:flex-row sm:items-end">
+          <div className="w-full sm:max-w-sm"><Label htmlFor="social-report-title">Report title</Label><Input id="social-report-title" className="mt-2" value={reportTitle} onChange={(event) => setReportTitle(event.target.value)} /></div>
+          <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={working === 'analyze' || analysisMentionIds.length === 0} onClick={() => void analyzeSelected()}>{working === 'analyze' ? <Loader2 className="animate-spin" /> : <Radar />}Analyze {analysisMentionIds.length} {analysisMentionIds.length === 1 ? 'post' : 'posts'}</Button><Button size="sm" disabled={working === 'report' || reportTitle.trim().length < 2 || reportMentionIds.length === 0} onClick={() => void createReport()}>{working === 'report' ? <Loader2 className="animate-spin" /> : <BarChart3 />}Generate report</Button></div>
+        </div>
       </div>}
     </Card>}
 

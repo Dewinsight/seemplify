@@ -22,8 +22,20 @@ Object.assign(process.env, {
   SESSION_SECRET_FILE: sessionFile,
   SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
   LOCAL_LLM_SHARED_SECRET_FILE: sessionFile,
+  KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge-admin.test',
+  KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: sessionFile,
   EMAIL_MODE: 'log'
 });
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async (input) => {
+  const url = new URL(String(input));
+  if (url.hostname === 'knowledge-admin.test' && url.pathname === '/v1/status') {
+    return new Response(JSON.stringify({ ready: true, version: 'admin-test', components: { arango: { ready: true } },
+      queue: { waiting: 3 }, rollout: { percent: 0 }, nestedTelemetry: { preserved: true } }),
+    { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  throw new Error(`Unexpected platform admin test request: ${String(input)}`);
+};
 
 const { db } = await import('../src/database.js');
 const {
@@ -70,6 +82,7 @@ async function loginAs(email: string) {
 }
 
 after(() => {
+  globalThis.fetch = originalFetch;
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -105,6 +118,16 @@ test('platform administration is authenticated and exposes privacy-safe operatio
   assert.equal(detail.body.memberships.length, 1);
   assert.equal(detail.body.spaces.length, 1);
   assert.equal('password_hash' in detail.body.user, false);
+
+  const runtime = await agent.get('/api/platform-admin/knowledge-runtime').expect(200);
+  assert.equal(runtime.body.runtime.ready, true);
+  assert.deepEqual(runtime.body.runtime.nestedTelemetry, { preserved: true });
+  const tenant = seedUser('knowledge-tenant@example.test', 'Knowledge Tenant');
+  const tenantAgent = await loginAs(tenant.email);
+  await tenantAgent.get('/api/platform-admin/knowledge-runtime').expect(403);
+  await tenantAgent.post('/api/platform-admin/knowledge-backfills').send({}).expect(403);
+  const audit = await agent.get('/api/platform-admin/audit-events?search=knowledge').expect(200);
+  assert.ok(Array.isArray(audit.body.events));
 });
 
 test('subscription requests are durable, versioned, approved explicitly, and audited', async () => {

@@ -29,6 +29,15 @@ const {
   ACTIVITY_DEFINITIONS,
   localProviderLabel
 } = require('../../recruiter/backend/config/aiRuntimeCatalog');
+const {
+  RUNTIME_PROFILE_DEFINITIONS,
+  RUNTIME_PROFILE_IDS,
+  defaultApplicationDefaults,
+  isRuntimeProfile,
+  mergeApplicationDefaults,
+  runtimeProfileForActivity,
+  runtimeProfileFromStatusInput
+} = require('./runtime-profiles.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
@@ -94,9 +103,7 @@ function defaultState() {
     autoStart: true,
     selectionMode: 'automatic',
     selectedEngine: 'codex',
-    applicationDefaults: {
-      experienceManagement: { engine: 'codex', model: 'gpt-5.6-terra' }
-    },
+    applicationDefaults: defaultApplicationDefaults(),
     engines: Object.fromEntries(Object.entries(ENGINE_DEFAULTS).map(([id, item]) => [
       id,
       { model: item.model, ...(item.baseUrl ? { baseUrl: item.baseUrl } : {}) }
@@ -132,10 +139,7 @@ function readStoredState() {
     return {
       ...defaults,
       ...saved,
-      applicationDefaults: {
-        ...defaults.applicationDefaults,
-        ...(saved.applicationDefaults || {})
-      },
+      applicationDefaults: mergeApplicationDefaults(saved.applicationDefaults),
       engines: Object.fromEntries(Object.keys(ENGINE_DEFAULTS).map((id) => [
         id,
         { ...defaults.engines[id], ...(saved.engines?.[id] || {}) }
@@ -152,10 +156,17 @@ function readState() {
 }
 
 function stateForRuntimeProfile(state, runtimeProfile) {
-  if (runtimeProfile !== 'experience-management') return state;
-  const profile = state.applicationDefaults?.experienceManagement || {};
-  const engine = ENGINE_IDS.includes(profile.engine) ? profile.engine : 'codex';
-  const model = String(profile.model || state.engines?.[engine]?.model || ENGINE_DEFAULTS[engine]?.model || '');
+  const definition = RUNTIME_PROFILE_DEFINITIONS[runtimeProfile];
+  if (!definition) return state;
+  const profile = state.applicationDefaults?.[definition.stateKey] || {};
+  const engine = ENGINE_IDS.includes(profile.engine) ? profile.engine : definition.defaultEngine;
+  const model = String(
+    profile.model
+    || state.engines?.[engine]?.model
+    || ENGINE_DEFAULTS[engine]?.model
+    || definition.defaultModel
+    || ''
+  );
   return {
     ...state,
     selectedEngine: engine,
@@ -298,7 +309,7 @@ function activitySchedulerLimits(activity) {
   const state = readState();
   const executionState = stateForRuntimeProfile(
     state,
-    String(activity || '').startsWith('experience.') ? 'experience-management' : ''
+    runtimeProfileForActivity(activity)
   );
   const selected = engineSettings(executionState);
   const available = !shuttingDown && state.enabled && !state.paused;
@@ -758,6 +769,17 @@ function statusPayload() {
     providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
     executionMode: selected.id === 'codex' ? 'local-cloud' : 'local',
     applicationDefaults: state.applicationDefaults,
+    runtimeProfiles: RUNTIME_PROFILE_IDS.map((id) => {
+      const profileState = stateForRuntimeProfile(state, id);
+      const profileEngine = engineSettings(profileState);
+      return {
+        id,
+        engine: profileEngine.id,
+        model: profileEngine.model,
+        provider: `local-${profileEngine.id}`,
+        executionMode: profileEngine.id === 'codex' ? 'local-cloud' : 'local'
+      };
+    }),
     cvLocalEligible,
     engines: Object.entries(state.engines || {}).map(([id, value]) => ({
       id,
@@ -967,10 +989,21 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   } catch (error) {
     return sendJson(response, error.status || 400, { code: error.code, message: error.message });
   }
-  const runtimeProfile = String(input.runtimeProfile || '').trim().toLowerCase();
-  if (runtimeProfile && runtimeProfile !== 'experience-management') {
+  const requestedRuntimeProfile = String(input.runtimeProfile || '').trim().toLowerCase();
+  if (requestedRuntimeProfile && !isRuntimeProfile(requestedRuntimeProfile)) {
     return sendJson(response, 400, { code: 'INVALID_RUNTIME_PROFILE' });
   }
+  const activityRuntimeProfile = runtimeProfileForActivity(input.activity);
+  if (
+    requestedRuntimeProfile
+    && requestedRuntimeProfile !== activityRuntimeProfile
+  ) {
+    return sendJson(response, 400, {
+      code: 'RUNTIME_PROFILE_ACTIVITY_MISMATCH',
+      message: 'The requested runtime profile does not govern this activity'
+    });
+  }
+  const runtimeProfile = requestedRuntimeProfile || activityRuntimeProfile;
   const executionState = stateForRuntimeProfile(state, runtimeProfile);
   const selected = engineSettings(executionState);
   if (input.executionMode === 'local-only' && !ENGINE_IDS.includes(selected.id)) {
@@ -1437,17 +1470,33 @@ const server = http.createServer(async (request, response) => {
         }
       }
       if (input.applicationDefaults && typeof input.applicationDefaults === 'object') {
-        const requested = input.applicationDefaults.experienceManagement;
-        if (requested !== undefined) {
+        const knownApplicationDefaultKeys = new Set(RUNTIME_PROFILE_IDS.map((id) => (
+          RUNTIME_PROFILE_DEFINITIONS[id].stateKey
+        )));
+        const unknownApplicationDefaultKey = Object.keys(input.applicationDefaults).find((key) => (
+          !knownApplicationDefaultKeys.has(key)
+        ));
+        if (unknownApplicationDefaultKey) {
+          const error = new Error(`Unsupported runtime profile ${unknownApplicationDefaultKey}`);
+          error.code = 'INVALID_RUNTIME_PROFILE';
+          error.status = 400;
+          throw error;
+        }
+        const currentApplicationDefaults = readState().applicationDefaults;
+        const nextApplicationDefaults = { ...currentApplicationDefaults };
+        let applicationDefaultChanged = false;
+        for (const id of RUNTIME_PROFILE_IDS) {
+          const definition = RUNTIME_PROFILE_DEFINITIONS[id];
+          const requested = input.applicationDefaults[definition.stateKey];
+          if (requested === undefined) continue;
           const engine = String(requested?.engine || '').trim().toLowerCase();
           const model = String(requested?.model || '').trim();
-          if (!ENGINE_IDS.includes(engine)) throw new Error('Unsupported Experience Management engine');
-          if (!/^[A-Za-z0-9._:/-]{2,200}$/.test(model)) throw new Error('Invalid Experience Management model identifier');
-          allowed.applicationDefaults = {
-            ...readState().applicationDefaults,
-            experienceManagement: { engine, model }
-          };
+          if (!ENGINE_IDS.includes(engine)) throw new Error(`Unsupported ${id} engine`);
+          if (!/^[A-Za-z0-9._:/-]{2,200}$/.test(model)) throw new Error(`Invalid ${id} model identifier`);
+          nextApplicationDefaults[definition.stateKey] = { engine, model };
+          applicationDefaultChanged = true;
         }
+        if (applicationDefaultChanged) allowed.applicationDefaults = nextApplicationDefaults;
       }
       if (requestedConcurrency !== null) {
         const current = readStoredState();
@@ -1505,9 +1554,10 @@ const server = http.createServer(async (request, response) => {
       const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const input = JSON.parse(rawBody || '{}');
-      const runtimeProfile = input.source === 'experience-management' || input.runtimeProfile === 'experience-management'
-        ? 'experience-management'
-        : '';
+      const runtimeProfile = runtimeProfileFromStatusInput(input);
+      if (runtimeProfile && !isRuntimeProfile(runtimeProfile)) {
+        return sendJson(response, 400, { code: 'INVALID_RUNTIME_PROFILE' });
+      }
       const state = readState();
       const executionState = stateForRuntimeProfile(state, runtimeProfile);
       const selected = engineSettings(executionState);

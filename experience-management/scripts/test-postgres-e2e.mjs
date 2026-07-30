@@ -163,12 +163,12 @@ function postgresEnvironment(sourceSha256) {
     POSTGRES_PASSWORD_FILE: appPasswordFile,
     POSTGRES_SSL: 'disable',
     POSTGRES_SCHEMA_VERSION: '1',
-    POSTGRES_RUNTIME_SCHEMA_VERSION: '2',
+    POSTGRES_RUNTIME_SCHEMA_VERSION: '4',
     POSTGRES_SOURCE_SHA256: sourceSha256,
     EXPERIENCE_E2E_DATABASE_PROVIDER: 'postgres',
     EXPERIENCE_POSTGRES_E2E_RUN_ID: suffix,
     PLAYWRIGHT_EXTERNAL_URL: '',
-    KNOWLEDGE_E2E_LIVE: ''
+    KNOWLEDGE_E2E_LIVE: process.env.KNOWLEDGE_E2E_LIVE || ''
   };
 }
 
@@ -212,7 +212,7 @@ try {
   assert.match(sourceSha256, /^[a-f0-9]{64}$/u);
 
   run(process.execPath, [
-    'scripts/upgrade-postgres-schema.mjs', '--target-version', '2',
+    'scripts/upgrade-postgres-schema.mjs', '--target-version', '4',
     '--expected-source-version', '1', '--expected-source-sha256', sourceSha256,
     '--pg-host', host, '--pg-port', String(port), '--pg-database', database,
     '--pg-user', ownerRole, '--pg-password-file', ownerPasswordFile,

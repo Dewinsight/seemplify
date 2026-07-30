@@ -16,8 +16,10 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /SurveyStudioPage/);
   assert.match(app, /SocialListeningPage/);
   assert.match(app, /IntelligencePage/);
+  assert.match(app, /PersonalAssistantPage/);
   assert.match(app, /JourneysPage/);
   assert.match(app, /path="\/intelligence"/);
+  assert.match(app, /path="\/assistant"/);
   assert.match(app, /path="\/campaigns"/);
   assert.match(app, /path="\/campaigns\/:id"/);
   assert.match(app, /path="\/agreements"/);
@@ -28,6 +30,29 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /CertificateVerificationPage/);
   assert.match(app, /path="\/join\/:token"/);
   assert.match(app, /path="\/settings\/space"/);
+});
+test('keeps the Experience personal assistant private, durable, grounded, and human reviewed', () => {
+  const assistant = fs.readFileSync(path.join(source, 'pages', 'PersonalAssistantPage.tsx'), 'utf8');
+  const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  for (const endpoint of [
+    '/api/assistant/overview', '/api/assistant/threads', '/api/assistant/runs'
+  ]) assert.match(assistant, new RegExp(endpoint.replaceAll('/', '\\/')));
+  for (const activity of ['email-summary', 'email-draft', 'knowledge-answer']) assert.match(assistant, new RegExp(activity));
+  for (const feature of [
+    'Personal assistant', 'Mailbox connections', 'Workspace knowledge', 'Assistant history',
+    'Draft only — nothing has been sent', 'Original generation is retained for audit',
+    'The selected evidence is snapshotted before queueing', 'Private to your account within the active space',
+    'connectedConnectionIds', "connection.status === 'connected'", 'This connection is inactive'
+  ]) assert.match(assistant, new RegExp(feature));
+  assert.doesNotMatch(assistant, />Send<|name="Send"|\/send/);
+  assert.match(shell, /label: 'Personal assistant'/);
+});
+test('keeps the populated dashboard table inside its responsive grid track', () => {
+  const dashboard = fs.readFileSync(path.join(source, 'pages', 'DashboardPage.tsx'), 'utf8');
+  assert.match(dashboard, /grid min-w-0 items-start/);
+  assert.match(dashboard, /Card className="min-w-0"/);
+  assert.match(dashboard, /CardContent className="min-w-0 px-0 pb-0"/);
+  assert.match(dashboard, /max-w-full overflow-x-auto/);
 });
 test('keeps space selection, membership management, invitations, uploads, and live events tenant-aware', () => {
   const api = fs.readFileSync(path.join(source, 'lib', 'api.ts'), 'utf8');
@@ -221,12 +246,15 @@ test('ships explicit knowledge grounding with durable indexing, retrieval citati
   assert.match(list, /relevant excerpts may be sent to the Terra local-cloud runtime/);
   assert.match(workspace, /\.png,\.jpg,\.jpeg,\.tif,\.tiff/);
   assert.doesNotMatch(workspace, /\.doc,\.docx|\.ppt,\.pptx|\.xls,\.xlsx|\.rtf|\.json/);
-  for (const consumer of [createSurvey, surveyAi, intelligence, journeys]) {
+  for (const consumer of [createSurvey, intelligence, journeys]) {
     assert.match(consumer, /useState<string\[\]>\(\[\]\)/);
     assert.match(consumer, /knowledgeBaseIds/);
     assert.match(consumer, /KnowledgeBasePicker/);
   }
-  assert.match(surveyAi, /path === 'translate' \? \{ \.\.\.body, language: targetLanguage \} : \{ \.\.\.body, knowledgeBaseIds \}/);
+  assert.match(surveyAi, /useState<string\[\] \| null>\(null\)/);
+  assert.match(surveyAi, /\/knowledge-bases`,\s*json\('PUT', \{ knowledgeBaseIds: nextIds \}\)/);
+  assert.match(surveyAi, /knowledgeBaseIds === null \? body : \{ \.\.\.body, knowledgeBaseIds \}/);
+  assert.match(picker, /Uses a different embedding profile/);
   assert.match(surveyAi, /requestId !== insightRequestRef\.current/);
   assert.match(surveyAi, /aria-expanded=\{expanded\}/);
   assert.match(surveyAi, /<TranslationDetails/);
@@ -313,9 +341,14 @@ test('ships persistent section tutorials with every referenced lesson image', ()
   const registry = fs.readFileSync(path.join(source, 'lib', 'tutorials.ts'), 'utf8');
   assert.match(shell, /SectionTutorial/);
   assert.match(shell, /tutorialForPath\(location\.pathname\)/);
+  assert.match(shell, /max-\[439px\]:sr-only/);
+  assert.match(shell, /min-w-0 truncate text-sm font-semibold/);
   for (const feature of ['/api/tutorials/progress', 'Maybe later', 'Previous', 'Next', 'Finish tutorial', 'aria-label="Tutorial"']) {
     assert.match(component, new RegExp(feature.replaceAll('/', '\\/')));
   }
+  assert.match(component, /sm:max-w-\[960px\]/);
+  assert.match(component, /overflow-x-hidden/);
+  assert.match(component, /data-section-tutorial-open/);
   const keys = ['overview', 'surveys', 'campaigns', 'agreements', 'social-listening', 'intelligence', 'knowledge-bases', 'journey-maps', 'ai-queue', 'service-recovery', 'space-settings'];
   for (const key of keys) {
     assert.match(registry, new RegExp(`key: ['"]${key}['"]`));

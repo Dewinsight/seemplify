@@ -81,7 +81,9 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [insightsError, setInsightsError] = useState<string | null>(null);
   const [expandedInsightId, setExpandedInsightId] = useState<string | null>(null);
-  const [knowledgeBaseIds, setKnowledgeBaseIds] = useState<string[]>([]);
+  const [knowledgeBaseIds, setKnowledgeBaseIds] = useState<string[] | null>(null);
+  const [knowledgeSelectionLoading, setKnowledgeSelectionLoading] = useState(true);
+  const [knowledgeSelectionSaving, setKnowledgeSelectionSaving] = useState(false);
   const insightRequestRef = useRef(0);
 
   const loadInsights = useCallback(async (revealKind?: string) => {
@@ -113,6 +115,17 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
     setTranslationRun(null);
     setActiveAction(null);
     setJob(null);
+    setKnowledgeBaseIds(null);
+  }, [survey.id]);
+
+  useEffect(() => {
+    let active = true;
+    setKnowledgeSelectionLoading(true);
+    void api<{ knowledgeBaseIds?: string[] }>(`/api/surveys/${survey.id}/knowledge-bases`)
+      .then((result) => { if (active) setKnowledgeBaseIds(Array.isArray(result.knowledgeBaseIds) ? result.knowledgeBaseIds : []); })
+      .catch(() => { if (active) setKnowledgeBaseIds(null); })
+      .finally(() => { if (active) setKnowledgeSelectionLoading(false); });
+    return () => { active = false; };
   }, [survey.id]);
 
   useEffect(() => { void loadInsights(); }, [loadInsights, refreshKey]);
@@ -126,13 +139,32 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
     });
   }
 
+  async function saveKnowledgeSelection(nextIds: string[]) {
+    const previous = knowledgeBaseIds;
+    setKnowledgeBaseIds(nextIds);
+    setKnowledgeSelectionSaving(true);
+    try {
+      const saved = await api<{ knowledgeBaseIds?: string[] }>(`/api/surveys/${survey.id}/knowledge-bases`,
+        json('PUT', { knowledgeBaseIds: nextIds }));
+      setKnowledgeBaseIds(Array.isArray(saved.knowledgeBaseIds) ? saved.knowledgeBaseIds : nextIds);
+      toast.success('Survey knowledge grounding saved');
+    } catch (error) {
+      setKnowledgeBaseIds(previous);
+      toast.error(error instanceof Error ? error.message : 'Could not save survey knowledge grounding.');
+    } finally {
+      setKnowledgeSelectionSaving(false);
+    }
+  }
+
   async function run(path: string, body: Record<string, unknown> = {}) {
     const targetLanguage = path === 'translate' ? String(body.language || '').trim() : '';
     try {
       setActiveAction(path);
       setJob(null);
       if (path === 'translate') setTranslationRun({ phase: 'submitting', language: targetLanguage, progress: 0 });
-      const requestBody = path === 'translate' ? { ...body, language: targetLanguage } : { ...body, knowledgeBaseIds };
+      const requestBody = path === 'translate'
+        ? { ...body, language: targetLanguage }
+        : knowledgeBaseIds === null ? body : { ...body, knowledgeBaseIds };
       const queued = await api<{ jobId: string }>(`/api/surveys/${survey.id}/ai/${path}`, json('POST', requestBody));
       if (path === 'translate') setTranslationRun({ phase: 'queued', language: targetLanguage, progress: 0 });
       const done = await waitForJob(queued.jobId, (nextJob) => {
@@ -163,14 +195,14 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
   }
 
   const busy = Boolean(activeAction) || Boolean(job && ['queued', 'processing'].includes(job.state));
-  const actionsDisabled = busy || hasUnsavedChanges;
+  const actionsDisabled = busy || hasUnsavedChanges || knowledgeSelectionLoading || knowledgeSelectionSaving;
   const trimmedLanguage = language.trim();
   const hasQuestions = (survey.questions?.length || 0) > 0;
   const translating = translationRun ? ['submitting', 'queued', 'processing'].includes(translationRun.phase) : false;
   const translateButtonLabel = translationRun?.phase === 'submitting' ? 'Queuing'
     : translationRun?.phase === 'queued' ? 'Queued'
       : translationRun?.phase === 'processing' ? 'Translating' : 'Translate';
-  return <><div className="mb-5 border bg-card p-4"><KnowledgeBasePicker value={knowledgeBaseIds} onChange={setKnowledgeBaseIds} disabled={actionsDisabled} description="Optional grounding for Ask, quality review, insights, and reports. Translation uses only the survey." /></div><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+  return <><div className="mb-5 border bg-card p-4"><KnowledgeBasePicker value={knowledgeBaseIds || []} onChange={(ids) => void saveKnowledgeSelection(ids)} disabled={actionsDisabled} description={knowledgeBaseIds === null ? 'Loading the survey’s saved knowledge selection. Translation uses only the survey.' : knowledgeSelectionSaving ? 'Saving this selection for survey AI and automatic response analysis.' : 'Saved grounding for Ask, quality review, response analysis, insights, and reports. Translation uses only the survey.'} /></div><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
     <div className="space-y-5">
       <Card><CardHeader><CardTitle>Ask the research</CardTitle><CardDescription>Terra can query responses, calculated metrics, and prior insights. Answers must cite the supplied evidence.</CardDescription></CardHeader><CardContent className="space-y-3"><Textarea rows={4} value={question} onChange={(event) => setQuestion(event.target.value)} /><Button disabled={actionsDisabled || question.trim().length < 5} onClick={() => run('ask', { question })}>{busy ? <Loader2 className="animate-spin" /> : <MessageSquareText />}Ask Terra</Button>{answer && <div className="border bg-muted/25 p-5"><div className="text-sm font-semibold">Answer</div><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{answer.answer}</p>{answer.evidence?.length > 0 && <div className="mt-4 border-t pt-3"><div className="text-xs font-medium text-muted-foreground">Evidence</div>{answer.evidence.map((citation: any, index: number) => <div className="mt-2 text-xs" key={`${citation.responseId}-${index}`}><span className="font-mono text-muted-foreground">{citation.responseId?.slice(0, 8)}</span> — “{citation.excerpt}”</div>)}</div>}</div>}</CardContent></Card>
       <Card><CardHeader><CardTitle>Generated intelligence</CardTitle><CardDescription>Saved outputs remain attached to this survey for later review and reporting.</CardDescription></CardHeader><CardContent className="px-0 pb-0">

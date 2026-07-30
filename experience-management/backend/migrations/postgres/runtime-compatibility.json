@@ -1,4 +1,4 @@
 {
-  "minimumRuntimeSchemaVersion": 2,
-  "maximumRuntimeSchemaVersion": 2
+  "minimumRuntimeSchemaVersion": 4,
+  "maximumRuntimeSchemaVersion": 4
 }

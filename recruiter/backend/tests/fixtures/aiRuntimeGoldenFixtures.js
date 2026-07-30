@@ -402,6 +402,9 @@ fixtures.push({
 const experienceQuestionSchema = strictObject({
   type: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, required: { type: 'boolean' }, options: stringArray, page: { type: 'integer' }
 });
+const assistantCitationSchema = strictObject({
+  sourceRef: { type: 'string' }, excerpt: { type: 'string' }
+});
 const experienceFixtures = [
   {
     id: 'experience-survey-generation', activity: 'experience.survey_generation',
@@ -530,6 +533,76 @@ const experienceFixtures = [
       relations: [{ sourceEntityId: 'e-acme', type: 'uses', targetEntityId: 'e-atlas', confidence: 1,
         mentions: [{ quote: 'Acme uses Atlas', start: 0, end: 15 }] }]
     }
+  },
+  {
+    id: 'experience-assistant-email-summarise', activity: 'experience.assistant.email_summarise',
+    prompt: 'Summarise a supplied email requesting a reviewed onboarding brief by Friday.',
+    schema: strictObject({ summary: { type: 'string' }, asks: stringArray, dates: stringArray, commitments: stringArray, risks: stringArray, limitations: stringArray }),
+    keywords: ['onboarding', 'Friday', 'review'],
+    output: { summary: 'The sender requests a reviewed onboarding brief by Friday.', asks: ['Review the onboarding brief.'], dates: ['Friday'], commitments: [], risks: ['The owner is not specified.'], limitations: ['Only the supplied email was considered.'] }
+  },
+  {
+    id: 'experience-assistant-email-draft', activity: 'experience.assistant.email_draft',
+    prompt: 'Draft a reply confirming that the onboarding brief will be reviewed, without sending it.',
+    schema: strictObject({ subject: { type: 'string' }, body: { type: 'string' }, factsUsed: stringArray, warnings: stringArray }),
+    keywords: ['onboarding', 'review', 'draft'],
+    output: { subject: 'Onboarding brief review', body: 'Thank you. I have prepared this draft to confirm that the onboarding brief will be reviewed.', factsUsed: ['A review was requested.'], warnings: ['Draft only; human approval is required before sending.'] }
+  },
+  {
+    id: 'experience-assistant-document-summarise', activity: 'experience.assistant.document_summarise',
+    prompt: 'Summarise a supplied policy excerpt that requires human approval before external communication.',
+    schema: strictObject({ summary: { type: 'string' }, keyPoints: stringArray, citations: { type: 'array', items: assistantCitationSchema }, limitations: stringArray }),
+    keywords: ['human approval', 'external communication', 'policy-1'],
+    output: { summary: 'External communication requires human approval.', keyPoints: ['AI may prepare drafts but cannot send them autonomously.'], citations: [{ sourceRef: 'policy-1', excerpt: 'Human approval is required before external communication.' }], limitations: ['Only the supplied excerpt was reviewed.'] }
+  },
+  {
+    id: 'experience-assistant-document-compare', activity: 'experience.assistant.document_compare',
+    prompt: 'Compare two supplied policy versions where only the approval threshold changed.',
+    schema: strictObject({ agreements: stringArray, differences: stringArray, gaps: stringArray, risks: stringArray, citations: { type: 'array', items: assistantCitationSchema } }),
+    keywords: ['approval threshold', 'policy-v1', 'policy-v2'],
+    output: { agreements: ['Both versions require human review.'], differences: ['The approval threshold changed in policy-v2.'], gaps: [], risks: ['Applying the old threshold could bypass review.'], citations: [{ sourceRef: 'policy-v1', excerpt: 'Manager approval is required.' }, { sourceRef: 'policy-v2', excerpt: 'Executive approval is required.' }] }
+  },
+  {
+    id: 'experience-assistant-meeting-prepare', activity: 'experience.assistant.meeting_prepare',
+    prompt: 'Prepare a meeting pack from supplied onboarding decisions and open actions.',
+    schema: strictObject({ agenda: stringArray, background: stringArray, openActions: stringArray, questions: stringArray, risks: stringArray, citations: { type: 'array', items: assistantCitationSchema } }),
+    keywords: ['onboarding', 'open action', 'decision-1'],
+    output: { agenda: ['Review onboarding progress.'], background: ['Decision-1 approved a simpler setup guide.'], openActions: ['Confirm the guide owner.'], questions: ['When will the revised guide be tested?'], risks: ['No owner is recorded.'], citations: [{ sourceRef: 'decision-1', excerpt: 'Approve a simpler setup guide.' }] }
+  },
+  {
+    id: 'experience-assistant-meeting-minutes', activity: 'experience.assistant.meeting_minutes',
+    prompt: 'Create draft minutes from a supplied transcript that records one decision and one open item.',
+    schema: strictObject({ summary: { type: 'string' }, decisions: stringArray, proposedActions: stringArray, unresolvedItems: stringArray, transcriptSpans: stringArray }),
+    keywords: ['draft minutes', 'setup guide', 'owner'],
+    output: { summary: 'Draft minutes record approval of the setup-guide revision.', decisions: ['Revise the setup guide.'], proposedActions: ['Assign an owner for the revision.'], unresolvedItems: ['The owner remains unconfirmed.'], transcriptSpans: ['Revise the setup guide; owner to be confirmed.'] }
+  },
+  {
+    id: 'experience-assistant-action-extract', activity: 'experience.assistant.action_extract',
+    prompt: 'Extract the proposed action from a supplied note: Ada will review the guide by Friday.',
+    schema: strictObject({ actions: { type: 'array', items: strictObject({ action: { type: 'string' }, ownerCandidate: { type: 'string' }, dueDateCandidate: { type: 'string' }, sourceSpan: { type: 'string' } }) } }),
+    keywords: ['Ada', 'Friday', 'review'],
+    output: { actions: [{ action: 'Review the guide.', ownerCandidate: 'Ada', dueDateCandidate: 'Friday', sourceSpan: 'Ada will review the guide by Friday.' }] }
+  },
+  {
+    id: 'experience-assistant-knowledge-answer', activity: 'experience.assistant.knowledge_answer',
+    prompt: 'Answer from supplied policy-1: may an AI assistant send external email without review?',
+    schema: strictObject({ answer: { type: 'string' }, citations: { type: 'array', items: assistantCitationSchema }, confidence: { type: 'number' }, limitations: stringArray, unsupported: { type: 'boolean' } }),
+    keywords: ['human approval', 'policy-1', 'cannot'],
+    output: { answer: 'No. The supplied policy requires human approval before external email is sent.', citations: [{ sourceRef: 'policy-1', excerpt: 'Human approval is required before external communication.' }], confidence: 0.98, limitations: ['This answer is limited to policy-1.'], unsupported: false }
+  },
+  {
+    id: 'experience-assistant-executive-brief', activity: 'experience.assistant.executive_brief',
+    prompt: 'Create an executive brief from supplied evidence about onboarding friction and an unowned action.',
+    schema: strictObject({ summary: { type: 'string' }, rankedItems: stringArray, rationale: stringArray, sourceLinks: stringArray, conflicts: stringArray, followUps: stringArray }),
+    keywords: ['onboarding friction', 'owner', 'follow-up'],
+    output: { summary: 'Onboarding friction is the leading supplied issue.', rankedItems: ['Clarify setup guidance.', 'Assign the open action.'], rationale: ['Both supplied sources identify setup confusion.'], sourceLinks: ['report-1', 'decision-1'], conflicts: [], followUps: ['Confirm an owner and test date.'] }
+  },
+  {
+    id: 'experience-assistant-correspondence-draft', activity: 'experience.assistant.correspondence_draft',
+    prompt: 'Draft internal correspondence requesting approval of the revised onboarding guide.',
+    schema: strictObject({ subject: { type: 'string' }, body: { type: 'string' }, factsUsed: stringArray, missingInformation: stringArray, warnings: stringArray }),
+    keywords: ['approval', 'onboarding guide', 'draft'],
+    output: { subject: 'Approval request: revised onboarding guide', body: 'Please review the revised onboarding guide and confirm approval.', factsUsed: ['A revised guide is ready for review.'], missingInformation: ['Approval deadline'], warnings: ['Draft only; human approval is required before sending.'] }
   },
   {
     id: 'experience-journey-mapping', activity: 'experience.journey_mapping',

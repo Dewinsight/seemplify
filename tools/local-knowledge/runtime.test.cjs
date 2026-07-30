@@ -8,7 +8,8 @@ const { CONFIG } = require('./config.cjs');
 const { AQL } = require('./aql.cjs');
 const { createReplayGuard, signRequest, tenantDatabaseName, verifyRequest } = require('./auth.cjs');
 const {
-  BENCHMARK_CLEANUP_CONFIRMATION, chunkText, createKnowledgeRuntime, groundedMentions, purgeKnowledgeEvidence, rerank,
+  BENCHMARK_CLEANUP_CONFIRMATION, blendRetrievalScore, chunkText, createKnowledgeRuntime, groundedMentions,
+  normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank,
   selectDeclaredBindVars, upstreamResponseError, validateRetrieveInput, validateTestCleanupInput, vectorIndexState, weightedReciprocalRankFusion,
 } = require('./runtime.cjs');
 
@@ -90,19 +91,37 @@ test('Arango ingesting is treated as an in-progress vector training state', asyn
 
 test('BGE reranking uses bounded batches and preserves global candidate indexes', async () => {
   const batchLengths = [];
+  const rawScoreFlags = [];
   const candidates = Array.from({ length: 35 }, (_, index) => ({ _key: `chunk_${index}`, text: `candidate ${index}` }));
   const output = await rerank('query', candidates, {
     apiKey: 'test',
     fetchImpl: async (_url, options) => {
       const body = JSON.parse(options.body);
       batchLengths.push(body.texts.length);
+      rawScoreFlags.push(body.raw_scores);
       return { ok: true, status: 200, json: async () => body.texts.map((_text, index) => ({ index, score: index })) };
     },
   });
   assert.deepEqual(batchLengths, [16, 16, 3]);
+  assert.deepEqual(rawScoreFlags, [true, true, true]);
   assert.equal(output.length, 35);
   assert.equal(output.filter((item) => item.candidate._key === 'chunk_34').length, 1);
   assert.ok(output.every((item) => candidates.includes(item.candidate)));
+});
+
+test('BGE raw logits are sigmoid-normalized exactly once before retrieval blending', () => {
+  const relevantRawLogit = -8.09375;
+  const irrelevantRawLogit = -11.03125;
+  const relevantProbability = normalizeRawRerankerScore(relevantRawLogit);
+  const irrelevantProbability = normalizeRawRerankerScore(irrelevantRawLogit);
+  assert.ok(Math.abs(relevantProbability - 0.00030534892) < 1e-9);
+  assert.ok(Math.abs(irrelevantProbability - 0.000016187581) < 1e-10);
+  assert.ok(relevantProbability > irrelevantProbability * 18);
+  const equalFusionScore = 0.01;
+  const relevantFinal = blendRetrievalScore(relevantRawLogit, equalFusionScore);
+  const irrelevantFinal = blendRetrievalScore(irrelevantRawLogit, equalFusionScore);
+  assert.ok(relevantFinal > irrelevantFinal);
+  assert.ok(relevantFinal - irrelevantFinal > 0.0002);
 });
 
 test('weighted RRF preserves vector-only, lexical-only, and graph-only evidence', () => {
@@ -118,6 +137,13 @@ test('weighted RRF preserves vector-only, lexical-only, and graph-only evidence'
 test('AQL uses bounded hybrid channels, revision watermarks, and physical deletion', () => {
   assert.match(AQL.annVectorChunks, /APPROX_NEAR_COSINE/);
   assert.match(AQL.exactVectorChunks, /COSINE_SIMILARITY/);
+  assert.match(AQL.annGteVectorChunks, /APPROX_NEAR_COSINE/);
+  assert.ok(AQL.annVectorChunks.indexOf('FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds')
+    < AQL.annVectorChunks.indexOf('APPROX_NEAR_COSINE'), 'Qwen ANN must filter the selected bases before probing');
+  assert.ok(AQL.annGteVectorChunks.indexOf('FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds')
+    < AQL.annGteVectorChunks.indexOf('APPROX_NEAR_COSINE'), 'GTE ANN must filter the selected bases before probing');
+  assert.match(AQL.exactGteVectorChunks, /experience_chunks_gte_v1/);
+  assert.match(AQL.exactGteVectorChunks, /vectorIndexVersion == @vectorIndexVersion/);
   assert.match(AQL.lexicalChunks, /BM25/);
   assert.match(AQL.graphNeighbors2, /confidence >= @minConfidence/);
   for (const query of [AQL.annVectorChunks, AQL.exactVectorChunks, AQL.lexicalChunks, AQL.graphChunks]) {
@@ -128,6 +154,7 @@ test('AQL uses bounded hybrid channels, revision watermarks, and physical deleti
   assert.match(AQL.purgeClaims, /REMOVE claim IN claims/);
   assert.match(AQL.purgeRelations, /REMOVE relation IN relations/);
   assert.match(AQL.purgeChunks, /REMOVE chunk IN chunks/);
+  assert.match(AQL.purgeGteChunks, /REMOVE chunk IN experience_chunks_gte_v1/);
   assert.match(AQL.purgeDocuments, /REMOVE document IN documents/);
   assert.match(AQL.purgeIndexReceipts, /receipt\.type == 'index'/);
   assert.match(AQL.pruneEntityMentions, /mentions/);
@@ -193,7 +220,7 @@ test('status exposes a consistent ready and healthy contract', async () => {
   const status = await runtime.status();
   assert.equal(status.ready, true);
   assert.equal(status.healthy, true);
-  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'docling', 'embedding', 'reranker', 'terra']);
+  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'docling', 'embedding', 'gteEmbedding', 'reranker', 'terra']);
 });
 
 test('index response exposes canonical relationshipCount and scoped receipt metadata', async () => {

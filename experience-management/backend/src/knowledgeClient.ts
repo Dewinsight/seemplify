@@ -1,7 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { z } from 'zod';
-import { config } from './config.js';
+import {
+  bgeKnowledgeRerankerProfile, config, gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile,
+  type KnowledgeEmbeddingProfile
+} from './config.js';
 import { getKnowledgeDocument, KnowledgeError, type KnowledgeBaseRef, type KnowledgeCitation } from './knowledgeRepository.js';
 
 function readSecret() {
@@ -70,9 +73,32 @@ const citationSchema = z.object({
   entityRefs: z.array(z.string().trim().min(1).max(300)).max(50).optional()
 });
 
+const rerankerTelemetrySchema = z.object({
+  model: z.literal(bgeKnowledgeRerankerProfile.model),
+  revision: z.literal(bgeKnowledgeRerankerProfile.revision),
+  executed: z.literal(true),
+  inputCount: z.number().int().nonnegative(),
+  outputCount: z.number().int().nonnegative()
+}).strict().refine((value) => value.outputCount <= value.inputCount, {
+  message: 'Reranker output count cannot exceed its input count.'
+});
+
+const retrievalMetricsSchema = z.object({
+  fusion: z.literal('weighted-rrf+local-reranker'),
+  rerankedCount: z.number().int().nonnegative(),
+  timings: z.object({ rerankerMs: z.number().finite().nonnegative() }).passthrough(),
+  reranker: rerankerTelemetrySchema,
+  embeddingProfile: z.unknown()
+}).passthrough().superRefine((value, context) => {
+  if (value.rerankedCount !== value.reranker.outputCount) {
+    context.addIssue({ code: z.ZodIssueCode.custom,
+      message: 'Reranker output telemetry does not match the reported reranked count.', path: ['reranker', 'outputCount'] });
+  }
+});
+
 const retrieveResponse = z.object({
   citations: z.array(citationSchema).max(20),
-  metrics: z.record(z.string(), z.unknown()).optional().default({})
+  metrics: retrievalMetricsSchema
 });
 
 const graphResponse = z.object({
@@ -102,6 +128,91 @@ const graphResponse = z.object({
   metrics: z.record(z.string(), z.unknown()).optional().default({})
 });
 
+const embeddingProfileSchema = z.object({
+  provider: z.enum(['qwen-tei', 'gte-node']),
+  model: z.string().trim().min(1).max(300),
+  revision: z.string().regex(/^[a-f0-9]{40}$/u),
+  dtype: z.string().trim().min(1).max(40),
+  dimensions: z.number().int().min(128).max(8192),
+  vectorIndexVersion: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}$/u)
+}).strict();
+
+function profileIdentity(profile: KnowledgeEmbeddingProfile) {
+  return JSON.stringify([profile.provider, profile.model, profile.revision, profile.dtype,
+    profile.dimensions, profile.vectorIndexVersion]);
+}
+
+function assertPinnedProfile(profile: KnowledgeEmbeddingProfile, expected?: KnowledgeEmbeddingProfile) {
+  const pinned = profile.provider === 'qwen-tei' ? qwenKnowledgeEmbeddingProfile : gteKnowledgeEmbeddingProfile;
+  if (profileIdentity(profile) !== profileIdentity(pinned)
+      || (expected && profileIdentity(profile) !== profileIdentity(expected))) {
+    throw new KnowledgeError('The local knowledge runtime reported an unpinned embedding profile.',
+      502, 'KNOWLEDGE_RUNTIME_PROFILE_MISMATCH', false);
+  }
+}
+
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([key, item]) => [key, canonicalValue(item)]));
+  }
+  return value;
+}
+
+const backfillCoverageSchema = z.object({
+  canonicalCount: z.number().int().nonnegative(),
+  validSourceCount: z.number().int().nonnegative(),
+  validTargetCount: z.number().int().nonnegative(),
+  targetCount: z.number().int().nonnegative(),
+  exact: z.boolean()
+}).strict();
+
+const backfillResponse = z.object({
+  jobId: z.string().trim().min(1).max(200),
+  spaceId: z.string().trim().min(1).max(100),
+  knowledgeBaseId: z.string().trim().min(1).max(100),
+  documentId: z.string().trim().min(1).max(100),
+  sourceIndexVersion: z.number().int().positive(),
+  sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  sourceChunkerVersion: z.string().trim().min(1).max(80),
+  sourceEmbeddingProfile: embeddingProfileSchema,
+  embeddingProfile: embeddingProfileSchema,
+  provider: z.literal('gte-node'),
+  vectorIndexVersion: z.string().trim().min(1).max(100),
+  processed: z.number().int().nonnegative(),
+  written: z.number().int().nonnegative(),
+  afterKey: z.string().max(128),
+  remaining: z.number().int().nonnegative(),
+  complete: z.boolean(),
+  coverage: backfillCoverageSchema,
+  vectorIndex: z.record(z.string(), z.unknown()).optional().default({}),
+  metrics: z.record(z.string(), z.unknown()).optional().default({}),
+  attestation: z.object({
+    version: z.literal(1),
+    jobId: z.string().trim().min(1).max(200),
+    spaceId: z.string().trim().min(1).max(100),
+    knowledgeBaseId: z.string().trim().min(1).max(100),
+    documentId: z.string().trim().min(1).max(100),
+    sourceIndexVersion: z.number().int().positive(),
+    sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    sourceChunkerVersion: z.string().trim().min(1).max(80),
+    sourceEmbeddingProfile: embeddingProfileSchema,
+    embeddingProfile: embeddingProfileSchema,
+    afterKeyBefore: z.string().max(128),
+    afterKeyAfter: z.string().max(128),
+    processed: z.number().int().nonnegative(),
+    written: z.number().int().nonnegative(),
+    remaining: z.number().int().nonnegative(),
+    complete: z.boolean(),
+    coverage: backfillCoverageSchema,
+    issuedAt: z.string().datetime(),
+    payloadSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    signature: z.string().regex(/^[A-Za-z0-9_-]{43}$/u)
+  }).strict()
+});
+
 function invalidRuntimeOutput(name: string, error: z.ZodError) {
   return new KnowledgeError(`The local knowledge runtime returned invalid ${name}: ${error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`,
     502, 'KNOWLEDGE_RUNTIME_INVALID_RESPONSE', false);
@@ -111,6 +222,8 @@ export async function indexKnowledgeDocument(input: {
   jobId: string;
   spaceId: string;
   knowledgeBase: KnowledgeBaseRef;
+  targetEmbeddingProfiles: KnowledgeEmbeddingProfile[];
+  dualWrite: boolean;
   targetVersion: number;
   document: {
     id: string; sourcePath: string; originalName: string; mimeType: string; sizeBytes: number; sha256: string;
@@ -120,11 +233,27 @@ export async function indexKnowledgeDocument(input: {
   const raw = await postRuntime('/v1/index', {
     jobId: input.jobId,
     spaceId: input.spaceId,
-    knowledgeBase: { ...input.knowledgeBase, indexVersion: input.targetVersion },
+    knowledgeBase: { ...input.knowledgeBase, indexVersion: input.targetVersion,
+      targetEmbeddingProfiles: input.targetEmbeddingProfiles, dualWrite: input.dualWrite },
     document: input.document
   }, 30 * 60_000);
   const parsed = indexResponse.safeParse(raw);
   if (!parsed.success) throw invalidRuntimeOutput('index result', parsed.error);
+  const reportedProfiles = z.array(embeddingProfileSchema).min(1).max(4)
+    .safeParse(parsed.data.metrics.embeddingProfiles);
+  if (!reportedProfiles.success) {
+    throw new KnowledgeError('The local knowledge runtime did not attest every embedding profile written during indexing.',
+      502, 'KNOWLEDGE_RUNTIME_PROFILE_MISSING', false);
+  }
+  const expectedProfiles = [...input.targetEmbeddingProfiles].map(profileIdentity).sort();
+  const actualProfiles = reportedProfiles.data.map((profile) => {
+    assertPinnedProfile(profile as KnowledgeEmbeddingProfile);
+    return profileIdentity(profile as KnowledgeEmbeddingProfile);
+  }).sort();
+  if (JSON.stringify(actualProfiles) !== JSON.stringify(expectedProfiles)) {
+    throw new KnowledgeError('The local knowledge runtime indexed a different embedding profile set than requested.',
+      502, 'KNOWLEDGE_RUNTIME_PROFILE_MISMATCH', false);
+  }
   return parsed.data;
 }
 
@@ -132,17 +261,52 @@ export async function retrieveKnowledge(input: {
   requestId: string; spaceId: string; knowledgeBases: KnowledgeBaseRef[]; query: string;
   topK?: number; graphDepth?: 1 | 2;
 }) {
+  const profileKeys = new Set(input.knowledgeBases.map((base) => JSON.stringify([
+    base.embeddingProfile.provider, base.embeddingProfile.model, base.embeddingProfile.revision,
+    base.embeddingProfile.dtype, base.embeddingProfile.dimensions, base.embeddingProfile.vectorIndexVersion
+  ])));
+  if (profileKeys.size !== 1) {
+    throw new KnowledgeError('Selected knowledge bases use different embedding spaces and cannot be queried together.',
+      409, 'KNOWLEDGE_EMBEDDING_PROFILE_MISMATCH', false);
+  }
+  const embeddingProfile = input.knowledgeBases[0]?.embeddingProfile;
   const raw = await postRuntime('/v1/retrieve', {
     requestId: input.requestId,
     spaceId: input.spaceId,
     knowledgeBases: input.knowledgeBases,
     query: input.query,
+    embeddingProfile,
     topK: input.topK ?? config.knowledgeRetrieveTopK,
     graphDepth: input.graphDepth ?? 2,
     retrieval: { vector: true, bm25: true, fusion: 'rrf', rerank: true }
   }, 120_000);
   const parsed = retrieveResponse.safeParse(raw);
   if (!parsed.success) throw invalidRuntimeOutput('retrieval result', parsed.error);
+  const servedProfileResult = embeddingProfileSchema.safeParse(parsed.data.metrics.embeddingProfile);
+  if (!servedProfileResult.success) {
+    throw new KnowledgeError('The local knowledge runtime did not attest the embedding profile used for retrieval.',
+      502, 'KNOWLEDGE_RUNTIME_PROFILE_MISSING', false);
+  }
+  const servedProfile = servedProfileResult.data as KnowledgeEmbeddingProfile;
+  assertPinnedProfile(servedProfile);
+  if (profileIdentity(servedProfile) !== profileIdentity(embeddingProfile!)) {
+    const fallback = parsed.data.metrics.providerFallback as Record<string, unknown> | null | undefined;
+    const routing = parsed.data.metrics.providerRouting as Record<string, unknown> | null | undefined;
+    const validFallback = embeddingProfile?.provider === 'gte-node' && servedProfile.provider === 'qwen-tei'
+      && fallback?.from === 'gte-node' && fallback?.to === 'qwen-tei'
+      && typeof fallback.code === 'string' && Boolean(fallback.code);
+    const validRollback = embeddingProfile?.provider === 'gte-node' && servedProfile.provider === 'qwen-tei'
+      && routing?.type === 'rollback' && routing.from === 'gte-node' && routing.to === 'qwen-tei'
+      && (routing.code === 'FORCED_QWEN_ROLLBACK' || routing.code === 'MIGRATION_GATE_PAUSED');
+    const validRollout = embeddingProfile?.provider === 'qwen-tei' && servedProfile.provider === 'gte-node'
+      && routing?.type === 'rollout' && routing.from === 'qwen-tei' && routing.to === 'gte-node'
+      && Number.isFinite(routing.rolloutPercent) && Number(routing.rolloutPercent) > 0
+      && Number(routing.rolloutPercent) <= 100;
+    if (!validFallback && !validRollback && !validRollout) {
+      throw new KnowledgeError('The local knowledge runtime served a different embedding space without an approved Qwen fallback.',
+        502, 'KNOWLEDGE_RUNTIME_PROFILE_MISMATCH', false);
+    }
+  }
   const allowedBases = new Map(input.knowledgeBases.map((base) => [base.id, base]));
   const seen = new Set<string>(); const citations: KnowledgeCitation[] = [];
   for (const citation of parsed.data.citations) {
@@ -167,11 +331,101 @@ export async function retrieveKnowledge(input: {
 export async function deleteKnowledgeIndex(input: {
   jobId: string; spaceId: string; knowledgeBaseId: string; targetVersion: number;
   documentId?: string | null;
+  embeddingProfile: KnowledgeEmbeddingProfile;
+  targetEmbeddingProfiles: KnowledgeEmbeddingProfile[];
 }) {
   return postRuntime('/v1/delete', {
     jobId: input.jobId, spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBaseId,
-    documentId: input.documentId || undefined, indexVersion: input.targetVersion
+    documentId: input.documentId || undefined, indexVersion: input.targetVersion,
+    embeddingProfile: input.embeddingProfile, targetEmbeddingProfiles: input.targetEmbeddingProfiles
   }, 10 * 60_000);
+}
+
+export async function backfillKnowledgeIndex(input: {
+  jobId: string;
+  spaceId: string;
+  knowledgeBaseId: string;
+  documentId: string;
+  sourceIndexVersion: number;
+  sourceSha256: string;
+  sourceChunkerVersion: string;
+  sourceEmbeddingProfile: KnowledgeEmbeddingProfile;
+  afterKey?: string;
+  batchSize: number;
+  targetEmbeddingProfile: KnowledgeEmbeddingProfile;
+}) {
+  if (input.targetEmbeddingProfile.provider !== 'gte-node') {
+    throw new KnowledgeError('Only the pinned GTE profile supports corpus backfill.',
+      409, 'KNOWLEDGE_BACKFILL_PROFILE_UNSUPPORTED');
+  }
+  assertPinnedProfile(input.sourceEmbeddingProfile, qwenKnowledgeEmbeddingProfile);
+  assertPinnedProfile(input.targetEmbeddingProfile, gteKnowledgeEmbeddingProfile);
+  const raw = await postRuntime('/v1/backfill', {
+    jobId: input.jobId,
+    spaceId: input.spaceId,
+    knowledgeBaseId: input.knowledgeBaseId,
+    documentId: input.documentId,
+    sourceIndexVersion: input.sourceIndexVersion,
+    sourceSha256: input.sourceSha256,
+    sourceChunkerVersion: input.sourceChunkerVersion,
+    sourceEmbeddingProfile: input.sourceEmbeddingProfile,
+    afterKey: input.afterKey || '',
+    batchSize: Math.max(1, Math.min(128, Math.floor(input.batchSize))),
+    embeddingProfile: input.targetEmbeddingProfile
+  }, 30 * 60_000);
+  const parsed = backfillResponse.safeParse(raw);
+  if (!parsed.success) throw invalidRuntimeOutput('backfill result', parsed.error);
+  assertPinnedProfile(parsed.data.sourceEmbeddingProfile as KnowledgeEmbeddingProfile, input.sourceEmbeddingProfile);
+  assertPinnedProfile(parsed.data.embeddingProfile as KnowledgeEmbeddingProfile, input.targetEmbeddingProfile);
+  const expectedAfterKey = input.afterKey || '';
+  const scopeMatches = parsed.data.jobId === input.jobId && parsed.data.spaceId === input.spaceId
+    && parsed.data.knowledgeBaseId === input.knowledgeBaseId && parsed.data.documentId === input.documentId
+    && parsed.data.sourceIndexVersion === input.sourceIndexVersion && parsed.data.sourceSha256 === input.sourceSha256
+    && parsed.data.sourceChunkerVersion === input.sourceChunkerVersion
+    && parsed.data.vectorIndexVersion === input.targetEmbeddingProfile.vectorIndexVersion;
+  if (!scopeMatches) {
+    throw new KnowledgeError('The local knowledge runtime returned a backfill result for a different embedding scope.',
+      502, 'KNOWLEDGE_RUNTIME_SCOPE_VIOLATION', false);
+  }
+  const attestation = parsed.data.attestation;
+  const { payloadSha256, signature, ...attestedPayload } = attestation;
+  const calculatedSha256 = crypto.createHash('sha256')
+    .update(JSON.stringify(canonicalValue(attestedPayload))).digest('hex');
+  const calculatedSignature = crypto.createHmac('sha256', readSecret()).update(calculatedSha256).digest('base64url');
+  const signatureMatches = calculatedSignature.length === signature.length
+    && crypto.timingSafeEqual(Buffer.from(calculatedSignature), Buffer.from(signature));
+  const attestationMatches = payloadSha256 === calculatedSha256 && signatureMatches
+    && attestation.jobId === input.jobId && attestation.spaceId === input.spaceId
+    && attestation.knowledgeBaseId === input.knowledgeBaseId && attestation.documentId === input.documentId
+    && attestation.sourceIndexVersion === input.sourceIndexVersion && attestation.sourceSha256 === input.sourceSha256
+    && attestation.sourceChunkerVersion === input.sourceChunkerVersion && attestation.afterKeyBefore === expectedAfterKey
+    && attestation.afterKeyAfter === parsed.data.afterKey && attestation.processed === parsed.data.processed
+    && attestation.written === parsed.data.written && attestation.remaining === parsed.data.remaining
+    && attestation.complete === parsed.data.complete
+    && JSON.stringify(attestation.coverage) === JSON.stringify(parsed.data.coverage)
+    && profileIdentity(attestation.sourceEmbeddingProfile as KnowledgeEmbeddingProfile)
+      === profileIdentity(input.sourceEmbeddingProfile)
+    && profileIdentity(attestation.embeddingProfile as KnowledgeEmbeddingProfile)
+      === profileIdentity(input.targetEmbeddingProfile);
+  if (!attestationMatches) {
+    throw new KnowledgeError('The local knowledge runtime returned an invalid backfill attestation.',
+      502, 'KNOWLEDGE_RUNTIME_ATTESTATION_INVALID', false);
+  }
+  const coverage = parsed.data.coverage;
+  const coverageConsistent = coverage.validSourceCount <= coverage.canonicalCount
+    && coverage.validTargetCount <= coverage.validSourceCount && coverage.targetCount <= coverage.canonicalCount
+    && parsed.data.remaining === coverage.canonicalCount - coverage.validTargetCount
+    && coverage.exact === (coverage.canonicalCount === coverage.validSourceCount
+      && coverage.validSourceCount === coverage.validTargetCount
+      && coverage.validTargetCount === coverage.targetCount)
+    && parsed.data.complete === coverage.exact;
+  if (parsed.data.processed > input.batchSize || parsed.data.written > parsed.data.processed
+      || (parsed.data.complete && parsed.data.remaining !== 0)
+      || (!parsed.data.complete && parsed.data.remaining === 0) || !coverageConsistent) {
+    throw new KnowledgeError('The local knowledge runtime returned inconsistent backfill counters.',
+      502, 'KNOWLEDGE_RUNTIME_BACKFILL_COUNTERS_INVALID', false);
+  }
+  return parsed.data;
 }
 
 export async function getKnowledgeGraph(input: {
@@ -212,7 +466,10 @@ export async function getKnowledgeGraph(input: {
 export async function getKnowledgeRuntimeStatus() {
   try {
     const result = await postRuntime('/v1/status', { source: 'experience-management' }, 8_000);
-    return { reachable: true, ready: result.ready === true, components: result.components || {}, queue: result.queue || {}, version: result.version || null };
+    // Preserve provider, migration, resource, service and search telemetry for
+    // the authenticated admin projection instead of narrowing it away here.
+    return { ...result, reachable: true, ready: result.ready === true,
+      components: result.components || {}, queue: result.queue || {}, version: result.version || null };
   } catch (error) {
     return { reachable: false, ready: false, error: error instanceof Error ? error.message : String(error) };
   }

@@ -4,6 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const manager = fs.readFileSync(path.join(__dirname, 'manage.ps1'), 'utf8');
+const experienceManager = fs.readFileSync(path.join(__dirname, '..', '..', 'experience-management', 'scripts', 'manage.ps1'), 'utf8');
+const postgresE2e = fs.readFileSync(path.join(__dirname, '..', '..', 'experience-management', 'scripts', 'test-postgres-e2e.mjs'), 'utf8');
+const postgresMigrationTest = fs.readFileSync(path.join(__dirname, '..', '..', 'experience-management', 'scripts', 'test-postgres-runtime-migration.mjs'), 'utf8');
+const packageManifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, 'package-lock.json'), 'utf8'));
 
 test('manager owns only labelled loopback containers with pinned digests', () => {
   assert.match(manager, /ai\.seemplify\.owner=local-knowledge/);
@@ -47,7 +52,78 @@ test('manager exposes lifecycle and default-off autostart without destructive re
   assert.match(manager, /service-secret/);
   assert.match(manager, /DependencyReadySeconds = 1200/);
   assert.match(manager, /\[bool\]\$status\.ready/);
+  assert.match(manager, /client\.cjs'\) shutdown/);
+  assert.match(manager, /WaitForExit\(35000\)/);
   assert.match(manager, /modelCache=\[ordered\]/);
   assert.match(manager, /models--Qwen--Qwen3-Embedding-4B/);
   assert.match(manager, /models--BAAI--bge-reranker-v2-m3/);
+});
+
+test('all launchers reuse the runtime root mounted by an owned shared container', () => {
+  for (const source of [manager, experienceManager]) {
+    assert.match(source, /SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR/);
+    assert.match(source, /seemplify-knowledge-arango/);
+    assert.match(source, /ai\.seemplify\.owner/);
+    assert.match(source, /\/run\/secrets\/arango-root/);
+    assert.match(source, /Split-Path -Parent \$secretsRoot/);
+  }
+  assert.match(manager, /\$env:SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR = \$RuntimeDir/);
+  assert.match(experienceManager, /\$env:SEEMPLIFY_KNOWLEDGE_RUNTIME_DIR = \$KnowledgeRuntimeDir/);
+  assert.match(manager, /runtimeRoot=\$RuntimeDir/);
+});
+
+test('GTE dependency is exact, checked read-only, and installed only when configured', () => {
+  assert.equal(packageManifest.dependencies['@huggingface/transformers'], '4.2.0');
+  assert.equal(packageLock.packages[''].dependencies['@huggingface/transformers'], '4.2.0');
+  assert.equal(packageLock.packages['node_modules/@huggingface/transformers'].version, '4.2.0');
+  assert.match(manager, /function Get-GteDependencyStatus/);
+  assert.match(manager, /npm\.cmd/);
+  assert.match(manager, /ci --omit=dev --no-audit --no-fund/);
+  assert.match(manager, /if \(\$embeddingConfiguration\.gteRequired\) \{ \[void\]\(Ensure-GteDependencies\) \}/);
+  assert.doesNotMatch(manager, /Get-Status[\s\S]{0,800}Ensure-GteDependencies/);
+});
+
+test('Qwen stays default while GTE migration controls are explicit and bounded', () => {
+  for (const source of [manager, experienceManager]) {
+    assert.match(source, /EXPERIENCE_EMBEDDING_PROVIDER/);
+    assert.match(source, /EXPERIENCE_EMBEDDING_DUAL_WRITE/);
+    assert.match(source, /EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT/);
+    assert.match(source, /EXPERIENCE_EMBEDDING_SHADOW_PERCENT/);
+    assert.match(source, /EXPERIENCE_EMBEDDING_FORCE_QWEN/);
+    assert.match(source, /EXPERIENCE_QWEN_ROLLBACK_RETAINED/);
+    assert.match(source, /if \(\[string\]::IsNullOrWhiteSpace\(\$provider\)\) \{ \$provider = 'qwen-tei' \}/);
+    assert.match(source, /\$provider = 'qwen-tei'[\s\S]{0,180}\$dualWrite = \$false[\s\S]{0,180}\$rolloutPercent = 0[\s\S]{0,180}\$shadowPercent = 0/);
+    assert.match(source, /\$defaultRolloutPercent = if \(\$provider -eq 'gte-node'\) \{ 100 \} else \{ 0 \}/);
+    assert.match(source, /EXPERIENCE_QWEN_ROLLBACK_RETAINED=false is not supported during this gated release/);
+    assert.match(source, /\$provider -eq 'gte-node' -and \$qwenRollbackRetained -and -not \$dualWrite/);
+    assert.match(source, /EXPERIENCE_VECTOR_INDEX_VERSION/);
+    assert.match(source, /gte-modernbert-v1/);
+  }
+  assert.match(manager, /Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_CONCURRENCY' 8 1 8/);
+  assert.equal((manager.match(/Start-Embedding/g) || []).length >= 3, true, 'Qwen TEI lifecycle must remain present');
+  assert.equal((manager.match(/Start-Reranker/g) || []).length >= 3, true, 'BGE lifecycle must remain present');
+});
+
+test('signed status surfaces migration, GTE, queue, backfill, provider, and resource telemetry', () => {
+  assert.match(manager, /Get-SignedRuntimeStatus/);
+  assert.match(manager, /signedRuntimeStatusAvailable/);
+  for (const field of ['gte=', 'migration=', 'backfill=', 'queue=', 'providers=', 'resources=']) {
+    assert.ok(manager.includes(field), `missing operational field ${field}`);
+  }
+  assert.match(manager, /gteRequired=\$gteRequired/);
+  assert.match(manager, /forceQwenRollback=\$forceQwen/);
+  assert.match(manager, /models\\transformers|Join-Path \$modelRoot 'transformers'/);
+});
+
+test('managed PostgreSQL runtime and isolated harnesses target additive schema four', () => {
+  assert.match(experienceManager, /\$PostgresRuntimeSchemaVersion = 4/);
+  assert.match(experienceManager, /postgres-runtime-schema-v4-started/);
+  assert.match(postgresE2e, /POSTGRES_RUNTIME_SCHEMA_VERSION: '4'/);
+  assert.match(postgresE2e, /'--target-version', '4'/);
+  assert.match(postgresMigrationTest, /'--target-version', '4'/);
+  assert.match(postgresMigrationTest, /0003_knowledge_embedding_profiles\.sql/);
+  assert.match(postgresMigrationTest, /0004_experience_assistant\.sql/);
+  assert.match(postgresMigrationTest, /0005_intentional_failure\.sql/);
+  assert.match(postgresMigrationTest, /knowledge_backfill_runs/);
+  assert.match(postgresMigrationTest, /assistant_runs/);
 });

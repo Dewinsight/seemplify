@@ -11,17 +11,20 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-intelligence-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
 const terraFile = path.join(root, 'terra-secret');
+const knowledgeFile = path.join(root, 'knowledge-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
 fs.writeFileSync(passwordFile, 'Intelligence-Test-Password-2026!');
 fs.writeFileSync(sessionFile, 'intelligence-test-session-secret-that-is-long-enough');
 fs.writeFileSync(terraFile, 'intelligence-test-terra-secret-that-is-long-enough');
+fs.writeFileSync(knowledgeFile, 'intelligence-test-knowledge-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 21).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 22).toString('base64url'));
 Object.assign(process.env, {
   DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: path.join(root, 'missing-frontend'),
   PUBLIC_URL: 'http://127.0.0.1:5414', ADMIN_EMAIL: 'intelligence@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile, TERRA_GATEWAY_SHARED_SECRET_FILE: terraFile, LOCAL_LLM_SHARED_SECRET_FILE: terraFile,
+  KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge.test', KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: knowledgeFile,
   EMAIL_MODE: 'log', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'),
   X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'missing-x-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(root, 'missing-x-bearer'),
@@ -47,6 +50,13 @@ function terraResponse(data: unknown) {
     usage: { input_tokens: 120, output_tokens: 80, total_tokens: 200 }, metrics: { latencyMs: 25, queueWaitMs: 3 }
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
+
+const gteProfile = { provider: 'gte-node', model: 'Alibaba-NLP/gte-modernbert-base',
+  revision: 'e7f32e3c00f91d699e8c43b53106206bcc72bb22', dtype: 'q8', dimensions: 768,
+  vectorIndexVersion: 'gte-modernbert-v1' } as const;
+const bgeReranker = { model: 'BAAI/bge-reranker-v2-m3',
+  revision: '953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e', executed: true,
+  inputCount: 1, outputCount: 1 } as const;
 
 async function completeQueuedJob(jobId: string, data: unknown) {
   const job = getJob(jobId); assert.ok(job);
@@ -123,6 +133,126 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   const completedReportReplay = await owner.post('/api/social/reports').set('Idempotency-Key', socialReportKey).send({ connectionId, title: 'Onboarding listening report', mentionIds: [mentionId] }).expect(202);
   assert.equal(completedReportReplay.body.jobId, queuedReport.body.jobId);
 
+  const groundedBase = await owner.post('/api/knowledge-bases').send({
+    name: 'Support policy', description: 'Approved support guidance', privacy: 'space', terraContextEnabled: true
+  }).expect(201);
+  const knowledgeBaseId = groundedBase.body.knowledgeBase.id as string;
+  const knowledgeDocumentId = crypto.randomUUID();
+  db.prepare(`UPDATE knowledge_bases SET status='ready',embedding_provider=?,embedding_model=?,embedding_revision=?,
+    embedding_dtype=?,embedding_dimension=?,vector_index_version=?,current_version=1,last_allocated_version=1,
+    last_indexed_at=?,updated_at=? WHERE id=? AND space_id=?`).run(gteProfile.provider, gteProfile.model,
+      gteProfile.revision, gteProfile.dtype, gteProfile.dimensions, gteProfile.vectorIndexVersion, timestamp, timestamp,
+      knowledgeBaseId, user.active_space_id);
+  db.prepare(`DELETE FROM knowledge_base_embedding_profiles WHERE knowledge_base_id=? AND space_id=?`)
+    .run(knowledgeBaseId, user.active_space_id);
+  db.prepare(`INSERT INTO knowledge_base_embedding_profiles
+    (space_id,knowledge_base_id,vector_index_version,mode,state,current_version,created_at,updated_at)
+    VALUES (?,?,?,'primary','ready',1,?,?)`).run(user.active_space_id, knowledgeBaseId,
+      gteProfile.vectorIndexVersion, timestamp, timestamp);
+  db.prepare(`INSERT INTO knowledge_documents
+    (id,space_id,knowledge_base_id,created_by,stored_filename,original_name,mime_type,size_bytes,sha256,state,index_version,
+      page_count,chunk_count,language,created_at,updated_at,indexed_at)
+    VALUES (?,?,?,?,?,?,?,?,?,'ready',1,1,1,'en',?,?,?)`).run(knowledgeDocumentId, user.active_space_id,
+      knowledgeBaseId, user.id, `${knowledgeDocumentId}.md`, 'support-policy.md', 'text/markdown', 128, 'a'.repeat(64),
+      timestamp, timestamp, timestamp);
+
+  const groundedAnalysis = await owner.post('/api/social/analyze').send({
+    mentionIds: [mentionId], knowledgeBaseIds: [knowledgeBaseId]
+  }).expect(202);
+  const groundedAnalysisJob = getJob(groundedAnalysis.body.jobId); assert.ok(groundedAnalysisJob);
+  assert.equal(groundedAnalysisJob.input.knowledgeBaseIds, undefined);
+  assert.deepEqual((groundedAnalysisJob.input.knowledgeBaseRefs as any[]).map((ref) => ref.id), [knowledgeBaseId]);
+
+  const groundedReportKey = crypto.randomUUID();
+  const groundedReportInput = {
+    connectionId, title: 'Grounded onboarding report', mentionIds: [mentionId], knowledgeBaseIds: [knowledgeBaseId]
+  };
+  const groundedReport = await owner.post('/api/social/reports').set('Idempotency-Key', groundedReportKey)
+    .send(groundedReportInput).expect(202);
+  const groundedReportJob = getJob(groundedReport.body.jobId); assert.ok(groundedReportJob);
+  assert.deepEqual((groundedReportJob.input.knowledgeBaseRefs as any[]).map((ref) => ref.id), [knowledgeBaseId]);
+  assert.deepEqual(groundedReport.body.report.knowledgeBaseIds, [knowledgeBaseId]);
+  const groundedReportReplay = await owner.post('/api/social/reports').set('Idempotency-Key', groundedReportKey)
+    .send(groundedReportInput).expect(202);
+  assert.equal(groundedReportReplay.body.jobId, groundedReport.body.jobId);
+  assert.equal(groundedReportReplay.body.deduplicated, true);
+  const changedKnowledgeReplay = await owner.post('/api/social/reports').set('Idempotency-Key', groundedReportKey)
+    .send({ connectionId, title: groundedReportInput.title, mentionIds: [mentionId] }).expect(409);
+  assert.match(changedKnowledgeReplay.body.error, /different knowledge selection/u);
+  await owner.post('/api/social/reports')
+    .send({ connectionId, title: groundedReportInput.title, mentionIds: [mentionId] }).expect(409);
+
+  const privateBase = await owner.post('/api/knowledge-bases').send({
+    name: 'Private notes', privacy: 'private', terraContextEnabled: true
+  }).expect(201);
+  const privateSelection = await owner.post('/api/social/analyze').send({
+    mentionIds: [mentionId], knowledgeBaseIds: [privateBase.body.knowledgeBase.id]
+  }).expect(409);
+  assert.equal(privateSelection.body.code, 'KNOWLEDGE_PRIVATE_CONTEXT_NOT_SHAREABLE');
+  const tooManyKnowledgeBases = Array.from({ length: 6 }, () => crypto.randomUUID());
+  await owner.post('/api/social/analyze').send({ mentionIds: [mentionId], knowledgeBaseIds: tooManyKnowledgeBases }).expect(400);
+  await owner.post('/api/social/reports').send({
+    connectionId, title: 'Too many knowledge bases', mentionIds: [mentionId], knowledgeBaseIds: tooManyKnowledgeBases
+  }).expect(400);
+
+  let activeGroundedJob: { id: string; kind: 'social.analyze' | 'social.report' } | null = null;
+  const retrievalCalls: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'knowledge.test') {
+      const payload = JSON.parse(String(init?.body || '{}')) as any;
+      assert.equal(url.pathname, '/v1/retrieve');
+      assert.equal(payload.requestId, `${activeGroundedJob?.id}:knowledge`);
+      assert.deepEqual(payload.embeddingProfile, gteProfile);
+      assert.deepEqual(payload.knowledgeBases.map((base: any) => base.id), [knowledgeBaseId]);
+      assert.deepEqual(payload.knowledgeBases[0].embeddingProfile, gteProfile);
+      assert.deepEqual(payload.retrieval, { vector: true, bm25: true, fusion: 'rrf', rerank: true });
+      retrievalCalls.push(activeGroundedJob!.kind);
+      return new Response(JSON.stringify({
+        citations: [{ sourceRef: `${knowledgeBaseId}:${knowledgeDocumentId}:support`, knowledgeBaseId,
+          documentId: knowledgeDocumentId, documentName: 'support-policy.md', page: 1,
+          excerpt: 'Approved support guidance requires acknowledging onboarding friction.', score: 0.97 }],
+        metrics: { fusion: 'weighted-rrf+local-reranker', rerankedCount: 1,
+          timings: { vectorMs: 2, bm25Ms: 1, rrfMs: 1, rerankerMs: 3 }, reranker: bgeReranker,
+          embeddingProfile: gteProfile, providerFallback: null, providerRouting: null }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    const context = db.prepare(`SELECT knowledge_refs_json,metrics_json,context_text FROM ai_job_knowledge_contexts
+      WHERE ai_job_id=? AND space_id=?`).get(activeGroundedJob!.id, user.active_space_id) as any;
+    assert.ok(context, `${activeGroundedJob!.kind} must persist the exact retrieval snapshot before Terra dispatch`);
+    assert.deepEqual(JSON.parse(context.knowledge_refs_json).map((ref: any) => ref.id), [knowledgeBaseId]);
+    const metrics = JSON.parse(context.metrics_json);
+    assert.equal(metrics.fusion, 'weighted-rrf+local-reranker');
+    assert.equal(metrics.rerankedCount, 1);
+    assert.equal(metrics.timings.rerankerMs, 3);
+    assert.deepEqual(metrics.embeddingProfile, gteProfile);
+    assert.deepEqual(metrics.reranker, bgeReranker);
+    assert.match(context.context_text, /Approved support guidance/u);
+    const sourceRef = activeGroundedJob!.kind === 'social.report' ? `x-post:${mentionId}` : mentionId;
+    return terraResponse({
+      executiveSummary: 'One saved X post reports onboarding friction.',
+      sentiment: { negative: 1, neutral: 0, positive: 0, mixed: 0 },
+      themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [postText] }],
+      emergingTrends: [], risks: [], opportunities: [],
+      mentions: [{ mentionId: sourceRef, sentiment: 'negative', sentimentScore: -0.7,
+        emotions: ['frustration'], themes: ['onboarding'], summary: 'The author reports difficult onboarding.',
+        risk: 'medium', evidence: postText }]
+    });
+  };
+
+  for (const groundedJob of [groundedAnalysisJob, groundedReportJob]) {
+    activeGroundedJob = { id: groundedJob.id, kind: groundedJob.kind as 'social.analyze' | 'social.report' };
+    const result = await executeAiJob(groundedJob);
+    updateJob(groundedJob.id, { state: 'completed', stage: 'completed', progress: 100, result,
+      completedAt: new Date().toISOString() });
+    const snapshot = db.prepare('SELECT metrics_json FROM ai_job_knowledge_contexts WHERE ai_job_id=? AND space_id=?')
+      .get(groundedJob.id, user.active_space_id) as any;
+    assert.ok(snapshot);
+    assert.equal(Number((db.prepare(`SELECT COUNT(*) count FROM knowledge_audit_events
+      WHERE ai_job_id=? AND action='knowledge.context_snapshot_created'`).get(groundedJob.id) as any).count), 1);
+  }
+  assert.deepEqual(retrievalCalls, ['social.analyze', 'social.report']);
+
   const journaledDraft = createSocialReplyDraft({ id: user.id } as any, user.active_space_id, { mentionId, tone: 'professional', instructions: 'Keep this for recovery.' });
   const journaledOutput = { reply: 'Thank you for describing the onboarding difficulty so clearly.', rationale: 'Acknowledges only the supplied issue.', safetyFlags: [] };
   db.prepare('UPDATE ai_jobs SET provider_result_json=? WHERE id=?').run(JSON.stringify({
@@ -153,7 +283,7 @@ test('combines selected historical survey and social reports with immutable evid
   const survey = await owner.post('/api/surveys').send({ title: 'Onboarding experience', description: 'First-time setup research', questions: [] }).expect(201);
   const surveySummary = 'Survey participants said onboarding instructions were difficult to follow.';
   const insight = insertInsight(survey.body.id, 'ai_insights', { executiveSummary: surveySummary, healthScore: 48 });
-  const socialReport = db.prepare("SELECT id,result_json FROM social_intelligence_reports WHERE state='completed' ORDER BY created_at DESC LIMIT 1").get() as any;
+  const socialReport = db.prepare("SELECT id,result_json FROM social_intelligence_reports WHERE state='completed' AND title='Onboarding listening report' LIMIT 1").get() as any;
   assert.ok(socialReport);
   const sources = await owner.get('/api/intelligence/sources').expect(200);
   const surveyRef = `survey-insight:${insight.id}`; const socialRef = `social-report:${socialReport.id}`;

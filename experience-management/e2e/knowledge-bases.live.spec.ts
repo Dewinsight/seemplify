@@ -1,6 +1,11 @@
 import { expect, test, type APIResponse, type Page } from '@playwright/test';
 
 const liveEnabled = process.env.KNOWLEDGE_E2E_LIVE === '1';
+const expectedEmbeddingProvider = process.env.KNOWLEDGE_E2E_EXPECTED_PROVIDER || 'gte-node';
+const pinnedReranker = {
+  model: 'BAAI/bge-reranker-v2-m3',
+  revision: '953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e'
+};
 const fixtureName = 'meridian-live-graphrag.md';
 const fixture = `# Project Meridian operating policy
 
@@ -19,7 +24,10 @@ async function signIn(page: Page) {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
   await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  const loginResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/auth/login');
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await json(await loginResponse);
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 }
 
@@ -27,6 +35,21 @@ async function json(response: APIResponse) {
   const body = await response.json().catch(() => ({}));
   expect(response.ok(), `${response.status()} ${response.url()}: ${JSON.stringify(body)}`).toBeTruthy();
   return body as any;
+}
+
+function expectPinnedRetrieval(result: any) {
+  const retrieval = result?.runtime?.retrieval;
+  expect(retrieval, JSON.stringify(result?.runtime)).toBeTruthy();
+  expect(retrieval.embeddingProfile?.provider).toBe(expectedEmbeddingProvider);
+  expect(retrieval.providerFallback).toBeNull();
+  expect(retrieval.fusion).toBe('weighted-rrf+local-reranker');
+  expect(retrieval.rerankedCount).toBeGreaterThan(0);
+  expect(retrieval.timings?.rerankerMs).toBeGreaterThanOrEqual(0);
+  expect(retrieval.reranker).toEqual(expect.objectContaining({
+    ...pinnedReranker, executed: true
+  }));
+  expect(retrieval.reranker.inputCount).toBeGreaterThanOrEqual(retrieval.reranker.outputCount);
+  expect(retrieval.reranker.outputCount).toBe(retrieval.rerankedCount);
 }
 
 test('real local GraphRAG completes the browser knowledge workflow with provenance and explicit Terra consent', async ({ page }, testInfo) => {
@@ -37,6 +60,7 @@ test('real local GraphRAG completes the browser knowledge workflow with provenan
   const baseName = `Meridian live ${Date.now()}`;
   let knowledgeBaseId = '';
   let indexJobId = '';
+  let completedIndexJob: any = null;
   const observedStages = new Set<string>();
   page.on('response', async (response) => {
     if (!response.ok() || !new URL(response.url()).pathname.endsWith('/indexing-jobs')) return;
@@ -85,8 +109,13 @@ test('real local GraphRAG completes the browser knowledge workflow with provenan
     }, { timeout: 12 * 60_000, intervals: [1_000, 2_000, 4_000] }).toBe('ready');
     await expect.poll(async () => {
       const response = await page.request.get(`/api/knowledge-jobs/${indexJobId}`);
-      return (await json(response)).state;
+      completedIndexJob = await json(response);
+      return completedIndexJob.state;
     }, { timeout: 30_000, intervals: [500, 1_000] }).toBe('completed');
+    const writtenProviders = new Set((completedIndexJob?.result?.metrics?.embeddingProfiles || [])
+      .map((profile: any) => profile.provider));
+    expect(writtenProviders.has(expectedEmbeddingProvider), JSON.stringify(completedIndexJob?.result)).toBe(true);
+    if (expectedEmbeddingProvider === 'gte-node') expect(writtenProviders.has('qwen-tei')).toBe(true);
     await page.getByRole('button', { name: 'Refresh' }).click();
     const documentRow = page.getByRole('row').filter({ hasText: fixtureName });
     await expect(documentRow.getByText('ready', { exact: true })).toBeVisible();
@@ -110,6 +139,7 @@ test('real local GraphRAG completes the browser knowledge workflow with provenan
     expect(localSearch.answer).toBeNull();
     expect(localSearch.citations?.length).toBeGreaterThan(0);
     expect(localSearch.citations[0].documentName).toBe(fixtureName);
+    expectPinnedRetrieval(localSearch);
     await expect(page.getByText(fixtureName, { exact: true }).first()).toBeVisible();
 
     await page.getByRole('button', { name: 'Edit settings' }).click();
@@ -125,6 +155,7 @@ test('real local GraphRAG completes the browser knowledge workflow with provenan
     const groundedSearch = await json(await groundedSearchPromise);
     expect(groundedSearch.answer).toMatch(/Amina|48 hours/i);
     expect(groundedSearch.citations?.some((citation: any) => citation.documentName === fixtureName)).toBe(true);
+    expectPinnedRetrieval(groundedSearch);
     await expect(page.getByRole('heading', { name: 'Answer' })).toBeVisible();
 
     const graphResponsePromise = page.waitForResponse((response) =>

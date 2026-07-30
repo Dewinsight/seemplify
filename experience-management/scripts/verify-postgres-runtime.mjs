@@ -156,7 +156,9 @@ async function main() {
       throw fail('Applied PostgreSQL runtime migrations do not match this release.', 'RUNTIME_MIGRATION_CHECKSUM_MISMATCH');
     }
     const runtimeQuery = async (sql) => ({ rows: db.prepare(sql).all() });
-    const schemaContract = await assertRuntimeSchemaContract(runtimeQuery, { schema: 'public' });
+    const schemaContract = await assertRuntimeSchemaContract(runtimeQuery, {
+      schema: 'public', runtimeVersion: config.postgres.runtimeSchemaVersion
+    });
     const privilegeContract = await assertRuntimePrivileges(runtimeQuery, config.postgres.user, { schema: 'public' });
 
     const actualTableNames = (db.prepare(`SELECT table_name name
