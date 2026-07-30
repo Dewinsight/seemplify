@@ -13,7 +13,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   RUNTIME_EXTENSION_TABLES,
   assertRuntimePrivileges,
-  assertRuntimeSchemaContract
+  assertRuntimeSchemaContract,
+  runtimeTableSetDifference
 } from './postgres-runtime-contract.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -165,9 +166,7 @@ async function main() {
       FROM information_schema.tables
       WHERE table_schema=current_schema() AND table_type='BASE TABLE'
         AND table_name<>'experience_schema_version' ORDER BY table_name`).all()).map((row) => String(row.name));
-    const expectedTables = new Set([...tableNames, ...RUNTIME_EXTENSION_TABLES]);
-    const unknownTables = actualTableNames.filter((name) => !expectedTables.has(name));
-    const missingTables = [...expectedTables].filter((name) => !actualTableNames.includes(name));
+    const { unknownTables, missingTables } = runtimeTableSetDifference(tableNames, actualTableNames);
     if (unknownTables.length || missingTables.length) {
       throw fail(`PostgreSQL tables differ from the source manifest plus runtime extensions (unknown: ${unknownTables.join(', ') || 'none'}; missing: ${missingTables.join(', ') || 'none'}).`, 'SOURCE_MANIFEST_MISMATCH');
     }

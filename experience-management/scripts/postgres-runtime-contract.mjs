@@ -8,10 +8,25 @@ export const RUNTIME_EXTENSION_TABLES = Object.freeze([
   'platform_subscription_events',
   'platform_audit_events',
   'ticket_events',
+  'knowledge_embedding_profiles',
+  'knowledge_base_embedding_profiles',
+  'knowledge_document_embeddings',
+  'knowledge_backfill_runs',
+  'knowledge_backfill_run_bases',
+  'knowledge_backfill_items',
+  'knowledge_embedding_promotion_approvals',
   'assistant_nylas_connections',
   'assistant_nylas_oauth_states',
   'assistant_runs'
 ]);
+
+export function runtimeTableSetDifference(sourceTableNames, actualTableNames) {
+  const expectedTables = new Set([...sourceTableNames, ...RUNTIME_EXTENSION_TABLES]);
+  return {
+    unknownTables: actualTableNames.filter((name) => !expectedTables.has(name)),
+    missingTables: [...expectedTables].filter((name) => !actualTableNames.includes(name))
+  };
+}
 
 const exactColumns = Object.freeze({
   experience_runtime_schema_version: [
