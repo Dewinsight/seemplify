@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { SessionUser } from './auth.js';
-import { createJob, db, getJob, listSocialMentionsByIds } from './database.js';
+import { createJob, db, getJob, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
 
 export class IntelligenceError extends Error {
@@ -60,16 +60,21 @@ export function validateSocialListeningEvidence(sources: Array<{ sourceRef: stri
   }
 }
 
-function userOwnsConnection(userId: string, connectionId: string) {
-  return Boolean(db.prepare('SELECT 1 FROM x_connections WHERE id=? AND user_id=?').get(connectionId, userId));
+function spaceOwnsConnection(spaceId: string, connectionId: string) {
+  return Boolean(db.prepare('SELECT 1 FROM x_connections WHERE id=? AND space_id=?').get(connectionId, spaceId));
 }
-function ownedXMention(userId: string, mentionId: string) {
+function ownedXMention(spaceId: string, mentionId: string) {
   return db.prepare(`SELECT m.* FROM social_mentions m JOIN x_connection_mentions cm ON cm.mention_id=m.id
-    JOIN x_connections c ON c.id=cm.connection_id WHERE m.id=? AND m.source='x' AND c.user_id=? LIMIT 1`).get(mentionId, userId) as any;
+    JOIN x_connections c ON c.id=cm.connection_id WHERE m.id=? AND m.source='x' AND c.space_id=? LIMIT 1`).get(mentionId, spaceId) as any;
+}
+
+function artifactJob(row: any) {
+  const job = row?.ai_job_id ? getJob(row.ai_job_id) : null;
+  return job && job.spaceId === row.space_id ? job : null;
 }
 
 function rowReplyDraft(row: any) {
-  const job = row.ai_job_id ? getJob(row.ai_job_id) : null;
+  const job = artifactJob(row);
   return {
     id: row.id, mentionId: row.mention_id, connectionId: row.connection_id, tone: row.tone, instructions: row.instructions,
     state: job?.state === 'failed' ? 'failed' : row.state, generatedContent: row.generated_content, content: row.content,
@@ -78,93 +83,98 @@ function rowReplyDraft(row: any) {
   };
 }
 
-export function listSocialReplyDrafts(user: SessionUser, mentionId?: string) {
-  const parameters: unknown[] = [user.id]; let mentionFilter = '';
+export function listSocialReplyDrafts(_user: SessionUser, spaceId: string, mentionId?: string) {
+  const parameters: unknown[] = [spaceId]; let mentionFilter = '';
   if (mentionId) { parameters.push(mentionId); mentionFilter = ' AND d.mention_id=?'; }
-  return (db.prepare(`SELECT d.* FROM social_reply_drafts d WHERE d.requested_by=?${mentionFilter}
+  return (db.prepare(`SELECT d.* FROM social_reply_drafts d WHERE d.space_id=?${mentionFilter}
     ORDER BY d.created_at DESC LIMIT 200`).all(...parameters) as any[]).map(rowReplyDraft);
 }
 
-export function createSocialReplyDraft(user: SessionUser, input: { mentionId: string; tone: string; instructions?: string; idempotencyKey?: string }) {
-  const mention = ownedXMention(user.id, input.mentionId);
+export function createSocialReplyDraft(user: SessionUser, spaceId: string, input: { mentionId: string; tone: string; instructions?: string; idempotencyKey?: string }) {
+  const mention = ownedXMention(spaceId, input.mentionId);
   if (!mention) throw new IntelligenceError('X post not found for this account.', 404);
   const connection = db.prepare(`SELECT c.* FROM x_connections c JOIN x_connection_mentions cm ON cm.connection_id=c.id
-    WHERE cm.mention_id=? AND c.user_id=? LIMIT 1`).get(input.mentionId, user.id) as any;
+    WHERE cm.mention_id=? AND c.space_id=? LIMIT 1`).get(input.mentionId, spaceId) as any;
   const id = crypto.randomUUID(); const timestamp = now(); const instructions = cleanText(input.instructions, 1000);
   const source = { mentionId: mention.id, author: mention.author, content: mention.content, url: mention.url,
     publishedAt: mention.published_at, analysis: parseJson(mention.analysis_json, null) };
   const created = db.transaction(() => {
     if (input.idempotencyKey) {
-      const replay = db.prepare('SELECT * FROM social_reply_drafts WHERE requested_by=? AND idempotency_key=?').get(user.id, input.idempotencyKey) as any;
+      const replay = db.prepare('SELECT * FROM social_reply_drafts WHERE space_id=? AND requested_by=? AND idempotency_key=?').get(spaceId, user.id, input.idempotencyKey) as any;
       if (replay) {
         if (replay.mention_id !== mention.id || replay.tone !== input.tone || replay.instructions !== instructions) throw new IntelligenceError('This idempotency key was already used for a different reply request.', 409);
-        const job = replay.ai_job_id ? getJob(replay.ai_job_id) : null;
+        const job = artifactJob(replay);
         if (!job) throw new IntelligenceError('The original idempotent reply request is no longer available.', 409);
         return { draft: rowReplyDraft(replay), job, created: false };
       }
     }
-    const existing = db.prepare(`SELECT * FROM social_reply_drafts WHERE requested_by=? AND mention_id=? AND tone=? AND instructions=? AND state='queued'
-      ORDER BY created_at LIMIT 1`).get(user.id, mention.id, input.tone, instructions) as any;
+    const existing = db.prepare(`SELECT * FROM social_reply_drafts WHERE space_id=? AND requested_by=? AND mention_id=? AND tone=? AND instructions=? AND state='queued'
+      ORDER BY created_at LIMIT 1`).get(spaceId, user.id, mention.id, input.tone, instructions) as any;
     if (existing) {
-      const job = existing.ai_job_id ? getJob(existing.ai_job_id) : null;
+      const job = artifactJob(existing);
       if (job && ['queued', 'processing'].includes(job.state)) return { draft: rowReplyDraft(existing), job, created: false };
       db.prepare("UPDATE social_reply_drafts SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
-    db.prepare(`INSERT INTO social_reply_drafts (id,mention_id,connection_id,requested_by,tone,instructions,source_snapshot_json,state,idempotency_key,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, mention.id, connection.id, user.id, input.tone, instructions, JSON.stringify(source), input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('social.reply_draft', { draftId: id }, null, null, user.id);
+    db.prepare(`INSERT INTO social_reply_drafts (id,space_id,mention_id,connection_id,requested_by,tone,instructions,source_snapshot_json,state,idempotency_key,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, mention.id, connection.id, user.id, input.tone, instructions, JSON.stringify(source), input.idempotencyKey || null, timestamp, timestamp);
+    const job = createJob('social.reply_draft', { draftId: id }, spaceId, null, null, user.id);
     db.prepare('UPDATE social_reply_drafts SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { draft: rowReplyDraft(db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id)), job, created: true };
   })();
-  publishEvent('data-changed', { reason: 'social-reply-draft-created', draftId: id });
+  publishEvent('data-changed', { reason: 'social-reply-draft-created', draftId: id }, spaceId);
   return created;
 }
 
-export function updateSocialReplyDraft(user: SessionUser, id: string, input: { content?: string; archived?: boolean }) {
-  const row = db.prepare('SELECT * FROM social_reply_drafts WHERE id=? AND requested_by=?').get(id, user.id) as any;
+export function updateSocialReplyDraft(_user: SessionUser, spaceId: string, id: string, input: { content?: string; archived?: boolean }) {
+  const row = db.prepare('SELECT * FROM social_reply_drafts WHERE id=? AND space_id=?').get(id, spaceId) as any;
   if (!row) throw new IntelligenceError('Reply draft not found.', 404);
   if (row.state === 'queued') throw new IntelligenceError('Wait for Terra to finish before editing or archiving this draft.', 409);
   if (input.content !== undefined && !cleanText(input.content, 280)) throw new IntelligenceError('A reply draft cannot be empty.');
   const state = input.archived ? 'archived' : input.content !== undefined ? 'edited' : row.state;
   db.prepare('UPDATE social_reply_drafts SET content=?,state=?,updated_at=? WHERE id=?')
     .run(input.content === undefined ? row.content : cleanText(input.content, 280), state, now(), id);
-  publishEvent('data-changed', { reason: 'social-reply-draft-updated', draftId: id });
+  publishEvent('data-changed', { reason: 'social-reply-draft-updated', draftId: id }, spaceId);
   return rowReplyDraft(db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id));
 }
 
-export function replyDraftExecutionInput(id: string) {
-  const row = db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id) as any;
+export function replyDraftExecutionInput(id: string, spaceId?: string) {
+  const row = spaceId
+    ? db.prepare('SELECT * FROM social_reply_drafts WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id) as any;
   if (!row) throw new IntelligenceError('Reply draft was deleted.', 404);
   return { id: row.id, tone: row.tone, instructions: row.instructions, source: parseJson(row.source_snapshot_json, {}) };
 }
 
-export function completeSocialReplyDraft(id: string, output: { reply: string; rationale: string; safetyFlags: string[] }, runtime: unknown) {
-  const current = db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id) as any;
+export function completeSocialReplyDraft(id: string, output: { reply: string; rationale: string; safetyFlags: string[] }, runtime: unknown, spaceId?: string) {
+  const current = spaceId
+    ? db.prepare('SELECT * FROM social_reply_drafts WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id) as any;
+  if (!current) throw new IntelligenceError('Reply draft was deleted.', 404);
   if (current && ['ready', 'edited', 'archived'].includes(current.state) && current.generated_content) return rowReplyDraft(current);
   const timestamp = now();
   const changed = db.prepare(`UPDATE social_reply_drafts SET state='ready',generated_content=?,content=?,rationale=?,safety_flags_json=?,runtime_json=?,error=NULL,
     completed_at=?,updated_at=? WHERE id=? AND state='queued'`).run(output.reply, output.reply, output.rationale, JSON.stringify(output.safetyFlags), JSON.stringify(runtime), timestamp, timestamp, id).changes;
   if (!changed) throw new IntelligenceError('Reply draft changed while Terra was generating it.', 409);
-  publishEvent('data-changed', { reason: 'social-reply-draft-ready', draftId: id });
+  publishEvent('data-changed', { reason: 'social-reply-draft-ready', draftId: id }, current.space_id);
   return rowReplyDraft(db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id));
 }
 
 function rowSocialReport(row: any) {
-  const job = row.ai_job_id ? getJob(row.ai_job_id) : null;
+  const job = artifactJob(row);
   return { id: row.id, connectionId: row.connection_id, title: row.title, mentionIds: parseJson<string[]>(row.mention_ids_json, []),
     state: job?.state === 'failed' ? 'failed' : row.state, result: parseJson(row.result_json, null), runtime: parseJson(row.runtime_json, null),
     aiJobId: row.ai_job_id, error: job?.error || row.error, createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at };
 }
 
-export function listSocialIntelligenceReports(user: SessionUser, connectionId?: string) {
-  const parameters: unknown[] = [user.id]; let connectionFilter = '';
-  if (connectionId) { if (!userOwnsConnection(user.id, connectionId)) throw new IntelligenceError('X connection not found.', 404); parameters.push(connectionId); connectionFilter = ' AND r.connection_id=?'; }
-  return (db.prepare(`SELECT r.* FROM social_intelligence_reports r WHERE r.user_id=?${connectionFilter} ORDER BY r.created_at DESC LIMIT 100`).all(...parameters) as any[]).map(rowSocialReport);
+export function listSocialIntelligenceReports(_user: SessionUser, spaceId: string, connectionId?: string) {
+  const parameters: unknown[] = [spaceId]; let connectionFilter = '';
+  if (connectionId) { if (!spaceOwnsConnection(spaceId, connectionId)) throw new IntelligenceError('X connection not found.', 404); parameters.push(connectionId); connectionFilter = ' AND r.connection_id=?'; }
+  return (db.prepare(`SELECT r.* FROM social_intelligence_reports r WHERE r.space_id=?${connectionFilter} ORDER BY r.created_at DESC LIMIT 100`).all(...parameters) as any[]).map(rowSocialReport);
 }
 
-export function createSocialIntelligenceReport(user: SessionUser, input: { connectionId: string; title: string; mentionIds?: string[]; idempotencyKey?: string }) {
-  if (!userOwnsConnection(user.id, input.connectionId)) throw new IntelligenceError('X connection not found.', 404);
+export function createSocialIntelligenceReport(user: SessionUser, spaceId: string, input: { connectionId: string; title: string; mentionIds?: string[]; idempotencyKey?: string }) {
+  if (!spaceOwnsConnection(spaceId, input.connectionId)) throw new IntelligenceError('X connection not found.', 404);
   if ((input.mentionIds || []).length > 200) throw new IntelligenceError('Select no more than 200 X posts for one report.');
   let ids = [...new Set(input.mentionIds || [])].slice(0, 200);
   if (!ids.length) ids = (db.prepare(`SELECT mention_id id FROM x_connection_mentions WHERE connection_id=? ORDER BY last_seen_at DESC LIMIT 200`)
@@ -173,7 +183,7 @@ export function createSocialIntelligenceReport(user: SessionUser, input: { conne
   const allowed = new Set((db.prepare(`SELECT mention_id id FROM x_connection_mentions WHERE connection_id=? AND mention_id IN (${ids.map(() => '?').join(',')})`)
     .all(input.connectionId, ...ids) as Array<{ id: string }>).map((row) => row.id));
   if (allowed.size !== ids.length) throw new IntelligenceError('One or more selected X posts do not belong to this account.', 404);
-  const mentions = listSocialMentionsByIds(ids);
+  const mentions = listSocialMentionsByIdsForSpace(ids, spaceId);
   const snapshot = mentions.map((mention) => ({ sourceRef: `x-post:${mention.id}`, author: cleanText(mention.author, 200), content: cleanText(mention.content, 1200),
     publishedAt: mention.publishedAt, analysis: mention.analysis ? {
       sentiment: (mention.analysis as any).sentiment, sentimentScore: (mention.analysis as any).sentimentScore,
@@ -188,41 +198,46 @@ export function createSocialIntelligenceReport(user: SessionUser, input: { conne
   const idsJson = JSON.stringify(ids); const id = crypto.randomUUID(); const timestamp = now();
   const created = db.transaction(() => {
     if (input.idempotencyKey) {
-      const replay = db.prepare('SELECT * FROM social_intelligence_reports WHERE user_id=? AND idempotency_key=?').get(user.id, input.idempotencyKey) as any;
+      const replay = db.prepare('SELECT * FROM social_intelligence_reports WHERE space_id=? AND user_id=? AND idempotency_key=?').get(spaceId, user.id, input.idempotencyKey) as any;
       if (replay) {
         if (replay.connection_id !== input.connectionId || replay.title !== title || replay.mention_ids_json !== idsJson) throw new IntelligenceError('This idempotency key was already used for a different social report.', 409);
-        const job = replay.ai_job_id ? getJob(replay.ai_job_id) : null;
+        const job = artifactJob(replay);
         if (!job) throw new IntelligenceError('The original idempotent social report is no longer available.', 409);
         return { report: rowSocialReport(replay), job, created: false };
       }
     }
-    const existing = db.prepare(`SELECT * FROM social_intelligence_reports WHERE user_id=? AND connection_id=? AND title=? AND mention_ids_json=? AND state='queued'
-      ORDER BY created_at LIMIT 1`).get(user.id, input.connectionId, title, idsJson) as any;
+    const existing = db.prepare(`SELECT * FROM social_intelligence_reports WHERE space_id=? AND user_id=? AND connection_id=? AND title=? AND mention_ids_json=? AND state='queued'
+      ORDER BY created_at LIMIT 1`).get(spaceId, user.id, input.connectionId, title, idsJson) as any;
     if (existing) {
-      const job = existing.ai_job_id ? getJob(existing.ai_job_id) : null;
+      const job = artifactJob(existing);
       if (job && ['queued', 'processing'].includes(job.state)) return { report: rowSocialReport(existing), job, created: false };
       db.prepare("UPDATE social_intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
-    db.prepare(`INSERT INTO social_intelligence_reports (id,user_id,connection_id,title,mention_ids_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,'queued',?,?,?)`).run(id, user.id, input.connectionId, title, idsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('social.report', { reportId: id }, null, null, user.id);
+    db.prepare(`INSERT INTO social_intelligence_reports (id,space_id,user_id,connection_id,title,mention_ids_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, input.connectionId, title, idsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
+    const job = createJob('social.report', { reportId: id }, spaceId, null, null, user.id);
     db.prepare('UPDATE social_intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { report: rowSocialReport(db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id)), job, created: true };
   })();
-  publishEvent('data-changed', { reason: 'social-intelligence-report-created', reportId: id });
+  publishEvent('data-changed', { reason: 'social-intelligence-report-created', reportId: id }, spaceId);
   return created;
 }
 
-export function socialReportExecutionInput(id: string) {
-  const row = db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id) as any;
+export function socialReportExecutionInput(id: string, spaceId?: string) {
+  const row = spaceId
+    ? db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id) as any;
   if (!row) throw new IntelligenceError('Social intelligence report was deleted.', 404);
   return { id: row.id, title: row.title, mentions: parseJson(row.source_snapshot_json, []) };
 }
-export function completeSocialIntelligenceReport(id: string, output: unknown, runtime: unknown) {
-  const current = db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id) as any;
+export function completeSocialIntelligenceReport(id: string, output: unknown, runtime: unknown, spaceId?: string) {
+  const current = spaceId
+    ? db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id) as any;
+  if (!current) throw new IntelligenceError('Social intelligence report was deleted.', 404);
   if (current?.state === 'completed' && current.result_json) return rowSocialReport(current);
-  const input = socialReportExecutionInput(id);
+  const input = socialReportExecutionInput(id, spaceId);
   const result = output as any;
   validateSocialListeningEvidence(input.mentions.map((mention: any) => ({ sourceRef: String(mention.sourceRef), content: String(mention.content || '') })), result);
   const timestamp = now();
@@ -230,44 +245,44 @@ export function completeSocialIntelligenceReport(id: string, output: unknown, ru
     WHERE id=? AND state='queued'`).run(JSON.stringify(output), JSON.stringify(runtime), timestamp, timestamp, id).changes) {
     throw new IntelligenceError('Social report changed while Terra was generating it.', 409);
   }
-  publishEvent('data-changed', { reason: 'social-intelligence-report-ready', reportId: id });
+  publishEvent('data-changed', { reason: 'social-intelligence-report-ready', reportId: id }, current.space_id);
   return rowSocialReport(db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id));
 }
 
 type IntelligenceSource = { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string; payload?: unknown };
-function availableSources(user: SessionUser, withPayload = false): IntelligenceSource[] {
+function availableSources(spaceId: string, withPayload = false): IntelligenceSource[] {
   const surveys = (db.prepare(`SELECT i.id,i.kind,i.payload_json,i.created_at,s.title survey_title FROM insights i JOIN surveys s ON s.id=i.survey_id
-    WHERE i.kind IN ('ai_insights','executive_report') ORDER BY i.created_at DESC LIMIT 200`).all() as any[]).map((row) => {
+    WHERE s.space_id=? AND i.kind IN ('ai_insights','executive_report') ORDER BY i.created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
       const payload = parseJson(row.payload_json, {}); return { ref: `survey-insight:${row.id}`, type: 'survey' as const,
       title: `${row.survey_title} · ${row.kind === 'executive_report' ? 'Executive report' : 'AI insights'}`, kind: row.kind,
         createdAt: row.created_at, preview: preview(payload), ...(withPayload ? { payload } : {}) };
     });
-  const social = (db.prepare(`SELECT * FROM social_intelligence_reports WHERE user_id=? AND state='completed' ORDER BY created_at DESC LIMIT 200`).all(user.id) as any[]).map((row) => {
+  const social = (db.prepare(`SELECT * FROM social_intelligence_reports WHERE space_id=? AND state='completed' ORDER BY created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
     const payload = parseJson(row.result_json, {}); return { ref: `social-report:${row.id}`, type: 'social' as const,
       title: row.title, kind: 'social_report', createdAt: row.completed_at || row.created_at, preview: preview(payload), ...(withPayload ? { payload } : {}) };
   });
   return [...surveys, ...social].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
-export function listIntelligenceSources(user: SessionUser) { return availableSources(user, false); }
+export function listIntelligenceSources(_user: SessionUser, spaceId: string) { return availableSources(spaceId, false); }
 
 function rowIntelligenceReport(row: any) {
-  const job = row.ai_job_id ? getJob(row.ai_job_id) : null;
+  const job = artifactJob(row);
   return { id: row.id, title: row.title, objective: row.objective, sourceRefs: parseJson<{ survey: string[]; social: string[] }>(row.source_refs_json, { survey: [], social: [] }),
     state: job?.state === 'failed' ? 'failed' : row.state, result: parseJson(row.result_json, null), runtime: parseJson(row.runtime_json, null),
     aiJobId: row.ai_job_id, error: job?.error || row.error, createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at };
 }
-export function listIntelligenceReports(user: SessionUser) {
-  return (db.prepare('SELECT * FROM intelligence_reports WHERE user_id=? ORDER BY created_at DESC LIMIT 100').all(user.id) as any[]).map(rowIntelligenceReport);
+export function listIntelligenceReports(_user: SessionUser, spaceId: string) {
+  return (db.prepare('SELECT * FROM intelligence_reports WHERE space_id=? ORDER BY created_at DESC LIMIT 100').all(spaceId) as any[]).map(rowIntelligenceReport);
 }
-export function getIntelligenceReport(user: SessionUser, id: string) {
-  const row = db.prepare('SELECT * FROM intelligence_reports WHERE id=? AND user_id=?').get(id, user.id) as any;
+export function getIntelligenceReport(_user: SessionUser, spaceId: string, id: string) {
+  const row = db.prepare('SELECT * FROM intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any;
   if (!row) throw new IntelligenceError('Intelligence report not found.', 404);
   return rowIntelligenceReport(row);
 }
-export function createIntelligenceReport(user: SessionUser, input: { title: string; objective?: string; sourceRefs: string[]; idempotencyKey?: string }) {
+export function createIntelligenceReport(user: SessionUser, spaceId: string, input: { title: string; objective?: string; sourceRefs: string[]; idempotencyKey?: string }) {
   const requested = [...new Set(input.sourceRefs)].slice(0, 12).sort();
   if (requested.length < 2) throw new IntelligenceError('Select at least two historical reports to synthesize.');
-  const sources = availableSources(user, true); const byRef = new Map(sources.map((source) => [source.ref, source]));
+  const sources = availableSources(spaceId, true); const byRef = new Map(sources.map((source) => [source.ref, source]));
   const selected = requested.map((ref) => byRef.get(ref));
   if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
   const snapshot = selected.map((source) => ({ ref: source!.ref, type: source!.type, title: source!.title, kind: source!.kind,
@@ -280,41 +295,46 @@ export function createIntelligenceReport(user: SessionUser, input: { title: stri
   const refsJson = JSON.stringify(refs); const id = crypto.randomUUID(); const timestamp = now();
   const created = db.transaction(() => {
     if (input.idempotencyKey) {
-      const replay = db.prepare('SELECT * FROM intelligence_reports WHERE user_id=? AND idempotency_key=?').get(user.id, input.idempotencyKey) as any;
+      const replay = db.prepare('SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND idempotency_key=?').get(spaceId, user.id, input.idempotencyKey) as any;
       if (replay) {
         if (replay.title !== title || replay.objective !== objective || replay.source_refs_json !== refsJson) throw new IntelligenceError('This idempotency key was already used for a different intelligence report.', 409);
-        const job = replay.ai_job_id ? getJob(replay.ai_job_id) : null;
+        const job = artifactJob(replay);
         if (!job) throw new IntelligenceError('The original idempotent intelligence report is no longer available.', 409);
         return { report: rowIntelligenceReport(replay), job, created: false };
       }
     }
-    const existing = db.prepare(`SELECT * FROM intelligence_reports WHERE user_id=? AND title=? AND objective=? AND source_refs_json=? AND state='queued'
-      ORDER BY created_at LIMIT 1`).get(user.id, title, objective, refsJson) as any;
+    const existing = db.prepare(`SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND title=? AND objective=? AND source_refs_json=? AND state='queued'
+      ORDER BY created_at LIMIT 1`).get(spaceId, user.id, title, objective, refsJson) as any;
     if (existing) {
-      const job = existing.ai_job_id ? getJob(existing.ai_job_id) : null;
+      const job = artifactJob(existing);
       if (job && ['queued', 'processing'].includes(job.state)) return { report: rowIntelligenceReport(existing), job, created: false };
       db.prepare("UPDATE intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
-    db.prepare(`INSERT INTO intelligence_reports (id,user_id,title,objective,source_refs_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,'queued',?,?,?)`).run(id, user.id, title, objective, refsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('intelligence.synthesize', { reportId: id }, null, null, user.id);
+    db.prepare(`INSERT INTO intelligence_reports (id,space_id,user_id,title,objective,source_refs_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, title, objective, refsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
+    const job = createJob('intelligence.synthesize', { reportId: id }, spaceId, null, null, user.id);
     db.prepare('UPDATE intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { report: rowIntelligenceReport(db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id)), job, created: true };
   })();
-  publishEvent('data-changed', { reason: 'intelligence-report-created', reportId: id });
+  publishEvent('data-changed', { reason: 'intelligence-report-created', reportId: id }, spaceId);
   return created;
 }
 
-export function intelligenceExecutionInput(id: string) {
-  const row = db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
+export function intelligenceExecutionInput(id: string, spaceId?: string) {
+  const row = spaceId
+    ? db.prepare('SELECT * FROM intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
   if (!row) throw new IntelligenceError('Intelligence report was deleted.', 404);
   return { id: row.id, title: row.title, objective: row.objective, sources: parseJson<Array<{ ref: string; type: string; title: string; payload: unknown }>>(row.source_snapshot_json, []) };
 }
-export function completeIntelligenceReport(id: string, output: any, runtime: unknown) {
-  const current = db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
+export function completeIntelligenceReport(id: string, output: any, runtime: unknown, spaceId?: string) {
+  const current = spaceId
+    ? db.prepare('SELECT * FROM intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
+  if (!current) throw new IntelligenceError('Intelligence report was deleted.', 404);
   if (current?.state === 'completed' && current.result_json) return rowIntelligenceReport(current);
-  const input = intelligenceExecutionInput(id); const sources = new Map(input.sources.map((source) => [source.ref, { body: normalizedEvidence(source.payload), type: source.type }]));
+  const input = intelligenceExecutionInput(id, spaceId); const sources = new Map(input.sources.map((source) => [source.ref, { body: normalizedEvidence(source.payload), type: source.type }]));
   const findings = [...(output.themes || []), ...(output.convergence || []), ...(output.divergence || []), ...(output.risks || []),
     ...(output.opportunities || []), ...(output.recommendations || [])];
   for (const finding of findings) for (const evidence of finding.evidence || []) {
@@ -339,29 +359,38 @@ export function completeIntelligenceReport(id: string, output: any, runtime: unk
     WHERE id=? AND state='queued'`).run(JSON.stringify(output), JSON.stringify(runtime), timestamp, timestamp, id).changes) {
     throw new IntelligenceError('Intelligence report changed while Terra was generating it.', 409);
   }
-  publishEvent('data-changed', { reason: 'intelligence-report-ready', reportId: id });
+  publishEvent('data-changed', { reason: 'intelligence-report-ready', reportId: id }, current.space_id);
   return rowIntelligenceReport(db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id));
 }
 
-export function appliedIntelligenceArtifact(kind: string, input: Record<string, unknown>) {
+export function appliedIntelligenceArtifact(kind: string, input: Record<string, unknown>, spaceId?: string) {
   if (kind === 'social.reply_draft' && input.draftId) {
-    const row = db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(String(input.draftId)) as any;
+    const row = spaceId
+      ? db.prepare('SELECT * FROM social_reply_drafts WHERE id=? AND space_id=?').get(String(input.draftId), spaceId) as any
+      : db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(String(input.draftId)) as any;
     if (row && ['ready', 'edited', 'archived'].includes(row.state) && row.generated_content) return { output: rowReplyDraft(row), runtime: parseJson(row.runtime_json, null) };
   }
   if (kind === 'social.report' && input.reportId) {
-    const row = db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(String(input.reportId)) as any;
+    const row = spaceId
+      ? db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(String(input.reportId), spaceId) as any
+      : db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(String(input.reportId)) as any;
     if (row?.state === 'completed' && row.result_json) return { output: rowSocialReport(row), runtime: parseJson(row.runtime_json, null) };
   }
   if (kind === 'intelligence.synthesize' && input.reportId) {
-    const row = db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(String(input.reportId)) as any;
+    const row = spaceId
+      ? db.prepare('SELECT * FROM intelligence_reports WHERE id=? AND space_id=?').get(String(input.reportId), spaceId) as any
+      : db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(String(input.reportId)) as any;
     if (row?.state === 'completed' && row.result_json) return { output: rowIntelligenceReport(row), runtime: parseJson(row.runtime_json, null) };
   }
   return null;
 }
 
-export function failIntelligenceArtifact(kind: string, input: Record<string, unknown>, message: string) {
+export function failIntelligenceArtifact(kind: string, input: Record<string, unknown>, message: string, spaceId?: string) {
   const timestamp = now(); const error = message.slice(0, 1000);
-  if (kind === 'social.reply_draft' && input.draftId) db.prepare("UPDATE social_reply_drafts SET state='failed',error=?,updated_at=? WHERE id=? AND state='queued'").run(error, timestamp, String(input.draftId));
-  if (kind === 'social.report' && input.reportId) db.prepare("UPDATE social_intelligence_reports SET state='failed',error=?,updated_at=? WHERE id=? AND state='queued'").run(error, timestamp, String(input.reportId));
-  if (kind === 'intelligence.synthesize' && input.reportId) db.prepare("UPDATE intelligence_reports SET state='failed',error=?,updated_at=? WHERE id=? AND state='queued'").run(error, timestamp, String(input.reportId));
+  if (kind === 'social.reply_draft' && input.draftId) db.prepare("UPDATE social_reply_drafts SET state='failed',error=?,updated_at=? WHERE id=? AND state='queued' AND (? IS NULL OR space_id=?)")
+    .run(error, timestamp, String(input.draftId), spaceId || null, spaceId || null);
+  if (kind === 'social.report' && input.reportId) db.prepare("UPDATE social_intelligence_reports SET state='failed',error=?,updated_at=? WHERE id=? AND state='queued' AND (? IS NULL OR space_id=?)")
+    .run(error, timestamp, String(input.reportId), spaceId || null, spaceId || null);
+  if (kind === 'intelligence.synthesize' && input.reportId) db.prepare("UPDATE intelligence_reports SET state='failed',error=?,updated_at=? WHERE id=? AND state='queued' AND (? IS NULL OR space_id=?)")
+    .run(error, timestamp, String(input.reportId), spaceId || null, spaceId || null);
 }

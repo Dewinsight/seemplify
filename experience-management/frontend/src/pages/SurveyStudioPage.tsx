@@ -4,6 +4,7 @@ import { Link, useParams } from '@/lib/router';
 import { toast } from 'sonner';
 import { api, json } from '@/lib/api';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SurveyStatus } from '@/components/StatusBadge';
@@ -22,6 +23,7 @@ export function SurveyStudioPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  useUnsavedChanges(dirty);
   const load = useCallback(() => api<SurveyDetail>(`/api/surveys/${id}`).then((next) => { setData(next); setDraft((current) => dirty ? current : next.survey); setRefreshKey((value) => value + 1); }), [id, dirty]);
   useEffect(() => { load(); }, [id]);
   useLiveRefresh(() => { if (!dirty) load(); });

@@ -91,12 +91,14 @@ function correlation(event: BrevoWebhookEvent) {
 
 function findEsignDelivery(event: BrevoWebhookEvent) {
   const identifier = correlation(event); let row: any = null;
-  if (identifier.esignDeliveryId) row = db.prepare(`SELECT d.*,r.email recipient_email,r.status recipient_status,r.role recipient_role
-    FROM esign_email_deliveries d JOIN esign_recipients r ON r.id=d.recipient_id WHERE d.id=?`).get(identifier.esignDeliveryId);
+  if (identifier.esignDeliveryId) row = db.prepare(`SELECT d.*,r.email recipient_email,r.status recipient_status,r.role recipient_role,e.space_id
+    FROM esign_email_deliveries d JOIN esign_recipients r ON r.id=d.recipient_id
+    JOIN esign_envelopes e ON e.id=d.envelope_id WHERE d.id=?`).get(identifier.esignDeliveryId);
   if (!row && identifier.messageId) {
     const normalized = identifier.messageId.replace(/^<|>$/g, '');
-    row = db.prepare(`SELECT d.*,r.email recipient_email,r.status recipient_status,r.role recipient_role FROM esign_email_deliveries d
-      JOIN esign_recipients r ON r.id=d.recipient_id WHERE d.provider_message_id=? OR REPLACE(REPLACE(d.provider_message_id,'<',''),'>','')=?
+    row = db.prepare(`SELECT d.*,r.email recipient_email,r.status recipient_status,r.role recipient_role,e.space_id FROM esign_email_deliveries d
+      JOIN esign_recipients r ON r.id=d.recipient_id JOIN esign_envelopes e ON e.id=d.envelope_id
+      WHERE d.provider_message_id=? OR REPLACE(REPLACE(d.provider_message_id,'<',''),'>','')=?
       ORDER BY d.sent_at DESC LIMIT 1`).get(identifier.messageId, normalized);
   }
   if (!row || String(row.recipient_email).trim().toLowerCase() !== event.email.trim().toLowerCase()) return null;
@@ -106,12 +108,13 @@ function findEsignDelivery(event: BrevoWebhookEvent) {
 function findDelivery(event: BrevoWebhookEvent) {
   const identifier = correlation(event); let row: any = null;
   if (identifier.deliveryId) {
-    row = db.prepare(`SELECT d.*,r.email contact_email FROM campaign_deliveries d
-      JOIN campaign_contacts r ON r.id=d.contact_id WHERE d.id=?`).get(identifier.deliveryId);
+    row = db.prepare(`SELECT d.*,r.email contact_email,c.space_id FROM campaign_deliveries d
+      JOIN campaign_contacts r ON r.id=d.contact_id JOIN campaigns c ON c.id=d.campaign_id WHERE d.id=?`).get(identifier.deliveryId);
   }
   if (!row && identifier.messageId) {
     const normalized = identifier.messageId.replace(/^<|>$/g, '');
-    row = db.prepare(`SELECT d.*,r.email contact_email FROM campaign_deliveries d JOIN campaign_contacts r ON r.id=d.contact_id
+    row = db.prepare(`SELECT d.*,r.email contact_email,c.space_id FROM campaign_deliveries d JOIN campaign_contacts r ON r.id=d.contact_id
+      JOIN campaigns c ON c.id=d.campaign_id
       WHERE d.provider_message_id=? OR REPLACE(REPLACE(d.provider_message_id,'<',''),'>','')=? ORDER BY d.sent_at DESC LIMIT 1`)
       .get(identifier.messageId, normalized);
   }
@@ -182,22 +185,25 @@ const persistEvents = db.transaction((events: BrevoWebhookEvent[]) => {
 
     if (globallySuppressive.has(status)) {
       const email = String(delivery.contact_email).trim().toLowerCase();
+      const spaceId = String(delivery.space_id);
       const contactStatus = status === 'unsubscribed' ? 'unsubscribed' : 'suppressed';
       const reason = `Brevo ${status.replace(/_/g, ' ')}`;
-      db.prepare(`INSERT INTO email_suppressions (email,reason,source,created_at,updated_at) VALUES (?,?,?,?,?)
-        ON CONFLICT(email) DO UPDATE SET reason=excluded.reason,source=excluded.source,updated_at=excluded.updated_at`)
-        .run(email, reason, `brevo_webhook:${status}`, now, now);
-      const contacts = db.prepare('SELECT id,campaign_id FROM campaign_contacts WHERE email=?').all(email) as any[];
-      db.prepare("UPDATE campaign_contacts SET status=?,updated_at=? WHERE email=? AND status NOT IN ('responded','completed','unsubscribed')")
-        .run(contactStatus, now, email);
-      db.prepare("UPDATE recipients SET status=?,error=COALESCE(error,?),updated_at=? WHERE email=? AND status<>'responded'")
-        .run(contactStatus, reason, now, email);
+      db.prepare(`INSERT INTO email_suppressions (space_id,email,reason,source,created_at,updated_at) VALUES (?,?,?,?,?,?)
+        ON CONFLICT(space_id,email) DO UPDATE SET reason=excluded.reason,source=excluded.source,updated_at=excluded.updated_at`)
+        .run(spaceId, email, reason, `brevo_webhook:${status}`, now, now);
+      const contacts = db.prepare(`SELECT r.id,r.campaign_id FROM campaign_contacts r
+        JOIN campaigns c ON c.id=r.campaign_id WHERE c.space_id=? AND r.email=?`).all(spaceId, email) as any[];
       const contactIds = contacts.map((contact) => String(contact.id));
       if (contactIds.length) {
         const placeholders = contactIds.map(() => '?').join(',');
+        db.prepare(`UPDATE campaign_contacts SET status=?,updated_at=? WHERE id IN (${placeholders})
+          AND status NOT IN ('responded','completed','unsubscribed')`).run(contactStatus, now, ...contactIds);
         db.prepare(`UPDATE campaign_deliveries SET state='skipped',error=?,updated_at=? WHERE contact_id IN (${placeholders}) AND state='queued'`)
           .run(reason, now, ...contactIds);
       }
+      db.prepare(`UPDATE recipients SET status=?,error=COALESCE(error,?),updated_at=? WHERE email=? AND status<>'responded'
+        AND collector_id IN (SELECT c.id FROM collectors c JOIN surveys s ON s.id=c.survey_id WHERE s.space_id=?)`)
+        .run(contactStatus, reason, now, email, spaceId);
       for (const contact of contacts) {
         const relatedEvents = affectedCampaigns.get(String(contact.campaign_id)) || new Set<string>();
         relatedEvents.add(status); affectedCampaigns.set(String(contact.campaign_id), relatedEvents);
@@ -218,10 +224,16 @@ const persistEvents = db.transaction((events: BrevoWebhookEvent[]) => {
 export function processBrevoWebhookEvents(events: BrevoWebhookEvent[]) {
   const result = persistEvents(events);
   for (const campaign of result.affectedCampaigns) {
-    publishEvent('campaign', { campaignId: campaign.campaignId, reason: 'provider-status-updated', statuses: campaign.statuses });
+    const spaceId = (db.prepare('SELECT space_id FROM campaigns WHERE id=?').get(campaign.campaignId) as { space_id?: string } | undefined)?.space_id;
+    publishEvent('campaign', { campaignId: campaign.campaignId, reason: 'provider-status-updated', statuses: campaign.statuses }, spaceId);
     reconcileCampaignCompletion(campaign.campaignId);
   }
-  for (const envelope of result.affectedEnvelopes) publishEvent('esign', { envelopeId: envelope.envelopeId, reason: 'provider-status-updated', statuses: envelope.statuses });
-  if (result.accepted) publishEvent('data-changed', { reason: 'campaign-provider-events', count: result.accepted });
+  for (const envelope of result.affectedEnvelopes) {
+    const spaceId = (db.prepare('SELECT space_id FROM esign_envelopes WHERE id=?').get(envelope.envelopeId) as { space_id?: string } | undefined)?.space_id;
+    publishEvent('esign', { envelopeId: envelope.envelopeId, reason: 'provider-status-updated', statuses: envelope.statuses }, spaceId);
+  }
+  const spaces = new Set(result.affectedCampaigns.map((campaign) =>
+    (db.prepare('SELECT space_id FROM campaigns WHERE id=?').get(campaign.campaignId) as { space_id?: string } | undefined)?.space_id).filter(Boolean));
+  for (const spaceId of spaces) publishEvent('data-changed', { reason: 'campaign-provider-events', count: result.accepted }, spaceId);
   return result;
 }

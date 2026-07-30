@@ -41,7 +41,8 @@ test('bootstraps the owner and consumes plaintext X seed files into the encrypte
   for (const secret of Object.values(sentinels)) {
     assert.doesNotMatch(JSON.stringify(app), new RegExp(secret)); assert.doesNotMatch(JSON.stringify(connection), new RegExp(secret));
   }
-  const status = getXIntegrationStatus({ id: userId, email: 'fresh-admin@example.com', name: 'Workspace admin', role: 'owner', sessionVersion: 1 });
+  const spaceId = (db.prepare('SELECT active_space_id FROM users WHERE id=?').get(userId) as { active_space_id: string }).active_space_id;
+  const status = getXIntegrationStatus({ id: userId, email: 'fresh-admin@example.com', name: 'Workspace admin', role: 'owner', sessionVersion: 1 }, spaceId);
   assert.equal(status.app.configured, true); assert.equal(status.app.bearerTokenConfigured, true); assert.ok(status.connection);
   for (const secret of Object.values(sentinels)) assert.doesNotMatch(JSON.stringify(status), new RegExp(secret));
 });

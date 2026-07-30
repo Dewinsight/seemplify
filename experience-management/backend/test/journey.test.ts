@@ -233,9 +233,10 @@ test('legacy journey IDs cannot escape export filenames and leading-line-feed fo
   const agent = await authenticatedAgent();
   const id = 'legacy-id"\r\nX-Injected: yes';
   const now = new Date().toISOString();
+  const spaceId = (db.prepare('SELECT active_space_id FROM users LIMIT 1').get() as { active_space_id: string }).active_space_id;
   const legacyStages = [{ ...stages[0], metrics: ['\n\t=WEBSERVICE("https://invalid.example")'] }];
-  db.prepare(`INSERT INTO journeys (id,name,audience,objective,industry,stages_json,summary,provenance_json,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(id, 'Legacy / unsafe export', '', '', '', JSON.stringify(legacyStages), '', '{}', now, now);
+  db.prepare(`INSERT INTO journeys (id,space_id,name,audience,objective,industry,stages_json,summary,provenance_json,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(id, spaceId, 'Legacy / unsafe export', '', '', '', JSON.stringify(legacyStages), '', '{}', now, now);
 
   const encodedId = encodeURIComponent(id);
   const exportedCsv = await agent.get(`/api/journeys/${encodedId}/export.csv`).expect(200);

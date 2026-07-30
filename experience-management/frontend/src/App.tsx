@@ -26,6 +26,8 @@ const SignupPage = lazy(() => import('@/pages/SignupPage').then((module) => ({ d
 const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage').then((module) => ({ default: module.ResetPasswordPage })));
 const LegalPage = lazy(() => import('@/pages/LegalPage').then((module) => ({ default: module.LegalPage })));
+const JoinSpacePage = lazy(() => import('@/pages/JoinSpacePage').then((module) => ({ default: module.JoinSpacePage })));
+const SpaceSettingsPage = lazy(() => import('@/pages/SpaceSettingsPage').then((module) => ({ default: module.SpaceSettingsPage })));
 function Admin({ children }: { children: ReactNode }) { return <AppShell>{children}</AppShell>; }
 
 export function App() {
@@ -34,6 +36,7 @@ export function App() {
     <Route path="/sign/:token"><PublicSigningPage /></Route>
     <Route path="/sign"><PublicSigningPage /></Route>
     <Route path="/verify/:certificateId"><CertificateVerificationPage /></Route>
+    <Route path="/join/:token"><JoinSpacePage /></Route>
     <Route path="/login"><LoginPage /></Route>
     <Route path="/signup"><SignupPage /></Route>
     <Route path="/forgot-password"><ForgotPasswordPage /></Route>
@@ -54,6 +57,7 @@ export function App() {
     <Route path="/journeys"><Admin><JourneysPage /></Admin></Route>
     <Route path="/ai-queue"><Admin><AiQueuePage /></Admin></Route>
     <Route path="/tickets"><Admin><TicketsPage /></Admin></Route>
+    <Route path="/settings/space"><Admin><SpaceSettingsPage /></Admin></Route>
     <Route path="/"><Admin><DashboardPage /></Admin></Route>
     <Route><Navigate to="/" /></Route>
   </Switch></Suspense>;

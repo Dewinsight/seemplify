@@ -2,10 +2,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, FileText, History, Loader2, Mail, Plus, RefreshCw, Save, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, json } from '@/lib/api';
-import { esignStatusLabel, normalizeEnvelopeDetail, signingRoles } from '@/lib/esign';
+import { adminArtifactContentUrl, adminDocumentContentUrl, esignStatusLabel, normalizeEnvelopeDetail, signingRoles } from '@/lib/esign';
 import { formatDateTime } from '@/lib/utils';
 import { Link, useParams } from '@/lib/router';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { AgreementFieldsStep } from '@/components/esign/AgreementFieldsStep';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,7 +60,7 @@ function DocumentStep({ detail, onRefresh, onBusyChange }: { detail: ESignEnvelo
   }
   return <Card><CardHeader><CardTitle id="agreement-documents-heading" tabIndex={-1}>Documents</CardTitle><p className="text-sm text-muted-foreground">Upload one or more PDF files. Every page opens directly in the Fields step.</p></CardHeader><CardContent className="space-y-4">
     {editable && <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center border border-dashed bg-muted/15 px-6 py-6 text-center transition-colors hover:bg-muted/30"><FileText className="h-5 w-5 text-muted-foreground" /><span className="mt-2 text-sm font-medium">{uploading ? 'Uploading document…' : 'Choose a PDF document'}</span><span className="mt-1 text-xs text-muted-foreground">The server verifies each file before it becomes available to recipients.</span><input className="sr-only" type="file" accept="application/pdf,.pdf" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ''; }} /></label>}
-    {detail.documents.length ? <div className="divide-y border">{detail.documents.map((document) => <div className="flex items-center justify-between gap-4 px-4 py-3" key={document.id}><div className="min-w-0"><div className="truncate text-sm font-medium">{document.name}</div><div className="mt-1 text-xs text-muted-foreground">{document.pageCount} page{document.pageCount === 1 ? '' : 's'} · {(document.size / 1024 / 1024).toFixed(1)} MB</div></div>{editable ? <Button variant="ghost" size="icon" aria-label={`Remove ${document.name}`} onClick={() => void remove(document.id)}><Trash2 /></Button> : <Button variant="outline" size="sm" asChild><a href={`/api/esign/envelopes/${detail.envelope.id}/documents/${document.id}/content`}><Download />Download</a></Button>}</div>)}</div> : <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert">Upload at least one PDF before sending.</div>}
+    {detail.documents.length ? <div className="divide-y border">{detail.documents.map((document) => <div className="flex items-center justify-between gap-4 px-4 py-3" key={document.id}><div className="min-w-0"><div className="truncate text-sm font-medium">{document.name}</div><div className="mt-1 text-xs text-muted-foreground">{document.pageCount} page{document.pageCount === 1 ? '' : 's'} · {(document.size / 1024 / 1024).toFixed(1)} MB</div></div>{editable ? <Button variant="ghost" size="icon" aria-label={`Remove ${document.name}`} onClick={() => void remove(document.id)}><Trash2 /></Button> : <Button variant="outline" size="sm" asChild><a href={adminDocumentContentUrl(detail.envelope.id, document.id)}><Download />Download</a></Button>}</div>)}</div> : <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert">Upload at least one PDF before sending.</div>}
   </CardContent></Card>;
 }
 
@@ -173,7 +174,7 @@ function ActivityStep({ detail, envelopeId, working, onRetryFinalization }: {
     </tr>)}</tbody></table></div> : <div className="px-5 pb-8 text-sm text-muted-foreground">No emails have been queued. Delivery attempts appear after the agreement is sent.</div>}</CardContent></Card>
 
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]"><Card><CardHeader><CardTitle>Signing history</CardTitle></CardHeader><CardContent className="px-0 pb-0">{detail.audit.length ? <div className="overflow-x-auto"><table className="data-table"><thead><tr><th>Event</th><th>Actor</th><th>When</th></tr></thead><tbody>{detail.audit.map((event) => <tr key={event.id}><td className="font-medium capitalize">{readableStatus(event.action)}</td><td>{event.actorName || event.actorType || 'System'}</td><td>{formatDateTime(event.createdAt)}</td></tr>)}</tbody></table></div> : <div className="px-5 pb-8 text-sm text-muted-foreground">Activity appears here as documents are sent, viewed and completed.</div>}</CardContent></Card>
-      <Card className="h-fit"><CardHeader><CardTitle>Files and evidence</CardTitle></CardHeader><CardContent className="space-y-2">{detail.artifacts.length ? detail.artifacts.map((artifact) => <Button key={artifact.id} variant="outline" className="w-full justify-start" asChild><a href={`/api/esign/envelopes/${envelopeId}/artifacts/${artifact.id}/content`}><Download />{artifact.name}</a></Button>) : <div className="flex gap-3 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4 shrink-0" />Completed documents and the completion certificate will appear here.</div>}</CardContent></Card>
+      <Card className="h-fit"><CardHeader><CardTitle>Files and evidence</CardTitle></CardHeader><CardContent className="space-y-2">{detail.artifacts.length ? detail.artifacts.map((artifact) => <Button key={artifact.id} variant="outline" className="w-full justify-start" asChild><a href={adminArtifactContentUrl(envelopeId, artifact.id)}><Download />{artifact.name}</a></Button>) : <div className="flex gap-3 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4 shrink-0" />Completed documents and the completion certificate will appear here.</div>}</CardContent></Card>
     </div>
   </div>;
 }
@@ -211,12 +212,7 @@ export function AgreementWorkspacePage() {
   const onFieldDirty = useCallback((value: boolean) => setFieldDirty(value), []);
   const onFieldSaving = useCallback((value: boolean) => setFieldSaving(value), []);
   const hasUnsavedChanges = recipientDirty || messageDirty || fieldDirty;
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [hasUnsavedChanges]);
+  useUnsavedChanges(hasUnsavedChanges);
   useEffect(() => {
     if (!hasUnsavedChanges) return;
     const guardLinks = (event: globalThis.MouseEvent) => {

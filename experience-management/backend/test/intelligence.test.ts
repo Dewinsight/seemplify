@@ -58,17 +58,17 @@ async function completeQueuedJob(jobId: string, data: unknown) {
 test('saves Terra reply drafts and social intelligence without any automatic X posting capability', async () => {
   const owner = request.agent(app);
   await owner.post('/api/auth/signup').send({ name: 'Research Owner', email: 'intelligence@seemplify.local', password: 'Intelligence-Test-Password-2026!' }).expect(201);
-  const user = db.prepare('SELECT id FROM users WHERE email=?').get('intelligence@seemplify.local') as { id: string };
+  const user = db.prepare('SELECT id,active_space_id FROM users WHERE email=?').get('intelligence@seemplify.local') as { id: string; active_space_id: string };
   const connectionId = crypto.randomUUID(); const mentionId = crypto.randomUUID(); const timestamp = new Date().toISOString();
   db.prepare(`INSERT INTO x_apps (id,credential_version,configured_by,created_at,updated_at) VALUES ('workspace-x-app',1,?,?,?)`)
     .run(user.id, timestamp, timestamp);
-  db.prepare(`INSERT INTO x_connections (id,user_id,app_id,access_token_enc,auth_type,x_user_id,username,display_name,status,created_at,updated_at)
-    VALUES (?,?,?,'test-envelope','oauth2','800000000000000001','researcher','Researcher','connected',?,?)`)
-    .run(connectionId, user.id, 'workspace-x-app', timestamp, timestamp);
+  db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,auth_type,x_user_id,username,display_name,status,created_at,updated_at)
+    VALUES (?,?,?,?,'test-envelope','oauth2','800000000000000001','researcher','Researcher','connected',?,?)`)
+    .run(connectionId, user.active_space_id, user.id, 'workspace-x-app', timestamp, timestamp);
   const postText = 'Acme onboarding is confusing and slow for a first-time administrator.';
-  db.prepare(`INSERT INTO social_mentions (id,source,external_id,x_connection_id,ingestion_kind,author,content,url,language,published_at,metadata_json,created_at)
-    VALUES (?,'x','180000000000000001',?,'mention','@customer',?,'https://x.com/customer/status/180000000000000001','en',?,'{}',?)`)
-    .run(mentionId, connectionId, postText, timestamp, timestamp);
+  db.prepare(`INSERT INTO social_mentions (id,space_id,source,external_id,x_connection_id,ingestion_kind,author,content,url,language,published_at,metadata_json,created_at)
+    VALUES (?,?,'x','180000000000000001',?,'mention','@customer',?,'https://x.com/customer/status/180000000000000001','en',?,'{}',?)`)
+    .run(mentionId, user.active_space_id, connectionId, postText, timestamp, timestamp);
   db.prepare(`INSERT INTO x_connection_mentions (connection_id,mention_id,streams_json,query_ids_json,discovered_at,last_seen_at)
     VALUES (?,?,'["mention"]','[]',?,?)`).run(connectionId, mentionId, timestamp, timestamp);
 
@@ -122,7 +122,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   const completedReportReplay = await owner.post('/api/social/reports').set('Idempotency-Key', socialReportKey).send({ connectionId, title: 'Onboarding listening report', mentionIds: [mentionId] }).expect(202);
   assert.equal(completedReportReplay.body.jobId, queuedReport.body.jobId);
 
-  const journaledDraft = createSocialReplyDraft({ id: user.id } as any, { mentionId, tone: 'professional', instructions: 'Keep this for recovery.' });
+  const journaledDraft = createSocialReplyDraft({ id: user.id } as any, user.active_space_id, { mentionId, tone: 'professional', instructions: 'Keep this for recovery.' });
   const journaledOutput = { reply: 'Thank you for describing the onboarding difficulty so clearly.', rationale: 'Acknowledges only the supplied issue.', safetyFlags: [] };
   db.prepare('UPDATE ai_jobs SET provider_result_json=? WHERE id=?').run(JSON.stringify({
     activity: 'experience.social_reply_draft', schemaName: 'experience_social_reply_draft', output: journaledOutput,
@@ -141,8 +141,8 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   await member.post('/api/social/analyze').send({ mentionIds: [mentionId] }).expect(404);
   assert.deepEqual((await member.get('/api/social/reply-drafts').expect(200)).body, []);
   assert.deepEqual((await member.get('/api/social/reports').expect(200)).body, []);
-  const unattributedPrivateJob = createJob('social.analyze', { mentionIds: [mentionId] });
-  await owner.get(`/api/ai/jobs/${unattributedPrivateJob.id}`).expect(404);
+  const unattributedPrivateJob = createJob('social.analyze', { mentionIds: [mentionId] }, user.active_space_id);
+  await owner.get(`/api/ai/jobs/${unattributedPrivateJob.id}`).expect(200);
   await member.get(`/api/ai/jobs/${unattributedPrivateJob.id}`).expect(404);
 });
 
@@ -226,9 +226,10 @@ test('grounds mixed short and long social posts without letting one short post p
 });
 
 test('deleting a user deletes their private AI payloads instead of making them globally visible', () => {
-  const member = db.prepare('SELECT id FROM users WHERE email=?').get('research-member@seemplify.local') as { id: string };
-  const privateJob = createJob('social.analyze', { mentionIds: ['private-source-id'] }, null, null, member.id);
+  const member = db.prepare('SELECT id,active_space_id FROM users WHERE email=?').get('research-member@seemplify.local') as { id: string; active_space_id: string };
+  const privateJob = createJob('social.analyze', { mentionIds: ['private-source-id'] }, member.active_space_id, null, null, member.id);
   assert.ok(getJob(privateJob.id));
+  db.prepare('DELETE FROM spaces WHERE id=?').run(member.active_space_id);
   db.prepare('DELETE FROM users WHERE id=?').run(member.id);
   assert.equal(getJob(privateJob.id), null);
 });

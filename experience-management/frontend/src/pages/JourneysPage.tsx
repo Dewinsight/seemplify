@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'wouter';
 import { toast } from 'sonner';
-import { api, ApiError, json, waitForJob } from '@/lib/api';
+import { api, ApiError, json, spaceScopedApiUrl, waitForJob } from '@/lib/api';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
 import { formatDate, formatDateTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -462,7 +462,7 @@ export function JourneysPage() {
   function downloadExport(format: 'json' | 'csv') {
     if (!selected) return;
     const link = document.createElement('a');
-    link.href = `/api/journeys/${selected.id}/export.${format}`;
+    link.href = spaceScopedApiUrl(`/api/journeys/${encodeURIComponent(selected.id)}/export.${format}`);
     link.download = `${selected.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'journey-map'}.${format}`;
     document.body.appendChild(link);
     link.click();

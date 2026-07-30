@@ -117,7 +117,7 @@ function verifyAccessCode(code: string, encoded: string) {
 function envelopeRow(row: any) {
   const expiresInDays = row.expiration_days == null ? null : Number(row.expiration_days);
   return {
-    id: row.id, createdByUserId: row.created_by_user_id, sourceEnvelopeId: row.source_envelope_id,
+    id: row.id, spaceId: row.space_id, createdByUserId: row.created_by_user_id, sourceEnvelopeId: row.source_envelope_id,
     title: row.title, subject: row.subject, message: row.message, status: row.status,
     routingMode: row.routing_mode, expiresAt: row.expires_at, expiresInDays,
     reminderIntervalHours: row.reminder_interval_hours == null ? null : Number(row.reminder_interval_hours),
@@ -167,15 +167,37 @@ function deliveryRow(row: any) {
   };
 }
 
-function requireOwnedEnvelope(id: string, userId: string) {
-  const row = db.prepare('SELECT * FROM esign_envelopes WHERE id=? AND created_by_user_id=?').get(id, userId) as any;
+function requireSpaceEnvelope(id: string, spaceId: string) {
+  const row = db.prepare('SELECT * FROM esign_envelopes WHERE id=? AND space_id=?').get(id, spaceId) as any;
   if (!row) throw new EsignError('Envelope not found.', 404, 'ENVELOPE_NOT_FOUND');
   return row;
 }
-function requireEditable(id: string, userId: string) {
-  const row = requireOwnedEnvelope(id, userId);
+function requireEditable(id: string, spaceId: string) {
+  const row = requireSpaceEnvelope(id, spaceId);
   if (!EDITABLE_ENVELOPE.has(row.status)) throw new EsignError('Only a draft envelope can be edited.', 409, 'ENVELOPE_NOT_EDITABLE');
   return row;
+}
+
+function reservedEsignBytes(spaceId: string) {
+  const documents = Number((db.prepare(`SELECT COALESCE(SUM(d.size_bytes),0) bytes
+    FROM esign_documents d JOIN esign_envelopes e ON e.id=d.envelope_id WHERE e.space_id=?`)
+    .get(spaceId) as any)?.bytes || 0);
+  const artifacts = Number((db.prepare(`SELECT COALESCE(SUM(a.size_bytes),0) bytes
+    FROM esign_artifacts a JOIN esign_envelopes e ON e.id=a.envelope_id WHERE e.space_id=?`)
+    .get(spaceId) as any)?.bytes || 0);
+  // Reserve one additional document-sized copy for completion output before an
+  // envelope is signed, rather than discovering a full disk at finalization.
+  return documents * 2 + artifacts;
+}
+
+function requireEsignSpaceCapacity(spaceId: string, additionalReservedBytes: number) {
+  if (reservedEsignBytes(spaceId) + Math.max(0, additionalReservedBytes) > config.esignMaxSpaceBytes) {
+    throw new EsignError(
+      `This space has reached its ${Math.floor(config.esignMaxSpaceBytes / 1024 / 1024)} MB agreement storage allowance.`,
+      409,
+      'SPACE_STORAGE_LIMIT'
+    );
+  }
 }
 
 export function recordEsignAudit(envelopeId: string, eventType: string, actor: EsignActor, metadata: Record<string, unknown> = {}) {
@@ -215,8 +237,8 @@ function readiness(envelopeId: string) {
   return { ready: issues.length === 0, completedSections: Object.values(sections).filter((section) => section.complete).length, totalSections: 4, sections, issues, documentCount: documents.length, recipientCount: recipients.length, fieldCount: fields.length };
 }
 
-export function getEnvelopeDetail(id: string, userId: string) {
-  const envelope = requireOwnedEnvelope(id, userId);
+export function getEnvelopeDetail(id: string, spaceId: string) {
+  const envelope = requireSpaceEnvelope(id, spaceId);
   const values = db.prepare(`SELECT v.* FROM esign_field_values v JOIN esign_fields f ON f.id=v.field_id WHERE f.envelope_id=?`).all(id) as any[];
   return {
     envelope: envelopeRow(envelope),
@@ -234,51 +256,51 @@ export function getEnvelopeDetail(id: string, userId: string) {
   };
 }
 
-export function listEnvelopes(userId: string, limit = 200) {
+export function listEnvelopes(spaceId: string, limit = 200) {
   return (db.prepare(`SELECT e.*,
       (SELECT COUNT(*) FROM esign_documents d WHERE d.envelope_id=e.id) document_count,
       (SELECT COUNT(*) FROM esign_recipients r WHERE r.envelope_id=e.id) recipient_count,
       (SELECT COUNT(*) FROM esign_recipients r WHERE r.envelope_id=e.id AND r.role IN ('signer','approver') AND r.status='completed') completed_recipient_count
-    FROM esign_envelopes e WHERE e.created_by_user_id=? ORDER BY e.updated_at DESC LIMIT ?`).all(userId, Math.max(1, Math.min(500, limit))) as any[])
+    FROM esign_envelopes e WHERE e.space_id=? ORDER BY e.updated_at DESC LIMIT ?`).all(spaceId, Math.max(1, Math.min(500, limit))) as any[])
     .map((row) => ({ ...envelopeRow(row), documentCount: Number(row.document_count), recipientCount: Number(row.recipient_count), completedRecipientCount: Number(row.completed_recipient_count) }));
 }
 
-export function createEnvelope(userId: string, input: EnvelopeInput, actor: EsignActor) {
+export function createEnvelope(spaceId: string, userId: string, input: EnvelopeInput, actor: EsignActor) {
   const id = crypto.randomUUID(); const timestamp = now();
   const days = input.expiresInDays === undefined ? 30 : input.expiresInDays === null ? null : Math.max(1, Math.min(365, Math.floor(input.expiresInDays)));
   const expiresAt = days === null ? null : new Date(Date.now() + days * 86_400_000).toISOString();
   db.transaction(() => {
-    db.prepare(`INSERT INTO esign_envelopes (id,created_by_user_id,title,subject,message,status,routing_mode,expires_at,expiration_days,reminder_interval_hours,created_at,updated_at)
-      VALUES (?,?,?,?,?,'draft',?,?,?,?,?,?)`).run(id, userId, cleanText(input.title, 180), cleanText(input.subject || `Please sign: ${input.title}`, 250), String(input.message || '').trim().slice(0, 5000), input.routingMode || 'sequential', expiresAt, days, input.reminderIntervalHours == null ? 72 : Math.max(1, Math.min(720, Math.floor(input.reminderIntervalHours))), timestamp, timestamp);
+    db.prepare(`INSERT INTO esign_envelopes (id,space_id,created_by_user_id,title,subject,message,status,routing_mode,expires_at,expiration_days,reminder_interval_hours,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,'draft',?,?,?,?,?,?)`).run(id, spaceId, userId, cleanText(input.title, 180), cleanText(input.subject || `Please sign: ${input.title}`, 250), String(input.message || '').trim().slice(0, 5000), input.routingMode || 'sequential', expiresAt, days, input.reminderIntervalHours == null ? 72 : Math.max(1, Math.min(720, Math.floor(input.reminderIntervalHours))), timestamp, timestamp);
     recordEsignAudit(id, 'envelope.created', { ...actor, userId }, { routingMode: input.routingMode || 'sequential' });
   })();
-  publishEvent('esign', { envelopeId: id, reason: 'created' });
-  return getEnvelopeDetail(id, userId);
+  publishEvent('esign', { envelopeId: id, reason: 'created' }, spaceId);
+  return getEnvelopeDetail(id, spaceId);
 }
 
-export function updateEnvelope(id: string, userId: string, input: Partial<EnvelopeInput>, actor: EsignActor) {
-  const current = requireEditable(id, userId); const timestamp = now();
+export function updateEnvelope(id: string, spaceId: string, userId: string, input: Partial<EnvelopeInput>, actor: EsignActor) {
+  const current = requireEditable(id, spaceId); const timestamp = now();
   const expirationDays = input.expiresInDays === undefined ? current.expiration_days : input.expiresInDays === null ? null : Math.max(1, Math.min(365, Math.floor(input.expiresInDays)));
   const expiresAt = expirationDays == null ? null : new Date(Date.now() + Number(expirationDays) * 86_400_000).toISOString();
   db.transaction(() => {
-    db.prepare(`UPDATE esign_envelopes SET title=?,subject=?,message=?,routing_mode=?,expires_at=?,expiration_days=?,reminder_interval_hours=?,revision=revision+1,updated_at=? WHERE id=?`).run(
+    db.prepare(`UPDATE esign_envelopes SET title=?,subject=?,message=?,routing_mode=?,expires_at=?,expiration_days=?,reminder_interval_hours=?,revision=revision+1,updated_at=? WHERE id=? AND space_id=?`).run(
       input.title === undefined ? current.title : cleanText(input.title, 180), input.subject === undefined ? current.subject : cleanText(input.subject, 250),
       input.message === undefined ? current.message : String(input.message).trim().slice(0, 5000), input.routingMode || current.routing_mode, expiresAt, expirationDays,
-      input.reminderIntervalHours === undefined ? current.reminder_interval_hours : input.reminderIntervalHours === null ? null : Math.max(1, Math.min(720, Math.floor(input.reminderIntervalHours))), timestamp, id);
+      input.reminderIntervalHours === undefined ? current.reminder_interval_hours : input.reminderIntervalHours === null ? null : Math.max(1, Math.min(720, Math.floor(input.reminderIntervalHours))), timestamp, id, spaceId);
     recordEsignAudit(id, 'envelope.updated', { ...actor, userId }, {});
   })();
-  publishEvent('esign', { envelopeId: id, reason: 'updated' });
-  return getEnvelopeDetail(id, userId);
+  publishEvent('esign', { envelopeId: id, reason: 'updated' }, spaceId);
+  return getEnvelopeDetail(id, spaceId);
 }
 
-export function deleteEnvelope(id: string, userId: string) {
-  requireEditable(id, userId);
+export function deleteEnvelope(id: string, spaceId: string) {
+  requireEditable(id, spaceId);
   const files = [
     ...(db.prepare('SELECT storage_key FROM esign_documents WHERE envelope_id=?').all(id) as any[]),
     ...(db.prepare('SELECT storage_key FROM esign_signature_assets WHERE envelope_id=? AND storage_key IS NOT NULL').all(id) as any[]),
     ...(db.prepare('SELECT storage_key FROM esign_artifacts WHERE envelope_id=?').all(id) as any[])
   ].map((item) => String(item.storage_key));
-  const changed = db.prepare('DELETE FROM esign_envelopes WHERE id=? AND created_by_user_id=? AND status=?').run(id, userId, 'draft').changes;
+  const changed = db.prepare('DELETE FROM esign_envelopes WHERE id=? AND space_id=? AND status=?').run(id, spaceId, 'draft').changes;
   if (changed) files.forEach(removeProtectedFile);
   return Boolean(changed);
 }
@@ -316,8 +338,9 @@ async function canonicalizeUploadedPdf(bytes: Buffer) {
   return { bytes: Buffer.from(await canonical.save({ useObjectStreams: true, addDefaultPage: false })), pageCount };
 }
 
-export async function addEnvelopeDocument(id: string, userId: string, file: { originalname: string; mimetype: string; size: number; buffer: Buffer }, actor: EsignActor) {
-  requireEditable(id, userId);
+export async function addEnvelopeDocument(id: string, spaceId: string, userId: string, file: { originalname: string; mimetype: string; size: number; buffer: Buffer }, actor: EsignActor) {
+  requireEditable(id, spaceId);
+  requireEsignSpaceCapacity(spaceId, file.size * 2);
   if (file.size < 8 || file.size > config.esignMaxDocumentBytes) throw new EsignError(`PDF documents must be smaller than ${Math.floor(config.esignMaxDocumentBytes / 1024 / 1024)} MB.`);
   if (!file.buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) throw new EsignError('The uploaded file is not a valid PDF.', 400, 'INVALID_PDF');
   const usage = db.prepare('SELECT COUNT(*) document_count,COALESCE(SUM(size_bytes),0) total_bytes FROM esign_documents WHERE envelope_id=?').get(id) as any;
@@ -329,38 +352,39 @@ export async function addEnvelopeDocument(id: string, userId: string, file: { or
   const stored = writeProtectedFile(canonical.bytes, `esign-document:${documentId}`); const timestamp = now();
   try {
     db.transaction(() => {
-      requireEditable(id, userId);
+      requireEditable(id, spaceId);
+      requireEsignSpaceCapacity(spaceId, stored.size * 2);
       const currentUsage = db.prepare('SELECT COUNT(*) document_count,COALESCE(SUM(size_bytes),0) total_bytes FROM esign_documents WHERE envelope_id=?').get(id) as any;
       if (Number(currentUsage.document_count) >= config.esignMaxEnvelopeDocuments) throw new EsignError(`An envelope may contain at most ${config.esignMaxEnvelopeDocuments} documents.`, 409, 'ENVELOPE_DOCUMENT_LIMIT');
       if (Number(currentUsage.total_bytes) + stored.size > config.esignMaxEnvelopeBytes) throw new EsignError(`Envelope documents may total at most ${Math.floor(config.esignMaxEnvelopeBytes / 1024 / 1024)} MB.`, 409, 'ENVELOPE_STORAGE_LIMIT');
       const position = Number((db.prepare('SELECT COALESCE(MAX(position),-1)+1 position FROM esign_documents WHERE envelope_id=?').get(id) as any).position);
       db.prepare(`INSERT INTO esign_documents (id,envelope_id,position,original_name,mime_type,size_bytes,page_count,storage_key,sha256,state,created_at)
         VALUES (?,?,?,?,?,?,?,?,?,'ready',?)`).run(documentId, id, position, safeFilename(file.originalname).replace(/\.pdf$/i, '') + '.pdf', 'application/pdf', stored.size, pageCount, stored.storageKey, stored.sha256, timestamp);
-      db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=?').run(timestamp, id);
+      db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=? AND space_id=?').run(timestamp, id, spaceId);
       recordEsignAudit(id, 'document.uploaded', { ...actor, userId }, { documentId, pageCount, size: stored.size, sha256: stored.sha256, originalSha256: hashBytes(file.buffer), sanitized: true });
     })();
   } catch (error) { removeProtectedFile(stored.storageKey); throw error; }
-  publishEvent('esign', { envelopeId: id, reason: 'document-uploaded', documentId });
-  return getEnvelopeDetail(id, userId);
+  publishEvent('esign', { envelopeId: id, reason: 'document-uploaded', documentId }, spaceId);
+  return getEnvelopeDetail(id, spaceId);
 }
 
-export function removeEnvelopeDocument(envelopeId: string, documentId: string, userId: string, actor: EsignActor) {
-  requireEditable(envelopeId, userId);
+export function removeEnvelopeDocument(envelopeId: string, documentId: string, spaceId: string, userId: string, actor: EsignActor) {
+  requireEditable(envelopeId, spaceId);
   const row = db.prepare('SELECT * FROM esign_documents WHERE id=? AND envelope_id=?').get(documentId, envelopeId) as any;
   if (!row) throw new EsignError('Document not found.', 404);
   db.transaction(() => {
     db.prepare('DELETE FROM esign_documents WHERE id=?').run(documentId);
     const remaining = db.prepare('SELECT id FROM esign_documents WHERE envelope_id=? ORDER BY position').all(envelopeId) as any[];
     remaining.forEach((item, position) => db.prepare('UPDATE esign_documents SET position=? WHERE id=?').run(position, item.id));
-    db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=?').run(now(), envelopeId);
+    db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=? AND space_id=?').run(now(), envelopeId, spaceId);
     recordEsignAudit(envelopeId, 'document.removed', { ...actor, userId }, { documentId });
   })();
   removeProtectedFile(row.storage_key);
-  publishEvent('esign', { envelopeId, reason: 'document-removed', documentId });
+  publishEvent('esign', { envelopeId, reason: 'document-removed', documentId }, spaceId);
 }
 
-export function replaceEnvelopeRecipients(envelopeId: string, userId: string, inputs: RecipientInput[], actor: EsignActor) {
-  requireEditable(envelopeId, userId);
+export function replaceEnvelopeRecipients(envelopeId: string, spaceId: string, userId: string, inputs: RecipientInput[], actor: EsignActor) {
+  requireEditable(envelopeId, spaceId);
   const timestamp = now();
   const normalized = inputs.map((input, position) => {
     const email = normalizedEmail(input.email);
@@ -369,7 +393,7 @@ export function replaceEnvelopeRecipients(envelopeId: string, userId: string, in
     return { ...input, name, email, position, routingOrder: Math.max(1, Math.min(100, Math.floor(input.routingOrder || 1))) };
   });
   db.transaction(() => {
-    requireEditable(envelopeId, userId);
+    requireEditable(envelopeId, spaceId);
     const existing = db.prepare('SELECT * FROM esign_recipients WHERE envelope_id=?').all(envelopeId) as any[];
     const retained = new Set<string>();
     for (const item of normalized) {
@@ -388,15 +412,15 @@ export function replaceEnvelopeRecipients(envelopeId: string, userId: string, in
       }
     }
     for (const current of existing) if (!retained.has(current.id)) db.prepare('DELETE FROM esign_recipients WHERE id=?').run(current.id);
-    db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=?').run(timestamp, envelopeId);
+    db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=? AND space_id=?').run(timestamp, envelopeId, spaceId);
     recordEsignAudit(envelopeId, 'recipients.replaced', { ...actor, userId }, { count: normalized.length, roles: normalized.reduce<Record<string, number>>((counts, item) => ({ ...counts, [item.role]: (counts[item.role] || 0) + 1 }), {}) });
   })();
-  publishEvent('esign', { envelopeId, reason: 'recipients-updated' });
-  return getEnvelopeDetail(envelopeId, userId);
+  publishEvent('esign', { envelopeId, reason: 'recipients-updated' }, spaceId);
+  return getEnvelopeDetail(envelopeId, spaceId);
 }
 
-export function replaceEnvelopeFields(envelopeId: string, userId: string, inputs: FieldInput[], actor: EsignActor) {
-  requireEditable(envelopeId, userId); const timestamp = now();
+export function replaceEnvelopeFields(envelopeId: string, spaceId: string, userId: string, inputs: FieldInput[], actor: EsignActor) {
+  requireEditable(envelopeId, spaceId); const timestamp = now();
   const documents = new Map((db.prepare('SELECT * FROM esign_documents WHERE envelope_id=?').all(envelopeId) as any[]).map((row) => [row.id, row]));
   const recipients = new Map((db.prepare('SELECT * FROM esign_recipients WHERE envelope_id=?').all(envelopeId) as any[]).map((row) => [row.id, row]));
   const normalized = inputs.map((input, index) => {
@@ -415,16 +439,16 @@ export function replaceEnvelopeFields(envelopeId: string, userId: string, inputs
   });
   if (new Set(normalized.map((item) => item.id)).size !== normalized.length) throw new EsignError('Field identifiers must be unique.');
   db.transaction(() => {
-    requireEditable(envelopeId, userId);
+    requireEditable(envelopeId, spaceId);
     db.prepare('DELETE FROM esign_fields WHERE envelope_id=?').run(envelopeId);
     const insert = db.prepare(`INSERT INTO esign_fields (id,envelope_id,document_id,recipient_id,type,page,x,y,width,height,required,label,placeholder,tab_order,options_json,validation_json,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     for (const item of normalized) insert.run(item.id, envelopeId, item.documentId, item.recipientId, item.type, item.page, item.x, item.y, item.width, item.height, item.required ? 1 : 0, item.label, item.placeholder, item.tabOrder, JSON.stringify(item.options), JSON.stringify(item.validation || {}), timestamp, timestamp);
-    db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=?').run(timestamp, envelopeId);
+    db.prepare('UPDATE esign_envelopes SET revision=revision+1,updated_at=? WHERE id=? AND space_id=?').run(timestamp, envelopeId, spaceId);
     recordEsignAudit(envelopeId, 'fields.replaced', { ...actor, userId }, { count: normalized.length });
   })();
-  publishEvent('esign', { envelopeId, reason: 'fields-updated' });
-  return getEnvelopeDetail(envelopeId, userId);
+  publishEvent('esign', { envelopeId, reason: 'fields-updated' }, spaceId);
+  return getEnvelopeDetail(envelopeId, spaceId);
 }
 
 function queueEmail(envelopeId: string, recipientId: string, kind: 'invitation' | 'reminder' | 'completed' | 'voided', scheduledAt = now()) {
@@ -451,29 +475,29 @@ function activateRecipients(envelopeId: string) {
   return active.length;
 }
 
-export function sendEnvelope(envelopeId: string, userId: string, actor: EsignActor) {
-  const envelope = requireEditable(envelopeId, userId); const ready = readiness(envelopeId);
+export function sendEnvelope(envelopeId: string, spaceId: string, userId: string, actor: EsignActor) {
+  const envelope = requireEditable(envelopeId, spaceId); const ready = readiness(envelopeId);
   if (!ready.ready) throw new EsignError(ready.issues[0] || 'Complete the envelope before sending.', 409, 'ENVELOPE_NOT_READY');
   const timestamp = now();
   db.transaction(() => {
     const sendExpiresAt = envelope.expiration_days == null ? null : new Date(Date.now() + Number(envelope.expiration_days) * 86_400_000).toISOString();
-    const changed = db.prepare(`UPDATE esign_envelopes SET status='sent',sent_at=?,expires_at=?,updated_at=?,revision=revision+1 WHERE id=? AND created_by_user_id=? AND status='draft'`).run(timestamp, sendExpiresAt, timestamp, envelopeId, userId).changes;
+    const changed = db.prepare(`UPDATE esign_envelopes SET status='sent',sent_at=?,expires_at=?,updated_at=?,revision=revision+1 WHERE id=? AND space_id=? AND status='draft'`).run(timestamp, sendExpiresAt, timestamp, envelopeId, spaceId).changes;
     if (changed !== 1) throw new EsignError('This envelope has already been sent.', 409);
     db.prepare(`UPDATE esign_recipients SET status=CASE WHEN role IN ('signer','approver') THEN 'waiting' ELSE 'waiting' END,updated_at=? WHERE envelope_id=?`).run(timestamp, envelopeId);
     activateRecipients(envelopeId);
     recordEsignAudit(envelopeId, 'envelope.sent', { ...actor, userId }, { routingMode: envelope.routing_mode, expiresAt: sendExpiresAt, expirationDays: envelope.expiration_days });
   })();
-  publishEvent('esign', { envelopeId, reason: 'sent' }); void esignWorker.pump();
-  return getEnvelopeDetail(envelopeId, userId);
+  publishEvent('esign', { envelopeId, reason: 'sent' }, spaceId); void esignWorker.pump();
+  return getEnvelopeDetail(envelopeId, spaceId);
 }
 
-export function voidEnvelope(envelopeId: string, userId: string, reason: string, actor: EsignActor) {
-  const envelope = requireOwnedEnvelope(envelopeId, userId);
+export function voidEnvelope(envelopeId: string, spaceId: string, userId: string, reason: string, actor: EsignActor) {
+  const envelope = requireSpaceEnvelope(envelopeId, spaceId);
   if (FINAL_ENVELOPE.has(envelope.status)) throw new EsignError('This envelope can no longer be voided.', 409);
   const message = cleanText(reason, 1000); if (message.length < 2) throw new EsignError('Add a reason for voiding the envelope.');
   const timestamp = now();
   db.transaction(() => {
-    const changed = db.prepare("UPDATE esign_envelopes SET status='voided',voided_at=?,void_reason=?,updated_at=?,revision=revision+1 WHERE id=? AND created_by_user_id=? AND status IN ('draft','sent','in_progress')").run(timestamp, message, timestamp, envelopeId, userId).changes;
+    const changed = db.prepare("UPDATE esign_envelopes SET status='voided',voided_at=?,void_reason=?,updated_at=?,revision=revision+1 WHERE id=? AND space_id=? AND status IN ('draft','sent','in_progress')").run(timestamp, message, timestamp, envelopeId, spaceId).changes;
     if (changed !== 1) throw new EsignError('This envelope can no longer be voided.', 409);
     db.prepare('UPDATE esign_signing_sessions SET revoked_at=? WHERE recipient_id IN (SELECT id FROM esign_recipients WHERE envelope_id=?) AND revoked_at IS NULL').run(timestamp, envelopeId);
     db.prepare("UPDATE esign_email_deliveries SET state='cancelled',error='Envelope voided',updated_at=? WHERE envelope_id=? AND state='queued'").run(timestamp, envelopeId);
@@ -481,43 +505,43 @@ export function voidEnvelope(envelopeId: string, userId: string, reason: string,
     recipients.forEach((recipient) => queueEmail(envelopeId, recipient.id, 'voided', timestamp));
     recordEsignAudit(envelopeId, 'envelope.voided', { ...actor, userId }, { reason: message });
   })();
-  publishEvent('esign', { envelopeId, reason: 'voided' }); void esignWorker.pump();
-  return getEnvelopeDetail(envelopeId, userId);
+  publishEvent('esign', { envelopeId, reason: 'voided' }, spaceId); void esignWorker.pump();
+  return getEnvelopeDetail(envelopeId, spaceId);
 }
 
-export function remindEnvelope(envelopeId: string, userId: string, recipientId: string | undefined, actor: EsignActor) {
-  const envelope = requireOwnedEnvelope(envelopeId, userId);
+export function remindEnvelope(envelopeId: string, spaceId: string, userId: string, recipientId: string | undefined, actor: EsignActor) {
+  const envelope = requireSpaceEnvelope(envelopeId, spaceId);
   if (!['sent', 'in_progress'].includes(envelope.status)) throw new EsignError('Only an active envelope can send reminders.', 409);
   const recipients = db.prepare(`SELECT * FROM esign_recipients WHERE envelope_id=? AND status IN ('ready','sent','viewed','in_progress','delivery_failed') ${recipientId ? 'AND id=?' : ''}`).all(...(recipientId ? [envelopeId, recipientId] : [envelopeId])) as any[];
   if (!recipients.length) throw new EsignError('No active recipient is available for a reminder.', 409);
   const timestamp = now();
   db.transaction(() => {
     recipients.forEach((recipient) => queueEmail(envelopeId, recipient.id, 'reminder', timestamp));
-    db.prepare('UPDATE esign_envelopes SET last_reminder_at=?,updated_at=? WHERE id=?').run(timestamp, timestamp, envelopeId);
+    db.prepare('UPDATE esign_envelopes SET last_reminder_at=?,updated_at=? WHERE id=? AND space_id=?').run(timestamp, timestamp, envelopeId, spaceId);
     recordEsignAudit(envelopeId, 'envelope.reminded', { ...actor, userId }, { recipientIds: recipients.map((item) => item.id) });
   })();
-  publishEvent('esign', { envelopeId, reason: 'reminder-queued' }); void esignWorker.pump();
+  publishEvent('esign', { envelopeId, reason: 'reminder-queued' }, spaceId); void esignWorker.pump();
   return { queued: recipients.length };
 }
 
-export function retryEnvelopeFinalization(envelopeId: string, userId: string, actor: EsignActor) {
-  const envelope = requireOwnedEnvelope(envelopeId, userId);
+export function retryEnvelopeFinalization(envelopeId: string, spaceId: string, userId: string, actor: EsignActor) {
+  const envelope = requireSpaceEnvelope(envelopeId, spaceId);
   if (envelope.status !== 'failed' || !envelope.finalization_error) throw new EsignError('This envelope does not have a failed finalization to retry.', 409, 'FINALIZATION_NOT_RETRYABLE');
   const remaining = Number((db.prepare(`SELECT COUNT(*) count FROM esign_recipients WHERE envelope_id=? AND role IN ('signer','approver') AND status<>'completed'`).get(envelopeId) as any).count);
   if (remaining) throw new EsignError('All signers and approvers must complete before finalization can be retried.', 409, 'FINALIZATION_NOT_READY');
   const timestamp = now();
   db.transaction(() => {
-    const changed = db.prepare("UPDATE esign_envelopes SET status='finalizing',finalization_attempt=0,finalization_retry_at=?,finalization_error=NULL,updated_at=? WHERE id=? AND created_by_user_id=? AND status='failed'").run(timestamp, timestamp, envelopeId, userId).changes;
+    const changed = db.prepare("UPDATE esign_envelopes SET status='finalizing',finalization_attempt=0,finalization_retry_at=?,finalization_error=NULL,updated_at=? WHERE id=? AND space_id=? AND status='failed'").run(timestamp, timestamp, envelopeId, spaceId).changes;
     if (changed !== 1) throw new EsignError('This envelope is no longer available for retry.', 409);
     recordEsignAudit(envelopeId, 'envelope.finalization_retried', { ...actor, userId }, {});
   })();
-  publishEvent('esign', { envelopeId, reason: 'finalization-retried' }); void esignWorker.pump();
-  return getEnvelopeDetail(envelopeId, userId);
+  publishEvent('esign', { envelopeId, reason: 'finalization-retried' }, spaceId); void esignWorker.pump();
+  return getEnvelopeDetail(envelopeId, spaceId);
 }
 
 function publicRecipientByToken(token: string) {
   if (!/^[A-Za-z0-9_-]{30,100}$/.test(token)) return null;
-  return db.prepare(`SELECT r.*,e.status envelope_status,e.expires_at,e.title envelope_title,e.id envelope_id
+  return db.prepare(`SELECT r.*,e.status envelope_status,e.expires_at,e.title envelope_title,e.id envelope_id,e.space_id
     FROM esign_recipients r JOIN esign_envelopes e ON e.id=r.envelope_id WHERE r.access_token_hash=?`).get(hashToken(token)) as any;
 }
 
@@ -542,14 +566,14 @@ export function exchangeSigningToken(token: string, actor: EsignActor) {
     }
     recordEsignAudit(recipient.envelope_id, 'recipient.link_opened', { ...actor, actorType: 'recipient', recipientId: recipient.id }, { authenticated: Boolean(authenticated) });
   })();
-  publishEvent('esign', { envelopeId: recipient.envelope_id, reason: 'recipient-viewed', recipientId: recipient.id });
+  publishEvent('esign', { envelopeId: recipient.envelope_id, reason: 'recipient-viewed', recipientId: recipient.id }, recipient.space_id);
   return { sessionToken: rawSession, expiresAt, snapshot: signingSessionSummary(rawSession) };
 }
 
 function signingSession(rawToken: string) {
   if (!/^[A-Za-z0-9_-]{30,100}$/.test(rawToken)) throw new EsignError('Signing session required.', 401, 'SIGNING_SESSION_REQUIRED');
   const row = db.prepare(`SELECT s.*,r.envelope_id,r.name,r.email,r.role,r.status recipient_status,r.access_code_hash,r.code_locked_until,
-      e.status envelope_status,e.expires_at envelope_expires_at,e.title envelope_title
+      e.status envelope_status,e.expires_at envelope_expires_at,e.title envelope_title,e.space_id
     FROM esign_signing_sessions s JOIN esign_recipients r ON r.id=s.recipient_id JOIN esign_envelopes e ON e.id=r.envelope_id
     WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>?`).get(hashToken(rawToken), now()) as any;
   if (!row) throw new EsignError('Signing session expired. Open the email link again.', 401, 'SIGNING_SESSION_EXPIRED');
@@ -608,7 +632,7 @@ export function consentToElectronicSigning(rawToken: string, agreed: boolean, ac
       disclosureVersion: ESIGN_DISCLOSURE_VERSION, disclosureSha256: ESIGN_DISCLOSURE_SHA256, disclosureText: ESIGN_DISCLOSURE_TEXT
     });
   })();
-  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'recipient-consented', recipientId: session.recipient_id });
+  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'recipient-consented', recipientId: session.recipient_id }, session.space_id);
   return signingSessionSummary(rawToken);
 }
 
@@ -707,7 +731,7 @@ export async function savePublicField(rawToken: string, fieldId: string, input: 
     })();
   } catch (error) { if (asset?.storageKey) removeProtectedFile(asset.storageKey); throw error; }
   if (previousStorageKey) removeProtectedFile(previousStorageKey);
-  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'field-updated', recipientId: session.recipient_id, fieldId });
+  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'field-updated', recipientId: session.recipient_id, fieldId }, session.space_id);
   return signingSessionSummary(rawToken);
 }
 
@@ -746,7 +770,7 @@ export function completePublicSigning(rawToken: string, actor: EsignActor) {
       db.prepare("UPDATE esign_envelopes SET status='finalizing',finalization_attempt=0,finalization_retry_at=?,finalization_error=NULL,updated_at=? WHERE id=? AND status IN ('sent','in_progress')").run(timestamp, timestamp, session.envelope_id);
     }
   })();
-  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'recipient-completed', recipientId: session.recipient_id }); void esignWorker.pump();
+  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'recipient-completed', recipientId: session.recipient_id }, session.space_id); void esignWorker.pump();
   return signingSessionSummary(rawToken);
 }
 
@@ -762,7 +786,7 @@ export function declinePublicSigning(rawToken: string, reason: string, actor: Es
     db.prepare("UPDATE esign_email_deliveries SET state='cancelled',error='Envelope declined',updated_at=? WHERE envelope_id=? AND state='queued'").run(timestamp, session.envelope_id);
     recordEsignAudit(session.envelope_id, 'recipient.declined', { ...actor, actorType: 'recipient', recipientId: session.recipient_id }, { reason: message });
   })();
-  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'declined', recipientId: session.recipient_id });
+  publishEvent('esign', { envelopeId: session.envelope_id, reason: 'declined', recipientId: session.recipient_id }, session.space_id);
   return { envelopeId: session.envelope_id, status: 'declined' };
 }
 
@@ -771,8 +795,8 @@ export function revokeSigningSession(rawToken: string) {
   db.prepare('UPDATE esign_signing_sessions SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL').run(now(), hashToken(rawToken));
 }
 
-export function getOwnedDocumentContent(envelopeId: string, documentId: string, userId: string) {
-  requireOwnedEnvelope(envelopeId, userId);
+export function getOwnedDocumentContent(envelopeId: string, documentId: string, spaceId: string) {
+  requireSpaceEnvelope(envelopeId, spaceId);
   const row = db.prepare('SELECT * FROM esign_documents WHERE id=? AND envelope_id=?').get(documentId, envelopeId) as any;
   if (!row) throw new EsignError('Document not found.', 404);
   const bytes = readProtectedFile(row.storage_key, `esign-document:${row.id}`);
@@ -791,8 +815,8 @@ export function getPublicDocumentContent(rawToken: string, documentId: string) {
   return { bytes, fileName: row.original_name, mimeType: row.mime_type, sha256: row.sha256 };
 }
 
-export function getOwnedArtifactContent(envelopeId: string, artifactId: string, userId: string) {
-  requireOwnedEnvelope(envelopeId, userId);
+export function getOwnedArtifactContent(envelopeId: string, artifactId: string, spaceId: string) {
+  requireSpaceEnvelope(envelopeId, spaceId);
   const row = db.prepare('SELECT * FROM esign_artifacts WHERE id=? AND envelope_id=? AND state=?').get(artifactId, envelopeId, 'ready') as any;
   if (!row) throw new EsignError('Artifact not found.', 404);
   const bytes = readProtectedFile(row.storage_key, `esign-artifact:${row.id}`);
@@ -811,11 +835,11 @@ export function getPublicArtifactContent(rawToken: string, artifactId: string) {
   return { bytes, fileName: row.file_name, mimeType: row.mime_type, sha256: row.sha256 };
 }
 
-export function listLogModeOutbox(userId: string, envelopeId?: string) {
+export function listLogModeOutbox(spaceId: string, envelopeId?: string) {
   if (config.emailMode !== 'log') throw new EsignError('The test outbox is available only in log email mode.', 404);
   const rows = db.prepare(`SELECT d.*,r.email,r.name,e.title FROM esign_email_deliveries d
     JOIN esign_envelopes e ON e.id=d.envelope_id JOIN esign_recipients r ON r.id=d.recipient_id
-    WHERE e.created_by_user_id=? ${envelopeId ? 'AND e.id=?' : ''} ORDER BY d.created_at DESC LIMIT 500`).all(...(envelopeId ? [userId, envelopeId] : [userId])) as any[];
+    WHERE e.space_id=? ${envelopeId ? 'AND e.id=?' : ''} ORDER BY d.created_at DESC LIMIT 500`).all(...(envelopeId ? [spaceId, envelopeId] : [spaceId])) as any[];
   return rows.map((row) => ({
     id: row.id, envelopeId: row.envelope_id, recipientId: row.recipient_id, recipientEmail: row.email, recipientName: row.name,
     envelopeTitle: row.title, kind: row.kind, state: row.state, scheduledAt: row.scheduled_at, sentAt: row.sent_at,
@@ -824,18 +848,25 @@ export function listLogModeOutbox(userId: string, envelopeId?: string) {
   }));
 }
 
-export function cloneEnvelope(envelopeId: string, userId: string, title: string | undefined, actor: EsignActor) {
-  const source = requireOwnedEnvelope(envelopeId, userId); const newId = crypto.randomUUID(); const timestamp = now();
+export function cloneEnvelope(envelopeId: string, spaceId: string, userId: string, title: string | undefined, actor: EsignActor) {
+  const source = requireSpaceEnvelope(envelopeId, spaceId); const newId = crypto.randomUUID(); const timestamp = now();
   const documents = db.prepare('SELECT * FROM esign_documents WHERE envelope_id=? ORDER BY position').all(envelopeId) as any[];
+  const cloneBytes = documents.reduce((total, document) => total + Number(document.size_bytes || 0), 0);
+  requireEsignSpaceCapacity(spaceId, cloneBytes * 2);
+  const recentClones = Number((db.prepare(`SELECT COUNT(*) count FROM esign_envelopes
+    WHERE space_id=? AND created_by_user_id=? AND source_envelope_id IS NOT NULL AND created_at>=?`)
+    .get(spaceId, userId, new Date(Date.now() - 60 * 60_000).toISOString()) as any)?.count || 0);
+  if (recentClones >= 20) throw new EsignError('Too many agreement copies were created recently. Try again later.', 429, 'CLONE_RATE_LIMIT');
   const recipients = db.prepare('SELECT * FROM esign_recipients WHERE envelope_id=? ORDER BY position').all(envelopeId) as any[];
   const fields = db.prepare('SELECT * FROM esign_fields WHERE envelope_id=? ORDER BY tab_order').all(envelopeId) as any[];
   const createdFiles: string[] = [];
   try {
     db.transaction(() => {
+      requireEsignSpaceCapacity(spaceId, cloneBytes * 2);
       const expirationDays = source.expiration_days == null ? null : Number(source.expiration_days);
       const expiresAt = expirationDays == null ? null : new Date(Date.now() + expirationDays * 86_400_000).toISOString();
-      db.prepare(`INSERT INTO esign_envelopes (id,created_by_user_id,source_envelope_id,title,subject,message,status,routing_mode,expires_at,expiration_days,reminder_interval_hours,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,'draft',?,?,?,?,?,?)`).run(newId, userId, envelopeId, cleanText(title || `${source.title} copy`, 180), source.subject, source.message, source.routing_mode, expiresAt, expirationDays, source.reminder_interval_hours, timestamp, timestamp);
+      db.prepare(`INSERT INTO esign_envelopes (id,space_id,created_by_user_id,source_envelope_id,title,subject,message,status,routing_mode,expires_at,expiration_days,reminder_interval_hours,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,'draft',?,?,?,?,?,?)`).run(newId, spaceId, userId, envelopeId, cleanText(title || `${source.title} copy`, 180), source.subject, source.message, source.routing_mode, expiresAt, expirationDays, source.reminder_interval_hours, timestamp, timestamp);
       const documentIds = new Map<string, string>();
       for (const document of documents) {
         const id = crypto.randomUUID(); const bytes = readProtectedFile(document.storage_key, `esign-document:${document.id}`); const stored = writeProtectedFile(bytes, `esign-document:${id}`); createdFiles.push(stored.storageKey); documentIds.set(document.id, id);
@@ -853,8 +884,8 @@ export function cloneEnvelope(envelopeId: string, userId: string, title: string 
       recordEsignAudit(newId, 'envelope.cloned', { ...actor, userId }, { sourceEnvelopeId: envelopeId });
     })();
   } catch (error) { createdFiles.forEach(removeProtectedFile); throw error; }
-  publishEvent('esign', { envelopeId: newId, reason: 'cloned', sourceEnvelopeId: envelopeId });
-  return getEnvelopeDetail(newId, userId);
+  publishEvent('esign', { envelopeId: newId, reason: 'cloned', sourceEnvelopeId: envelopeId }, spaceId);
+  return getEnvelopeDetail(newId, spaceId);
 }
 
 function displayFieldValue(field: any, value: any, recipient: any) {
@@ -1020,22 +1051,23 @@ async function finalizeEnvelope(envelopeId: string) {
       recipients.forEach((recipient) => queueEmail(envelopeId, recipient.id, 'completed', completedAt));
     })();
   } catch (error) { removeProtectedFile(completedStored.storageKey); removeProtectedFile(certificateStored.storageKey); throw error; }
-  publishEvent('esign', { envelopeId, reason: 'completed', certificateId: publicId });
+  publishEvent('esign', { envelopeId, reason: 'completed', certificateId: publicId }, envelope.space_id);
 }
 
 function scheduleFinalizationRetry(envelopeId: string, caught: unknown) {
   const message = (caught instanceof Error ? caught.message : String(caught)).slice(0, 1000); const timestamp = now();
-  let terminal = false; let attempt = 0; let retryAt: string | null = null;
+  let terminal = false; let attempt = 0; let retryAt: string | null = null; let spaceId: string | null = null;
   db.transaction(() => {
-    const current = db.prepare("SELECT finalization_attempt FROM esign_envelopes WHERE id=? AND status='finalizing'").get(envelopeId) as any;
+    const current = db.prepare("SELECT finalization_attempt,space_id FROM esign_envelopes WHERE id=? AND status='finalizing'").get(envelopeId) as any;
     if (!current) return;
+    spaceId = current.space_id;
     attempt = Number(current.finalization_attempt || 0) + 1; terminal = attempt >= 5;
     retryAt = terminal ? null : new Date(Date.now() + Math.min(300, 5 * (2 ** Math.max(0, attempt - 1))) * 1000).toISOString();
     db.prepare(`UPDATE esign_envelopes SET status=?,finalization_attempt=?,finalization_retry_at=?,finalization_error=?,updated_at=?,revision=revision+1
       WHERE id=? AND status='finalizing'`).run(terminal ? 'failed' : 'finalizing', attempt, retryAt, message, timestamp, envelopeId);
     recordEsignAudit(envelopeId, terminal ? 'envelope.finalization_failed' : 'envelope.finalization_retry_scheduled', { actorType: 'system' }, { attempt, retryAt, error: message });
   })();
-  publishEvent('esign', { envelopeId, reason: terminal ? 'finalization-failed' : 'finalization-retry-scheduled', attempt, retryAt, error: message });
+  if (spaceId) publishEvent('esign', { envelopeId, reason: terminal ? 'finalization-failed' : 'finalization-retry-scheduled', attempt, retryAt, error: message }, spaceId);
 }
 
 function awaitPageCountPlaceholder(bytes: Buffer) {
@@ -1079,7 +1111,7 @@ const claimEmailDelivery = db.transaction(() => {
 });
 
 async function processEmailDelivery(delivery: any) {
-  const row = db.prepare(`SELECT d.*,e.title,e.subject,e.message,e.status envelope_status,e.void_reason,r.name,r.email,r.role recipient_role,r.access_token_enc,r.status recipient_status
+  const row = db.prepare(`SELECT d.*,e.title,e.subject,e.message,e.status envelope_status,e.void_reason,e.space_id,r.name,r.email,r.role recipient_role,r.access_token_enc,r.status recipient_status
     FROM esign_email_deliveries d JOIN esign_envelopes e ON e.id=d.envelope_id JOIN esign_recipients r ON r.id=d.recipient_id WHERE d.id=?`).get(delivery.id) as any;
   if (!row) return;
   if (row.kind !== 'voided' && row.kind !== 'completed' && !['sent', 'in_progress'].includes(row.envelope_status)) {
@@ -1104,7 +1136,7 @@ async function processEmailDelivery(delivery: any) {
       if (row.kind === 'completed' && ['cc', 'viewer'].includes(row.recipient_role)) db.prepare("UPDATE esign_recipients SET status='notified',invitation_sent_at=COALESCE(invitation_sent_at,?),updated_at=? WHERE id=? AND status='waiting'").run(timestamp, timestamp, row.recipient_id);
       recordEsignAudit(row.envelope_id, `email.${row.kind}_sent`, { actorType: 'system', recipientId: row.recipient_id }, { deliveryId: row.id, providerMessageId: (result as any).messageId || null });
     })();
-    publishEvent('esign', { envelopeId: row.envelope_id, reason: 'email-sent', kind: row.kind, recipientId: row.recipient_id });
+    publishEvent('esign', { envelopeId: row.envelope_id, reason: 'email-sent', kind: row.kind, recipientId: row.recipient_id }, row.space_id);
   } catch (error) {
     const message = (error instanceof Error ? error.message : String(error)).slice(0, 1000); const timestamp = now(); const attempt = Number(row.attempt);
     if (attempt >= Number(row.max_attempts)) db.prepare("UPDATE esign_email_deliveries SET state='failed',error=?,updated_at=? WHERE id=?").run(message, timestamp, row.id);
@@ -1112,12 +1144,12 @@ async function processEmailDelivery(delivery: any) {
       const delayMinutes = Math.min(8, 2 ** Math.max(0, attempt - 1));
       db.prepare("UPDATE esign_email_deliveries SET state='queued',scheduled_at=?,error=?,updated_at=? WHERE id=?").run(new Date(Date.now() + delayMinutes * 60_000).toISOString(), message, timestamp, row.id);
     }
-    publishEvent('esign', { envelopeId: row.envelope_id, reason: 'email-failed', kind: row.kind, recipientId: row.recipient_id });
+    publishEvent('esign', { envelopeId: row.envelope_id, reason: 'email-failed', kind: row.kind, recipientId: row.recipient_id }, row.space_id);
   }
 }
 
 function expireDueEnvelopes() {
-  const timestamp = now(); const rows = db.prepare("SELECT id FROM esign_envelopes WHERE status IN ('sent','in_progress') AND expires_at IS NOT NULL AND expires_at<=?").all(timestamp) as any[];
+  const timestamp = now(); const rows = db.prepare("SELECT id,space_id FROM esign_envelopes WHERE status IN ('sent','in_progress') AND expires_at IS NOT NULL AND expires_at<=?").all(timestamp) as any[];
   for (const row of rows) {
     db.transaction(() => {
       db.prepare("UPDATE esign_envelopes SET status='expired',updated_at=?,revision=revision+1 WHERE id=? AND status IN ('sent','in_progress')").run(timestamp, row.id);
@@ -1125,7 +1157,7 @@ function expireDueEnvelopes() {
       db.prepare("UPDATE esign_email_deliveries SET state='cancelled',error='Envelope expired',updated_at=? WHERE envelope_id=? AND state='queued'").run(timestamp, row.id);
       recordEsignAudit(row.id, 'envelope.expired', { actorType: 'system' }, {});
     })();
-    publishEvent('esign', { envelopeId: row.id, reason: 'expired' });
+    publishEvent('esign', { envelopeId: row.id, reason: 'expired' }, row.space_id);
   }
 }
 

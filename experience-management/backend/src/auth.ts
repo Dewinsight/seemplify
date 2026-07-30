@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { config } from './config.js';
 import { db } from './database.js';
 import { sendPasswordResetEmail } from './emailService.js';
+import { acceptSpaceInvitation, ensureDefaultSpaceForUser, spaceSession } from './spaces.js';
 
 const cookieName = 'seemplify_experience_session';
 const resetLifetimeMs = 30 * 60_000;
@@ -94,10 +95,12 @@ function cookie(value: string, maxAge: number) {
 
 function authenticatedResponse(response: Response, user: SessionUser, status = 200) {
   response.setHeader('Set-Cookie', cookie(makeSession(user), config.sessionHours * 3600));
+  const spaces = spaceSession(user.id);
   return response.status(status).json({
     authenticated: true,
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
-    email: user.email
+    email: user.email,
+    ...spaces
   });
 }
 
@@ -115,12 +118,15 @@ function userByEmail(email: string) {
   return db.prepare('SELECT id,email,name,password_hash,role,session_version FROM users WHERE email=?').get(email) as UserRow | undefined;
 }
 
-function createUser(email: string, name: string, password: string) {
+function createUser(email: string, name: string, password: string, spaceName?: unknown) {
   const id = crypto.randomUUID(); const now = new Date().toISOString();
   const count = Number((db.prepare('SELECT COUNT(*) count FROM users').get() as any)?.count || 0);
   const role = count === 0 ? 'owner' : 'member';
-  db.prepare(`INSERT INTO users (id,email,name,password_hash,role,session_version,created_at,updated_at)
-    VALUES (?,?,?,?,?,1,?,?)`).run(id, email, name, hashPassword(password), role, now, now);
+  db.transaction(() => {
+    db.prepare(`INSERT INTO users (id,email,name,password_hash,role,session_version,created_at,updated_at)
+      VALUES (?,?,?,?,?,1,?,?)`).run(id, email, name, hashPassword(password), role, now, now);
+    ensureDefaultSpaceForUser({ id, name }, spaceName);
+  })();
   return { id, email, name, role, sessionVersion: 1 } satisfies SessionUser;
 }
 
@@ -128,6 +134,7 @@ export function bootstrapAdminAccount() {
   const existing = userByEmail(config.adminEmail);
   if (existing) {
     if (existing.role !== 'owner') db.prepare("UPDATE users SET role='owner',updated_at=? WHERE id=?").run(new Date().toISOString(), existing.id);
+    ensureDefaultSpaceForUser({ id: existing.id, name: existing.name });
     return existing.id;
   }
   const password = readRequired(config.adminPasswordFile, 'Admin password');
@@ -141,12 +148,21 @@ export function signup(request: Request, response: Response) {
   const email = normalizeEmail(request.body?.email);
   const name = String(request.body?.name || '').trim().replace(/\s+/g, ' ');
   const password = String(request.body?.password || '');
+  const spaceName = request.body?.spaceName;
+  const inviteToken = String(request.body?.inviteToken || '').trim();
   const invalidPassword = passwordError(password);
   if (!email) return response.status(400).json({ error: 'Enter a valid email address.' });
   if (name.length < 2 || name.length > 100) return response.status(400).json({ error: 'Name must be between 2 and 100 characters.' });
   if (invalidPassword) return response.status(400).json({ error: invalidPassword });
   if (userByEmail(email)) return response.status(409).json({ error: 'An account already exists for this email.' });
-  try { return authenticatedResponse(response, createUser(email, name, password), 201); }
+  try {
+    const user = db.transaction(() => {
+      const created = createUser(email, name, password, spaceName);
+      if (inviteToken) acceptSpaceInvitation(created, inviteToken);
+      return created;
+    })();
+    return authenticatedResponse(response, user, 201);
+  }
   catch (error: any) {
     if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) return response.status(409).json({ error: 'An account already exists for this email.' });
     throw error;
@@ -245,6 +261,7 @@ export function session(request: Request, response: Response) {
   return response.json({
     authenticated: Boolean(user),
     email: user?.email || null,
-    user: user ? { id: user.id, email: user.email, name: user.name, role: user.role } : null
+    user: user ? { id: user.id, email: user.email, name: user.name, role: user.role } : null,
+    ...(user ? spaceSession(user.id) : { spaces: [], activeSpace: null })
   });
 }

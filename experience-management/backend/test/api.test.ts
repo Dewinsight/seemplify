@@ -767,20 +767,20 @@ test('makes Quick Email durable, idempotent, unsubscribe-safe and suppression-aw
 });
 
 test('connects X with a one-time OAuth handshake, encrypts secrets, and durably synchronises posts', async () => {
-  const member = request.agent(app);
-  await member.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
-  await member.put('/api/integrations/x/app').send({ consumerKey: 'member-cannot-save', consumerSecret: 'member-cannot-save-secret' }).expect(403);
+  const platformAdmin = request.agent(app);
+  await platformAdmin.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
   await request(app).get('/api/integrations/x').expect(401);
   await request(app).get('/api/integrations/x/callback?oauth_token=junk-token&oauth_verifier=junk-verifier').expect(303)
     .expect('Location', '/social-listening?x=failed').expect('Cache-Control', 'no-store').expect('Referrer-Policy', 'no-referrer');
 
   const owner = request.agent(app);
   await owner.post('/api/auth/login').send({ email: 'researcher@example.com', password: 'Researcher-Reset-2026' }).expect(200);
+  await owner.put('/api/integrations/x/app').send({ consumerKey: 'space-owner-cannot-change-platform-app', consumerSecret: 'space-owner-cannot-change-platform-secret' }).expect(403);
   const sentinels = {
     consumerKey: 'test-consumer-key-12345', consumerSecret: 'test-consumer-secret-67890', bearerToken: 'test-bearer-token-123456',
     accessToken: 'test-access-token-123456', accessTokenSecret: 'test-access-secret-123456'
   };
-  const configured = await owner.put('/api/integrations/x/app').send({ consumerKey: sentinels.consumerKey, consumerSecret: sentinels.consumerSecret, bearerToken: sentinels.bearerToken }).expect(200);
+  const configured = await platformAdmin.put('/api/integrations/x/app').send({ consumerKey: sentinels.consumerKey, consumerSecret: sentinels.consumerSecret, bearerToken: sentinels.bearerToken }).expect(200);
   assert.equal(configured.body.app.configured, true); assert.equal(configured.body.app.bearerTokenConfigured, true);
   const configurationJson = JSON.stringify(configured.body);
   for (const value of Object.values(sentinels)) assert.doesNotMatch(configurationJson, new RegExp(value));
@@ -873,7 +873,7 @@ test('connects X with a one-time OAuth handshake, encrypts secrets, and durably 
     assert.deepEqual(xMentions.map((mention: any) => mention.externalId).sort(), ['1001', '1002', '1003', '1004']);
     const ownerScopedMentions = (await owner.get('/api/integrations/x/mentions?limit=1000').expect(200)).body;
     assert.deepEqual(ownerScopedMentions.map((mention: any) => mention.externalId).sort(), ['1001', '1002', '1003', '1004']);
-    assert.deepEqual((await member.get('/api/integrations/x/mentions?limit=1000').expect(200)).body, []);
+    assert.deepEqual((await platformAdmin.get('/api/integrations/x/mentions?limit=1000').expect(200)).body, []);
     assert.equal(xMentions.find((mention: any) => mention.externalId === '1001').content, '<script>untrusted post text</script>');
     const duplicate = ownerScopedMentions.find((mention: any) => mention.externalId === '1002'); assert.deepEqual(duplicate.metadata.x.streams.sort(), ['mention', 'search']);
     assert.ok(requests.some((item) => item.url.includes('/oauth/request_token?x_auth_access_type=read') && item.authorization.includes('oauth_callback') && !item.authorization.includes('x_auth_access_type')));

@@ -163,6 +163,7 @@ export interface JourneyVersionSummary {
 
 export interface AiJob {
   id: string;
+  spaceId: string;
   kind: AiJobKind;
   surveyId: string | null;
   responseId: string | null;

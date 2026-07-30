@@ -25,6 +25,28 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /path="\/agreements\/:id\/prepare"/);
   assert.match(app, /path="\/sign"/);
   assert.match(app, /CertificateVerificationPage/);
+  assert.match(app, /path="\/join\/:token"/);
+  assert.match(app, /path="\/settings\/space"/);
+});
+test('keeps space selection, membership management, invitations, uploads, and live events tenant-aware', () => {
+  const api = fs.readFileSync(path.join(source, 'lib', 'api.ts'), 'utf8');
+  const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  const settings = fs.readFileSync(path.join(source, 'pages', 'SpaceSettingsPage.tsx'), 'utf8');
+  const join = fs.readFileSync(path.join(source, 'pages', 'JoinSpacePage.tsx'), 'utf8');
+  const signup = fs.readFileSync(path.join(source, 'pages', 'SignupPage.tsx'), 'utf8');
+  const live = fs.readFileSync(path.join(source, 'hooks', 'useLiveRefresh.ts'), 'utf8');
+  const publicSurvey = fs.readFileSync(path.join(source, 'pages', 'PublicSurveyPage.tsx'), 'utf8');
+  for (const feature of ['x-seemplify-space', 'BroadcastChannel', 'SPACE_ACCESS_DENIED', 'storeActiveSpaceId']) assert.match(api, new RegExp(feature));
+  for (const feature of ['Active space', 'Create space', 'Space settings', 'session?.user?.email']) assert.match(shell, new RegExp(feature.replaceAll('?', '\\?')));
+  for (const endpoint of ['/api/spaces', '/members', '/invitations']) assert.match(settings, new RegExp(endpoint.replaceAll('/', '\\/')));
+  for (const feature of ['Only people listed here', 'Personal', 'pending invitation', 'Remove']) assert.match(settings, new RegExp(feature, 'i'));
+  assert.match(join, /\/api\/public\/spaces\/invitations/);
+  assert.match(join, /\/accept/);
+  assert.match(signup, /spaceName/);
+  assert.match(signup, /inviteToken/);
+  assert.match(live, /spaceId=/);
+  assert.match(publicSurvey, /\/api\/public\/collectors\/\$\{encodeURIComponent\(collectorSlug\)\}\/uploads/);
+  assert.doesNotMatch(publicSurvey, /api\('\/api\/uploads/);
 });
 test('ships the native agreement preparation and signing workspaces', () => {
   const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
@@ -51,7 +73,7 @@ test('exposes multi-account X listening, human-reviewed replies, cross-source in
   assert.match(social, /connections\/\$\{connection\.id\}\/sync/);
   assert.match(social, /connections\/\$\{connection\.id\}\/queries/);
   assert.match(social, /mentions\/\$\{replyMention\.id\}\/reply-drafts/);
-  for (const feature of ['X accounts', 'Add X account', 'X API credits are depleted', 'Listening queries', 'Reply assistant', 'Draft a reply with Terra', 'Draft only', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Remove X developer app', 'waiting_billing']) assert.match(social, new RegExp(feature));
+  for (const feature of ['X accounts', 'Add X account', 'X API credits are depleted', 'Listening queries', 'Reply assistant', 'Draft a reply with Terra', 'Draft only', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Platform X settings', 'Remove platform X app', 'waiting_billing']) assert.match(social, new RegExp(feature));
   assert.match(social, /Promise\.allSettled/);
   assert.match(social, /selectedConnectionId/);
   assert.match(social, /selectedConnectionRef/);

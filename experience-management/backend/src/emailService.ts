@@ -150,6 +150,29 @@ export async function sendPasswordResetEmail(input: { email: string; name: strin
   });
 }
 
+export async function sendSpaceInvitationEmail(input: {
+  invitationId: string;
+  email: string;
+  token: string;
+  spaceName: string;
+  invitedBy: string;
+  role: string;
+}) {
+  const inviteUrl = `${config.publicUrl}/join/${encodeURIComponent(input.token)}`;
+  return sendBrevoEmail({
+    to: input.email,
+    subject: `Join ${input.spaceName} in Seemplify Experience`,
+    html: `<div style="font-family:Helvetica,Arial,sans-serif;color:#20211f;line-height:1.6;max-width:620px;margin:auto">
+      <h2 style="font-size:22px;margin:0 0 18px">You have been invited</h2>
+      <p>${escapeHtml(input.invitedBy)} invited you to join <strong>${escapeHtml(input.spaceName)}</strong> as ${escapeHtml(input.role)}.</p>
+      <p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;background:#26352e;color:#fff;text-decoration:none;padding:12px 18px;border-radius:7px;font-weight:600">Review invitation</a></p>
+      <p style="font-size:13px;color:#6b706c">This link expires in 7 days and is bound to ${escapeHtml(input.email)}. If you were not expecting it, you can ignore this message.</p>
+    </div>`,
+    text: `${input.invitedBy} invited you to join ${input.spaceName} in Seemplify Experience as ${input.role}.\n\nReview the invitation: ${inviteUrl}\n\nThis link expires in 7 days and is bound to ${input.email}.`,
+    headers: { idempotencyKey: input.invitationId, 'X-Mailin-custom': `space_invitation:${input.invitationId}` }
+  });
+}
+
 function inviteContent(survey: Survey, collector: Collector, recipient: { name?: string; token: string }, message?: string) {
   const surveyUrl = `${collector.publicUrl}?recipient=${encodeURIComponent(recipient.token)}`;
   const unsubscribeUrl = `${config.publicUrl}/api/public/collectors/unsubscribe/${encodeURIComponent(recipient.token)}`;
@@ -166,10 +189,12 @@ function inviteContent(survey: Survey, collector: Collector, recipient: { name?:
 }
 
 export async function sendInvitations(survey: Survey, collector: Collector, recipients: { email: string; name?: string }[], message?: string) {
+  const spaceId = (db.prepare('SELECT space_id FROM surveys WHERE id=?').get(survey.id) as { space_id?: string } | undefined)?.space_id;
+  if (!spaceId) throw new Error('Survey space is not configured.');
   const insert = db.prepare(`INSERT INTO recipients (id,collector_id,name,email,token,status,first_attempt_at,updated_at,created_at) VALUES (?,?,?,?,?,'sending',?,?,?)`);
   const update = db.prepare(`UPDATE recipients SET status=?,invite_sent_at=?,message_id=?,error=?,updated_at=? WHERE id=?`);
   const findExisting = db.prepare('SELECT * FROM recipients WHERE collector_id=? AND email=? COLLATE NOCASE ORDER BY created_at DESC LIMIT 1');
-  const isSuppressed = db.prepare('SELECT 1 FROM email_suppressions WHERE email=?');
+  const isSuppressed = db.prepare('SELECT 1 FROM email_suppressions WHERE space_id=? AND email=?');
   const outcomes = [];
   for (const recipient of recipients) {
     const email = recipient.email.trim().toLowerCase(); const now = new Date().toISOString();
@@ -181,7 +206,7 @@ export async function sendInvitations(survey: Survey, collector: Collector, reci
     }
     const id = String(stored.id); const token = String(stored.token);
     const content = inviteContent(survey, collector, { ...recipient, token }, message);
-    if (isSuppressed.get(email) || ['suppressed', 'unsubscribed'].includes(String(stored.status))) {
+    if (isSuppressed.get(spaceId, email) || ['suppressed', 'unsubscribed'].includes(String(stored.status))) {
       update.run('suppressed', stored.invite_sent_at || null, stored.message_id || null, 'Recipient has opted out of survey emails.', now, id);
       outcomes.push({ id, email, status: 'failed', error: 'Recipient has opted out of survey emails.' });
       continue;
@@ -235,9 +260,10 @@ export function getRecipientUnsubscribePreview(token: string) {
 }
 
 export function markRecipientUnsubscribed(token: string) {
-  const row = token ? db.prepare('SELECT id,email,status FROM recipients WHERE token=?').get(token) as any : null;
+  const row = token ? db.prepare(`SELECT r.id,r.email,r.status,s.space_id FROM recipients r
+    JOIN collectors c ON c.id=r.collector_id JOIN surveys s ON s.id=c.survey_id WHERE r.token=?`).get(token) as any : null;
   if (!row) return null;
   const now = new Date().toISOString();
   db.prepare("UPDATE recipients SET status='unsubscribed',updated_at=? WHERE id=? AND status<>'responded'").run(now, row.id);
-  return { email: String(row.email).trim().toLowerCase(), maskedEmail: maskRecipientEmail(String(row.email)) };
+  return { email: String(row.email).trim().toLowerCase(), maskedEmail: maskRecipientEmail(String(row.email)), spaceId: String(row.space_id) };
 }

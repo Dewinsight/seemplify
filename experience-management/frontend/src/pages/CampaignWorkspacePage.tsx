@@ -6,6 +6,7 @@ import { contactsFromText, customFieldToken } from '@/lib/contactImport';
 import { Link, useParams } from '@/lib/router';
 import { formatDateTime } from '@/lib/utils';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -313,17 +314,16 @@ export function CampaignWorkspacePage() {
   const completedSteps = workflowSections.filter((section) => section.complete).length;
   const workflowReady = workflowSections.length === 4 && completedSteps === 4;
   const hasUnsavedChanges = setupDirty || scheduleDirty || sequenceDraft.dirty;
+  useUnsavedChanges(hasUnsavedChanges);
   useEffect(() => {
     if (!hasUnsavedChanges) return;
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     const confirmNavigation = (event: MouseEvent) => {
       const link = (event.target as HTMLElement | null)?.closest('a[href]') as HTMLAnchorElement | null;
       if (!link || link.target || link.href === window.location.href) return;
       if (!window.confirm('Leave this campaign and discard unsaved changes?')) { event.preventDefault(); event.stopImmediatePropagation(); }
     };
-    window.addEventListener('beforeunload', warnBeforeUnload);
     document.addEventListener('click', confirmNavigation, true);
-    return () => { window.removeEventListener('beforeunload', warnBeforeUnload); document.removeEventListener('click', confirmNavigation, true); };
+    return () => document.removeEventListener('click', confirmNavigation, true);
   }, [hasUnsavedChanges]);
 
   async function transition(action: 'launch' | 'pause' | 'resume') {

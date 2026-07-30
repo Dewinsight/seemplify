@@ -199,7 +199,6 @@ db.exec(`
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS x_connections_schedule ON x_connections(auto_sync,next_sync_at);
-  CREATE UNIQUE INDEX IF NOT EXISTS x_connections_user_account ON x_connections(user_id,x_user_id) WHERE x_user_id IS NOT NULL;
   CREATE TABLE IF NOT EXISTS x_oauth_requests (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -725,7 +724,9 @@ for (const row of activeJourneyOptimizations) {
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ai_jobs_one_active_journey_optimize
   ON ai_jobs(CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END)
   WHERE kind='journey.optimize' AND state IN ('queued','processing')`);
-db.exec('CREATE UNIQUE INDEX IF NOT EXISTS social_mentions_x_external ON social_mentions(source,external_id) WHERE external_id IS NOT NULL');
+if (!new Set((db.prepare('PRAGMA table_info(social_mentions)').all() as Array<{ name: string }>).map((column) => column.name)).has('space_id')) {
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS social_mentions_x_external ON social_mentions(source,external_id) WHERE external_id IS NOT NULL');
+}
 const xAppColumns = new Set((db.prepare('PRAGMA table_info(x_apps)').all() as any[]).map((column) => String(column.name)));
 if (!xAppColumns.has('client_id_enc')) db.exec('ALTER TABLE x_apps ADD COLUMN client_id_enc TEXT');
 if (!xAppColumns.has('client_secret_enc')) db.exec('ALTER TABLE x_apps ADD COLUMN client_secret_enc TEXT');
@@ -827,8 +828,10 @@ if (!xConnectionColumns.has('refresh_token_enc')) db.exec('ALTER TABLE x_connect
 if (!xConnectionColumns.has('auth_type')) db.exec("ALTER TABLE x_connections ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'oauth1'");
 if (!xConnectionColumns.has('scopes_json')) db.exec("ALTER TABLE x_connections ADD COLUMN scopes_json TEXT NOT NULL DEFAULT '[]'");
 if (!xConnectionColumns.has('token_expires_at')) db.exec('ALTER TABLE x_connections ADD COLUMN token_expires_at TEXT');
-db.exec(`CREATE INDEX IF NOT EXISTS x_connections_schedule ON x_connections(auto_sync,next_sync_at);
-  CREATE UNIQUE INDEX IF NOT EXISTS x_connections_user_account ON x_connections(user_id,x_user_id) WHERE x_user_id IS NOT NULL;`);
+db.exec('CREATE INDEX IF NOT EXISTS x_connections_schedule ON x_connections(auto_sync,next_sync_at)');
+if (!new Set((db.prepare('PRAGMA table_info(x_connections)').all() as Array<{ name: string }>).map((column) => column.name)).has('space_id')) {
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS x_connections_user_account ON x_connections(user_id,x_user_id) WHERE x_user_id IS NOT NULL');
+}
 const xForeignKeyViolations = db.prepare('PRAGMA foreign_key_check').all();
 if (xForeignKeyViolations.length) throw new Error('X connection migration left invalid foreign keys.');
 const activeXSyncRows = db.prepare(`SELECT id,connection_id,state FROM x_sync_jobs
@@ -866,13 +869,16 @@ db.exec(`DROP INDEX IF EXISTS x_sync_jobs_one_active;
   WHERE credit_probe=1 AND state IN ('queued','processing','waiting_rate_limit','waiting_billing');`);
 
 function normalizeQueuedIntelligenceArtifacts(table: string, keyColumns: string[]) {
-  const columns = keyColumns.map((column) => `a.${column}`).join(',');
+  const scopedKeyColumns = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name)).has('space_id')
+    ? ['space_id', ...keyColumns]
+    : keyColumns;
+  const columns = scopedKeyColumns.map((column) => `a.${column}`).join(',');
   const rows = db.prepare(`SELECT a.id,a.ai_job_id,${columns},COALESCE(j.state,'missing') job_state,a.created_at
     FROM ${table} a LEFT JOIN ai_jobs j ON j.id=a.ai_job_id WHERE a.state='queued'
     ORDER BY CASE COALESCE(j.state,'missing') WHEN 'processing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,a.created_at,a.id`).all() as any[];
   const retained = new Set<string>(); const timestamp = new Date().toISOString();
   for (const row of rows) {
-    const key = JSON.stringify(keyColumns.map((column) => row[column]));
+    const key = JSON.stringify(scopedKeyColumns.map((column) => row[column]));
     if (!retained.has(key)) { retained.add(key); continue; }
     db.prepare(`UPDATE ${table} SET state='failed',error='A duplicate queued request was removed during migration.',updated_at=? WHERE id=?`)
       .run(timestamp, row.id);
@@ -884,18 +890,20 @@ function normalizeQueuedIntelligenceArtifacts(table: string, keyColumns: string[
 normalizeQueuedIntelligenceArtifacts('social_reply_drafts', ['requested_by', 'mention_id', 'tone', 'instructions']);
 normalizeQueuedIntelligenceArtifacts('social_intelligence_reports', ['user_id', 'connection_id', 'title', 'mention_ids_json']);
 normalizeQueuedIntelligenceArtifacts('intelligence_reports', ['user_id', 'title', 'objective', 'source_refs_json']);
-db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS social_reply_drafts_one_active_request
-    ON social_reply_drafts(requested_by,mention_id,tone,instructions) WHERE state='queued';
-  CREATE UNIQUE INDEX IF NOT EXISTS social_reply_drafts_idempotency
-    ON social_reply_drafts(requested_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
-  CREATE UNIQUE INDEX IF NOT EXISTS social_intelligence_reports_one_active_request
-    ON social_intelligence_reports(user_id,connection_id,title,mention_ids_json) WHERE state='queued';
-  CREATE UNIQUE INDEX IF NOT EXISTS social_intelligence_reports_idempotency
-    ON social_intelligence_reports(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
-  CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_one_active_request
-    ON intelligence_reports(user_id,title,objective,source_refs_json) WHERE state='queued';
-  CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_idempotency
-    ON intelligence_reports(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+if (!new Set((db.prepare('PRAGMA table_info(social_reply_drafts)').all() as Array<{ name: string }>).map((column) => column.name)).has('space_id')) {
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS social_reply_drafts_one_active_request
+      ON social_reply_drafts(requested_by,mention_id,tone,instructions) WHERE state='queued';
+    CREATE UNIQUE INDEX IF NOT EXISTS social_reply_drafts_idempotency
+      ON social_reply_drafts(requested_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS social_intelligence_reports_one_active_request
+      ON social_intelligence_reports(user_id,connection_id,title,mention_ids_json) WHERE state='queued';
+    CREATE UNIQUE INDEX IF NOT EXISTS social_intelligence_reports_idempotency
+      ON social_intelligence_reports(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_one_active_request
+      ON intelligence_reports(user_id,title,objective,source_refs_json) WHERE state='queued';
+    CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_idempotency
+      ON intelligence_reports(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+}
 
 const parseJson = <T>(value: unknown, fallback: T): T => {
   try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; }
@@ -916,16 +924,18 @@ const rowQuestion = (row: any): Question => ({
   logic: parseJson(row.logic_json, [])
 });
 
-export function listSurveys(): Survey[] {
+export function listSurveys(spaceId: string): Survey[] {
   return (db.prepare(`SELECT s.*, COUNT(DISTINCT r.id) response_count, COUNT(DISTINCT c.id) collector_count
     FROM surveys s LEFT JOIN responses r ON r.survey_id=s.id LEFT JOIN collectors c ON c.survey_id=s.id
-    GROUP BY s.id ORDER BY s.updated_at DESC`).all() as any[]).map((row) => ({
+    WHERE s.space_id=? GROUP BY s.id ORDER BY s.updated_at DESC`).all(spaceId) as any[]).map((row) => ({
       ...rowSurvey(row), responseCount: Number(row.response_count), collectorCount: Number(row.collector_count)
     } as Survey));
 }
 
-export function getSurvey(id: string): Survey | null {
-  const row = db.prepare('SELECT * FROM surveys WHERE id=?').get(id) as any;
+export function getSurvey(id: string, spaceId?: string): Survey | null {
+  const row = spaceId
+    ? db.prepare('SELECT * FROM surveys WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM surveys WHERE id=?').get(id) as any;
   if (!row) return null;
   return {
     ...rowSurvey(row),
@@ -933,13 +943,16 @@ export function getSurvey(id: string): Survey | null {
   };
 }
 
-export const saveSurvey = db.transaction((input: Partial<Survey> & { title: string }, questions?: Partial<Question>[]) => {
+export const saveSurvey = db.transaction((input: Partial<Survey> & { title: string }, questions: Partial<Question>[] | undefined, spaceId: string) => {
+  if (!spaceId) throw new Error('A space is required to save a survey.');
   const now = new Date().toISOString();
   const id = input.id || crypto.randomUUID();
-  db.prepare(`INSERT INTO surveys (id,title,description,purpose,audience,status,primary_metric,language,thank_you_message,theme_json,settings_json,created_at,updated_at,published_at)
-    VALUES (@id,@title,@description,@purpose,@audience,@status,@primaryMetric,@language,@thankYouMessage,@theme,@settings,@createdAt,@updatedAt,@publishedAt)
+  const existing = db.prepare('SELECT space_id FROM surveys WHERE id=?').get(id) as { space_id: string } | undefined;
+  if (existing && existing.space_id !== spaceId) throw new Error('Survey not found.');
+  db.prepare(`INSERT INTO surveys (id,space_id,title,description,purpose,audience,status,primary_metric,language,thank_you_message,theme_json,settings_json,created_at,updated_at,published_at)
+    VALUES (@id,@spaceId,@title,@description,@purpose,@audience,@status,@primaryMetric,@language,@thankYouMessage,@theme,@settings,@createdAt,@updatedAt,@publishedAt)
     ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,purpose=excluded.purpose,audience=excluded.audience,status=excluded.status,primary_metric=excluded.primary_metric,language=excluded.language,thank_you_message=excluded.thank_you_message,theme_json=excluded.theme_json,settings_json=excluded.settings_json,updated_at=excluded.updated_at,published_at=excluded.published_at`).run({
-      id, title: input.title.trim(), description: input.description || '', purpose: input.purpose || 'customer_experience',
+      id, spaceId, title: input.title.trim(), description: input.description || '', purpose: input.purpose || 'customer_experience',
       audience: input.audience || '', status: input.status || 'draft', primaryMetric: input.primaryMetric || 'nps',
       language: input.language || 'English', thankYouMessage: input.thankYouMessage || 'Thank you for sharing your feedback.',
       theme: JSON.stringify(input.theme || {}), settings: JSON.stringify(input.settings || {}), createdAt: input.createdAt || now,
@@ -957,10 +970,10 @@ export const saveSurvey = db.transaction((input: Partial<Survey> & { title: stri
       logic: JSON.stringify(question.logic || [])
     }));
   }
-  return getSurvey(id)!;
+  return getSurvey(id, spaceId)!;
 });
 
-export function deleteSurvey(id: string) { return db.prepare('DELETE FROM surveys WHERE id=?').run(id).changes > 0; }
+export function deleteSurvey(id: string, spaceId: string) { return db.prepare('DELETE FROM surveys WHERE id=? AND space_id=?').run(id, spaceId).changes > 0; }
 
 const rowCollector = (row: any): Collector => ({
   id: row.id, surveyId: row.survey_id, name: row.name, type: row.type, slug: row.slug,
@@ -1039,7 +1052,7 @@ export function listInsights(surveyId: string) {
 
 export function rowJob(row: any): AiJob {
   return {
-    id: row.id, kind: row.kind, surveyId: row.survey_id, responseId: row.response_id, requestedBy: row.requested_by, state: row.state,
+    id: row.id, spaceId: row.space_id, kind: row.kind, surveyId: row.survey_id, responseId: row.response_id, requestedBy: row.requested_by, state: row.state,
     stage: row.stage, progress: row.progress, attempt: row.attempt, input: parseJson(row.input_json, {}),
     result: parseJson(row.result_json, null), error: row.error, retryAt: row.retry_at,
     createdAt: row.created_at, startedAt: row.started_at, completedAt: row.completed_at, updatedAt: row.updated_at
@@ -1055,17 +1068,13 @@ export function listJobs(limit = 100) {
   return (db.prepare('SELECT * FROM ai_jobs ORDER BY created_at DESC LIMIT ?').all(limit) as any[]).map(rowJob);
 }
 
-export function getJobForUser(id: string, userId: string): AiJob | null {
-  const row = db.prepare(`SELECT * FROM ai_jobs WHERE id=? AND (requested_by=? OR (
-    requested_by IS NULL AND kind NOT IN ('social.analyze','social.report','social.reply_draft','intelligence.synthesize')
-  ))`).get(id, userId) as any;
+export function getJobForSpace(id: string, spaceId: string): AiJob | null {
+  const row = db.prepare('SELECT * FROM ai_jobs WHERE id=? AND space_id=?').get(id, spaceId) as any;
   return row ? rowJob(row) : null;
 }
 
-export function listJobsForUser(userId: string, limit = 100) {
-  return (db.prepare(`SELECT * FROM ai_jobs WHERE requested_by=? OR (
-    requested_by IS NULL AND kind NOT IN ('social.analyze','social.report','social.reply_draft','intelligence.synthesize')
-  ) ORDER BY created_at DESC LIMIT ?`).all(userId, limit) as any[]).map(rowJob);
+export function listJobsForSpace(spaceId: string, limit = 100) {
+  return (db.prepare('SELECT * FROM ai_jobs WHERE space_id=? ORDER BY created_at DESC LIMIT ?').all(spaceId, limit) as any[]).map(rowJob);
 }
 
 export function getJobProviderResult(id: string): { activity: string; schemaName: string; output: unknown; runtime: unknown } | null {
@@ -1079,17 +1088,37 @@ export function saveJobProviderResult(id: string, value: { activity: string; sch
   return getJobProviderResult(id);
 }
 
-export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
+export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, spaceId: string, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
+  if (!spaceId) throw new Error('A space is required to queue AI work.');
+  if (surveyId && !db.prepare('SELECT 1 FROM surveys WHERE id=? AND space_id=?').get(surveyId, spaceId)) {
+    throw new Error('Survey not found.');
+  }
+  if (responseId && !db.prepare(`SELECT 1 FROM responses r JOIN surveys s ON s.id=r.survey_id
+    WHERE r.id=? AND s.space_id=? AND (? IS NULL OR r.survey_id=?)`).get(responseId, spaceId, surveyId || null, surveyId || null)) {
+    throw new Error('Response not found.');
+  }
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  db.prepare(`INSERT INTO ai_jobs (id,kind,survey_id,response_id,requested_by,state,stage,progress,attempt,input_json,created_at,updated_at)
-    VALUES (?,?,?,?,?,'queued','queued',0,0,?,?,?)`).run(id, kind, surveyId || null, responseId || null, requestedBy || null, JSON.stringify(input), now, now);
+  db.prepare(`INSERT INTO ai_jobs (id,space_id,kind,survey_id,response_id,requested_by,state,stage,progress,attempt,input_json,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,'queued','queued',0,0,?,?,?)`).run(id, spaceId, kind, surveyId || null, responseId || null, requestedBy || null, JSON.stringify(input), now, now);
   return getJob(id)!;
 }
 
 export const claimNextJob = db.transaction((): AiJob | null => {
   const now = new Date().toISOString();
-  const row = db.prepare(`SELECT * FROM ai_jobs WHERE state='queued' AND (retry_at IS NULL OR retry_at<=?) ORDER BY created_at LIMIT 1`).get(now) as any;
+  const row = db.prepare(`SELECT candidate.* FROM ai_jobs candidate
+    WHERE candidate.state='queued' AND (candidate.retry_at IS NULL OR candidate.retry_at<=?)
+      AND candidate.id=(
+        SELECT queued.id FROM ai_jobs queued
+        WHERE queued.space_id=candidate.space_id AND queued.state='queued' AND (queued.retry_at IS NULL OR queued.retry_at<=?)
+        ORDER BY queued.created_at,queued.id LIMIT 1
+      )
+    ORDER BY
+      (SELECT COUNT(*) FROM ai_jobs active WHERE active.space_id=candidate.space_id AND active.state='processing'),
+      COALESCE((SELECT MAX(started_at) FROM ai_jobs served
+        WHERE served.space_id=candidate.space_id AND served.started_at IS NOT NULL),''),
+      candidate.created_at,candidate.id
+    LIMIT 1`).get(now, now) as any;
   if (!row) return null;
   const changed = db.prepare(`UPDATE ai_jobs SET state='processing',stage='dispatching',progress=5,attempt=attempt+1,started_at=?,updated_at=? WHERE id=? AND state='queued'`).run(now, now, row.id).changes;
   return changed ? getJob(row.id) : null;
@@ -1119,12 +1148,9 @@ export function listSocialMentions(limit = 500) {
   return (db.prepare('SELECT * FROM social_mentions ORDER BY published_at DESC LIMIT ?').all(limit) as any[]).map(rowMention);
 }
 
-export function listSocialMentionsForUser(userId: string, limit = 500) {
-  return (db.prepare(`SELECT DISTINCT m.* FROM social_mentions m
-    LEFT JOIN x_connection_mentions cm ON cm.mention_id=m.id
-    LEFT JOIN x_connections c ON c.id=cm.connection_id
-    WHERE m.source<>'x' OR cm.connection_id IS NULL OR c.user_id=?
-    ORDER BY m.published_at DESC LIMIT ?`).all(userId, limit) as any[]).map(rowMention);
+export function listSocialMentionsForSpace(spaceId: string, limit = 500) {
+  return (db.prepare(`SELECT * FROM social_mentions
+    WHERE space_id=? ORDER BY published_at DESC LIMIT ?`).all(spaceId, limit) as any[]).map(rowMention);
 }
 
 export function listSocialMentionsByIds(ids: string[]) {
@@ -1136,26 +1162,25 @@ export function listSocialMentionsByIds(ids: string[]) {
   return unique.map((id) => byId.get(id)).filter((item): item is SocialMention => Boolean(item));
 }
 
-export function listSocialMentionsByIdsForUser(ids: string[], userId: string) {
+export function listSocialMentionsByIdsForSpace(ids: string[], spaceId: string) {
   const unique = [...new Set(ids)].slice(0, 200);
   if (!unique.length) return [];
   const placeholders = unique.map(() => '?').join(',');
-  const rows = db.prepare(`SELECT DISTINCT m.* FROM social_mentions m
-    LEFT JOIN x_connection_mentions cm ON cm.mention_id=m.id
-    LEFT JOIN x_connections c ON c.id=cm.connection_id
-    WHERE m.id IN (${placeholders}) AND (m.source<>'x' OR cm.connection_id IS NULL OR c.user_id=?)`).all(...unique, userId) as any[];
+  const rows = db.prepare(`SELECT * FROM social_mentions
+    WHERE id IN (${placeholders}) AND space_id=?`).all(...unique, spaceId) as any[];
   const byId = new Map(rows.map((row) => [row.id, rowMention(row)]));
   return unique.map((id) => byId.get(id)).filter((item): item is SocialMention => Boolean(item));
 }
 
-export const insertSocialMentions = db.transaction((items: Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>) => {
-  const insert = db.prepare(`INSERT OR IGNORE INTO social_mentions (id,source,external_id,x_connection_id,ingestion_kind,author,content,url,language,published_at,metadata_json,analysis_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+export const insertSocialMentions = db.transaction((items: Array<Partial<SocialMention> & { content: string; source: SocialMention['source'] }>, spaceId: string) => {
+  if (!spaceId) throw new Error('A space is required to import social mentions.');
+  const insert = db.prepare(`INSERT OR IGNORE INTO social_mentions (id,space_id,source,external_id,x_connection_id,ingestion_kind,author,content,url,language,published_at,metadata_json,analysis_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const now = new Date().toISOString();
   return items.map((item) => {
     const id = item.id || crypto.randomUUID();
-    insert.run(id, item.source, item.externalId || null, item.xConnectionId || null, item.ingestionKind || null, item.author || '', item.content.trim(), item.url || '', item.language || '', item.publishedAt || now, JSON.stringify(item.metadata || {}), item.analysis ? JSON.stringify(item.analysis) : null, now);
+    insert.run(id, spaceId, item.source, item.externalId || null, item.xConnectionId || null, item.ingestionKind || null, item.author || '', item.content.trim(), item.url || '', item.language || '', item.publishedAt || now, JSON.stringify(item.metadata || {}), item.analysis ? JSON.stringify(item.analysis) : null, now);
     const row = db.prepare('SELECT * FROM social_mentions WHERE id=?').get(id)
-      || (item.externalId ? db.prepare('SELECT * FROM social_mentions WHERE source=? AND external_id=?').get(item.source, item.externalId) : null);
+      || (item.externalId ? db.prepare('SELECT * FROM social_mentions WHERE space_id=? AND source=? AND external_id=?').get(spaceId, item.source, item.externalId) : null);
     return rowMention(row);
   });
 });
@@ -1180,14 +1205,18 @@ const rowJourney = (row: any): Journey => ({
   createdAt: row.created_at, updatedAt: row.updated_at
 });
 
-export function listJourneys() { return (db.prepare('SELECT * FROM journeys ORDER BY updated_at DESC').all() as any[]).map(rowJourney); }
-export function getJourney(id: string): Journey | null { const row = db.prepare('SELECT * FROM journeys WHERE id=?').get(id) as any; return row ? rowJourney(row) : null; }
-export function createJourney(input: Partial<Journey> & { name: string }) {
+export function listJourneys(spaceId: string) { return (db.prepare('SELECT * FROM journeys WHERE space_id=? ORDER BY updated_at DESC').all(spaceId) as any[]).map(rowJourney); }
+export function getJourney(id: string, spaceId?: string): Journey | null {
+  const row = spaceId ? db.prepare('SELECT * FROM journeys WHERE id=? AND space_id=?').get(id, spaceId) : db.prepare('SELECT * FROM journeys WHERE id=?').get(id) as any;
+  return row ? rowJourney(row) : null;
+}
+export function createJourney(input: Partial<Journey> & { name: string }, spaceId: string) {
+  if (!spaceId) throw new Error('A space is required to create a journey.');
   const now = new Date().toISOString(); const id = input.id || crypto.randomUUID();
-  db.prepare(`INSERT INTO journeys (id,name,audience,objective,industry,stages_json,summary,provenance_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, input.name.trim(), input.audience || '', input.objective || '', input.industry || '', JSON.stringify(input.stages || []),
+  db.prepare(`INSERT INTO journeys (id,space_id,name,audience,objective,industry,stages_json,summary,provenance_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, spaceId, input.name.trim(), input.audience || '', input.objective || '', input.industry || '', JSON.stringify(input.stages || []),
       input.summary || '', JSON.stringify(input.provenance || legacyJourneyProvenance), input.createdAt || now, now);
-  return getJourney(id)!;
+  return getJourney(id, spaceId)!;
 }
 
 type JourneyVersionMetadata = Pick<JourneyVersion, 'reason' | 'actor'> & { sourceJobId?: string | null };
@@ -1242,8 +1271,8 @@ function pruneAllJourneyVersions() {
   for (const row of journeys) pruneJourneyVersions(row.journey_id);
 }
 
-function updateJourneyRecord(id: string, input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, metadata: JourneyVersionMetadata): Journey | null {
-  const current = getJourney(id);
+function updateJourneyRecord(id: string, input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, metadata: JourneyVersionMetadata, spaceId?: string): Journey | null {
+  const current = getJourney(id, spaceId);
   if (!current || current.updatedAt !== expectedUpdatedAt) return null;
   insertJourneyVersion(current, metadata);
   const currentTime = Date.parse(current.updatedAt);
@@ -1256,11 +1285,11 @@ function updateJourneyRecord(id: string, input: Partial<Omit<Journey, 'id' | 'cr
     JSON.stringify(input.provenance === undefined ? current.provenance : input.provenance), updatedAt, id, expectedUpdatedAt
   ).changes;
   if (!changed) throw new Error('Journey changed while its version snapshot was being saved.');
-  return getJourney(id);
+  return getJourney(id, spaceId);
 }
 
-export const updateJourney = db.transaction((id: string, input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, metadata: JourneyVersionMetadata): Journey | null => {
-  return updateJourneyRecord(id, input, expectedUpdatedAt, metadata);
+export const updateJourney = db.transaction((id: string, input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, metadata: JourneyVersionMetadata, spaceId?: string): Journey | null => {
+  return updateJourneyRecord(id, input, expectedUpdatedAt, metadata, spaceId);
 });
 
 export function getJourneyAiApplication(jobId: string): JourneyJobOutput | null {
@@ -1271,25 +1300,25 @@ export function getJourneyAiApplication(jobId: string): JourneyJobOutput | null 
   return result;
 }
 
-export const applyGeneratedJourney = db.transaction((jobId: string, input: Partial<Journey> & { name: string }, runtime: unknown): JourneyJobOutput => {
+export const applyGeneratedJourney = db.transaction((jobId: string, spaceId: string, input: Partial<Journey> & { name: string }, runtime: unknown): JourneyJobOutput => {
   const previous = getJourneyAiApplication(jobId);
   if (previous) return previous;
-  const journey = createJourney(input);
+  const journey = createJourney(input, spaceId);
   const result: JourneyJobOutput = { output: { journey }, runtime };
   db.prepare(`INSERT INTO journey_ai_applications (job_id,journey_id,kind,result_json,created_at) VALUES (?,?,'journey.generate',?,?)`)
     .run(jobId, journey.id, JSON.stringify(result), new Date().toISOString());
   return getJourneyAiApplication(jobId)!;
 });
 
-export const applyOptimizedJourney = db.transaction((jobId: string, journeyId: string,
+export const applyOptimizedJourney = db.transaction((jobId: string, spaceId: string, journeyId: string,
   input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, runtime: unknown):
   { status: 'applied' | 'replayed'; result: JourneyJobOutput } | { status: 'conflict' | 'not_found' } => {
   const previous = getJourneyAiApplication(jobId);
   if (previous) return { status: 'replayed', result: previous };
-  const current = getJourney(journeyId);
+  const current = getJourney(journeyId, spaceId);
   if (!current) return { status: 'not_found' };
   if (current.updatedAt !== expectedUpdatedAt) return { status: 'conflict' };
-  const journey = updateJourneyRecord(journeyId, input, expectedUpdatedAt, { reason: 'terra_optimize', actor: 'terra', sourceJobId: jobId });
+  const journey = updateJourneyRecord(journeyId, input, expectedUpdatedAt, { reason: 'terra_optimize', actor: 'terra', sourceJobId: jobId }, spaceId);
   if (!journey) return { status: 'conflict' };
   const result: JourneyJobOutput = { output: { journey }, runtime };
   db.prepare(`INSERT INTO journey_ai_applications (job_id,journey_id,kind,result_json,created_at) VALUES (?,?,'journey.optimize',?,?)`)
@@ -1297,9 +1326,9 @@ export const applyOptimizedJourney = db.transaction((jobId: string, journeyId: s
   return { status: 'applied', result: getJourneyAiApplication(jobId)! };
 });
 
-export const restoreJourneyVersion = db.transaction((journeyId: string, versionId: string, expectedUpdatedAt: string):
+export const restoreJourneyVersion = db.transaction((journeyId: string, versionId: string, expectedUpdatedAt: string, spaceId?: string):
   { status: 'restored'; journey: Journey } | { status: 'not_found' | 'version_not_found' | 'conflict'; current?: Journey } => {
-  const current = getJourney(journeyId);
+  const current = getJourney(journeyId, spaceId);
   if (!current) return { status: 'not_found' };
   const version = getJourneyVersion(journeyId, versionId);
   if (!version) return { status: 'version_not_found' };
@@ -1309,20 +1338,24 @@ export const restoreJourneyVersion = db.transaction((journeyId: string, versionI
     name: target.name, audience: target.audience, objective: target.objective, industry: target.industry,
     stages: target.stages, summary: target.summary,
     provenance: { ...target.provenance, lastModifiedBy: 'workspace', evidenceLevel: 'hypothesis' }
-  }, expectedUpdatedAt, { reason: 'restore_displaced', actor: 'workspace' });
-  if (!journey) return { status: 'conflict', current: getJourney(journeyId) || undefined };
+  }, expectedUpdatedAt, { reason: 'restore_displaced', actor: 'workspace' }, spaceId);
+  if (!journey) return { status: 'conflict', current: getJourney(journeyId, spaceId) || undefined };
   return { status: 'restored', journey };
 });
 
-export function findActiveJourneyOptimization(journeyId: string): AiJob | null {
-  const row = db.prepare(`SELECT * FROM ai_jobs WHERE kind='journey.optimize' AND state IN ('queued','processing')
-    AND CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END=?
-    ORDER BY CASE state WHEN 'processing' THEN 0 ELSE 1 END,created_at,id LIMIT 1`).get(journeyId) as any;
+export function findActiveJourneyOptimization(journeyId: string, spaceId?: string): AiJob | null {
+  const row = spaceId
+    ? db.prepare(`SELECT * FROM ai_jobs WHERE kind='journey.optimize' AND state IN ('queued','processing')
+      AND CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END=? AND space_id=?
+      ORDER BY CASE state WHEN 'processing' THEN 0 ELSE 1 END,created_at,id LIMIT 1`).get(journeyId, spaceId) as any
+    : db.prepare(`SELECT * FROM ai_jobs WHERE kind='journey.optimize' AND state IN ('queued','processing')
+      AND CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END=?
+      ORDER BY CASE state WHEN 'processing' THEN 0 ELSE 1 END,created_at,id LIMIT 1`).get(journeyId) as any;
   return row ? rowJob(row) : null;
 }
 
-export const deleteJourney = db.transaction((id: string, expectedUpdatedAt: string): 'deleted' | 'not_found' | 'conflict' => {
-  const current = getJourney(id);
+export const deleteJourney = db.transaction((id: string, expectedUpdatedAt: string, spaceId?: string): 'deleted' | 'not_found' | 'conflict' => {
+  const current = getJourney(id, spaceId);
   if (!current) return 'not_found';
   if (current.updatedAt !== expectedUpdatedAt) return 'conflict';
   db.prepare(`DELETE FROM ai_jobs WHERE kind IN ('journey.generate','journey.optimize') AND (
@@ -1331,7 +1364,9 @@ export const deleteJourney = db.transaction((id: string, expectedUpdatedAt: stri
     OR CASE WHEN json_valid(result_json) THEN json_extract(result_json,'$.output.journey.id') END=?
   )`).run(id, id, id);
   db.prepare('DELETE FROM journey_ai_applications WHERE journey_id=?').run(id);
-  const deleted = db.prepare('DELETE FROM journeys WHERE id=? AND updated_at=?').run(id, expectedUpdatedAt).changes;
+  const deleted = spaceId
+    ? db.prepare('DELETE FROM journeys WHERE id=? AND updated_at=? AND space_id=?').run(id, expectedUpdatedAt, spaceId).changes
+    : db.prepare('DELETE FROM journeys WHERE id=? AND updated_at=?').run(id, expectedUpdatedAt).changes;
   if (!deleted) throw new Error('Journey changed while it was being deleted.');
   return 'deleted';
 });

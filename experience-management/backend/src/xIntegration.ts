@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import type { SessionUser } from './auth.js';
 import { aiJobRunner } from './aiJobs.js';
 import { config } from './config.js';
-import { createJob, db, listSocialMentionsByIds } from './database.js';
+import { createJob, db, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
 import { decryptSecret, encryptSecret } from './secureSecrets.js';
 import {
@@ -16,6 +16,16 @@ const oauthCookieName = 'seemplify_x_oauth';
 const oauthLifetimeMs = 10 * 60_000;
 const manualSyncCooldownMs = 60_000;
 const allowedSyncIntervals = new Set([15, 30, 60, 180, 360, 720, 1440]);
+
+function canManagePlatformXApp(user: SessionUser) {
+  return user.email.trim().toLowerCase() === config.adminEmail.trim().toLowerCase();
+}
+
+function canManageSpaceXAccounts(user: SessionUser, spaceId: string) {
+  const row = db.prepare(`SELECT role FROM space_memberships WHERE space_id=? AND user_id=?`)
+    .get(spaceId, user.id) as { role: string } | undefined;
+  return row?.role === 'owner' || row?.role === 'admin';
+}
 
 export class XIntegrationError extends Error {
   status: number;
@@ -34,7 +44,7 @@ type XAppRow = {
   credential_version: number; configured_by: string | null; created_at: string; updated_at: string;
 };
 type XConnectionRow = {
-  id: string; user_id: string; app_id: string; access_token_enc: string; access_token_secret_enc: string | null;
+  id: string; space_id: string; user_id: string; app_id: string; access_token_enc: string; access_token_secret_enc: string | null;
   refresh_token_enc: string | null; auth_type: 'oauth1' | 'oauth2'; scopes_json: string; token_expires_at: string | null;
   x_user_id: string | null; username: string | null; display_name: string | null; profile_image_url: string | null;
   status: string; generation: number; auto_sync: number; sync_interval_minutes: number; next_sync_at: string | null; last_sync_at: string | null;
@@ -56,11 +66,11 @@ function callbackUrl() { return `${config.publicUrl}/api/integrations/x/callback
 function readOptional(path: string) { try { const value = fs.readFileSync(path, 'utf8').trim(); return value || null; } catch { return null; } }
 function removeOptional(path: string) { try { fs.rmSync(path, { force: true }); } catch { /* the encrypted database copy remains authoritative */ } }
 function getApp() { return db.prepare('SELECT * FROM x_apps WHERE id=?').get(appId) as XAppRow | undefined; }
-function connectionsForUser(userId: string) { return db.prepare('SELECT * FROM x_connections WHERE user_id=? ORDER BY created_at').all(userId) as XConnectionRow[]; }
-function connectionForUser(userId: string, connectionId?: string | null) {
-  if (connectionId) return db.prepare('SELECT * FROM x_connections WHERE id=? AND user_id=?').get(connectionId, userId) as XConnectionRow | undefined;
-  return db.prepare(`SELECT * FROM x_connections WHERE user_id=? ORDER BY
-    CASE status WHEN 'connected' THEN 0 WHEN 'action_required' THEN 1 WHEN 'pending_verification' THEN 2 ELSE 3 END,created_at LIMIT 1`).get(userId) as XConnectionRow | undefined;
+function connectionsForSpace(spaceId: string) { return db.prepare('SELECT * FROM x_connections WHERE space_id=? ORDER BY created_at').all(spaceId) as XConnectionRow[]; }
+function connectionForSpace(spaceId: string, connectionId?: string | null) {
+  if (connectionId) return db.prepare('SELECT * FROM x_connections WHERE id=? AND space_id=?').get(connectionId, spaceId) as XConnectionRow | undefined;
+  return db.prepare(`SELECT * FROM x_connections WHERE space_id=? ORDER BY
+    CASE status WHEN 'connected' THEN 0 WHEN 'action_required' THEN 1 WHEN 'pending_verification' THEN 2 ELSE 3 END,created_at LIMIT 1`).get(spaceId) as XConnectionRow | undefined;
 }
 function cleanSecret(value: unknown, label: string) {
   const secret = String(value ?? '').trim();
@@ -89,10 +99,13 @@ function connectionCredentials(row: XConnectionRow) {
     refreshToken: row.refresh_token_enc ? decryptSecret(row.refresh_token_enc, connectionContext(row.id, 'refresh-token')) : null
   };
 }
-function userOwnsConnection(userId: string, connectionId: string) {
-  const row = db.prepare('SELECT * FROM x_connections WHERE id=? AND user_id=?').get(connectionId, userId) as XConnectionRow | undefined;
+function spaceOwnsConnection(spaceId: string, connectionId: string) {
+  const row = db.prepare('SELECT * FROM x_connections WHERE id=? AND space_id=?').get(connectionId, spaceId) as XConnectionRow | undefined;
   if (!row) throw new XIntegrationError('X connection not found.', 404);
   return row;
+}
+function pendingUserIsSpaceMember(pending: { space_id: string; user_id: string }) {
+  return Boolean(db.prepare('SELECT 1 FROM space_memberships WHERE space_id=? AND user_id=?').get(pending.space_id, pending.user_id));
 }
 function connectionHasCreditProbe(connectionId: string) {
   return Boolean(db.prepare(`SELECT 1 FROM x_sync_jobs WHERE connection_id=? AND credit_probe=1
@@ -139,7 +152,7 @@ function publicConnection(row: XConnectionRow | undefined) {
 }
 
 export function seedXIntegrationForAdmin() {
-  const user = db.prepare('SELECT id,email FROM users WHERE email=?').get(config.adminEmail) as { id: string; email: string } | undefined;
+  const user = db.prepare(`SELECT u.id,u.email,u.active_space_id space_id FROM users u WHERE u.email=?`).get(config.adminEmail) as { id: string; email: string; space_id: string } | undefined;
   if (!user) return false;
   const consumerKey = readOptional(config.xSeedConsumerKeyFile); const consumerSecret = readOptional(config.xSeedConsumerSecretFile);
   const bearerToken = readOptional(config.xSeedBearerTokenFile); const accessToken = readOptional(config.xSeedAccessTokenFile);
@@ -165,10 +178,10 @@ export function seedXIntegrationForAdmin() {
           clientId ? encryptSecret(clientId, appContext('client-id')) : null,
           clientSecret ? encryptSecret(clientSecret, appContext('client-secret')) : null, user.id, timestamp, appId);
     }
-    if (accessToken && accessTokenSecret && !connectionForUser(user.id)) {
+    if (accessToken && accessTokenSecret && user.space_id && !connectionForSpace(user.space_id)) {
       const id = crypto.randomUUID();
-      db.prepare(`INSERT INTO x_connections (id,user_id,app_id,access_token_enc,access_token_secret_enc,status,auto_sync,sync_interval_minutes,next_sync_at,rate_limit_json,created_at,updated_at)
-        VALUES (?,?,?,?,?,'pending_verification',0,60,NULL,'{}',?,?)`).run(id, user.id, appId,
+      db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,status,auto_sync,sync_interval_minutes,next_sync_at,rate_limit_json,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,'pending_verification',0,60,NULL,'{}',?,?)`).run(id, user.space_id, user.id, appId,
         encryptSecret(accessToken, connectionContext(id, 'access-token')), encryptSecret(accessTokenSecret, connectionContext(id, 'access-token-secret')), timestamp, timestamp);
     }
   });
@@ -196,12 +209,12 @@ function connectionCounts(connectionId: string) {
     searchResults: Number(counts?.searches || 0), analyzed: Number(counts?.analyzed || 0) };
 }
 
-export function getXIntegrationStatus(user: SessionUser, selectedConnectionId?: string | null) {
+export function getXIntegrationStatus(user: SessionUser, spaceId: string, selectedConnectionId?: string | null) {
   const app = getApp();
-  const ownedConnections = connectionsForUser(user.id);
+  const ownedConnections = connectionsForSpace(spaceId);
   const connection = selectedConnectionId
     ? ownedConnections.find((item) => item.id === selectedConnectionId) || (() => { throw new XIntegrationError('X connection not found.', 404); })()
-    : connectionForUser(user.id);
+    : connectionForSpace(spaceId);
   const queries = connection ? (db.prepare('SELECT * FROM x_listening_queries WHERE connection_id=? ORDER BY created_at').all(connection.id) as any[]).map(rowQuery) : [];
   const syncJobs = connection ? (db.prepare('SELECT * FROM x_sync_jobs WHERE connection_id=? ORDER BY created_at DESC LIMIT 50').all(connection.id) as any[]).map(rowSyncJob) : [];
   const counts = connection ? connectionCounts(connection.id) : { collected: 0, accountPosts: 0, mentions: 0, searchResults: 0, analyzed: 0 };
@@ -211,7 +224,7 @@ export function getXIntegrationStatus(user: SessionUser, selectedConnectionId?: 
       mentions: total.mentions + value.mentions, searchResults: total.searchResults + value.searchResults, analyzed: total.analyzed + value.analyzed };
   }, { collected: 0, accountPosts: 0, mentions: 0, searchResults: 0, analyzed: 0 });
   return {
-    provider: 'x', callbackUrl: callbackUrl(), canManageAppCredentials: user.role === 'owner',
+    provider: 'x', callbackUrl: callbackUrl(), canManageAppCredentials: canManagePlatformXApp(user),
     app: { configured: Boolean(app?.client_id_enc && app.client_secret_enc || app?.consumer_key_enc && app.consumer_secret_enc),
       oauth2Configured: Boolean(app?.client_id_enc && app.client_secret_enc), consumerCredentialsConfigured: Boolean(app?.consumer_key_enc && app.consumer_secret_enc),
       bearerTokenConfigured: Boolean(app?.bearer_token_enc), credentialVersion: Number(app?.credential_version || 0), updatedAt: app?.updated_at || null,
@@ -221,12 +234,19 @@ export function getXIntegrationStatus(user: SessionUser, selectedConnectionId?: 
   };
 }
 
-export function saveXConfiguration(user: SessionUser, input: Record<string, unknown>) {
-  if (user.role !== 'owner') throw new XIntegrationError('Workspace owner access is required.', 403);
-  const current = getApp(); const timestamp = now();
+export function saveXConfiguration(user: SessionUser, spaceId: string, input: Record<string, unknown>) {
   const consumerSupplied = input.consumerKey !== undefined || input.consumerSecret !== undefined;
   const clientSupplied = input.clientId !== undefined || input.clientSecret !== undefined;
   const accessSupplied = input.accessToken !== undefined || input.accessTokenSecret !== undefined;
+  const appCredentialsSupplied = consumerSupplied || clientSupplied || input.bearerToken !== undefined;
+  if (appCredentialsSupplied && !canManagePlatformXApp(user)) {
+    throw new XIntegrationError('Platform administrator access is required to change the shared X developer app.', 403);
+  }
+  if (accessSupplied && !canManageSpaceXAccounts(user, spaceId)) {
+    throw new XIntegrationError('Space owner or admin access is required to add static X account credentials.', 403);
+  }
+  if (!appCredentialsSupplied && !accessSupplied) throw new XIntegrationError('No X credential changes were supplied.');
+  const current = getApp(); const timestamp = now();
   if (consumerSupplied && (input.consumerKey === undefined || input.consumerSecret === undefined)) throw new XIntegrationError('Update the consumer key and consumer secret together.');
   if (clientSupplied && (input.clientId === undefined || input.clientSecret === undefined)) throw new XIntegrationError('Update the OAuth 2 client ID and client secret together.');
   if (accessSupplied && (input.accessToken === undefined || input.accessTokenSecret === undefined)) throw new XIntegrationError('Update the access token and access-token secret together.');
@@ -237,7 +257,7 @@ export function saveXConfiguration(user: SessionUser, input: Record<string, unkn
   const bearerToken = input.bearerToken !== undefined ? cleanSecret(input.bearerToken, 'bearer token') : null;
   const accessToken = accessSupplied ? cleanSecret(input.accessToken, 'access token') : null;
   const accessTokenSecret = accessSupplied ? cleanSecret(input.accessTokenSecret, 'access-token secret') : null;
-  const existingUserConnections = connectionsForUser(user.id);
+  const existingUserConnections = connectionsForSpace(spaceId);
   if (accessSupplied && (existingUserConnections.length > 1 || existingUserConnections.some((connection) => connection.status !== 'disconnected'))) {
     throw new XIntegrationError('Static OAuth 1 account tokens cannot replace or ambiguously select a connected account. Use Add X account so each identity is authorized separately.', 409);
   }
@@ -272,23 +292,23 @@ export function saveXConfiguration(user: SessionUser, input: Record<string, unkn
       for (const connection of connections) cancelConnectionSyncs(connection.id, consumerSupplied || clientSupplied ? 'X app credentials changed.' : 'X bearer token changed.', timestamp);
     }
     if (accessToken && accessTokenSecret) {
-      const existing = connectionForUser(user.id); const id = existing?.id || crypto.randomUUID();
+      const existing = connectionForSpace(spaceId); const id = existing?.id || crypto.randomUUID();
       if (existing) {
         db.prepare(`UPDATE x_connections SET app_id=?,access_token_enc=?,access_token_secret_enc=?,refresh_token_enc=NULL,auth_type='oauth1',scopes_json='[]',token_expires_at=NULL,status='pending_verification',generation=generation+1,auto_sync=0,next_sync_at=NULL,last_error=NULL,updated_at=? WHERE id=?`)
           .run(appId, encryptSecret(accessToken, connectionContext(id, 'access-token')), encryptSecret(accessTokenSecret, connectionContext(id, 'access-token-secret')), timestamp, id);
         cancelConnectionSyncs(id, 'X account credentials changed.', timestamp);
       }
-      else db.prepare(`INSERT INTO x_connections (id,user_id,app_id,access_token_enc,access_token_secret_enc,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
-        VALUES (?,?,?,?,?,'pending_verification',0,60,'{}',?,?)`).run(id, user.id, appId,
+      else db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,'pending_verification',0,60,'{}',?,?)`).run(id, spaceId, user.id, appId,
         encryptSecret(accessToken, connectionContext(id, 'access-token')), encryptSecret(accessTokenSecret, connectionContext(id, 'access-token-secret')), timestamp, timestamp);
     }
   });
-  transaction(); publishEvent('data-changed', { reason: 'x-configuration-updated' });
-  return getXIntegrationStatus(user);
+  transaction(); publishEvent('data-changed', { reason: 'x-configuration-updated' }, spaceId);
+  return getXIntegrationStatus(user, spaceId);
 }
 
 export function deleteXConfiguration(user: SessionUser) {
-  if (user.role !== 'owner') throw new XIntegrationError('Workspace owner access is required.', 403);
+  if (!canManagePlatformXApp(user)) throw new XIntegrationError('Platform administrator access is required.', 403);
   const app = getApp();
   if (!app) return;
   const oauth2Credentials = app.client_id_enc && app.client_secret_enc ? (() => { try { return oauth2AppCredentials(app); } catch { return null; } })() : null;
@@ -312,8 +332,8 @@ export function deleteXConfiguration(user: SessionUser) {
   publishEvent('data-changed', { reason: 'x-configuration-removed' });
 }
 
-export function disconnectXAccount(user: SessionUser, connectionId?: string | null) {
-  const connection = connectionForUser(user.id, connectionId);
+export function disconnectXAccount(user: SessionUser, spaceId: string, connectionId?: string | null) {
+  const connection = connectionForSpace(spaceId, connectionId);
   if (!connection) throw new XIntegrationError('X connection not found.', 404);
   const timestamp = now();
   // Keep the connection row as the user's durable history association, but
@@ -323,18 +343,18 @@ export function disconnectXAccount(user: SessionUser, connectionId?: string | nu
   const oauth2Credentials = connection.auth_type === 'oauth2' ? (() => { try { return oauth2AppCredentials(); } catch { return null; } })() : null;
   db.transaction(() => {
     db.prepare(`UPDATE x_connections SET access_token_enc=?,access_token_secret_enc=NULL,refresh_token_enc=NULL,token_expires_at=NULL,status='disconnected',generation=generation+1,auto_sync=0,next_sync_at=NULL,
-      last_error=NULL,updated_at=? WHERE id=? AND user_id=?`).run(
+      last_error=NULL,updated_at=? WHERE id=? AND space_id=?`).run(
       encryptSecret(`revoked-${crypto.randomUUID()}`, connectionContext(connection.id, 'access-token')),
-      timestamp, connection.id, user.id);
-    db.prepare('UPDATE x_oauth_requests SET consumed_at=? WHERE user_id=? AND consumed_at IS NULL').run(timestamp, user.id);
+      timestamp, connection.id, spaceId);
+    db.prepare('UPDATE x_oauth_requests SET consumed_at=? WHERE space_id=? AND consumed_at IS NULL').run(timestamp, spaceId);
     cancelConnectionSyncs(connection.id, 'X account disconnected.', timestamp);
   })();
   if (oauth2Credentials && revocationToken) void revokeOAuth2Token(oauth2Credentials, revocationToken);
-  publishEvent('data-changed', { reason: 'x-account-disconnected' });
+  publishEvent('data-changed', { reason: 'x-account-disconnected' }, spaceId);
 }
 
-export function deleteXCollectedHistory(user: SessionUser, connectionId?: string | null) {
-  const connection = connectionForUser(user.id, connectionId);
+export function deleteXCollectedHistory(user: SessionUser, spaceId: string, connectionId?: string | null) {
+  const connection = connectionForSpace(spaceId, connectionId);
   if (!connection) throw new XIntegrationError('X connection history not found.', 404);
   const transaction = db.transaction(() => {
     const deletingCreditProbe = getApp()?.billing_status === 'checking_credits' && connectionHasCreditProbe(connection.id);
@@ -368,7 +388,7 @@ export function deleteXCollectedHistory(user: SessionUser, connectionId?: string
       // Once a disconnected account's history is purged there is no durable
       // identity association left to preserve. Deleting the row also removes
       // its listening queries and prevents anonymous tombstones accumulating.
-      db.prepare('DELETE FROM x_connections WHERE id=? AND user_id=?').run(connection.id, user.id);
+      db.prepare('DELETE FROM x_connections WHERE id=? AND space_id=?').run(connection.id, spaceId);
     } else {
       db.prepare(`UPDATE x_connections SET last_post_id=NULL,last_mention_id=NULL,generation=generation+1,auto_sync=0,next_sync_at=NULL,updated_at=? WHERE id=?`)
         .run(now(), connection.id);
@@ -380,33 +400,33 @@ export function deleteXCollectedHistory(user: SessionUser, connectionId?: string
       deletedReplyDrafts: replyJobIds.length, deletedSocialReports: socialReports.length, deletedCombinedReports: combinedReports.length,
       connectionDeleted };
   });
-  const result = transaction(); publishEvent('data-changed', { reason: 'x-history-deleted', ...result }); return result;
+  const result = transaction(); publishEvent('data-changed', { reason: 'x-history-deleted', ...result }, spaceId); return result;
 }
 
-export function listXCollectedMentions(user: SessionUser, limit = 500, connectionId?: string | null) {
-  const connection = connectionForUser(user.id, connectionId); if (!connection) return [];
+export function listXCollectedMentions(_user: SessionUser, spaceId: string, limit = 500, connectionId?: string | null) {
+  const connection = connectionForSpace(spaceId, connectionId); if (!connection) return [];
   const links = db.prepare(`SELECT m.id,cm.streams_json,cm.query_ids_json FROM x_connection_mentions cm JOIN social_mentions m ON m.id=cm.mention_id
     WHERE cm.connection_id=? ORDER BY m.published_at DESC LIMIT ?`).all(connection.id, Math.max(1, Math.min(1000, Math.floor(limit)))) as Array<{ id: string; streams_json: string; query_ids_json: string }>;
   const byId = new Map(links.map((row) => [row.id, row]));
-  return listSocialMentionsByIds(links.map((row) => row.id)).map((mention) => {
+  return listSocialMentionsByIdsForSpace(links.map((row) => row.id), spaceId).map((mention) => {
     const link = byId.get(mention.id); const x = (mention.metadata as any)?.x || {};
     return { ...mention, xConnectionId: connection.id, metadata: { ...mention.metadata, x: { ...x,
       streams: parseJson<string[]>(link?.streams_json, []), queryIds: parseJson<string[]>(link?.query_ids_json, []) } } };
   });
 }
 
-export function updateXConnectionSettings(user: SessionUser, input: { autoSync?: boolean; syncIntervalMinutes?: number }, connectionId?: string | null) {
-  const connection = connectionForUser(user.id, connectionId);
+export function updateXConnectionSettings(_user: SessionUser, spaceId: string, input: { autoSync?: boolean; syncIntervalMinutes?: number }, connectionId?: string | null) {
+  const connection = connectionForSpace(spaceId, connectionId);
   if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
   const interval = input.syncIntervalMinutes ?? Number(connection.sync_interval_minutes);
   if (!allowedSyncIntervals.has(interval)) throw new XIntegrationError('Choose a supported synchronisation interval.');
   const enabled = input.autoSync ?? Boolean(connection.auto_sync); const timestamp = now();
   if (enabled && connection.status !== 'connected') throw new XIntegrationError('Verify or reconnect the X account before enabling automatic sync.', 409);
   const next = enabled ? new Date(Date.now() + interval * 60_000).toISOString() : null;
-  db.prepare('UPDATE x_connections SET auto_sync=?,sync_interval_minutes=?,next_sync_at=?,updated_at=? WHERE id=? AND user_id=?')
-    .run(enabled ? 1 : 0, interval, next, timestamp, connection.id, user.id);
-  publishEvent('data-changed', { reason: 'x-sync-settings-updated' });
-  return publicConnection(connectionForUser(user.id, connection.id));
+  db.prepare('UPDATE x_connections SET auto_sync=?,sync_interval_minutes=?,next_sync_at=?,updated_at=? WHERE id=? AND space_id=?')
+    .run(enabled ? 1 : 0, interval, next, timestamp, connection.id, spaceId);
+  publishEvent('data-changed', { reason: 'x-sync-settings-updated' }, spaceId);
+  return publicConnection(connectionForSpace(spaceId, connection.id));
 }
 
 function oauthRequestCookieName(requestToken?: string) {
@@ -426,12 +446,12 @@ export function xOAuthCookieFromHeader(cookieHeader: string | undefined, request
   return values[oauthRequestCookieName(requestToken)] || values[oauthCookieName] || '';
 }
 
-function connectionMutationSnapshot(userId: string) {
-  return connectionsForUser(userId).map((row) => `${row.id}:${row.generation}:${row.status}`).sort();
+function connectionMutationSnapshot(spaceId: string) {
+  return connectionsForSpace(spaceId).map((row) => `${row.id}:${row.generation}:${row.status}`).sort();
 }
 
-function connectionSnapshotUnchanged(userId: string, snapshot: string[]) {
-  const current = new Set(connectionMutationSnapshot(userId));
+function connectionSnapshotUnchanged(spaceId: string, snapshot: string[]) {
+  const current = new Set(connectionMutationSnapshot(spaceId));
   // New rows are allowed so separate OAuth windows can add different accounts
   // concurrently. Any mutation/removal of a row that existed when exchange
   // began invalidates the callback (for example, disconnect during exchange).
@@ -443,7 +463,7 @@ function oauthRequestCleanup(timestamp: string) {
     .run(new Date(Date.now() - 24 * 60 * 60_000).toISOString(), new Date(Date.now() - 24 * 60 * 60_000).toISOString());
 }
 
-export async function startXOAuth(user: SessionUser) {
+export async function startXOAuth(user: SessionUser, spaceId: string) {
   const app = getApp(); const handshake = crypto.randomBytes(32).toString('base64url');
   const callback = callbackUrl(); const id = crypto.randomUUID(); const timestamp = now(); const expiresAt = new Date(Date.now() + oauthLifetimeMs).toISOString();
   if (app?.client_id_enc && app.client_secret_enc) {
@@ -451,8 +471,8 @@ export async function startXOAuth(user: SessionUser) {
     const verifier = crypto.randomBytes(48).toString('base64url');
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     db.transaction(() => {
-      db.prepare(`INSERT INTO x_oauth_requests (id,user_id,app_id,credential_version,request_token_hash,request_secret_enc,handshake_hash,expires_at,created_at,flow)
-        VALUES (?,?,?,?,?,?,?,?,?,'oauth2')`).run(id, user.id, appId, Number(app.credential_version), sha256(state),
+      db.prepare(`INSERT INTO x_oauth_requests (id,space_id,user_id,app_id,credential_version,request_token_hash,request_secret_enc,handshake_hash,expires_at,created_at,flow)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'oauth2')`).run(id, spaceId, user.id, appId, Number(app.credential_version), sha256(state),
         encryptSecret(verifier, oauthContext(id)), sha256(handshake), expiresAt, timestamp);
       oauthRequestCleanup(timestamp);
     })();
@@ -464,8 +484,8 @@ export async function startXOAuth(user: SessionUser) {
   }
   const credentials = appCredentials(app); const requested = await requestOAuthToken(credentials, callback);
   db.transaction(() => {
-    db.prepare(`INSERT INTO x_oauth_requests (id,user_id,app_id,credential_version,request_token_hash,request_secret_enc,handshake_hash,expires_at,created_at,flow)
-      VALUES (?,?,?,?,?,?,?,?,?,'oauth1')`).run(id, user.id, appId, Number(app!.credential_version), sha256(requested.token),
+    db.prepare(`INSERT INTO x_oauth_requests (id,space_id,user_id,app_id,credential_version,request_token_hash,request_secret_enc,handshake_hash,expires_at,created_at,flow)
+      VALUES (?,?,?,?,?,?,?,?,?,?,'oauth1')`).run(id, spaceId, user.id, appId, Number(app!.credential_version), sha256(requested.token),
       encryptSecret(requested.secret, oauthContext(id)), sha256(handshake), expiresAt, timestamp);
     oauthRequestCleanup(timestamp);
   })();
@@ -476,9 +496,9 @@ function storeOAuth2Connection(input: { pending: any; account: { id: string; use
   return db.transaction(() => {
     const currentApp = getApp();
     if (!currentApp || Number(currentApp.credential_version) !== Number(input.pending.credential_version)
-      || !connectionSnapshotUnchanged(input.pending.user_id, input.snapshot)) throw new XSyncCancelledError();
+      || !connectionSnapshotUnchanged(input.pending.space_id, input.snapshot) || !pendingUserIsSpaceMember(input.pending)) throw new XSyncCancelledError();
     const timestamp = now();
-    const existing = db.prepare('SELECT * FROM x_connections WHERE user_id=? AND x_user_id=?').get(input.pending.user_id, input.account.id) as XConnectionRow | undefined;
+    const existing = db.prepare('SELECT * FROM x_connections WHERE space_id=? AND x_user_id=?').get(input.pending.space_id, input.account.id) as XConnectionRow | undefined;
     const id = existing?.id || crypto.randomUUID();
     const access = encryptSecret(input.token.accessToken, connectionContext(id, 'access-token'));
     const refresh = input.token.refreshToken ? encryptSecret(input.token.refreshToken, connectionContext(id, 'refresh-token')) : null;
@@ -490,10 +510,10 @@ function storeOAuth2Connection(input: { pending: any; account: { id: string; use
           input.account.profile_image_url || null, timestamp, id);
       cancelConnectionSyncs(id, 'X account credentials changed.', timestamp);
     } else {
-      db.prepare(`INSERT INTO x_connections (id,user_id,app_id,access_token_enc,access_token_secret_enc,refresh_token_enc,auth_type,scopes_json,token_expires_at,
+      db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,refresh_token_enc,auth_type,scopes_json,token_expires_at,
         x_user_id,username,display_name,profile_image_url,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
-        VALUES (?,?,?,?,NULL,?,'oauth2',?,?,?,?,?,?, 'connected',0,60,'{}',?,?)`)
-        .run(id, input.pending.user_id, appId, access, refresh, JSON.stringify(input.token.scopes), expiresAt, input.account.id, input.account.username,
+        VALUES (?,?,?,?,?,NULL,?,'oauth2',?,?,?,?,?,?, 'connected',0,60,'{}',?,?)`)
+        .run(id, input.pending.space_id, input.pending.user_id, appId, access, refresh, JSON.stringify(input.token.scopes), expiresAt, input.account.id, input.account.username,
           input.account.name || input.account.username, input.account.profile_image_url || null, timestamp, timestamp);
     }
     return true;
@@ -509,8 +529,9 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
     if (input.error) return input.error === 'access_denied' ? 'denied' as const : 'failed' as const;
     const code = String(input.code || ''); if (!code || code.length > 2000) return 'failed' as const;
     try {
+      if (!pendingUserIsSpaceMember(pending)) return 'failed' as const;
       const app = getApp(); if (!app || Number(app.credential_version) !== Number(pending.credential_version)) return 'failed' as const;
-      const snapshot = connectionMutationSnapshot(pending.user_id); const credentials = oauth2AppCredentials(app);
+      const snapshot = connectionMutationSnapshot(pending.space_id); const credentials = oauth2AppCredentials(app);
       const verifier = decryptSecret(pending.request_secret_enc, oauthContext(pending.id));
       const token = await exchangeOAuth2Code(credentials, { code, redirectUri: callbackUrl(), codeVerifier: verifier });
       const profile = await getXJson<{ data?: { id?: string; username?: string; name?: string; profile_image_url?: string } }>({
@@ -519,7 +540,7 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
       const account = profile.data.data;
       if (!account?.id || !account.username) return 'failed' as const;
       storeOAuth2Connection({ pending, account: { id: account.id, username: account.username, name: account.name, profile_image_url: account.profile_image_url }, token, snapshot });
-      publishEvent('data-changed', { reason: 'x-account-connected', connectionCount: connectionsForUser(pending.user_id).length });
+      publishEvent('data-changed', { reason: 'x-account-connected', connectionCount: connectionsForSpace(pending.space_id).length }, pending.space_id);
       return 'connected' as const;
     } catch { return 'failed' as const; }
   }
@@ -534,9 +555,10 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
   const verifier = String(input.oauthVerifier || '');
   if (!/^[A-Za-z0-9_-]{4,300}$/.test(verifier)) return 'failed' as const;
   try {
+    if (!pendingUserIsSpaceMember(pending)) return 'failed' as const;
     const app = getApp();
     if (!app || Number(app.credential_version) !== Number(pending.credential_version)) return 'failed' as const;
-    const snapshot = connectionMutationSnapshot(pending.user_id);
+    const snapshot = connectionMutationSnapshot(pending.space_id);
     const credentials = appCredentials(app); const oauthApp = { consumerKey: credentials.consumerKey, consumerSecret: credentials.consumerSecret };
     const requestSecret = decryptSecret(pending.request_secret_enc, oauthContext(pending.id));
     const exchanged = await exchangeOAuthToken(oauthApp, requestToken, requestSecret, verifier);
@@ -547,60 +569,60 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
     const account = profile.data.data;
     if (!account?.id || !account.username || exchanged.xUserId && exchanged.xUserId !== account.id) return 'failed' as const;
     const stored = db.transaction(() => {
-      const currentApp = getApp(); const existing = db.prepare('SELECT * FROM x_connections WHERE user_id=? AND x_user_id=?').get(pending.user_id, account.id) as XConnectionRow | undefined;
+      const currentApp = getApp(); const existing = db.prepare('SELECT * FROM x_connections WHERE space_id=? AND x_user_id=?').get(pending.space_id, account.id) as XConnectionRow | undefined;
       if (!currentApp || Number(currentApp.credential_version) !== Number(pending.credential_version)) throw new XSyncCancelledError();
-      if (!connectionSnapshotUnchanged(pending.user_id, snapshot)) throw new XSyncCancelledError();
+      if (!connectionSnapshotUnchanged(pending.space_id, snapshot) || !pendingUserIsSpaceMember(pending)) throw new XSyncCancelledError();
       const finalTimestamp = now(); const id = existing?.id || crypto.randomUUID();
       if (existing) {
         db.prepare(`UPDATE x_connections SET app_id=?,access_token_enc=?,access_token_secret_enc=?,refresh_token_enc=NULL,auth_type='oauth1',scopes_json='[]',token_expires_at=NULL,x_user_id=?,username=?,display_name=?,profile_image_url=?,status='connected',generation=generation+1,auto_sync=0,next_sync_at=NULL,last_error=NULL,updated_at=? WHERE id=?`)
           .run(appId, encryptSecret(exchanged.accessToken, connectionContext(id, 'access-token')), encryptSecret(exchanged.accessTokenSecret, connectionContext(id, 'access-token-secret')),
             account.id, account.username, account.name || account.username, account.profile_image_url || null, finalTimestamp, id);
         cancelConnectionSyncs(id, 'X account credentials changed.', finalTimestamp);
-      } else db.prepare(`INSERT INTO x_connections (id,user_id,app_id,access_token_enc,access_token_secret_enc,auth_type,x_user_id,username,display_name,profile_image_url,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
-        VALUES (?,?,?,?,?,'oauth1',?,?,?,?,'connected',0,60,'{}',?,?)`).run(id, pending.user_id, appId,
+      } else db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,auth_type,x_user_id,username,display_name,profile_image_url,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,'oauth1',?,?,?,?,'connected',0,60,'{}',?,?)`).run(id, pending.space_id, pending.user_id, appId,
         encryptSecret(exchanged.accessToken, connectionContext(id, 'access-token')), encryptSecret(exchanged.accessTokenSecret, connectionContext(id, 'access-token-secret')),
         account.id, account.username, account.name || account.username, account.profile_image_url || null, finalTimestamp, finalTimestamp);
       return true;
     })();
     if (!stored) return 'failed' as const;
-    publishEvent('data-changed', { reason: 'x-account-connected' });
+    publishEvent('data-changed', { reason: 'x-account-connected' }, pending.space_id);
     return 'connected' as const;
   } catch { return 'failed' as const; }
 }
 
-export function listXQueries(user: SessionUser, connectionId?: string | null) {
-  const connection = connectionForUser(user.id, connectionId); if (!connection) return [];
+export function listXQueries(_user: SessionUser, spaceId: string, connectionId?: string | null) {
+  const connection = connectionForSpace(spaceId, connectionId); if (!connection) return [];
   return (db.prepare('SELECT * FROM x_listening_queries WHERE connection_id=? ORDER BY created_at').all(connection.id) as any[]).map(rowQuery);
 }
-export function createXQuery(user: SessionUser, input: { label: string; query: string; enabled?: boolean }, connectionId?: string | null) {
-  const connection = connectionForUser(user.id, connectionId); if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
+export function createXQuery(_user: SessionUser, spaceId: string, input: { label: string; query: string; enabled?: boolean }, connectionId?: string | null) {
+  const connection = connectionForSpace(spaceId, connectionId); if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
   const count = Number((db.prepare('SELECT COUNT(*) count FROM x_listening_queries WHERE connection_id=?').get(connection.id) as any).count);
   if (count >= 10) throw new XIntegrationError('A maximum of 10 listening queries can be active for one account.');
   const id = crypto.randomUUID(); const timestamp = now();
   db.prepare(`INSERT INTO x_listening_queries (id,connection_id,label,query,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`)
     .run(id, connection.id, input.label.trim(), input.query.trim(), input.enabled === false ? 0 : 1, timestamp, timestamp);
-  publishEvent('data-changed', { reason: 'x-query-created', id });
+  publishEvent('data-changed', { reason: 'x-query-created', id }, spaceId);
   return rowQuery(db.prepare('SELECT * FROM x_listening_queries WHERE id=?').get(id));
 }
-export function updateXQuery(user: SessionUser, id: string, input: { label?: string; query?: string; enabled?: boolean }) {
+export function updateXQuery(_user: SessionUser, spaceId: string, id: string, input: { label?: string; query?: string; enabled?: boolean }) {
   const current = db.prepare(`SELECT q.* FROM x_listening_queries q JOIN x_connections c ON c.id=q.connection_id
-    WHERE q.id=? AND c.user_id=?`).get(id, user.id) as any;
+    WHERE q.id=? AND c.space_id=?`).get(id, spaceId) as any;
   if (!current) throw new XIntegrationError('Listening query not found.', 404);
   db.prepare('UPDATE x_listening_queries SET label=?,query=?,enabled=?,since_id=?,updated_at=? WHERE id=? AND connection_id=?')
     .run(input.label?.trim() ?? current.label, input.query?.trim() ?? current.query, input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0,
       input.query !== undefined && input.query.trim() !== current.query ? null : current.since_id, now(), id, current.connection_id);
-  publishEvent('data-changed', { reason: 'x-query-updated', id });
+  publishEvent('data-changed', { reason: 'x-query-updated', id }, spaceId);
   return rowQuery(db.prepare('SELECT * FROM x_listening_queries WHERE id=?').get(id));
 }
-export function deleteXQuery(user: SessionUser, id: string) {
+export function deleteXQuery(_user: SessionUser, spaceId: string, id: string) {
   const current = db.prepare(`SELECT q.id FROM x_listening_queries q JOIN x_connections c ON c.id=q.connection_id
-    WHERE q.id=? AND c.user_id=?`).get(id, user.id) as { id: string } | undefined;
+    WHERE q.id=? AND c.space_id=?`).get(id, spaceId) as { id: string } | undefined;
   if (!current || !db.prepare('DELETE FROM x_listening_queries WHERE id=?').run(id).changes) throw new XIntegrationError('Listening query not found.', 404);
-  publishEvent('data-changed', { reason: 'x-query-deleted', id });
+  publishEvent('data-changed', { reason: 'x-query-deleted', id }, spaceId);
 }
 
-function stableMentionId(postId: string) {
-  const hash = crypto.createHash('sha256').update(`x:${postId}`).digest('hex');
+function stableMentionId(postId: string, spaceId = 'legacy') {
+  const hash = crypto.createHash('sha256').update(`x:${spaceId}:${postId}`).digest('hex');
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 function greatestId(values: Array<string | null | undefined>) {
@@ -622,7 +644,7 @@ function upsertCollectedPosts(connection: XConnectionRow, collected: CollectedPo
     const validUsername = /^[A-Za-z0-9_]{1,15}$/.test(username) ? username : '';
     const streams = [...new Set(discoveries.map((item) => item.stream))];
     const queryIds = [...new Set(discoveries.map((item) => item.queryId).filter((value): value is string => Boolean(value)))];
-    const existing = db.prepare("SELECT * FROM social_mentions WHERE source='x' AND external_id=?").get(postId) as any;
+    const existing = db.prepare("SELECT * FROM social_mentions WHERE space_id=? AND source='x' AND external_id=?").get(connection.space_id, postId) as any;
     const priorMetadata = parseJson<Record<string, any>>(existing?.metadata_json, {}); const priorX = priorMetadata.x || {};
     // Discovery streams and listening-query IDs are connection-scoped and live
     // in x_connection_mentions. Keeping them out of the shared post metadata
@@ -638,13 +660,13 @@ function upsertCollectedPosts(connection: XConnectionRow, collected: CollectedPo
       db.prepare(`UPDATE social_mentions SET author=?,content=?,url=?,language=?,published_at=?,metadata_json=? WHERE id=?`)
         .run(validUsername ? `@${validUsername}` : author?.name || connection.display_name || '', content, url, post.lang || '', published, JSON.stringify(metadata), existing.id);
     } else {
-      const id = stableMentionId(postId);
-      db.prepare(`INSERT INTO social_mentions (id,source,external_id,x_connection_id,ingestion_kind,author,content,url,language,published_at,metadata_json,analysis_json,created_at)
-        VALUES (?,'x',?,?,?,?,?,?,?,?,?,NULL,?)`).run(id, postId, connection.id, streams[0], validUsername ? `@${validUsername}` : author?.name || connection.display_name || '',
+      const id = stableMentionId(postId, connection.space_id);
+      db.prepare(`INSERT INTO social_mentions (id,space_id,source,external_id,x_connection_id,ingestion_kind,author,content,url,language,published_at,metadata_json,analysis_json,created_at)
+        VALUES (?,?,'x',?,?,?,?,?,?,?,?,?,NULL,?)`).run(id, connection.space_id, postId, connection.id, streams[0], validUsername ? `@${validUsername}` : author?.name || connection.display_name || '',
         content, url, post.lang || '', published, JSON.stringify(metadata), timestamp);
       insertedIds.push(id);
     }
-    const mentionId = existing?.id || stableMentionId(postId);
+    const mentionId = existing?.id || stableMentionId(postId, connection.space_id);
     const currentLink = db.prepare('SELECT * FROM x_connection_mentions WHERE connection_id=? AND mention_id=?').get(connection.id, mentionId) as any;
     const linkStreams = [...new Set([...(parseJson<string[]>(currentLink?.streams_json, [])), ...streams])];
     const linkQueries = [...new Set([...(parseJson<string[]>(currentLink?.query_ids_json, [])), ...queryIds])];
@@ -667,14 +689,15 @@ function persistCollectedBatch(input: {
     const { insertedIds, pendingAnalysisIds } = upsertCollectedPosts(latestConnection, input.collected);
     const recoveryIds = (db.prepare(`SELECT m.id FROM x_connection_mentions cm JOIN social_mentions m ON m.id=cm.mention_id
       WHERE cm.connection_id=? AND m.analysis_json IS NULL ORDER BY cm.discovered_at LIMIT 2000`).all(input.connection.id) as Array<{ id: string }>).map((row) => row.id);
-    const activeInputs = db.prepare("SELECT input_json FROM ai_jobs WHERE kind='social.analyze' AND state IN ('queued','processing')").all() as Array<{ input_json: string }>;
+    const activeInputs = db.prepare("SELECT input_json FROM ai_jobs WHERE space_id=? AND kind='social.analyze' AND state IN ('queued','processing')")
+      .all(input.connection.space_id) as Array<{ input_json: string }>;
     const activeIds = new Set(activeInputs.flatMap((row) => {
       const value = parseJson<{ mentionIds?: unknown[] }>(row.input_json, {}); return Array.isArray(value.mentionIds) ? value.mentionIds.map(String) : [];
     }));
     const analysisIds = [...new Set([...pendingAnalysisIds, ...recoveryIds])].filter((id) => !activeIds.has(id));
     const analysisJobs: ReturnType<typeof createJob>[] = [];
     for (let index = 0; index < analysisIds.length; index += 200) {
-      analysisJobs.push(createJob('social.analyze', { mentionIds: analysisIds.slice(index, index + 200), source: 'x-sync', xSyncJobId: input.jobId }, null, null, input.connection.user_id));
+      analysisJobs.push(createJob('social.analyze', { mentionIds: analysisIds.slice(index, index + 200), source: 'x-sync', xSyncJobId: input.jobId }, input.connection.space_id, null, null, input.connection.user_id));
     }
     input.afterPersist?.();
     db.prepare('UPDATE x_sync_jobs SET imported_count=imported_count+?,analysis_job_id=COALESCE(analysis_job_id,?),updated_at=? WHERE id=?')
@@ -684,7 +707,7 @@ function persistCollectedBatch(input: {
 }
 
 function dispatchAnalysisJobs(jobs: ReturnType<typeof createJob>[]) {
-  for (const job of jobs) publishEvent('ai-job', job);
+  for (const job of jobs) publishEvent('ai-job', job, job.spaceId);
   if (jobs.length) void aiJobRunner.pump();
 }
 
@@ -746,7 +769,8 @@ function syncProgress(jobId: string, stage: string, progress: number, _counts: {
   // Counts are checkpointed only with the corresponding endpoint cursor. This
   // keeps retry telemetry exact; stage/progress still stream after every page.
   db.prepare('UPDATE x_sync_jobs SET stage=?,progress=?,updated_at=? WHERE id=?').run(stage, progress, now(), jobId);
-  publishEvent('data-changed', { reason: 'x-sync-progress', jobId, stage, progress });
+  const row = db.prepare(`SELECT c.space_id FROM x_sync_jobs j JOIN x_connections c ON c.id=j.connection_id WHERE j.id=?`).get(jobId) as { space_id: string } | undefined;
+  if (row) publishEvent('data-changed', { reason: 'x-sync-progress', jobId, stage, progress }, row.space_id);
 }
 
 async function executeSyncJob(job: any) {
@@ -874,13 +898,13 @@ async function executeSyncJob(job: any) {
       const completed = db.prepare('SELECT imported_count FROM x_sync_jobs WHERE id=?').get(job.id) as { imported_count: number };
       return { importedCount: Number(completed.imported_count) };
     })();
-    publishEvent('data-changed', { reason: 'x-sync-completed', jobId: job.id, importedCount: saved.importedCount });
+    publishEvent('data-changed', { reason: 'x-sync-completed', jobId: job.id, importedCount: saved.importedCount }, connection.space_id);
   } catch (error) {
     if (error instanceof XSyncCancelledError) {
       const timestamp = now();
       db.prepare("UPDATE x_sync_jobs SET state='cancelled',stage='cancelled',error=?,run_after=NULL,completed_at=?,updated_at=? WHERE id=?")
         .run(error.message, timestamp, timestamp, job.id);
-      publishEvent('data-changed', { reason: 'x-sync-state-changed', jobId: job.id, state: 'cancelled', stage: 'cancelled' });
+      if (connection) publishEvent('data-changed', { reason: 'x-sync-state-changed', jobId: job.id, state: 'cancelled', stage: 'cancelled' }, connection.space_id);
       return;
     }
     const apiError = error instanceof XApiError ? error
@@ -915,7 +939,7 @@ async function executeSyncJob(job: any) {
       db.prepare(`UPDATE x_apps SET billing_status='credits_depleted',billing_checked_at=?,updated_at=?
         WHERE id=? AND billing_status='checking_credits'`).run(timestamp, timestamp, appId);
     }
-    publishEvent('data-changed', { reason: 'x-sync-state-changed', jobId: job.id, state, stage });
+    if (connection) publishEvent('data-changed', { reason: 'x-sync-state-changed', jobId: job.id, state, stage }, connection.space_id);
   }
 }
 
@@ -940,12 +964,12 @@ function enqueueForConnection(connection: XConnectionRow, trigger: 'manual' | 's
     .run(id, connection.id, trigger, billingBlocked ? 'waiting_billing' : 'queued', billingBlocked ? 'credits_required' : creditProbe ? 'checking_credits' : 'queued',
       creditProbe ? 1 : 0, billingBlocked ? 'X API credits are depleted. Add credits in the X Developer Console, then retry this sync.' : null, timestamp, timestamp);
   const job = db.prepare('SELECT * FROM x_sync_jobs WHERE id=?').get(id) as any;
-  publishEvent('data-changed', { reason: 'x-sync-queued', jobId: id });
+  publishEvent('data-changed', { reason: 'x-sync-queued', jobId: id }, connection.space_id);
   return { job: rowSyncJob(job), created: true };
 }
 
-export function enqueueXSync(user: SessionUser, connectionId?: string | null) {
-  const connection = connectionForUser(user.id, connectionId); if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
+export function enqueueXSync(_user: SessionUser, spaceId: string, connectionId?: string | null) {
+  const connection = connectionForSpace(spaceId, connectionId); if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
   if (!['connected', 'pending_verification', 'action_required'].includes(connection.status)) throw new XIntegrationError('Reconnect the X account before synchronising.', 409);
   const active = db.prepare(`SELECT * FROM x_sync_jobs WHERE connection_id=? AND state IN ('queued','processing','waiting_rate_limit','waiting_billing') ORDER BY created_at LIMIT 1`).get(connection.id) as any;
   if (active?.state === 'waiting_billing') {
@@ -1006,7 +1030,8 @@ export const xSyncRunner = {
           try {
             db.prepare("UPDATE x_sync_jobs SET state='failed',stage='internal_error',error='The sync worker stopped unexpectedly.',completed_at=?,updated_at=? WHERE id=? AND state='processing'")
               .run(timestamp, timestamp, job.id);
-            publishEvent('data-changed', { reason: 'x-sync-state-changed', jobId: job.id, state: 'failed', stage: 'internal_error' });
+            const failedConnection = db.prepare('SELECT space_id FROM x_connections WHERE id=?').get(job.connection_id) as { space_id: string } | undefined;
+            if (failedConnection) publishEvent('data-changed', { reason: 'x-sync-state-changed', jobId: job.id, state: 'failed', stage: 'internal_error' }, failedConnection.space_id);
           } catch { /* database recovery will reconcile processing rows on restart */ }
         }
       }

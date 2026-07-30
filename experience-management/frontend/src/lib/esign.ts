@@ -2,6 +2,7 @@ import type {
   ESignEnvelopeDetail, ESignEnvelopeStatus, ESignField, ESignFieldType, ESignReadiness,
   ESignRecipient, ESignWorkflowSectionKey
 } from '@/types';
+import { spaceScopedApiUrl } from '@/lib/api';
 
 export const esignFieldDefinitions: Array<{ type: ESignFieldType; label: string; defaultWidth: number; defaultHeight: number }> = [
   { type: 'signature', label: 'Signature', defaultWidth: 0.24, defaultHeight: 0.075 },
@@ -55,7 +56,11 @@ export function normalizeEnvelopeDetail(input: ESignEnvelopeDetail): ESignEnvelo
 }
 
 export function adminDocumentContentUrl(envelopeId: string, documentId: string) {
-  return `/api/esign/envelopes/${encodeURIComponent(envelopeId)}/documents/${encodeURIComponent(documentId)}/content`;
+  return spaceScopedApiUrl(`/api/esign/envelopes/${encodeURIComponent(envelopeId)}/documents/${encodeURIComponent(documentId)}/content`);
+}
+
+export function adminArtifactContentUrl(envelopeId: string, artifactId: string) {
+  return spaceScopedApiUrl(`/api/esign/envelopes/${encodeURIComponent(envelopeId)}/artifacts/${encodeURIComponent(artifactId)}/content`);
 }
 
 export function publicDocumentContentUrl(documentId: string) {

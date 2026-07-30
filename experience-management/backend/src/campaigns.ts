@@ -88,10 +88,21 @@ const rowDelivery = (row: any): CampaignDelivery => ({
   messageId: row.provider_message_id
 });
 
-function requireCampaign(id: string) {
-  const row = db.prepare('SELECT * FROM campaigns WHERE id=?').get(id) as any;
+function requireCampaign(id: string, spaceId?: string) {
+  const row = spaceId
+    ? db.prepare('SELECT * FROM campaigns WHERE id=? AND space_id=?').get(id, spaceId) as any
+    : db.prepare('SELECT * FROM campaigns WHERE id=?').get(id) as any;
   if (!row) throw new Error('Campaign not found.');
   return rowCampaign(row);
+}
+
+function campaignSpaceId(campaignId: string) {
+  return (db.prepare('SELECT space_id FROM campaigns WHERE id=?').get(campaignId) as { space_id: string } | undefined)?.space_id || null;
+}
+
+function publishCampaign(campaignId: string, data: Record<string, unknown>) {
+  const spaceId = campaignSpaceId(campaignId);
+  if (spaceId) publishEvent('campaign', { campaignId, ...data }, spaceId);
 }
 
 function campaignMetrics(campaignId: string) {
@@ -118,13 +129,14 @@ function campaignMetrics(campaignId: string) {
   };
 }
 
-export function getCampaignReadiness(id: string, startAtOverride?: string | null): CampaignReadiness {
-  const campaign = requireCampaign(id);
-  const survey = getSurvey(campaign.surveyId);
+export function getCampaignReadiness(id: string, startAtOverride?: string | null, spaceId?: string): CampaignReadiness {
+  const campaign = requireCampaign(id, spaceId);
+  const effectiveSpaceId = spaceId || campaignSpaceId(id)!;
+  const survey = getSurvey(campaign.surveyId, effectiveSpaceId);
   const collector = getCollector(campaign.collectorId);
   const steps = db.prepare('SELECT subject,content_mode,body_text,body_html FROM campaign_steps WHERE campaign_id=? ORDER BY position').all(id) as any[];
   const sendableContacts = Number((db.prepare(`SELECT COUNT(*) count FROM campaign_contacts r WHERE campaign_id=? AND status='active'
-    AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=r.email)`).get(id) as any).count);
+    AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.space_id=? AND s.email=r.email)`).get(id, effectiveSpaceId) as any).count);
 
   const setupIssues: string[] = [];
   if (campaign.name.trim().length < 2) setupIssues.push('Enter a campaign name.');
@@ -159,25 +171,26 @@ export function getCampaignReadiness(id: string, startAtOverride?: string | null
   };
 }
 
-export function getCampaignDetail(id: string) {
-  const campaign = requireCampaign(id);
+export function getCampaignDetail(id: string, spaceId?: string) {
+  const campaign = requireCampaign(id, spaceId);
+  const effectiveSpaceId = spaceId || campaignSpaceId(id)!;
   return {
     campaign,
-    survey: getSurvey(campaign.surveyId),
+    survey: getSurvey(campaign.surveyId, effectiveSpaceId),
     collector: getCollector(campaign.collectorId),
     steps: (db.prepare('SELECT * FROM campaign_steps WHERE campaign_id=? ORDER BY position').all(id) as any[]).map(rowStep),
     contacts: (db.prepare(`SELECT r.*,(SELECT MIN(d.scheduled_at) FROM campaign_deliveries d WHERE d.contact_id=r.id AND d.state='queued') next_send_at
       FROM campaign_contacts r WHERE r.campaign_id=? ORDER BY r.created_at DESC LIMIT 1000`).all(id) as any[]).map(rowContact),
     deliveries: (db.prepare('SELECT * FROM campaign_deliveries WHERE campaign_id=? ORDER BY created_at DESC LIMIT 1000').all(id) as any[]).map(rowDelivery),
     metrics: campaignMetrics(id),
-    readiness: getCampaignReadiness(id)
+    readiness: getCampaignReadiness(id, undefined, effectiveSpaceId)
   };
 }
 
-export function listCampaignSummaries() {
-  return (db.prepare('SELECT * FROM campaigns ORDER BY updated_at DESC').all() as any[]).map((row) => {
+export function listCampaignSummaries(spaceId: string) {
+  return (db.prepare('SELECT * FROM campaigns WHERE space_id=? ORDER BY updated_at DESC').all(spaceId) as any[]).map((row) => {
     const campaign = rowCampaign(row);
-    const survey = getSurvey(campaign.surveyId);
+    const survey = getSurvey(campaign.surveyId, spaceId);
     const metrics = campaignMetrics(campaign.id);
     return {
       ...campaign, surveyTitle: survey?.title || 'Deleted survey', metrics,
@@ -198,27 +211,27 @@ function resolveEmailCollector(surveyId: string, collectorId?: string) {
   return existing ? getCollector(existing.id)! : createCollector(surveyId, { name: 'Email campaign', type: 'email' });
 }
 
-export function createCampaign(input: { name: string; surveyId: string; collectorId?: string; stopOnResponse?: boolean; startAt?: string | null; templateId?: string }) {
-  if (!getSurvey(input.surveyId)) throw new Error('Survey not found.');
+export function createCampaign(input: { name: string; surveyId: string; collectorId?: string; stopOnResponse?: boolean; startAt?: string | null; templateId?: string }, spaceId: string) {
+  if (!getSurvey(input.surveyId, spaceId)) throw new Error('Survey not found.');
   const collector = resolveEmailCollector(input.surveyId, input.collectorId);
   const id = crypto.randomUUID(); const now = new Date().toISOString();
-  db.prepare(`INSERT INTO campaigns (id,survey_id,collector_id,name,status,stop_on_response,start_at,created_at,updated_at)
-    VALUES (?,?,?,?,'draft',?,?,?,?)`).run(id, input.surveyId, collector.id, input.name.trim(), input.stopOnResponse === false ? 0 : 1, input.startAt || null, now, now);
+  db.prepare(`INSERT INTO campaigns (id,space_id,survey_id,collector_id,name,status,stop_on_response,start_at,created_at,updated_at)
+    VALUES (?,?,?,?,?,'draft',?,?,?,?)`).run(id, spaceId, input.surveyId, collector.id, input.name.trim(), input.stopOnResponse === false ? 0 : 1, input.startAt || null, now, now);
   const template = campaignTemplates.find((item) => item.id === input.templateId) || campaignTemplates[0];
-  replaceCampaignSteps(id, template.steps);
-  publishEvent('campaign', { campaignId: id, reason: 'created' });
-  return getCampaignDetail(id);
+  replaceCampaignSteps(id, template.steps, spaceId);
+  publishCampaign(id, { reason: 'created' });
+  return getCampaignDetail(id, spaceId);
 }
 
-export function updateCampaign(id: string, input: { name?: string; stopOnResponse?: boolean; startAt?: string | null; surveyId?: string; collectorId?: string }) {
-  const current = requireCampaign(id);
+export function updateCampaign(id: string, input: { name?: string; stopOnResponse?: boolean; startAt?: string | null; surveyId?: string; collectorId?: string }, spaceId?: string) {
+  const current = requireCampaign(id, spaceId);
   if (current.status === 'completed') throw new Error('Completed campaigns cannot be edited.');
   if (current.launchedAt && input.startAt !== undefined && input.startAt !== current.startAt) throw new Error('The start time cannot be changed after launch.');
   let surveyId = current.surveyId; let collectorId = current.collectorId;
   let surveyChanged = false;
   if (input.surveyId && input.surveyId !== current.surveyId) {
     if (current.status !== 'draft') throw new Error('The survey can only be changed while the campaign is a draft.');
-    if (!getSurvey(input.surveyId)) throw new Error('Survey not found.');
+    if (!getSurvey(input.surveyId, spaceId)) throw new Error('Survey not found.');
     surveyId = input.surveyId;
     surveyChanged = true;
     collectorId = resolveEmailCollector(surveyId, input.collectorId).id;
@@ -234,14 +247,14 @@ export function updateCampaign(id: string, input: { name?: string; stopOnRespons
     );
     if (surveyChanged) db.prepare('UPDATE campaign_steps SET embed_question_id=NULL,updated_at=? WHERE campaign_id=?').run(now, id);
   })();
-  publishEvent('campaign', { campaignId: id, reason: 'updated' });
-  return getCampaignDetail(id);
+  publishCampaign(id, { reason: 'updated' });
+  return getCampaignDetail(id, spaceId);
 }
 
-export const replaceCampaignSteps = db.transaction((campaignId: string, steps: Array<Partial<CampaignStep> & { delayMinutes: number; subject: string; mode: 'plain' | 'html'; bodyText: string }>) => {
-  const campaign = requireCampaign(campaignId);
+export const replaceCampaignSteps = db.transaction((campaignId: string, steps: Array<Partial<CampaignStep> & { delayMinutes: number; subject: string; mode: 'plain' | 'html'; bodyText: string }>, spaceId?: string) => {
+  const campaign = requireCampaign(campaignId, spaceId);
   if (campaign.status !== 'draft' || campaign.launchedAt) throw new Error('Sequence steps can only be replaced before launch.');
-  const survey = getSurvey(campaign.surveyId)!;
+  const survey = getSurvey(campaign.surveyId, spaceId || campaignSpaceId(campaignId)!)!;
   const questions = new Map((survey.questions || []).map((question) => [question.id, question]));
   for (const step of steps) {
     if (!step.embedQuestionId) continue;
@@ -260,20 +273,21 @@ export const replaceCampaignSteps = db.transaction((campaignId: string, steps: A
     step.bodyText || '', step.bodyHtml || '', step.embedQuestionId || null, now, now
   ));
   db.prepare('UPDATE campaigns SET updated_at=? WHERE id=?').run(now, campaignId);
-  publishEvent('campaign', { campaignId, reason: 'sequence-updated' });
-  return getCampaignDetail(campaignId);
+  publishCampaign(campaignId, { reason: 'sequence-updated' });
+  return getCampaignDetail(campaignId, spaceId);
 });
 
-export const addCampaignContacts = db.transaction((campaignId: string, contacts: Array<{ email: string; firstName?: string; lastName?: string; jobTitle?: string; company?: string; customData?: Record<string, unknown> }>) => {
-  const campaign = requireCampaign(campaignId);
+export const addCampaignContacts = db.transaction((campaignId: string, contacts: Array<{ email: string; firstName?: string; lastName?: string; jobTitle?: string; company?: string; customData?: Record<string, unknown> }>, spaceId?: string) => {
+  const campaign = requireCampaign(campaignId, spaceId);
+  const effectiveSpaceId = spaceId || campaignSpaceId(campaignId)!;
   if (campaign.status === 'active' || campaign.status === 'completed') throw new Error('Pause the campaign before adding contacts.');
   const now = new Date().toISOString(); let added = 0; let duplicates = 0; let suppressed = 0;
-  const isSuppressed = db.prepare('SELECT 1 FROM email_suppressions WHERE email=?');
+  const isSuppressed = db.prepare('SELECT 1 FROM email_suppressions WHERE space_id=? AND email=?');
   const insert = db.prepare(`INSERT OR IGNORE INTO campaign_contacts (id,campaign_id,email,first_name,last_name,job_title,company,token,status,custom_json,created_at,updated_at)
     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?)`);
   for (const item of contacts) {
     const email = item.email.trim().toLowerCase();
-    if (isSuppressed.get(email)) { suppressed += 1; continue; }
+    if (isSuppressed.get(effectiveSpaceId, email)) { suppressed += 1; continue; }
     const result = insert.run(
       crypto.randomUUID(), campaignId, email, item.firstName || '', item.lastName || '', item.jobTitle || '', item.company || '',
       crypto.randomBytes(18).toString('base64url'), JSON.stringify(item.customData || {}), now, now
@@ -282,7 +296,7 @@ export const addCampaignContacts = db.transaction((campaignId: string, contacts:
   }
   db.prepare('UPDATE campaigns SET updated_at=? WHERE id=?').run(now, campaignId);
   if (campaign.launchedAt) ensureInitialDeliveries(campaignId);
-  publishEvent('campaign', { campaignId, reason: 'contacts-imported', added, duplicates, suppressed });
+  publishCampaign(campaignId, { reason: 'contacts-imported', added, duplicates, suppressed });
   return {
     contacts: (db.prepare(`SELECT r.*,(SELECT MIN(d.scheduled_at) FROM campaign_deliveries d WHERE d.contact_id=r.id AND d.state='queued') next_send_at
       FROM campaign_contacts r WHERE r.campaign_id=? ORDER BY r.created_at DESC LIMIT 1000`).all(campaignId) as any[]).map(rowContact),
@@ -297,14 +311,15 @@ export function updateCampaignContact(campaignId: string, contactId: string, inp
   jobTitle?: string;
   company?: string;
   customData?: Record<string, unknown>;
-}) {
-  const campaign = requireCampaign(campaignId);
+}, spaceId?: string) {
+  const campaign = requireCampaign(campaignId, spaceId);
+  const effectiveSpaceId = spaceId || campaignSpaceId(campaignId)!;
   if (campaign.status === 'active' || campaign.status === 'completed') throw new Error('Pause the campaign before editing contacts.');
   const row = db.prepare('SELECT * FROM campaign_contacts WHERE id=? AND campaign_id=?').get(contactId, campaignId) as any;
   if (!row) throw new Error('Campaign contact not found.');
   const email = (input.email ?? String(row.email)).trim().toLowerCase();
   if (campaign.launchedAt && email !== String(row.email).toLowerCase()) throw new Error('The email address cannot be changed after campaign launch.');
-  if (email !== String(row.email).toLowerCase() && db.prepare('SELECT 1 FROM email_suppressions WHERE email=?').get(email)) {
+  if (email !== String(row.email).toLowerCase() && db.prepare('SELECT 1 FROM email_suppressions WHERE space_id=? AND email=?').get(effectiveSpaceId, email)) {
     throw new Error('This email address is suppressed and cannot be added to a campaign.');
   }
   if (db.prepare('SELECT 1 FROM campaign_contacts WHERE campaign_id=? AND email=? AND id<>?').get(campaignId, email, contactId)) {
@@ -324,33 +339,37 @@ export function updateCampaignContact(campaignId: string, contactId: string, inp
     campaignId
   );
   db.prepare('UPDATE campaigns SET updated_at=? WHERE id=?').run(now, campaignId);
-  publishEvent('campaign', { campaignId, reason: 'contact-updated', contactId });
+  publishCampaign(campaignId, { reason: 'contact-updated', contactId });
   const updated = db.prepare(`SELECT r.*,(SELECT MIN(d.scheduled_at) FROM campaign_deliveries d WHERE d.contact_id=r.id AND d.state='queued') next_send_at
     FROM campaign_contacts r WHERE r.id=? AND r.campaign_id=?`).get(contactId, campaignId);
   return rowContact(updated);
 }
 
-export function suppressCampaignContact(campaignId: string, contactId: string) {
-  requireCampaign(campaignId); const now = new Date().toISOString();
+export function suppressCampaignContact(campaignId: string, contactId: string, spaceId?: string) {
+  requireCampaign(campaignId, spaceId); const now = new Date().toISOString();
   const changed = db.prepare("UPDATE campaign_contacts SET status='suppressed',updated_at=? WHERE id=? AND campaign_id=? AND status NOT IN ('responded','completed','unsubscribed')").run(now, contactId, campaignId).changes;
   if (!changed) return false;
   db.prepare("UPDATE campaign_deliveries SET state='skipped',error='Contact removed',updated_at=? WHERE contact_id=? AND state='queued'").run(now, contactId);
-  publishEvent('campaign', { campaignId, reason: 'contact-suppressed', contactId });
+  publishCampaign(campaignId, { reason: 'contact-suppressed', contactId });
   refreshCampaignCompletion(campaignId);
   return true;
 }
 
-const applyGlobalEmailSuppression = db.transaction((input: { email: string; reason: string; source: string; contactStatus: 'suppressed' | 'unsubscribed' }) => {
+const applyGlobalEmailSuppression = db.transaction((input: { spaceId: string; email: string; reason: string; source: string; contactStatus: 'suppressed' | 'unsubscribed' }) => {
   const now = new Date().toISOString(); const email = input.email.trim().toLowerCase();
-  db.prepare(`INSERT INTO email_suppressions (email,reason,source,created_at,updated_at) VALUES (?,?,?,?,?)
-    ON CONFLICT(email) DO UPDATE SET reason=excluded.reason,source=excluded.source,updated_at=excluded.updated_at`)
-    .run(email, input.reason.slice(0, 250), input.source.slice(0, 100), now, now);
-  const contacts = db.prepare('SELECT id,campaign_id FROM campaign_contacts WHERE email=?').all(email) as any[];
+  db.prepare(`INSERT INTO email_suppressions (space_id,email,reason,source,created_at,updated_at) VALUES (?,?,?,?,?,?)
+    ON CONFLICT(space_id,email) DO UPDATE SET reason=excluded.reason,source=excluded.source,updated_at=excluded.updated_at`)
+    .run(input.spaceId, email, input.reason.slice(0, 250), input.source.slice(0, 100), now, now);
+  const contacts = db.prepare(`SELECT r.id,r.campaign_id FROM campaign_contacts r JOIN campaigns c ON c.id=r.campaign_id
+    WHERE c.space_id=? AND r.email=?`).all(input.spaceId, email) as any[];
   const contactIds = contacts.map((contact) => String(contact.id));
-  db.prepare("UPDATE campaign_contacts SET status=?,updated_at=? WHERE email=? AND status NOT IN ('responded','completed','unsubscribed')")
-    .run(input.contactStatus, now, email);
-  db.prepare("UPDATE recipients SET status=?,error=COALESCE(error,?),updated_at=? WHERE email=? AND status<>'responded'")
-    .run(input.contactStatus, input.reason.slice(0, 500), now, email);
+  db.prepare(`UPDATE campaign_contacts SET status=?,updated_at=? WHERE id IN (
+      SELECT r.id FROM campaign_contacts r JOIN campaigns c ON c.id=r.campaign_id WHERE c.space_id=? AND r.email=?
+    ) AND status NOT IN ('responded','completed','unsubscribed')`).run(input.contactStatus, now, input.spaceId, email);
+  db.prepare(`UPDATE recipients SET status=?,error=COALESCE(error,?),updated_at=? WHERE id IN (
+      SELECT r.id FROM recipients r JOIN collectors c ON c.id=r.collector_id JOIN surveys s ON s.id=c.survey_id
+      WHERE s.space_id=? AND r.email=?
+    ) AND status<>'responded'`).run(input.contactStatus, input.reason.slice(0, 500), now, input.spaceId, email);
   if (contactIds.length) {
     const placeholders = contactIds.map(() => '?').join(',');
     db.prepare(`UPDATE campaign_deliveries SET state='skipped',error=?,updated_at=?
@@ -359,10 +378,10 @@ const applyGlobalEmailSuppression = db.transaction((input: { email: string; reas
   return { email, campaignIds: [...new Set(contacts.map((contact) => String(contact.campaign_id)))] };
 });
 
-export function suppressEmailGlobally(input: { email: string; reason: string; source: string; contactStatus?: 'suppressed' | 'unsubscribed' }) {
+export function suppressEmailGlobally(input: { spaceId: string; email: string; reason: string; source: string; contactStatus?: 'suppressed' | 'unsubscribed' }) {
   const result = applyGlobalEmailSuppression({ ...input, contactStatus: input.contactStatus || 'suppressed' });
   for (const campaignId of result.campaignIds) {
-    publishEvent('campaign', { campaignId, reason: 'email-suppressed', source: input.source });
+    publishCampaign(campaignId, { reason: 'email-suppressed', source: input.source });
     refreshCampaignCompletion(campaignId);
   }
   return result;
@@ -385,9 +404,10 @@ export function getCampaignUnsubscribePreview(token: string) {
 }
 
 function unsubscribeEmail(token: string) {
-  const row = db.prepare('SELECT id,campaign_id,email,status FROM campaign_contacts WHERE token=?').get(token) as any;
+  const row = db.prepare(`SELECT r.id,r.campaign_id,r.email,r.status,c.space_id FROM campaign_contacts r
+    JOIN campaigns c ON c.id=r.campaign_id WHERE r.token=?`).get(token) as any;
   if (!row) return null;
-  const result = suppressEmailGlobally({ email: String(row.email), reason: 'Recipient unsubscribed', source: 'campaign', contactStatus: 'unsubscribed' });
+  const result = suppressEmailGlobally({ spaceId: row.space_id, email: String(row.email), reason: 'Recipient unsubscribed', source: 'campaign', contactStatus: 'unsubscribed' });
   return { email: maskedEmail(result.email), campaignIds: result.campaignIds };
 }
 
@@ -400,6 +420,7 @@ export function unsubscribeCampaignContact(token: string) {
 
 function ensureInitialDeliveries(campaignId: string) {
   const campaign = requireCampaign(campaignId);
+  const spaceId = campaignSpaceId(campaignId)!;
   const first = db.prepare('SELECT * FROM campaign_steps WHERE campaign_id=? ORDER BY position LIMIT 1').get(campaignId) as any;
   if (!first) return;
   const base = Math.max(Date.now(), campaign.startAt ? Date.parse(campaign.startAt) : 0);
@@ -407,22 +428,23 @@ function ensureInitialDeliveries(campaignId: string) {
   const insert = db.prepare(`INSERT OR IGNORE INTO campaign_deliveries (id,campaign_id,step_id,contact_id,step_position,state,scheduled_at,created_at,updated_at)
     VALUES (?,?,?,?,?,'queued',?,?,?)`);
   const contacts = db.prepare(`SELECT r.id FROM campaign_contacts r WHERE r.campaign_id=? AND r.status='active'
-    AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=r.email)`).all(campaignId) as any[];
+    AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.space_id=? AND s.email=r.email)`).all(campaignId, spaceId) as any[];
   for (const contact of contacts) insert.run(crypto.randomUUID(), campaignId, first.id, contact.id, Number(first.position), scheduledAt, now, now);
 }
 
-export function launchCampaign(id: string, startAtOverride?: string | null) {
+export function launchCampaign(id: string, startAtOverride?: string | null, spaceId?: string) {
   db.transaction(() => {
-    const campaign = requireCampaign(id); const survey = getSurvey(campaign.surveyId); const collector = getCollector(campaign.collectorId);
+    const campaign = requireCampaign(id, spaceId); const effectiveSpaceId = spaceId || campaignSpaceId(id)!;
+    const survey = getSurvey(campaign.surveyId, effectiveSpaceId); const collector = getCollector(campaign.collectorId);
     if (campaign.status !== 'draft' || campaign.launchedAt) throw new Error('This campaign has already been launched.');
     if (!survey || survey.status !== 'live') throw new Error('Publish the survey before launching its campaign.');
     if (!collector || collector.type !== 'email' || collector.status !== 'open') throw new Error('An open email collector is required.');
     const steps = Number((db.prepare('SELECT COUNT(*) count FROM campaign_steps WHERE campaign_id=?').get(id) as any).count);
     const contacts = Number((db.prepare(`SELECT COUNT(*) count FROM campaign_contacts r WHERE campaign_id=? AND status='active'
-      AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=r.email)`).get(id) as any).count);
+      AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.space_id=? AND s.email=r.email)`).get(id, effectiveSpaceId) as any).count);
     if (!steps) throw new Error('Add at least one sequence step before launch.');
     if (!contacts) throw new Error('Add at least one active contact before launch.');
-    const readiness = getCampaignReadiness(id, startAtOverride);
+    const readiness = getCampaignReadiness(id, startAtOverride, effectiveSpaceId);
     if (!readiness.ready) throw new Error(readiness.issues[0] || 'Complete the campaign workflow before launch.');
     const now = new Date().toISOString();
     const startAt = startAtOverride === undefined ? campaign.startAt : startAtOverride;
@@ -431,27 +453,30 @@ export function launchCampaign(id: string, startAtOverride?: string | null) {
     if (changed !== 1) throw new Error('This campaign has already been launched.');
     ensureInitialDeliveries(id);
   })();
-  publishEvent('campaign', { campaignId: id, reason: 'launched' }); refreshCampaignCompletion(id); void campaignRunner.pump();
-  return getCampaignDetail(id);
+  publishCampaign(id, { reason: 'launched' }); refreshCampaignCompletion(id); void campaignRunner.pump();
+  return getCampaignDetail(id, spaceId);
 }
 
-export function pauseCampaign(id: string) {
-  const campaign = requireCampaign(id); if (campaign.status !== 'active') throw new Error('Only an active campaign can be paused.');
+export function pauseCampaign(id: string, spaceId?: string) {
+  const campaign = requireCampaign(id, spaceId); if (campaign.status !== 'active') throw new Error('Only an active campaign can be paused.');
   const now = new Date().toISOString(); db.prepare("UPDATE campaigns SET status='paused',paused_at=?,updated_at=? WHERE id=?").run(now, now, id);
-  publishEvent('campaign', { campaignId: id, reason: 'paused' }); return getCampaignDetail(id);
+  publishCampaign(id, { reason: 'paused' }); return getCampaignDetail(id, spaceId);
 }
 
-export function resumeCampaign(id: string) {
-  const campaign = requireCampaign(id); if (campaign.status !== 'paused') throw new Error('Only a paused campaign can be resumed.');
+export function resumeCampaign(id: string, spaceId?: string) {
+  const campaign = requireCampaign(id, spaceId); if (campaign.status !== 'paused') throw new Error('Only a paused campaign can be resumed.');
   const now = new Date().toISOString(); db.prepare("UPDATE campaigns SET status='active',paused_at=NULL,updated_at=? WHERE id=?").run(now, id);
-  ensureInitialDeliveries(id); publishEvent('campaign', { campaignId: id, reason: 'resumed' }); refreshCampaignCompletion(id);
+  ensureInitialDeliveries(id); publishCampaign(id, { reason: 'resumed' }); refreshCampaignCompletion(id);
   if (requireCampaign(id).status === 'active') void campaignRunner.pump();
-  return getCampaignDetail(id);
+  return getCampaignDetail(id, spaceId);
 }
 
-export function markCampaignContactResponded(token: string) {
+export function markCampaignContactResponded(token: string, surveyId?: string) {
   if (!token) return false; const now = new Date().toISOString();
-  const row = db.prepare('SELECT id,campaign_id FROM campaign_contacts WHERE token=?').get(token) as any;
+  const row = surveyId
+    ? db.prepare(`SELECT r.id,r.campaign_id FROM campaign_contacts r JOIN campaigns c ON c.id=r.campaign_id
+      WHERE r.token=? AND c.survey_id=?`).get(token, surveyId) as any
+    : db.prepare('SELECT id,campaign_id FROM campaign_contacts WHERE token=?').get(token) as any;
   if (!row) return false;
   const campaign = requireCampaign(row.campaign_id);
   if (campaign.stopOnResponse) {
@@ -460,15 +485,16 @@ export function markCampaignContactResponded(token: string) {
   } else {
     db.prepare('UPDATE campaign_contacts SET responded_at=?,updated_at=? WHERE id=?').run(now, now, row.id);
   }
-  publishEvent('campaign', { campaignId: row.campaign_id, reason: 'contact-responded', contactId: row.id });
+  publishCampaign(row.campaign_id, { reason: 'contact-responded', contactId: row.id });
   refreshCampaignCompletion(row.campaign_id); return true;
 }
 
 function refreshCampaignCompletion(campaignId: string) {
   const campaign = requireCampaign(campaignId); if (campaign.status !== 'active') return;
+  const spaceId = campaignSpaceId(campaignId)!;
   const now = new Date().toISOString();
   db.prepare(`UPDATE campaign_contacts SET status='suppressed',updated_at=? WHERE campaign_id=? AND status='active'
-    AND EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=campaign_contacts.email)`).run(now, campaignId);
+    AND EXISTS (SELECT 1 FROM email_suppressions s WHERE s.space_id=? AND s.email=campaign_contacts.email)`).run(now, campaignId, spaceId);
   db.prepare(`UPDATE campaign_deliveries SET state='skipped',error=COALESCE(error,'Contact is no longer sendable'),updated_at=?
     WHERE campaign_id=? AND state='queued' AND EXISTS (
       SELECT 1 FROM campaign_contacts r WHERE r.id=campaign_deliveries.contact_id AND r.status<>'active'
@@ -477,18 +503,32 @@ function refreshCampaignCompletion(campaignId: string) {
   const pending = Number((db.prepare("SELECT COUNT(*) count FROM campaign_deliveries WHERE campaign_id=? AND state IN ('queued','sending')").get(campaignId) as any).count);
   if (active || pending) return;
   db.prepare("UPDATE campaigns SET status='completed',completed_at=?,updated_at=? WHERE id=?").run(now, now, campaignId);
-  publishEvent('campaign', { campaignId, reason: 'completed' });
+  publishCampaign(campaignId, { reason: 'completed' });
 }
 
 export function reconcileCampaignCompletion(campaignId: string) { refreshCampaignCompletion(campaignId); }
 
-const claimNextDelivery = db.transaction(() => {
+export const claimNextDelivery = db.transaction(() => {
   const now = new Date().toISOString();
   const row = db.prepare(`SELECT d.* FROM campaign_deliveries d
     JOIN campaigns c ON c.id=d.campaign_id JOIN campaign_contacts r ON r.id=d.contact_id
     WHERE d.state='queued' AND d.scheduled_at<=? AND c.status='active' AND r.status='active'
-      AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email=r.email)
-    ORDER BY d.scheduled_at,d.created_at LIMIT 1`).get(now) as any;
+      AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.space_id=c.space_id AND s.email=r.email)
+      AND d.id=(
+        SELECT pending.id FROM campaign_deliveries pending
+        JOIN campaigns pending_campaign ON pending_campaign.id=pending.campaign_id
+        JOIN campaign_contacts pending_contact ON pending_contact.id=pending.contact_id
+        WHERE pending_campaign.space_id=c.space_id AND pending.state='queued' AND pending.scheduled_at<=?
+          AND pending_campaign.status='active' AND pending_contact.status='active'
+          AND NOT EXISTS (SELECT 1 FROM email_suppressions suppression
+            WHERE suppression.space_id=pending_campaign.space_id AND suppression.email=pending_contact.email)
+        ORDER BY pending.scheduled_at,pending.created_at,pending.id LIMIT 1
+      )
+    ORDER BY COALESCE((
+      SELECT MAX(served.first_attempt_at) FROM campaign_deliveries served
+      JOIN campaigns served_campaign ON served_campaign.id=served.campaign_id
+      WHERE served_campaign.space_id=c.space_id AND served.first_attempt_at IS NOT NULL
+    ),''),d.scheduled_at,d.created_at,d.id LIMIT 1`).get(now, now) as any;
   if (!row) return null;
   const changed = db.prepare("UPDATE campaign_deliveries SET state='sending',attempt=attempt+1,first_attempt_at=COALESCE(first_attempt_at,?),updated_at=? WHERE id=? AND state='queued'").run(now, now, row.id).changes;
   return changed ? rowDelivery(db.prepare('SELECT * FROM campaign_deliveries WHERE id=?').get(row.id)) : null;
@@ -585,7 +625,8 @@ async function processDelivery(delivery: CampaignDelivery) {
   const campaign = requireCampaign(delivery.campaignId);
   const stepRow = db.prepare('SELECT * FROM campaign_steps WHERE id=?').get(delivery.stepId) as any;
   const contactRow = db.prepare('SELECT * FROM campaign_contacts WHERE id=?').get(delivery.contactId) as any;
-  const survey = getSurvey(campaign.surveyId); const collector = getCollector(campaign.collectorId);
+  const spaceId = campaignSpaceId(campaign.id)!;
+  const survey = getSurvey(campaign.surveyId, spaceId); const collector = getCollector(campaign.collectorId);
   if (campaign.status === 'paused') {
     const now = new Date().toISOString();
     db.prepare("UPDATE campaign_deliveries SET state='queued',updated_at=? WHERE id=? AND state='sending'").run(now, delivery.id);
@@ -595,12 +636,12 @@ async function processDelivery(delivery: CampaignDelivery) {
     const now = new Date().toISOString(); db.prepare("UPDATE campaign_deliveries SET state='skipped',error='Campaign or contact is no longer sendable',updated_at=? WHERE id=?").run(now, delivery.id);
     refreshCampaignCompletion(delivery.campaignId); return;
   }
-  const globallySuppressed = db.prepare('SELECT 1 FROM email_suppressions WHERE email=?').get(contactRow.email);
+  const globallySuppressed = db.prepare('SELECT 1 FROM email_suppressions WHERE space_id=? AND email=?').get(spaceId, contactRow.email);
   if (globallySuppressed) {
     const now = new Date().toISOString();
     db.prepare("UPDATE campaign_contacts SET status='unsubscribed',updated_at=? WHERE id=? AND status='active'").run(now, delivery.contactId);
     db.prepare("UPDATE campaign_deliveries SET state='skipped',error='Email is globally suppressed',updated_at=? WHERE id=? AND state='sending'").run(now, delivery.id);
-    publishEvent('campaign', { campaignId: campaign.id, reason: 'delivery-suppressed', deliveryId: delivery.id, contactId: delivery.contactId });
+    publishCampaign(campaign.id, { reason: 'delivery-suppressed', deliveryId: delivery.id, contactId: delivery.contactId });
     refreshCampaignCompletion(delivery.campaignId); return;
   }
   const step = rowStep(stepRow); const contact = rowContact(contactRow);
@@ -616,12 +657,12 @@ async function processDelivery(delivery: CampaignDelivery) {
       unsubscribeUrl: `${config.publicUrl.replace(/\/$/, '')}/api/public/campaigns/unsubscribe/${encodeURIComponent(contact.token)}`
     });
     finalizeSuccessfulDelivery({ deliveryId: delivery.id, campaignId: campaign.id, contactId: contact.id, stepPosition: step.position, providerMessageId: (sent as any).messageId || '' });
-    publishEvent('campaign', { campaignId: campaign.id, reason: 'delivery-sent', deliveryId: delivery.id, contactId: contact.id });
+    publishCampaign(campaign.id, { reason: 'delivery-sent', deliveryId: delivery.id, contactId: contact.id });
     refreshCampaignCompletion(campaign.id);
   } catch (error) {
     const message = (error instanceof Error ? error.message : String(error)).slice(0, 1000);
     finalizeFailedDelivery({ deliveryId: delivery.id, campaignId: campaign.id, contactId: delivery.contactId, error: message });
-    publishEvent('campaign', { campaignId: campaign.id, reason: 'delivery-failed', deliveryId: delivery.id, error: message });
+    publishCampaign(campaign.id, { reason: 'delivery-failed', deliveryId: delivery.id, error: message });
     refreshCampaignCompletion(campaign.id);
   }
 }
@@ -648,7 +689,7 @@ export function recoverCampaignDeliveries() {
   const now = new Date();
   const result = recoverSendingDeliveries(now.toISOString(), new Date(now.getTime() - config.brevoIdempotencyTtlMinutes * 60_000).toISOString());
   for (const campaignId of result.campaignIds) {
-    publishEvent('campaign', { campaignId, reason: result.failed ? 'delivery-recovery-failed' : 'delivery-recovered' });
+    publishCampaign(campaignId, { reason: result.failed ? 'delivery-recovery-failed' : 'delivery-recovered' });
     refreshCampaignCompletion(campaignId);
   }
   return result.recovered + result.failed;
@@ -692,8 +733,8 @@ class CampaignRunner {
 
 export const campaignRunner = new CampaignRunner();
 
-export async function sendCampaignTest(campaignId: string, emails: string[]) {
-  const detail = getCampaignDetail(campaignId); const step = detail.steps[0];
+export async function sendCampaignTest(campaignId: string, emails: string[], spaceId?: string) {
+  const detail = getCampaignDetail(campaignId, spaceId); const step = detail.steps[0];
   if (!step) throw new Error('Add a sequence step before sending a test.');
   const survey = detail.survey as Survey; const collector = detail.collector as Collector;
   const question = (survey.questions || []).find((item) => item.id === step.embedQuestionId);

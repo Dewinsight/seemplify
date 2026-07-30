@@ -39,6 +39,7 @@ Object.assign(process.env, {
 
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
+const { config } = await import('../src/config.js');
 const { esignWorker } = await import('../src/esign.js');
 esignWorker.start();
 
@@ -64,7 +65,7 @@ async function signup(label: string) {
   identity += 1;
   const agent = request.agent(app);
   const email = `${label}-${identity}@example.com`;
-  await agent.post('/api/auth/signup').send({ name: `${label} user`, email, password: 'Security-Account-2026!' }).expect(201);
+  await agent.post('/api/auth/signup').set('x-forwarded-for', `198.51.100.${identity}`).send({ name: `${label} user`, email, password: 'Security-Account-2026!' }).expect(201);
   return { agent, email };
 }
 
@@ -295,4 +296,71 @@ test('accepts only one concurrent decline and leaves no completion artifacts', a
   assert.equal(detail.body.envelope.status, 'declined');
   assert.equal(detail.body.artifacts.length, 0);
   assert.equal(detail.body.audit.filter((event: any) => event.action === 'recipient.declined').length, 1);
+});
+
+test('shares e-sign envelopes inside one space while isolating every active-space operation', async () => {
+  const owner = await signup('space-owner');
+  const member = await signup('space-member');
+  const ownerSession = await owner.agent.get('/api/spaces').expect(200);
+  const memberSession = await member.agent.get('/api/spaces').expect(200);
+  const ownerSpaceId = ownerSession.body.activeSpace.id as string;
+  const memberPersonalSpaceId = memberSession.body.activeSpace.id as string;
+
+  const created = await owner.agent.post('/api/esign/envelopes').send({ title: 'Shared-space agreement' }).expect(201);
+  const envelopeId = created.body.envelope.id as string;
+  const uploaded = await owner.agent.post(`/api/esign/envelopes/${envelopeId}/documents`)
+    .attach('file', await samplePdf(), { filename: 'shared-space.pdf', contentType: 'application/pdf' })
+    .expect(201);
+  const documentId = uploaded.body.documents[0].id as string;
+
+  const invitation = await owner.agent.post(`/api/spaces/${ownerSpaceId}/invitations`)
+    .send({ email: member.email, role: 'member' }).expect(201);
+  const inviteToken = new URL(invitation.body.inviteUrl).pathname.split('/').at(-1)!;
+  await member.agent.post(`/api/spaces/invitations/${inviteToken}/accept`).send({}).expect(200);
+
+  await member.agent.get(`/api/esign/envelopes/${envelopeId}`).expect(200);
+  await member.agent.get(`/api/esign/envelopes/${envelopeId}/documents/${documentId}/content`).expect(200);
+  await member.agent.patch(`/api/esign/envelopes/${envelopeId}`).send({ title: 'Updated by another space member' }).expect(200);
+  await member.agent.put(`/api/esign/envelopes/${envelopeId}/recipients`).send({ recipients: [{
+    name: 'Shared Recipient', email: 'shared-recipient@example.com', role: 'signer', routingOrder: 1
+  }] }).expect(200);
+  const memberCreated = await member.agent.post('/api/esign/envelopes').send({ title: 'Created by shared member' }).expect(201);
+
+  const ownerList = await owner.agent.get('/api/esign/envelopes').expect(200);
+  assert.deepEqual(new Set(ownerList.body.map((item: any) => item.id)), new Set([envelopeId, memberCreated.body.envelope.id]));
+  const ownerUserId = (db.prepare('SELECT id FROM users WHERE email=?').get(owner.email) as any).id;
+  const memberUserId = (db.prepare('SELECT id FROM users WHERE email=?').get(member.email) as any).id;
+  const stored = db.prepare('SELECT space_id,created_by_user_id FROM esign_envelopes WHERE id=?').get(envelopeId) as any;
+  const storedMemberEnvelope = db.prepare('SELECT space_id,created_by_user_id FROM esign_envelopes WHERE id=?').get(memberCreated.body.envelope.id) as any;
+  assert.deepEqual(stored, { space_id: ownerSpaceId, created_by_user_id: ownerUserId });
+  assert.deepEqual(storedMemberEnvelope, { space_id: ownerSpaceId, created_by_user_id: memberUserId });
+  const memberAudit = db.prepare("SELECT actor_user_id FROM esign_audit_events WHERE envelope_id=? AND event_type='envelope.updated'").get(envelopeId) as any;
+  assert.equal(memberAudit.actor_user_id, memberUserId);
+
+  await member.agent.post(`/api/spaces/${memberPersonalSpaceId}/select`).send({}).expect(200);
+  assert.deepEqual((await member.agent.get('/api/esign/envelopes').expect(200)).body, []);
+  await member.agent.get(`/api/esign/envelopes/${envelopeId}`).expect(404);
+  await member.agent.patch(`/api/esign/envelopes/${envelopeId}`).send({ title: 'Cross-space update' }).expect(404);
+  await member.agent.get(`/api/esign/envelopes/${envelopeId}/documents/${documentId}/content`).expect(404);
+  await member.agent.put(`/api/esign/envelopes/${envelopeId}/recipients`).send({ recipients: [] }).expect(404);
+
+  const outsider = await signup('space-outsider');
+  await outsider.agent.get(`/api/esign/envelopes/${envelopeId}`).set('x-seemplify-space', ownerSpaceId).expect(403);
+});
+
+test('rejects agreement bytes before writing when a space has exhausted its storage allowance', async () => {
+  const owner = await signup('storage-owner');
+  const envelope = await owner.agent.post('/api/esign/envelopes').send({ title: 'Storage-limited agreement' }).expect(201);
+  const previousLimit = config.esignMaxSpaceBytes;
+  try {
+    config.esignMaxSpaceBytes = 1;
+    await owner.agent.post(`/api/esign/envelopes/${envelope.body.envelope.id}/documents`)
+      .attach('file', await samplePdf(), { filename: 'too-large-for-space.pdf', contentType: 'application/pdf' })
+      .expect(409)
+      .expect((response) => assert.equal(response.body.code, 'SPACE_STORAGE_LIMIT'));
+    assert.equal((db.prepare('SELECT COUNT(*) count FROM esign_documents WHERE envelope_id=?')
+      .get(envelope.body.envelope.id) as any).count, 0);
+  } finally {
+    config.esignMaxSpaceBytes = previousLimit;
+  }
 });

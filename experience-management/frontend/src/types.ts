@@ -1,3 +1,18 @@
+export type SpaceRole = 'owner' | 'admin' | 'member';
+export interface SpaceSummary { id: string; name: string; slug: string; role: SpaceRole; isPersonal: boolean; createdAt: string; updatedAt: string }
+export interface SessionUser { id: string; email: string; name: string; role: string }
+export interface AuthSession { authenticated: boolean; email: string | null; user: SessionUser | null; spaces: SpaceSummary[]; activeSpace: SpaceSummary | null }
+export interface SpaceSession { spaces: SpaceSummary[]; activeSpace: SpaceSummary }
+export interface SpaceMember { id: string; name: string; email: string; role: SpaceRole; joinedAt: string }
+export interface SpaceInvitation {
+  id: string; email: string; role: Exclude<SpaceRole, 'owner'>; expiresAt: string;
+  acceptedAt: string | null; revokedAt: string | null; createdAt: string; invitedBy: string;
+}
+export interface SpaceInvitationPreview {
+  email: string; role: Exclude<SpaceRole, 'owner'>; expiresAt: string;
+  space: Pick<SpaceSummary, 'id' | 'name'>; invitedBy: string;
+}
+
 export type QuestionType = 'single_choice' | 'multiple_choice' | 'dropdown' | 'nps' | 'multi_nps' | 'csat' | 'ces' | 'short_text' | 'multi_text' | 'long_text' | 'email' | 'number' | 'rating' | 'graphical_rating' | 'slider' | 'ranking' | 'matrix' | 'date' | 'contact' | 'file' | 'media' | 'statement';
 export interface LogicRule { action: 'show' | 'hide' | 'skip_to' | 'create_ticket'; sourceQuestionId: string; operator: string; value: string | number; targetQuestionId?: string }
 export interface Question { id: string; surveyId: string; page: number; position: number; type: QuestionType; title: string; description: string; required: boolean; options: string[]; settings: Record<string, any>; logic: LogicRule[] }

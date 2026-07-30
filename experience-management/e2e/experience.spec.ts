@@ -109,7 +109,7 @@ test('account signup and forgot-password entry points are complete', async ({ pa
   await expect(page.getByRole('link', { name: 'Forgot password?' })).toBeVisible();
   await page.getByRole('link', { name: 'Create an account' }).click();
   await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
-  await page.getByLabel('Name').fill('Experience Researcher');
+  await page.getByLabel('Name', { exact: true }).fill('Experience Researcher');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill('Experience-Account-2026');
   await page.getByLabel('Confirm password').fill('Experience-Account-2026');
@@ -457,18 +457,18 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await page.unroute('**/api/integrations/x/mentions?limit=1000*');
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByText(/Some live data could not refresh/)).toHaveCount(0);
-  await page.getByRole('button', { name: 'API settings' }).click();
-  const appDialog = page.getByRole('dialog', { name: 'X developer app' });
+  await page.getByRole('button', { name: 'Platform X settings' }).click();
+  const appDialog = page.getByRole('dialog', { name: 'Platform X developer app' });
   await expect(appDialog.getByText('http://127.0.0.1:5412/api/integrations/x/callback')).toBeVisible();
   await expect(page.getByLabel('OAuth 2 client ID')).toHaveValue('');
   await expect(page.getByLabel('Bearer token')).toHaveValue('');
   await page.getByLabel('OAuth 2 client ID').fill('incomplete-client-id');
-  await expect(page.getByRole('button', { name: 'Save securely' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Save platform settings' })).toBeDisabled();
   await appDialog.getByRole('button', { name: 'Cancel' }).click();
-  await page.getByRole('button', { name: 'API settings' }).click();
+  await page.getByRole('button', { name: 'Platform X settings' }).click();
   await expect(page.getByLabel('OAuth 2 client ID')).toHaveValue('incomplete-client-id');
   await page.getByLabel('OAuth 2 client ID').fill('');
-  await page.getByRole('dialog', { name: 'X developer app' }).getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('dialog', { name: 'Platform X developer app' }).getByRole('button', { name: 'Cancel' }).click();
 
   await page.evaluate(async () => {
     const update = (body: Record<string, string>) => fetch('/api/integrations/x/app', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -499,10 +499,10 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await expect(page.getByRole('button', { name: 'Reconnect through X' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete X history' })).toBeEnabled();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening-disconnected.png'), fullPage: true });
-  await page.getByRole('button', { name: 'API settings' }).click();
-  await expect(page.getByRole('button', { name: 'Remove X developer app' })).toBeVisible();
+  await page.getByRole('button', { name: 'Platform X settings' }).click();
+  await expect(page.getByRole('button', { name: 'Remove platform X app' })).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
-  await page.getByRole('button', { name: 'Remove X developer app' }).click();
+  await page.getByRole('button', { name: 'Remove platform X app' }).click();
   await expect(page.getByText('disconnected', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Add X account' })).toBeDisabled();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('social-listening.png'), fullPage: true });

@@ -4,6 +4,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { currentSessionUser } from './auth.js';
 import { config } from './config.js';
+import { resolveRequestSpace, SpaceError } from './spaces.js';
 import {
   addEnvelopeDocument, authenticateSigningAccessCode, cloneEnvelope, completePublicSigning, consentToElectronicSigning,
   createEnvelope, declinePublicSigning, deleteEnvelope, EsignError, exchangeSigningToken, getEnvelopeDetail,
@@ -27,11 +28,14 @@ function actor(request: Request) {
   return { userId: user?.id || null, actorType: 'user' as const, ip: request.ip || null, userAgent: String(request.headers['user-agent'] || '').slice(0, 500) || null };
 }
 function recipientActor(request: Request) { return { actorType: 'recipient' as const, ip: request.ip || null, userAgent: String(request.headers['user-agent'] || '').slice(0, 500) || null }; }
-function userId(request: Request) {
-  const user = currentSessionUser(request); if (!user) throw new EsignError('Authentication required.', 401); return user.id;
+function authenticatedScope(request: Request) {
+  const user = currentSessionUser(request);
+  if (!user) throw new EsignError('Authentication required.', 401);
+  return { userId: user.id, spaceId: resolveRequestSpace(request, user.id).id };
 }
 function error(response: Response, caught: unknown) {
   if (caught instanceof z.ZodError) return response.status(400).json({ error: 'Validation failed.', details: caught.issues });
+  if (caught instanceof SpaceError) return response.status(caught.status).json({ error: caught.message, code: caught.code });
   if (caught instanceof EsignError) return response.status(caught.status).json({ error: caught.message, code: caught.code });
   console.error('E-sign request failed:', caught);
   return response.status(500).json({ error: 'The e-sign request could not be completed.' });
@@ -78,27 +82,28 @@ const fieldInput = z.object({
 });
 
 esignRouter.use((_request, response, next) => { response.setHeader('Cache-Control', 'no-store'); next(); });
-esignRouter.get('/outbox', (request, response) => { try { return response.json(listLogModeOutbox(userId(request), request.query.envelopeId ? String(request.query.envelopeId) : undefined)); } catch (caught) { return error(response, caught); } });
-esignRouter.get('/envelopes', (request, response) => { try { return response.json(listEnvelopes(userId(request), Number(request.query.limit || 200))); } catch (caught) { return error(response, caught); } });
-esignRouter.post('/envelopes', (request, response) => { try { const input = envelopeInput.parse(request.body); return response.status(201).json(createEnvelope(userId(request), input, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.get('/envelopes/:id', (request, response) => { try { return response.json(getEnvelopeDetail(String(request.params.id), userId(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.patch('/envelopes/:id', (request, response) => { try { const input = envelopeInput.partial().parse(request.body); return response.json(updateEnvelope(String(request.params.id), userId(request), input, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.delete('/envelopes/:id', (request, response) => { try { return deleteEnvelope(String(request.params.id), userId(request)) ? response.status(204).end() : response.status(404).json({ error: 'Envelope not found.' }); } catch (caught) { return error(response, caught); } });
+esignRouter.get('/outbox', (request, response) => { try { const scope = authenticatedScope(request); return response.json(listLogModeOutbox(scope.spaceId, request.query.envelopeId ? String(request.query.envelopeId) : undefined)); } catch (caught) { return error(response, caught); } });
+esignRouter.get('/envelopes', (request, response) => { try { const scope = authenticatedScope(request); return response.json(listEnvelopes(scope.spaceId, Number(request.query.limit || 200))); } catch (caught) { return error(response, caught); } });
+esignRouter.post('/envelopes', (request, response) => { try { const scope = authenticatedScope(request); const input = envelopeInput.parse(request.body); return response.status(201).json(createEnvelope(scope.spaceId, scope.userId, input, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.get('/envelopes/:id', (request, response) => { try { const scope = authenticatedScope(request); return response.json(getEnvelopeDetail(String(request.params.id), scope.spaceId)); } catch (caught) { return error(response, caught); } });
+esignRouter.patch('/envelopes/:id', (request, response) => { try { const scope = authenticatedScope(request); const input = envelopeInput.partial().parse(request.body); return response.json(updateEnvelope(String(request.params.id), scope.spaceId, scope.userId, input, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.delete('/envelopes/:id', (request, response) => { try { const scope = authenticatedScope(request); return deleteEnvelope(String(request.params.id), scope.spaceId) ? response.status(204).end() : response.status(404).json({ error: 'Envelope not found.' }); } catch (caught) { return error(response, caught); } });
 esignRouter.post('/envelopes/:id/documents', pdfUpload.single('file'), asyncRoute(async (request, response) => {
+  const scope = authenticatedScope(request);
   if (!request.file) throw new EsignError('Choose a PDF document.');
-  return response.status(201).json(await addEnvelopeDocument(String(request.params.id), userId(request), request.file, actor(request)));
+  return response.status(201).json(await addEnvelopeDocument(String(request.params.id), scope.spaceId, scope.userId, request.file, actor(request)));
 }));
-esignRouter.get('/envelopes/:id/documents/:documentId/content', (request, response) => { try { return fileResponse(response, getOwnedDocumentContent(String(request.params.id), String(request.params.documentId), userId(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.delete('/envelopes/:id/documents/:documentId', (request, response) => { try { removeEnvelopeDocument(String(request.params.id), String(request.params.documentId), userId(request), actor(request)); return response.status(204).end(); } catch (caught) { return error(response, caught); } });
-esignRouter.put('/envelopes/:id/recipients', (request, response) => { try { const input = z.object({ recipients: z.array(recipientInput).max(100) }).parse(request.body); return response.json(replaceEnvelopeRecipients(String(request.params.id), userId(request), input.recipients, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.put('/envelopes/:id/fields', (request, response) => { try { const input = z.object({ fields: z.array(fieldInput).max(1000) }).parse(request.body); return response.json(replaceEnvelopeFields(String(request.params.id), userId(request), input.fields, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.post('/envelopes/:id/send', (request, response) => { try { return response.json(sendEnvelope(String(request.params.id), userId(request), actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.post('/envelopes/:id/remind', (request, response) => { try { const input = z.object({ recipientId: z.string().uuid().optional() }).parse(request.body || {}); return response.status(202).json(remindEnvelope(String(request.params.id), userId(request), input.recipientId, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.post('/envelopes/:id/recipients/:recipientId/resend', (request, response) => { try { return response.status(202).json(remindEnvelope(String(request.params.id), userId(request), String(request.params.recipientId), actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.post('/envelopes/:id/void', (request, response) => { try { const input = z.object({ reason: z.string().trim().min(2).max(1000) }).parse(request.body); return response.json(voidEnvelope(String(request.params.id), userId(request), input.reason, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.post('/envelopes/:id/clone', (request, response) => { try { const input = z.object({ title: z.string().trim().min(2).max(180).optional() }).parse(request.body || {}); return response.status(201).json(cloneEnvelope(String(request.params.id), userId(request), input.title, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.post('/envelopes/:id/retry-finalization', (request, response) => { try { return response.status(202).json(retryEnvelopeFinalization(String(request.params.id), userId(request), actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.get('/envelopes/:id/artifacts/:artifactId/content', (request, response) => { try { return fileResponse(response, getOwnedArtifactContent(String(request.params.id), String(request.params.artifactId), userId(request)), 'attachment'); } catch (caught) { return error(response, caught); } });
+esignRouter.get('/envelopes/:id/documents/:documentId/content', (request, response) => { try { const scope = authenticatedScope(request); return fileResponse(response, getOwnedDocumentContent(String(request.params.id), String(request.params.documentId), scope.spaceId)); } catch (caught) { return error(response, caught); } });
+esignRouter.delete('/envelopes/:id/documents/:documentId', (request, response) => { try { const scope = authenticatedScope(request); removeEnvelopeDocument(String(request.params.id), String(request.params.documentId), scope.spaceId, scope.userId, actor(request)); return response.status(204).end(); } catch (caught) { return error(response, caught); } });
+esignRouter.put('/envelopes/:id/recipients', (request, response) => { try { const scope = authenticatedScope(request); const input = z.object({ recipients: z.array(recipientInput).max(100) }).parse(request.body); return response.json(replaceEnvelopeRecipients(String(request.params.id), scope.spaceId, scope.userId, input.recipients, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.put('/envelopes/:id/fields', (request, response) => { try { const scope = authenticatedScope(request); const input = z.object({ fields: z.array(fieldInput).max(1000) }).parse(request.body); return response.json(replaceEnvelopeFields(String(request.params.id), scope.spaceId, scope.userId, input.fields, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.post('/envelopes/:id/send', (request, response) => { try { const scope = authenticatedScope(request); return response.json(sendEnvelope(String(request.params.id), scope.spaceId, scope.userId, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.post('/envelopes/:id/remind', (request, response) => { try { const scope = authenticatedScope(request); const input = z.object({ recipientId: z.string().uuid().optional() }).parse(request.body || {}); return response.status(202).json(remindEnvelope(String(request.params.id), scope.spaceId, scope.userId, input.recipientId, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.post('/envelopes/:id/recipients/:recipientId/resend', (request, response) => { try { const scope = authenticatedScope(request); return response.status(202).json(remindEnvelope(String(request.params.id), scope.spaceId, scope.userId, String(request.params.recipientId), actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.post('/envelopes/:id/void', (request, response) => { try { const scope = authenticatedScope(request); const input = z.object({ reason: z.string().trim().min(2).max(1000) }).parse(request.body); return response.json(voidEnvelope(String(request.params.id), scope.spaceId, scope.userId, input.reason, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.post('/envelopes/:id/clone', (request, response) => { try { const scope = authenticatedScope(request); const input = z.object({ title: z.string().trim().min(2).max(180).optional() }).parse(request.body || {}); return response.status(201).json(cloneEnvelope(String(request.params.id), scope.spaceId, scope.userId, input.title, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.post('/envelopes/:id/retry-finalization', (request, response) => { try { const scope = authenticatedScope(request); return response.status(202).json(retryEnvelopeFinalization(String(request.params.id), scope.spaceId, scope.userId, actor(request))); } catch (caught) { return error(response, caught); } });
+esignRouter.get('/envelopes/:id/artifacts/:artifactId/content', (request, response) => { try { const scope = authenticatedScope(request); return fileResponse(response, getOwnedArtifactContent(String(request.params.id), String(request.params.artifactId), scope.spaceId), 'attachment'); } catch (caught) { return error(response, caught); } });
 
 esignPublicRouter.use((_request, response, next) => { response.setHeader('Cache-Control', 'no-store'); response.setHeader('Referrer-Policy', 'no-referrer'); next(); });
 esignPublicRouter.get('/certificates/:publicId', (request, response) => { try { return response.json(verifyPublicCertificate(String(request.params.publicId))); } catch (caught) { return error(response, caught); } });
