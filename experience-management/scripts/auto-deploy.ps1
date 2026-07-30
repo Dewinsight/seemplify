@@ -138,19 +138,19 @@ function Invoke-Deployment([switch]$ForceDeploy) {
         $previousSupportsPostgres = $previousProject -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'backend\dist\databaseAdapter.js') -PathType Leaf) -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'scripts\verify-postgres-runtime.mjs') -PathType Leaf)
-        $previousSupportsRuntime2 = $previousProject -and (Test-ProjectSupportsPostgresRuntimeVersion $previousProject 2)
+        $previousSupportsRuntime4 = $previousProject -and (Test-ProjectSupportsPostgresRuntimeVersion $previousProject 4)
         $cutoverCommitted = Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf
         $cutoverStaged = Test-Path -LiteralPath $PostgresCutoverState -PathType Leaf
-        $runtime2Started = Test-Path -LiteralPath $PostgresRuntimeUpgradeMarker -PathType Leaf
-        $rollbackCompatible = if ($runtime2Started) { $previousSupportsRuntime2 } else { $previousSupportsPostgres }
-        if ((-not $cutoverCommitted -and -not $cutoverStaged -and -not $runtime2Started) -or
+        $runtime4Started = Test-Path -LiteralPath $PostgresRuntimeUpgradeMarker -PathType Leaf
+        $rollbackCompatible = if ($runtime4Started) { $previousSupportsRuntime4 } else { $previousSupportsPostgres }
+        if ((-not $cutoverCommitted -and -not $cutoverStaged -and -not $runtime4Started) -or
             ($cutoverCommitted -and -not $cutoverStaged -and $rollbackCompatible)) {
           if ($previousProject) { Set-Content -LiteralPath $ActiveProjectFile -Value $previousProject -Encoding utf8 } else { Remove-Item -LiteralPath $ActiveProjectFile -Force -ErrorAction SilentlyContinue }
           & (Join-Path $PSScriptRoot 'manage.ps1') -Action restart | Out-Null
           throw "service restart failed; previous compatible deployment restored: $($_.Exception.Message)"
         }
-        # A staged base cutover and a started runtime-2 upgrade are both
-        # roll-forward-only. Runtime-v1 binaries cannot enforce v2 suspension.
+        # A staged base cutover and a started runtime-4 upgrade are both
+        # roll-forward-only. Older binaries cannot enforce the v4 contracts.
         Set-Content -LiteralPath $ActiveProjectFile -Value $releaseProject -Encoding utf8
         throw "service restart failed after PostgreSQL cutover; an incompatible runtime rollback was refused: $($_.Exception.Message)"
       }

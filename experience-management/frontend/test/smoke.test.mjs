@@ -288,6 +288,12 @@ test('retains versioned assets before an isolated release becomes active', () =>
   const activate = deploy.indexOf('Set-Content -LiteralPath $ActiveProjectFile', merge);
   assert.ok(build >= 0 && merge > build && activate > merge);
 });
+test('refuses an incompatible rollback after the PostgreSQL runtime-v4 upgrade starts', () => {
+  const deploy = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'auto-deploy.ps1'), 'utf8');
+  assert.match(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 4/);
+  assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
+  assert.match(deploy, /started runtime-4 upgrade/);
+});
 test('ships the extended question library and executable respondent logic', () => {
   const types = fs.readFileSync(path.join(source, 'types.ts'), 'utf8');
   const respondent = fs.readFileSync(path.join(source, 'pages', 'PublicSurveyPage.tsx'), 'utf8');
