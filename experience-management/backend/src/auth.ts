@@ -8,7 +8,8 @@ import { isDatabaseConstraintError } from './databaseAdapter.js';
 import { sendEmailVerificationEmail, sendExistingAccountSignupNotice, sendPasswordResetEmail } from './emailService.js';
 import { EsignError, getRecipientAccountInvitation } from './esign.js';
 import {
-  ensureDefaultSpaceForUser, pendingSpaceInvitationForSignup, renamePersonalSpaceForUser, spaceSession
+  ensureDefaultSpaceForUser, listPendingSpaceInvitationsForAccount, pendingSpaceInvitationForSignup,
+  renamePersonalSpaceForUser, spaceSession
 } from './spaces.js';
 
 const cookieName = 'seemplify_experience_session';
@@ -164,7 +165,8 @@ function sessionPayload(user: SessionUser) {
     emailVerified: Boolean(user.emailVerifiedAt),
     onboardingRequired: onboardingRequired(profile),
     profile,
-    ...spaceSession(user.id)
+    ...spaceSession(user.id),
+    pendingSpaceInvitations: user.emailVerifiedAt ? listPendingSpaceInvitationsForAccount(user) : []
   };
 }
 
@@ -914,6 +916,7 @@ export function session(request: Request, response: Response) {
     onboardingRequired: false,
     profile: null,
     spaces: [],
-    activeSpace: null
+    activeSpace: null,
+    pendingSpaceInvitations: []
   });
 }

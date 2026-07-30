@@ -100,20 +100,21 @@ test('spaces isolate surveys until invitation acceptance and revoke access after
       expect(directAccess.forgedSpaceBody).toMatchObject({ code: 'SPACE_ACCESS_DENIED' });
     });
 
-    let inviteUrl = '';
-    await test.step('account A invites B and B explicitly accepts access', async () => {
+    await test.step('account A invites B and B sees the invitation after login without needing the email link', async () => {
       await pageA.goto('/settings/space');
       await expect(pageA.getByRole('heading', { name: 'Space settings' })).toBeVisible();
       await pageA.getByLabel('Email address').fill(accountB.email);
       await pageA.getByLabel('Role').selectOption('member');
       await pageA.getByRole('button', { name: 'Invite', exact: true }).click();
-      inviteUrl = await pageA.getByLabel('Share this invitation link').inputValue();
+      const inviteUrl = await pageA.getByLabel('Share this invitation link').inputValue();
       expect(inviteUrl).toContain('/join/');
 
-      await pageB.goto(inviteUrl);
-      await expect(pageB.getByRole('heading', { name: `Join ${accountA.spaceName}` })).toBeVisible();
-      await expect(pageB.getByText(`Signed in as ${accountB.email}`)).toBeVisible();
-      await pageB.getByRole('button', { name: 'Accept invitation' }).click();
+      await pageB.goto('/');
+      const invitationBar = pageB.getByRole('region', { name: 'Space invitation' });
+      await expect(invitationBar).toBeVisible();
+      await expect(invitationBar.getByText(accountA.spaceName, { exact: true })).toBeVisible();
+      await expect(invitationBar.getByText('Accepting adds and opens the space. Its content remains private until then.')).toBeVisible();
+      await invitationBar.getByRole('button', { name: `Accept invitation to ${accountA.spaceName} and open it`, exact: true }).click();
       await expect(pageB.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
       await expect(pageB.locator('#active-space-desktop')).toHaveValue(ownerSpaceId);
 

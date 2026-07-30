@@ -9,9 +9,13 @@ export interface UserProfile {
 export interface AuthSession {
   authenticated: boolean; email: string | null; user: SessionUser | null;
   emailVerified: boolean; onboardingRequired: boolean; profile: UserProfile | null;
-  spaces: SpaceSummary[]; activeSpace: SpaceSummary | null;
+  spaces: SpaceSummary[]; activeSpace: SpaceSummary | null; pendingSpaceInvitations: PendingSpaceInvitation[];
 }
 export interface SpaceSession { spaces: SpaceSummary[]; activeSpace: SpaceSummary }
+export interface PendingSpaceInvitation {
+  id: string; role: Exclude<SpaceRole, 'owner'>; expiresAt: string; createdAt: string; invitedBy: string;
+  space: Pick<SpaceSummary, 'id' | 'name'>;
+}
 export interface SpaceMember { id: string; name: string; email: string; role: SpaceRole; joinedAt: string }
 export interface SpaceInvitation {
   id: string; email: string; role: Exclude<SpaceRole, 'owner'>; expiresAt: string;

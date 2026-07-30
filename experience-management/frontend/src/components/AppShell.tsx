@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, Megaphone, Menu, Plus, Radar, Route, Settings2, Sparkles, X } from 'lucide-react';
+import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SectionTutorial } from '@/components/tutorials/SectionTutorial';
 import { tutorialForPath } from '@/lib/tutorials';
-import type { AuthSession, SpaceSession } from '@/types';
+import type { AuthSession, PendingSpaceInvitation, SpaceSession } from '@/types';
 
 const navigation = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
@@ -29,6 +29,42 @@ function Brand() {
     <img src="/brand/experience-mark.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" />
     <div><div className="text-sm font-semibold leading-4">Seemplify</div><div className="text-xs text-muted-foreground">Experience</div></div>
   </Link>;
+}
+
+function PendingInvitationBar({ invitations, acceptingId, error, onAccept }: {
+  invitations: PendingSpaceInvitation[]; acceptingId: string; error: string;
+  onAccept: (invitation: PendingSpaceInvitation) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (!invitations.length) return null;
+  const visibleInvitations = expanded ? invitations : invitations.slice(0, 4);
+  const hiddenCount = invitations.length - visibleInvitations.length;
+  return <section className="border-b bg-card px-4 py-3 sm:px-6" aria-labelledby="pending-space-invitations-heading">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-3 xl:flex-row xl:items-start">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <MailOpen className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div>
+          <h2 id="pending-space-invitations-heading" className="text-sm font-semibold">Space invitation{invitations.length === 1 ? '' : 's'}</h2>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">Accepting adds and opens the space. Its content remains private until then.</p>
+        </div>
+      </div>
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:w-[720px]">
+        {visibleInvitations.map((invitation) => <div key={invitation.id} className="flex min-w-0 items-center gap-3 border bg-background px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{invitation.space.name}</div>
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">{invitation.invitedBy} · {invitation.role}</div>
+          </div>
+          <Button size="sm" variant="outline" aria-label={`Accept invitation to ${invitation.space.name} and open it`} disabled={Boolean(acceptingId)} onClick={() => onAccept(invitation)}>
+            {acceptingId === invitation.id ? <LoaderCircle className="animate-spin" /> : null}Accept and open
+          </Button>
+        </div>)}
+        {(hiddenCount > 0 || expanded && invitations.length > 4) && <Button className="sm:col-span-2 sm:justify-self-start" size="sm" variant="ghost" onClick={() => setExpanded((current) => !current)}>
+          {expanded ? 'Show fewer invitations' : `Show ${hiddenCount} more invitation${hiddenCount === 1 ? '' : 's'}`}
+        </Button>}
+      </div>
+    </div>
+    {error && <div className="mx-auto mt-2 w-full max-w-[1440px] text-xs text-destructive" role="alert">{error}</div>}
+  </section>;
 }
 
 type RuntimeState = 'checking' | 'ready' | 'unavailable';
@@ -123,6 +159,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [runtime, setRuntime] = useState<any>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [acceptingInvitationId, setAcceptingInvitationId] = useState('');
+  const [invitationError, setInvitationError] = useState('');
   const location = useLocation();
   const tutorial = tutorialForPath(location.pathname);
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
@@ -158,6 +196,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     }).catch(() => null);
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    if (!session?.authenticated) return;
+    const timer = window.setInterval(() => {
+      void api<AuthSession>('/api/auth/session').then((next) => {
+        if (!next.authenticated) {
+          storeActiveSpaceId(null);
+          window.location.assign('/login');
+          return;
+        }
+        setSession((current) => current ? { ...current, pendingSpaceInvitations: next.pendingSpaceInvitations } : current);
+      }).catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [session?.authenticated]);
   useEffect(() => subscribeToSpaceChanges((spaceId) => {
     if (!session?.activeSpace || spaceId === session.activeSpace.id) return;
     if (!confirmDiscardForSpaceSwitch()) return;
@@ -175,6 +227,22 @@ export function AppShell({ children }: { children: ReactNode }) {
       storeActiveSpaceId(selected.activeSpace.id, false);
       window.location.replace('/');
     } catch { setSwitching(false); }
+  }
+  async function acceptInvitation(invitation: PendingSpaceInvitation) {
+    if (acceptingInvitationId || !confirmDiscardForSpaceSwitch()) return;
+    try {
+      setAcceptingInvitationId(invitation.id);
+      setInvitationError('');
+      const accepted = await api<SpaceSession & { pendingSpaceInvitations: PendingSpaceInvitation[] }>(
+        `/api/account/space-invitations/${encodeURIComponent(invitation.id)}/accept`, json('POST', {})
+      );
+      allowConfirmedSpaceSwitchUnload();
+      storeActiveSpaceId(accepted.activeSpace.id, false);
+      window.location.replace('/');
+    } catch (reason) {
+      setInvitationError(reason instanceof Error ? reason.message : 'Could not accept this invitation.');
+      setAcceptingInvitationId('');
+    }
   }
   const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(location.pathname);
   const title = location.pathname === '/' ? 'Overview' : location.pathname === '/settings/profile' ? 'Your profile' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : location.pathname.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
@@ -202,6 +270,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {creationAction && <Button asChild size="sm"><Link to={creationAction.to}><Plus />{creationAction.label}</Link></Button>}
         </div>
       </header>
+      <PendingInvitationBar invitations={session?.pendingSpaceInvitations || []} acceptingId={acceptingInvitationId} error={invitationError} onAccept={(invitation) => void acceptInvitation(invitation)} />
       <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
     </div>
   </div>;

@@ -46,9 +46,10 @@ import {
   XIntegrationError, xOAuthCookieFromHeader
 } from './xIntegration.js';
 import {
-  acceptSpaceInvitation, createSpace, createSpaceInvitation, getSpaceForUser, invitationPreview, listSpaceInvitations,
-  listSpaceMembers, listSpacesForUser, removeSpaceMember, renameSpace, resolveRequestSpace, revokeSpaceInvitation,
-  setActiveSpace, SpaceError, spaceSession, updateSpaceMember
+  acceptPendingSpaceInvitationForAccount, acceptSpaceInvitation, createSpace, createSpaceInvitation, getSpaceForUser,
+  invitationPreview, listPendingSpaceInvitationsForAccount, listSpaceInvitations, listSpaceMembers, listSpacesForUser,
+  removeSpaceMember, renameSpace, resolveRequestSpace, revokeSpaceInvitation, setActiveSpace, SpaceError, spaceSession,
+  updateSpaceMember
 } from './spaces.js';
 import { tutorialProgressRouter } from './tutorialProgress.js';
 
@@ -99,6 +100,22 @@ app.post('/api/spaces/invitations/:token/accept', noStore, (request, response) =
   try {
     const activeSpace = acceptSpaceInvitation(user, String(request.params.token));
     return response.json({ activeSpace, spaces: listSpacesForUser(user.id) });
+  } catch (error) { return sendError(response, error); }
+});
+app.post('/api/account/space-invitations/:invitationId/accept', noStore, (request, response) => {
+  const user = currentSessionUser(request);
+  if (!user) return response.status(401).json({ error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
+  if (!user.emailVerifiedAt) {
+    return response.status(403).json({ error: 'Verify your email address first.', code: 'EMAIL_VERIFICATION_REQUIRED' });
+  }
+  try {
+    const activeSpace = acceptPendingSpaceInvitationForAccount(user, String(request.params.invitationId));
+    if (!activeSpace) return response.status(404).json({ error: 'Pending invitation not found.', code: 'INVITATION_NOT_FOUND' });
+    return response.json({
+      activeSpace,
+      spaces: listSpacesForUser(user.id),
+      pendingSpaceInvitations: listPendingSpaceInvitationsForAccount(user)
+    });
   } catch (error) { return sendError(response, error); }
 });
 app.use('/api', (request, response, next) => {

@@ -132,6 +132,8 @@ function createSpaceSchema() {
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS space_invitations_space ON space_invitations(space_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS space_invitations_account_pending
+      ON space_invitations(LOWER(email),created_at DESC) WHERE accepted_at IS NULL AND revoked_at IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS space_invitations_one_pending_email
       ON space_invitations(space_id,email) WHERE accepted_at IS NULL AND revoked_at IS NULL;
     CREATE TABLE IF NOT EXISTS space_migration_quarantine (
@@ -903,6 +905,36 @@ export function listSpaceInvitations(context: SpaceContext) {
     WHERE i.space_id=? ORDER BY i.created_at DESC`).all(context.id);
 }
 
+export function listPendingSpaceInvitationsForAccount(user: { id: string; email: string }) {
+  const now = new Date().toISOString();
+  return (db.prepare(`SELECT i.id,i.role,i.expires_at,i.created_at,
+      s.id space_id,s.name space_name,u.name invited_by
+    FROM space_invitations i
+    JOIN spaces s ON s.id=i.space_id
+    JOIN users u ON u.id=i.invited_by_user_id
+    WHERE LOWER(i.email)=LOWER(?) AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>?
+      AND NOT EXISTS (SELECT 1 FROM space_memberships m WHERE m.space_id=i.space_id AND m.user_id=?)
+    ORDER BY i.created_at DESC,i.id LIMIT 100`).all(user.email, now, user.id) as any[]).map((row) => ({
+      id: String(row.id),
+      role: row.role as Exclude<SpaceRole, 'owner'>,
+      expiresAt: String(row.expires_at),
+      createdAt: String(row.created_at),
+      invitedBy: String(row.invited_by),
+      space: { id: String(row.space_id), name: String(row.space_name) }
+    }));
+}
+
+export function acceptPendingSpaceInvitationForAccount(user: { id: string; email: string }, invitationId: string) {
+  return db.transaction(() => {
+    const now = new Date().toISOString();
+    const eligible = db.prepare(`SELECT id FROM space_invitations
+      WHERE id=? AND LOWER(email)=LOWER(?) AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?`)
+      .get(invitationId, user.email, now) as { id: string } | undefined;
+    if (!eligible) return null;
+    return acceptPendingSpaceInvitation(user, eligible.id);
+  })();
+}
+
 export function revokeSpaceInvitation(context: SpaceContext, invitationId: string) {
   requireSpaceManager(context);
   const changed = db.prepare(`UPDATE space_invitations SET revoked_at=?,updated_at=?
@@ -945,12 +977,21 @@ export function acceptPendingSpaceInvitation(user: { id: string; email: string }
       throw new SpaceError(`This invitation was sent to ${row.email}. Sign in with that email address to accept it.`, 403, 'INVITATION_EMAIL_MISMATCH');
     }
     const now = new Date().toISOString();
+    // Claim the invitation before changing membership. The conditional update
+    // makes parallel acceptance attempts deterministic and rolls back with the
+    // surrounding transaction if any subsequent write fails.
+    const claimed = db.prepare(`UPDATE space_invitations SET accepted_at=?,accepted_by_user_id=?,updated_at=?
+      WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?`)
+      .run(now, user.id, now, row.id, now).changes;
+    if (claimed !== 1) return null;
     db.prepare(`INSERT INTO space_memberships (space_id,user_id,role,joined_at,updated_at)
       VALUES (?,?,?,?,?) ON CONFLICT(space_id,user_id) DO UPDATE SET
-      role=CASE WHEN space_memberships.role='owner' THEN 'owner' ELSE excluded.role END,updated_at=excluded.updated_at`)
+      role=CASE
+        WHEN space_memberships.role='owner' THEN 'owner'
+        WHEN space_memberships.role='admin' OR excluded.role='admin' THEN 'admin'
+        ELSE 'member'
+      END,updated_at=excluded.updated_at`)
       .run(row.space_id, user.id, row.role, now, now);
-    db.prepare(`UPDATE space_invitations SET accepted_at=?,accepted_by_user_id=?,updated_at=?
-      WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL`).run(now, user.id, now, row.id);
     db.prepare('UPDATE users SET active_space_id=?,updated_at=? WHERE id=?').run(row.space_id, now, user.id);
     return getSpaceForUser(user.id, row.space_id)!;
   })();
