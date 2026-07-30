@@ -1,9 +1,14 @@
 import crypto from 'node:crypto';
-import Database from 'better-sqlite3';
 import { config } from './config.js';
+import { createDatabase } from './databaseAdapter.js';
 import type { AiJob, Collector, Journey, JourneyProvenance, JourneyVersion, JourneyVersionSummary, Question, ResponseRecord, SocialMention, Survey } from './types.js';
 
-export const db = new Database(config.databasePath);
+export const db = createDatabase(config);
+
+// SQLite retains its historical in-process migrations for development and
+// isolated tests. PostgreSQL is provisioned only by the offline, checksummed
+// migrator and is version-asserted before this module can continue loading.
+if (db.provider === 'sqlite') {
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
@@ -1369,6 +1374,7 @@ if (!new Set((db.prepare('PRAGMA table_info(social_reply_drafts)').all() as Arra
     CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_idempotency
       ON intelligence_reports(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;`);
 }
+}
 
 const parseJson = <T>(value: unknown, fallback: T): T => {
   try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; }
@@ -1613,6 +1619,7 @@ export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, s
 
 export const claimNextJob = db.transaction((): AiJob | null => {
   const now = new Date().toISOString();
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE OF candidate SKIP LOCKED' : '';
   // JavaScript timestamps have millisecond precision, so rowid preserves
   // insertion-order FIFO when several durable jobs are enqueued together.
   const row = db.prepare(`SELECT candidate.* FROM ai_jobs candidate
@@ -1627,7 +1634,7 @@ export const claimNextJob = db.transaction((): AiJob | null => {
       COALESCE((SELECT MAX(started_at) FROM ai_jobs served
         WHERE served.space_id=candidate.space_id AND served.started_at IS NOT NULL),''),
       candidate.created_at,candidate.rowid
-    LIMIT 1`).get(now, now) as any;
+    LIMIT 1${lock}`).get(now, now) as any;
   if (!row) return null;
   const changed = db.prepare(`UPDATE ai_jobs SET state='processing',stage='dispatching',progress=5,attempt=attempt+1,started_at=?,updated_at=? WHERE id=? AND state='queued'`).run(now, now, row.id).changes;
   return changed ? getJob(row.id) : null;

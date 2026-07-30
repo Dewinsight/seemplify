@@ -1538,7 +1538,9 @@ export function verifyPublicCertificate(publicId: string) {
 
 const claimEmailDelivery = db.transaction(() => {
   const timestamp = now();
-  const row = db.prepare("SELECT * FROM esign_email_deliveries WHERE state='queued' AND scheduled_at<=? ORDER BY scheduled_at,created_at LIMIT 1").get(timestamp) as any;
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE SKIP LOCKED' : '';
+  const row = db.prepare(`SELECT * FROM esign_email_deliveries WHERE state='queued' AND scheduled_at<=?
+    ORDER BY scheduled_at,created_at LIMIT 1${lock}`).get(timestamp) as any;
   if (!row) return null;
   const changed = db.prepare("UPDATE esign_email_deliveries SET state='sending',attempt=attempt+1,updated_at=? WHERE id=? AND state='queued'").run(timestamp, row.id).changes;
   return changed ? db.prepare('SELECT * FROM esign_email_deliveries WHERE id=?').get(row.id) as any : null;

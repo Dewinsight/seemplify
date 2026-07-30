@@ -514,6 +514,7 @@ export function reconcileCampaignCompletion(campaignId: string) { refreshCampaig
 
 export const claimNextDelivery = db.transaction(() => {
   const now = new Date().toISOString();
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE OF d SKIP LOCKED' : '';
   const row = db.prepare(`SELECT d.* FROM campaign_deliveries d
     JOIN campaigns c ON c.id=d.campaign_id JOIN campaign_contacts r ON r.id=d.contact_id
     WHERE d.state='queued' AND d.scheduled_at<=? AND c.status='active' AND r.status='active'
@@ -532,7 +533,7 @@ export const claimNextDelivery = db.transaction(() => {
       SELECT MAX(served.first_attempt_at) FROM campaign_deliveries served
       JOIN campaigns served_campaign ON served_campaign.id=served.campaign_id
       WHERE served_campaign.space_id=c.space_id AND served.first_attempt_at IS NOT NULL
-    ),''),d.scheduled_at,d.created_at,d.id LIMIT 1`).get(now, now) as any;
+    ),''),d.scheduled_at,d.created_at,d.id LIMIT 1${lock}`).get(now, now) as any;
   if (!row) return null;
   const changed = db.prepare("UPDATE campaign_deliveries SET state='sending',attempt=attempt+1,first_attempt_at=COALESCE(first_attempt_at,?),updated_at=? WHERE id=? AND state='queued'").run(now, now, row.id).changes;
   return changed ? rowDelivery(db.prepare('SELECT * FROM campaign_deliveries WHERE id=?').get(row.id)) : null;

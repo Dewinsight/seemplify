@@ -9,6 +9,15 @@ $RepositoryDir = Split-Path -Parent $SourceProjectDir
 $RuntimeDir = Join-Path $RepositoryDir '.local-runtime\experience-management'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 $ActiveProjectFile = Join-Path $RuntimeDir 'active-project-path'
+$SqliteDatabasePath = Join-Path $RuntimeDir 'experience.sqlite'
+$PostgresPasswordFile = Join-Path $RuntimeDir 'postgres-password'
+$PostgresOwnerPasswordFile = Join-Path $RuntimeDir 'postgres-owner-password'
+$PostgresContainer = 'xplorer-postgres'
+$PostgresDatabase = 'seemplify_experience'
+$PostgresRole = 'seemplify_experience_app'
+$PostgresOwnerRole = 'seemplify_experience_owner'
+$PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
+$PostgresMigrationLog = Join-Path $RuntimeDir 'postgres-migration.log'
 $PidFile = Join-Path $RuntimeDir 'server.pid'
 $PasswordFile = Join-Path $RuntimeDir 'admin-password'
 $SessionSecretFile = Join-Path $RuntimeDir 'session-secret'
@@ -58,6 +67,8 @@ function Protect-RuntimeSecret([string]$Path) {
 function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $PasswordFile)) { Set-Content -LiteralPath $PasswordFile -Value (New-RandomSecret 24) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $PostgresPasswordFile)) { Set-Content -LiteralPath $PostgresPasswordFile -Value (New-RandomSecret 48) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $PostgresOwnerPasswordFile)) { Set-Content -LiteralPath $PostgresOwnerPasswordFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $XCredentialEncryptionKeyFile)) { Set-Content -LiteralPath $XCredentialEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $EsignEncryptionKeyFile)) { Set-Content -LiteralPath $EsignEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
@@ -65,12 +76,219 @@ function Initialize-Runtime {
   New-Item -ItemType Directory -Force $KnowledgeStorageDir | Out-Null
   New-Item -ItemType Directory -Force $KnowledgeRuntimeDir | Out-Null
   foreach ($secretFile in @(
-    $PasswordFile, $SessionSecretFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
+    $PasswordFile, $SessionSecretFile, $PostgresPasswordFile, $PostgresOwnerPasswordFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
     $XConsumerKeyFile, $XConsumerSecretFile, $XBearerTokenFile, $XAccessTokenFile,
     $XAccessTokenSecretFile, $XClientIdFile, $XClientSecretFile, $CloudflareTunnelTokenFile
   )) { Protect-RuntimeSecret $secretFile }
   $envFile = Join-Path $SourceProjectDir 'backend\.env'
   if (-not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath (Join-Path $SourceProjectDir 'backend\.env.example') -Destination $envFile }
+}
+function Get-PostgresContainerIdentity {
+  $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+  if (-not $docker) { throw 'Docker Desktop is required for the installed PostgreSQL runtime.' }
+  $raw = & $docker.Source inspect $PostgresContainer 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $raw) { throw "The PostgreSQL container '$PostgresContainer' is not installed." }
+  $container = @($raw | ConvertFrom-Json)[0]
+  $values = @{}
+  foreach ($entry in @($container.Config.Env)) {
+    $pair = $entry -split '=', 2
+    if ($pair.Count -eq 2) { $values[$pair[0]] = $pair[1] }
+  }
+  if (-not $values.POSTGRES_USER -or -not $values.POSTGRES_DB) { throw 'The PostgreSQL container identity is incomplete.' }
+  return [ordered]@{ Docker=$docker.Source; User=$values.POSTGRES_USER; Database=$values.POSTGRES_DB; Running=[bool]$container.State.Running }
+}
+function Invoke-PostgresAdminSql([System.Collections.IDictionary]$Identity, [string]$Database, [string]$Sql) {
+  $Sql | & $Identity.Docker exec -i $PostgresContainer psql -X -v ON_ERROR_STOP=1 -q -U $Identity.User -d $Database
+  if ($LASTEXITCODE -ne 0) { throw "PostgreSQL administration failed for database '$Database'." }
+}
+function Initialize-Postgres {
+  $identity = Get-PostgresContainerIdentity
+  if (-not $identity.Running) {
+    & $identity.Docker start $PostgresContainer | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "The PostgreSQL container '$PostgresContainer' could not be started." }
+  }
+  $deadline = (Get-Date).AddSeconds(30)
+  do {
+    & $identity.Docker exec $PostgresContainer pg_isready -q -U $identity.User -d $identity.Database 2>$null
+    if ($LASTEXITCODE -eq 0) { break }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+  if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not become ready within 30 seconds.' }
+
+  # Keep the shared database engine recoverable across Windows/Docker restarts.
+  & $identity.Docker update --restart unless-stopped $PostgresContainer | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'The PostgreSQL restart policy could not be configured.' }
+
+  $password = (Get-Content -LiteralPath $PostgresPasswordFile -Raw).Trim()
+  $ownerPassword = (Get-Content -LiteralPath $PostgresOwnerPasswordFile -Raw).Trim()
+  if (-not $password -or -not $ownerPassword) { throw 'An Experience PostgreSQL password file is empty.' }
+  $previousPassword = [Environment]::GetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_DB_PASSWORD', 'Process')
+  $previousOwnerPassword = [Environment]::GetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', 'Process')
+  [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_DB_PASSWORD', $password, 'Process')
+  [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', $ownerPassword, 'Process')
+  try {
+    $roleSql = @'
+\getenv app_password SEEMPLIFY_EXPERIENCE_DB_PASSWORD
+\getenv owner_password SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD
+DO $seemplify$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__OWNER_ROLE__') THEN
+    CREATE ROLE __OWNER_ROLE__ NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__APP_ROLE__') THEN
+    CREATE ROLE __APP_ROLE__ LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+END
+$seemplify$;
+ALTER ROLE __OWNER_ROLE__ NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'owner_password';
+ALTER ROLE __APP_ROLE__ LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'app_password';
+ALTER ROLE __APP_ROLE__ SET statement_timeout='60s';
+ALTER ROLE __APP_ROLE__ SET lock_timeout='5s';
+ALTER ROLE __APP_ROLE__ SET idle_in_transaction_session_timeout='30s';
+'@.Replace('__OWNER_ROLE__', $PostgresOwnerRole).Replace('__APP_ROLE__', $PostgresRole)
+    $roleSql | & $identity.Docker exec -i -e SEEMPLIFY_EXPERIENCE_DB_PASSWORD -e SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD $PostgresContainer psql -X -v ON_ERROR_STOP=1 -q -U $identity.User -d $identity.Database
+    if ($LASTEXITCODE -ne 0) { throw 'The isolated Experience PostgreSQL roles could not be configured.' }
+  } finally {
+    [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_DB_PASSWORD', $previousPassword, 'Process')
+    [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', $previousOwnerPassword, 'Process')
+  }
+
+  $exists = @(& $identity.Docker exec $PostgresContainer psql -X -Atq -U $identity.User -d $identity.Database -c "SELECT 1 FROM pg_database WHERE datname='$PostgresDatabase'") -join ''
+  if ($LASTEXITCODE -ne 0) { throw 'The Experience PostgreSQL database could not be inspected.' }
+  if ($exists.Trim() -ne '1') {
+    & $identity.Docker exec $PostgresContainer createdb -U $identity.User -O $PostgresOwnerRole $PostgresDatabase
+    if ($LASTEXITCODE -ne 0) { throw 'The Experience PostgreSQL database could not be created.' }
+  }
+  Invoke-PostgresAdminSql $identity $identity.Database "ALTER DATABASE $PostgresDatabase OWNER TO $PostgresOwnerRole; REVOKE CONNECT ON DATABASE $PostgresDatabase FROM PUBLIC; GRANT CONNECT ON DATABASE $PostgresDatabase TO $PostgresOwnerRole,$PostgresRole;"
+  Invoke-PostgresAdminSql $identity $PostgresDatabase @"
+ALTER SCHEMA public OWNER TO $PostgresOwnerRole;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE CREATE ON SCHEMA public FROM $PostgresRole;
+GRANT CONNECT ON DATABASE $PostgresDatabase TO $PostgresRole;
+GRANT USAGE ON SCHEMA public TO $PostgresRole;
+"@
+}
+function Set-PostgresOwnerLogin([bool]$Enabled) {
+  $identity = Get-PostgresContainerIdentity
+  if (-not $Enabled) {
+    Invoke-PostgresAdminSql $identity $identity.Database "ALTER ROLE $PostgresOwnerRole NOLOGIN;"
+    return
+  }
+  $password = (Get-Content -LiteralPath $PostgresOwnerPasswordFile -Raw).Trim()
+  if (-not $password) { throw 'The Experience PostgreSQL migration-owner password file is empty.' }
+  $previous = [Environment]::GetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', 'Process')
+  [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', $password, 'Process')
+  try {
+    @"
+\getenv owner_password SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD
+ALTER ROLE $PostgresOwnerRole LOGIN PASSWORD :'owner_password';
+"@ | & $identity.Docker exec -i -e SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD $PostgresContainer psql -X -v ON_ERROR_STOP=1 -q -U $identity.User -d $identity.Database
+    if ($LASTEXITCODE -ne 0) { throw 'The PostgreSQL migration owner could not be enabled.' }
+  } finally {
+    [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', $previous, 'Process')
+  }
+}
+function Grant-PostgresRuntimePrivileges {
+  $identity = Get-PostgresContainerIdentity
+  Invoke-PostgresAdminSql $identity $PostgresDatabase @"
+GRANT CONNECT ON DATABASE $PostgresDatabase TO $PostgresRole;
+GRANT USAGE ON SCHEMA public TO $PostgresRole;
+GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO $PostgresRole;
+GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA public TO $PostgresRole;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO $PostgresRole;
+ALTER DEFAULT PRIVILEGES FOR ROLE $PostgresOwnerRole IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO $PostgresRole;
+ALTER DEFAULT PRIVILEGES FOR ROLE $PostgresOwnerRole IN SCHEMA public GRANT USAGE,SELECT,UPDATE ON SEQUENCES TO $PostgresRole;
+ALTER DEFAULT PRIVILEGES FOR ROLE $PostgresOwnerRole IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO $PostgresRole;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE CREATE ON SCHEMA public FROM $PostgresRole;
+"@
+}
+function Get-PostgresCutoverMarker {
+  if (-not (Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf)) { return $null }
+  try { $marker = Get-Content -LiteralPath $PostgresCutoverMarker -Raw | ConvertFrom-Json } catch { throw 'The PostgreSQL cutover marker is malformed.' }
+  if ([int]$marker.schemaVersion -ne 1 -or [string]$marker.database -ne $PostgresDatabase -or [string]$marker.sourceSha256 -notmatch '^[a-f0-9]{64}$') {
+    throw 'The PostgreSQL cutover marker does not match the managed runtime.'
+  }
+  return $marker
+}
+function Set-PostgresRuntimeEnvironment([string]$SourceSha256 = '') {
+  $env:DATABASE_PROVIDER='postgres'
+  $env:POSTGRES_HOST='127.0.0.1'
+  $env:POSTGRES_PORT='5432'
+  $env:POSTGRES_DATABASE=$PostgresDatabase
+  $env:POSTGRES_USER=$PostgresRole
+  $env:POSTGRES_PASSWORD_FILE=$PostgresPasswordFile
+  $env:POSTGRES_SSL='false'
+  $env:POSTGRES_SCHEMA_VERSION='1'
+  if ($SourceSha256) { $env:POSTGRES_SOURCE_SHA256=$SourceSha256 } else { Remove-Item Env:POSTGRES_SOURCE_SHA256 -ErrorAction SilentlyContinue }
+  # Retained as the immutable migration/rollback source. PostgreSQL is the
+  # only runtime database once the cutover marker has been written.
+  $env:DATABASE_PATH=$SqliteDatabasePath
+}
+function Initialize-PostgresCutover([string]$ProjectDir) {
+  $migrator = Join-Path $ProjectDir 'scripts\migrate-sqlite-to-postgres.mjs'
+  $adapter = Join-Path $ProjectDir 'backend\dist\databaseAdapter.js'
+  $bootstrapper = Join-Path $ProjectDir 'scripts\bootstrap-sqlite-store.mjs'
+  $verifier = Join-Path $ProjectDir 'scripts\verify-postgres-runtime.mjs'
+  $postgresCapable = (Test-Path -LiteralPath $migrator -PathType Leaf) -and (Test-Path -LiteralPath $adapter -PathType Leaf) -and
+    (Test-Path -LiteralPath $bootstrapper -PathType Leaf) -and (Test-Path -LiteralPath $verifier -PathType Leaf)
+  if (-not $postgresCapable) {
+    if (Get-PostgresCutoverMarker) { throw 'This release predates the committed PostgreSQL cutover and cannot be started safely.' }
+    # Old isolated releases remain rollback-compatible with the untouched
+    # SQLite source only until the PostgreSQL cutover is committed.
+    $env:DATABASE_PROVIDER='sqlite'
+    $env:DATABASE_PATH=$SqliteDatabasePath
+    return
+  }
+
+  Initialize-Postgres
+  $node = Get-Command node.exe -ErrorAction Stop
+  $marker = Get-PostgresCutoverMarker
+  if ($marker) {
+    Grant-PostgresRuntimePrivileges
+    Set-PostgresRuntimeEnvironment ([string]$marker.sourceSha256)
+    $verifyOutput = @(& $node.Source $verifier --json 2>&1)
+    foreach ($line in $verifyOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
+    if ($LASTEXITCODE -ne 0) { throw "The committed PostgreSQL runtime failed verification. See $PostgresMigrationLog." }
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $SqliteDatabasePath -PathType Leaf)) {
+    $bootstrapOutput = @(& $node.Source $bootstrapper --sqlite $SqliteDatabasePath --json 2>&1)
+    foreach ($line in $bootstrapOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
+    if ($LASTEXITCODE -ne 0) { throw "The empty Experience database could not be bootstrapped. See $PostgresMigrationLog." }
+  }
+  $backupDir = Join-Path $RuntimeDir 'backups'
+  New-Item -ItemType Directory -Force $backupDir | Out-Null
+  Set-PostgresOwnerLogin $true
+  try {
+    $migrationOutput = @(& $node.Source $migrator --sqlite $SqliteDatabasePath --backup-dir $backupDir --mode migrate --pg-user $PostgresOwnerRole --pg-password-file $PostgresOwnerPasswordFile --json 2>&1)
+    $migrationExitCode = $LASTEXITCODE
+  } finally { Set-PostgresOwnerLogin $false }
+  foreach ($line in $migrationOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
+  if ($migrationExitCode -ne 0) {
+    throw "The SQLite to PostgreSQL migration failed. See $PostgresMigrationLog."
+  }
+  $completion = $null
+  foreach ($line in $migrationOutput) {
+    try {
+      $event = ([string]$line) | ConvertFrom-Json
+      if ($event.event -eq 'migration_complete') { $completion = $event }
+    } catch { }
+  }
+  if (-not $completion -or [string]$completion.sourceSha256 -notmatch '^[a-f0-9]{64}$') {
+    throw "The PostgreSQL migrator exited without a valid completion manifest. See $PostgresMigrationLog."
+  }
+  Grant-PostgresRuntimePrivileges
+  Set-PostgresRuntimeEnvironment ([string]$completion.sourceSha256)
+  $verifyOutput = @(& $node.Source $verifier --json 2>&1)
+  foreach ($line in $verifyOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
+  if ($LASTEXITCODE -ne 0) { throw "PostgreSQL was migrated but failed the read-only application verification. SQLite remains authoritative. See $PostgresMigrationLog." }
+
+  $markerValue = [ordered]@{ schemaVersion=1; database=$PostgresDatabase; sourceSha256=[string]$completion.sourceSha256; committedAt=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json -Compress
+  $markerTemp = "$PostgresCutoverMarker.pending"
+  Set-Content -LiteralPath $markerTemp -Value $markerValue -Encoding ascii
+  Move-Item -LiteralPath $markerTemp -Destination $PostgresCutoverMarker -Force
 }
 function Get-ServerProcess {
   if (-not (Test-Path -LiteralPath $PidFile)) { return $null }
@@ -84,6 +302,7 @@ function Start-Server {
   if (Get-ServerProcess) { return }
   $ProjectDir = Get-ProjectDir
   if (-not (Test-Path (Join-Path $ProjectDir 'backend\dist\server.js'))) { & npm.cmd run build --prefix $ProjectDir; if ($LASTEXITCODE -ne 0) { throw 'Experience build failed.' } }
+  Initialize-PostgresCutover $ProjectDir
   $env:HOST='127.0.0.1'; $env:PORT='5410'; $env:PUBLIC_URL='https://experience.aiinnigeria.com'
   $env:ADMIN_PASSWORD_FILE=$PasswordFile; $env:SESSION_SECRET_FILE=$SessionSecretFile
   $env:BREVO_WEBHOOK_SECRET_FILE=$BrevoWebhookSecretFile
@@ -98,7 +317,7 @@ function Start-Server {
   $env:X_SEED_CONSUMER_KEY_FILE=$XConsumerKeyFile; $env:X_SEED_CONSUMER_SECRET_FILE=$XConsumerSecretFile
   $env:X_SEED_BEARER_TOKEN_FILE=$XBearerTokenFile; $env:X_SEED_ACCESS_TOKEN_FILE=$XAccessTokenFile; $env:X_SEED_ACCESS_TOKEN_SECRET_FILE=$XAccessTokenSecretFile
   $env:X_SEED_CLIENT_ID_FILE=$XClientIdFile; $env:X_SEED_CLIENT_SECRET_FILE=$XClientSecretFile
-  $env:DATABASE_PATH=(Join-Path $RuntimeDir 'experience.sqlite'); $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
+  $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
   $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
   # The shared CRM file supplies Brevo credentials only. Experience owns its
   # sender identity so an isolated deployment cannot inherit another product's branding.
@@ -116,9 +335,14 @@ function Set-AutoStart([bool]$Enabled) {
   $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($StartupShortcut); $shortcut.TargetPath = 'powershell.exe'; $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot 'autostart.ps1')`""; $shortcut.WorkingDirectory = $ProjectDir; $shortcut.Save()
 }
 function Get-Status {
-  $process = Get-ServerProcess; $healthy = $false; try { $healthy = (Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:5410/health' -TimeoutSec 3).StatusCode -eq 200 } catch {}
+  $process = Get-ServerProcess; $healthy = $false; $health = $null; $reportedDatabaseReady = $false
+  try {
+    $health = Invoke-RestMethod 'http://127.0.0.1:5410/health' -TimeoutSec 3
+    $reportedDatabaseReady = if ($health.PSObject.Properties.Name -contains 'databaseReady') { [bool]$health.databaseReady } else { $health.status -eq 'ok' }
+    $healthy = $health.status -eq 'ok' -and $reportedDatabaseReady
+  } catch {}
   $project = Get-ProjectDir
-  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); esignEncryptionConfigured=(Test-Path $EsignEncryptionKeyFile); knowledgeRuntimeConfigured=(Test-Path $KnowledgeRuntimeSecretFile); knowledgeRuntimeUrl='http://127.0.0.1:11540'; knowledgeStorageDir=$KnowledgeStorageDir; xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
+  return [ordered]@{ installed=$true; running=[bool]$process; pid=if($process){$process.ProcessId}else{$null}; healthy=$healthy; url='http://127.0.0.1:5410'; publicUrl='https://experience.aiinnigeria.com'; projectDir=$project; isolatedDeployment=($project -ne $SourceProjectDir); databaseProvider=if($health){$health.database}else{'unknown'}; databaseReady=if($health){$reportedDatabaseReady}else{$false}; databaseSchemaVersion=if($health){$health.databaseSchemaVersion}else{$null}; postgresDatabase=$PostgresDatabase; postgresRole=$PostgresRole; postgresOwnerRole=$PostgresOwnerRole; postgresCutoverCommitted=(Test-Path $PostgresCutoverMarker); postgresCredentialConfigured=((Test-Path $PostgresPasswordFile) -and (Test-Path $PostgresOwnerPasswordFile)); sqliteRecoverySource=$SqliteDatabasePath; authConfigured=((Test-Path $PasswordFile) -and (Test-Path $SessionSecretFile)); brevoWebhookSecretConfigured=(Test-Path $BrevoWebhookSecretFile); xCredentialEncryptionConfigured=(Test-Path $XCredentialEncryptionKeyFile); esignEncryptionConfigured=(Test-Path $EsignEncryptionKeyFile); knowledgeRuntimeConfigured=(Test-Path $KnowledgeRuntimeSecretFile); knowledgeRuntimeUrl='http://127.0.0.1:11540'; knowledgeStorageDir=$KnowledgeStorageDir; xSeedCredentialsConfigured=((Test-Path $XConsumerKeyFile) -and (Test-Path $XConsumerSecretFile) -and (Test-Path $XBearerTokenFile)); adminEmail='admin@seemplify.local'; passwordFile=$PasswordFile; autoStart=(Test-Path $StartupShortcut); stdoutLog=$StdoutLog; stderrLog=$StderrLog }
 }
-switch ($Action) { 'initialize' { Initialize-Runtime }; 'start' { Start-Server }; 'stop' { Stop-Server }; 'restart' { Stop-Server; Start-Server }; 'enable-auto-start' { Initialize-Runtime; Set-AutoStart $true }; 'disable-auto-start' { Set-AutoStart $false }; 'status' {} }
+switch ($Action) { 'initialize' { Initialize-Runtime; Initialize-Postgres }; 'start' { Start-Server }; 'stop' { Stop-Server }; 'restart' { Stop-Server; Start-Server }; 'enable-auto-start' { Initialize-Runtime; Initialize-Postgres; Set-AutoStart $true }; 'disable-auto-start' { Set-AutoStart $false }; 'status' {} }
 $status = Get-Status; if ($Json) { $status | ConvertTo-Json -Compress } else { [pscustomobject]$status | Format-List }

@@ -261,8 +261,9 @@ const applyKnowledgeSchema = db.transaction(() => {
   db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
     .run(9, 'knowledge_graph_rag_control_plane', new Date().toISOString());
 });
-applyKnowledgeSchema();
+if (db.provider === 'sqlite') applyKnowledgeSchema();
 
+if (db.provider === 'sqlite') {
 const knowledgeBaseColumns = new Set((db.prepare('PRAGMA table_info(knowledge_bases)').all() as Array<{ name: string }>).map((column) => column.name));
 if (!knowledgeBaseColumns.has('privacy')) db.exec("ALTER TABLE knowledge_bases ADD COLUMN privacy TEXT NOT NULL DEFAULT 'space'");
 const knowledgeDocumentColumns = new Set((db.prepare('PRAGMA table_info(knowledge_documents)').all() as Array<{ name: string }>).map((column) => column.name));
@@ -272,9 +273,9 @@ if (!knowledgeAuditColumns.has('ai_job_id')) db.exec('ALTER TABLE knowledge_audi
 
 // SQLite considers NULL values distinct inside a regular UNIQUE constraint.
 // This partial index enforces one live copy of a document per knowledge base.
-db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_documents_live_sha
+if (db.provider === 'sqlite') db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_documents_live_sha
   ON knowledge_documents(knowledge_base_id,sha256) WHERE deleted_at IS NULL`);
-db.exec(`
+if (db.provider === 'sqlite') db.exec(`
   CREATE TABLE IF NOT EXISTS knowledge_query_snapshots (
     request_id TEXT PRIMARY KEY,
     space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -322,6 +323,7 @@ db.exec(`
 `);
 const knowledgeCleanupColumns = new Set((db.prepare('PRAGMA table_info(knowledge_file_cleanup)').all() as Array<{ name: string }>).map((column) => column.name));
 if (!knowledgeCleanupColumns.has('retry_at')) db.exec('ALTER TABLE knowledge_file_cleanup ADD COLUMN retry_at TEXT');
+}
 db.prepare(`UPDATE knowledge_file_cleanup SET state='pending',retry_at=NULL,updated_at=? WHERE state='processing'`)
   .run(new Date().toISOString());
 
@@ -619,6 +621,7 @@ export function queueKnowledgeBaseDelete(knowledgeBaseId: string, spaceId: strin
 
 export const claimNextKnowledgeJob = db.transaction((): KnowledgeJobRecord | null => {
   const now = new Date().toISOString();
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE OF candidate SKIP LOCKED' : '';
   const row = db.prepare(`SELECT candidate.* FROM knowledge_jobs candidate
     WHERE candidate.state='queued' AND (candidate.retry_at IS NULL OR candidate.retry_at<=?)
       AND NOT EXISTS (SELECT 1 FROM knowledge_jobs active WHERE active.knowledge_base_id=candidate.knowledge_base_id AND active.state='processing')
@@ -629,7 +632,7 @@ export const claimNextKnowledgeJob = db.transaction((): KnowledgeJobRecord | nul
         ORDER BY queued.created_at,queued.rowid LIMIT 1)
     ORDER BY (SELECT COUNT(*) FROM knowledge_jobs active WHERE active.space_id=candidate.space_id AND active.state='processing'),
       COALESCE((SELECT MAX(started_at) FROM knowledge_jobs served WHERE served.space_id=candidate.space_id AND served.started_at IS NOT NULL),''),
-      candidate.created_at,candidate.rowid LIMIT 1`).get(now, now) as any;
+      candidate.created_at,candidate.rowid LIMIT 1${lock}`).get(now, now) as any;
   if (!row) return null;
   const targetVersion = Number((db.prepare('SELECT current_version FROM knowledge_bases WHERE id=? AND space_id=?')
     .get(row.knowledge_base_id, row.space_id) as any)?.current_version || 0) + 1;

@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import { config } from './config.js';
 import { db } from './database.js';
+import { isDatabaseConstraintError } from './databaseAdapter.js';
 import { sendEmailVerificationEmail, sendExistingAccountSignupNotice, sendPasswordResetEmail } from './emailService.js';
 import { EsignError, getRecipientAccountInvitation } from './esign.js';
 import {
@@ -498,7 +499,7 @@ export async function signup(request: Request, response: Response) {
     ));
   }
   catch (error: any) {
-    if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
+    if (isDatabaseConstraintError(error)) {
       const racedUser = userByEmail(email);
       const delivery = racedUser
         ? await deliverExistingSignupAttempt(racedUser, password, pendingInvitation?.id || null, inviteToken, returnPath)

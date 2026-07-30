@@ -5,13 +5,15 @@ import { createJob, db, getJob, listSocialMentionsByIdsForSpace } from './databa
 import { publishEvent } from './events.js';
 import './spaces.js';
 
-const intelligenceColumns = new Set((db.prepare('PRAGMA table_info(intelligence_reports)').all() as Array<{ name: string }>).map((column) => column.name));
-if (!intelligenceColumns.has('knowledge_refs_json')) {
-  db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
+if (db.provider === 'sqlite') {
+  const intelligenceColumns = new Set((db.prepare('PRAGMA table_info(intelligence_reports)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!intelligenceColumns.has('knowledge_refs_json')) {
+    db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  db.exec(`DROP INDEX IF EXISTS intelligence_reports_one_active_request;
+    CREATE UNIQUE INDEX intelligence_reports_one_active_request
+      ON intelligence_reports(space_id,user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued'`);
 }
-db.exec(`DROP INDEX IF EXISTS intelligence_reports_one_active_request;
-  CREATE UNIQUE INDEX intelligence_reports_one_active_request
-    ON intelligence_reports(space_id,user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued'`);
 
 export class IntelligenceError extends Error {
   status: number;

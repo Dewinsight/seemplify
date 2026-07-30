@@ -1354,8 +1354,9 @@ const claimNextSync = db.transaction(() => {
   const timestamp = now();
   const billingStatus = getApp()?.billing_status || 'unknown';
   if (billingStatus === 'credits_depleted') return null;
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE SKIP LOCKED' : '';
   const row = db.prepare(`SELECT * FROM x_sync_jobs WHERE state IN ('queued','waiting_rate_limit') AND (run_after IS NULL OR run_after<=?)
-    AND (?<>'checking_credits' OR credit_probe=1) ORDER BY created_at LIMIT 1`).get(timestamp, billingStatus) as any;
+    AND (?<>'checking_credits' OR credit_probe=1) ORDER BY created_at LIMIT 1${lock}`).get(timestamp, billingStatus) as any;
   if (!row) return null;
   const changed = db.prepare(`UPDATE x_sync_jobs SET state='processing',stage='starting',progress=5,attempt=attempt+1,run_after=NULL,started_at=COALESCE(started_at,?),updated_at=? WHERE id=? AND state IN ('queued','waiting_rate_limit')`)
     .run(timestamp, timestamp, row.id).changes;

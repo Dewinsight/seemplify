@@ -707,7 +707,7 @@ function initializeSpaces() {
   if (violations.length) throw new Error('Space migration left invalid foreign keys.');
 }
 
-initializeSpaces();
+if (db.provider === 'sqlite') initializeSpaces();
 
 export function ensureDefaultSpaceForUser(user: { id: string; name: string }, requestedName?: unknown) {
   return db.transaction(() => {

@@ -14,6 +14,7 @@ $WatcherOutputLog = Join-Path $RuntimeDir 'auto-deploy.stdout.log'
 $WatcherErrorLog = Join-Path $RuntimeDir 'auto-deploy.stderr.log'
 $DeployedFile = Join-Path $RuntimeDir 'deployed-tree'
 $ActiveProjectFile = Join-Path $RuntimeDir 'active-project-path'
+$PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
@@ -86,9 +87,19 @@ function Invoke-Deployment([switch]$ForceDeploy) {
       try {
         & (Join-Path $PSScriptRoot 'manage.ps1') -Action restart | Out-Null
       } catch {
-        if ($previousProject) { Set-Content -LiteralPath $ActiveProjectFile -Value $previousProject -Encoding utf8 } else { Remove-Item -LiteralPath $ActiveProjectFile -Force -ErrorAction SilentlyContinue }
-        & (Join-Path $PSScriptRoot 'manage.ps1') -Action restart | Out-Null
-        throw "service restart failed; previous deployment restored: $($_.Exception.Message)"
+        $previousSupportsPostgres = $previousProject -and
+          (Test-Path -LiteralPath (Join-Path $previousProject 'backend\dist\databaseAdapter.js') -PathType Leaf) -and
+          (Test-Path -LiteralPath (Join-Path $previousProject 'scripts\verify-postgres-runtime.mjs') -PathType Leaf)
+        if (-not (Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf) -or $previousSupportsPostgres) {
+          if ($previousProject) { Set-Content -LiteralPath $ActiveProjectFile -Value $previousProject -Encoding utf8 } else { Remove-Item -LiteralPath $ActiveProjectFile -Force -ErrorAction SilentlyContinue }
+          & (Join-Path $PSScriptRoot 'manage.ps1') -Action restart | Out-Null
+          throw "service restart failed; previous compatible deployment restored: $($_.Exception.Message)"
+        }
+        # Once PostgreSQL has accepted writes, an older SQLite-only release is
+        # not a valid rollback target. Keep the new release selected for a
+        # repair/retry instead of silently forking production data.
+        Set-Content -LiteralPath $ActiveProjectFile -Value $releaseProject -Encoding utf8
+        throw "service restart failed after PostgreSQL cutover; SQLite rollback was refused: $($_.Exception.Message)"
       }
       $tree | Set-Content -LiteralPath $DeployedFile -Encoding ascii
       Write-DeployLog "Deployed $tree from $DeploymentRef at $commit into isolated release $releaseDir."

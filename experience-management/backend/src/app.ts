@@ -17,6 +17,7 @@ import {
   getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJourneyVersionSummaries,
   listJobsForSpace, listJourneys, listResponses, listSocialMentionsByIds, listSocialMentionsByIdsForSpace, listSocialMentionsForSpace, listSurveys, restoreJourneyVersion, saveSurvey, updateJourney
 } from './database.js';
+import { isDatabaseConstraintError } from './databaseAdapter.js';
 import { attachEventStream, publishEvent } from './events.js';
 import { EMAIL_SENDER_NAME_MAX_LENGTH, emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations, sendSpaceInvitationEmail } from './emailService.js';
 import {
@@ -410,7 +411,15 @@ function noStore(_request: express.Request, response: express.Response, next: ex
   next();
 }
 
-app.get('/health', (_request, response) => response.json({ status: 'ok', service: 'seemplify-experience', database: 'sqlite', at: new Date().toISOString() }));
+app.get('/health', (_request, response) => {
+  const database = db.health();
+  return response.status(database.ready ? 200 : 503).json({
+    status: database.ready ? 'ok' : 'degraded', service: 'seemplify-experience',
+    database: database.provider, databaseReady: database.ready,
+    databaseSchemaVersion: database.schemaVersion, databaseError: database.error,
+    at: new Date().toISOString()
+  });
+});
 app.use('/api/esign', esignRouter);
 app.use('/api/public/esign', esignPublicRouter);
 app.use('/api/tutorials', tutorialProgressRouter);
@@ -872,7 +881,7 @@ app.post('/api/journeys', (request, response) => {
     publishEvent('data-changed', { reason: 'journey-created', id: journey.id }, space.id);
     return response.status(201).json(journey);
   } catch (error: any) {
-    if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) return response.status(409).json({ error: 'A journey with this ID already exists.' });
+    if (isDatabaseConstraintError(error)) return response.status(409).json({ error: 'A journey with this ID already exists.' });
     throw error;
   }
 });
@@ -933,7 +942,7 @@ app.post('/api/journeys/:id/ai/optimize', (request, response) => {
       knowledgeBaseIds: parsed.data.knowledgeBaseIds }, space.id, null, null, authenticatedUser(request).id);
     return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}`, deduplicated: false });
   } catch (error: any) {
-    const raced = String(error?.code || '').startsWith('SQLITE_CONSTRAINT') ? findActiveJourneyOptimization(journey.id, space.id) : null;
+    const raced = isDatabaseConstraintError(error) ? findActiveJourneyOptimization(journey.id, space.id) : null;
     if (raced) {
       const sameSnapshot = String(raced.input.journeyUpdatedAt || '') === journey.updatedAt;
       const sameFocus = journeyFocusKey(raced.input.focus) === journeyFocusKey(focus);

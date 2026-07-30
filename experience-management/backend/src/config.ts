@@ -42,6 +42,29 @@ function boundedNumber(value: unknown, fallback: number, minimum: number, maximu
   return Math.max(minimum, Math.min(maximum, Number.isFinite(parsed) ? parsed : fallback));
 }
 
+function databaseProvider(value: unknown): 'sqlite' | 'postgres' {
+  const normalized = String(value || 'sqlite').trim().toLowerCase();
+  if (normalized !== 'sqlite' && normalized !== 'postgres') {
+    throw new Error(`DATABASE_PROVIDER must be either sqlite or postgres (received ${normalized || 'empty'}).`);
+  }
+  return normalized;
+}
+
+function postgresSsl(value: unknown): false | { rejectUnauthorized: boolean } {
+  const normalized = String(value || 'false').trim().toLowerCase();
+  if (['', '0', 'false', 'disable', 'disabled', 'off'].includes(normalized)) return false;
+  if (['1', 'true', 'require', 'required', 'on'].includes(normalized)) return { rejectUnauthorized: true };
+  if (['no-verify', 'allow-self-signed'].includes(normalized)) return { rejectUnauthorized: false };
+  throw new Error('POSTGRES_SSL must be false, true, require, or no-verify.');
+}
+
+function postgresSourceSha256(value: unknown) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (!/^[a-f0-9]{64}$/u.test(normalized)) throw new Error('POSTGRES_SOURCE_SHA256 must be a 64-character hexadecimal digest.');
+  return normalized;
+}
+
 export const config = {
   host: process.env.HOST || '127.0.0.1',
   port: Math.max(1, Number(process.env.PORT || 5410)),
@@ -49,6 +72,19 @@ export const config = {
   databasePath: resolveFromBackend(
     process.env.DATABASE_PATH || '../../.local-runtime/experience-management/experience.sqlite'
   ),
+  databaseProvider: databaseProvider(process.env.DATABASE_PROVIDER),
+  postgres: {
+    host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),
+    port: boundedNumber(process.env.POSTGRES_PORT, 5432, 1, 65_535),
+    database: String(process.env.POSTGRES_DATABASE || 'seemplify_experience').trim(),
+    user: String(process.env.POSTGRES_USER || 'seemplify_experience_app').trim(),
+    passwordFile: resolveFromBackend(
+      process.env.POSTGRES_PASSWORD_FILE || '../../.local-runtime/experience-management/postgres-password'
+    ),
+    ssl: postgresSsl(process.env.POSTGRES_SSL),
+    schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
+    sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
+  },
   uploadDir: resolveFromBackend(
     process.env.UPLOAD_DIR || '../../.local-runtime/experience-management/uploads'
   ),
@@ -138,7 +174,7 @@ export const config = {
   sessionHours: Math.max(1, Math.min(168, Number(process.env.SESSION_HOURS || 24)))
 };
 
-fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
+if (config.databaseProvider === 'sqlite') fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
 fs.mkdirSync(config.uploadDir, { recursive: true });
 fs.mkdirSync(config.knowledgeStorageDir, { recursive: true });
 fs.mkdirSync(config.esignStorageDir, { recursive: true });
