@@ -8,7 +8,7 @@ import {
 } from './aiSchemas.js';
 import { computeAnalytics } from './analytics.js';
 import {
-  applyGeneratedJourney, applyOptimizedJourney, claimNextJob, createCollector, db, getCollector, getJob, getJobProviderResult, getJourney, getJourneyAiApplication, getResponse, getSurvey, insertInsight,
+  applyGeneratedJourney, applyOptimizedJourney, applySurveyTranslation, claimNextJob, createCollector, db, getCollector, getJob, getJobProviderResult, getJourney, getJourneyAiApplication, getResponse, getSurvey, insertInsight,
   listInsights, listResponses, listSocialMentionsByIdsForSpace, listSocialMentionsForSpace, saveJobProviderResult, saveSurvey, setResponseAnalysis,
   setSocialMentionAnalysis, updateJob
 } from './database.js';
@@ -214,8 +214,8 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
     const result = await structured(job, 'experience.translation', 'experience_translation', aiJsonSchemas.translation, translationResult,
       `Translate every respondent-facing string in this survey into ${language}. Preserve IDs, measurement meaning, numeric scales, and brand names.\n${JSON.stringify(compactSurvey(survey))}`);
     const translation = result.output as z.infer<typeof translationResult>;
-    saveSurvey({ ...survey, settings: { ...survey.settings, translations: { ...((survey.settings.translations as object) || {}), [language]: translation } } }, survey.questions, job.spaceId);
-    insertInsight(survey.id, 'translation', translation);
+    const application = applySurveyTranslation({ aiJobId: job.id, surveyId: survey.id, spaceId: job.spaceId, language, translation });
+    if (!application) throw new TerraError('Survey was deleted while Terra was translating it.', 'SURVEY_NOT_FOUND', 404, false);
     return result;
   }
   if (job.kind === 'response.analyze') {

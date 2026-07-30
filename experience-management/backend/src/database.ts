@@ -102,6 +102,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS insights (
     id TEXT PRIMARY KEY,
     survey_id TEXT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+    ai_job_id TEXT REFERENCES ai_jobs(id) ON DELETE SET NULL,
     kind TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     created_at TEXT NOT NULL
@@ -1178,6 +1179,9 @@ db.exec(`UPDATE x_connections SET oldest_post_id=(
 const aiJobColumns = new Set((db.prepare('PRAGMA table_info(ai_jobs)').all() as any[]).map((column) => String(column.name)));
 if (!aiJobColumns.has('requested_by')) db.exec('ALTER TABLE ai_jobs ADD COLUMN requested_by TEXT REFERENCES users(id) ON DELETE SET NULL');
 if (!aiJobColumns.has('provider_result_json')) db.exec('ALTER TABLE ai_jobs ADD COLUMN provider_result_json TEXT');
+const insightColumns = new Set((db.prepare('PRAGMA table_info(insights)').all() as any[]).map((column) => String(column.name)));
+if (!insightColumns.has('ai_job_id')) db.exec('ALTER TABLE insights ADD COLUMN ai_job_id TEXT REFERENCES ai_jobs(id) ON DELETE SET NULL');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS insights_ai_job_id ON insights(ai_job_id) WHERE ai_job_id IS NOT NULL');
 const replyDraftColumns = new Set((db.prepare('PRAGMA table_info(social_reply_drafts)').all() as any[]).map((column) => String(column.name)));
 if (!replyDraftColumns.has('idempotency_key')) db.exec('ALTER TABLE social_reply_drafts ADD COLUMN idempotency_key TEXT');
 const socialReportColumns = new Set((db.prepare('PRAGMA table_info(social_intelligence_reports)').all() as any[]).map((column) => String(column.name)));
@@ -1370,6 +1374,10 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
   try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; }
 };
 
+const objectRecord = (value: unknown): Record<string, unknown> => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+);
+
 const rowSurvey = (row: any): Survey => ({
   id: row.id, title: row.title, description: row.description, purpose: row.purpose,
   audience: row.audience, status: row.status, primaryMetric: row.primary_metric,
@@ -1408,15 +1416,25 @@ export const saveSurvey = db.transaction((input: Partial<Survey> & { title: stri
   if (!spaceId) throw new Error('A space is required to save a survey.');
   const now = new Date().toISOString();
   const id = input.id || crypto.randomUUID();
-  const existing = db.prepare('SELECT space_id FROM surveys WHERE id=?').get(id) as { space_id: string } | undefined;
+  const existing = db.prepare('SELECT space_id,settings_json FROM surveys WHERE id=?').get(id) as { space_id: string; settings_json: string } | undefined;
   if (existing && existing.space_id !== spaceId) throw new Error('Survey not found.');
+  const incomingSettings = objectRecord(input.settings);
+  const currentSettings = existing ? objectRecord(parseJson(existing.settings_json, {})) : {};
+  const currentTranslations = objectRecord(currentSettings.translations);
+  const incomingTranslations = objectRecord(incomingSettings.translations);
+  // Translations are generated asynchronously. A Survey Studio draft can be
+  // older than the completed AI job, so a normal save must not erase those
+  // server-managed results. Existing translations win on the same language.
+  const settings = Object.keys(currentTranslations).length
+    ? { ...incomingSettings, translations: { ...incomingTranslations, ...currentTranslations } }
+    : incomingSettings;
   db.prepare(`INSERT INTO surveys (id,space_id,title,description,purpose,audience,status,primary_metric,language,thank_you_message,theme_json,settings_json,created_at,updated_at,published_at)
     VALUES (@id,@spaceId,@title,@description,@purpose,@audience,@status,@primaryMetric,@language,@thankYouMessage,@theme,@settings,@createdAt,@updatedAt,@publishedAt)
     ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,purpose=excluded.purpose,audience=excluded.audience,status=excluded.status,primary_metric=excluded.primary_metric,language=excluded.language,thank_you_message=excluded.thank_you_message,theme_json=excluded.theme_json,settings_json=excluded.settings_json,updated_at=excluded.updated_at,published_at=excluded.published_at`).run({
       id, spaceId, title: input.title.trim(), description: input.description || '', purpose: input.purpose || 'customer_experience',
       audience: input.audience || '', status: input.status || 'draft', primaryMetric: input.primaryMetric || 'nps',
       language: input.language || 'English', thankYouMessage: input.thankYouMessage || 'Thank you for sharing your feedback.',
-      theme: JSON.stringify(input.theme || {}), settings: JSON.stringify(input.settings || {}), createdAt: input.createdAt || now,
+      theme: JSON.stringify(input.theme || {}), settings: JSON.stringify(settings), createdAt: input.createdAt || now,
       updatedAt: now, publishedAt: input.publishedAt || null
     });
   if (questions) {
@@ -1499,17 +1517,45 @@ export function setResponseAnalysis(id: string, analysis: unknown) {
   db.prepare('UPDATE responses SET ai_analysis_json=?, analyzed_at=? WHERE id=?').run(JSON.stringify(analysis), new Date().toISOString(), id);
 }
 
-export function insertInsight(surveyId: string, kind: string, payload: unknown) {
-  const id = crypto.randomUUID();
-  db.prepare('INSERT INTO insights (id,survey_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)').run(id, surveyId, kind, JSON.stringify(payload), new Date().toISOString());
-  return { id, surveyId, kind, payload, createdAt: new Date().toISOString() };
+const rowInsight = (row: any) => ({
+  id: row.id, surveyId: row.survey_id, aiJobId: row.ai_job_id || null, kind: row.kind,
+  payload: parseJson(row.payload_json, {}), createdAt: row.created_at
+});
+
+export function insertInsight(surveyId: string, kind: string, payload: unknown, aiJobId: string | null = null) {
+  if (aiJobId) {
+    const replay = db.prepare('SELECT * FROM insights WHERE ai_job_id=?').get(aiJobId) as any;
+    if (replay) {
+      if (replay.survey_id !== surveyId || replay.kind !== kind) throw new Error('AI job is already attached to a different insight.');
+      return rowInsight(replay);
+    }
+  }
+  const id = crypto.randomUUID(); const createdAt = new Date().toISOString();
+  db.prepare('INSERT INTO insights (id,survey_id,ai_job_id,kind,payload_json,created_at) VALUES (?,?,?,?,?,?)')
+    .run(id, surveyId, aiJobId, kind, JSON.stringify(payload), createdAt);
+  return { id, surveyId, aiJobId, kind, payload, createdAt };
 }
 
 export function listInsights(surveyId: string) {
-  return (db.prepare('SELECT * FROM insights WHERE survey_id=? ORDER BY created_at DESC').all(surveyId) as any[]).map((row) => ({
-    id: row.id, surveyId: row.survey_id, kind: row.kind, payload: parseJson(row.payload_json, {}), createdAt: row.created_at
-  }));
+  return (db.prepare('SELECT * FROM insights WHERE survey_id=? ORDER BY created_at DESC').all(surveyId) as any[]).map(rowInsight);
 }
+
+export const applySurveyTranslation = db.transaction((input: {
+  aiJobId: string; surveyId: string; spaceId: string; language: string; translation: unknown;
+}) => {
+  const current = db.prepare('SELECT settings_json FROM surveys WHERE id=? AND space_id=?')
+    .get(input.surveyId, input.spaceId) as { settings_json: string } | undefined;
+  if (!current) return null;
+  const settings = objectRecord(parseJson(current.settings_json, {}));
+  const translations = objectRecord(settings.translations);
+  // The insight is the durable application journal. On a retry, its original
+  // payload wins even if a caller supplies a different value for the same job.
+  const insight = insertInsight(input.surveyId, 'translation', input.translation, input.aiJobId);
+  const updatedAt = new Date().toISOString();
+  db.prepare('UPDATE surveys SET settings_json=?,updated_at=? WHERE id=? AND space_id=?')
+    .run(JSON.stringify({ ...settings, translations: { ...translations, [input.language]: insight.payload } }), updatedAt, input.surveyId, input.spaceId);
+  return { survey: getSurvey(input.surveyId, input.spaceId)!, insight };
+});
 
 export function rowJob(row: any): AiJob {
   return {

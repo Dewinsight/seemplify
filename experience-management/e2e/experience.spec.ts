@@ -661,3 +661,87 @@ test('journey live refresh never lets an older response overwrite a newer edit',
   const deleted = await page.request.delete(`/api/journeys/${journey.id}`, { data: { expectedUpdatedAt: (await current.json()).updatedAt } });
   expect(deleted.status()).toBe(204);
 });
+
+test('a completed survey translation opens in saved intelligence and survives a stale history response', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop project exercises the saved-output refresh race');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  const suffix = `${Date.now()}`;
+  const setup = await page.evaluate(async (value) => {
+    const questionId = `translation-question-${value}`;
+    const response = await fetch('/api/surveys', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        title: `Translation viewer ${value}`, description: 'A source survey for the saved translation viewer.',
+        purpose: 'customer_experience', primaryMetric: 'custom', thankYouMessage: 'Thank you for responding.',
+        questions: [{ id: questionId, page: 1, position: 0, type: 'single_choice', title: 'How was your visit?', description: 'Choose one answer.', required: true, options: ['Good', 'Poor'], settings: {}, logic: [] }]
+      })
+    });
+    return { survey: await response.json(), questionId };
+  }, suffix);
+
+  const translation = {
+    language: 'Spanish', title: 'Encuesta sobre la experiencia de visita',
+    description: 'Una encuesta sobre la visita del cliente.', thankYouMessage: 'Gracias por responder.',
+    questions: [{ questionId: setup.questionId, title: '¿Cómo fue su visita?', description: 'Elija una respuesta.', options: ['Buena', 'Mala'] }]
+  };
+  const savedInsight = { id: `saved-translation-${suffix}`, kind: 'translation', payload: translation, createdAt: new Date().toISOString() };
+  let insightsRequestCount = 0;
+  let translationQueued = false;
+  let releaseInitial!: () => void;
+  let markInitialSeen!: () => void;
+  const initialRelease = new Promise<void>((resolve) => { releaseInitial = resolve; });
+  const initialSeen = new Promise<void>((resolve) => { markInitialSeen = resolve; });
+
+  await page.route(`**/api/surveys/${setup.survey.id}/insights*`, async (route) => {
+    insightsRequestCount += 1;
+    if (insightsRequestCount === 1) {
+      markInitialSeen();
+      await initialRelease;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(translationQueued ? [savedInsight] : []) });
+    releaseInitial();
+  });
+  await page.route(`**/api/surveys/${setup.survey.id}/ai/translate`, async (route) => {
+    translationQueued = true;
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ jobId: `translation-job-${suffix}`, state: 'queued' }) });
+  });
+  await page.route(`**/api/ai/jobs/translation-job-${suffix}`, (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({
+      id: `translation-job-${suffix}`, kind: 'survey.translate', surveyId: setup.survey.id,
+      state: 'completed', stage: 'completed', progress: 100, attempt: 1,
+      input: { language: 'Spanish' }, result: { output: translation, runtime: {} }, error: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completedAt: new Date().toISOString()
+    })
+  }));
+
+  await page.goto(`/surveys/${setup.survey.id}`);
+  await page.getByRole('tab', { name: 'Terra AI' }).click();
+  await initialSeen;
+  await page.getByLabel('Translate survey').fill('  Spanish  ');
+  await page.getByRole('button', { name: 'Translate', exact: true }).click();
+
+  const savedRow = page.getByRole('button', { name: /Spanish translation/ });
+  await expect(savedRow).toBeVisible();
+  await expect(savedRow).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
+  await expect(page.getByText(translation.questions[0].title, { exact: false })).toBeVisible();
+  await page.waitForTimeout(250);
+  await expect(savedRow).toBeVisible();
+  await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('saved-translation-viewer.png'), fullPage: true });
+
+  await savedRow.click();
+  await expect(savedRow).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByText(translation.title, { exact: true })).toHaveCount(0);
+  await savedRow.click();
+  await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
+
+  await page.evaluate((surveyId) => fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' }), setup.survey.id);
+});

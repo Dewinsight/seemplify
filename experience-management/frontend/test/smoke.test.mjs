@@ -214,7 +214,11 @@ test('ships explicit knowledge grounding with durable indexing, retrieval citati
     assert.match(consumer, /knowledgeBaseIds/);
     assert.match(consumer, /KnowledgeBasePicker/);
   }
-  assert.match(surveyAi, /path === 'translate' \? body : \{ \.\.\.body, knowledgeBaseIds \}/);
+  assert.match(surveyAi, /path === 'translate' \? \{ \.\.\.body, language: targetLanguage \} : \{ \.\.\.body, knowledgeBaseIds \}/);
+  assert.match(surveyAi, /requestId !== insightRequestRef\.current/);
+  assert.match(surveyAi, /aria-expanded=\{expanded\}/);
+  assert.match(surveyAi, /<TranslationDetails/);
+  assert.match(surveyAi, /await loadInsights\(savedInsightKind\[path\]\)/);
 
   for (const deterministicFile of [
     path.join(source, 'components', 'survey', 'AnalyticsTab.tsx'),
