@@ -395,6 +395,44 @@ test('creates, prepares and completes a protected three-signer agreement with or
   await expect(adaSigner.page.getByRole('heading', { name: 'My documents' })).toBeVisible();
   await expect(adaSigner.page.getByRole('heading', { name: title })).toBeVisible();
 
+  const onboarding = await adaSigner.page.request.post('/api/account/onboarding', {
+    data: {
+      name: 'Ada First',
+      email: ada.email,
+      jobTitle: 'Agreement recipient',
+      organizationName: 'Recipient acceptance workspace',
+      timezone: 'UTC',
+      primaryGoal: 'customer_experience',
+      spaceName: `Ada agreements ${suffix}`
+    }
+  });
+  expect(onboarding.status()).toBe(200);
+  const tutorialProgress = await adaSigner.page.request.put('/api/tutorials/progress/agreements', {
+    data: { version: 1, status: 'completed', lastStep: 2 }
+  });
+  expect(tutorialProgress.status()).toBe(200);
+
+  await adaSigner.page.goto('/agreements');
+  await expect(adaSigner.page.getByRole('heading', { name: 'Agreements' })).toBeVisible();
+  const agreementViews = adaSigner.page.getByRole('tablist', { name: 'Agreement views' });
+  const sentBySpace = agreementViews.getByRole('tab', { name: /Sent by this space/ });
+  const signedByMe = agreementViews.getByRole('tab', { name: /Signed by me/ });
+  await expect(sentBySpace).toHaveAttribute('aria-selected', 'true');
+  await expect(signedByMe).toHaveAttribute('aria-selected', 'false');
+  await expect(adaSigner.page.getByRole('heading', { name: title })).toHaveCount(0);
+
+  await signedByMe.click();
+  await expect(signedByMe).toHaveAttribute('aria-selected', 'true');
+  await expect(adaSigner.page.getByText(/across all spaces/i)).toBeVisible();
+  const embeddedDocument = adaSigner.page.getByTestId('recipient-document-row').filter({ hasText: title });
+  await expect(embeddedDocument.getByRole('heading', { name: title })).toBeVisible();
+  await expect(embeddedDocument.getByRole('link', { name: 'Completed document' })).toBeVisible();
+  await expect(embeddedDocument.getByRole('link', { name: 'Completion certificate' })).toBeVisible();
+
+  await adaSigner.page.goto('/my-documents');
+  await expect(adaSigner.page.getByRole('heading', { name: 'My documents' })).toBeVisible();
+  await expect(adaSigner.page.getByTestId('recipient-document-row').filter({ hasText: title })).toBeVisible();
+
   await Promise.all([adaSigner.context.close(), benSigner.context.close(), chiSigner.context.close()]);
 });
 

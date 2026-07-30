@@ -51,12 +51,14 @@ test('keeps space selection, membership management, invitations, uploads, and li
 });
 test('ships the native agreement preparation and signing workspaces', () => {
   const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  const agreements = fs.readFileSync(path.join(source, 'pages', 'AgreementsPage.tsx'), 'utf8');
   const workspace = fs.readFileSync(path.join(source, 'pages', 'AgreementWorkspacePage.tsx'), 'utf8');
   const prepare = fs.readFileSync(path.join(source, 'pages', 'AgreementPreparePage.tsx'), 'utf8');
   const fields = fs.readFileSync(path.join(source, 'components', 'esign', 'AgreementFieldsStep.tsx'), 'utf8');
   const editor = fs.readFileSync(path.join(source, 'components', 'esign', 'PdfAgreementEditor.tsx'), 'utf8');
   const signing = fs.readFileSync(path.join(source, 'pages', 'PublicSigningPage.tsx'), 'utf8');
   const recipientDocuments = fs.readFileSync(path.join(source, 'pages', 'MyDocumentsPage.tsx'), 'utf8');
+  const recipientDocumentLibrary = fs.readFileSync(path.join(source, 'components', 'esign', 'RecipientDocumentLibrary.tsx'), 'utf8');
   assert.match(shell, /Agreements/);
   for (const section of ['Documents', 'Recipients', 'Fields', 'Message', 'Review']) assert.match(workspace, new RegExp(section));
   for (const activity of ['Recipient progress', 'Email delivery', 'retry-finalization', 'Retry finalization']) assert.match(workspace, new RegExp(activity));
@@ -66,9 +68,14 @@ test('ships the native agreement preparation and signing workspaces', () => {
   for (const feature of ['pdfjs-dist', 'DndContext', 'PointerSensor', 'KeyboardSensor', 'DragOverlay', 'placementType']) assert.match(editor, new RegExp(feature));
   for (const feature of ['access-code', 'consent', 'SignatureCanvas', 'Next required', 'Decline agreement', 'Finish']) assert.match(signing, new RegExp(feature));
   for (const feature of ['Create optional account', 'An account is not required', 'Keep your signed documents together']) assert.match(signing, new RegExp(feature));
-  for (const feature of ['/api/recipient-documents', 'My documents', 'Waiting for others', 'Completed document', 'Completion certificate']) assert.match(recipientDocuments, new RegExp(feature.replaceAll('/', '\\/')));
+  assert.match(recipientDocuments, /My documents/);
+  for (const feature of ['/api/recipient-documents', 'Waiting for others', 'Completed document', 'Completion certificate']) assert.match(recipientDocumentLibrary, new RegExp(feature.replaceAll('/', '\\/')));
+  for (const view of ['Sent by this space', 'Signed by me']) assert.match(agreements, new RegExp(view));
+  assert.match(agreements, /RecipientDocumentLibrary/);
+  assert.match(recipientDocuments, /RecipientDocumentLibrary/);
+  assert.match(agreements, /across (?:every|all) space/i);
   assert.match(shell, /My signed documents/);
-  assert.doesNotMatch(recipientDocuments, /spaceScopedApiUrl|X-Seemplify-Space/);
+  assert.doesNotMatch(recipientDocumentLibrary, /spaceScopedApiUrl|X-Seemplify-Space/);
 });
 test('exposes multi-account X listening, human-reviewed replies, cross-source intelligence, and journey mapping', () => {
   const social = fs.readFileSync(path.join(source, 'pages', 'SocialListeningPage.tsx'), 'utf8');
