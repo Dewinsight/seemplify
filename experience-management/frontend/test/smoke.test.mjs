@@ -122,6 +122,7 @@ test('ships branded authentication, verified signup, onboarding, and profile man
   for (const asset of ['/images/auth-research.webp', '/images/auth-listening.webp']) assert.match(layout, new RegExp(asset.replaceAll('/', '\\/')));
   assert.match(brand, /Experience Management/);
   assert.match(brand, /experience-mark\.png/);
+  assert.doesNotMatch(brand, /Experience management, simplified\./);
   assert.match(signup, /EMAIL_VERIFICATION_REQUIRED/);
   assert.match(signup, /formStep/);
   assert.match(signup, /delivery=failed/);
