@@ -18,7 +18,7 @@ export class NylasError extends Error {
 
 const safeScopes: Record<NylasProvider, readonly string[]> = {
   google: [
-    'openid', 'email', 'profile',
+    'openid',
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -29,7 +29,7 @@ const safeScopes: Record<NylasProvider, readonly string[]> = {
 
 const defaultScopes: Record<NylasProvider, readonly string[]> = {
   google: [
-    'openid', 'email', 'https://www.googleapis.com/auth/userinfo.email',
+    'openid', 'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/calendar.readonly'
   ],

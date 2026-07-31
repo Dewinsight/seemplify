@@ -422,9 +422,13 @@ test('Nylas assistant is read-only, durable, grounded, encrypted, isolated, and 
   assert.equal(authorizeUrl.pathname, '/v3/connect/auth');
   assert.equal(authorizeUrl.searchParams.get('access_type'), 'online');
   assert.equal(authorizeUrl.searchParams.get('response_type'), 'code');
-  assert.match(authorizeUrl.searchParams.get('scope') || '', /gmail\.readonly/u);
-  assert.match(authorizeUrl.searchParams.get('scope') || '', /calendar\.readonly/u);
-  assert.doesNotMatch(authorizeUrl.searchParams.get('scope') || '', /Mail\.Send|Calendars\.ReadWrite|gmail\.modify/iu);
+  const googleScopes = (authorizeUrl.searchParams.get('scope') || '').split(/\s+/u);
+  assert.ok(googleScopes.includes('https://www.googleapis.com/auth/gmail.readonly'));
+  assert.ok(googleScopes.includes('https://www.googleapis.com/auth/calendar.readonly'));
+  assert.ok(googleScopes.includes('https://www.googleapis.com/auth/userinfo.email'));
+  assert.equal(googleScopes.includes('email'), false);
+  assert.equal(googleScopes.includes('profile'), false);
+  assert.doesNotMatch(googleScopes.join(' '), /Mail\.Send|Calendars\.ReadWrite|gmail\.modify/iu);
   const storedState = db.prepare('SELECT state_hash,consumed_at FROM assistant_nylas_oauth_states').get() as any;
   assert.notEqual(storedState.state_hash, state);
   assert.equal(storedState.consumed_at, null);

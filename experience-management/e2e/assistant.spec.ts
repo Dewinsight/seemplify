@@ -160,6 +160,10 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect.poll(() => savedDraftBody).toContain('send my comments by Friday');
   await page.getByRole('button', { name: 'Close assistant' }).click();
+  await expect(page.getByRole('button', { name: 'Open assistant' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open assistant' }).click();
+  await expect(page.getByLabel('Mailbox assistant')).toBeVisible();
+  await page.getByRole('button', { name: 'Close assistant' }).click();
 
   await page.getByRole('tab', { name: 'Workspace knowledge' }).click();
   await page.getByRole('button', { name: /Customer risk review/ }).click();
@@ -265,10 +269,8 @@ test('revoked mailbox history cannot remain selected or retain actionable thread
   await page.getByRole('button', { name: 'Disconnect selected', exact: true }).click();
 
   const mailbox = page.getByRole('button', { name: /Revoked mailbox.*revoked@example\.com/i });
-  await expect(mailbox).toBeDisabled();
-  await expect(mailbox).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByText('Connect a mailbox')).toBeVisible();
-  await expect(page.getByText('0 mailboxes connected')).toBeVisible();
+  await expect(mailbox).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Connect your mailbox' })).toBeVisible();
   await expect(page.getByTestId(`assistant-thread-${thread.id}`)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open assistant' })).toHaveCount(0);
 });
@@ -286,16 +288,10 @@ test('personal assistant explains missing Nylas setup without exposing a doomed 
 
   await signIn(page);
   await openAssistant(page);
-  await expect(page.getByText('Nylas application setup is required')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Mailbox setup needs attention' })).toBeVisible();
   await expect(page.getByText('https://experience.aiinnigeria.com/api/integrations/nylas/callback')).toBeVisible();
-  const googleButtons = page.getByRole('button', { name: /^(Connect )?Google$/ });
-  const microsoftButtons = page.getByRole('button', { name: /^(Connect )?Microsoft$/ });
-  const googleCount = await googleButtons.count();
-  const microsoftCount = await microsoftButtons.count();
-  expect(googleCount).toBeGreaterThanOrEqual(1);
-  expect(microsoftCount).toBeGreaterThanOrEqual(1);
-  for (let index = 0; index < googleCount; index += 1) await expect(googleButtons.nth(index)).toBeDisabled();
-  for (let index = 0; index < microsoftCount; index += 1) await expect(microsoftButtons.nth(index)).toBeDisabled();
-  await page.getByRole('tab', { name: 'Workspace knowledge' }).click();
-  await expect(page.getByText('No saved reports yet.')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Connect Google' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Connect Microsoft' })).toBeDisabled();
+  await expect(page.getByRole('tab')).toHaveCount(0);
+  await expect(page.getByLabel('Mailbox conversations')).toHaveCount(0);
 });

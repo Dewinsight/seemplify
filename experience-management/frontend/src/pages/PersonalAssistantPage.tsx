@@ -758,14 +758,15 @@ export function PersonalAssistantPage() {
 
     {error && <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">{error}</div>}
     {oauthNotice && <div className={cn('border px-4 py-3 text-sm', oauthNotice.tone === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-950' : oauthNotice.tone === 'warning' ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-destructive/40 bg-destructive/5 text-destructive')} role="status">{oauthNotice.text}</div>}
+    {loading || !overview ? <div className="flex min-h-[360px] items-center justify-center border bg-card text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Checking mailbox connection</div>
+      : connectedCount === 0 ? <MailboxConnectGate overview={overview} connect={connect} working={working} />
+      : <>
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y py-2.5 text-xs text-muted-foreground">
-      <ServiceStatus ready={Boolean(overview?.configured)} text={loading ? 'Checking mailbox' : overview?.configured ? `${connectedCount} mailbox${connectedCount === 1 ? '' : 'es'} connected` : 'Mailbox setup required'} />
-      <ServiceStatus ready={runtimeReady} text={loading ? 'Checking Terra' : runtimeReady ? `${overview?.terra?.providerLabel || overview?.terra?.model || 'Terra'} ready` : 'Terra unavailable'} />
+      <ServiceStatus ready={Boolean(overview.configured)} text={`${connectedCount} mailbox${connectedCount === 1 ? '' : 'es'} connected`} />
+      <ServiceStatus ready={runtimeReady} text={runtimeReady ? `${overview.terra?.providerLabel || overview.terra?.model || 'Terra'} ready` : 'Terra unavailable'} />
       <ServiceStatus ready={overview?.worker?.running !== false} text={workerBusy ? `${workerBusy} assistant request${workerBusy === 1 ? '' : 's'} active` : 'Assistant queue idle'} />
       <span className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5" />Human review required</span>
     </div>
-
-    {!loading && !overview?.configured && <div className="flex gap-3 border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-950"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">Nylas application setup is required</div><p className="mt-1 leading-6">{overview?.configurationError || 'Mailbox connectivity is not configured.'} Mailbox connect and thread actions stay disabled; saved Experience intelligence remains available.</p>{overview?.callbackUrl && <p className="mt-2 font-mono text-xs">Callback: {overview.callbackUrl}</p>}</div></div>}
 
     <Tabs value={tab} onValueChange={(value) => { changeTab(value as WorkspaceTab); }}>
       <TabsList className="overflow-x-auto" aria-label="Assistant workspace">
@@ -895,7 +896,31 @@ export function PersonalAssistantPage() {
         <AuditPane events={auditEvents} error={operationError} refresh={() => void loadAssistantOperations()} />
       </TabsContent>
     </Tabs>
+    </>}
   </div>;
+}
+
+function MailboxConnectGate({ overview, connect, working }: {
+  overview: AssistantOverview;
+  connect: (provider: 'google' | 'microsoft') => Promise<void>;
+  working: string;
+}) {
+  const ready = overview.configured === true;
+  return <section className="flex min-h-[430px] items-center justify-center border bg-card px-6 py-12" aria-labelledby="mailbox-connect-title">
+    <div className="w-full max-w-md text-center">
+      <div className="mx-auto grid h-11 w-11 place-items-center rounded-md border bg-muted/30"><Inbox className="h-5 w-5 text-muted-foreground" /></div>
+      <h2 id="mailbox-connect-title" className="mt-5 text-lg font-semibold">{ready ? 'Connect your mailbox' : 'Mailbox setup needs attention'}</h2>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        {ready ? 'Connect a Google or Microsoft account to open your private assistant workspace.' : overview.configurationError || 'Mailbox connectivity is not configured.'}
+      </p>
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <Button type="button" disabled={!ready || working !== ''} onClick={() => void connect('google')}>{working === 'connect:google' && <Loader2 className="animate-spin" />}Connect Google</Button>
+        <Button type="button" variant="outline" disabled={!ready || working !== ''} onClick={() => void connect('microsoft')}>{working === 'connect:microsoft' && <Loader2 className="animate-spin" />}Connect Microsoft</Button>
+      </div>
+      {!ready && overview.callbackUrl && <p className="mt-5 break-all font-mono text-[11px] leading-5 text-muted-foreground">Callback: {overview.callbackUrl}</p>}
+      <p className="mt-5 flex items-center justify-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="h-3.5 w-3.5" />Mailbox access remains private to your account in this space.</p>
+    </div>
+  </section>;
 }
 
 function WorkProductsPane({
@@ -1685,7 +1710,7 @@ function ConversationReader({ thread, detail, loading, error, retry, mobileView,
         <h2 className="truncate text-base font-semibold">{thread?.subject || 'Select a conversation'}</h2>
         {thread && <p className="mt-1 truncate text-xs text-muted-foreground">{thread.participants.map(participantLabel).join(', ')} · {totalMessageCount} message{totalMessageCount === 1 ? '' : 's'}</p>}
       </div>
-      {thread && <Button type="button" size="sm" variant="outline" aria-label="Open assistant" onClick={openAssistant}><PanelRightOpen /><span className="hidden xl:inline">Assistant</span></Button>}
+      <Button type="button" size="sm" variant="outline" aria-label="Open assistant" onClick={openAssistant}><PanelRightOpen /><span className="hidden xl:inline">Assistant</span></Button>
     </header>
     <div className="min-h-0 flex-1 overflow-y-auto">
       {detail && <div
