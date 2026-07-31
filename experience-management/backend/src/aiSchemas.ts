@@ -255,3 +255,18 @@ export const aiJsonSchemas = {
     }) }
   })
 };
+
+export function socialListeningJsonSchemaFor(sourceRefs: string[]): Record<string, unknown> {
+  const references = [...new Set(sourceRefs.map((value) => String(value).trim()).filter(Boolean))];
+  if (!references.length) throw new Error('At least one social source reference is required.');
+  const schema = structuredClone(aiJsonSchemas.socialListening) as any;
+  const referenceSchema = () => ({ type: 'string', enum: references });
+  for (const section of ['themes', 'emergingTrends', 'risks', 'opportunities']) {
+    schema.properties[section].items.properties.evidence.items = referenceSchema();
+  }
+  schema.properties.mentions.minItems = references.length;
+  schema.properties.mentions.maxItems = references.length;
+  schema.properties.mentions.items.properties.mentionId = referenceSchema();
+  schema.properties.mentions.items.properties.evidence = referenceSchema();
+  return schema;
+}

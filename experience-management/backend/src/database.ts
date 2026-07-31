@@ -1604,6 +1604,11 @@ export function saveJobProviderResult(id: string, value: { activity: string; sch
   return getJobProviderResult(id);
 }
 
+export function clearJobProviderResult(id: string) {
+  db.prepare('UPDATE ai_jobs SET provider_result_json=NULL,updated_at=? WHERE id=?')
+    .run(new Date().toISOString(), id);
+}
+
 export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, spaceId: string, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
   if (!spaceId) throw new Error('A space is required to queue AI work.');
   if (surveyId && !db.prepare('SELECT 1 FROM surveys WHERE id=? AND space_id=?').get(surveyId, spaceId)) {

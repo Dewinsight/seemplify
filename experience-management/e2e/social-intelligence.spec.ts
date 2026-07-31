@@ -312,6 +312,120 @@ test('saved X history defaults reports to 50 and requires confirmation before a 
   await expect(page.getByText('A space owner or admin can approve additional paid history reads.')).toBeVisible();
 });
 
+test('social report history shows terminal failures, retries the same report, and rejects empty completions', async ({ page }) => {
+  const account = connection(alphaId, 'researchalpha', 'Research Alpha', 50);
+  const reportId = '44444444-4444-4444-8444-444444444444';
+  const error = 'Terra returned evidence that was not present in the saved sources.';
+  let report = {
+    id: reportId,
+    connectionId: alphaId,
+    title: 'X listening intelligence',
+    mentionIds: ['saved-post-1', 'saved-post-2'],
+    knowledgeBaseIds: [],
+    state: 'queued',
+    result: null,
+    runtime: null,
+    aiJobId: '55555555-5555-4555-8555-555555555555',
+    error: null,
+    createdAt: now,
+    completedAt: null,
+    updatedAt: now
+  };
+  const retryRequests: Array<{ method: string; url: string }> = [];
+
+  await page.route(/\/api\/integrations\/x(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      provider: 'x',
+      callbackUrl: 'http://127.0.0.1:5412/api/integrations/x/callback',
+      canManageAppCredentials: true,
+      canManagePaidCollection: true,
+      collectionPolicy: {
+        normalSyncLimit: 50,
+        minimumExpansionLimit: 51,
+        maximumExpansionLimit: 500,
+        cacheStrategy: 'since-and-until-cursors',
+        alreadyStoredPostsAreNotReanalyzed: true,
+        incrementalSearchStrategy: 'one-oldest-or-catch-up-query-per-run'
+      },
+      app: {
+        configured: true,
+        oauth2Configured: true,
+        consumerCredentialsConfigured: false,
+        bearerTokenConfigured: true,
+        credentialVersion: 3,
+        updatedAt: now,
+        billing: { status: 'ready', problemType: null, checkedAt: now }
+      },
+      connections: [account],
+      selectedConnectionId: account.id,
+      connection: account,
+      queries: [],
+      syncJobs: [],
+      counts: account.counts,
+      aggregateCounts: account.counts
+    })
+  }));
+  await page.route(/\/api\/integrations\/x\/mentions(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: '[]'
+  }));
+  await page.route(new RegExp(`/api/social/reports/${reportId}/retry$`), async (route) => {
+    retryRequests.push({ method: route.request().method(), url: route.request().url() });
+    report = { ...report, state: 'queued', error: null, completedAt: null, updatedAt: '2026-07-29T12:01:00.000Z' };
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ report, jobId: report.aiJobId, state: report.state })
+    });
+  });
+  await page.route(/\/api\/social\/reports(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([report])
+  }));
+  await page.route(/\/api\/social\/reply-drafts$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: '[]'
+  }));
+
+  await signIn(page);
+  await page.goto('/social-listening');
+  await page.getByRole('button', { name: 'Intelligence (1)' }).click();
+
+  await expect(page.getByRole('status').filter({ hasText: 'Waiting for Terra. This report is durable.' })).toBeVisible();
+  await expect(page.getByText(error, { exact: true })).toHaveCount(0);
+
+  report = { ...report, state: 'failed', error, completedAt: now, updatedAt: now };
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+
+  const failureAlert = page.getByRole('alert').filter({ hasText: 'Report could not be completed' });
+  await expect(failureAlert).toBeVisible();
+  await expect(failureAlert.getByText(error, { exact: true })).toBeVisible();
+  await expect(page.getByText('Waiting for Terra. This report is durable.', { exact: true })).toHaveCount(0);
+
+  await failureAlert.getByRole('button', { name: 'Retry report' }).click();
+  await expect.poll(() => retryRequests).toEqual([{
+    method: 'POST',
+    url: `http://127.0.0.1:5412/api/social/reports/${reportId}/retry`
+  }]);
+  await expect(page.getByText('Retry queued with the same 2 saved posts and durable job.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Waiting for Terra. This report is durable.' })).toBeVisible();
+  await expect(failureAlert).toHaveCount(0);
+
+  report = { ...report, state: 'completed', result: null, completedAt: now, updatedAt: '2026-07-29T12:02:00.000Z' };
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+
+  const integrityAlert = page.getByRole('alert').filter({ hasText: 'The completed report has no readable result' });
+  await expect(integrityAlert).toBeVisible();
+  await expect(integrityAlert).toContainText('The saved sources are intact. Refresh once; if this remains, share the report ID with support.');
+  await expect(integrityAlert.getByRole('button', { name: 'Retry report' })).toHaveCount(0);
+  await expect(page.getByText('Waiting for Terra. This report is durable.', { exact: true })).toHaveCount(0);
+});
+
 test('Intelligence combines immutable survey and social report snapshots into saved analysis', async ({ page }, testInfo) => {
   const surveyRef = 'survey:insight-q2';
   const secondSurveyRef = 'survey:executive-retention';

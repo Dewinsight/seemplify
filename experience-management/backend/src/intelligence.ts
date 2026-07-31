@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
+import { socialListeningResult } from './aiSchemas.js';
 import type { SessionUser } from './auth.js';
 import type { KnowledgeBaseRef } from './knowledgeRepository.js';
-import { createJob, db, getJob, listSocialMentionsByIdsForSpace } from './database.js';
+import { createJob, db, getJob, getJobProviderResult, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
 import './spaces.js';
 
@@ -38,8 +39,31 @@ function normalizedEvidence(value: unknown): string {
   return '';
 }
 
+function canonicalSocialEvidence(value: unknown, maximum = 100_000): string {
+  return cleanText(value, maximum)
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/["'`´‘’‚‛“”„‟«»‹›]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function orderedEllipsisIsGrounded(value: unknown, sourceBody: string): boolean {
+  const raw = cleanText(value, 1000).normalize('NFKC');
+  if (!/(?:…|\.{3,})/u.test(raw)) return false;
+  const fragments = raw.split(/(?:…|\.{3,})/u).map((fragment) => canonicalSocialEvidence(fragment, 1000)).filter(Boolean);
+  if (fragments.length < 2 || fragments.length > 3 || fragments.some((fragment) => fragment.length < 12)) return false;
+  let cursor = 0;
+  for (const fragment of fragments) {
+    const index = sourceBody.indexOf(fragment, cursor);
+    if (index < 0) return false;
+    cursor = index + fragment.length;
+  }
+  return true;
+}
+
 export function validateSocialListeningEvidence(sources: Array<{ sourceRef: string; content: string }>, result: any) {
-  const expected = new Map(sources.map((source) => [String(source.sourceRef), normalizedEvidence(source.content)]));
+  const expected = new Map(sources.map((source) => [String(source.sourceRef), canonicalSocialEvidence(source.content)]));
   const returned = Array.isArray(result?.mentions) ? result.mentions.map((mention: any) => String(mention.mentionId)) : [];
   if (returned.length !== expected.size || new Set(returned).size !== expected.size || returned.some((mentionId: string) => !expected.has(mentionId))) {
     throw new IntelligenceError('Terra did not return exactly one analysis for every saved source.', 400);
@@ -47,12 +71,15 @@ export function validateSocialListeningEvidence(sources: Array<{ sourceRef: stri
   const sentimentTotal = ['negative', 'neutral', 'positive', 'mixed'].reduce((total, key) => total + Number(result?.sentiment?.[key] || 0), 0);
   if (sentimentTotal !== expected.size) throw new IntelligenceError('Terra returned sentiment counts that do not match the saved dataset.', 400);
   const sourceBodies = [...expected.values()];
-  const excerptIsGrounded = (value: unknown, exactSource?: string) => {
-    const excerpt = cleanText(value, 1000).toLocaleLowerCase('en-US');
-    const candidates = exactSource === undefined ? sourceBodies : [exactSource];
+  const evidenceIsGrounded = (value: unknown, exactSourceRef?: string) => {
+    const sourceRef = cleanText(value, 1000);
+    if (expected.has(sourceRef)) return exactSourceRef === undefined || sourceRef === exactSourceRef;
+    const excerpt = canonicalSocialEvidence(value, 1000);
+    const candidates = exactSourceRef === undefined ? sourceBodies : [expected.get(exactSourceRef) || ''];
     return candidates.some((body) => {
       const minimum = Math.min(12, body.length);
-      return minimum > 0 && excerpt.length >= minimum && body.includes(excerpt);
+      if (minimum <= 0 || excerpt.length < minimum) return false;
+      return body.includes(excerpt) || orderedEllipsisIsGrounded(value, body);
     });
   };
   const evidence = [
@@ -62,11 +89,11 @@ export function validateSocialListeningEvidence(sources: Array<{ sourceRef: stri
     ...(result?.opportunities || []).flatMap((item: any) => item.evidence || [])
   ];
   for (const excerpt of evidence) {
-    if (!excerptIsGrounded(excerpt)) throw new IntelligenceError('Terra returned evidence that was not present in the saved sources.', 400);
+    if (!evidenceIsGrounded(excerpt)) throw new IntelligenceError('Terra returned evidence that was not present in the saved sources.', 400);
   }
   for (const mention of result.mentions || []) {
-    const source = expected.get(String(mention.mentionId));
-    if (!source || !excerptIsGrounded(mention.evidence, source)) {
+    const sourceRef = String(mention.mentionId);
+    if (!expected.has(sourceRef) || !evidenceIsGrounded(mention.evidence, sourceRef)) {
       throw new IntelligenceError(`Terra returned ungrounded evidence for ${String(mention.mentionId)}.`, 400);
     }
   }
@@ -264,6 +291,56 @@ export function socialReportExecutionInput(id: string, spaceId?: string) {
     sourceRef: string; author: string; content: string; publishedAt: string; analysis: Record<string, unknown> | null;
   }>>(row.source_snapshot_json, []) };
 }
+
+export function retrySocialIntelligenceReport(_user: SessionUser, spaceId: string, id: string) {
+  const retried = db.transaction(() => {
+    const lock = db.provider === 'postgres' ? ' FOR UPDATE' : '';
+    const row = db.prepare(`SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?${lock}`).get(id, spaceId) as any;
+    if (!row) throw new IntelligenceError('Social intelligence report not found.', 404);
+    const job = artifactJob(row);
+    if (!job || job.kind !== 'social.report') throw new IntelligenceError('The durable job for this report is unavailable.', 409);
+    if (row.state === 'completed' || job.state === 'completed') throw new IntelligenceError('This report is already complete.', 409);
+    if (row.state === 'queued' && ['queued', 'processing'].includes(job.state)) {
+      return { report: rowSocialReport(row), job, restarted: false, journalReused: false };
+    }
+    if (row.state !== 'failed' || job.state !== 'failed') throw new IntelligenceError('Only a failed report can be retried.', 409);
+
+    const execution = socialReportExecutionInput(id, spaceId);
+    const journaled = getJobProviderResult(job.id);
+    let journalReused = false;
+    let retainedJournal: typeof journaled = null;
+    if (journaled?.activity === 'experience.social_listening' && journaled.schemaName === 'experience_social_listening_report') {
+      const parsed = socialListeningResult.safeParse(journaled.output);
+      if (parsed.success) {
+        try {
+          validateSocialListeningEvidence(
+            execution.mentions.map((mention) => ({ sourceRef: String(mention.sourceRef), content: String(mention.content || '') })),
+            parsed.data
+          );
+          retainedJournal = { ...journaled, output: parsed.data };
+          journalReused = true;
+        } catch {
+          journalReused = false;
+        }
+      }
+    }
+
+    const timestamp = now();
+    const jobChanged = db.prepare(`UPDATE ai_jobs SET state='queued',stage='queued',progress=0,attempt=0,result_json=NULL,error=NULL,
+      retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=?,updated_at=?
+      WHERE id=? AND space_id=? AND kind='social.report' AND state='failed'`)
+      .run(retainedJournal ? JSON.stringify(retainedJournal) : null, timestamp, job.id, spaceId).changes;
+    const reportChanged = db.prepare(`UPDATE social_intelligence_reports SET state='queued',result_json=NULL,runtime_json=NULL,error=NULL,
+      completed_at=NULL,updated_at=? WHERE id=? AND space_id=? AND state='failed'`)
+      .run(timestamp, id, spaceId).changes;
+    if (!jobChanged || !reportChanged) throw new IntelligenceError('The report changed while it was being retried.', 409);
+    const refreshed = db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any;
+    return { report: rowSocialReport(refreshed), job: getJob(job.id)!, restarted: true, journalReused };
+  })();
+  publishEvent('data-changed', { reason: 'social-intelligence-report-retried', reportId: id }, spaceId);
+  return retried;
+}
+
 export function completeSocialIntelligenceReport(id: string, output: unknown, runtime: unknown, spaceId?: string) {
   const current = spaceId
     ? db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any

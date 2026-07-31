@@ -32,7 +32,7 @@ import { getTerraStatus } from './terraClient.js';
 import {
   createIntelligenceReport, createSocialIntelligenceReport, createSocialReplyDraft, getIntelligenceReport,
   IntelligenceError, listIntelligenceReports, listIntelligenceSources, listSocialIntelligenceReports,
-  listSocialReplyDrafts, updateSocialReplyDraft
+  listSocialReplyDrafts, retrySocialIntelligenceReport, updateSocialReplyDraft
 } from './intelligence.js';
 import { templates } from './templates.js';
 import { esignPublicRouter, esignRecipientRouter, esignRouter } from './esignRoutes.js';
@@ -871,6 +871,19 @@ app.post('/api/social/reports', (request, response) => {
     });
     publishEvent('ai-job', created.job, space.id); void aiJobRunner.pump();
     return response.status(202).json({ report: created.report, jobId: created.job.id, state: created.job.state, deduplicated: !created.created, statusUrl: `/api/ai/jobs/${created.job.id}` });
+  } catch (error) { return intelligenceError(response, error); }
+});
+app.post('/api/social/reports/:id/retry', (request, response) => {
+  try {
+    z.object({}).strict().parse(request.body || {});
+    const space = authenticatedSpace(request);
+    const retried = retrySocialIntelligenceReport(authenticatedUser(request), space.id, String(request.params.id));
+    publishEvent('ai-job', retried.job, space.id); void aiJobRunner.pump();
+    return response.status(202).json({
+      report: retried.report, jobId: retried.job.id, state: retried.job.state,
+      deduplicated: !retried.restarted, journalReused: retried.journalReused,
+      statusUrl: `/api/ai/jobs/${retried.job.id}`
+    });
   } catch (error) { return intelligenceError(response, error); }
 });
 

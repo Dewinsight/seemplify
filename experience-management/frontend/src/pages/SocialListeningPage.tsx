@@ -49,6 +49,43 @@ function connectionLabel(connection: XConnection) {
   return connection.account?.username ? `@${connection.account.username}` : connection.account?.name || 'Pending account';
 }
 
+function SocialReportCard({ report, retrying, retry }: {
+  report: SocialIntelligenceReport;
+  retrying: boolean;
+  retry: (report: SocialIntelligenceReport) => void;
+}) {
+  const retryButton = <Button size="sm" variant="outline" disabled={retrying} onClick={() => retry(report)}>
+    {retrying ? <Loader2 className="animate-spin" /> : <RefreshCw />}Retry report
+  </Button>;
+  return <Card>
+    <CardHeader className="border-b">
+      <div className="flex items-start justify-between gap-3">
+        <div><CardTitle>{report.title}</CardTitle><CardDescription className="mt-1">{report.mentionIds.length} posts · {formatDate(report.createdAt)}</CardDescription></div>
+        <Badge variant={report.state === 'completed' ? 'success' : report.state === 'failed' ? 'destructive' : 'warning'}>{report.state}</Badge>
+      </div>
+    </CardHeader>
+    <CardContent className="space-y-5 pt-5">
+      {report.state === 'failed' ? <div className="flex flex-col items-start justify-between gap-4 border border-destructive/30 bg-destructive/5 px-4 py-3 sm:flex-row" role="alert">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-destructive"><AlertTriangle className="h-4 w-4" />Report could not be completed</div>
+          <p className="mt-2 text-sm leading-6 text-destructive">{report.error || 'Terra could not produce a grounded report from the saved posts.'}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">The saved post snapshot is unchanged. Retry restarts the same durable job from the same sources.</p>
+        </div>
+        {retryButton}
+      </div> : report.state === 'queued' ? <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
+        <Loader2 className="h-4 w-4 animate-spin" />Waiting for Terra. This report is durable.
+      </div> : report.result ? <>
+        <section><h3 className="text-sm font-semibold">Executive summary</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{report.result.executiveSummary}</p></section>
+        {report.result.themes?.length > 0 && <section><h3 className="text-sm font-semibold">Themes</h3><div className="mt-2 divide-y border">{report.result.themes.map((theme: any) => <div className="p-3" key={theme.name}><div className="text-sm font-medium">{theme.name}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{theme.sentiment} · {theme.mentions} mentions</p></div>)}</div></section>}
+        {report.result.risks?.length > 0 && <section><h3 className="text-sm font-semibold">Risks</h3><ul className="mt-2 space-y-2 text-sm text-muted-foreground">{report.result.risks.map((risk: any, index: number) => <li className="border-l-2 border-amber-400 pl-3" key={index}>{risk.issue} — {risk.action}</li>)}</ul></section>}
+      </> : <div className="border px-4 py-3" role="alert">
+        <p className="text-sm font-semibold">The completed report has no readable result</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">The saved sources are intact. Refresh once; if this remains, share the report ID with support.</p>
+      </div>}
+    </CardContent>
+  </Card>;
+}
+
 export function SocialListeningPage() {
   const [status, setStatus] = useState<XIntegrationStatus | null>(null);
   const [mentions, setMentions] = useState<SocialMention[]>([]);
@@ -310,6 +347,16 @@ export function SocialListeningPage() {
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not queue social intelligence.'); }
     finally { setWorking(''); }
   }
+  async function retryReport(report: SocialIntelligenceReport) {
+    setWorking(`report:${report.id}`);
+    try {
+      await api(`/api/social/reports/${report.id}/retry`, json('POST', {}));
+      await load('manual');
+      toast.success(`Retry queued with the same ${report.mentionIds.length} saved posts and durable job.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not retry this report.');
+    } finally { setWorking(''); }
+  }
   async function copyText(value: string, label: string) {
     try { await navigator.clipboard.writeText(value); toast.success(`${label} copied.`); }
     catch { toast.error('Clipboard access was unavailable.'); }
@@ -369,7 +416,7 @@ export function SocialListeningPage() {
 
     {connection && view === 'queries' && <Card><CardHeader className="border-b"><div className="flex items-start justify-between gap-4"><div><CardTitle>Listening queries</CardTitle><CardDescription className="mt-1">Recent-search queries run for {connectionLabel(connection)} and consume X API credits.</CardDescription></div>{canManageCollection ? <Button size="sm" onClick={() => openQuery()}><Plus />Add query</Button> : <span className="text-xs text-muted-foreground">Owner/admin managed</span>}</div></CardHeader><CardContent className="p-0">{status.queries.length ? <div className="divide-y">{status.queries.map((query) => <div className="flex flex-col justify-between gap-3 p-5 md:flex-row md:items-center" key={query.id}><div><div className="flex items-center gap-2"><span className="text-sm font-semibold">{query.label}</span><Badge variant={query.enabled ? 'success' : 'secondary'}>{query.enabled ? 'Enabled' : 'Paused'}</Badge>{query.catchUpPending && <Badge variant="warning">Catch-up pending</Badge>}{query.historyExhausted && <Badge variant="secondary">History loaded</Badge>}</div><code className="mt-1 block break-all text-xs text-muted-foreground">{query.query}</code><div className="mt-2 text-xs text-muted-foreground">Last success: {formatDate(query.lastSuccessAt)}{query.lastError ? ` · ${query.lastError}` : ''}</div></div>{canManageCollection && <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openQuery(query)}>Edit</Button><Button size="icon" variant="ghost" aria-label={`Delete ${query.label}`} onClick={() => void deleteQuery(query)}><Trash2 /></Button></div>}</div>)}</div> : <div className="px-5 py-14 text-center"><Search className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No listening queries</div><p className="mt-1 text-sm text-muted-foreground">Account posts and mentions still sync without a public search query.</p></div>}</CardContent></Card>}
 
-    {connection && view === 'intelligence' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Social intelligence history</h2><p className="mt-1 text-sm text-muted-foreground">Each report keeps its exact selected-post snapshot and Terra runtime metadata.</p></div>{activeReports > 0 && <Badge variant="warning">{activeReports} processing</Badge>}</div>{reports.length ? reports.map((report) => <Card key={report.id}><CardHeader className="border-b"><div className="flex items-start justify-between gap-3"><div><CardTitle>{report.title}</CardTitle><CardDescription className="mt-1">{report.mentionIds.length} posts · {formatDate(report.createdAt)}</CardDescription></div><Badge variant={report.state === 'completed' ? 'success' : report.state === 'failed' ? 'destructive' : 'warning'}>{report.state}</Badge></div></CardHeader><CardContent className="space-y-5 pt-5">{report.error && <p className="text-sm text-destructive">{report.error}</p>}{report.result ? <><section><h3 className="text-sm font-semibold">Executive summary</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{report.result.executiveSummary}</p></section>{report.result.themes?.length > 0 && <section><h3 className="text-sm font-semibold">Themes</h3><div className="mt-2 divide-y border">{report.result.themes.map((theme: any) => <div className="p-3" key={theme.name}><div className="text-sm font-medium">{theme.name}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{theme.sentiment} · {theme.mentions} mentions</p></div>)}</div></section>}{report.result.risks?.length > 0 && <section><h3 className="text-sm font-semibold">Risks</h3><ul className="mt-2 space-y-2 text-sm text-muted-foreground">{report.result.risks.map((risk: any, index: number) => <li className="border-l-2 border-amber-400 pl-3" key={index}>{risk.issue} — {risk.action}</li>)}</ul></section>}</> : <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Waiting for Terra. This report is durable.</div>}</CardContent></Card>) : <Card><CardContent className="py-14 text-center"><FileText className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No saved social reports</div><p className="mt-1 text-sm text-muted-foreground">Select collected posts in Listening and generate the first report.</p></CardContent></Card>}</div>}
+    {connection && view === 'intelligence' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Social intelligence history</h2><p className="mt-1 text-sm text-muted-foreground">Each report keeps its exact selected-post snapshot and Terra runtime metadata.</p></div>{activeReports > 0 && <Badge variant="warning">{activeReports} processing</Badge>}</div>{reports.length ? reports.map((report) => <SocialReportCard key={report.id} report={report} retrying={working === `report:${report.id}`} retry={(item) => void retryReport(item)} />) : <Card><CardContent className="py-14 text-center"><FileText className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No saved social reports</div><p className="mt-1 text-sm text-muted-foreground">Select collected posts in Listening and generate the first report.</p></CardContent></Card>}</div>}
 
     {connection && view === 'replies' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Reply assistant</h2><p className="mt-1 text-sm text-muted-foreground">Drafts require human review. Seemplify does not post, like, follow, or message on X.</p></div>{activeDrafts > 0 && <Badge variant="warning">{activeDrafts} generating</Badge>}</div>{visibleReplyDrafts.length ? visibleReplyDrafts.map((draft) => { const mention = mentions.find((item) => item.id === draft.mentionId); return <Card key={draft.id}><CardHeader className="border-b"><div className="flex items-start justify-between"><div><CardTitle>{mention?.author || 'X reply draft'}</CardTitle><CardDescription className="mt-1">{draft.tone} · {formatDate(draft.createdAt)}</CardDescription></div><Badge variant={draft.state === 'failed' ? 'destructive' : draft.state === 'queued' ? 'warning' : 'success'}>{draft.state}</Badge></div></CardHeader><CardContent className="pt-5">{draft.state === 'queued' ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Terra is generating a draft.</div> : draft.state === 'failed' ? <p className="text-sm text-destructive">{draft.error}</p> : <div className="space-y-3"><Label htmlFor={`reply-${draft.id}`}>Editable draft</Label><Textarea id={`reply-${draft.id}`} maxLength={280} value={draftEdits[draft.id] ?? draft.content} onChange={(event) => setDraftEdits((current) => ({ ...current, [draft.id]: event.target.value }))} /><div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{(draftEdits[draft.id] ?? draft.content).length}/280 · Draft only — never posted automatically</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void copyText(draftEdits[draft.id] ?? draft.content, 'Reply draft')}><Copy />Copy</Button>{mention?.url && <Button size="sm" variant="outline" asChild><a href={mention.url} target="_blank" rel="noreferrer"><ExternalLink />Open on X</a></Button>}<Button size="sm" disabled={working === `draft:${draft.id}`} onClick={() => void saveReplyDraft(draft)}>{working === `draft:${draft.id}` ? <Loader2 className="animate-spin" /> : <Check />}Save draft</Button></div></div>{draft.rationale && <p className="border-t pt-3 text-xs leading-5 text-muted-foreground">Why Terra suggested this: {draft.rationale}</p>}</div>}</CardContent></Card>; }) : <Card><CardContent className="py-14 text-center"><MessageSquareReply className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No reply drafts</div><p className="mt-1 text-sm text-muted-foreground">Choose Draft reply beside a collected X post.</p></CardContent></Card>}</div>}
 

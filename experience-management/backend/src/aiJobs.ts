@@ -4,13 +4,13 @@ import { config } from './config.js';
 import {
   aiJsonSchemas, analystChatResult, improvementResult, insightResult, reportResult,
   crossSourceIntelligenceResult, journeyResult, responseAnalysisResult, socialListeningResult, socialReplyDraftResult,
-  surveyGenerationResult, translationResult
+  socialListeningJsonSchemaFor, surveyGenerationResult, translationResult
 } from './aiSchemas.js';
 import { computeAnalytics } from './analytics.js';
 import { AssistantError, assistantRunId, failAssistantRun, markAssistantRunRetrying, publishAssistantChanged } from './assistant.js';
 import { executeAssistantJob } from './assistantJobs.js';
 import {
-  applyGeneratedJourney, applyOptimizedJourney, applySurveyTranslation, claimNextJob, createCollector, db, getCollector, getJob, getJobProviderResult, getJourney, getJourneyAiApplication, getResponse, getSurvey, insertInsight,
+  applyGeneratedJourney, applyOptimizedJourney, applySurveyTranslation, claimNextJob, clearJobProviderResult, createCollector, db, getCollector, getJob, getJobProviderResult, getJourney, getJourneyAiApplication, getResponse, getSurvey, insertInsight,
   listInsights, listResponses, listSocialMentionsByIdsForSpace, listSocialMentionsForSpace, saveJobProviderResult, saveSurvey, setResponseAnalysis,
   setSocialMentionAnalysis, updateJob
 } from './database.js';
@@ -56,11 +56,48 @@ function compactResponses(survey: Survey, responses: ResponseRecord[], limit = 1
   }));
 }
 
-async function structured<T>(job: AiJob, activity: string, schemaName: string, jsonSchema: Record<string, unknown>, validator: z.ZodType<T>, prompt: string, knowledgeQuery?: string): Promise<JobOutput> {
+function validateStructuredSemantics<T>(job: AiJob, output: T, semanticValidator?: (value: T) => void) {
+  if (!semanticValidator) return;
+  try {
+    semanticValidator(output);
+  } catch (error) {
+    if (error instanceof IntelligenceError && job.attempt < 2) {
+      throw new TerraError(
+        'Terra returned invalid source evidence. The durable job will make one corrective attempt.',
+        'TERRA_EVIDENCE_RETRY',
+        502,
+        true
+      );
+    }
+    throw error;
+  }
+}
+
+async function structured<T>(
+  job: AiJob,
+  activity: string,
+  schemaName: string,
+  jsonSchema: Record<string, unknown>,
+  validator: z.ZodType<T>,
+  prompt: string,
+  knowledgeQuery?: string,
+  semanticValidator?: (value: T) => void
+): Promise<JobOutput> {
   const journaled = getJobProviderResult(job.id);
-  if (journaled?.activity === activity && journaled.schemaName === schemaName) {
-    const parsed = validator.safeParse(journaled.output);
-    if (parsed.success) return { output: parsed.data, runtime: journaled.runtime };
+  if (journaled) {
+    if (journaled.activity === activity && journaled.schemaName === schemaName) {
+      const parsed = validator.safeParse(journaled.output);
+      if (parsed.success) {
+        try {
+          validateStructuredSemantics(job, parsed.data, semanticValidator);
+          return { output: parsed.data, runtime: journaled.runtime };
+        } catch (error) {
+          clearJobProviderResult(job.id);
+          throw error;
+        }
+      }
+    }
+    clearJobProviderResult(job.id);
   }
   let contextualPrompt = prompt;
   const knowledgeRefs = pinnedKnowledgeRefs(job.input);
@@ -85,6 +122,7 @@ async function structured<T>(job: AiJob, activity: string, schemaName: string, j
   });
   const parsed = validator.safeParse(result.data);
   if (!parsed.success) throw new TerraError(`Terra returned invalid ${schemaName}: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`, 'TERRA_SCHEMA_INVALID', 502, false);
+  validateStructuredSemantics(job, parsed.data, semanticValidator);
   const saved = saveJobProviderResult(job.id, { activity, schemaName, output: parsed.data, runtime: result.runtime });
   return { output: saved?.output ?? parsed.data, runtime: saved?.runtime ?? result.runtime };
 }
@@ -166,12 +204,14 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
       : listSocialMentionsForSpace(job.spaceId, socialAnalysisLimit);
     const mentions = candidates.slice(0, socialAnalysisLimit);
     if (!mentions.length) throw new TerraError('No social mentions are available for analysis.', 'MENTIONS_REQUIRED', 400, false);
+    const sourceRefs = mentions.map((mention) => mention.id);
     const socialKnowledgeQuery = `Relevant product, policy, terminology, reputation risk, and customer-experience context for these social posts: ${mentions.map((mention) => mention.content).join(' ').slice(0, 2600)}`;
-    const result = await structured(job, 'experience.social_listening', 'experience_social_listening', aiJsonSchemas.socialListening, socialListeningResult,
-      `Analyze these imported public mentions as a bounded social-listening dataset. Detect sentiment, emotions, themes, emerging trends, reputation risks, and actionable opportunities. Sentiment values must be mention counts and must sum to ${mentions.length}. Include exactly one analysis item for each supplied mention ID, with a verbatim evidence excerpt of at least 12 characters from that mention, or its full text when the mention is shorter. Every claim-bearing theme, trend, risk, and opportunity needs exact supplied evidence, using the full text when a cited source is shorter than 12 characters. Do not claim platform-wide prevalence or invent missing context.\nMentions: ${JSON.stringify(mentions.map((mention) => ({ id: mention.id, source: mention.source, publishedAt: mention.publishedAt, language: mention.language, content: mention.content })))}`,
-      socialKnowledgeQuery);
+    const result = await structured(job, 'experience.social_listening', 'experience_social_listening',
+      socialListeningJsonSchemaFor(sourceRefs), socialListeningResult,
+      `Analyze these imported public mentions as a bounded social-listening dataset. Detect sentiment, emotions, themes, emerging trends, reputation risks, and actionable opportunities. Sentiment values must be mention counts and must sum to ${mentions.length}. Include exactly one analysis item for every supplied ID. In every theme, emerging trend, risk, and opportunity, the evidence array must contain only exact supplied ID values, never quotes or paraphrases. In every mention analysis, copy that mention's exact ID into both mentionId and evidence. Do not claim platform-wide prevalence or invent missing context.\nMentions: ${JSON.stringify(mentions.map((mention) => ({ id: mention.id, source: mention.source, publishedAt: mention.publishedAt, language: mention.language, content: mention.content })))}`,
+      socialKnowledgeQuery,
+      (output) => validateSocialListeningEvidence(mentions.map((mention) => ({ sourceRef: mention.id, content: mention.content })), output));
     const analysis = result.output as z.infer<typeof socialListeningResult>;
-    validateSocialListeningEvidence(mentions.map((mention) => ({ sourceRef: mention.id, content: mention.content })), analysis);
     const validIds = new Set(mentions.map((mention) => mention.id));
     for (const item of analysis.mentions) if (validIds.has(item.mentionId)) setSocialMentionAnalysis(item.mentionId, item);
     return result;
@@ -186,9 +226,15 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
   if (job.kind === 'social.report') {
     const report = socialReportExecutionInput(String(job.input.reportId || ''), job.spaceId);
     if (!report.mentions.length) throw new TerraError('No X posts remain in this report snapshot.', 'MENTIONS_REQUIRED', 400, false);
-    const result = await structured(job, 'experience.social_listening', 'experience_social_listening_report', aiJsonSchemas.socialListening, socialListeningResult,
-      `Create a durable social-intelligence report from this bounded X dataset. Detect sentiment, themes, emerging trends, risks, and opportunities. Sentiment values are counts and must sum to ${report.mentions.length}. Include exactly one mention analysis for every sourceRef, including a verbatim evidence excerpt of at least 12 characters from that post, or its full text when the post is shorter. Every claim-bearing theme, trend, risk, and opportunity needs exact supplied evidence, using the full text when a cited source is shorter than 12 characters. Do not generalize beyond this dataset.\nReport title: ${report.title}\nPosts: ${JSON.stringify(report.mentions)}`,
-      `Relevant product, policy, terminology, reputation risk, and customer-experience context for ${report.title}: ${report.mentions.map((mention) => mention.content).join(' ').slice(0, 2400)}`);
+    const sourceRefs = report.mentions.map((mention) => mention.sourceRef);
+    const result = await structured(job, 'experience.social_listening', 'experience_social_listening_report',
+      socialListeningJsonSchemaFor(sourceRefs), socialListeningResult,
+      `Create a durable social-intelligence report from this bounded X dataset. Detect sentiment, themes, emerging trends, risks, and opportunities. Sentiment values are counts and must sum to ${report.mentions.length}. Include exactly one mention analysis for every sourceRef. In every theme, emerging trend, risk, and opportunity, the evidence array must contain only exact supplied sourceRef values, never quotes, excerpts, paraphrases, or ellipses. In every mention analysis, copy that post's exact sourceRef into both mentionId and evidence. Do not generalize beyond this dataset.\nReport title: ${report.title}\nPosts: ${JSON.stringify(report.mentions.map((mention) => ({ sourceRef: mention.sourceRef, author: mention.author, content: mention.content, publishedAt: mention.publishedAt })))}`,
+      `Relevant product, policy, terminology, reputation risk, and customer-experience context for ${report.title}: ${report.mentions.map((mention) => mention.content).join(' ').slice(0, 2400)}`,
+      (output) => validateSocialListeningEvidence(
+        report.mentions.map((mention) => ({ sourceRef: String(mention.sourceRef), content: String(mention.content || '') })),
+        output
+      ));
     return { ...result, output: completeSocialIntelligenceReport(report.id, result.output, result.runtime, job.spaceId) };
   }
   if (job.kind === 'intelligence.synthesize') {

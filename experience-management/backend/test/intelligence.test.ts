@@ -35,6 +35,7 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { createJob, db, getJob, insertInsight, updateJob } = await import('../src/database.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
+const { socialListeningJsonSchemaFor } = await import('../src/aiSchemas.js');
 const { createSocialReplyDraft, IntelligenceError, validateSocialListeningEvidence } = await import('../src/intelligence.js');
 const originalFetch = globalThis.fetch;
 
@@ -121,10 +122,10 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   const sourceRef = `x-post:${mentionId}`;
   await completeQueuedJob(queuedReport.body.jobId, {
     executiveSummary: 'One saved X post reports onboarding friction.', sentiment: { negative: 1, neutral: 0, positive: 0, mixed: 0 },
-    themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [postText] }],
-    emergingTrends: [], risks: [{ issue: 'Setup abandonment', severity: 'medium', evidence: [postText], action: 'Review the first-time setup flow.' }],
-    opportunities: [{ opportunity: 'Clarify setup guidance', evidence: [postText], action: 'Test revised onboarding guidance.' }],
-    mentions: [{ mentionId: sourceRef, sentiment: 'negative', sentimentScore: -0.7, emotions: ['frustration'], themes: ['onboarding'], summary: 'The author reports difficult onboarding.', risk: 'medium', evidence: postText }]
+    themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [sourceRef] }],
+    emergingTrends: [], risks: [{ issue: 'Setup abandonment', severity: 'medium', evidence: [sourceRef], action: 'Review the first-time setup flow.' }],
+    opportunities: [{ opportunity: 'Clarify setup guidance', evidence: [sourceRef], action: 'Test revised onboarding guidance.' }],
+    mentions: [{ mentionId: sourceRef, sentiment: 'negative', sentimentScore: -0.7, emotions: ['frustration'], themes: ['onboarding'], summary: 'The author reports difficult onboarding.', risk: 'medium', evidence: sourceRef }]
   });
   const reports = await owner.get(`/api/social/reports?connectionId=${connectionId}`).expect(200);
   assert.equal(reports.body[0].state, 'completed');
@@ -132,6 +133,84 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   assert.equal(reports.body[0].runtime.usage.total_tokens, 200);
   const completedReportReplay = await owner.post('/api/social/reports').set('Idempotency-Key', socialReportKey).send({ connectionId, title: 'Onboarding listening report', mentionIds: [mentionId] }).expect(202);
   assert.equal(completedReportReplay.body.jobId, queuedReport.body.jobId);
+
+  const failedReport = await owner.post('/api/social/reports').set('Idempotency-Key', crypto.randomUUID())
+    .send({ connectionId, title: 'Recoverable onboarding report', mentionIds: [mentionId] }).expect(202);
+  const failedReportOutput = {
+    executiveSummary: 'One saved X post reports onboarding friction.',
+    sentiment: { negative: 1, neutral: 0, positive: 0, mixed: 0 },
+    themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [`“${postText}”`] }],
+    emergingTrends: [], risks: [], opportunities: [],
+    mentions: [{ mentionId: sourceRef, sentiment: 'negative', sentimentScore: -0.7, emotions: ['frustration'],
+      themes: ['onboarding'], summary: 'The author reports difficult onboarding.', risk: 'medium', evidence: `“${postText}”` }]
+  };
+  const failedAt = new Date().toISOString();
+  db.prepare(`UPDATE ai_jobs SET state='failed',stage='failed',progress=100,attempt=3,error=?,
+    provider_result_json=?,completed_at=?,updated_at=? WHERE id=?`).run(
+      'Terra returned evidence that was not present in the saved sources.',
+      JSON.stringify({
+        activity: 'experience.social_listening', schemaName: 'experience_social_listening_report',
+        output: failedReportOutput, runtime: { model: 'gpt-5.6-terra', usage: { total_tokens: 200 } }
+      }),
+      failedAt, failedAt, failedReport.body.jobId
+    );
+  db.prepare(`UPDATE social_intelligence_reports SET state='failed',error=?,completed_at=?,updated_at=? WHERE id=?`).run(
+    'Terra returned evidence that was not present in the saved sources.', failedAt, failedAt, failedReport.body.report.id
+  );
+
+  let retryProviderCalls = 0;
+  globalThis.fetch = async () => {
+    retryProviderCalls += 1;
+    throw new Error('a valid durable provider journal must be reused without calling Terra');
+  };
+  const retriedReport = await owner.post(`/api/social/reports/${failedReport.body.report.id}/retry`).send({}).expect(202);
+  assert.equal(retriedReport.body.report.id, failedReport.body.report.id);
+  assert.equal(retriedReport.body.jobId, failedReport.body.jobId);
+  assert.equal(retriedReport.body.state, 'queued');
+  assert.equal(retriedReport.body.journalReused, true);
+  assert.equal(retriedReport.body.deduplicated, false);
+  const duplicateRetry = await owner.post(`/api/social/reports/${failedReport.body.report.id}/retry`).send({}).expect(202);
+  assert.equal(duplicateRetry.body.jobId, failedReport.body.jobId);
+  assert.equal(duplicateRetry.body.deduplicated, true);
+  const retryJob = getJob(failedReport.body.jobId); assert.ok(retryJob);
+  assert.equal(retryJob.state, 'queued');
+  assert.equal(retryJob.attempt, 0);
+  const recoveredReport = await executeAiJob(retryJob);
+  assert.equal(retryProviderCalls, 0);
+  assert.equal((recoveredReport as any).output.id, failedReport.body.report.id);
+  assert.equal((recoveredReport as any).output.state, 'completed');
+  updateJob(retryJob.id, {
+    state: 'completed', stage: 'completed', progress: 100, result: recoveredReport,
+    completedAt: new Date().toISOString()
+  });
+
+  const staleJournalReport = await owner.post('/api/social/reports').set('Idempotency-Key', crypto.randomUUID())
+    .send({ connectionId, title: 'Stale journal recovery report', mentionIds: [mentionId] }).expect(202);
+  db.prepare('UPDATE ai_jobs SET provider_result_json=? WHERE id=?').run(JSON.stringify({
+    activity: 'experience.social_listening', schemaName: 'experience_social_listening_report',
+    output: { malformed: true }, runtime: { model: 'gpt-5.6-terra' }
+  }), staleJournalReport.body.jobId);
+  let replacementProviderCalls = 0;
+  globalThis.fetch = async () => {
+    replacementProviderCalls += 1;
+    return terraResponse({
+      executiveSummary: 'One saved X post reports onboarding friction.',
+      sentiment: { negative: 1, neutral: 0, positive: 0, mixed: 0 },
+      themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [sourceRef] }],
+      emergingTrends: [], risks: [], opportunities: [],
+      mentions: [{ mentionId: sourceRef, sentiment: 'negative', sentimentScore: -0.7, emotions: ['frustration'],
+        themes: ['onboarding'], summary: 'The author reports difficult onboarding.', risk: 'medium', evidence: sourceRef }]
+    });
+  };
+  const staleJournalJob = getJob(staleJournalReport.body.jobId); assert.ok(staleJournalJob);
+  const replacedJournalResult = await executeAiJob(staleJournalJob);
+  assert.equal(replacementProviderCalls, 1);
+  assert.equal((replacedJournalResult as any).output.id, staleJournalReport.body.report.id);
+  assert.equal((replacedJournalResult as any).output.state, 'completed');
+  updateJob(staleJournalJob.id, {
+    state: 'completed', stage: 'completed', progress: 100, result: replacedJournalResult,
+    completedAt: new Date().toISOString()
+  });
 
   const groundedBase = await owner.post('/api/knowledge-bases').send({
     name: 'Support policy', description: 'Approved support guidance', privacy: 'space', terraContextEnabled: true
@@ -232,11 +311,11 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
     return terraResponse({
       executiveSummary: 'One saved X post reports onboarding friction.',
       sentiment: { negative: 1, neutral: 0, positive: 0, mixed: 0 },
-      themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [postText] }],
+      themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [sourceRef] }],
       emergingTrends: [], risks: [], opportunities: [],
       mentions: [{ mentionId: sourceRef, sentiment: 'negative', sentimentScore: -0.7,
         emotions: ['frustration'], themes: ['onboarding'], summary: 'The author reports difficult onboarding.',
-        risk: 'medium', evidence: postText }]
+        risk: 'medium', evidence: sourceRef }]
     });
   };
 
@@ -272,6 +351,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   await member.post('/api/social/analyze').send({ mentionIds: [mentionId] }).expect(404);
   assert.deepEqual((await member.get('/api/social/reply-drafts').expect(200)).body, []);
   assert.deepEqual((await member.get('/api/social/reports').expect(200)).body, []);
+  await member.post(`/api/social/reports/${failedReport.body.report.id}/retry`).send({}).expect(404);
   const unattributedPrivateJob = createJob('social.analyze', { mentionIds: [mentionId] }, user.active_space_id);
   await owner.get(`/api/ai/jobs/${unattributedPrivateJob.id}`).expect(200);
   await member.get(`/api/ai/jobs/${unattributedPrivateJob.id}`).expect(404);
@@ -336,24 +416,59 @@ test('combines selected historical survey and social reports with immutable evid
   await assert.rejects(executeAiJob(invalidJob), (error: unknown) => error instanceof IntelligenceError && error.status === 400);
 });
 
-test('grounds mixed short and long social posts without letting one short post poison the batch', () => {
+test('pins the social-listening JSON schema to the exact saved source set', () => {
+  const schema = socialListeningJsonSchemaFor(['x-post:first', ' x-post:second ', 'x-post:first']) as any;
+  const expected = ['x-post:first', 'x-post:second'];
+  for (const section of ['themes', 'emergingTrends', 'risks', 'opportunities']) {
+    assert.deepEqual(schema.properties[section].items.properties.evidence.items.enum, expected);
+  }
+  assert.equal(schema.properties.mentions.minItems, 2);
+  assert.equal(schema.properties.mentions.maxItems, 2);
+  assert.deepEqual(schema.properties.mentions.items.properties.mentionId.enum, expected);
+  assert.deepEqual(schema.properties.mentions.items.properties.evidence.enum, expected);
+  assert.throws(() => socialListeningJsonSchemaFor([]), /At least one social source reference/u);
+});
+
+test('accepts source references and presentation-only quote or ellipsis changes while rejecting fabricated social evidence', () => {
   const sources = [
     { sourceRef: 'short-post', content: 'Thanks!' },
-    { sourceRef: 'long-post', content: 'The onboarding guide made account setup much easier today.' }
+    { sourceRef: 'quoted-post', content: 'The customer said "setup is confusing" before adding that support fixed it.' },
+    { sourceRef: 'long-post', content: 'The onboarding guide made account setup much easier today, although account permissions remained hard to understand for new administrators.' }
   ];
-  const result = {
-    sentiment: { negative: 0, neutral: 1, positive: 1, mixed: 0 },
-    themes: [{ name: 'Feedback', mentions: 2, sentiment: 'positive', evidence: ['Thanks!', 'onboarding guide'] }],
+  const resultFor = (evidence: string[]) => ({
+    sentiment: { negative: 0, neutral: sources.length, positive: 0, mixed: 0 },
+    themes: [{ name: 'Feedback', mentions: sources.length, sentiment: 'neutral', evidence }],
     emergingTrends: [], risks: [], opportunities: [],
-    mentions: [
-      { mentionId: 'short-post', evidence: 'Thanks!' },
-      { mentionId: 'long-post', evidence: 'onboarding guide' }
-    ]
-  };
-  assert.doesNotThrow(() => validateSocialListeningEvidence(sources, result));
+    mentions: sources.map((source) => ({ mentionId: source.sourceRef, evidence: source.sourceRef }))
+  });
+
+  assert.doesNotThrow(() => validateSocialListeningEvidence(sources, resultFor(sources.map((source) => source.sourceRef))));
+  assert.doesNotThrow(() => validateSocialListeningEvidence(sources, resultFor([
+    '“The customer said ‘setup is confusing’ before adding that support fixed it.”'
+  ])));
+  assert.doesNotThrow(() => validateSocialListeningEvidence(sources, resultFor([
+    'The onboarding guide made account setup much easier … account permissions remained hard to understand'
+  ])));
+
+  assert.throws(() => validateSocialListeningEvidence(sources, resultFor([
+    'account permissions remained hard to understand … The onboarding guide made account setup much easier'
+  ])), /not present in the saved sources/u);
+  assert.throws(() => validateSocialListeningEvidence(sources, resultFor([
+    'The customer said setup is confusing … account permissions remained hard to understand'
+  ])), /not present in the saved sources/u);
+  assert.throws(() => validateSocialListeningEvidence(sources, resultFor(['onboarding'])),
+    /not present in the saved sources/u);
+  assert.throws(() => validateSocialListeningEvidence(sources, resultFor([
+    'Customers said onboarding takes several hours and blocks every administrator.'
+  ])), /not present in the saved sources/u);
   assert.throws(() => validateSocialListeningEvidence(sources, {
-    ...result, mentions: [{ mentionId: 'short-post', evidence: 'Thanks' }, result.mentions[1]]
-  }), /ungrounded evidence/u);
+    ...resultFor(['short-post']),
+    mentions: [
+      { mentionId: 'short-post', evidence: 'quoted-post' },
+      { mentionId: 'quoted-post', evidence: 'quoted-post' },
+      { mentionId: 'long-post', evidence: 'long-post' }
+    ]
+  }), /ungrounded evidence for short-post/u);
 });
 
 test('deleting a user deletes their private AI payloads instead of making them globally visible', () => {
