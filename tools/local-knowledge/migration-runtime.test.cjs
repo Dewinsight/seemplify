@@ -148,6 +148,65 @@ test('dual-write extracts once and writes immutable Qwen and GTE profiles to sep
   }
 });
 
+test('GTE-only indexing never calls or writes the retired Qwen provider', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-gte-only-'));
+  const filename = path.join(directory, 'source.md');
+  fs.writeFileSync(filename, 'CPU-only GTE evidence.');
+  const config = {
+    ...CONFIG,
+    paths: { ...CONFIG.paths, staging: directory },
+    embeddingMigration: {
+      ...CONFIG.embeddingMigration,
+      provider: 'gte-node', dualWrite: false, qwenRollbackRetained: false, rolloutPercent: 100,
+    },
+  };
+  const profiles = embeddingProfiles(config);
+  let qwenWrites = 0;
+  let gteChunks = [];
+  const embeddedProviders = [];
+  const clients = fakeTenantClients('space_gte_only', config, async (_database, query, variables = {}) => {
+    if (query === AQL.findReceipt) return [];
+    if (query === AQL.upsertChunks) qwenWrites += 1;
+    if (query === AQL.upsertGteChunks) gteChunks = variables.chunks;
+    if (query === AQL.collectionCounts) return [{ documents: 1, chunks: 0, entities: 0, claims: 0, relations: 0 }];
+    if (query === AQL.gteCollectionCount) return [gteChunks.length];
+    return [];
+  });
+  const runtime = createKnowledgeRuntime({
+    config, secrets: SECRETS, appClient: clients.app, provisionerClient: clients.provisioner,
+    extractDocument: async () => ({ text: 'CPU-only GTE evidence.', pageCount: 1 }),
+    embedByProfile: async (profile, texts) => {
+      embeddedProviders.push(profile.provider);
+      return texts.map(() => [1, ...Array(767).fill(0)]);
+    },
+    extractGraph: async () => ({ windows: 0, entities: [], claims: [], relations: [] }),
+  });
+  try {
+    const result = await runtime.index({
+      jobId: 'job_gte_only', spaceId: 'space_gte_only',
+      knowledgeBase: {
+        id: 'base_gte_only', indexVersion: 1,
+        embeddingModel: profiles['gte-node'].model, embeddingDimension: profiles['gte-node'].dimensions,
+        embeddingProfile: profiles['gte-node'], chunkerVersion: 'structured-v1',
+        targetEmbeddingProfiles: [profiles['gte-node']],
+      },
+      document: {
+        id: 'doc_gte_only', sourcePath: filename, originalName: 'source.md', mimeType: 'text/markdown',
+        sizeBytes: fs.statSync(filename).size,
+        sha256: crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex'), metadata: {},
+      },
+    });
+    assert.deepEqual(embeddedProviders, ['gte-node']);
+    assert.equal(qwenWrites, 0);
+    assert.equal(gteChunks.length, 1);
+    assert.deepEqual(result.metrics.embeddingProfiles.map((profile) => profile.provider), ['gte-node']);
+    assert.equal(result.metrics.vectorIndexes.qwen, undefined);
+  } finally {
+    await runtime.close({ force: true });
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('GTE backfill reuses canonical chunk boundaries and is resumable and idempotent', async () => {
   const config = { ...CONFIG, embeddingMigration: { ...CONFIG.embeddingMigration, dualWrite: false } };
   const canonical = [{
@@ -306,6 +365,7 @@ test('migration AQL accepts pinned legacy Qwen chunks and exact-validates GTE co
   assert.match(AQL.gteBackfillCandidates, /document\.sha256 == @sourceSha256/);
   assert.match(AQL.gteBackfillRemaining, /target\.embeddingRevision != @embeddingRevision/);
   assert.match(AQL.gteCoverageByBase, /LENGTH\(target\.embedding \|\| \[\]\) == @embeddingDimensions/);
+  assert.match(AQL.gteStandaloneCoverageByBase, /complete: targetCount > 0/);
   assert.match(AQL.gteBackfillCoverage, /validTargetCount/);
   assert.match(AQL.gteBackfillCoverage, /targetCount/);
   assert.match(AQL.gteBackfillCoverage, /LENGTH\(canonical\) == LENGTH\(validSource\)/);

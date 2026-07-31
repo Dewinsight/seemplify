@@ -147,7 +147,7 @@ export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.Proce
     'EXPERIENCE_EMBEDDING_FORCE_QWEN');
   const providerValue = forceQwen
     ? 'qwen-tei'
-    : String(environment.EXPERIENCE_EMBEDDING_PROVIDER || 'qwen-tei').trim().toLowerCase();
+    : String(environment.EXPERIENCE_EMBEDDING_PROVIDER || 'gte-node').trim().toLowerCase();
   if (providerValue !== 'qwen-tei' && providerValue !== 'gte-node') {
     throw new Error('EXPERIENCE_EMBEDDING_PROVIDER must be either qwen-tei or gte-node.');
   }
@@ -189,7 +189,7 @@ export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.Proce
     'EXPERIENCE_EMBEDDING_CONCURRENCY');
   const dualWrite = forceQwen ? false : configuredBoolean(environment.EXPERIENCE_EMBEDDING_DUAL_WRITE, false,
     'EXPERIENCE_EMBEDDING_DUAL_WRITE');
-  const qwenRollbackRetained = configuredBoolean(environment.EXPERIENCE_QWEN_ROLLBACK_RETAINED, true,
+  const qwenRollbackRetained = configuredBoolean(environment.EXPERIENCE_QWEN_ROLLBACK_RETAINED, provider === 'qwen-tei',
     'EXPERIENCE_QWEN_ROLLBACK_RETAINED');
 
   if (provider === 'gte-node'
@@ -204,11 +204,11 @@ export function resolveKnowledgeEmbeddingConfiguration(environment: NodeJS.Proce
         || vectorIndexVersion !== qwenKnowledgeEmbeddingProfile.vectorIndexVersion)) {
     throw new Error('qwen-tei requires the pinned Qwen/Qwen3-Embedding-4B float16 profile and index version.');
   }
-  if (!qwenRollbackRetained) {
-    throw new Error('EXPERIENCE_QWEN_ROLLBACK_RETAINED must remain true during the gated GTE migration release.');
-  }
-  if (provider === 'gte-node' && !dualWrite) {
+  if (provider === 'gte-node' && qwenRollbackRetained && !dualWrite) {
     throw new Error('gte-node requires dual-write while the Qwen rollback index is retained.');
+  }
+  if (provider === 'gte-node' && !qwenRollbackRetained && dualWrite) {
+    throw new Error('gte-node cannot dual-write to Qwen after the Qwen rollback profile has been retired.');
   }
 
   return {

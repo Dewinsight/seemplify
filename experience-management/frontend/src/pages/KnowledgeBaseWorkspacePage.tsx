@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
+import { api } from '@/lib/api';
 import {
   deleteKnowledgeBase,
   deleteKnowledgeDocument,
@@ -36,7 +37,18 @@ import type {
   KnowledgeSearchResult
 } from '@/types';
 
-type WorkspaceTab = 'documents' | 'search' | 'graph' | 'history';
+type WorkspaceTab = 'documents' | 'search' | 'graph' | 'history' | 'runtime';
+type RuntimeService = { healthy?: boolean; ready?: boolean; required?: boolean; state?: string; statusCode?: number; latencyMs?: number };
+type KnowledgeRuntime = {
+  reachable?: boolean; ready?: boolean; healthy?: boolean; checkedAt?: string; uptimeSeconds?: number; tenantDatabases?: number;
+  activeEmbeddingProvider?: string; services?: Record<string, RuntimeService>;
+  gte?: { state?: string; ready?: boolean; accepting?: boolean; profile?: Record<string, unknown>; worker?: Record<string, unknown>; queue?: Record<string, unknown>; metrics?: Record<string, unknown> };
+  migration?: Record<string, unknown>; providers?: Record<string, Record<string, unknown>>;
+  queue?: { waiting?: number; accepting?: boolean; active?: Record<string, number>; completed?: number; failed?: number; oldestWaitMs?: number };
+  search?: { lexical?: string; vector?: string; vectorIndexes?: Record<string, unknown> };
+  resources?: { memory?: { rssBytes?: number; heapUsedBytes?: number }; cpuPercent?: number; eventLoop?: Record<string, number> };
+};
+type RuntimePayload = { knowledge?: { runtime?: KnowledgeRuntime; worker?: Record<string, unknown> } };
 const acceptedExtensions = '.pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.html,.htm,.png,.jpg,.jpeg,.tif,.tiff';
 
 function formatDate(value?: string | null) {
@@ -81,6 +93,9 @@ export function KnowledgeBaseWorkspacePage() {
   const [settings, setSettings] = useState({ name: '', description: '', privacy: 'space' as KnowledgeBasePrivacy, terraContextEnabled: false });
   const [query, setQuery] = useState('');
   const [searchResult, setSearchResult] = useState<KnowledgeSearchResult | null>(null);
+  const [runtime, setRuntime] = useState<RuntimePayload | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [runtimeError, setRuntimeError] = useState('');
 
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
@@ -110,6 +125,13 @@ export function KnowledgeBaseWorkspacePage() {
     catch (reason) { setGraphError(reason instanceof Error ? reason.message : 'Knowledge graph could not load.'); }
   }, [id]);
 
+  const loadRuntime = useCallback(async () => {
+    setRuntimeLoading(true);
+    try { setRuntime(await api<RuntimePayload>('/api/runtime')); setRuntimeError(''); }
+    catch (reason) { setRuntimeError(reason instanceof Error ? reason.message : 'Knowledge runtime status could not load.'); }
+    finally { setRuntimeLoading(false); }
+  }, []);
+
   useEffect(() => { void load(); }, [load]);
   useLiveRefresh(load);
   const activeJobs = useMemo(() => jobs.filter((job) => ['queued', 'processing', 'waiting_for_terra'].includes(job.state)), [jobs]);
@@ -119,6 +141,12 @@ export function KnowledgeBaseWorkspacePage() {
     return () => window.clearInterval(timer);
   }, [activeJobs.length, load]);
   useEffect(() => { if (tab === 'graph') void loadGraph(); }, [tab, loadGraph, knowledgeBase?.lastIndexedAt]);
+  useEffect(() => {
+    if (tab !== 'runtime') return;
+    void loadRuntime();
+    const timer = window.setInterval(() => void loadRuntime(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [tab, loadRuntime]);
 
   function addFiles(next: File[]) {
     setFiles((current) => {
@@ -201,11 +229,12 @@ export function KnowledgeBaseWorkspacePage() {
     </div>
 
     <Tabs value={tab} onValueChange={(value) => setTab(value as WorkspaceTab)}>
-      <TabsList className="overflow-x-auto"><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="search">Search & test</TabsTrigger><TabsTrigger value="graph">Graph & provenance</TabsTrigger><TabsTrigger value="history">Indexing history</TabsTrigger></TabsList>
+      <TabsList className="overflow-x-auto"><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="search">Search & test</TabsTrigger><TabsTrigger value="graph">Graph & provenance</TabsTrigger><TabsTrigger value="history">Indexing history</TabsTrigger><TabsTrigger value="runtime">Runtime</TabsTrigger></TabsList>
       <TabsContent value="documents"><DocumentsWorkspace files={files} setFiles={setFiles} addFiles={addFiles} dragging={dragging} setDragging={setDragging} fileInput={fileInput} upload={upload} working={working} documents={documents} jobs={jobs} removeDocument={removeDocument} retryDocument={retryDocument} /></TabsContent>
       <TabsContent value="search"><SearchWorkspace query={query} setQuery={setQuery} working={working} search={search} result={searchResult} ready={documents.some((document) => document.state === 'ready')} terraAnswerEnabled={knowledgeBase.terraContextEnabled} /></TabsContent>
       <TabsContent value="graph"><GraphWorkspace graph={graph} error={graphError} loading={!graph && !graphError} refresh={loadGraph} /></TabsContent>
       <TabsContent value="history"><JobHistory jobs={jobs} /></TabsContent>
+      <TabsContent value="runtime"><RuntimeWorkspace payload={runtime} loading={runtimeLoading} error={runtimeError} refresh={loadRuntime} /></TabsContent>
     </Tabs>
 
     <div className="flex justify-end border-t pt-4"><Button size="sm" variant="ghost" className="text-destructive hover:bg-red-50 hover:text-destructive" disabled={working === 'delete-base'} onClick={() => void removeKnowledgeBase()}>{working === 'delete-base' ? <Loader2 className="animate-spin" /> : <Trash2 />}Delete knowledge base</Button></div>
@@ -216,6 +245,69 @@ export function KnowledgeBaseWorkspacePage() {
 
 function Summary({ label, value }: { label: string; value: string }) {
   return <div className="px-4 py-3"><div className="text-xs text-muted-foreground">{label}</div><div className="mt-1 text-sm font-semibold">{value}</div></div>;
+}
+
+function runtimeText(record: Record<string, unknown> | undefined, key: string, fallback = '—') {
+  const value = record?.[key];
+  return value === undefined || value === null || value === '' ? fallback : String(value);
+}
+
+function runtimeBytes(value?: number) {
+  if (!Number.isFinite(value)) return '—';
+  return `${((value || 0) / 1024 / 1024).toFixed(0)} MB`;
+}
+
+function runtimeDuration(seconds?: number) {
+  if (!Number.isFinite(seconds)) return '—';
+  const total = Math.max(0, Math.floor(seconds || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function RuntimeWorkspace({ payload, loading, error, refresh }: { payload: RuntimePayload | null; loading: boolean; error: string; refresh: () => Promise<void> }) {
+  const runtime = payload?.knowledge?.runtime;
+  const services = runtime?.services || {};
+  const serviceRows = [
+    ['arango', 'ArangoDB', 'Documents, vectors, graph, and provenance'],
+    ['gteEmbedding', 'GTE embedding worker', 'CPU embeddings for indexing and retrieval'],
+    ['reranker', 'BGE reranker', 'Reorders retrieved evidence'],
+    ['docling', 'Docling', 'Document extraction and OCR'],
+    ['terra', 'Terra gateway', 'Graph extraction and grounded answers']
+  ] as const;
+  const profile = runtime?.gte?.profile || {};
+  const migration = runtime?.migration || {};
+  const vectorIndexes = runtime?.search?.vectorIndexes || {};
+  const provider = runtime?.providers?.['gte-node'] || {};
+  const qwen = runtime?.providers?.['qwen-tei'] || {};
+  const appWorker = payload?.knowledge?.worker || {};
+  const activeQueue = runtime?.queue?.active || {};
+  const eventLoop = runtime?.resources?.eventLoop || {};
+
+  return <div className="space-y-5">
+    <section className="border bg-card"><header className="flex flex-col justify-between gap-3 border-b px-4 py-3 sm:flex-row sm:items-center"><div><h2 className="text-sm font-semibold">Knowledge runtime</h2><p className="mt-1 text-xs text-muted-foreground">Signed local status. Refreshes every five seconds while this tab is open.</p></div><div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{runtime?.checkedAt ? `Checked ${formatDate(runtime.checkedAt)}` : 'Not checked yet'}</span><Button size="sm" variant="outline" disabled={loading} onClick={() => void refresh()}>{loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}Refresh</Button></div></header>
+      {!runtime && loading ? <div className="grid min-h-44 place-items-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : error && !runtime ? <div className="px-4 py-8 text-sm text-destructive">{error}</div> : <div className="divide-y"><RuntimeRow label="Runtime" value={runtime?.reachable && runtime.ready ? 'Ready' : runtime?.reachable ? 'Degraded' : 'Unavailable'} detail={`Uptime ${runtimeDuration(runtime?.uptimeSeconds)} · ${runtime?.tenantDatabases ?? 0} tenant database${runtime?.tenantDatabases === 1 ? '' : 's'}`} state={runtime?.reachable && runtime.ready ? 'ready' : 'failed'} />{serviceRows.map(([key, label, detail]) => { const service = services[key] || {}; const healthy = service.healthy === true || service.ready === true; return <RuntimeRow key={key} label={label} value={healthy ? 'Healthy' : service.state || 'Unavailable'} detail={`${detail}${typeof service.latencyMs === 'number' ? ` · ${service.latencyMs} ms` : ''}`} state={healthy ? 'ready' : 'failed'} />; })}</div>}
+    </section>
+    {error && runtime && <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">The last refresh failed. Showing the most recent runtime snapshot. {error}</div>}
+
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className="border bg-card"><header className="border-b px-4 py-3"><h2 className="text-sm font-semibold">Embedding</h2><p className="mt-1 text-xs text-muted-foreground">The active vector-space contract and CPU worker.</p></header><dl className="divide-y text-sm"><RuntimeDetail label="Provider" value={runtime?.activeEmbeddingProvider || '—'} /><RuntimeDetail label="Model" value={runtimeText(profile, 'modelId')} /><RuntimeDetail label="Revision" value={runtimeText(profile, 'revision')} mono /><RuntimeDetail label="Execution" value={`${runtimeText(profile, 'execution')} · ${runtimeText(profile, 'dtype')} · ${runtimeText(profile, 'dimension')} dimensions`} /><RuntimeDetail label="Index version" value={runtimeText(profile, 'vectorIndexVersion')} /><RuntimeDetail label="Worker" value={`${runtime?.gte?.state || 'unknown'} · accepting ${runtime?.gte?.accepting ? 'yes' : 'no'} · generation ${runtimeText(runtime?.gte?.worker, 'generation')}`} /><RuntimeDetail label="GTE activity" value={`${runtimeText(provider, 'embeddings', '0')} requests · ${runtimeText(provider, 'texts', '0')} texts · ${runtimeText(provider, 'failures', '0')} failures`} /><RuntimeDetail label="Qwen activity" value={`${runtimeText(qwen, 'embeddings', '0')} requests · rollback ${runtimeText(migration, 'dualWrite', 'false') === 'true' ? 'retained' : 'retired'}`} /></dl></section>
+
+      <section className="border bg-card"><header className="border-b px-4 py-3"><h2 className="text-sm font-semibold">Queue and workers</h2><p className="mt-1 text-xs text-muted-foreground">Runtime retrieval work and durable application indexing.</p></header><dl className="divide-y text-sm"><RuntimeDetail label="Runtime queue" value={`${runtime?.queue?.waiting || 0} waiting · ${runtime?.queue?.accepting ? 'accepting work' : 'paused'}`} /><RuntimeDetail label="Active work" value={`${activeQueue.retrieve || 0} retrieval · ${activeQueue.graph || 0} graph`} /><RuntimeDetail label="Runtime totals" value={`${runtime?.queue?.completed || 0} completed · ${runtime?.queue?.failed || 0} failed`} /><RuntimeDetail label="Oldest wait" value={`${runtime?.queue?.oldestWaitMs || 0} ms`} /><RuntimeDetail label="Indexing worker" value={`${runtimeText(appWorker, 'active', '0')} active · ${runtimeText(appWorker, 'queued', '0')} queued · concurrency ${runtimeText(appWorker, 'concurrency', '1')}`} /><RuntimeDetail label="GTE queue" value={`${runtimeText(runtime?.gte?.queue, 'waiting', '0')} waiting · capacity ${runtimeText(runtime?.gte?.queue, 'capacity')}`} /></dl></section>
+
+      <section className="border bg-card"><header className="border-b px-4 py-3"><h2 className="text-sm font-semibold">Retrieval and indexes</h2><p className="mt-1 text-xs text-muted-foreground">Search channels and vector-index readiness.</p></header><dl className="divide-y text-sm"><RuntimeDetail label="Lexical search" value={runtime?.search?.lexical || '—'} /><RuntimeDetail label="Vector search" value={runtime?.search?.vector || '—'} /><RuntimeDetail label="Observed indexes" value={runtimeText(vectorIndexes, 'observed', '0')} /><RuntimeDetail label="Ready indexes" value={runtimeText(vectorIndexes, 'ready', '0')} /><RuntimeDetail label="Training" value={runtimeText(vectorIndexes, 'training', '0')} /><RuntimeDetail label="Rollout" value={`${runtimeText(migration, 'configuredProvider', runtime?.activeEmbeddingProvider || '—')} · ${runtimeText(migration, 'rolloutPercent', '100')}% · shadow ${runtimeText(migration, 'shadowPercent', '0')}%`} /></dl></section>
+
+      <section className="border bg-card"><header className="border-b px-4 py-3"><h2 className="text-sm font-semibold">Runtime process</h2><p className="mt-1 text-xs text-muted-foreground">Local Node process health, not total machine usage.</p></header><dl className="divide-y text-sm"><RuntimeDetail label="Resident memory" value={runtimeBytes(runtime?.resources?.memory?.rssBytes)} /><RuntimeDetail label="Heap used" value={runtimeBytes(runtime?.resources?.memory?.heapUsedBytes)} /><RuntimeDetail label="CPU" value={typeof runtime?.resources?.cpuPercent === 'number' ? `${runtime.resources.cpuPercent.toFixed(1)}%` : '—'} /><RuntimeDetail label="Event loop p95" value={typeof eventLoop.p95Ms === 'number' ? `${eventLoop.p95Ms.toFixed(1)} ms` : '—'} /><RuntimeDetail label="PID" value={runtime?.healthy ? 'Healthy process' : 'Process status unavailable'} /></dl></section>
+    </div>
+  </div>;
+}
+
+function RuntimeRow({ label, value, detail, state }: { label: string; value: string; detail: string; state: string }) {
+  return <div className="flex flex-col justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center"><div><div className="text-sm font-medium">{label}</div><div className="mt-1 text-xs text-muted-foreground">{detail}</div></div><Badge variant={stateVariant(state)}>{value}</Badge></div>;
+}
+
+function RuntimeDetail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return <div className="grid gap-1 px-4 py-3 sm:grid-cols-[140px_1fr]"><dt className="text-xs text-muted-foreground">{label}</dt><dd className={`min-w-0 break-words text-sm ${mono ? 'font-mono text-xs' : 'font-medium'}`}>{value}</dd></div>;
 }
 
 function DocumentsWorkspace({ files, setFiles, addFiles, dragging, setDragging, fileInput, upload, working, documents, jobs, removeDocument, retryDocument }: {

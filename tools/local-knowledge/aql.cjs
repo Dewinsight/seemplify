@@ -280,6 +280,7 @@ const AQL = Object.freeze({
   lexicalChunks: `
     FOR chunk IN chunks_search
       SEARCH ANALYZER(chunk.text IN TOKENS(@query, @analyzer), @analyzer)
+      FILTER chunk.embeddingProvider == @embeddingProvider
       FILTER chunk.spaceId == @spaceId
       FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
       FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
@@ -359,6 +360,22 @@ const AQL = Object.freeze({
         OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
         OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
       FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      LET overlap = LENGTH(INTERSECTION(chunk.entityRefs || [], @entityKeys))
+      FILTER overlap > 0
+      SORT overlap DESC
+      LIMIT @candidateLimit
+      RETURN MERGE(KEEP(chunk, '_key', 'knowledgeBaseId', 'documentId', 'documentName', 'text', 'page', 'section', 'entityRefs'), { channelScore: overlap })
+  `,
+  graphGteChunks: `
+    FOR chunk IN experience_chunks_gte_v1
+      FILTER chunk.spaceId == @spaceId
+      FILTER chunk.knowledgeBaseId IN @knowledgeBaseIds
+      FILTER chunk.indexVersion <= @watermarkByBase[chunk.knowledgeBaseId]
+      FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[chunk.knowledgeBaseId]
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      FILTER chunk.embeddingProvider == 'gte-node'
+      FILTER chunk.vectorIndexVersion == @vectorIndexVersion
       LET overlap = LENGTH(INTERSECTION(chunk.entityRefs || [], @entityKeys))
       FILTER overlap > 0
       SORT overlap DESC
@@ -781,6 +798,28 @@ const AQL = Object.freeze({
         valid,
         complete: LENGTH(canonical) > 0 AND valid == LENGTH(canonical) AND targetCount == LENGTH(canonical)
       }
+  `,
+  gteStandaloneCoverageByBase: `
+    FOR knowledgeBaseId IN @knowledgeBaseIds
+      LET targetCount = LENGTH(
+        FOR chunk IN experience_chunks_gte_v1
+          FILTER chunk.spaceId == @spaceId
+          FILTER chunk.knowledgeBaseId == knowledgeBaseId
+          FILTER chunk.indexVersion <= @watermarkByBase[knowledgeBaseId]
+          FILTER chunk.activeUntil == null OR chunk.activeUntil > @watermarkByBase[knowledgeBaseId]
+            OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+          FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+          FILTER chunk.embeddingProvider == @embeddingProvider
+          FILTER chunk.embeddingModel == @embeddingModel
+          FILTER chunk.embeddingRevision == @embeddingRevision
+          FILTER chunk.embeddingDtype == @embeddingDtype
+          FILTER chunk.embeddingDimensions == @embeddingDimensions
+          FILTER LENGTH(chunk.embedding || []) == @embeddingDimensions
+          FILTER chunk.vectorIndexVersion == @vectorIndexVersion
+          RETURN 1
+      )
+      RETURN { knowledgeBaseId, canonical: targetCount, gte: targetCount, valid: targetCount,
+        complete: targetCount > 0 }
   `,
   nextIndexVersion: `
     LET versions = (

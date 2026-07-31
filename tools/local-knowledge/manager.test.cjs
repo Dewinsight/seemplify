@@ -83,7 +83,7 @@ test('GTE dependency is exact, checked read-only, and installed only when config
   assert.doesNotMatch(manager, /Get-Status[\s\S]{0,800}Ensure-GteDependencies/);
 });
 
-test('Qwen stays default while GTE migration controls are explicit and bounded', () => {
+test('CPU GTE is the default while the explicit Qwen rollback path remains bounded', () => {
   for (const source of [manager, experienceManager]) {
     assert.match(source, /EXPERIENCE_EMBEDDING_PROVIDER/);
     assert.match(source, /EXPERIENCE_EMBEDDING_DUAL_WRITE/);
@@ -91,16 +91,16 @@ test('Qwen stays default while GTE migration controls are explicit and bounded',
     assert.match(source, /EXPERIENCE_EMBEDDING_SHADOW_PERCENT/);
     assert.match(source, /EXPERIENCE_EMBEDDING_FORCE_QWEN/);
     assert.match(source, /EXPERIENCE_QWEN_ROLLBACK_RETAINED/);
-    assert.match(source, /if \(\[string\]::IsNullOrWhiteSpace\(\$provider\)\) \{ \$provider = 'qwen-tei' \}/);
+    assert.match(source, /if \(\[string\]::IsNullOrWhiteSpace\(\$provider\)\) \{ \$provider = 'gte-node' \}/);
     assert.match(source, /\$provider = 'qwen-tei'[\s\S]{0,180}\$dualWrite = \$false[\s\S]{0,180}\$rolloutPercent = 0[\s\S]{0,180}\$shadowPercent = 0/);
     assert.match(source, /\$defaultRolloutPercent = if \(\$provider -eq 'gte-node'\) \{ 100 \} else \{ 0 \}/);
-    assert.match(source, /EXPERIENCE_QWEN_ROLLBACK_RETAINED=false is not supported during this gated release/);
     assert.match(source, /\$provider -eq 'gte-node' -and \$qwenRollbackRetained -and -not \$dualWrite/);
+    assert.match(source, /\$provider -eq 'gte-node' -and -not \$qwenRollbackRetained -and \$dualWrite/);
     assert.match(source, /EXPERIENCE_VECTOR_INDEX_VERSION/);
     assert.match(source, /gte-modernbert-v1/);
   }
   assert.match(manager, /Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_CONCURRENCY' 8 1 8/);
-  assert.equal((manager.match(/Start-Embedding/g) || []).length >= 3, true, 'Qwen TEI lifecycle must remain present');
+  assert.match(manager, /if \(\$embeddingConfiguration\.qwenRequired\) \{ Start-Embedding \}/);
   assert.equal((manager.match(/Start-Reranker/g) || []).length >= 3, true, 'BGE lifecycle must remain present');
 });
 
@@ -123,7 +123,6 @@ test('managed PostgreSQL runtime and isolated harnesses target additive schema f
   assert.match(postgresMigrationTest, /'--target-version', '5'/);
   assert.match(postgresMigrationTest, /0003_knowledge_embedding_profiles\.sql/);
   assert.match(postgresMigrationTest, /0004_experience_assistant\.sql/);
-  assert.match(postgresMigrationTest, /0005_experience_assistant_phase1\.sql/);
   assert.match(postgresMigrationTest, /0006_intentional_failure\.sql/);
   assert.match(postgresMigrationTest, /knowledge_backfill_runs/);
   assert.match(postgresMigrationTest, /assistant_runs/);

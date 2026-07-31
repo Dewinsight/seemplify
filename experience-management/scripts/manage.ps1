@@ -142,14 +142,11 @@ function Get-EmbeddingConfiguration {
     $timeoutMs = 120000
   } else {
     $provider = [string][Environment]::GetEnvironmentVariable('EXPERIENCE_EMBEDDING_PROVIDER')
-    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = 'qwen-tei' }
+    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = 'gte-node' }
     $provider = $provider.Trim().ToLowerInvariant()
     if ($provider -notin @('qwen-tei','gte-node')) { throw 'EXPERIENCE_EMBEDDING_PROVIDER must be qwen-tei or gte-node.' }
     $dualWrite = Get-EmbeddingBoolean 'EXPERIENCE_EMBEDDING_DUAL_WRITE' $false
-    $qwenRollbackRetained = Get-EmbeddingBoolean 'EXPERIENCE_QWEN_ROLLBACK_RETAINED' $true
-    if (-not $qwenRollbackRetained) {
-      throw 'EXPERIENCE_QWEN_ROLLBACK_RETAINED=false is not supported during this gated release.'
-    }
+    $qwenRollbackRetained = Get-EmbeddingBoolean 'EXPERIENCE_QWEN_ROLLBACK_RETAINED' ($provider -eq 'qwen-tei')
     $defaultRolloutPercent = if ($provider -eq 'gte-node') { 100 } else { 0 }
     $rolloutPercent = Get-EmbeddingInteger 'EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT' $defaultRolloutPercent 0 100
     $shadowPercent = Get-EmbeddingInteger 'EXPERIENCE_EMBEDDING_SHADOW_PERCENT' 0 0 100
@@ -159,6 +156,9 @@ function Get-EmbeddingConfiguration {
   }
   if ($provider -eq 'gte-node' -and $qwenRollbackRetained -and -not $dualWrite) {
     throw 'gte-node requires EXPERIENCE_EMBEDDING_DUAL_WRITE=true while the Qwen rollback index is retained.'
+  }
+  if ($provider -eq 'gte-node' -and -not $qwenRollbackRetained -and $dualWrite) {
+    throw 'gte-node cannot dual-write to Qwen after the Qwen rollback profile has been retired.'
   }
   $profile = $EmbeddingProfiles[$provider]
   $configuredFields = [ordered]@{

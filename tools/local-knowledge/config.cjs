@@ -95,6 +95,9 @@ const CONFIG = Object.freeze({
   embeddingMigration: Object.freeze({
     provider: EMBEDDING_ENVIRONMENT.provider,
     dualWrite: FORCE_QWEN_ROLLBACK ? false : booleanEnvironment('EXPERIENCE_EMBEDDING_DUAL_WRITE', false),
+    qwenRollbackRetained: FORCE_QWEN_ROLLBACK ? true : booleanEnvironment(
+      'EXPERIENCE_QWEN_ROLLBACK_RETAINED', EMBEDDING_ENVIRONMENT.provider === 'qwen-tei'
+    ),
     concurrency: EMBEDDING_ENVIRONMENT.concurrency,
     queueDepth: EMBEDDING_ENVIRONMENT.queueDepth,
     timeoutMs: EMBEDDING_ENVIRONMENT.requestTimeoutMs,

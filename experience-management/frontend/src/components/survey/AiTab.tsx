@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ChevronDown, ChevronUp, FileText, Languages, Lightbulb, Loader2, MessageSquareText, ShieldCheck, WandSparkles
+  BookOpenCheck, Check, ChevronDown, ChevronUp, FileText, Languages, Lightbulb, Loader2, MessageSquareText, ShieldCheck, WandSparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, json, waitForJob } from '@/lib/api';
@@ -33,7 +33,8 @@ type Insight = { id: string; kind: string; payload: any; createdAt: string };
 const savedInsightKind: Record<string, string> = {
   insights: 'ai_insights',
   report: 'executive_report',
-  translate: 'translation'
+  translate: 'translation',
+  ask: 'research_answer'
 };
 
 function insightLabel(insight: Insight) {
@@ -43,6 +44,7 @@ function insightLabel(insight: Insight) {
   }
   if (insight.kind === 'ai_insights') return 'AI insights';
   if (insight.kind === 'executive_report') return 'Executive report';
+  if (insight.kind === 'research_answer') return 'Research answer';
   return insight.kind.replaceAll('_', ' ');
 }
 
@@ -84,13 +86,15 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
   const [knowledgeBaseIds, setKnowledgeBaseIds] = useState<string[] | null>(null);
   const [knowledgeSelectionLoading, setKnowledgeSelectionLoading] = useState(true);
   const [knowledgeSelectionSaving, setKnowledgeSelectionSaving] = useState(false);
+  const [promotingId, setPromotingId] = useState('');
   const insightRequestRef = useRef(0);
 
   const loadInsights = useCallback(async (revealKind?: string) => {
     const requestId = ++insightRequestRef.current;
     setInsightsLoading(true);
     try {
-      const next = await api<Insight[]>(`/api/surveys/${survey.id}/insights`);
+      const loaded = await api<Insight[]>(`/api/surveys/${survey.id}/insights`);
+      const next = loaded.filter((item) => ['ai_insights', 'executive_report', 'research_answer'].includes(item.kind));
       if (requestId !== insightRequestRef.current) return next;
       setInsights(next);
       setInsightsError(null);
@@ -130,6 +134,14 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
 
   useEffect(() => { void loadInsights(); }, [loadInsights, refreshKey]);
 
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.dataset.surveyTranslationRemoval = 'true';
+    style.textContent = 'div:has(> label[for="survey-translation-language"]) { display: none !important; }';
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, []);
+
   function viewSavedInsight(insightId: string) {
     setExpandedInsightId(insightId);
     window.requestAnimationFrame(() => {
@@ -154,6 +166,18 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
     } finally {
       setKnowledgeSelectionSaving(false);
     }
+  }
+
+  async function promoteToKnowledge(insight: Insight) {
+    if (!knowledgeBaseIds?.length) { toast.error('Select at least one knowledge base first.'); return; }
+    try {
+      setPromotingId(insight.id);
+      await api(`/api/surveys/${survey.id}/insights/${insight.id}/knowledge`,
+        json('POST', { knowledgeBaseIds, reviewed: true }));
+      toast.success('Research answer queued for knowledge indexing');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not add this answer to knowledge.');
+    } finally { setPromotingId(''); }
   }
 
   async function run(path: string, body: Record<string, unknown> = {}) {
@@ -202,13 +226,13 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
   const translateButtonLabel = translationRun?.phase === 'submitting' ? 'Queuing'
     : translationRun?.phase === 'queued' ? 'Queued'
       : translationRun?.phase === 'processing' ? 'Translating' : 'Translate';
-  return <><div className="mb-5 border bg-card p-4"><KnowledgeBasePicker value={knowledgeBaseIds || []} onChange={(ids) => void saveKnowledgeSelection(ids)} disabled={actionsDisabled} description={knowledgeBaseIds === null ? 'Loading the survey’s saved knowledge selection. Translation uses only the survey.' : knowledgeSelectionSaving ? 'Saving this selection for survey AI and automatic response analysis.' : 'Saved grounding for Ask, quality review, response analysis, insights, and reports. Translation uses only the survey.'} /></div><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+  return <><div className="mb-5 border bg-card p-4"><KnowledgeBasePicker value={knowledgeBaseIds || []} onChange={(ids) => void saveKnowledgeSelection(ids)} disabled={actionsDisabled} description={knowledgeBaseIds === null ? 'Loading the survey’s saved knowledge selection.' : knowledgeSelectionSaving ? 'Saving this selection for survey AI and automatic response analysis.' : 'Saved grounding for Ask, quality review, response analysis, survey intelligence, reports, and publishing reviewed answers.'} /></div><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
     <div className="space-y-5">
       <Card><CardHeader><CardTitle>Ask the research</CardTitle><CardDescription>Terra can query responses, calculated metrics, and prior insights. Answers must cite the supplied evidence.</CardDescription></CardHeader><CardContent className="space-y-3"><Textarea rows={4} value={question} onChange={(event) => setQuestion(event.target.value)} /><Button disabled={actionsDisabled || question.trim().length < 5} onClick={() => run('ask', { question })}>{busy ? <Loader2 className="animate-spin" /> : <MessageSquareText />}Ask Terra</Button>{answer && <div className="border bg-muted/25 p-5"><div className="text-sm font-semibold">Answer</div><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{answer.answer}</p>{answer.evidence?.length > 0 && <div className="mt-4 border-t pt-3"><div className="text-xs font-medium text-muted-foreground">Evidence</div>{answer.evidence.map((citation: any, index: number) => <div className="mt-2 text-xs" key={`${citation.responseId}-${index}`}><span className="font-mono text-muted-foreground">{citation.responseId?.slice(0, 8)}</span> — “{citation.excerpt}”</div>)}</div>}</div>}</CardContent></Card>
-      <Card><CardHeader><CardTitle>Generated intelligence</CardTitle><CardDescription>Saved outputs remain attached to this survey for later review and reporting.</CardDescription></CardHeader><CardContent className="px-0 pb-0">
+      <Card><CardHeader><CardTitle>Saved survey intelligence</CardTitle><CardDescription>Decision-ready findings, research answers, and reports remain attached to this survey.</CardDescription></CardHeader><CardContent className="px-0 pb-0">
         {insightsError && <div className="flex items-center justify-between gap-4 border-t px-5 py-4 text-sm text-destructive"><span>{insightsError}</span><Button size="sm" variant="outline" onClick={() => void loadInsights()}>Retry</Button></div>}
         {!insightsError && insightsLoading && insights.length === 0 && <div className="flex items-center justify-center gap-2 border-t px-5 py-10 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading saved intelligence</div>}
-        {!insightsError && !insightsLoading && insights.length === 0 && <div className="border-t px-5 py-10 text-center text-sm text-muted-foreground">Generate insights, a report, or a translation to build the research record.</div>}
+        {!insightsError && !insightsLoading && insights.length === 0 && <div className="border-t px-5 py-10 text-center text-sm text-muted-foreground">Ask the research, generate survey intelligence, or create an executive report to build the research record.</div>}
         {insights.length > 0 && <ul className="divide-y border-t" aria-label="Generated intelligence history">{insights.map((item) => {
           const expanded = expandedInsightId === item.id;
           const contentId = `insight-${item.id}`;
@@ -218,7 +242,7 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
               <time className="shrink-0 text-xs font-normal text-muted-foreground" dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
               {expanded ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
             </button>
-            {expanded && <div id={contentId} className="border-t bg-muted/10 px-5 py-4"><InsightDetails insight={item} /></div>}
+            {expanded && <div id={contentId} className="space-y-4 border-t bg-muted/10 px-5 py-4"><InsightDetails insight={item} />{item.kind === 'research_answer' && <Button size="sm" variant="outline" disabled={promotingId === item.id} onClick={() => promoteToKnowledge(item)}>{promotingId === item.id ? <Loader2 className="animate-spin" /> : <BookOpenCheck />}Add to selected knowledge base</Button>}</div>}
           </li>;
         })}</ul>}
       </CardContent></Card>

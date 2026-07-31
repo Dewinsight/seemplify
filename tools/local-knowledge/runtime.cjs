@@ -18,6 +18,7 @@ const INDEXES = Object.freeze([
   ['operation_receipts', ['spaceId', 'operationId'], true],
 ]);
 const SEARCH_INDEX_NAME = 'chunks_text_inverted';
+const GTE_SEARCH_INDEX_NAME = 'experience_chunks_gte_v1_text_inverted';
 const SEARCH_VIEW_NAME = 'chunks_search';
 const VECTOR_INDEX_NAME = 'chunks_embedding_vector';
 const GTE_VECTOR_INDEX_NAME = 'experience_chunks_gte_v1_vector';
@@ -190,7 +191,7 @@ function validateRetrieveInput(input, config = CONFIG) {
   if (!references.length || references.length > 5) throw runtimeError('knowledgeBases must contain 1 to 5 pinned bases.', { code: 'INVALID_REQUEST', status: 400 });
   const unique = new Set();
   const embeddingProfileExplicit = input?.embeddingProfile != null;
-  const requestedProfile = resolveEmbeddingProfile(input?.embeddingProfile || 'qwen-tei', config);
+  const requestedProfile = resolveEmbeddingProfile(input?.embeddingProfile || config.embeddingMigration?.provider || 'gte-node', config);
   const knowledgeBases = references.map((reference) => {
     const referenceProfileExplicit = reference?.embeddingProfile != null;
     const referenceProfile = referenceProfileExplicit ? resolveEmbeddingProfile(reference.embeddingProfile, config) : requestedProfile;
@@ -484,11 +485,28 @@ async function ensureTenantDatabase({ provisioner, app, appUser, appPassword, sp
       body: { type: 'inverted', name: SEARCH_INDEX_NAME, fields: [{ name: 'text', analyzer: ANALYZER_NAME }], includeAllFields: false },
     });
   }
+  const gteChunkIndexes = await app.request(database, `/_api/index?collection=${GTE_COLLECTION_NAME}`);
+  if (!(gteChunkIndexes.indexes || []).some((index) => index.name === GTE_SEARCH_INDEX_NAME)) {
+    await app.request(database, `/_api/index?collection=${GTE_COLLECTION_NAME}`, {
+      method: 'POST',
+      body: { type: 'inverted', name: GTE_SEARCH_INDEX_NAME, fields: [{ name: 'text', analyzer: ANALYZER_NAME }], includeAllFields: false },
+    });
+  }
   const views = await app.request(database, '/_api/view');
   if (!(views.result || []).some((view) => view.name === SEARCH_VIEW_NAME)) {
     await app.request(database, '/_api/view', {
       method: 'POST',
-      body: { name: SEARCH_VIEW_NAME, type: 'search-alias', indexes: [{ collection: 'chunks', index: SEARCH_INDEX_NAME }] },
+      body: { name: SEARCH_VIEW_NAME, type: 'search-alias', indexes: [
+        { collection: 'chunks', index: SEARCH_INDEX_NAME },
+        { collection: GTE_COLLECTION_NAME, index: GTE_SEARCH_INDEX_NAME },
+      ] },
+    });
+  } else {
+    await app.request(database, `/_api/view/${SEARCH_VIEW_NAME}/properties`, {
+      method: 'PUT', body: { indexes: [
+        { collection: 'chunks', index: SEARCH_INDEX_NAME },
+        { collection: GTE_COLLECTION_NAME, index: GTE_SEARCH_INDEX_NAME },
+      ] },
     });
   }
   return database;
@@ -1043,7 +1061,9 @@ function createKnowledgeRuntime(options = {}) {
   async function gteCoverage(database, input) {
     const profile = embeddingProfiles(config)['gte-node'];
     const watermarkByBase = Object.fromEntries(input.knowledgeBases.map((base) => [base.id, base.indexVersion]));
-    const coverage = await app.query(database, AQL.gteCoverageByBase, {
+    const coverageQuery = config.embeddingMigration?.qwenRollbackRetained === false
+      ? AQL.gteStandaloneCoverageByBase : AQL.gteCoverageByBase;
+    const coverage = await app.query(database, coverageQuery, {
       spaceId: input.spaceId,
       knowledgeBaseIds: input.knowledgeBases.map((base) => base.id),
       watermarkByBase,
@@ -1080,7 +1100,7 @@ function createKnowledgeRuntime(options = {}) {
       const chunks = chunkText(extracted.text, config, { pageCount: extracted.pageCount });
       const targets = [...input.knowledgeBase.targetEmbeddingProfiles];
       if (!input.knowledgeBase.targetEmbeddingProfilesExplicit && migrationConfig.dualWrite && !targets.some((profile) => profile.provider === 'gte-node')) targets.push(embeddingProfiles(config)['gte-node']);
-      if (!targets.some((profile) => profile.provider === 'qwen-tei')) {
+      if (migrationConfig.qwenRollbackRetained !== false && !targets.some((profile) => profile.provider === 'qwen-tei')) {
         throw runtimeError('Qwen must remain a target during the configured rollback window.', { code: 'QWEN_ROLLBACK_PROFILE_REQUIRED', status: 409 });
       }
       const vectorsByProvider = new Map();
@@ -1102,10 +1122,12 @@ function createKnowledgeRuntime(options = {}) {
       await app.query(database, AQL.closeRelationRevision, closeVariables);
       await app.query(database, AQL.pruneEntityMentions, { spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, now });
       await app.query(database, AQL.upsertDocument, { key: revisionKey, document: { _key: revisionKey, spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, documentName: input.document.originalName, mimeType: input.document.mimeType, sizeBytes: input.document.sizeBytes, sha256: input.document.sha256, metadata: input.document.metadata, indexVersion: input.knowledgeBase.indexVersion, embeddingModel: input.knowledgeBase.embeddingModel, embeddingDimension: input.knowledgeBase.embeddingDimension, chunkerVersion: input.knowledgeBase.chunkerVersion, receiptKey, operationId: input.jobId, activeUntil: null, pageCount: extracted.pageCount, createdAt: now, updatedAt: now } });
-      const qwenProfile = embeddingProfiles(config)['qwen-tei'];
       const baseRecords = chunks.map((chunk, index) => ({ _key: stableKey(revisionKey, chunk.contentHash, index), spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, documentName: input.document.originalName, indexVersion: input.knowledgeBase.indexVersion, ordinal: index, text: chunk.text, contentHash: chunk.contentHash, sourceSha256: input.document.sha256, receiptKey, operationId: input.jobId, tokenEstimate: chunk.tokenEstimate, start: chunk.start, end: chunk.end, section: chunk.section, page: chunk.page, entityRefs: chunk.entityRefs || [], activeUntil: null, createdAt: now, updatedAt: now }));
-      const records = baseRecords.map((record, index) => ({ ...record, embedding: vectorsByProvider.get('qwen-tei')[index], embeddingProvider: qwenProfile.provider, embeddingModel: qwenProfile.model, embeddingRevision: qwenProfile.revision, embeddingDtype: qwenProfile.dtype, embeddingDimensions: qwenProfile.dimensions, vectorIndexVersion: qwenProfile.vectorIndexVersion }));
-      await app.query(database, AQL.upsertChunks, { chunks: records });
+      const qwenProfile = embeddingProfiles(config)['qwen-tei'];
+      if (vectorsByProvider.has('qwen-tei')) {
+        const records = baseRecords.map((record, index) => ({ ...record, embedding: vectorsByProvider.get('qwen-tei')[index], embeddingProvider: qwenProfile.provider, embeddingModel: qwenProfile.model, embeddingRevision: qwenProfile.revision, embeddingDtype: qwenProfile.dtype, embeddingDimensions: qwenProfile.dimensions, vectorIndexVersion: qwenProfile.vectorIndexVersion }));
+        await app.query(database, AQL.upsertChunks, { chunks: records });
+      }
       if (vectorsByProvider.has('gte-node')) {
         const gteProfile = embeddingProfiles(config)['gte-node'];
         const gteRecords = baseRecords.map((record, index) => ({ ...record, embedding: vectorsByProvider.get('gte-node')[index], embeddingProvider: gteProfile.provider, embeddingModel: gteProfile.model, embeddingRevision: gteProfile.revision, embeddingDtype: gteProfile.dtype, embeddingDimensions: gteProfile.dimensions, vectorIndexVersion: gteProfile.vectorIndexVersion }));
@@ -1117,12 +1139,14 @@ function createKnowledgeRuntime(options = {}) {
       await app.query(database, AQL.removeUnsupportedEntities, { spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBase.id, documentId: input.document.id, now });
       const [counts = {}] = await app.query(database, AQL.collectionCounts);
       const vectorIndexes = {};
-      vectorIndexes.qwen = await ensureVectorIndex(app, database, qwenProfile.dimensions, Number(counts.chunks || 0), { collection: qwenProfile.collection, indexName: qwenProfile.vectorIndexName });
-      indexStates.set(`${database}:qwen-tei`, vectorIndexes.qwen);
+      if (vectorsByProvider.has('qwen-tei')) {
+        vectorIndexes.qwen = await ensureVectorIndex(app, database, qwenProfile.dimensions, Number(counts.chunks || 0), { collection: qwenProfile.collection, indexName: qwenProfile.vectorIndexName });
+        indexStates.set(`${database}:qwen-tei`, vectorIndexes.qwen);
+      }
       if (vectorsByProvider.has('gte-node')) {
         const gteProfile = embeddingProfiles(config)['gte-node'];
         const [gteCount = 0] = await app.query(database, AQL.gteCollectionCount);
-        vectorIndexes.gte = Number(gteCount || 0) === Number(counts.chunks || 0)
+        vectorIndexes.gte = migrationConfig.qwenRollbackRetained === false || Number(gteCount || 0) === Number(counts.chunks || 0)
           ? await ensureVectorIndex(app, database, gteProfile.dimensions, Number(gteCount || 0), { collection: gteProfile.collection, indexName: gteProfile.vectorIndexName })
           : { exists: false, ready: false, training: false, mode: 'exact', eligibleCount: Number(gteCount || 0), deferredUntilBackfillComplete: true };
         indexStates.set(`${database}:gte-node`, vectorIndexes.gte);
@@ -1349,7 +1373,7 @@ function createKnowledgeRuntime(options = {}) {
       if (!input.evaluation && migrationConfig.forceQwenRollback === true) {
         rollbackCode = 'FORCED_QWEN_ROLLBACK';
         servedProfile = embeddingProfiles(config)['qwen-tei'];
-      } else if (!input.evaluation && migrationStatus.paused === true) {
+      } else if (!input.evaluation && migrationStatus.paused === true && migrationConfig.qwenRollbackRetained !== false) {
         rollbackCode = 'MIGRATION_GATE_PAUSED';
         servedProfile = embeddingProfiles(config)['qwen-tei'];
       } else if (!input.evaluation && servedProfile.provider === 'qwen-tei'
@@ -1360,6 +1384,7 @@ function createKnowledgeRuntime(options = {}) {
       }
       if (servedProfile.provider === 'gte-node' && coverage?.complete !== true) {
         if (input.embeddingProfileExplicit) throw runtimeError('The GTE profile is not fully indexed for every selected knowledge base.', { code: 'EMBEDDING_PROFILE_NOT_READY', status: 409, retryable: true });
+        if (migrationConfig.qwenRollbackRetained === false) throw runtimeError('The GTE profile is not fully indexed for every selected knowledge base.', { code: 'EMBEDDING_PROFILE_NOT_READY', status: 409, retryable: true });
         servedProfile = embeddingProfiles(config)['qwen-tei'];
       }
       let providerRouting = null;
@@ -1398,7 +1423,7 @@ function createKnowledgeRuntime(options = {}) {
       try {
         vectorResult = await executeVector(servedProfile);
       } catch (error) {
-        if (servedProfile.provider !== 'gte-node') throw error;
+        if (servedProfile.provider !== 'gte-node' || migrationConfig.qwenRollbackRetained === false) throw error;
         recordMigration({ provider: 'gte-node', durationMs: Date.now() - started, failed: true, queueDepth: gteClient?.status?.().queue?.waiting || 0 });
         providerFallback = { from: 'gte-node', to: 'qwen-tei', code: error.code || 'GTE_UNAVAILABLE' };
         providerRouting = null;
@@ -1406,7 +1431,7 @@ function createKnowledgeRuntime(options = {}) {
         vectorResult = await executeVector(servedProfile, 'fallback');
       }
       const { eligibleCount, vectorIndex, vectorMode, vectorItems } = vectorResult;
-      const lexicalItems = await timed('lexical', () => app.query(database, AQL.lexicalChunks, { ...common, query: input.query }));
+      const lexicalItems = await timed('lexical', () => app.query(database, AQL.lexicalChunks, { ...common, query: input.query, embeddingProvider: servedProfile.provider }));
       let seedKeys = [];
       let graphKeys = [];
       let graphItems = [];
@@ -1416,7 +1441,8 @@ function createKnowledgeRuntime(options = {}) {
           const traversalQuery = input.graphDepth === 2 ? AQL.graphNeighbors2 : AQL.graphNeighbors1;
           const neighbors = await timed('graphTraversal', () => app.query(database, traversalQuery, { ...common, seedKeys, minConfidence: 0.55, breadth: 80 }));
           graphKeys = [...new Set([...seedKeys, ...neighbors])].slice(0, 100);
-          graphItems = await timed('graphEvidence', () => app.query(database, AQL.graphChunks, { ...common, entityKeys: graphKeys }));
+          const graphQuery = servedProfile.provider === 'gte-node' ? AQL.graphGteChunks : AQL.graphChunks;
+          graphItems = await timed('graphEvidence', () => app.query(database, graphQuery, { ...common, entityKeys: graphKeys, vectorIndexVersion: servedProfile.vectorIndexVersion }));
         }
       }
       const fused = weightedReciprocalRankFusion([
@@ -1564,11 +1590,13 @@ function createKnowledgeRuntime(options = {}) {
     const services = {};
     const checks = [
       ['arango', `${baseUrl}/_api/version`, { authorization: provisioner.authorization }],
-      ['embedding', `http://${config.host}:${config.ports.embedding}/health`, { authorization: `Bearer ${embeddingApiKey}` }],
       ['reranker', `http://${config.host}:${config.ports.reranker}/health`, { authorization: `Bearer ${embeddingApiKey}` }],
       ['docling', `http://${config.host}:${config.ports.docling}/health`, { authorization: `Bearer ${doclingApiKey}`, 'x-api-key': doclingApiKey }],
       ['terra', `http://${config.host}:11435/health`, {}],
     ];
+    if (migrationConfig.qwenRollbackRetained !== false || migrationConfig.provider === 'qwen-tei' || migrationConfig.dualWrite === true) {
+      checks.push(['embedding', `http://${config.host}:${config.ports.embedding}/health`, { authorization: `Bearer ${embeddingApiKey}` }]);
+    }
     await Promise.all(checks.map(async ([name, url, headers]) => {
       const started = Date.now();
       try {

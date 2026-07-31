@@ -108,14 +108,11 @@ function Get-EmbeddingConfiguration {
     $timeoutMs = 120000
   } else {
     $provider = [string][Environment]::GetEnvironmentVariable('EXPERIENCE_EMBEDDING_PROVIDER')
-    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = 'qwen-tei' }
+    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = 'gte-node' }
     $provider = $provider.Trim().ToLowerInvariant()
     if ($provider -notin @('qwen-tei','gte-node')) { throw 'EXPERIENCE_EMBEDDING_PROVIDER must be qwen-tei or gte-node.' }
     $dualWrite = Get-BooleanEnvironment 'EXPERIENCE_EMBEDDING_DUAL_WRITE' $false
-    $qwenRollbackRetained = Get-BooleanEnvironment 'EXPERIENCE_QWEN_ROLLBACK_RETAINED' $true
-    if (-not $qwenRollbackRetained) {
-      throw 'EXPERIENCE_QWEN_ROLLBACK_RETAINED=false is not supported during this gated release.'
-    }
+    $qwenRollbackRetained = Get-BooleanEnvironment 'EXPERIENCE_QWEN_ROLLBACK_RETAINED' ($provider -eq 'qwen-tei')
     $defaultRolloutPercent = if ($provider -eq 'gte-node') { 100 } else { 0 }
     $rolloutPercent = Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_ROLLOUT_PERCENT' $defaultRolloutPercent 0 100
     $shadowPercent = Get-IntegerEnvironment 'EXPERIENCE_EMBEDDING_SHADOW_PERCENT' 0 0 100
@@ -125,6 +122,9 @@ function Get-EmbeddingConfiguration {
   }
   if ($provider -eq 'gte-node' -and $qwenRollbackRetained -and -not $dualWrite) {
     throw 'gte-node requires EXPERIENCE_EMBEDDING_DUAL_WRITE=true while the Qwen rollback index is retained.'
+  }
+  if ($provider -eq 'gte-node' -and -not $qwenRollbackRetained -and $dualWrite) {
+    throw 'gte-node cannot dual-write to Qwen after the Qwen rollback profile has been retired.'
   }
   $profile = $EmbeddingProfiles[$provider]
   $configuredFields = [ordered]@{
@@ -143,12 +143,13 @@ function Get-EmbeddingConfiguration {
     }
   }
   $gteRequired = $provider -eq 'gte-node' -or $dualWrite -or $rolloutPercent -gt 0 -or $shadowPercent -gt 0
+  $qwenRequired = $provider -eq 'qwen-tei' -or $dualWrite -or $qwenRollbackRetained -or $forceQwen
   return [ordered]@{
     provider=$provider; model=$profile.model; revision=$profile.revision; dtype=$profile.dtype;
     dimensions=$profile.dimensions; vectorIndexVersion=$profile.vectorIndexVersion;
     concurrency=$concurrency; queueDepth=$queueDepth; timeoutMs=$timeoutMs;
     dualWrite=$dualWrite; qwenRollbackRetained=$qwenRollbackRetained; rolloutPercent=$rolloutPercent; shadowPercent=$shadowPercent;
-    gteRequired=$gteRequired; forceQwenRollback=$forceQwen
+    gteRequired=$gteRequired; qwenRequired=$qwenRequired; forceQwenRollback=$forceQwen
   }
 }
 
@@ -293,8 +294,16 @@ function Ensure-GteDependencies {
   $npm = Get-Command npm.cmd -ErrorAction Stop
   Push-Location $PSScriptRoot
   try {
-    $output = & $npm.Source ci --omit=dev --no-audit --no-fund 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Exact GTE dependency installation failed: $($output -join [Environment]::NewLine)" }
+    # npm writes non-fatal warnings to stderr. Under this script's strict
+    # ErrorActionPreference, PowerShell otherwise turns those warnings into a
+    # terminating NativeCommandError before the process exit code is checked.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      $output = & $npm.Source ci --omit=dev --no-audit --no-fund 2>&1
+      $npmExitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($npmExitCode -ne 0) { throw "Exact GTE dependency installation failed: $($output -join [Environment]::NewLine)" }
   } finally { Pop-Location }
   $status = Get-GteDependencyStatus
   if (-not $status.ready) { throw "npm ci completed without installing exact $GtePackageName $GtePackageVersion." }
@@ -607,12 +616,14 @@ function Get-Status {
 }
 
 function Start-All {
+  $embeddingConfiguration = Get-EmbeddingConfiguration
   Ensure-DirectoriesAndSecrets
   if (-not (Test-DockerReady)) { throw 'Docker Desktop is not ready.' }
   Ensure-Network
   Start-Arango
   Start-Docling
-  Start-Embedding
+  if ($embeddingConfiguration.qwenRequired) { Start-Embedding }
+  else { Stop-Containers @($Containers.embedding) }
   Start-Reranker
   [void](Invoke-Bootstrap)
   [void](Start-Runtime)
@@ -625,7 +636,7 @@ switch ($Action) {
   'graceful-stop' { Stop-Runtime; Stop-Containers @($Containers.reranker,$Containers.embedding,$Containers.docling,$Containers.arango); $state=Read-State; $state.desired='stopped'; $state.modelsLoaded=$false; Write-State $state }
   'force-stop' { Stop-Runtime -Force; Stop-Containers @($Containers.reranker,$Containers.embedding,$Containers.docling,$Containers.arango) -Force; $state=Read-State; $state.desired='stopped'; $state.modelsLoaded=$false; Write-State $state }
   'restart' { Stop-Runtime; Stop-Containers @($Containers.reranker,$Containers.embedding,$Containers.docling,$Containers.arango); Start-All }
-  'load' { Ensure-DirectoriesAndSecrets; if (-not (Test-DockerReady)) { throw 'Docker Desktop is not ready.' }; Ensure-Network; Start-Embedding; Start-Reranker; $state=Read-State; $state.modelsLoaded=$true; Write-State $state }
+  'load' { $embeddingConfiguration=Get-EmbeddingConfiguration; Ensure-DirectoriesAndSecrets; if (-not (Test-DockerReady)) { throw 'Docker Desktop is not ready.' }; Ensure-Network; if ($embeddingConfiguration.qwenRequired) { Start-Embedding } else { Stop-Containers @($Containers.embedding) }; Start-Reranker; $state=Read-State; $state.modelsLoaded=$true; Write-State $state }
   'unload' { Stop-Containers @($Containers.reranker,$Containers.embedding); $state=Read-State; $state.modelsLoaded=$false; Write-State $state }
   'enable-auto-start' { $state=Read-State; $state.autoStart=$true; Write-State $state }
   'disable-auto-start' { $state=Read-State; $state.autoStart=$false; Write-State $state }

@@ -385,3 +385,12 @@ test('ships persistent section tutorials with every referenced lesson image', ()
     assert.ok(fs.statSync(image).size > 5_000, `tutorial image is unexpectedly small for ${key}`);
   }
 });
+test('exposes signed knowledge runtime health without adding service mutation controls', () => {
+  const workspace = fs.readFileSync(path.join(source, 'pages', 'KnowledgeBaseWorkspacePage.tsx'), 'utf8');
+  for (const feature of [
+    '/api/runtime', 'RuntimeWorkspace', 'ArangoDB', 'GTE embedding worker', 'BGE reranker', 'Docling',
+    'Queue and workers', 'Retrieval and indexes', 'Runtime process', 'activeEmbeddingProvider',
+    'vectorIndexVersion', 'cpuPercent', 'Refreshes every five seconds'
+  ]) assert.match(workspace, new RegExp(feature.replaceAll('/', '\\/')));
+  assert.doesNotMatch(workspace, /startKnowledgeRuntime|stopKnowledgeRuntime|restartKnowledgeRuntime/);
+});

@@ -349,15 +349,20 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
   const analytics = computeAnalytics(survey, responses);
   if (job.kind === 'insights.generate') {
     const result = await structured(job, 'experience.insight_generation', 'experience_insights', aiJsonSchemas.insights, insightResult,
-      `Produce decision-ready insights. Numeric analytics are authoritative; do not recalculate them. Distinguish correlation from causation and mark insufficient evidence. healthScore must be from 0 to 100. Every driver strength and forecast confidence must be a decimal from 0 to 1, never a percentage from 0 to 100.\nSurvey: ${JSON.stringify(compactSurvey(survey))}\nAnalytics: ${JSON.stringify(analytics)}\nResponses: ${JSON.stringify(compactResponses(survey, responses))}`,
+      `Produce a saved, decision-ready survey intelligence record in the survey's language. This is analysis, never translation: do not translate or rewrite the survey. Ground every finding in the supplied analytics and response excerpts. Numeric analytics are authoritative; do not recalculate them. Distinguish correlation from causation, say when evidence is insufficient, and avoid findings unsupported by completed responses. Make recommendations specific, measurable, and assign a plausible role owner. healthScore must be from 0 to 100. Every driver strength and forecast confidence must be a decimal from 0 to 1, never a percentage from 0 to 100.\nSurvey: ${JSON.stringify(compactSurvey(survey))}\nAnalytics: ${JSON.stringify(analytics)}\nResponses: ${JSON.stringify(compactResponses(survey, responses))}`,
       `Relevant business, product, policy, terminology, and research context for interpreting results from "${survey.title}" measuring ${survey.primaryMetric || survey.purpose}`);
     insertInsight(survey.id, 'ai_insights', result.output, job.id);
     return result;
   }
   if (job.kind === 'analyst.chat') {
-    return structured(job, 'experience.analyst_chat', 'experience_analyst_answer', aiJsonSchemas.analystChat, analystChatResult,
+    const result = await structured(job, 'experience.analyst_chat', 'experience_analyst_answer', aiJsonSchemas.analystChat, analystChatResult,
       `Answer the analyst's question using only the supplied evidence. Cite response IDs and exact excerpts. If the evidence is insufficient, say so.\nQuestion: ${String(job.input.question || '')}\nSurvey: ${JSON.stringify(compactSurvey(survey))}\nAnalytics: ${JSON.stringify(analytics)}\nResponses: ${JSON.stringify(compactResponses(survey, responses))}`,
       String(job.input.question || `Relevant context for survey analysis of ${survey.title}`));
+    const answer = result.output as z.infer<typeof analystChatResult>;
+    const saved = insertInsight(survey.id, 'research_answer', {
+      question: String(job.input.question || '').trim(), ...answer
+    }, job.id);
+    return { ...result, output: { ...answer, savedInsightId: saved.id } };
   }
   if (job.kind === 'report.generate') {
     const result = await structured(job, 'experience.report_generation', 'experience_executive_report', aiJsonSchemas.report, reportResult,

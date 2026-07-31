@@ -41,7 +41,10 @@ import { getKnowledgeRuntimeStatus } from './knowledgeClient.js';
 import { supportsKnowledgeContext } from './knowledgeContext.js';
 import { knowledgeJobRunner } from './knowledgeJobs.js';
 import { knowledgeJobRoute, knowledgeRouter, surveyKnowledgeRoutes } from './knowledgeRoutes.js';
-import { getKnowledgeContext, knowledgeJobAudienceUserId, KnowledgeError, resolveKnowledgeBaseRefs, surveyKnowledgeBaseIds } from './knowledgeRepository.js';
+import {
+  createKnowledgeMarkdownDocument, getKnowledgeBase, getKnowledgeContext, knowledgeJobAudienceUserId,
+  KnowledgeError, resolveKnowledgeBaseRefs, surveyKnowledgeBaseIds
+} from './knowledgeRepository.js';
 import { QUESTION_TYPES, type AiJob, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
 import {
   clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXExpansion, enqueueXSync,
@@ -1601,6 +1604,47 @@ app.post('/api/ai/jobs/:id/retry', (request, response) => {
 app.get('/api/surveys/:id/insights', noStore, (request, response) => {
   const survey = getSurvey(String(request.params.id), authenticatedSpace(request).id);
   return survey ? response.json(listInsights(survey.id)) : response.status(404).json({ error: 'Survey not found.' });
+});
+app.post('/api/surveys/:id/insights/:insightId/knowledge', (request, response) => {
+  try {
+    const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
+    const survey = requireSurvey(String(request.params.id), space.id);
+    const input = z.object({
+      knowledgeBaseIds: z.array(z.string().uuid()).min(1).max(5),
+      title: z.string().trim().min(3).max(180).optional(), reviewed: z.literal(true)
+    }).strict().parse(request.body || {});
+    const source = db.prepare(`SELECT i.* FROM insights i JOIN surveys s ON s.id=i.survey_id
+      WHERE i.id=? AND i.survey_id=? AND s.space_id=? AND i.kind='research_answer'`)
+      .get(String(request.params.insightId), survey.id, space.id) as any;
+    if (!source) return response.status(404).json({ error: 'Saved research answer not found.' });
+    const payload = JSON.parse(source.payload_json || '{}') as Record<string, any>;
+    const title = input.title || String(payload.question || 'Survey research answer').slice(0, 180);
+    const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+    const caveats = Array.isArray(payload.caveats) ? payload.caveats : [];
+    const markdown = [
+      `# ${title}`, '', `Survey: ${survey.title}`, '', '## Question', '', String(payload.question || ''), '',
+      '## Answer', '', String(payload.answer || ''), '', '## Evidence', '',
+      ...(evidence.length ? evidence.map((item: any) => `- ${String(item.responseId || 'response')}: ${String(item.excerpt || '')}`) : ['- No respondent excerpt was supplied.']),
+      '', '## Caveats', '', ...(caveats.length ? caveats.map((item: unknown) => `- ${String(item)}`) : ['- None supplied.']), '',
+      '## Provenance', '', `- Survey ID: ${survey.id}`, `- Saved research answer ID: ${source.id}`,
+      `- Generated at: ${source.created_at}`, `- Reviewed and published by: ${user.id}`, ''
+    ].join('\n');
+    const uniqueBaseIds = [...new Set(input.knowledgeBaseIds)];
+    const bases = uniqueBaseIds.map((id) => getKnowledgeBase(id, space.id, false, user.id));
+    if (bases.some((base) => !base)) return response.status(404).json({ error: 'Knowledge base not found in this space.' });
+    const publications = bases.map((base) => {
+      const created = createKnowledgeMarkdownDocument({
+        spaceId: space.id, knowledgeBaseId: base!.id, userId: user.id,
+        originalName: `Survey research ${source.id}.md`, markdown,
+        metadata: { artifactType: 'survey_research_answer', trustStatus: 'human_reviewed_derived',
+          surveyId: survey.id, sourceInsightId: source.id, reviewedBy: user.id }
+      });
+      return { knowledgeBaseId: base!.id, document: created.document, job: created.job, deduplicated: created.deduplicated };
+    });
+    publishEvent('data-changed', { reason: 'survey-research-published', surveyId: survey.id,
+      insightId: source.id, knowledgeBaseIds: uniqueBaseIds }, space.id);
+    return response.status(202).json({ insightId: source.id, publications });
+  } catch (error) { return sendError(response, error, 400); }
 });
 app.get('/api/surveys/:id/tickets', noStore, (request, response) => {
   const survey = getSurvey(String(request.params.id), authenticatedSpace(request).id);
