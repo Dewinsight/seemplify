@@ -2,7 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { Route, Switch } from 'wouter';
 import { AppShell } from '@/components/AppShell';
 import { PlatformAdminShell } from '@/components/platform-admin/PlatformAdminShell';
-import { Navigate, PageLoader } from '@/lib/router';
+import { Navigate, PageContentLoader, PageLoader } from '@/lib/router';
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
 const SurveysPage = lazy(() => import('@/pages/SurveysPage').then((module) => ({ default: module.SurveysPage })));
@@ -47,56 +47,83 @@ const PlatformAdminSubscriptionRequestDetailPage = lazy(() => import('@/pages/pl
 const PlatformAdminAnalyticsPage = lazy(() => import('@/pages/platform-admin/AnalyticsPage').then((module) => ({ default: module.PlatformAdminAnalyticsPage })));
 const PlatformAdminAuditPage = lazy(() => import('@/pages/platform-admin/AuditPage').then((module) => ({ default: module.PlatformAdminAuditPage })));
 const PlatformAdminAuditDetailPage = lazy(() => import('@/pages/platform-admin/AuditDetailPage').then((module) => ({ default: module.PlatformAdminAuditDetailPage })));
-function Admin({ children }: { children: ReactNode }) { return <AppShell>{children}</AppShell>; }
-function PlatformAdmin({ children }: { children: ReactNode }) { return <PlatformAdminShell>{children}</PlatformAdminShell>; }
+
+function StandalonePage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+}
+
+function PlatformAdminRoutes() {
+  return <Switch>
+    <Route path="/admin/users/:id"><PlatformAdminUserDetailPage /></Route>
+    <Route path="/admin/users"><PlatformAdminUsersPage /></Route>
+    <Route path="/admin/spaces/:id"><PlatformAdminSpaceDetailPage /></Route>
+    <Route path="/admin/spaces"><PlatformAdminSpacesPage /></Route>
+    <Route path="/admin/subscriptions"><PlatformAdminSubscriptionsPage /></Route>
+    <Route path="/admin/subscription-requests/:id"><PlatformAdminSubscriptionRequestDetailPage /></Route>
+    <Route path="/admin/subscription-requests"><PlatformAdminSubscriptionRequestsPage /></Route>
+    <Route path="/admin/analytics"><PlatformAdminAnalyticsPage /></Route>
+    <Route path="/admin/audit/:id"><PlatformAdminAuditDetailPage /></Route>
+    <Route path="/admin/audit"><PlatformAdminAuditPage /></Route>
+    <Route path="/admin"><PlatformAdminOverviewPage /></Route>
+    <Route><Navigate to="/admin" /></Route>
+  </Switch>;
+}
+
+function PlatformAdministration() {
+  return <PlatformAdminShell>
+    <Suspense fallback={<PageContentLoader />}><PlatformAdminRoutes /></Suspense>
+  </PlatformAdminShell>;
+}
+
+function ExperienceRoutes() {
+  return <Switch>
+    <Route path="/surveys/new"><CreateSurveyPage /></Route>
+    <Route path="/surveys/:id"><SurveyStudioPage /></Route>
+    <Route path="/surveys"><SurveysPage /></Route>
+    <Route path="/campaigns/:id"><CampaignWorkspacePage /></Route>
+    <Route path="/campaigns"><CampaignsPage /></Route>
+    <Route path="/agreements/new"><NewAgreementPage /></Route>
+    <Route path="/agreements/:id/prepare"><AgreementPreparePage /></Route>
+    <Route path="/agreements/:id"><AgreementWorkspacePage /></Route>
+    <Route path="/agreements"><AgreementsPage /></Route>
+    <Route path="/social-listening"><SocialListeningPage /></Route>
+    <Route path="/intelligence"><IntelligencePage /></Route>
+    <Route path="/assistant"><PersonalAssistantPage /></Route>
+    <Route path="/knowledge-bases/:id"><KnowledgeBaseWorkspacePage /></Route>
+    <Route path="/knowledge-bases"><KnowledgeBasesPage /></Route>
+    <Route path="/journeys"><JourneysPage /></Route>
+    <Route path="/ai-queue"><AiQueuePage /></Route>
+    <Route path="/tickets"><TicketsPage /></Route>
+    <Route path="/settings/space"><SpaceSettingsPage /></Route>
+    <Route path="/settings/profile"><ProfilePage /></Route>
+    <Route path="/"><DashboardPage /></Route>
+    <Route><Navigate to="/" /></Route>
+  </Switch>;
+}
+
+function ExperienceApplication() {
+  return <AppShell>
+    <Suspense fallback={<PageContentLoader />}><ExperienceRoutes /></Suspense>
+  </AppShell>;
+}
 
 export function App() {
-  return <Suspense fallback={<PageLoader />}><Switch>
-    <Route path="/s/:slug"><PublicSurveyPage /></Route>
-    <Route path="/sign/:token"><PublicSigningPage /></Route>
-    <Route path="/sign"><PublicSigningPage /></Route>
-    <Route path="/my-documents"><MyDocumentsPage /></Route>
-    <Route path="/verify/:certificateId"><CertificateVerificationPage /></Route>
-    <Route path="/join/:token"><JoinSpacePage /></Route>
-    <Route path="/login"><LoginPage /></Route>
-    <Route path="/signup"><SignupPage /></Route>
-    <Route path="/verify-email"><EmailVerificationPage /></Route>
-    <Route path="/onboarding"><OnboardingPage /></Route>
-    <Route path="/forgot-password"><ForgotPasswordPage /></Route>
-    <Route path="/reset-password"><ResetPasswordPage /></Route>
-    <Route path="/legal/terms"><LegalPage kind="terms" /></Route>
-    <Route path="/legal/privacy"><LegalPage kind="privacy" /></Route>
-    <Route path="/admin/users/:id"><PlatformAdmin><PlatformAdminUserDetailPage /></PlatformAdmin></Route>
-    <Route path="/admin/users"><PlatformAdmin><PlatformAdminUsersPage /></PlatformAdmin></Route>
-    <Route path="/admin/spaces/:id"><PlatformAdmin><PlatformAdminSpaceDetailPage /></PlatformAdmin></Route>
-    <Route path="/admin/spaces"><PlatformAdmin><PlatformAdminSpacesPage /></PlatformAdmin></Route>
-    <Route path="/admin/subscriptions"><PlatformAdmin><PlatformAdminSubscriptionsPage /></PlatformAdmin></Route>
-    <Route path="/admin/subscription-requests/:id"><PlatformAdmin><PlatformAdminSubscriptionRequestDetailPage /></PlatformAdmin></Route>
-    <Route path="/admin/subscription-requests"><PlatformAdmin><PlatformAdminSubscriptionRequestsPage /></PlatformAdmin></Route>
-    <Route path="/admin/analytics"><PlatformAdmin><PlatformAdminAnalyticsPage /></PlatformAdmin></Route>
-    <Route path="/admin/audit/:id"><PlatformAdmin><PlatformAdminAuditDetailPage /></PlatformAdmin></Route>
-    <Route path="/admin/audit"><PlatformAdmin><PlatformAdminAuditPage /></PlatformAdmin></Route>
-    <Route path="/admin"><PlatformAdmin><PlatformAdminOverviewPage /></PlatformAdmin></Route>
-    <Route path="/surveys/new"><Admin><CreateSurveyPage /></Admin></Route>
-    <Route path="/surveys/:id"><Admin><SurveyStudioPage /></Admin></Route>
-    <Route path="/surveys"><Admin><SurveysPage /></Admin></Route>
-    <Route path="/campaigns/:id"><Admin><CampaignWorkspacePage /></Admin></Route>
-    <Route path="/campaigns"><Admin><CampaignsPage /></Admin></Route>
-    <Route path="/agreements/new"><Admin><NewAgreementPage /></Admin></Route>
-    <Route path="/agreements/:id/prepare"><Admin><AgreementPreparePage /></Admin></Route>
-    <Route path="/agreements/:id"><Admin><AgreementWorkspacePage /></Admin></Route>
-    <Route path="/agreements"><Admin><AgreementsPage /></Admin></Route>
-    <Route path="/social-listening"><Admin><SocialListeningPage /></Admin></Route>
-    <Route path="/intelligence"><Admin><IntelligencePage /></Admin></Route>
-    <Route path="/assistant"><Admin><PersonalAssistantPage /></Admin></Route>
-    <Route path="/knowledge-bases/:id"><Admin><KnowledgeBaseWorkspacePage /></Admin></Route>
-    <Route path="/knowledge-bases"><Admin><KnowledgeBasesPage /></Admin></Route>
-    <Route path="/journeys"><Admin><JourneysPage /></Admin></Route>
-    <Route path="/ai-queue"><Admin><AiQueuePage /></Admin></Route>
-    <Route path="/tickets"><Admin><TicketsPage /></Admin></Route>
-    <Route path="/settings/space"><Admin><SpaceSettingsPage /></Admin></Route>
-    <Route path="/settings/profile"><Admin><ProfilePage /></Admin></Route>
-    <Route path="/"><Admin><DashboardPage /></Admin></Route>
-    <Route><Navigate to="/" /></Route>
-  </Switch></Suspense>;
+  return <Switch>
+    <Route path="/s/:slug"><StandalonePage><PublicSurveyPage /></StandalonePage></Route>
+    <Route path="/sign/:token"><StandalonePage><PublicSigningPage /></StandalonePage></Route>
+    <Route path="/sign"><StandalonePage><PublicSigningPage /></StandalonePage></Route>
+    <Route path="/my-documents"><StandalonePage><MyDocumentsPage /></StandalonePage></Route>
+    <Route path="/verify/:certificateId"><StandalonePage><CertificateVerificationPage /></StandalonePage></Route>
+    <Route path="/join/:token"><StandalonePage><JoinSpacePage /></StandalonePage></Route>
+    <Route path="/login"><StandalonePage><LoginPage /></StandalonePage></Route>
+    <Route path="/signup"><StandalonePage><SignupPage /></StandalonePage></Route>
+    <Route path="/verify-email"><StandalonePage><EmailVerificationPage /></StandalonePage></Route>
+    <Route path="/onboarding"><StandalonePage><OnboardingPage /></StandalonePage></Route>
+    <Route path="/forgot-password"><StandalonePage><ForgotPasswordPage /></StandalonePage></Route>
+    <Route path="/reset-password"><StandalonePage><ResetPasswordPage /></StandalonePage></Route>
+    <Route path="/legal/terms"><StandalonePage><LegalPage kind="terms" /></StandalonePage></Route>
+    <Route path="/legal/privacy"><StandalonePage><LegalPage kind="privacy" /></StandalonePage></Route>
+    <Route path="/admin/*?"><PlatformAdministration /></Route>
+    <Route><ExperienceApplication /></Route>
+  </Switch>;
 }
