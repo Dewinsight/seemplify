@@ -98,6 +98,29 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS assistant_runs_job ON assistant_runs(ai_job_id);
   CREATE UNIQUE INDEX IF NOT EXISTS assistant_runs_idempotency
     ON assistant_runs(space_id,requested_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS assistant_outbound_messages (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL UNIQUE REFERENCES assistant_runs(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    connection_id TEXT NOT NULL REFERENCES assistant_nylas_connections(id) ON DELETE RESTRICT,
+    thread_id TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK(mode IN ('reply','reply_all')),
+    status TEXT NOT NULL CHECK(status IN ('sending','sent','failed')),
+    provider_idempotency_key TEXT NOT NULL UNIQUE,
+    provider_reply_to_message_id TEXT NOT NULL,
+    provider_message_id TEXT,
+    recipients_json TEXT NOT NULL DEFAULT '[]',
+    subject_sha256 TEXT NOT NULL,
+    body_sha256 TEXT NOT NULL,
+    error_code TEXT,
+    created_at TEXT NOT NULL,
+    sent_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS assistant_outbound_messages_owner
+    ON assistant_outbound_messages(space_id,user_id,created_at DESC,id);
 `);
 
 const assistantRunColumns = new Set((db.pragma('table_info(assistant_runs)') as Array<{ name: string }>).map((column) => column.name));
@@ -367,8 +390,13 @@ function assistantRunRow(id: string, spaceId?: string, userId?: string) {
   if (spaceId) { filters.push('r.space_id=?'); values.push(spaceId); }
   if (userId) { filters.push('r.requested_by=?'); values.push(userId); }
   return db.prepare(`SELECT r.*,j.state job_state,j.stage job_stage,j.progress job_progress,j.error job_error,
-      j.attempt job_attempt,j.retry_at job_retry_at
-    FROM assistant_runs r LEFT JOIN ai_jobs j ON j.id=r.ai_job_id WHERE ${filters.join(' AND ')}`).get(...values) as any;
+      j.attempt job_attempt,j.retry_at job_retry_at,
+      o.sent_at delivery_sent_at,o.provider_message_id delivery_message_id,o.recipients_json delivery_recipients_json,
+      o.mode delivery_mode
+    FROM assistant_runs r
+    LEFT JOIN ai_jobs j ON j.id=r.ai_job_id
+    LEFT JOIN assistant_outbound_messages o ON o.run_id=r.id AND o.status='sent'
+    WHERE ${filters.join(' AND ')}`).get(...values) as any;
 }
 
 function runResponse(row: any) {
@@ -394,7 +422,13 @@ function runResponse(row: any) {
       revision: Number(row.draft_revision), updatedAt: row.draft_updated_at
     } : null,
     advisoryOnly: Number(row.advisory_only ?? 1) === 1,
-    externalDispatched: Number(row.external_dispatched || 0) === 1,
+    externalDispatched: Number(row.external_dispatched || 0) === 1 || Boolean(row.delivery_sent_at),
+    delivery: row.delivery_sent_at ? {
+      sentAt: String(row.delivery_sent_at),
+      messageId: row.delivery_message_id ? String(row.delivery_message_id) : null,
+      recipients: parseJson<string[]>(row.delivery_recipients_json, []),
+      mode: row.delivery_mode === 'reply_all' ? 'reply_all' : 'reply'
+    } : null,
     error: row.job_error || row.error || null, retryAt: row.job_retry_at || null,
     createdAt: String(row.created_at), startedAt: row.started_at || null,
     completedAt: row.completed_at || null, updatedAt: String(row.updated_at)
@@ -408,8 +442,12 @@ export function getAssistantRun(id: string, spaceId: string, userId: string) {
 
 export function listAssistantRuns(spaceId: string, userId: string, limit = 100) {
   return (db.prepare(`SELECT r.*,j.state job_state,j.stage job_stage,j.progress job_progress,j.error job_error,
-      j.attempt job_attempt,j.retry_at job_retry_at
-    FROM assistant_runs r LEFT JOIN ai_jobs j ON j.id=r.ai_job_id
+      j.attempt job_attempt,j.retry_at job_retry_at,
+      o.sent_at delivery_sent_at,o.provider_message_id delivery_message_id,o.recipients_json delivery_recipients_json,
+      o.mode delivery_mode
+    FROM assistant_runs r
+    LEFT JOIN ai_jobs j ON j.id=r.ai_job_id
+    LEFT JOIN assistant_outbound_messages o ON o.run_id=r.id AND o.status='sent'
     WHERE r.space_id=? AND r.requested_by=? ORDER BY r.created_at DESC,r.id DESC LIMIT ?`)
     .all(spaceId, userId, Math.max(1, Math.min(500, limit))) as any[]).map(runResponse);
 }
@@ -574,7 +612,9 @@ export function createAssistantEmailRun(input: {
     }),
     snapshot: assistantEmailExecutionSnapshot(
       input.snapshot,
-      input.kind === 'email_draft' ? { instructions: input.instructions, tone: input.tone } : undefined
+      input.kind === 'email_draft' || input.instructions
+        ? { instructions: input.instructions, tone: input.tone }
+        : undefined
     )
   });
 }

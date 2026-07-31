@@ -6,12 +6,12 @@ import {
   gteKnowledgeEmbeddingProfile, qwenKnowledgeEmbeddingProfile, resolveKnowledgeEmbeddingConfiguration
 } from '../src/config.js';
 
-test('keeps pinned Qwen as the production-safe default', () => {
+test('keeps pinned CPU-based GTE as the production default', () => {
   const resolved = resolveKnowledgeEmbeddingConfiguration({});
-  assert.deepEqual(resolved.profile, qwenKnowledgeEmbeddingProfile);
+  assert.deepEqual(resolved.profile, gteKnowledgeEmbeddingProfile);
   assert.equal(resolved.concurrency, 8);
   assert.equal(resolved.dualWrite, false);
-  assert.equal(resolved.qwenRollbackRetained, true);
+  assert.equal(resolved.qwenRollbackRetained, false);
   assert.equal(resolved.forceQwen, false);
 });
 
@@ -24,12 +24,13 @@ test('accepts only the pinned GTE q8 embedding-space contract', () => {
     EXPERIENCE_EMBEDDING_DIMENSIONS: '768',
     EXPERIENCE_EMBEDDING_CONCURRENCY: '8',
     EXPERIENCE_VECTOR_INDEX_VERSION: 'gte-modernbert-v1',
-    EXPERIENCE_EMBEDDING_DUAL_WRITE: 'true'
+    EXPERIENCE_EMBEDDING_DUAL_WRITE: 'false',
+    EXPERIENCE_QWEN_ROLLBACK_RETAINED: 'false'
   });
   assert.deepEqual(resolved.profile, gteKnowledgeEmbeddingProfile);
   assert.equal(resolved.concurrency, 8);
-  assert.equal(resolved.dualWrite, true);
-  assert.equal(resolved.qwenRollbackRetained, true);
+  assert.equal(resolved.dualWrite, false);
+  assert.equal(resolved.qwenRollbackRetained, false);
 });
 
 test('rejects mixed, unpinned, or unsafe provider settings before startup', () => {
@@ -44,17 +45,20 @@ test('rejects mixed, unpinned, or unsafe provider settings before startup', () =
   assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_MODEL_REVISION: 'main' }),
     /pinned 40-character/u);
   assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_MODEL_REVISION: '0'.repeat(40) }),
-    /pinned Qwen/u);
+    /pinned Alibaba-NLP\/gte-modernbert-base/u);
   assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_CONCURRENCY: '16' }),
     /between 1 and 8/u);
   assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_VECTOR_INDEX_VERSION: 'GTE V1' }),
     /stable lowercase identifier/u);
   assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_DUAL_WRITE: 'sometimes' }),
     /must be a boolean/u);
-  assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_EMBEDDING_PROVIDER: 'gte-node' }),
+  assert.throws(() => resolveKnowledgeEmbeddingConfiguration({
+    EXPERIENCE_EMBEDDING_PROVIDER: 'gte-node', EXPERIENCE_QWEN_ROLLBACK_RETAINED: 'true'
+  }),
     /requires dual-write/u);
-  assert.throws(() => resolveKnowledgeEmbeddingConfiguration({ EXPERIENCE_QWEN_ROLLBACK_RETAINED: 'false' }),
-    /must remain true during the gated GTE migration release/u);
+  assert.throws(() => resolveKnowledgeEmbeddingConfiguration({
+    EXPERIENCE_QWEN_ROLLBACK_RETAINED: 'false', EXPERIENCE_EMBEDDING_DUAL_WRITE: 'true'
+  }), /cannot dual-write/u);
 
   const forcedRollback = resolveKnowledgeEmbeddingConfiguration({
     EXPERIENCE_EMBEDDING_FORCE_QWEN: 'true', EXPERIENCE_EMBEDDING_PROVIDER: 'gte-node',
@@ -80,8 +84,8 @@ test('runtime schema 3 migration is additive and carries durable rollout state',
   ]) assert.match(migration, new RegExp(contract, 'u'));
   assert.match(migration, /ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS/u);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 6,
-    maximumRuntimeSchemaVersion: 6,
+    minimumRuntimeSchemaVersion: 7,
+    maximumRuntimeSchemaVersion: 7,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });

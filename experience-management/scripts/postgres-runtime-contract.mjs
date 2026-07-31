@@ -23,15 +23,16 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export function runtimeExtensionTables(runtimeVersion = 6) {
-  return runtimeVersion >= 6
-    ? [...BASE_RUNTIME_EXTENSION_TABLES, 'social_intelligence_publications']
-    : [...BASE_RUNTIME_EXTENSION_TABLES];
+export function runtimeExtensionTables(runtimeVersion = 7) {
+  const tables = [...BASE_RUNTIME_EXTENSION_TABLES];
+  if (runtimeVersion >= 6) tables.push('social_intelligence_publications');
+  if (runtimeVersion >= 7) tables.push('assistant_outbound_messages');
+  return tables;
 }
 
-export const RUNTIME_EXTENSION_TABLES = Object.freeze(runtimeExtensionTables(6));
+export const RUNTIME_EXTENSION_TABLES = Object.freeze(runtimeExtensionTables(7));
 
-export function runtimeTableSetDifference(sourceTableNames, actualTableNames, runtimeVersion = 6) {
+export function runtimeTableSetDifference(sourceTableNames, actualTableNames, runtimeVersion = 7) {
   const expectedTables = new Set([...sourceTableNames, ...runtimeExtensionTables(runtimeVersion)]);
   return {
     unknownTables: actualTableNames.filter((name) => !expectedTables.has(name)),
@@ -134,6 +135,17 @@ const reviewedIntelligenceExactColumns = Object.freeze({
   ]
 });
 
+const reviewedReplyExactColumns = Object.freeze({
+  assistant_outbound_messages: [
+    ['id', 'text', false], ['run_id', 'text', false], ['space_id', 'text', false], ['user_id', 'text', false],
+    ['connection_id', 'text', false], ['thread_id', 'text', false], ['mode', 'text', false], ['status', 'text', false],
+    ['provider_idempotency_key', 'text', false], ['provider_reply_to_message_id', 'text', false],
+    ['provider_message_id', 'text', true], ['recipients_json', 'text', false],
+    ['subject_sha256', 'text', false], ['body_sha256', 'text', false], ['error_code', 'text', true],
+    ['created_at', 'text', false], ['sent_at', 'text', true], ['updated_at', 'text', false]
+  ]
+});
+
 const additiveColumns = Object.freeze({
   users: [
     ['account_status', 'text', false], ['last_login_at', 'text', true], ['suspended_at', 'text', true],
@@ -170,6 +182,8 @@ const assistantPhase1PrimaryKeys = Object.freeze({
 const reviewedIntelligencePrimaryKeys = Object.freeze({
   social_intelligence_publications: ['report_id', 'knowledge_base_id']
 });
+
+const reviewedReplyPrimaryKeys = Object.freeze({ assistant_outbound_messages: ['id'] });
 
 const requiredForeignKeys = Object.freeze([
   ['users', 'suspended_by_user_id', 'users', 'id', 'n'],
@@ -225,6 +239,13 @@ const reviewedIntelligenceRequiredForeignKeys = Object.freeze([
   ['social_intelligence_publications', 'space_id', 'knowledge_documents', 'space_id', 'c']
 ]);
 
+const reviewedReplyRequiredForeignKeys = Object.freeze([
+  ['assistant_outbound_messages', 'run_id', 'assistant_runs', 'id', 'c'],
+  ['assistant_outbound_messages', 'space_id', 'spaces', 'id', 'c'],
+  ['assistant_outbound_messages', 'user_id', 'users', 'id', 'r'],
+  ['assistant_outbound_messages', 'connection_id', 'assistant_nylas_connections', 'id', 'r']
+]);
+
 const requiredIndexes = Object.freeze({
   platform_role_assignments_active: ['create unique index', '(user_id, role)', 'where (revoked_at is null)'],
   platform_role_assignments_user: ['(user_id, granted_at desc)'],
@@ -264,6 +285,12 @@ const assistantPhase1RequiredIndexes = Object.freeze({
 const reviewedIntelligenceRequiredIndexes = Object.freeze({
   social_intelligence_publications_document_id_key: ['create unique index', '(document_id)'],
   social_intelligence_publications_space_created: ['(space_id, created_at desc)']
+});
+
+const reviewedReplyRequiredIndexes = Object.freeze({
+  assistant_outbound_messages_run_id_key: ['create unique index', '(run_id)'],
+  assistant_outbound_messages_provider_idempotency_key_key: ['create unique index', '(provider_idempotency_key)'],
+  assistant_outbound_messages_owner: ['(space_id, user_id, created_at desc, id)']
 });
 
 const requiredDefaults = Object.freeze({
@@ -307,6 +334,10 @@ const assistantPhase1RequiredDefaults = Object.freeze({
 
 const reviewedIntelligenceRequiredDefaults = Object.freeze({
   'social_intelligence_publications.review_status': "'reviewed'::text"
+});
+
+const reviewedReplyRequiredDefaults = Object.freeze({
+  'assistant_outbound_messages.recipients_json': "'[]'::text"
 });
 
 const requiredChecks = Object.freeze({
@@ -361,6 +392,15 @@ const reviewedIntelligenceRequiredChecks = Object.freeze({
   ]
 });
 
+const reviewedReplyRequiredChecks = Object.freeze({
+  assistant_outbound_messages: [
+    ['mode', 'reply', 'reply_all'],
+    ['status', 'sending', 'sent', 'failed'],
+    ['subject_sha256', '^[a-f0-9]{64}$'],
+    ['body_sha256', '^[a-f0-9]{64}$']
+  ]
+});
+
 function contractError(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -387,31 +427,43 @@ async function rows(query, sql) {
 export async function assertRuntimeSchemaContract(query, options = {}) {
   const schema = String(options.schema || 'public');
   if (!IDENTIFIER.test(schema)) throw contractError('RUNTIME_SCHEMA_IDENTIFIER_INVALID', `Unsafe PostgreSQL schema identifier: ${schema}`);
-  const runtimeVersion = Number(options.runtimeVersion ?? 6);
+  const runtimeVersion = Number(options.runtimeVersion ?? 7);
   if (!Number.isSafeInteger(runtimeVersion) || runtimeVersion < 1) {
     throw contractError('RUNTIME_SCHEMA_VERSION_INVALID', 'Runtime schema contract version must be a positive integer.');
   }
-  const exactColumnContract = runtimeVersion >= 6
+  const exactColumnContract = runtimeVersion >= 7
+    ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns, ...reviewedReplyExactColumns }
+    : runtimeVersion >= 6
     ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns }
     : runtimeVersion >= 5 ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns }
     : runtimeVersion >= 4 ? { ...exactColumns, ...assistantExactColumns } : exactColumns;
-  const primaryKeyContract = runtimeVersion >= 6
+  const primaryKeyContract = runtimeVersion >= 7
+    ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys, ...reviewedReplyPrimaryKeys }
+    : runtimeVersion >= 6
     ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys }
     : runtimeVersion >= 5 ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys }
     : runtimeVersion >= 4 ? { ...primaryKeys, ...assistantPrimaryKeys } : primaryKeys;
-  const foreignKeyContract = runtimeVersion >= 6
+  const foreignKeyContract = runtimeVersion >= 7
+    ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys, ...reviewedReplyRequiredForeignKeys]
+    : runtimeVersion >= 6
     ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys]
     : runtimeVersion >= 5 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys]
     : runtimeVersion >= 4 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys] : requiredForeignKeys;
-  const indexContract = runtimeVersion >= 6
+  const indexContract = runtimeVersion >= 7
+    ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes, ...reviewedReplyRequiredIndexes }
+    : runtimeVersion >= 6
     ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes }
     : runtimeVersion >= 5 ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes }
     : runtimeVersion >= 4 ? { ...requiredIndexes, ...assistantRequiredIndexes } : requiredIndexes;
-  const defaultContract = runtimeVersion >= 6
+  const defaultContract = runtimeVersion >= 7
+    ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults, ...reviewedReplyRequiredDefaults }
+    : runtimeVersion >= 6
     ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults }
     : runtimeVersion >= 5 ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults }
     : runtimeVersion >= 4 ? { ...requiredDefaults, ...assistantRequiredDefaults } : requiredDefaults;
-  const checkContract = runtimeVersion >= 6
+  const checkContract = runtimeVersion >= 7
+    ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks, ...reviewedIntelligenceRequiredChecks, ...reviewedReplyRequiredChecks }
+    : runtimeVersion >= 6
     ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks, ...reviewedIntelligenceRequiredChecks }
     : runtimeVersion >= 5 ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks }
     : runtimeVersion >= 4 ? { ...requiredChecks, ...assistantRequiredChecks } : requiredChecks;

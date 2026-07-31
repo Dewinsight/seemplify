@@ -275,13 +275,13 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
 
   const openAssistantPanel = page.getByRole('button', { name: 'Open assistant' });
   if (await openAssistantPanel.isVisible()) await openAssistantPanel.click();
-  await page.getByRole('button', { name: /Summarise thread/ }).click();
+  await page.getByRole('button', { name: 'Summarise' }).click();
   await expect(page.getByText('The board paper needs human approval before distribution.')).toBeVisible();
-  await page.getByRole('button', { name: /Prepare reply draft/ }).click();
-  await expect(page.getByText('Draft only — nothing has been sent')).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Send$/ })).toHaveCount(0);
-  await expect(page.getByLabel('Editable draft')).toHaveValue('Thank you. I will review the board paper.');
-  await page.getByLabel('Editable draft').fill('Unsaved executive response.');
+  await page.getByRole('tab', { name: 'Reply' }).click();
+  await page.getByRole('button', { name: 'Draft reply' }).click();
+  await expect(page.getByText('Review required')).toBeVisible();
+  await expect(page.getByLabel('Reply', { exact: true })).toHaveValue('Thank you. I will review the board paper.');
+  await page.getByLabel('Reply', { exact: true }).fill('Unsaved executive response.');
 
   let accountGuardSeen = false;
   page.once('dialog', async (dialog) => {
@@ -289,10 +289,10 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
     expect(dialog.message()).toContain('Discard the unsaved changes');
     await dialog.dismiss();
   });
-  await page.getByRole('button', { name: /Second mailbox.*second@example\.test/i }).click();
+  await page.getByLabel('Connected mailbox').selectOption(secondConnectionId);
   expect(accountGuardSeen).toBe(true);
   await expect(reader).toContainText('Executive update');
-  await expect(page.getByLabel('Editable draft')).toHaveValue('Unsaved executive response.');
+  await expect(page.getByLabel('Reply', { exact: true })).toHaveValue('Unsaved executive response.');
 
   let tabGuardSeen = false;
   page.once('dialog', async (dialog) => {
@@ -303,7 +303,7 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
   await page.getByRole('tab', { name: 'Work products' }).click();
   expect(tabGuardSeen).toBe(true);
   await expect(page.getByRole('tab', { name: 'Mailbox' })).toHaveAttribute('data-state', 'active');
-  await expect(page.getByLabel('Editable draft')).toHaveValue('Unsaved executive response.');
+  await expect(page.getByLabel('Reply', { exact: true })).toHaveValue('Unsaved executive response.');
 });
 
 test('mailbox switching rejects late list and conversation responses from the previous account', async ({ page }, testInfo) => {
@@ -352,7 +352,7 @@ test('mailbox switching rejects late list and conversation responses from the pr
   await signIn(page);
   await openAssistant(page);
   await firstListStarted;
-  await page.getByRole('button', { name: /Second mailbox.*second@example\.test/i }).click();
+  await page.getByLabel('Connected mailbox').selectOption(secondConnectionId);
   await expect(page.getByTestId('assistant-thread-second-account-thread')).toBeVisible();
   releaseFirstList();
   await expect(page.getByTestId('assistant-thread-first-account-thread')).toHaveCount(0);
@@ -360,9 +360,9 @@ test('mailbox switching rejects late list and conversation responses from the pr
 
   firstDetailStarted = new Promise<void>((resolve) => { markFirstDetailStarted = resolve; });
   firstDetailReleased = new Promise<void>((resolve) => { releaseFirstDetail = resolve; });
-  await page.getByRole('button', { name: /First mailbox.*first@example\.test/i }).click();
+  await page.getByLabel('Connected mailbox').selectOption(firstConnectionId);
   await firstDetailStarted;
-  await page.getByRole('button', { name: /Second mailbox.*second@example\.test/i }).click();
+  await page.getByLabel('Connected mailbox').selectOption(secondConnectionId);
   await expect(page.getByTestId('assistant-conversation-reader')).toContainText('Full first message for Second account current thread');
   releaseFirstDetail();
   await expect(page.getByText('Full first message for First account confidential thread')).toHaveCount(0);

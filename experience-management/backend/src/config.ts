@@ -268,7 +268,7 @@ export const config = {
     ),
     ssl: postgresSsl(process.env.POSTGRES_SSL),
     schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
-    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 6, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 7, 1, 1_000_000),
     sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
   },
   uploadDir: resolveFromBackend(

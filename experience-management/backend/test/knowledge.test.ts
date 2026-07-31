@@ -38,7 +38,10 @@ Object.assign(process.env, {
   X_SEED_BEARER_TOKEN_FILE: path.join(root, 'missing-x-bearer'),
   X_SEED_ACCESS_TOKEN_FILE: path.join(root, 'missing-x-token'),
   X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(root, 'missing-x-token-secret'),
-  X_SEED_CLIENT_ID_FILE: path.join(root, 'missing-client-id'), X_SEED_CLIENT_SECRET_FILE: path.join(root, 'missing-client-secret')
+  X_SEED_CLIENT_ID_FILE: path.join(root, 'missing-client-id'), X_SEED_CLIENT_SECRET_FILE: path.join(root, 'missing-client-secret'),
+  // This suite exercises the durable Qwen-to-GTE migration path. Production defaults to GTE.
+  EXPERIENCE_EMBEDDING_PROVIDER: 'qwen-tei', EXPERIENCE_EMBEDDING_DUAL_WRITE: 'false',
+  EXPERIENCE_QWEN_ROLLBACK_RETAINED: 'true'
 });
 
 const originalFetch = globalThis.fetch;

@@ -31,14 +31,14 @@ test('real assistant backend completes OAuth, reads a thread, and durably saves 
   await expect(page.getByTestId('assistant-thread-playwright-thread')).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Open assistant' }).click();
 
-  await page.getByRole('button', { name: /Summarise thread/ }).click();
+  await page.getByRole('button', { name: 'Summarise' }).click();
   await expect(page.getByText('Ada needs confirmation of the revised customer-risk section by Friday.')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('222 tokens')).toBeVisible();
 
-  await page.getByRole('button', { name: /Prepare reply draft/ }).click();
-  await expect(page.getByText(/Draft only/)).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole('button', { name: /^Send$/u })).toHaveCount(0);
-  const draft = page.getByLabel('Editable draft');
+  await page.getByRole('tab', { name: 'Reply' }).click();
+  await page.getByRole('button', { name: 'Draft reply' }).click();
+  await expect(page.getByText('Review required')).toBeVisible({ timeout: 20_000 });
+  const draft = page.getByLabel('Reply', { exact: true });
   await expect(draft).toHaveValue(/confirm by Friday/u);
   await draft.fill('Hi Ada,\n\nI reviewed the revised section and will confirm by Friday.\n\nRegards');
   await page.getByRole('button', { name: 'Save draft' }).click();

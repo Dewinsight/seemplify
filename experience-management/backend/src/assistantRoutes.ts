@@ -26,7 +26,8 @@ import {
 import {
   createNylasAuthorizeUrl, exchangeNylasCode, getNylasCalendarEvent, getNylasThreadSnapshot,
   listNylasCalendarEvents, listNylasCalendars, listNylasFolders, listNylasThreadPage, listNylasThreads,
-  NylasError, nylasConfigured, nylasRedirectUri, revokeNylasGrant
+  NylasError, nylasConfigured, nylasRedirectUri, revokeNylasGrant, sendNylasReply,
+  type AssistantThreadSnapshot, type NylasReplyRecipient
 } from './nylasClient.js';
 import { nylasSecretEncryptionConfigured } from './nylasSecrets.js';
 import { getSpaceForUser, resolveRequestSpace, SpaceError } from './spaces.js';
@@ -56,7 +57,10 @@ const mailboxThreadQuery = z.object({
 });
 const mailboxThreadDetailQuery = z.object({ connectionId: z.string().uuid() }).strict();
 const runsQuery = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }).strict();
-const emailSummaryInput = z.object({ connectionId: z.string().uuid(), threadId: z.string().trim().min(1).max(300) }).strict();
+const emailSummaryInput = z.object({
+  connectionId: z.string().uuid(), threadId: z.string().trim().min(1).max(300),
+  instructions: z.string().trim().min(3).max(2_000).optional()
+}).strict();
 const emailDraftInput = emailSummaryInput.extend({
   instructions: z.string().trim().max(2_000).optional(), tone: z.string().trim().min(1).max(80).optional()
 }).strict();
@@ -70,6 +74,13 @@ const knowledgeInput = z.object({
 const draftInput = z.object({
   subject: z.string().trim().min(1).max(500), body: z.string().trim().min(1).max(24_000),
   revision: z.number().int().min(1)
+}).strict();
+const replyInput = z.object({
+  connectionId: z.string().uuid(),
+  runId: z.string().uuid(),
+  revision: z.number().int().min(1),
+  mode: z.enum(['reply', 'reply_all']).default('reply'),
+  confirmation: z.literal('send')
 }).strict();
 const workProductInput = z.object({
   documentType: assistantDocumentType,
@@ -208,6 +219,41 @@ function statusPayload(created: { run: any; job: any }) {
 function queueCreated(created: { run: any; job: any }, spaceId: string) {
   publishAssistantChanged(spaceId);
   void aiJobRunner.pump();
+}
+
+function connectionCanSend(connection: { provider: string; scopes: string[] }) {
+  const scopes = new Set(connection.scopes.map((scope) => scope.toLocaleLowerCase('en-US')));
+  return connection.provider === 'microsoft'
+    ? scopes.has('mail.send')
+    : scopes.has('https://www.googleapis.com/auth/gmail.send')
+      || scopes.has('https://www.googleapis.com/auth/gmail.modify');
+}
+
+function replyTarget(snapshot: AssistantThreadSnapshot, mailboxEmail: string, mode: 'reply' | 'reply_all') {
+  const own = mailboxEmail.trim().toLocaleLowerCase('en-US');
+  const external = (participant: { email?: string }) => participant.email
+    && participant.email.toLocaleLowerCase('en-US') !== own;
+  const anchor = [...snapshot.messages].reverse().find((message) => message.from.some(external))
+    || snapshot.messages.at(-1);
+  if (!anchor) throw new AssistantError('This conversation has no message to reply to.', 409, 'ASSISTANT_REPLY_TARGET_MISSING');
+  const seen = new Set<string>();
+  const collect = (candidates: typeof anchor.from, limit: number) => {
+    const recipients: NylasReplyRecipient[] = [];
+    for (const participant of candidates) {
+      const email = String(participant.email || '').trim().toLocaleLowerCase('en-US');
+      if (!email || email === own || seen.has(email)) continue;
+      seen.add(email);
+      recipients.push({ email, ...(participant.name ? { name: participant.name } : {}) });
+      if (recipients.length === limit) break;
+    }
+    return recipients;
+  };
+  const externalSenders = anchor.from.filter(external);
+  const to = collect(externalSenders.length ? externalSenders : [...anchor.to, ...anchor.cc], mode === 'reply_all' ? 50 : 1);
+  const cc = mode === 'reply_all' ? collect([...anchor.to, ...anchor.cc], Math.max(0, 50 - to.length)) : [];
+  const recipients = [...to, ...cc];
+  if (!recipients.length) throw new AssistantError('No external reply recipient could be identified.', 409, 'ASSISTANT_REPLY_RECIPIENT_MISSING');
+  return { replyToMessageId: anchor.id, to, cc, recipients };
 }
 
 export function boundedEvidence(sources: AssistantEvidenceSnapshot[], maximumBytes = 128 * 1024) {
@@ -403,6 +449,124 @@ assistantRouter.get('/mailbox/threads/:threadId', async (request, response) => {
   } catch (error) { return assistantError(response, error); }
 });
 
+assistantRouter.post('/mailbox/threads/:threadId/reply', async (request, response) => {
+  let outboundId = '';
+  let auditIdentity: { spaceId: string; userId: string; runId: string; threadId: string } | null = null;
+  try {
+    const { user, space } = identity(request);
+    const input = replyInput.parse(request.body);
+    const threadId = z.string().trim().min(1).max(300).parse(request.params.threadId);
+    const connection = ownedNylasConnection(user.id, space.id, input.connectionId);
+    if (!connectionCanSend(connection)) {
+      throw new AssistantError(
+        'Reconnect this mailbox to approve reply access before sending.',
+        409,
+        'NYLAS_SEND_SCOPE_REQUIRED'
+      );
+    }
+    const run = getAssistantRun(input.runId, space.id, user.id);
+    if (!run || !['assistant.email_draft', 'email_draft'].includes(run.kind)
+      || run.connectionId !== connection.id || run.subjectRef !== threadId || !run.draft) {
+      throw new AssistantError('The saved reply draft does not belong to this conversation.', 409, 'ASSISTANT_REPLY_DRAFT_MISMATCH');
+    }
+    if (run.state !== 'completed' || run.draft.revision !== input.revision) {
+      throw new AssistantError('Save the latest draft before sending.', 409, 'ASSISTANT_REPLY_DRAFT_STALE');
+    }
+    if (run.delivery?.sentAt) return response.json({ run, delivery: run.delivery, idempotent: true });
+
+    const snapshot = await getNylasThreadSnapshot(connection.grantId, threadId);
+    const target = replyTarget(snapshot, connection.email, input.mode);
+    const timestamp = new Date().toISOString();
+    const recipients = target.recipients.map((recipient) => recipient.email);
+    const subjectSha256 = crypto.createHash('sha256').update(run.draft.subject).digest('hex');
+    const bodySha256 = crypto.createHash('sha256').update(run.draft.body).digest('hex');
+    auditIdentity = { spaceId: space.id, userId: user.id, runId: run.id, threadId };
+
+    const reservation = db.transaction(() => {
+      const existing = db.prepare('SELECT * FROM assistant_outbound_messages WHERE run_id=?').get(run.id) as any;
+      if (existing?.status === 'sent') return { id: String(existing.id), providerKey: String(existing.provider_idempotency_key), sent: true };
+      if (existing?.status === 'sending') {
+        const stale = Date.now() - new Date(String(existing.updated_at)).getTime() > 5 * 60_000;
+        if (!stale) throw new AssistantError('This reply is already being sent.', 409, 'ASSISTANT_REPLY_IN_PROGRESS');
+      }
+      if (existing) {
+        const sameIntent = String(existing.mode) === input.mode
+          && String(existing.recipients_json) === JSON.stringify(recipients)
+          && String(existing.provider_reply_to_message_id) === target.replyToMessageId
+          && String(existing.subject_sha256) === subjectSha256
+          && String(existing.body_sha256) === bodySha256;
+        if (!sameIntent) {
+          throw new AssistantError(
+            'This draft already has a different send attempt. Create a new draft before changing recipients or content.',
+            409,
+            'ASSISTANT_REPLY_INTENT_CHANGED'
+          );
+        }
+        db.prepare(`UPDATE assistant_outbound_messages SET status='sending',mode=?,recipients_json=?,
+          subject_sha256=?,body_sha256=?,error_code=NULL,updated_at=? WHERE id=?`).run(
+          input.mode, JSON.stringify(recipients), subjectSha256, bodySha256, timestamp, existing.id
+        );
+        return { id: String(existing.id), providerKey: String(existing.provider_idempotency_key), sent: false };
+      }
+      const id = crypto.randomUUID(); const providerKey = crypto.randomUUID();
+      db.prepare(`INSERT INTO assistant_outbound_messages
+        (id,run_id,space_id,user_id,connection_id,thread_id,mode,status,provider_idempotency_key,
+         provider_reply_to_message_id,provider_message_id,recipients_json,subject_sha256,body_sha256,error_code,
+         created_at,sent_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,'sending',?,?,NULL,?,?,?,NULL,?,NULL,?)`).run(
+        id, run.id, space.id, user.id, connection.id, threadId, input.mode, providerKey, target.replyToMessageId,
+        JSON.stringify(recipients), subjectSha256, bodySha256, timestamp, timestamp
+      );
+      return { id, providerKey, sent: false };
+    })();
+    outboundId = reservation.id;
+    if (reservation.sent) {
+      const refreshed = getAssistantRun(run.id, space.id, user.id);
+      return response.json({ run: refreshed, delivery: refreshed?.delivery, idempotent: true });
+    }
+
+    const sent = await sendNylasReply(connection.grantId, {
+      replyToMessageId: target.replyToMessageId,
+      to: target.to,
+      cc: target.cc,
+      subject: run.draft.subject,
+      body: run.draft.body,
+      idempotencyKey: reservation.providerKey
+    });
+    const sentAt = new Date().toISOString();
+    db.prepare(`UPDATE assistant_outbound_messages SET status='sent',provider_message_id=?,sent_at=?,updated_at=?
+      WHERE id=? AND status='sending'`).run(sent.id, sentAt, sentAt, reservation.id);
+    recordAssistantAudit({
+      spaceId: space.id,
+      actorUserId: user.id,
+      action: 'assistant.mailbox.reply_sent',
+      targetType: 'mailbox_thread',
+      targetId: threadId,
+      detail: { connectionId: connection.id, runId: run.id, mode: input.mode, recipientCount: recipients.length,
+        providerMessageId: sent.id, subjectSha256, bodySha256 }
+    });
+    publishAssistantChanged(space.id);
+    const refreshed = getAssistantRun(run.id, space.id, user.id);
+    return response.status(201).json({ run: refreshed, delivery: refreshed?.delivery, idempotent: false });
+  } catch (error) {
+    if (outboundId) {
+      const code = error instanceof AssistantError || error instanceof NylasError ? error.code : 'ASSISTANT_REPLY_SEND_FAILED';
+      const timestamp = new Date().toISOString();
+      db.prepare(`UPDATE assistant_outbound_messages SET status='failed',error_code=?,updated_at=?
+        WHERE id=? AND status='sending'`).run(code, timestamp, outboundId);
+      if (auditIdentity) recordAssistantAudit({
+        spaceId: auditIdentity.spaceId,
+        actorUserId: auditIdentity.userId,
+        action: 'assistant.mailbox.reply_failed',
+        targetType: 'mailbox_thread',
+        targetId: auditIdentity.threadId,
+        detail: { runId: auditIdentity.runId, code }
+      });
+    }
+    return assistantError(response, error);
+  }
+});
+
 assistantRouter.get('/runs', (request, response) => {
   try {
     const { user, space } = identity(request); const input = runsQuery.parse(request.query);
@@ -461,7 +625,7 @@ assistantRouter.post('/runs/email-summary', async (request, response) => {
     const snapshot = await getNylasThreadSnapshot(connection.grantId, input.threadId);
     const created = createAssistantEmailRun({
       kind: 'email_summary', user, spaceId: space.id, connectionId: connection.id,
-      snapshot, idempotencyKey: key
+      snapshot, instructions: input.instructions, idempotencyKey: key
     });
     queueCreated(created, space.id);
     return response.status(202).json(statusPayload(created));

@@ -74,7 +74,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   const overview = {
     configured: true,
     callbackUrl: 'http://127.0.0.1:5412/api/integrations/nylas/callback',
-    connections: [{ id: connectionId, email: 'michael@example.com', displayName: 'Michael Egbo', provider: 'google', status: 'connected', scopes: ['email.read_only'], lastHealthAt: now }],
+    connections: [{ id: connectionId, email: 'michael@example.com', displayName: 'Michael Egbo', provider: 'google', status: 'connected', scopes: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send'], lastHealthAt: now }],
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
     terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
   };
@@ -96,11 +96,12 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
     return json(route, runs);
   });
   await page.route(/\/api\/assistant\/runs\/email-summary$/, async (route) => {
-    expect(await route.request().postDataJSON()).toEqual({ connectionId, threadId: thread.id });
+    const request = await route.request().postDataJSON();
+    expect(request.connectionId).toBe(connectionId); expect(request.threadId).toBe(thread.id);
     const run = {
       id: summaryRunId, jobId: summaryJobId, kind: 'assistant.email_summary', state: 'completed', stage: 'completed', progress: 100,
       connectionId, subjectRef: thread.id,
-      output: { summary: 'Ada needs confirmation of the revised customer-risk section by Friday.', keyPoints: ['The board pack is awaiting review.'], actionItems: [{ action: 'Confirm the revised section.', owner: 'Michael', dueDate: 'Friday', sourceMessageId: 'message-3' }], openQuestions: ['Which timezone applies to Friday?'] },
+      output: { summary: request.instructions ? 'The revised customer-risk section needs a reply by Friday.' : 'Ada needs confirmation of the revised customer-risk section by Friday.', keyPoints: ['The board pack is awaiting review.'], actionItems: [{ action: 'Confirm the revised section.', owner: 'Michael', dueDate: 'Friday', sourceMessageId: 'message-3' }], openQuestions: ['Which timezone applies to Friday?'] },
       runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 412 }, latencyMs: 920 }, error: null,
       createdAt: now, completedAt: now, updatedAt: now
     };
@@ -128,6 +129,14 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
     run.draft = { ...run.draft, subject: body.subject, body: body.body, revision: 2, updatedAt: now };
     return json(route, run);
   });
+  await page.route(`**/api/assistant/mailbox/threads/${thread.id}/reply`, async (route) => {
+    const body = await route.request().postDataJSON();
+    expect(body).toEqual({ connectionId, runId: draftRunId, revision: 2, mode: 'reply', confirmation: 'send' });
+    const run = runs.find((item) => item.id === draftRunId);
+    run.externalDispatched = true;
+    run.delivery = { sentAt: now, messageId: 'sent-message-1', recipients: ['ada@example.com'], mode: 'reply' };
+    return json(route, { run, delivery: run.delivery, idempotent: false }, 201);
+  });
   await page.route(/\/api\/assistant\/runs\/knowledge-answer$/, async (route) => {
     const request = await route.request().postDataJSON();
     expect(request.sourceRefs).toEqual(['survey-insight:customer-risk']);
@@ -148,17 +157,22 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   await expect(page.getByTestId(`assistant-thread-${thread.id}`)).toHaveAttribute('aria-pressed', 'true');
   await openMailboxAssistant(page, thread.id);
 
-  await page.getByRole('button', { name: /Summarise thread/ }).click();
-  await expect(page.getByText('Ada needs confirmation of the revised customer-risk section by Friday.')).toBeVisible();
+  await page.getByLabel('Ask about this thread').fill('What needs a reply?');
+  await page.getByRole('button', { name: 'Ask Terra', exact: true }).click();
+  await expect(page.getByText('The revised customer-risk section needs a reply by Friday.')).toBeVisible();
   await expect(page.getByText('412 tokens')).toBeVisible();
 
-  await page.getByRole('button', { name: /Prepare reply draft/ }).click();
-  await expect(page.getByText('Draft only — nothing has been sent')).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Send$/ })).toHaveCount(0);
-  const draft = page.getByLabel('Editable draft');
+  await page.getByRole('tab', { name: 'Reply' }).click();
+  await page.getByRole('button', { name: 'Draft reply' }).click();
+  await expect(page.getByText('Review required')).toBeVisible();
+  const draft = page.getByLabel('Reply', { exact: true });
   await draft.fill('Hi Ada,\n\nI have reviewed the section and will send my comments by Friday.\n\nRegards,\nMichael');
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect.poll(() => savedDraftBody).toContain('send my comments by Friday');
+  await page.getByRole('button', { name: 'Review and send' }).click();
+  await expect(page.getByRole('heading', { name: 'Send this reply?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Send reply' }).click();
+  await expect(page.getByTestId('assistant-run-detail').getByText('Reply sent', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close assistant' }).click();
   await expect(page.getByRole('button', { name: 'Open assistant' })).toBeVisible();
   await page.getByRole('button', { name: 'Open assistant' }).click();
@@ -225,9 +239,9 @@ test('mailbox switching rejects late thread data and retries with the same idemp
   releaseFirst();
   await expect(page.getByTestId(`assistant-thread-${firstThread.id}`)).toHaveCount(0);
   await openMailboxAssistant(page, secondThread.id);
-  await page.getByRole('button', { name: /Summarise thread/ }).click();
+  await page.getByRole('button', { name: 'Summarise' }).click();
   await expect(page.getByText(/Assistant work could not be queued|Failed to fetch/)).toBeVisible();
-  await page.getByRole('button', { name: /Summarise thread/ }).click();
+  await page.getByRole('button', { name: 'Summarise' }).click();
   await expect.poll(() => idempotencyKeys.length).toBe(2);
   expect(idempotencyKeys[0]).toBeTruthy();
   expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
@@ -266,7 +280,8 @@ test('revoked mailbox history cannot remain selected or retain actionable thread
   await openAssistant(page);
   await expect(page.getByTestId(`assistant-thread-${thread.id}`)).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
-  await page.getByRole('button', { name: 'Disconnect selected', exact: true }).click();
+  await page.getByLabel('Mailbox accounts').click();
+  await page.getByRole('button', { name: 'Disconnect current', exact: true }).click();
 
   const mailbox = page.getByRole('button', { name: /Revoked mailbox.*revoked@example\.com/i });
   await expect(mailbox).toHaveCount(0);

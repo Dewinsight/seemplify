@@ -196,6 +196,7 @@ export interface AssistantRun {
   knowledgeBaseIds?: string[]; documentType?: AssistantDocumentType | null; title?: string | null;
   output?: AssistantOutput | null; runtime?: AssistantRuntime | null; draft?: AssistantDraft | null;
   generatedDraft?: Pick<AssistantDraft, 'subject' | 'body'> | null; advisoryOnly?: boolean; externalDispatched?: boolean;
+  delivery?: { sentAt: string; messageId?: string | null; recipients: string[]; mode: 'reply' | 'reply_all' } | null;
   error: string | null; createdAt: string; startedAt?: string | null; completedAt: string | null; updatedAt: string;
 }
 export interface AssistantOverview {

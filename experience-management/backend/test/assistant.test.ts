@@ -242,6 +242,9 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
     }
     throw new Error(`Unexpected Nylas message page ${url.searchParams.get('page_token')}`);
   }
+  if (url.pathname === '/v3/grants/grant-private-123/messages/send' && method === 'POST') {
+    return json({ data: { id: 'sent-message-1', thread_id: 'thread-1' } });
+  }
   if (url.pathname === '/v3/grants/grant-private-123/messages/msg-1' && method === 'GET') {
     return messageDetail({
       id: 'msg-1', subject: 'Onboarding feedback', date: 1_785_999_000,
@@ -339,7 +342,7 @@ async function finishJob(jobId: string) {
   return result;
 }
 
-test('Nylas assistant is read-only, durable, grounded, encrypted, isolated, and human-reviewed', async () => {
+test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only explicitly reviewed replies', async () => {
   const longEmailSnapshot = assistantEmailExecutionSnapshot({
     thread: {
       id: 'long-thread',
@@ -424,11 +427,14 @@ test('Nylas assistant is read-only, durable, grounded, encrypted, isolated, and 
   assert.equal(authorizeUrl.searchParams.get('response_type'), 'code');
   const googleScopes = (authorizeUrl.searchParams.get('scope') || '').split(/\s+/u);
   assert.ok(googleScopes.includes('https://www.googleapis.com/auth/gmail.readonly'));
+  assert.ok(googleScopes.includes('https://www.googleapis.com/auth/gmail.send'));
   assert.ok(googleScopes.includes('https://www.googleapis.com/auth/calendar.readonly'));
   assert.ok(googleScopes.includes('https://www.googleapis.com/auth/userinfo.email'));
   assert.equal(googleScopes.includes('email'), false);
   assert.equal(googleScopes.includes('profile'), false);
-  assert.doesNotMatch(googleScopes.join(' '), /Mail\.Send|Calendars\.ReadWrite|gmail\.modify/iu);
+  assert.equal(googleScopes.includes('Mail.Send'), false);
+  assert.equal(googleScopes.includes('Calendars.ReadWrite'), false);
+  assert.equal(googleScopes.includes('https://www.googleapis.com/auth/gmail.modify'), false);
   const storedState = db.prepare('SELECT state_hash,consumed_at FROM assistant_nylas_oauth_states').get() as any;
   assert.notEqual(storedState.state_hash, state);
   assert.equal(storedState.consumed_at, null);
@@ -659,6 +665,51 @@ test('Nylas assistant is read-only, durable, grounded, encrypted, isolated, and 
   assert.notEqual(draftDb.generated_body, 'Thank you. We are reviewing the identity step.');
   assert.equal(draftDb.draft_subject, 'Re: Updated onboarding feedback');
   assert.equal(draftDb.advisory_only, 1); assert.equal(draftDb.external_dispatched, 0);
+
+  const reservedAt = new Date().toISOString();
+  db.prepare(`INSERT INTO assistant_outbound_messages
+    (id,run_id,space_id,user_id,connection_id,thread_id,mode,status,provider_idempotency_key,
+     provider_reply_to_message_id,provider_message_id,recipients_json,subject_sha256,body_sha256,error_code,
+     created_at,sent_at,updated_at)
+    SELECT ?,id,space_id,requested_by,connection_id,subject_ref,'reply_all','failed',?,?,NULL,?,?,?,
+      'SIMULATED_AMBIGUOUS_FAILURE',?,NULL,? FROM assistant_runs WHERE id=?`).run(
+    crypto.randomUUID(), crypto.randomUUID(), 'msg-4', JSON.stringify(['customer@example.test']),
+    crypto.createHash('sha256').update('Re: Updated onboarding feedback').digest('hex'),
+    crypto.createHash('sha256').update('Thank you. We are reviewing the identity step.').digest('hex'),
+    reservedAt, reservedAt, draftCreated.body.run.id
+  );
+  const changedIntent = await owner.post('/api/assistant/mailbox/threads/thread-1/reply').send({
+    connectionId: firstConnectionId, runId: draftCreated.body.run.id, revision: 2,
+    mode: 'reply', confirmation: 'send'
+  }).expect(409);
+  assert.equal(changedIntent.body.code, 'ASSISTANT_REPLY_INTENT_CHANGED');
+  assert.equal(fetchCalls.filter((call) => new URL(call.url).pathname.endsWith('/messages/send')).length, 0);
+  db.prepare('DELETE FROM assistant_outbound_messages WHERE run_id=?').run(draftCreated.body.run.id);
+
+  const sentReply = await owner.post('/api/assistant/mailbox/threads/thread-1/reply').send({
+    connectionId: firstConnectionId,
+    runId: draftCreated.body.run.id,
+    revision: 2,
+    mode: 'reply',
+    confirmation: 'send'
+  }).expect(201);
+  assert.equal(sentReply.body.run.externalDispatched, true);
+  assert.equal(sentReply.body.delivery.messageId, 'sent-message-1');
+  assert.deepEqual(sentReply.body.delivery.recipients, ['customer@example.test']);
+  const providerSend = fetchCalls.find((call) => new URL(call.url).pathname.endsWith('/messages/send'))!;
+  assert.equal(providerSend.method, 'POST');
+  assert.deepEqual(providerSend.body.to, [{ email: 'customer@example.test' }]);
+  assert.equal(providerSend.body.reply_to_message_id, 'msg-4');
+  assert.equal(providerSend.body.is_plaintext, true);
+  const idempotentReply = await owner.post('/api/assistant/mailbox/threads/thread-1/reply').send({
+    connectionId: firstConnectionId,
+    runId: draftCreated.body.run.id,
+    revision: 2,
+    mode: 'reply',
+    confirmation: 'send'
+  }).expect(200);
+  assert.equal(idempotentReply.body.idempotent, true);
+  assert.equal(fetchCalls.filter((call) => new URL(call.url).pathname.endsWith('/messages/send')).length, 1);
 
   const survey = await owner.post('/api/surveys').send({ title: 'Grounded assistant evidence', questions: [] }).expect(201);
   const insight = insertInsight(survey.body.id, 'ai_insights', {
@@ -1025,6 +1076,7 @@ test('Nylas assistant is read-only, durable, grounded, encrypted, isolated, and 
     'assistant.run.queued',
     'assistant.run.completed',
     'assistant.draft.edited',
+    'assistant.mailbox.reply_sent',
     'assistant.action.promoted',
     'assistant.action.updated',
     'assistant.reminder.created',
@@ -1035,7 +1087,8 @@ test('Nylas assistant is read-only, durable, grounded, encrypted, isolated, and 
 
   const runs = await owner.get('/api/assistant/runs').expect(200);
   assert.ok(Array.isArray(runs.body)); assert.ok(runs.body.length >= 4);
-  assert.ok(runs.body.every((run: any) => run.advisoryOnly === true && run.externalDispatched === false));
+  assert.ok(runs.body.every((run: any) => run.advisoryOnly === true));
+  assert.equal(runs.body.filter((run: any) => run.externalDispatched).length, 1);
 
   const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
   let monthlyJobs = Number((db.prepare('SELECT COUNT(*) count FROM ai_jobs WHERE space_id=? AND created_at>=?')
@@ -1145,12 +1198,15 @@ test('Nylas assistant is read-only, durable, grounded, encrypted, isolated, and 
 
   await owner.post(`/api/assistant/runs/${draftCreated.body.run.id}/send`).send({}).expect(404);
   await owner.post('/api/assistant/calendar/events').send({}).expect(404);
-  assert.equal(fetchCalls.some((call) => {
+  const providerWrites = fetchCalls.filter((call) => {
     const url = new URL(call.url);
     return url.origin === 'http://nylas.test'
       && ['POST', 'PATCH', 'PUT'].includes(call.method)
       && url.pathname !== '/v3/connect/token';
-  }), false);
+  });
+  assert.deepEqual(providerWrites.map((call) => new URL(call.url).pathname), [
+    '/v3/grants/grant-private-123/messages/send'
+  ]);
 
   nylasAuthorizationRejected = true;
   const providerAuthorizationFailure = await owner.get('/api/assistant/mailbox/threads').query({

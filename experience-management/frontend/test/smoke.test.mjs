@@ -37,18 +37,18 @@ test('keeps the Experience personal assistant private, durable, grounded, and hu
   for (const endpoint of [
     '/api/assistant/overview', '/api/assistant/mailbox/threads', '/api/assistant/runs',
     '/api/assistant/runs/work-product', '/api/assistant/actions', '/api/assistant/calendar/events',
-    '/api/assistant/audit'
+    '/api/assistant/audit', '/reply'
   ]) assert.match(assistant, new RegExp(endpoint.replaceAll('/', '\\/')));
   for (const activity of ['email-summary', 'email-draft', 'knowledge-answer', 'work-product']) assert.match(assistant, new RegExp(activity));
   for (const feature of [
     'Personal assistant', 'Search mail', 'Workspace knowledge', 'Assistant history',
     'Create a work product', 'Actions', 'Calendar', 'Assistant audit',
-    'nothing has been sent', 'Original generation is retained for audit',
+    'Saving it does not send anything', 'Generated copy is retained for audit',
     'exact evidence excerpts are frozen before queueing', 'Private to your account within the active space',
     'Human review required', 'connectedConnectionIds', "connection.status === 'connected'",
-    'threadConnectionId', 'calendarConnectionId', 'knowledgeBaseIds', 'messagesTruncated', 'confirmDraftDiscard'
+    'threadConnectionId', 'calendarConnectionId', 'knowledgeBaseIds', 'messagesTruncated', 'confirmDraftDiscard',
+    'Review and send', 'Send this reply?', "confirmation: 'send'", 'Enable replies'
   ]) assert.match(assistant, new RegExp(feature));
-  assert.doesNotMatch(assistant, />Send<|name="Send"|\/send/);
   assert.match(shell, /label: 'Personal assistant'/);
 });
 test('keeps the populated dashboard table inside its responsive grid track', () => {
@@ -311,8 +311,8 @@ test('refuses an incompatible rollback after the PostgreSQL runtime-v5 upgrade s
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 6,
-    maximumRuntimeSchemaVersion: 6,
+    minimumRuntimeSchemaVersion: 7,
+    maximumRuntimeSchemaVersion: 7,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
