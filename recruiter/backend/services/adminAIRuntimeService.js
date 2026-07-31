@@ -699,6 +699,8 @@ async function updateRollout(input, req) {
 
 function rangeStart(range) {
   if (range === 'all') return null;
+  if (range === '1h') return new Date(Date.now() - 60 * 60_000);
+  if (range === '24h') return new Date(Date.now() - 24 * 60 * 60_000);
   const days = { '7d': 7, '30d': 30, '90d': 90 }[range] || 30;
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
@@ -869,6 +871,14 @@ function logicalRequestStages(match) {
         requestId: { $ifNull: ['$requestId', { $toString: '$_id' }] }
       },
       activity: { $last: '$activity' },
+      sourceApp: { $last: { $ifNull: ['$sourceApp', 'recruiter'] } },
+      provider: { $last: '$provider' },
+      model: { $last: '$model' },
+      organizationId: { $last: { $ifNull: ['$organizationId', ''] } },
+      organizationName: { $last: { $ifNull: ['$organizationName', ''] } },
+      actorId: { $last: { $ifNull: ['$actorId', ''] } },
+      actorName: { $last: { $ifNull: ['$actorName', ''] } },
+      actorEmail: { $last: { $ifNull: ['$actorEmail', ''] } },
       createdAt: { $max: '$createdAt' },
       statuses: { $addToSet: '$status' },
       inputTokens: { $sum: '$inputTokens' },
@@ -884,6 +894,14 @@ function logicalRequestStages(match) {
     } },
     { $project: {
       activity: 1,
+      sourceApp: 1,
+      provider: 1,
+      model: 1,
+      organizationId: 1,
+      organizationName: 1,
+      actorId: 1,
+      actorName: 1,
+      actorEmail: 1,
       createdAt: 1,
       inputTokens: 1,
       cachedInputTokens: 1,
@@ -900,6 +918,119 @@ function logicalRequestStages(match) {
       status: { $cond: [{ $in: ['success', '$statuses'] }, 'success', 'failed'] }
     } }
   ];
+}
+
+const ACTIVITY_ANALYTICS_RANGES = new Set(['1h', '24h', '7d', '30d', '90d']);
+
+function activityAnalyticsBreakdown(row = {}) {
+  return {
+    id: String(row._id || 'unknown'),
+    name: String(row.name || ''),
+    ...liveSummary(row),
+    lastRequestAt: row.lastRequestAt || null
+  };
+}
+
+async function getActivityAnalytics({ range = '24h' } = {}) {
+  const selectedRange = ACTIVITY_ANALYTICS_RANGES.has(range) ? range : '24h';
+  const start = rangeStart(selectedRange);
+  const timelineFormat = selectedRange === '1h'
+    ? '%Y-%m-%dT%H:%M:00Z'
+    : selectedRange === '24h'
+      ? '%Y-%m-%dT%H:00:00Z'
+      : '%Y-%m-%dT00:00:00Z';
+  const match = { createdAt: { $gte: start } };
+  const grouped = {
+    ...logicalGroupedMetrics,
+    lastRequestAt: { $max: '$createdAt' }
+  };
+  const providerGrouped = {
+    calls: { $sum: 1 },
+    successes: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
+    failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+    inputTokens: { $sum: '$inputTokens' },
+    cachedInputTokens: { $sum: '$cachedInputTokens' },
+    outputTokens: { $sum: '$outputTokens' },
+    reasoningTokens: { $sum: '$reasoningTokens' },
+    totalTokens: { $sum: '$totalTokens' },
+    cost: { $sum: '$estimatedCostUsd' },
+    averageLatencyMs: { $avg: '$latencyMs' },
+    maxLatencyMs: { $max: '$latencyMs' },
+    failovers: { $sum: '$failovers' },
+    ...usageMeteringGroupFields(),
+    lastRequestAt: { $max: '$createdAt' }
+  };
+  const [logicalRows, providerRows] = await Promise.all([
+    AIUsageEvent.aggregate([
+      ...logicalRequestStages(match),
+      { $facet: {
+        summary: [{ $group: {
+          _id: null,
+          ...logicalGroupedMetrics,
+          actors: { $addToSet: '$actorId' },
+          organizations: { $addToSet: '$organizationId' },
+          sourceApps: { $addToSet: '$sourceApp' }
+        } }],
+        activities: [{ $group: { _id: '$activity', ...grouped } }, { $sort: { calls: -1 } }, { $limit: 20 }],
+        sources: [{ $group: { _id: '$sourceApp', ...grouped } }, { $sort: { calls: -1 } }, { $limit: 20 }],
+        organizations: [
+          { $match: { organizationId: { $ne: '' } } },
+          { $group: { _id: '$organizationId', name: { $last: '$organizationName' }, ...grouped } },
+          { $sort: { calls: -1 } },
+          { $limit: 20 }
+        ],
+        actors: [
+          { $match: { $or: [{ actorId: { $ne: '' } }, { actorEmail: { $ne: '' } }] } },
+          { $group: {
+            _id: { $cond: [{ $ne: ['$actorId', ''] }, '$actorId', '$actorEmail'] },
+            name: { $last: { $cond: [{ $ne: ['$actorName', ''] }, '$actorName', '$actorEmail'] } },
+            ...grouped
+          } },
+          { $sort: { calls: -1 } },
+          { $limit: 20 }
+        ],
+        timeline: [
+          { $group: {
+            _id: { $dateToString: { date: '$createdAt', format: timelineFormat, timezone: 'UTC' } },
+            calls: { $sum: 1 },
+            failures: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+            tokens: { $sum: '$totalTokens' }
+          } },
+          { $sort: { _id: 1 } }
+        ]
+      } }
+    ]),
+    AIUsageEvent.aggregate([
+      { $match: match },
+      { $group: { _id: '$provider', ...providerGrouped } },
+      { $sort: { calls: -1 } },
+      { $limit: 20 }
+    ])
+  ]);
+  const facets = logicalRows[0] || {};
+  const summaryRow = facets.summary?.[0] || {};
+  const nonEmpty = (values) => new Set((values || []).filter(Boolean)).size;
+  return {
+    sampledAt: new Date().toISOString(),
+    range: selectedRange,
+    summary: {
+      ...liveSummary(summaryRow),
+      uniqueActors: nonEmpty(summaryRow.actors),
+      uniqueOrganizations: nonEmpty(summaryRow.organizations),
+      sourceApps: nonEmpty(summaryRow.sourceApps)
+    },
+    timeline: (facets.timeline || []).map((row) => ({
+      at: row._id,
+      calls: Number(row.calls || 0),
+      failures: Number(row.failures || 0),
+      tokens: Number(row.tokens || 0)
+    })),
+    activities: (facets.activities || []).map(activityAnalyticsBreakdown),
+    providers: (providerRows || []).map(activityAnalyticsBreakdown),
+    sources: (facets.sources || []).map(activityAnalyticsBreakdown),
+    organizations: (facets.organizations || []).map(activityAnalyticsBreakdown),
+    actors: (facets.actors || []).map(activityAnalyticsBreakdown)
+  };
 }
 
 const logicalGroupedMetrics = {
@@ -1299,6 +1430,7 @@ module.exports = {
   createCredential,
   createQuotaGroup,
   getAuditDetail,
+  getActivityAnalytics,
   getLiveOperations,
   getOverview,
   getRequestDetail,
