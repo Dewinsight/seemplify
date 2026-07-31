@@ -122,6 +122,8 @@ test('exposes multi-account X listening, human-reviewed replies, cross-source in
   assert.match(social, /mentionIds: reportMentionIds/);
   assert.doesNotMatch(social, /latest 200 posts/);
   assert.match(social, /Promise\.allSettled/);
+  assert.match(social, /hasActiveSocialWork/);
+  assert.match(social, /setInterval\(\(\) => \{ void load\('live'\); \}, 4_000\)/);
   assert.match(social, /selectedConnectionId/);
   assert.match(social, /selectedConnectionRef/);
   assert.doesNotMatch(social, /Import pasted text|Choose CSV, JSON or TXT/);

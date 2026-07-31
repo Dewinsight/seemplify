@@ -417,10 +417,9 @@ test('social report history shows terminal failures, retries the same report, an
   await expect(failureAlert).toHaveCount(0);
 
   report = { ...report, state: 'completed', result: null, completedAt: now, updatedAt: '2026-07-29T12:02:00.000Z' };
-  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
 
   const integrityAlert = page.getByRole('alert').filter({ hasText: 'The completed report has no readable result' });
-  await expect(integrityAlert).toBeVisible();
+  await expect(integrityAlert).toBeVisible({ timeout: 7_000 });
   await expect(integrityAlert).toContainText('The saved sources are intact. Refresh once; if this remains, share the report ID with support.');
   await expect(integrityAlert.getByRole('button', { name: 'Retry report' })).toHaveCount(0);
   await expect(page.getByText('Waiting for Terra. This report is durable.', { exact: true })).toHaveCount(0);

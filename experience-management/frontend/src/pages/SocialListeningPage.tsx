@@ -187,6 +187,12 @@ export function SocialListeningPage() {
   ].filter((value): value is string => Boolean(value)) : [];
   const activeReports = reports.filter((report) => report.state === 'queued').length;
   const activeDrafts = visibleReplyDrafts.filter((draft) => draft.state === 'queued').length;
+  const hasActiveSocialWork = Boolean(dispatchingSync || activeReports || activeDrafts);
+  useEffect(() => {
+    if (!hasActiveSocialWork) return;
+    const timer = window.setInterval(() => { void load('live'); }, 4_000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveSocialWork, load]);
   const credentialsChanged = Object.values(credentials).some((value) => value.trim());
   const clientPair = Boolean(credentials.clientId.trim()) === Boolean(credentials.clientSecret.trim());
   const consumerPair = Boolean(credentials.consumerKey.trim()) === Boolean(credentials.consumerSecret.trim());
