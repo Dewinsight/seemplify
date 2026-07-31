@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { socialListeningResult } from './aiSchemas.js';
+import { socialListeningResultFor } from './aiSchemas.js';
 import type { SessionUser } from './auth.js';
 import type { KnowledgeBaseRef } from './knowledgeRepository.js';
 import { createJob, db, getJob, getJobProviderResult, listSocialMentionsByIdsForSpace } from './database.js';
@@ -310,7 +310,8 @@ export function retrySocialIntelligenceReport(_user: SessionUser, spaceId: strin
     let journalReused = false;
     let retainedJournal: typeof journaled = null;
     if (journaled?.activity === 'experience.social_listening' && journaled.schemaName === 'experience_social_listening_report') {
-      const parsed = socialListeningResult.safeParse(journaled.output);
+      const parsed = socialListeningResultFor(execution.mentions.map((mention) => String(mention.sourceRef)))
+        .safeParse(journaled.output);
       if (parsed.success) {
         try {
           validateSocialListeningEvidence(

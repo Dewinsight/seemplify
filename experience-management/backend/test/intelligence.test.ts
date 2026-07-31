@@ -35,7 +35,7 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { createJob, db, getJob, insertInsight, updateJob } = await import('../src/database.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
-const { socialListeningJsonSchemaFor } = await import('../src/aiSchemas.js');
+const { socialListeningJsonSchemaFor, socialListeningResult, socialListeningResultFor } = await import('../src/aiSchemas.js');
 const { createSocialReplyDraft, IntelligenceError, validateSocialListeningEvidence } = await import('../src/intelligence.js');
 const originalFetch = globalThis.fetch;
 
@@ -512,12 +512,54 @@ test('pins the social-listening JSON schema to the exact saved source set', () =
   const expected = ['x-post:first', 'x-post:second'];
   for (const section of ['themes', 'emergingTrends', 'risks', 'opportunities']) {
     assert.deepEqual(schema.properties[section].items.properties.evidence.items.enum, expected);
+    assert.equal(schema.properties[section].items.properties.evidence.maxItems, 200);
   }
   assert.equal(schema.properties.mentions.minItems, 2);
   assert.equal(schema.properties.mentions.maxItems, 2);
   assert.deepEqual(schema.properties.mentions.items.properties.mentionId.enum, expected);
   assert.deepEqual(schema.properties.mentions.items.properties.evidence.enum, expected);
   assert.throws(() => socialListeningJsonSchemaFor([]), /At least one social source reference/u);
+});
+
+test('canonicalizes oversized grounded social evidence without weakening source validation', () => {
+  const sourceRefs = Array.from({ length: 25 }, (_, index) => `x-post:${index + 1}`);
+  const payload = {
+    executiveSummary: 'The bounded source set contains one recurring theme.',
+    sentiment: { negative: 0, neutral: 25, positive: 0, mixed: 0 },
+    themes: [{
+      name: 'Recurring feedback',
+      mentions: 25,
+      sentiment: 'neutral',
+      evidence: [...sourceRefs, sourceRefs[0], sourceRefs[1]]
+    }],
+    emergingTrends: [],
+    risks: [],
+    opportunities: [],
+    mentions: sourceRefs.map((sourceRef) => ({
+      mentionId: sourceRef,
+      sentiment: 'neutral',
+      sentimentScore: 0,
+      emotions: [],
+      themes: ['Recurring feedback'],
+      summary: 'A saved post contributes to the recurring theme.',
+      risk: 'low',
+      evidence: sourceRef
+    }))
+  };
+  assert.equal(socialListeningResult.safeParse(payload).success, false);
+  const parsed = socialListeningResultFor(sourceRefs).safeParse(payload);
+  assert.equal(parsed.success, true);
+  if (!parsed.success) return;
+  assert.deepEqual(parsed.data.themes[0].evidence, sourceRefs.slice(0, 20));
+
+  const fabricated = socialListeningResultFor(sourceRefs).safeParse({
+    ...payload,
+    themes: [{
+      ...payload.themes[0],
+      evidence: [...sourceRefs.slice(0, 20), 'x-post:not-supplied']
+    }]
+  });
+  assert.equal(fabricated.success, false);
 });
 
 test('accepts source references and presentation-only quote or ellipsis changes while rejecting fabricated social evidence', () => {
