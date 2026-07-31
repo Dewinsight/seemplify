@@ -19,7 +19,8 @@ $DeployedFile = Join-Path $RuntimeDir 'deployed-tree'
 $ActiveProjectFile = Join-Path $RuntimeDir 'active-project-path'
 $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
 $PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
-$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v4-started'
+$PostgresRuntime4UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v4-started'
+$PostgresRuntime5UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v5-started'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
@@ -67,7 +68,7 @@ function Test-CommitSupportsPostgres([string]$Commit) {
   }
   return $true
 }
-function Test-CommitSupportsPostgresRuntime4([string]$Commit) {
+function Test-CommitSupportsPostgresRuntime([string]$Commit, [int]$RequiredVersion) {
   $requiredPaths = @(
     'experience-management/backend/migrations/postgres/runtime-compatibility.json',
     'experience-management/backend/migrations/postgres/0002_platform_administration.sql',
@@ -78,6 +79,9 @@ function Test-CommitSupportsPostgresRuntime4([string]$Commit) {
     'experience-management/scripts/postgres-runtime-contract.mjs',
     'experience-management/scripts/verify-postgres-runtime.mjs'
   )
+  if ($RequiredVersion -ge 5) {
+    $requiredPaths += 'experience-management/backend/migrations/postgres/0005_experience_assistant_phase1.sql'
+  }
   foreach ($requiredPath in $requiredPaths) {
     $entry = (@(& git ls-tree --name-only $Commit -- $requiredPath 2>$null) -join '').Trim()
     if ($LASTEXITCODE -ne 0 -or $entry -ne $requiredPath) { return $false }
@@ -85,7 +89,29 @@ function Test-CommitSupportsPostgresRuntime4([string]$Commit) {
   try {
     $metadata = ((@(& git show "${Commit}:experience-management/backend/migrations/postgres/runtime-compatibility.json" 2>$null) -join "`n") | ConvertFrom-Json)
   } catch { return $false }
-  return [int]$metadata.minimumRuntimeSchemaVersion -le 4 -and [int]$metadata.maximumRuntimeSchemaVersion -ge 4
+  return [int]$metadata.minimumRuntimeSchemaVersion -le $RequiredVersion -and
+    [int]$metadata.maximumRuntimeSchemaVersion -ge $RequiredVersion
+}
+function Test-CommitCanUpgradePostgresRuntime([string]$Commit, [int]$SourceVersion, [int]$TargetVersion) {
+  if ($SourceVersion -lt 1 -or $TargetVersion -le $SourceVersion) { return $false }
+  try {
+    $metadata = ((@(& git show "${Commit}:experience-management/backend/migrations/postgres/runtime-compatibility.json" 2>$null) -join "`n") | ConvertFrom-Json)
+  } catch { return $false }
+  $minimumRunnable = [int]$metadata.minimumRuntimeSchemaVersion
+  $maximumRunnable = [int]$metadata.maximumRuntimeSchemaVersion
+  $minimumUpgradeSource = [int]$metadata.minimumUpgradeSourceRuntimeSchemaVersion
+  if ($minimumUpgradeSource -lt 1 -or $SourceVersion -lt $minimumUpgradeSource -or
+      $SourceVersion -ge $minimumRunnable -or $TargetVersion -lt $minimumRunnable -or
+      $TargetVersion -gt $maximumRunnable) {
+    return $false
+  }
+  $migrationEntries = @(& git ls-tree -r --name-only $Commit -- experience-management/backend/migrations/postgres 2>$null)
+  if ($LASTEXITCODE -ne 0) { return $false }
+  for ($version = $SourceVersion + 1; $version -le $TargetVersion; $version += 1) {
+    $prefix = "experience-management/backend/migrations/postgres/{0:D4}_" -f $version
+    if (-not @($migrationEntries | Where-Object { [string]$_ -like "$prefix*" }).Count) { return $false }
+  }
+  return $true
 }
 function Invoke-Deployment([switch]$ForceDeploy) {
   Push-Location $RepositoryDir
@@ -103,9 +129,18 @@ function Invoke-Deployment([switch]$ForceDeploy) {
       Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL cutover has started and this release is SQLite-only."
       return
     }
-    if ((Test-Path -LiteralPath $PostgresRuntimeUpgradeMarker -PathType Leaf) -and -not (Test-CommitSupportsPostgresRuntime4 -Commit $commit)) {
-      Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 4 has started and this release is not runtime-v4-compatible."
-      return
+    if (Test-Path -LiteralPath $PostgresRuntime5UpgradeMarker -PathType Leaf) {
+      if (-not (Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 5)) {
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 5 has started and this release is not runtime-v5-compatible."
+        return
+      }
+    } elseif (Test-Path -LiteralPath $PostgresRuntime4UpgradeMarker -PathType Leaf) {
+      $runsOnVersion4 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 4
+      $upgradesVersion4 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 4 -TargetVersion 5
+      if (-not $runsOnVersion4 -and -not $upgradesVersion4) {
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 4 has started and this release can neither run on schema 4 nor upgrade it to schema 5."
+        return
+      }
     }
     $tree = (& git rev-parse "${commit}:experience-management").Trim()
     $deployed = if (Test-Path $DeployedFile) { (Get-Content $DeployedFile -Raw).Trim() } else { '' }
@@ -138,19 +173,22 @@ function Invoke-Deployment([switch]$ForceDeploy) {
         $previousSupportsPostgres = $previousProject -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'backend\dist\databaseAdapter.js') -PathType Leaf) -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'scripts\verify-postgres-runtime.mjs') -PathType Leaf)
-        $previousSupportsRuntime4 = $previousProject -and (Test-ProjectSupportsPostgresRuntimeVersion $previousProject 4)
+        $runtimeVersionStarted = if (Test-Path -LiteralPath $PostgresRuntime5UpgradeMarker -PathType Leaf) { 5 }
+          elseif (Test-Path -LiteralPath $PostgresRuntime4UpgradeMarker -PathType Leaf) { 4 } else { 0 }
+        $previousSupportsStartedRuntime = $previousProject -and $runtimeVersionStarted -gt 0 -and
+          (Test-ProjectSupportsPostgresRuntimeVersion $previousProject $runtimeVersionStarted)
         $cutoverCommitted = Test-Path -LiteralPath $PostgresCutoverMarker -PathType Leaf
         $cutoverStaged = Test-Path -LiteralPath $PostgresCutoverState -PathType Leaf
-        $runtime4Started = Test-Path -LiteralPath $PostgresRuntimeUpgradeMarker -PathType Leaf
-        $rollbackCompatible = if ($runtime4Started) { $previousSupportsRuntime4 } else { $previousSupportsPostgres }
-        if ((-not $cutoverCommitted -and -not $cutoverStaged -and -not $runtime4Started) -or
+        $runtimeUpgradeStarted = $runtimeVersionStarted -gt 0
+        $rollbackCompatible = if ($runtimeUpgradeStarted) { $previousSupportsStartedRuntime } else { $previousSupportsPostgres }
+        if ((-not $cutoverCommitted -and -not $cutoverStaged -and -not $runtimeUpgradeStarted) -or
             ($cutoverCommitted -and -not $cutoverStaged -and $rollbackCompatible)) {
           if ($previousProject) { Set-Content -LiteralPath $ActiveProjectFile -Value $previousProject -Encoding utf8 } else { Remove-Item -LiteralPath $ActiveProjectFile -Force -ErrorAction SilentlyContinue }
           & (Join-Path $PSScriptRoot 'manage.ps1') -Action restart | Out-Null
           throw "service restart failed; previous compatible deployment restored: $($_.Exception.Message)"
         }
-        # A staged base cutover and a started runtime-4 upgrade are both
-        # roll-forward-only. Older binaries cannot enforce the v4 contracts.
+        # A staged base cutover and any started runtime upgrade are both
+        # roll-forward-only. Older binaries cannot enforce the active contracts.
         Set-Content -LiteralPath $ActiveProjectFile -Value $releaseProject -Encoding utf8
         throw "service restart failed after PostgreSQL cutover; an incompatible runtime rollback was refused: $($_.Exception.Message)"
       }

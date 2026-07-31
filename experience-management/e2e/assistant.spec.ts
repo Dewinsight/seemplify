@@ -28,6 +28,46 @@ function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
+function threadDetail(thread: any) {
+  return {
+    thread,
+    loadedMessageCount: thread.messageCount,
+    totalMessageCount: thread.messageCount,
+    messagesTruncated: false,
+    bytesTruncated: false,
+    loadedMessageBytes: 512,
+    messageBodyByteLimit: 12 * 1024,
+    threadByteLimit: 96 * 1024,
+    messages: [{
+      id: `${thread.id}-message`,
+      subject: thread.subject,
+      from: thread.participants,
+      to: [{ name: 'Michael Egbo', email: 'michael@example.com' }],
+      cc: [],
+      sentAt: now,
+      body: thread.snippet,
+      bodyTruncated: false,
+      attachments: []
+    }]
+  };
+}
+
+async function openMailboxAssistant(page: Page, threadId: string) {
+  const open = page.getByRole('button', { name: 'Open assistant' });
+  if (!await open.isVisible()) {
+    const thread = page.getByTestId(`assistant-thread-${threadId}`);
+    if (await thread.isVisible()) await thread.click();
+  }
+  await open.click();
+  await expect(page.getByLabel('Mailbox assistant')).toBeVisible();
+}
+
+async function selectMailbox(page: Page, id: string, accessibleName: RegExp) {
+  const button = page.getByRole('button', { name: accessibleName });
+  if (await button.isVisible()) await button.click();
+  else await page.getByLabel('Connected mailbox').selectOption(id);
+}
+
 test('personal assistant summarises mail, preserves an editable draft, and cites selected Experience evidence', async ({ page }) => {
   let runs: any[] = [];
   let savedDraftBody = '';
@@ -45,8 +85,12 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   const sources = [{ ref: 'survey-insight:customer-risk', type: 'survey', title: 'Customer risk review', kind: 'insights', createdAt: now, preview: 'Customers report delayed issue resolution.' }];
 
   await page.route(/\/api\/assistant\/overview(?:\?.*)?$/, (route) => json(route, overview));
-  await page.route(/\/api\/assistant\/threads(?:\?.*)?$/, (route) => json(route, [thread]));
+  await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) =>
+    json(route, { items: [thread], nextCursor: null }));
+  await page.route(/\/api\/assistant\/mailbox\/threads\/[^?]+(?:\?.*)?$/, (route) =>
+    json(route, threadDetail(thread)));
   await page.route(/\/api\/intelligence\/sources(?:\?.*)?$/, (route) => json(route, sources));
+  await page.route(/\/api\/knowledge-bases(?:\?.*)?$/, (route) => json(route, { knowledgeBases: [] }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return json(route, runs);
@@ -87,6 +131,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   await page.route(/\/api\/assistant\/runs\/knowledge-answer$/, async (route) => {
     const request = await route.request().postDataJSON();
     expect(request.sourceRefs).toEqual(['survey-insight:customer-risk']);
+    expect(request.knowledgeBaseIds).toEqual([]);
     const run = {
       id: knowledgeRunId, jobId: knowledgeJobId, kind: 'assistant.knowledge_answer', state: 'completed', stage: 'completed', progress: 100,
       sourceRefs: request.sourceRefs, output: { answer: 'Delayed issue resolution is the strongest supported risk.', citations: [{ sourceRef: sources[0].ref, excerpt: 'Customers report delayed issue resolution.' }] },
@@ -99,8 +144,9 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
 
   await signIn(page);
   await openAssistant(page);
-  await expect(page.getByText('michael@example.com')).toBeVisible();
+  await expect(page.getByLabel('Connected mailbox')).toHaveValue(connectionId);
   await expect(page.getByTestId(`assistant-thread-${thread.id}`)).toHaveAttribute('aria-pressed', 'true');
+  await openMailboxAssistant(page, thread.id);
 
   await page.getByRole('button', { name: /Summarise thread/ }).click();
   await expect(page.getByText('Ada needs confirmation of the revised customer-risk section by Friday.')).toBeVisible();
@@ -113,6 +159,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   await draft.fill('Hi Ada,\n\nI have reviewed the section and will send my comments by Friday.\n\nRegards,\nMichael');
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect.poll(() => savedDraftBody).toContain('send my comments by Friday');
+  await page.getByRole('button', { name: 'Close assistant' }).click();
 
   await page.getByRole('tab', { name: 'Workspace knowledge' }).click();
   await page.getByRole('button', { name: /Customer risk review/ }).click();
@@ -145,14 +192,18 @@ test('mailbox switching rejects late thread data and retries with the same idemp
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));
   await page.route(/\/api\/intelligence\/sources(?:\?.*)?$/, (route) => json(route, []));
-  await page.route(/\/api\/assistant\/threads(?:\?.*)?$/, async (route) => {
+  await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, async (route) => {
     const requested = new URL(route.request().url()).searchParams.get('connectionId');
     if (requested === connectionId) {
       markFirstStarted();
       await firstReleased;
-      return json(route, [firstThread]);
+      return json(route, { items: [firstThread], nextCursor: null });
     }
-    return json(route, [secondThread]);
+    return json(route, { items: [secondThread], nextCursor: null });
+  });
+  await page.route(/\/api\/assistant\/mailbox\/threads\/[^?]+(?:\?.*)?$/, (route) => {
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-1) || '');
+    return json(route, threadDetail(id === secondThread.id ? secondThread : firstThread));
   });
   await page.route(/\/api\/assistant\/runs\/email-summary$/, async (route) => {
     idempotencyKeys.push(route.request().headers()['idempotency-key']);
@@ -165,10 +216,11 @@ test('mailbox switching rejects late thread data and retries with the same idemp
   await signIn(page);
   await openAssistant(page);
   await firstStarted;
-  await page.getByRole('button', { name: /Second mailbox/ }).click();
+  await selectMailbox(page, secondConnectionId, /Second mailbox/);
   await expect(page.getByTestId(`assistant-thread-${secondThread.id}`)).toBeVisible();
   releaseFirst();
   await expect(page.getByTestId(`assistant-thread-${firstThread.id}`)).toHaveCount(0);
+  await openMailboxAssistant(page, secondThread.id);
   await page.getByRole('button', { name: /Summarise thread/ }).click();
   await expect(page.getByText(/Assistant work could not be queued|Failed to fetch/)).toBeVisible();
   await page.getByRole('button', { name: /Summarise thread/ }).click();
@@ -177,7 +229,8 @@ test('mailbox switching rejects late thread data and retries with the same idemp
   expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
 });
 
-test('revoked mailbox history cannot remain selected or retain actionable thread state', async ({ page }) => {
+test('revoked mailbox history cannot remain selected or retain actionable thread state', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Account revocation controls live in the desktop mailbox rail; mobile mailbox navigation is covered separately.');
   let revoked = false;
   const thread = {
     id: 'thread-before-revoke', subject: 'Thread that must be cleared', snippet: 'This thread is no longer available after disconnect.',
@@ -195,7 +248,10 @@ test('revoked mailbox history cannot remain selected or retain actionable thread
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));
   await page.route(/\/api\/intelligence\/sources(?:\?.*)?$/, (route) => json(route, []));
-  await page.route(/\/api\/assistant\/threads(?:\?.*)?$/, (route) => json(route, [thread]));
+  await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) =>
+    json(route, { items: [thread], nextCursor: null }));
+  await page.route(/\/api\/assistant\/mailbox\/threads\/[^?]+(?:\?.*)?$/, (route) =>
+    json(route, threadDetail(thread)));
   await page.route(`**/api/assistant/nylas/connections/${connectionId}`, async (route) => {
     expect(route.request().method()).toBe('DELETE');
     revoked = true;
@@ -206,16 +262,15 @@ test('revoked mailbox history cannot remain selected or retain actionable thread
   await openAssistant(page);
   await expect(page.getByTestId(`assistant-thread-${thread.id}`)).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
-  await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await page.getByRole('button', { name: 'Disconnect selected', exact: true }).click();
 
-  const mailbox = page.getByRole('button', { name: /Revoked mailbox.*revoked@example\.com.*revoked/i });
+  const mailbox = page.getByRole('button', { name: /Revoked mailbox.*revoked@example\.com/i });
   await expect(mailbox).toBeDisabled();
   await expect(mailbox).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByText('This connection is inactive. Connect the mailbox again to read threads.')).toBeVisible();
-  await expect(page.getByText('0 connected')).toBeVisible();
+  await expect(page.getByText('Connect a mailbox')).toBeVisible();
+  await expect(page.getByText('0 mailboxes connected')).toBeVisible();
   await expect(page.getByTestId(`assistant-thread-${thread.id}`)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /Summarise thread/ })).toBeDisabled();
-  await expect(page.getByRole('button', { name: /Prepare reply draft/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Open assistant' })).toHaveCount(0);
 });
 
 test('personal assistant explains missing Nylas setup without exposing a doomed mailbox action', async ({ page }) => {
@@ -233,8 +288,14 @@ test('personal assistant explains missing Nylas setup without exposing a doomed 
   await openAssistant(page);
   await expect(page.getByText('Nylas application setup is required')).toBeVisible();
   await expect(page.getByText('https://experience.aiinnigeria.com/api/integrations/nylas/callback')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Connect Google' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Connect Microsoft' })).toBeDisabled();
+  const googleButtons = page.getByRole('button', { name: /^(Connect )?Google$/ });
+  const microsoftButtons = page.getByRole('button', { name: /^(Connect )?Microsoft$/ });
+  const googleCount = await googleButtons.count();
+  const microsoftCount = await microsoftButtons.count();
+  expect(googleCount).toBeGreaterThanOrEqual(1);
+  expect(microsoftCount).toBeGreaterThanOrEqual(1);
+  for (let index = 0; index < googleCount; index += 1) await expect(googleButtons.nth(index)).toBeDisabled();
+  for (let index = 0; index < microsoftCount; index += 1) await expect(microsoftButtons.nth(index)).toBeDisabled();
   await page.getByRole('tab', { name: 'Workspace knowledge' }).click();
   await expect(page.getByText('No saved reports yet.')).toHaveCount(2);
 });

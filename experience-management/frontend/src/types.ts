@@ -124,15 +124,44 @@ export interface AssistantConnection {
 export interface AssistantThreadParticipant { name?: string | null; email: string }
 export interface AssistantThread {
   id: string; subject: string; snippet: string; participants: Array<AssistantThreadParticipant | string>; messageCount: number;
-  lastMessageAt: string | null; unread?: boolean;
+  lastMessageAt: string | null; unread?: boolean; starred?: boolean; hasAttachments?: boolean; attachmentCount?: number;
+  labels?: string[];
 }
-export type AssistantRunKind = 'assistant.email_summary' | 'assistant.email_draft' | 'assistant.knowledge_answer' | 'email_summary' | 'email_draft' | 'knowledge_answer';
+export interface AssistantThreadPage { items?: AssistantThread[]; threads?: AssistantThread[]; nextCursor?: string | null }
+export interface AssistantMessageAttachment {
+  id?: string; filename: string; contentType?: string | null; size?: number | null; inline?: boolean;
+}
+export interface AssistantMessage {
+  id: string; subject: string; from: AssistantThreadParticipant[]; to: AssistantThreadParticipant[];
+  cc: AssistantThreadParticipant[]; sentAt: string | null; body: string; bodyTruncated: boolean;
+  attachments?: AssistantMessageAttachment[];
+}
+export interface AssistantThreadDetail {
+  thread: AssistantThread;
+  messages: AssistantMessage[];
+  loadedMessageCount: number;
+  totalMessageCount: number;
+  messagesTruncated: boolean;
+  bytesTruncated: boolean;
+  loadedMessageBytes: number;
+  messageBodyByteLimit: number;
+  threadByteLimit: number;
+}
+export type AssistantDocumentType = 'correspondence' | 'memo' | 'report' | 'board_paper' | 'meeting_pack'
+  | 'briefing_note' | 'meeting_minutes' | 'executive_document' | 'cross_document_summary'
+  | 'historical_decision_brief' | 'policy_lookup' | 'scheduling_proposal';
+export type AssistantRunKind = 'assistant.email_summary' | 'assistant.email_draft' | 'assistant.knowledge_answer'
+  | 'assistant.work_product' | 'email_summary' | 'email_draft' | 'knowledge_answer' | 'work_product';
 export interface AssistantDraft {
   subject: string; body: string; generatedSubject?: string; generatedBody?: string; revision: number; updatedAt?: string;
 }
+export interface AssistantActionItem {
+  action?: string; title?: string; owner?: string; dueDate?: string; sourceRef?: string; sourceMessageId?: string;
+}
 export interface AssistantOutput {
   summary?: string; answer?: string; subject?: string; body?: string; rationale?: string;
-  keyPoints?: unknown[]; actionItems?: unknown[]; openQuestions?: unknown[]; safetyFlags?: string[];
+  executiveSummary?: string; keyPoints?: unknown[]; actionItems?: AssistantActionItem[]; openQuestions?: unknown[]; safetyFlags?: string[];
+  decisions?: unknown[];
   citations?: Array<{ sourceRef: string; excerpt: string }>;
   limitations?: unknown[]; caveats?: unknown[];
 }
@@ -144,6 +173,7 @@ export interface AssistantRuntime {
 export interface AssistantRun {
   id: string; jobId: string; kind: AssistantRunKind; state: 'queued' | 'processing' | 'completed' | 'failed';
   stage: string; progress: number; attempt?: number; connectionId?: string | null; subjectRef?: string | null; sourceRefs?: string[];
+  knowledgeBaseIds?: string[]; documentType?: AssistantDocumentType | null; title?: string | null;
   output?: AssistantOutput | null; runtime?: AssistantRuntime | null; draft?: AssistantDraft | null;
   generatedDraft?: Pick<AssistantDraft, 'subject' | 'body'> | null; advisoryOnly?: boolean; externalDispatched?: boolean;
   error: string | null; createdAt: string; startedAt?: string | null; completedAt: string | null; updatedAt: string;
@@ -152,6 +182,27 @@ export interface AssistantOverview {
   configured: boolean; callbackUrl?: string; configurationError?: string | null; connections: AssistantConnection[];
   worker?: { running: boolean; active: number; queued: number; concurrency: number };
   terra?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
+}
+export type AssistantActionStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+export type AssistantActionPriority = 'low' | 'normal' | 'high' | 'urgent';
+export interface AssistantAction {
+  id: string; sourceRunId?: string | null; sourceItemIndex?: number | null; title: string; description: string; owner: string;
+  status: AssistantActionStatus; priority: AssistantActionPriority; dueAt: string | null; revision: number;
+  completedAt?: string | null; createdAt: string; updatedAt: string;
+}
+export interface AssistantReminder {
+  id: string; actionId: string; remindAt: string; note: string; state: 'scheduled' | 'dismissed' | 'completed';
+  revision: number; deliveredAt?: string | null; createdAt: string; updatedAt: string;
+}
+export interface AssistantCalendar {
+  id: string; name: string; description: string; readOnly: boolean; primary: boolean; timezone: string | null;
+}
+export interface AssistantCalendarEvent {
+  id: string; calendarId: string | null; title: string; description: string; location: string;
+  startAt: string | null; endAt: string | null; status: string; busy: boolean; participants: AssistantThreadParticipant[];
+}
+export interface AssistantAuditEvent {
+  id: string; action: string; targetType: string; targetId: string | null; detail: Record<string, unknown>; createdAt: string;
 }
 export type KnowledgeBasePrivacy = 'private' | 'space';
 export type KnowledgeBaseState = 'empty' | 'indexing' | 'ready' | 'degraded' | 'failed' | 'deleting';

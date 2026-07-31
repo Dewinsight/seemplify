@@ -35,14 +35,18 @@ test('keeps the Experience personal assistant private, durable, grounded, and hu
   const assistant = fs.readFileSync(path.join(source, 'pages', 'PersonalAssistantPage.tsx'), 'utf8');
   const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
   for (const endpoint of [
-    '/api/assistant/overview', '/api/assistant/threads', '/api/assistant/runs'
+    '/api/assistant/overview', '/api/assistant/mailbox/threads', '/api/assistant/runs',
+    '/api/assistant/runs/work-product', '/api/assistant/actions', '/api/assistant/calendar/events',
+    '/api/assistant/audit'
   ]) assert.match(assistant, new RegExp(endpoint.replaceAll('/', '\\/')));
-  for (const activity of ['email-summary', 'email-draft', 'knowledge-answer']) assert.match(assistant, new RegExp(activity));
+  for (const activity of ['email-summary', 'email-draft', 'knowledge-answer', 'work-product']) assert.match(assistant, new RegExp(activity));
   for (const feature of [
-    'Personal assistant', 'Mailbox connections', 'Workspace knowledge', 'Assistant history',
-    'Draft only — nothing has been sent', 'Original generation is retained for audit',
-    'The selected evidence is snapshotted before queueing', 'Private to your account within the active space',
-    'connectedConnectionIds', "connection.status === 'connected'", 'This connection is inactive'
+    'Personal assistant', 'Search mail', 'Workspace knowledge', 'Assistant history',
+    'Create a work product', 'Actions', 'Calendar', 'Assistant audit',
+    'nothing has been sent', 'Original generation is retained for audit',
+    'exact evidence excerpts are frozen before queueing', 'Private to your account within the active space',
+    'Human review required', 'connectedConnectionIds', "connection.status === 'connected'",
+    'threadConnectionId', 'calendarConnectionId', 'knowledgeBaseIds', 'messagesTruncated', 'confirmDraftDiscard'
   ]) assert.match(assistant, new RegExp(feature));
   assert.doesNotMatch(assistant, />Send<|name="Send"|\/send/);
   assert.match(shell, /label: 'Personal assistant'/);
@@ -288,11 +292,27 @@ test('retains versioned assets before an isolated release becomes active', () =>
   const activate = deploy.indexOf('Set-Content -LiteralPath $ActiveProjectFile', merge);
   assert.ok(build >= 0 && merge > build && activate > merge);
 });
-test('refuses an incompatible rollback after the PostgreSQL runtime-v4 upgrade starts', () => {
+test('refuses an incompatible rollback after the PostgreSQL runtime-v5 upgrade starts', () => {
   const deploy = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'auto-deploy.ps1'), 'utf8');
-  assert.match(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 4/);
+  const compatibility = JSON.parse(fs.readFileSync(path.resolve(source, '..', '..', 'backend', 'migrations', 'postgres', 'runtime-compatibility.json'), 'utf8'));
+  assert.match(deploy, /postgres-runtime-schema-v5-started/);
+  assert.match(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject \$runtimeVersionStarted/);
+  assert.match(deploy, /Test-CommitCanUpgradePostgresRuntime/);
+  assert.match(deploy, /elseif \(Test-Path -LiteralPath \$PostgresRuntime4UpgradeMarker/);
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
-  assert.match(deploy, /started runtime-4 upgrade/);
+  assert.match(deploy, /started runtime upgrade/);
+  assert.deepEqual(compatibility, {
+    minimumRuntimeSchemaVersion: 5,
+    maximumRuntimeSchemaVersion: 5,
+    minimumUpgradeSourceRuntimeSchemaVersion: 4
+  });
+});
+test('grants PostgreSQL runtime privileges from the exact active release', () => {
+  const manage = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'manage.ps1'), 'utf8');
+  assert.match(manage, /function Grant-PostgresRuntimePrivileges\(\[string\]\$ProjectDir\)/);
+  assert.match(manage, /Join-Path \$ProjectDir 'backend\\migrations\\postgres\\runtime_privileges\.sql'/);
+  assert.doesNotMatch(manage, /Join-Path \$SourceProjectDir 'backend\\migrations\\postgres\\runtime_privileges\.sql'/);
+  assert.equal((manage.match(/Grant-PostgresRuntimePrivileges \$ProjectDir/g) || []).length, 2);
 });
 test('ships the extended question library and executable respondent logic', () => {
   const types = fs.readFileSync(path.join(source, 'types.ts'), 'utf8');

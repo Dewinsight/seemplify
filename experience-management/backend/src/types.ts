@@ -89,7 +89,8 @@ export type AiJobKind =
   | 'journey.optimize'
   | 'assistant.email_summary'
   | 'assistant.email_draft'
-  | 'assistant.knowledge_answer';
+  | 'assistant.knowledge_answer'
+  | 'assistant.work_product';
 
 export interface SocialMention {
   id: string;

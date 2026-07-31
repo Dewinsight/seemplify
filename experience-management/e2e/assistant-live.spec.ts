@@ -17,15 +17,19 @@ async function openAssistant(page: Page) {
   await expect(page.getByRole('heading', { name: 'Personal assistant' })).toBeVisible();
 }
 
-test('real assistant backend completes OAuth, reads a thread, and durably saves Terra summary and draft work', async ({ page }) => {
+test('real assistant backend completes OAuth, reads a thread, and durably saves Terra summary and draft work', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'The real provider flow is covered once on desktop; mobile mailbox navigation has an isolated browser test.');
   await signIn(page);
   await openAssistant(page);
 
   await page.getByRole('button', { name: 'Connect Google' }).click();
   await expect(page).toHaveURL(/\/assistant(?:\?|$)/u);
-  await expect(page.getByRole('main').getByRole('status')).toContainText('Mailbox connected successfully.');
+  await expect(
+    page.getByRole('main').getByRole('status').filter({ hasText: 'Mailbox connected successfully.' })
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: /connected@example\.test/u })).toBeVisible();
   await expect(page.getByTestId('assistant-thread-playwright-thread')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Open assistant' }).click();
 
   await page.getByRole('button', { name: /Summarise thread/ }).click();
   await expect(page.getByText('Ada needs confirmation of the revised customer-risk section by Friday.')).toBeVisible({ timeout: 20_000 });
@@ -39,6 +43,7 @@ test('real assistant backend completes OAuth, reads a thread, and durably saves 
   await draft.fill('Hi Ada,\n\nI reviewed the revised section and will confirm by Friday.\n\nRegards');
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect(page.getByText(/Revision 2/)).toBeVisible();
+  await page.getByRole('button', { name: 'Close assistant' }).click();
 
   await page.getByRole('tab', { name: /History/ }).click();
   await expect(page.getByRole('button', { name: /Email summary/ }).first()).toBeVisible();

@@ -17,7 +17,10 @@ export const RUNTIME_EXTENSION_TABLES = Object.freeze([
   'knowledge_embedding_promotion_approvals',
   'assistant_nylas_connections',
   'assistant_nylas_oauth_states',
-  'assistant_runs'
+  'assistant_runs',
+  'assistant_actions',
+  'assistant_reminders',
+  'assistant_audit_events'
 ]);
 
 export function runtimeTableSetDifference(sourceTableNames, actualTableNames) {
@@ -89,6 +92,31 @@ const assistantExactColumns = Object.freeze({
   ]
 });
 
+const assistantPhase1ExactColumns = Object.freeze({
+  assistant_runs: [
+    ...assistantExactColumns.assistant_runs,
+    ['document_type', 'text', true], ['title', 'text', true], ['knowledge_base_ids_json', 'text', false]
+  ],
+  assistant_actions: [
+    ['id', 'text', false], ['space_id', 'text', false], ['created_by', 'text', false],
+    ['source_run_id', 'text', true], ['source_item_index', 'integer', true], ['title', 'text', false],
+    ['description', 'text', false], ['owner', 'text', false], ['status', 'text', false],
+    ['priority', 'text', false], ['due_at', 'text', true], ['revision', 'integer', false],
+    ['completed_at', 'text', true], ['created_at', 'text', false], ['updated_at', 'text', false]
+  ],
+  assistant_reminders: [
+    ['id', 'text', false], ['space_id', 'text', false], ['action_id', 'text', false],
+    ['created_by', 'text', false], ['remind_at', 'text', false], ['note', 'text', false],
+    ['state', 'text', false], ['revision', 'integer', false], ['delivered_at', 'text', true],
+    ['created_at', 'text', false], ['updated_at', 'text', false]
+  ],
+  assistant_audit_events: [
+    ['id', 'text', false], ['space_id', 'text', false], ['actor_user_id', 'text', false],
+    ['action', 'text', false], ['target_type', 'text', false], ['target_id', 'text', true],
+    ['detail_json', 'text', false], ['created_at', 'text', false]
+  ]
+});
+
 const additiveColumns = Object.freeze({
   users: [
     ['account_status', 'text', false], ['last_login_at', 'text', true], ['suspended_at', 'text', true],
@@ -114,6 +142,12 @@ const assistantPrimaryKeys = Object.freeze({
   assistant_nylas_connections: ['id'],
   assistant_nylas_oauth_states: ['state_hash'],
   assistant_runs: ['id']
+});
+
+const assistantPhase1PrimaryKeys = Object.freeze({
+  assistant_actions: ['id'],
+  assistant_reminders: ['id'],
+  assistant_audit_events: ['id']
 });
 
 const requiredForeignKeys = Object.freeze([
@@ -149,6 +183,17 @@ const assistantRequiredForeignKeys = Object.freeze([
   ['assistant_runs', 'connection_id', 'assistant_nylas_connections', 'id', 'n']
 ]);
 
+const assistantPhase1RequiredForeignKeys = Object.freeze([
+  ['assistant_actions', 'space_id', 'spaces', 'id', 'c'],
+  ['assistant_actions', 'created_by', 'users', 'id', 'r'],
+  ['assistant_actions', 'source_run_id', 'assistant_runs', 'id', 'n'],
+  ['assistant_reminders', 'space_id', 'spaces', 'id', 'c'],
+  ['assistant_reminders', 'action_id', 'assistant_actions', 'id', 'c'],
+  ['assistant_reminders', 'created_by', 'users', 'id', 'r'],
+  ['assistant_audit_events', 'space_id', 'spaces', 'id', 'c'],
+  ['assistant_audit_events', 'actor_user_id', 'users', 'id', 'r']
+]);
+
 const requiredIndexes = Object.freeze({
   platform_role_assignments_active: ['create unique index', '(user_id, role)', 'where (revoked_at is null)'],
   platform_role_assignments_user: ['(user_id, granted_at desc)'],
@@ -175,6 +220,16 @@ const assistantRequiredIndexes = Object.freeze({
   assistant_runs_idempotency: ['create unique index', '(space_id, requested_by, idempotency_key)', 'where (idempotency_key is not null)']
 });
 
+const assistantPhase1RequiredIndexes = Object.freeze({
+  assistant_actions_owner_history: ['(space_id, created_by, status, created_at desc, id)'],
+  assistant_actions_source_item: [
+    'create unique index', '(space_id, created_by, source_run_id, source_item_index)',
+    'where ((source_run_id is not null) and (source_item_index is not null))'
+  ],
+  assistant_reminders_owner_schedule: ['(space_id, created_by, state, remind_at, id)'],
+  assistant_audit_events_owner_history: ['(space_id, actor_user_id, created_at desc, id)']
+});
+
 const requiredDefaults = Object.freeze({
   'users.account_status': "'active'::text",
   'spaces.status': "'active'::text",
@@ -199,6 +254,19 @@ const assistantRequiredDefaults = Object.freeze({
   'assistant_runs.draft_revision': '0',
   'assistant_runs.advisory_only': '1',
   'assistant_runs.external_dispatched': '0'
+});
+
+const assistantPhase1RequiredDefaults = Object.freeze({
+  'assistant_runs.knowledge_base_ids_json': "'[]'::text",
+  'assistant_actions.description': "''::text",
+  'assistant_actions.owner': "''::text",
+  'assistant_actions.status': "'open'::text",
+  'assistant_actions.priority': "'normal'::text",
+  'assistant_actions.revision': '1',
+  'assistant_reminders.note': "''::text",
+  'assistant_reminders.state': "'scheduled'::text",
+  'assistant_reminders.revision': '1',
+  'assistant_audit_events.detail_json': "'{}'::text"
 });
 
 const requiredChecks = Object.freeze({
@@ -230,6 +298,21 @@ const assistantRequiredChecks = Object.freeze({
   ]
 });
 
+const assistantPhase1RequiredChecks = Object.freeze({
+  assistant_runs: [
+    ['kind', 'email_summary', 'email_draft', 'knowledge_answer', 'work_product'],
+    ['state', 'queued', 'processing', 'completed', 'failed'],
+    ['document_type', 'correspondence', 'board_paper', 'policy_lookup', 'scheduling_proposal'],
+    ['advisory_only', '= 1'],
+    ['external_dispatched', '= 0']
+  ],
+  assistant_actions: [
+    ['status', 'open', 'in_progress', 'completed', 'cancelled'],
+    ['priority', 'low', 'normal', 'high', 'urgent']
+  ],
+  assistant_reminders: [['state', 'scheduled', 'dismissed', 'completed']]
+});
+
 function contractError(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -256,16 +339,28 @@ async function rows(query, sql) {
 export async function assertRuntimeSchemaContract(query, options = {}) {
   const schema = String(options.schema || 'public');
   if (!IDENTIFIER.test(schema)) throw contractError('RUNTIME_SCHEMA_IDENTIFIER_INVALID', `Unsafe PostgreSQL schema identifier: ${schema}`);
-  const runtimeVersion = Number(options.runtimeVersion ?? 4);
+  const runtimeVersion = Number(options.runtimeVersion ?? 5);
   if (!Number.isSafeInteger(runtimeVersion) || runtimeVersion < 1) {
     throw contractError('RUNTIME_SCHEMA_VERSION_INVALID', 'Runtime schema contract version must be a positive integer.');
   }
-  const exactColumnContract = runtimeVersion >= 4 ? { ...exactColumns, ...assistantExactColumns } : exactColumns;
-  const primaryKeyContract = runtimeVersion >= 4 ? { ...primaryKeys, ...assistantPrimaryKeys } : primaryKeys;
-  const foreignKeyContract = runtimeVersion >= 4 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys] : requiredForeignKeys;
-  const indexContract = runtimeVersion >= 4 ? { ...requiredIndexes, ...assistantRequiredIndexes } : requiredIndexes;
-  const defaultContract = runtimeVersion >= 4 ? { ...requiredDefaults, ...assistantRequiredDefaults } : requiredDefaults;
-  const checkContract = runtimeVersion >= 4 ? { ...requiredChecks, ...assistantRequiredChecks } : requiredChecks;
+  const exactColumnContract = runtimeVersion >= 5
+    ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns }
+    : runtimeVersion >= 4 ? { ...exactColumns, ...assistantExactColumns } : exactColumns;
+  const primaryKeyContract = runtimeVersion >= 5
+    ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys }
+    : runtimeVersion >= 4 ? { ...primaryKeys, ...assistantPrimaryKeys } : primaryKeys;
+  const foreignKeyContract = runtimeVersion >= 5
+    ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys]
+    : runtimeVersion >= 4 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys] : requiredForeignKeys;
+  const indexContract = runtimeVersion >= 5
+    ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes }
+    : runtimeVersion >= 4 ? { ...requiredIndexes, ...assistantRequiredIndexes } : requiredIndexes;
+  const defaultContract = runtimeVersion >= 5
+    ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults }
+    : runtimeVersion >= 4 ? { ...requiredDefaults, ...assistantRequiredDefaults } : requiredDefaults;
+  const checkContract = runtimeVersion >= 5
+    ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks }
+    : runtimeVersion >= 4 ? { ...requiredChecks, ...assistantRequiredChecks } : requiredChecks;
 
   const columnRows = await rows(query, `SELECT table_name,column_name,data_type,is_nullable,column_default,ordinal_position
     FROM information_schema.columns WHERE table_schema=${sqlLiteral(schema)}
@@ -376,7 +471,8 @@ export async function assertRuntimePrivileges(query, runtimeRole, options = {}) 
     ['experience_runtime_schema_version', true, false, false, false],
     ['platform_audit_events', true, true, false, false],
     ['platform_subscription_events', true, true, false, false],
-    ['ticket_events', true, true, false, false]
+    ['ticket_events', true, true, false, false],
+    ['assistant_audit_events', true, true, false, false]
   ];
   for (const [table, select, insert, update, remove] of expectations) {
     const qualified = `${schema}.${table}`;

@@ -268,7 +268,7 @@ export const config = {
     ),
     ssl: postgresSsl(process.env.POSTGRES_SSL),
     schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
-    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 4, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 5, 1, 1_000_000),
     sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
   },
   uploadDir: resolveFromBackend(
@@ -340,7 +340,10 @@ export const config = {
   ),
   nylasOAuthStateMinutes: boundedNumber(process.env.NYLAS_OAUTH_STATE_MINUTES, 10, 1, 30),
   nylasRequestTimeoutMs: boundedNumber(process.env.NYLAS_REQUEST_TIMEOUT_MS, 20_000, 2_000, 60_000),
-  nylasMaxThreadMessages: boundedNumber(process.env.NYLAS_MAX_THREAD_MESSAGES, 16, 1, 30),
+  nylasMaxThreadMessages: boundedNumber(process.env.NYLAS_MAX_THREAD_MESSAGES, 100, 1, 250),
+  nylasMessageDetailConcurrency: boundedNumber(process.env.NYLAS_MESSAGE_DETAIL_CONCURRENCY, 6, 1, 8),
+  nylasMaxMessageBodyBytes: boundedNumber(process.env.NYLAS_MAX_MESSAGE_BODY_BYTES, 128 * 1024, 4 * 1024, 512 * 1024),
+  nylasMaxThreadBytes: boundedNumber(process.env.NYLAS_MAX_THREAD_BYTES, 1024 * 1024, 128 * 1024, 4 * 1024 * 1024),
   subscriptionEnforcementEnabled: enabled(process.env.SUBSCRIPTION_ENFORCEMENT_ENABLED),
   brevoApiKey: process.env.BREVO_API_KEY || '',
   brevoApiUrl: process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email',

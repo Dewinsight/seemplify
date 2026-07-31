@@ -79,7 +79,11 @@ test('runtime schema 3 migration is additive and carries durable rollout state',
     'knowledge_embedding_promotion_evidence_immutable', 'gte-modernbert-v1', 'qwen-v1'
   ]) assert.match(migration, new RegExp(contract, 'u'));
   assert.match(migration, /ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS/u);
-  assert.deepEqual(compatibility, { minimumRuntimeSchemaVersion: 4, maximumRuntimeSchemaVersion: 4 });
+  assert.deepEqual(compatibility, {
+    minimumRuntimeSchemaVersion: 5,
+    maximumRuntimeSchemaVersion: 5,
+    minimumUpgradeSourceRuntimeSchemaVersion: 4
+  });
 });
 
 test('ordinary knowledge dispatch SQL is deterministic and PostgreSQL portable', () => {

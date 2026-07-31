@@ -19,10 +19,10 @@ $PostgresContainer = 'xplorer-postgres'
 $PostgresDatabase = 'seemplify_experience'
 $PostgresRole = 'seemplify_experience_app'
 $PostgresOwnerRole = 'seemplify_experience_owner'
-$PostgresRuntimeSchemaVersion = 4
+$PostgresRuntimeSchemaVersion = 5
 $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
 $PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
-$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v4-started'
+$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v5-started'
 $PostgresMigrationLog = Join-Path $RuntimeDir 'postgres-migration.log'
 $PidFile = Join-Path $RuntimeDir 'server.pid'
 $PasswordFile = Join-Path $RuntimeDir 'admin-password'
@@ -337,12 +337,12 @@ ALTER ROLE $PostgresOwnerRole LOGIN PASSWORD :'owner_password';
     [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', $previous, 'Process')
   }
 }
-function Grant-PostgresRuntimePrivileges {
+function Grant-PostgresRuntimePrivileges([string]$ProjectDir) {
   $identity = Get-PostgresContainerIdentity
   foreach ($identifier in @($PostgresDatabase,$PostgresRole,$PostgresOwnerRole)) {
     if ($identifier -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { throw "Unsafe managed PostgreSQL identifier: $identifier" }
   }
-  $privilegeFile = Join-Path $SourceProjectDir 'backend\migrations\postgres\runtime_privileges.sql'
+  $privilegeFile = Join-Path $ProjectDir 'backend\migrations\postgres\runtime_privileges.sql'
   if (-not (Test-Path -LiteralPath $privilegeFile -PathType Leaf)) { throw 'The atomic PostgreSQL runtime privilege contract is missing.' }
   $privilegeSql = (Get-Content -LiteralPath $privilegeFile -Raw).
     Replace('__DATABASE__',$PostgresDatabase).
@@ -462,7 +462,7 @@ function Initialize-PostgresCutover([string]$ProjectDir) {
     }
     Start-PostgresRuntimeUpgrade
     Invoke-PostgresRuntimeUpgrade $ProjectDir $node ([string]$marker.sourceSha256)
-    Grant-PostgresRuntimePrivileges
+    Grant-PostgresRuntimePrivileges $ProjectDir
     Set-PostgresRuntimeEnvironment ([string]$marker.sourceSha256)
     $verifyOutput = @(& $node.Source $verifier --json 2>&1)
     foreach ($line in $verifyOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }
@@ -509,7 +509,7 @@ function Initialize-PostgresCutover([string]$ProjectDir) {
   }
   Start-PostgresRuntimeUpgrade
   Invoke-PostgresRuntimeUpgrade $ProjectDir $node $sourceSha256
-  Grant-PostgresRuntimePrivileges
+  Grant-PostgresRuntimePrivileges $ProjectDir
   Set-PostgresRuntimeEnvironment $sourceSha256
   $verifyOutput = @(& $node.Source $verifier --json 2>&1)
   foreach ($line in $verifyOutput) { Add-Content -LiteralPath $PostgresMigrationLog -Value ([string]$line) }

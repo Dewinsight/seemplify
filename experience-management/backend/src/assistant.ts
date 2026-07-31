@@ -6,10 +6,12 @@ import { publishEvent } from './events.js';
 import { IntelligenceError, resolveIntelligenceSourceSnapshots } from './intelligence.js';
 import { decryptNylasSecret, encryptNylasSecret, fingerprintNylasGrant } from './nylasSecrets.js';
 import { providerHtmlToText, redactProviderSecrets, type AssistantThreadSnapshot, type NylasProvider } from './nylasClient.js';
+import { recordAssistantAudit } from './assistantOperations.js';
+import type { AssistantDocumentType } from './assistantSchemas.js';
 import './spaces.js';
 import type { AiJob, AiJobKind } from './types.js';
 
-export type AssistantRunKind = 'email_summary' | 'email_draft' | 'knowledge_answer';
+export type AssistantRunKind = 'email_summary' | 'email_draft' | 'knowledge_answer' | 'work_product';
 
 export class AssistantError extends Error {
   status: number;
@@ -63,10 +65,13 @@ db.exec(`
     space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
     requested_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     ai_job_id TEXT UNIQUE REFERENCES ai_jobs(id) ON DELETE SET NULL,
-    kind TEXT NOT NULL CHECK(kind IN ('email_summary','email_draft','knowledge_answer')),
+    kind TEXT NOT NULL CHECK(kind IN ('email_summary','email_draft','knowledge_answer','work_product')),
     connection_id TEXT REFERENCES assistant_nylas_connections(id) ON DELETE SET NULL,
     subject_ref TEXT,
     source_refs_json TEXT NOT NULL DEFAULT '[]',
+    knowledge_base_ids_json TEXT NOT NULL DEFAULT '[]',
+    document_type TEXT,
+    title TEXT,
     input_snapshot_json TEXT NOT NULL,
     input_sha256 TEXT NOT NULL,
     request_fingerprint TEXT NOT NULL,
@@ -101,6 +106,84 @@ if (!assistantRunColumns.has('generated_body')) db.exec('ALTER TABLE assistant_r
 if (!assistantRunColumns.has('advisory_only')) db.exec('ALTER TABLE assistant_runs ADD COLUMN advisory_only INTEGER NOT NULL DEFAULT 1');
 if (!assistantRunColumns.has('external_dispatched')) db.exec('ALTER TABLE assistant_runs ADD COLUMN external_dispatched INTEGER NOT NULL DEFAULT 0');
 if (!assistantRunColumns.has('request_fingerprint')) db.exec('ALTER TABLE assistant_runs ADD COLUMN request_fingerprint TEXT');
+if (!assistantRunColumns.has('knowledge_base_ids_json')) db.exec("ALTER TABLE assistant_runs ADD COLUMN knowledge_base_ids_json TEXT NOT NULL DEFAULT '[]'");
+if (!assistantRunColumns.has('document_type')) db.exec('ALTER TABLE assistant_runs ADD COLUMN document_type TEXT');
+if (!assistantRunColumns.has('title')) db.exec('ALTER TABLE assistant_runs ADD COLUMN title TEXT');
+const assistantRunsSql = String((db.prepare(
+  "SELECT sql FROM sqlite_master WHERE type='table' AND name='assistant_runs'"
+).get() as any)?.sql || '');
+if (assistantRunsSql && !assistantRunsSql.includes("'work_product'")) {
+  db.prepare(`UPDATE assistant_runs SET request_fingerprint=lower(hex(randomblob(32)))
+    WHERE request_fingerprint IS NULL OR trim(request_fingerprint)=''`).run();
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS assistant_runs_work_product_next;
+        CREATE TABLE assistant_runs_work_product_next (
+          id TEXT PRIMARY KEY,
+          space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+          requested_by TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+          ai_job_id TEXT UNIQUE REFERENCES ai_jobs(id) ON DELETE SET NULL,
+          kind TEXT NOT NULL CHECK(kind IN ('email_summary','email_draft','knowledge_answer','work_product')),
+          connection_id TEXT REFERENCES assistant_nylas_connections(id) ON DELETE SET NULL,
+          subject_ref TEXT,
+          source_refs_json TEXT NOT NULL DEFAULT '[]',
+          knowledge_base_ids_json TEXT NOT NULL DEFAULT '[]',
+          document_type TEXT,
+          title TEXT,
+          input_snapshot_json TEXT NOT NULL,
+          input_sha256 TEXT NOT NULL,
+          request_fingerprint TEXT NOT NULL,
+          state TEXT NOT NULL DEFAULT 'queued' CHECK(state IN ('queued','processing','completed','failed')),
+          output_json TEXT,
+          runtime_json TEXT,
+          generated_subject TEXT,
+          generated_body TEXT,
+          draft_subject TEXT,
+          draft_body TEXT,
+          draft_revision INTEGER NOT NULL DEFAULT 0,
+          draft_updated_at TEXT,
+          error TEXT,
+          advisory_only INTEGER NOT NULL DEFAULT 1 CHECK(advisory_only=1),
+          external_dispatched INTEGER NOT NULL DEFAULT 0 CHECK(external_dispatched=0),
+          idempotency_key TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO assistant_runs_work_product_next (
+          id,space_id,requested_by,ai_job_id,kind,connection_id,subject_ref,source_refs_json,
+          knowledge_base_ids_json,document_type,title,input_snapshot_json,input_sha256,request_fingerprint,
+          state,output_json,runtime_json,generated_subject,generated_body,draft_subject,draft_body,
+          draft_revision,draft_updated_at,error,advisory_only,external_dispatched,idempotency_key,
+          created_at,started_at,completed_at,updated_at
+        ) SELECT
+          id,space_id,requested_by,ai_job_id,kind,connection_id,subject_ref,source_refs_json,
+          knowledge_base_ids_json,document_type,title,input_snapshot_json,input_sha256,request_fingerprint,
+          state,output_json,runtime_json,generated_subject,generated_body,draft_subject,draft_body,
+          draft_revision,draft_updated_at,error,advisory_only,external_dispatched,idempotency_key,
+          created_at,started_at,completed_at,updated_at
+        FROM assistant_runs;
+        DROP TABLE assistant_runs;
+        ALTER TABLE assistant_runs_work_product_next RENAME TO assistant_runs;
+        CREATE INDEX assistant_runs_owner_history
+          ON assistant_runs(space_id,requested_by,created_at DESC,id);
+        CREATE INDEX assistant_runs_job ON assistant_runs(ai_job_id);
+        CREATE UNIQUE INDEX assistant_runs_idempotency
+          ON assistant_runs(space_id,requested_by,idempotency_key) WHERE idempotency_key IS NOT NULL;
+      `);
+    })();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+  const assistantForeignKeyViolations = (db.prepare('PRAGMA foreign_key_check').all() as any[])
+    .filter((violation) => ['assistant_runs', 'assistant_actions', 'assistant_reminders'].includes(String(violation.table)));
+  if (assistantForeignKeyViolations.length) {
+    throw new Error('The assistant SQLite compatibility upgrade violated referential integrity.');
+  }
+}
 const assistantConnectionColumns = new Set((db.pragma('table_info(assistant_nylas_connections)') as Array<{ name: string }>).map((column) => column.name));
 if (!assistantConnectionColumns.has('grant_fingerprint')) db.exec('ALTER TABLE assistant_nylas_connections ADD COLUMN grant_fingerprint TEXT');
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS assistant_nylas_connections_grant
@@ -216,7 +299,8 @@ export function markNylasConnectionRevoked(userId: string, spaceId: string, id: 
 function jobKind(kind: AssistantRunKind): AiJobKind {
   if (kind === 'email_summary') return 'assistant.email_summary';
   if (kind === 'email_draft') return 'assistant.email_draft';
-  return 'assistant.knowledge_answer';
+  if (kind === 'knowledge_answer') return 'assistant.knowledge_answer';
+  return 'assistant.work_product';
 }
 
 function publicRunKind(kind: AssistantRunKind): AiJobKind { return jobKind(kind); }
@@ -237,10 +321,44 @@ export function assistantEmailRequestFingerprint(input: {
   });
 }
 
-export function assistantKnowledgeRequestFingerprint(question: string, sourceRefs: string[]) {
+export function assistantKnowledgeRequestFingerprint(
+  question: string,
+  sourceRefs: string[],
+  knowledgeBaseIds: string[] = []
+) {
   return logicalFingerprint({
     kind: 'knowledge_answer', question: cleanText(question, 4_000),
-    sourceRefs: [...new Set(sourceRefs)].sort((left, right) => left.localeCompare(right))
+    sourceRefs: [...new Set(sourceRefs)].sort((left, right) => left.localeCompare(right)),
+    knowledgeBaseIds: [...new Set(knowledgeBaseIds)].sort((left, right) => left.localeCompare(right))
+  });
+}
+
+export function assistantWorkProductRequestFingerprint(input: {
+  documentType: AssistantDocumentType;
+  title: string;
+  objective: string;
+  sourceRefs: string[];
+  knowledgeBaseIds: string[];
+  connectionId?: string;
+  threadConnectionId?: string;
+  calendarConnectionId?: string;
+  threadId?: string;
+  calendarEventId?: string;
+  calendarId?: string;
+}) {
+  return logicalFingerprint({
+    kind: 'work_product',
+    documentType: input.documentType,
+    title: cleanText(input.title, 500),
+    objective: cleanText(input.objective, 6_000),
+    sourceRefs: [...new Set(input.sourceRefs)].sort((left, right) => left.localeCompare(right)),
+    knowledgeBaseIds: [...new Set(input.knowledgeBaseIds)].sort((left, right) => left.localeCompare(right)),
+    connectionId: cleanText(input.connectionId, 300),
+    threadConnectionId: cleanText(input.threadConnectionId, 300),
+    calendarConnectionId: cleanText(input.calendarConnectionId, 300),
+    threadId: cleanText(input.threadId, 300),
+    calendarEventId: cleanText(input.calendarEventId, 300),
+    calendarId: cleanText(input.calendarId, 300)
   });
 }
 
@@ -255,7 +373,8 @@ function assistantRunRow(id: string, spaceId?: string, userId?: string) {
 
 function runResponse(row: any) {
   const state = String(row.job_state || row.state);
-  const hasDraft = row.kind === 'email_draft' && row.draft_revision > 0;
+  const draftCapable = row.kind === 'email_draft' || row.kind === 'work_product';
+  const hasDraft = draftCapable && row.draft_revision > 0;
   return {
     id: String(row.id), jobId: row.ai_job_id ? String(row.ai_job_id) : null,
     kind: publicRunKind(String(row.kind) as AssistantRunKind), state, stage: row.job_stage || state,
@@ -263,8 +382,11 @@ function runResponse(row: any) {
     attempt: Number(row.job_attempt || 0), connectionId: row.connection_id ? String(row.connection_id) : null,
     subjectRef: row.subject_ref ? String(row.subject_ref) : null,
     sourceRefs: parseJson<string[]>(row.source_refs_json, []),
+    knowledgeBaseIds: parseJson<string[]>(row.knowledge_base_ids_json, []),
+    documentType: row.document_type ? String(row.document_type) : null,
+    title: row.title ? String(row.title) : null,
     output: parseJson(row.output_json, null), runtime: parseJson(row.runtime_json, null),
-    generatedDraft: row.kind === 'email_draft' && row.generated_subject && row.generated_body ? {
+    generatedDraft: draftCapable && row.generated_subject && row.generated_body ? {
       subject: String(row.generated_subject), body: String(row.generated_body)
     } : null,
     draft: hasDraft ? {
@@ -295,6 +417,7 @@ export function listAssistantRuns(spaceId: string, userId: string, limit = 100) 
 function createRun(input: {
   kind: AssistantRunKind; spaceId: string; userId: string; snapshot: Record<string, unknown>;
   connectionId?: string | null; subjectRef?: string | null; sourceRefs?: string[]; idempotencyKey?: string;
+  knowledgeBaseIds?: string[]; documentType?: AssistantDocumentType | null; title?: string | null;
   requestFingerprint: string;
 }) {
   const snapshotJson = JSON.stringify(input.snapshot);
@@ -318,14 +441,30 @@ function createRun(input: {
       }
     }
     db.prepare(`INSERT INTO assistant_runs
-      (id,space_id,requested_by,kind,connection_id,subject_ref,source_refs_json,input_snapshot_json,input_sha256,request_fingerprint,state,idempotency_key,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(
+      (id,space_id,requested_by,kind,connection_id,subject_ref,source_refs_json,knowledge_base_ids_json,document_type,title,
+       input_snapshot_json,input_sha256,request_fingerprint,state,idempotency_key,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(
       id, input.spaceId, input.userId, input.kind, input.connectionId || null, input.subjectRef || null,
-      JSON.stringify(input.sourceRefs || []), encryptedSnapshot, snapshotHash, input.requestFingerprint,
+      JSON.stringify(input.sourceRefs || []), JSON.stringify(input.knowledgeBaseIds || []), input.documentType || null,
+      cleanText(input.title, 500) || null, encryptedSnapshot, snapshotHash, input.requestFingerprint,
       input.idempotencyKey || null, timestamp, timestamp
     );
     const job = createJob(jobKind(input.kind), { assistantRunId: id }, input.spaceId, null, null, input.userId);
     db.prepare('UPDATE assistant_runs SET ai_job_id=? WHERE id=?').run(job.id, id);
+    recordAssistantAudit({
+      spaceId: input.spaceId,
+      actorUserId: input.userId,
+      action: 'assistant.run.queued',
+      targetType: 'run',
+      targetId: id,
+      detail: {
+        kind: input.kind,
+        documentType: input.documentType || null,
+        sourceCount: input.sourceRefs?.length || 0,
+        knowledgeBaseCount: input.knowledgeBaseIds?.length || 0,
+        inputSha256: snapshotHash
+      }
+    });
     return { run: runResponse(assistantRunRow(id)), job, created: true };
   })();
 }
@@ -345,6 +484,83 @@ export function replayAssistantIdempotency(input: {
   return { run: runResponse(assistantRunRow(existing.id)), job, created: false };
 }
 
+const assistantEmailSnapshotLimitBytes = 144 * 1024;
+
+function truncateUtf8(value: string, maximumBytes: number) {
+  const encoded = Buffer.from(value, 'utf8');
+  if (encoded.length <= maximumBytes) return { value, truncated: false };
+  return {
+    value: encoded.subarray(0, Math.max(0, maximumBytes)).toString('utf8').replace(/\uFFFD+$/gu, ''),
+    truncated: true
+  };
+}
+
+export function assistantEmailExecutionSnapshot(
+  snapshot: AssistantThreadSnapshot,
+  preferences?: { instructions?: string; tone?: string }
+) {
+  const compactMessage = (message: AssistantThreadSnapshot['messages'][number], bodyByteLimit: number, minimal: boolean) => {
+    const boundedBody = truncateUtf8(message.body, bodyByteLimit);
+    const participant = (value: Array<{ name?: string; email?: string }>) =>
+      value.slice(0, 1).map((item) => cleanText(item.email || item.name || '', minimal ? 80 : 160)).filter(Boolean);
+    return {
+      id: cleanText(message.id, 300),
+      subject: cleanText(message.subject, minimal ? 100 : 240),
+      from: participant(message.from),
+      to: participant(message.to),
+      cc: minimal ? [] : participant(message.cc),
+      sentAt: message.sentAt,
+      body: boundedBody.value,
+      bodyTruncated: Boolean(message.bodyTruncated || boundedBody.truncated),
+      attachments: minimal ? [] : message.attachments.slice(0, 2).map((attachment) => ({
+        filename: cleanText(attachment.filename, 120),
+        contentType: cleanText(attachment.contentType, 80),
+        size: attachment.size
+      }))
+    };
+  };
+  const build = (bodyByteLimit: number, minimal: boolean) => {
+    const messages = snapshot.messages.map((message) => compactMessage(message, bodyByteLimit, minimal));
+    return {
+      thread: snapshot.thread,
+      coverage: {
+        providerLoadedMessageCount: snapshot.loadedMessageCount,
+        providerTotalMessageCount: snapshot.totalMessageCount,
+        providerMessagesTruncated: snapshot.messagesTruncated,
+        providerBytesTruncated: snapshot.bytesTruncated,
+        aiSourceMessageCount: snapshot.messages.length,
+        aiIncludedMessageCount: messages.length,
+        aiBodiesTruncated: messages.filter((message) => message.bodyTruncated).length,
+        aiBodyByteLimit: bodyByteLimit,
+        aiSnapshotByteLimit: assistantEmailSnapshotLimitBytes,
+        aiMetadataReduced: minimal
+      },
+      messages,
+      ...(preferences ? {
+        instructions: cleanText(preferences.instructions, 2_000),
+        tone: cleanText(preferences.tone || 'professional', 80)
+      } : {})
+    };
+  };
+  const byteLength = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+  let minimal = false;
+  if (byteLength(build(0, false)) > assistantEmailSnapshotLimitBytes) minimal = true;
+  if (byteLength(build(0, minimal)) > assistantEmailSnapshotLimitBytes) {
+    throw new AssistantError('The assistant email metadata is too large to process safely.', 413, 'ASSISTANT_SNAPSHOT_TOO_LARGE');
+  }
+  let low = 0;
+  let high = snapshot.messages.reduce(
+    (maximum, message) => Math.max(maximum, Buffer.byteLength(message.body, 'utf8')),
+    0
+  );
+  while (low < high) {
+    const candidate = Math.ceil((low + high) / 2);
+    if (byteLength(build(candidate, minimal)) <= assistantEmailSnapshotLimitBytes) low = candidate;
+    else high = candidate - 1;
+  }
+  return build(low, minimal);
+}
+
 export function createAssistantEmailRun(input: {
   kind: 'email_summary' | 'email_draft'; user: SessionUser; spaceId: string; connectionId: string;
   snapshot: AssistantThreadSnapshot; instructions?: string; tone?: string; idempotencyKey?: string;
@@ -356,20 +572,26 @@ export function createAssistantEmailRun(input: {
       kind: input.kind, connectionId: input.connectionId, threadId: input.snapshot.thread.id,
       instructions: input.instructions, tone: input.tone
     }),
-    snapshot: {
-      thread: input.snapshot.thread, messages: input.snapshot.messages,
-      ...(input.kind === 'email_draft' ? {
-        instructions: cleanText(input.instructions, 2_000), tone: cleanText(input.tone || 'professional', 80)
-      } : {})
-    }
+    snapshot: assistantEmailExecutionSnapshot(
+      input.snapshot,
+      input.kind === 'email_draft' ? { instructions: input.instructions, tone: input.tone } : undefined
+    )
   });
 }
+
+export type AssistantEvidenceSnapshot = {
+  sourceRef: string;
+  type: 'survey' | 'social' | 'knowledge' | 'email' | 'calendar';
+  title: string;
+  createdAt: string;
+  content: string;
+};
 
 type IntelligenceSourceSnapshot = {
   sourceRef: string; type: 'survey' | 'social'; title: string; createdAt: string; content: string;
 };
 
-function intelligenceSnapshot(spaceId: string, sourceRefs: string[]): IntelligenceSourceSnapshot[] {
+export function assistantIntelligenceSnapshot(spaceId: string, sourceRefs: string[]): IntelligenceSourceSnapshot[] {
   const requested = [...new Set(sourceRefs)];
   if (!requested.length || requested.length > 12) {
     throw new AssistantError('Select between one and twelve saved intelligence sources.', 400, 'ASSISTANT_SOURCES_REQUIRED');
@@ -380,24 +602,77 @@ function intelligenceSnapshot(spaceId: string, sourceRefs: string[]): Intelligen
     if (error instanceof IntelligenceError) throw new AssistantError(error.message, error.status, 'ASSISTANT_SOURCE_NOT_FOUND');
     throw error;
   }
-  let total = 0;
   return selected.map((source) => {
     const content = redactProviderSecrets(JSON.stringify(source.payload ?? {})).replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 28 * 1024);
-    const remaining = Math.max(0, 128 * 1024 - total); const bounded = content.slice(0, remaining); total += Buffer.byteLength(bounded, 'utf8');
-    return { sourceRef: source.ref, type: source.type, title: cleanText(source.title, 180), createdAt: source.createdAt, content: bounded };
+    return {
+      sourceRef: source.ref,
+      type: source.type,
+      title: cleanText(source.title, 180),
+      createdAt: source.createdAt,
+      content
+    };
   }).filter((source) => source.content.trim());
 }
 
 export function createAssistantKnowledgeRun(input: {
-  user: SessionUser; spaceId: string; question: string; sourceRefs: string[]; idempotencyKey?: string;
+  user: SessionUser;
+  spaceId: string;
+  question: string;
+  sources: AssistantEvidenceSnapshot[];
+  sourceRefs: string[];
+  knowledgeBaseIds: string[];
+  idempotencyKey?: string;
+  requestFingerprint: string;
 }) {
-  const sources = intelligenceSnapshot(input.spaceId, input.sourceRefs);
-  if (!sources.length) throw new AssistantError('The selected intelligence sources contain no usable evidence.', 409, 'ASSISTANT_SOURCE_EMPTY');
+  if (!input.sources.length) {
+    throw new AssistantError('The selected intelligence and knowledge sources contain no usable evidence.',
+      409, 'ASSISTANT_SOURCE_EMPTY');
+  }
   return createRun({
     kind: 'knowledge_answer', spaceId: input.spaceId, userId: input.user.id,
-    sourceRefs: sources.map((source) => source.sourceRef), idempotencyKey: input.idempotencyKey,
-    requestFingerprint: assistantKnowledgeRequestFingerprint(input.question, input.sourceRefs),
-    snapshot: { question: cleanText(input.question, 4_000), sources }
+    sourceRefs: [...new Set(input.sourceRefs)],
+    knowledgeBaseIds: [...new Set(input.knowledgeBaseIds)],
+    idempotencyKey: input.idempotencyKey,
+    requestFingerprint: input.requestFingerprint,
+    snapshot: { question: cleanText(input.question, 4_000), sources: input.sources }
+  });
+}
+
+export function createAssistantWorkProductRun(input: {
+  user: SessionUser;
+  spaceId: string;
+  documentType: AssistantDocumentType;
+  title: string;
+  objective: string;
+  sources: AssistantEvidenceSnapshot[];
+  sourceRefs: string[];
+  knowledgeBaseIds: string[];
+  connectionId?: string | null;
+  subjectRef?: string | null;
+  idempotencyKey?: string;
+  requestFingerprint: string;
+}) {
+  if (input.documentType !== 'scheduling_proposal' && !input.sources.length) {
+    throw new AssistantError('Select at least one authorized source for this work product.', 400, 'ASSISTANT_SOURCES_REQUIRED');
+  }
+  return createRun({
+    kind: 'work_product',
+    spaceId: input.spaceId,
+    userId: input.user.id,
+    connectionId: input.connectionId,
+    subjectRef: input.subjectRef,
+    sourceRefs: [...new Set(input.sourceRefs)],
+    knowledgeBaseIds: [...new Set(input.knowledgeBaseIds)],
+    documentType: input.documentType,
+    title: input.title,
+    idempotencyKey: input.idempotencyKey,
+    requestFingerprint: input.requestFingerprint,
+    snapshot: {
+      documentType: input.documentType,
+      title: cleanText(input.title, 500),
+      objective: cleanText(input.objective, 6_000),
+      sources: input.sources
+    }
   });
 }
 
@@ -427,21 +702,38 @@ export function completeAssistantRun(id: string, spaceId: string, output: unknow
   if (existing.state === 'completed' && existing.output_json) {
     return { output: parseJson(existing.output_json, null), runtime: parseJson(existing.runtime_json, null) };
   }
-  const timestamp = new Date().toISOString(); const draft = existing.kind === 'email_draft' ? output as any : null;
+  const timestamp = new Date().toISOString();
+  const draftCapable = existing.kind === 'email_draft' || existing.kind === 'work_product';
+  const draft = draftCapable ? output as any : null;
+  const generatedTitle = existing.kind === 'work_product' ? draft?.title : draft?.subject;
+  const generatedBody = existing.kind === 'work_product' ? draft?.body : draft?.body;
   const changed = db.prepare(`UPDATE assistant_runs SET state='completed',output_json=?,runtime_json=?,
-      generated_subject=CASE WHEN kind='email_draft' THEN ? ELSE generated_subject END,
-      generated_body=CASE WHEN kind='email_draft' THEN ? ELSE generated_body END,
-      draft_subject=CASE WHEN kind='email_draft' THEN ? ELSE draft_subject END,
-      draft_body=CASE WHEN kind='email_draft' THEN ? ELSE draft_body END,
-      draft_revision=CASE WHEN kind='email_draft' THEN 1 ELSE draft_revision END,
-      draft_updated_at=CASE WHEN kind='email_draft' THEN ? ELSE draft_updated_at END,
+      generated_subject=CASE WHEN kind IN ('email_draft','work_product') THEN ? ELSE generated_subject END,
+      generated_body=CASE WHEN kind IN ('email_draft','work_product') THEN ? ELSE generated_body END,
+      draft_subject=CASE WHEN kind IN ('email_draft','work_product') THEN ? ELSE draft_subject END,
+      draft_body=CASE WHEN kind IN ('email_draft','work_product') THEN ? ELSE draft_body END,
+      draft_revision=CASE WHEN kind IN ('email_draft','work_product') THEN 1 ELSE draft_revision END,
+      draft_updated_at=CASE WHEN kind IN ('email_draft','work_product') THEN ? ELSE draft_updated_at END,
       error=NULL,completed_at=?,updated_at=?
     WHERE id=? AND space_id=? AND state IN ('queued','processing')`).run(
-    JSON.stringify(output), JSON.stringify(runtime), draft?.subject || null, draft?.body || null,
-    draft?.subject || null, draft?.body || null,
+    JSON.stringify(output), JSON.stringify(runtime), generatedTitle || null, generatedBody || null,
+    generatedTitle || null, generatedBody || null,
     timestamp, timestamp, timestamp, id, spaceId
   ).changes;
   if (!changed) throw new AssistantError('Assistant run changed while the result was being saved.', 409, 'ASSISTANT_RUN_CHANGED');
+  recordAssistantAudit({
+    spaceId,
+    actorUserId: String(existing.requested_by),
+    action: 'assistant.run.completed',
+    targetType: 'run',
+    targetId: id,
+    detail: {
+      kind: existing.kind,
+      documentType: existing.document_type || null,
+      outputSha256: crypto.createHash('sha256').update(JSON.stringify(output)).digest('hex'),
+      model: runtime && typeof runtime === 'object' ? (runtime as any).model || null : null
+    }
+  });
   publishAssistantChanged(spaceId);
   return { output, runtime };
 }
@@ -452,25 +744,47 @@ export function markAssistantRunRetrying(id: string, spaceId: string, message: s
 }
 
 export function failAssistantRun(id: string, spaceId: string, message: string) {
+  const existing = assistantRunRow(id, spaceId);
   const timestamp = new Date().toISOString();
   db.prepare(`UPDATE assistant_runs SET state='failed',error=?,completed_at=?,updated_at=?
     WHERE id=? AND space_id=? AND state<>'completed'`).run(cleanText(message, 1_000), timestamp, timestamp, id, spaceId);
+  if (existing) recordAssistantAudit({
+    spaceId,
+    actorUserId: String(existing.requested_by),
+    action: 'assistant.run.failed',
+    targetType: 'run',
+    targetId: id,
+    detail: { kind: existing.kind, errorCode: crypto.createHash('sha256').update(cleanText(message, 1_000)).digest('hex') }
+  });
   publishAssistantChanged(spaceId);
 }
 
 export function updateAssistantDraft(id: string, spaceId: string, userId: string, input: { subject: string; body: string; revision: number }) {
   const current = assistantRunRow(id, spaceId, userId);
   if (!current) throw new AssistantError('Assistant run not found.', 404, 'ASSISTANT_RUN_NOT_FOUND');
-  if (current.kind !== 'email_draft' || current.job_state !== 'completed' || Number(current.draft_revision) < 1) {
+  if (!['email_draft', 'work_product'].includes(String(current.kind)) || current.job_state !== 'completed' || Number(current.draft_revision) < 1) {
     throw new AssistantError('This assistant run does not have an editable draft.', 409, 'ASSISTANT_DRAFT_NOT_READY');
   }
-  const subject = providerHtmlToText(input.subject, 500); const body = providerHtmlToText(input.body, 12_000);
+  const subject = providerHtmlToText(input.subject, 500);
+  const body = providerHtmlToText(input.body, current.kind === 'work_product' ? 24_000 : 12_000);
   if (!subject || !body) throw new AssistantError('Draft subject and body are required.', 400, 'ASSISTANT_DRAFT_INVALID');
   const timestamp = new Date().toISOString();
   const changed = db.prepare(`UPDATE assistant_runs SET draft_subject=?,draft_body=?,draft_revision=draft_revision+1,
       draft_updated_at=?,updated_at=? WHERE id=? AND space_id=? AND requested_by=? AND draft_revision=?`)
     .run(subject, body, timestamp, timestamp, id, spaceId, userId, input.revision).changes;
   if (!changed) throw new AssistantError('This draft changed in another session. Refresh and try again.', 409, 'ASSISTANT_DRAFT_REVISION_CONFLICT');
+  recordAssistantAudit({
+    spaceId,
+    actorUserId: userId,
+    action: 'assistant.draft.edited',
+    targetType: 'run',
+    targetId: id,
+    detail: {
+      revision: input.revision + 1,
+      previousSha256: crypto.createHash('sha256').update(`${current.draft_subject || ''}\n${current.draft_body || ''}`).digest('hex'),
+      updatedSha256: crypto.createHash('sha256').update(`${subject}\n${body}`).digest('hex')
+    }
+  });
   publishAssistantChanged(spaceId);
   return runResponse(assistantRunRow(id, spaceId, userId));
 }

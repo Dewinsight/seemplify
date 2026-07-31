@@ -12,7 +12,8 @@ BEGIN
     'experience_runtime_schema_version',
     'platform_audit_events',
     'platform_subscription_events',
-    'ticket_events'
+    'ticket_events',
+    'assistant_audit_events'
   ] LOOP
     IF to_regclass('public.' || protected_table) IS NULL THEN
       RAISE EXCEPTION 'Required runtime privilege target public.% is missing', protected_table;
@@ -43,6 +44,7 @@ REVOKE INSERT,UPDATE,DELETE ON TABLE public.experience_runtime_schema_version FR
 REVOKE UPDATE,DELETE ON TABLE public.platform_audit_events FROM __APP_ROLE__;
 REVOKE UPDATE,DELETE ON TABLE public.platform_subscription_events FROM __APP_ROLE__;
 REVOKE UPDATE,DELETE ON TABLE public.ticket_events FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.assistant_audit_events FROM __APP_ROLE__;
 
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM __APP_ROLE__;
