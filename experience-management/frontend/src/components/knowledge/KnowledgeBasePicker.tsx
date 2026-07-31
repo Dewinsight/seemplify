@@ -16,10 +16,12 @@ export interface KnowledgeBasePickerProps {
   label?: string;
   description?: string;
   max?: number;
+  allowPrivate?: boolean;
+  excludeIds?: string[];
 }
 
-function canSelect(item: KnowledgeBase) {
-  return item.privacy === 'space'
+function canSelect(item: KnowledgeBase, allowPrivate: boolean) {
+  return (allowPrivate || item.privacy === 'space')
     && item.terraContextEnabled
     && (item.state === 'ready' || (['indexing', 'degraded'].includes(item.state) && item.readyDocumentCount > 0));
 }
@@ -30,7 +32,9 @@ export function KnowledgeBasePicker({
   disabled = false,
   label = 'Knowledge bases',
   description = 'Optionally ground Terra in selected workspace documents.',
-  max = 5
+  max = 5,
+  allowPrivate = false,
+  excludeIds = []
 }: KnowledgeBasePickerProps) {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [open, setOpen] = useState(false);
@@ -56,12 +60,12 @@ export function KnowledgeBasePicker({
   const visible = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
     return term
-      ? knowledgeBases.filter((item) => `${item.name} ${item.description}`.toLocaleLowerCase().includes(term))
-      : knowledgeBases;
-  }, [knowledgeBases, search]);
+      ? knowledgeBases.filter((item) => !excludeIds.includes(item.id) && `${item.name} ${item.description}`.toLocaleLowerCase().includes(term))
+      : knowledgeBases.filter((item) => !excludeIds.includes(item.id));
+  }, [excludeIds, knowledgeBases, search]);
 
   function toggle(item: KnowledgeBase) {
-    if (!canSelect(item)) return;
+    if (!canSelect(item, allowPrivate)) return;
     if (!value.includes(item.id) && selectedProvider && item.embeddingProfile?.provider
       && selectedProvider !== item.embeddingProfile.provider) return;
     if (value.includes(item.id)) onChange(value.filter((id) => id !== item.id));
@@ -102,7 +106,7 @@ export function KnowledgeBasePicker({
             const active = value.includes(item.id);
             const compatible = active || !selectedProvider || !item.embeddingProfile?.provider
               || selectedProvider === item.embeddingProfile.provider;
-            const available = canSelect(item) && compatible;
+            const available = canSelect(item, allowPrivate) && compatible;
             const PrivacyIcon = item.privacy === 'private' ? LockKeyhole : Users;
             return <button
               type="button"

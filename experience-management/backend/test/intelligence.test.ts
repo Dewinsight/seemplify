@@ -451,6 +451,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
 test('combines selected historical survey and social reports with immutable evidence snapshots', async () => {
   const owner = request.agent(app);
   await owner.post('/api/auth/login').send({ email: 'intelligence@seemplify.local', password: 'Intelligence-Test-Password-2026!' }).expect(200);
+  const user = db.prepare('SELECT id,active_space_id FROM users WHERE email=?').get('intelligence@seemplify.local') as { id: string; active_space_id: string };
   const survey = await owner.post('/api/surveys').send({ title: 'Onboarding experience', description: 'First-time setup research', questions: [] }).expect(201);
   const surveySummary = 'Survey participants said onboarding instructions were difficult to follow.';
   const insight = insertInsight(survey.body.id, 'ai_insights', { executiveSummary: surveySummary, healthScore: 48 });
@@ -460,6 +461,66 @@ test('combines selected historical survey and social reports with immutable evid
   const surveyRef = `survey-insight:${insight.id}`; const socialRef = `social-report:${socialReport.id}`;
   assert.ok(sources.body.some((source: any) => source.ref === surveyRef));
   assert.ok(sources.body.some((source: any) => source.ref === socialRef));
+  const knowledgeBase = db.prepare("SELECT id FROM knowledge_bases WHERE name='Support policy' AND deleted_at IS NULL LIMIT 1").get() as { id: string };
+  assert.ok(knowledgeBase);
+  const knowledgeRef = `knowledge-base:${knowledgeBase.id}`;
+  const knowledgeSource = sources.body.find((source: any) => source.ref === knowledgeRef);
+  assert.equal(knowledgeSource?.type, 'knowledge');
+  assert.equal(knowledgeSource?.available, true);
+
+  globalThis.fetch = async () => terraResponse({
+    answer: `The saved survey identifies onboarding instruction difficulty [${surveyRef}].`,
+    citationSourceRefs: [surveyRef]
+  });
+  const chat = await owner.post('/api/intelligence/chat').send({
+    sourceRefs: [surveyRef], question: 'What onboarding problem does the survey identify?'
+  }).expect(200);
+  assert.match(chat.body.answer, /instruction difficulty/u);
+  assert.deepEqual(chat.body.citations.map((citation: any) => citation.sourceRef), [surveyRef]);
+  globalThis.fetch = async () => terraResponse({
+    answer: 'This answer cites evidence that was never selected [fabricated:source].',
+    citationSourceRefs: ['fabricated:source']
+  });
+  const invalidChat = await owner.post('/api/intelligence/chat').send({
+    sourceRefs: [surveyRef], question: 'Invent a finding outside the selected evidence.'
+  }).expect(502);
+  assert.match(invalidChat.body.error, /outside the selected research snapshot/u);
+
+  const reportAndKnowledge = await owner.post('/api/intelligence/reports').set('Idempotency-Key', crypto.randomUUID()).send({
+    title: 'Survey plus policy synthesis', objective: 'Compare observed friction with policy.',
+    sourceRefs: [surveyRef, knowledgeRef]
+  }).expect(202);
+  assert.deepEqual(reportAndKnowledge.body.report.sourceRefs, { survey: [surveyRef], social: [] });
+  assert.deepEqual(reportAndKnowledge.body.report.knowledgeBaseIds, [knowledgeBase.id]);
+  assert.deepEqual((getJob(reportAndKnowledge.body.jobId)?.input.knowledgeBaseRefs as any[]).map((ref) => ref.id), [knowledgeBase.id]);
+
+  const secondBase = await owner.post('/api/knowledge-bases').send({
+    name: 'Product handbook', description: 'Approved product guidance', privacy: 'space', terraContextEnabled: true
+  }).expect(201);
+  const secondBaseId = secondBase.body.knowledgeBase.id as string;
+  const secondDocumentId = crypto.randomUUID();
+  const knowledgeTimestamp = new Date().toISOString();
+  db.prepare(`UPDATE knowledge_bases SET status='ready',embedding_provider=?,embedding_model=?,embedding_revision=?,
+    embedding_dtype=?,embedding_dimension=?,vector_index_version=?,current_version=1,last_allocated_version=1,
+    last_indexed_at=?,updated_at=? WHERE id=?`).run(gteProfile.provider, gteProfile.model, gteProfile.revision,
+      gteProfile.dtype, gteProfile.dimensions, gteProfile.vectorIndexVersion, knowledgeTimestamp, knowledgeTimestamp, secondBaseId);
+  db.prepare('DELETE FROM knowledge_base_embedding_profiles WHERE knowledge_base_id=?').run(secondBaseId);
+  db.prepare(`INSERT INTO knowledge_base_embedding_profiles
+    (space_id,knowledge_base_id,vector_index_version,mode,state,current_version,created_at,updated_at)
+    VALUES (?,?,?,'primary','ready',1,?,?)`).run(user.active_space_id, secondBaseId,
+      gteProfile.vectorIndexVersion, knowledgeTimestamp, knowledgeTimestamp);
+  db.prepare(`INSERT INTO knowledge_documents
+    (id,space_id,knowledge_base_id,created_by,stored_filename,original_name,mime_type,size_bytes,sha256,state,index_version,
+      page_count,chunk_count,language,created_at,updated_at,indexed_at)
+    VALUES (?,?,?,?,?,?,?,?,?,'ready',1,1,1,'en',?,?,?)`).run(secondDocumentId, user.active_space_id,
+      secondBaseId, user.id, `${secondDocumentId}.md`, 'product-handbook.md', 'text/markdown', 128, 'b'.repeat(64),
+      knowledgeTimestamp, knowledgeTimestamp, knowledgeTimestamp);
+  const knowledgeOnly = await owner.post('/api/intelligence/reports').set('Idempotency-Key', crypto.randomUUID()).send({
+    title: 'Policy and product synthesis', objective: 'Compare two approved knowledge collections.',
+    sourceRefs: [knowledgeRef, `knowledge-base:${secondBaseId}`]
+  }).expect(202);
+  assert.deepEqual(knowledgeOnly.body.report.sourceRefs, { survey: [], social: [] });
+  assert.deepEqual(new Set(knowledgeOnly.body.report.knowledgeBaseIds), new Set([knowledgeBase.id, secondBaseId]));
 
   const combinedKey = crypto.randomUUID();
   const queued = await owner.post('/api/intelligence/reports').set('Idempotency-Key', combinedKey).send({

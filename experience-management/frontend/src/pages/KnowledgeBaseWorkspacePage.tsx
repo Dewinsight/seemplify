@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, BookOpenText, Check, Database, File, FileSearch, GitBranch, Loader2, LockKeyhole,
-  Pencil, RefreshCw, RotateCcw, Search, Trash2, Upload, Users, X
+  MessageSquare, Pencil, RefreshCw, RotateCcw, Search, Send, Trash2, Upload, Users, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -11,8 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { KnowledgeBasePicker } from '@/components/knowledge/KnowledgeBasePicker';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
 import { api } from '@/lib/api';
+import { askResearchSources, type ResearchConversationMessage } from '@/lib/researchChat';
 import {
   deleteKnowledgeBase,
   deleteKnowledgeDocument,
@@ -34,10 +36,12 @@ import type {
   KnowledgeGraph,
   KnowledgeGraphNode,
   KnowledgeIndexingJob,
-  KnowledgeSearchResult
+  KnowledgeSearchResult,
+  ResearchChatResult
 } from '@/types';
 
-type WorkspaceTab = 'documents' | 'search' | 'graph' | 'history' | 'runtime';
+type WorkspaceTab = 'documents' | 'chat' | 'search' | 'graph' | 'history' | 'runtime';
+type KnowledgeChatLine = ResearchConversationMessage & { result?: ResearchChatResult };
 type RuntimeService = { healthy?: boolean; ready?: boolean; required?: boolean; state?: string; statusCode?: number; latencyMs?: number };
 type KnowledgeRuntime = {
   reachable?: boolean; ready?: boolean; healthy?: boolean; checkedAt?: string; uptimeSeconds?: number; tenantDatabases?: number;
@@ -93,6 +97,10 @@ export function KnowledgeBaseWorkspacePage() {
   const [settings, setSettings] = useState({ name: '', description: '', privacy: 'space' as KnowledgeBasePrivacy, terraContextEnabled: false });
   const [query, setQuery] = useState('');
   const [searchResult, setSearchResult] = useState<KnowledgeSearchResult | null>(null);
+  const [chatKnowledgeBaseIds, setChatKnowledgeBaseIds] = useState<string[]>([]);
+  const [chatQuestion, setChatQuestion] = useState('');
+  const [chatMessages, setChatMessages] = useState<KnowledgeChatLine[]>([]);
+  const [chatWorking, setChatWorking] = useState(false);
   const [runtime, setRuntime] = useState<RuntimePayload | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [runtimeError, setRuntimeError] = useState('');
@@ -209,6 +217,22 @@ export function KnowledgeBaseWorkspacePage() {
     finally { setWorking(''); }
   }
 
+  async function askKnowledge() {
+    const value = chatQuestion.trim();
+    if (value.length < 3 || chatWorking || !knowledgeBase?.terraContextEnabled) return;
+    const sourceRefs = [id, ...chatKnowledgeBaseIds.filter((baseId) => baseId !== id)]
+      .map((baseId) => `knowledge-base:${baseId}`);
+    const history = chatMessages.map(({ role, content }) => ({ role, content }));
+    setChatQuestion('');
+    setChatMessages((current) => [...current, { role: 'user', content: value }]);
+    setChatWorking(true);
+    try {
+      const result = await askResearchSources({ sourceRefs, question: value, history });
+      setChatMessages((current) => [...current, { role: 'assistant', content: result.answer, result }]);
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Terra could not answer from this knowledge.'); }
+    finally { setChatWorking(false); }
+  }
+
   if (loading) return <div className="grid min-h-[55vh] place-items-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   if (!knowledgeBase) return <div className="mx-auto max-w-xl border bg-card p-6"><h1 className="text-lg font-semibold">Knowledge base unavailable</h1><p className="mt-2 text-sm text-muted-foreground">{error || 'This knowledge base no longer exists or is not available in the current space.'}</p><Button className="mt-5" variant="outline" asChild><Link to="/knowledge-bases"><ArrowLeft />Back to knowledge bases</Link></Button></div>;
 
@@ -229,8 +253,9 @@ export function KnowledgeBaseWorkspacePage() {
     </div>
 
     <Tabs value={tab} onValueChange={(value) => setTab(value as WorkspaceTab)}>
-      <TabsList className="overflow-x-auto"><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="search">Search & test</TabsTrigger><TabsTrigger value="graph">Graph & provenance</TabsTrigger><TabsTrigger value="history">Indexing history</TabsTrigger><TabsTrigger value="runtime">Runtime</TabsTrigger></TabsList>
+      <TabsList className="overflow-x-auto"><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="chat">Chat</TabsTrigger><TabsTrigger value="search">Search & test</TabsTrigger><TabsTrigger value="graph">Graph & provenance</TabsTrigger><TabsTrigger value="history">Indexing history</TabsTrigger><TabsTrigger value="runtime">Runtime</TabsTrigger></TabsList>
       <TabsContent value="documents"><DocumentsWorkspace files={files} setFiles={setFiles} addFiles={addFiles} dragging={dragging} setDragging={setDragging} fileInput={fileInput} upload={upload} working={working} documents={documents} jobs={jobs} removeDocument={removeDocument} retryDocument={retryDocument} /></TabsContent>
+      <TabsContent value="chat"><KnowledgeChatWorkspace knowledgeBase={knowledgeBase} additionalIds={chatKnowledgeBaseIds} setAdditionalIds={setChatKnowledgeBaseIds} question={chatQuestion} setQuestion={setChatQuestion} messages={chatMessages} working={chatWorking} ready={documents.some((document) => document.state === 'ready')} ask={askKnowledge} openSettings={() => setSettingsOpen(true)} /></TabsContent>
       <TabsContent value="search"><SearchWorkspace query={query} setQuery={setQuery} working={working} search={search} result={searchResult} ready={documents.some((document) => document.state === 'ready')} terraAnswerEnabled={knowledgeBase.terraContextEnabled} /></TabsContent>
       <TabsContent value="graph"><GraphWorkspace graph={graph} error={graphError} loading={!graph && !graphError} refresh={loadGraph} /></TabsContent>
       <TabsContent value="history"><JobHistory jobs={jobs} /></TabsContent>
@@ -333,6 +358,38 @@ function DocumentsWorkspace({ files, setFiles, addFiles, dragging, setDragging, 
 
 function JobRow({ job }: { job: KnowledgeIndexingJob }) {
   return <div className="px-4 py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-medium">{job.documentName || 'Document indexing'}</div><div className="mt-1 text-xs capitalize text-muted-foreground">{stageLabel(job.stage)} · attempt {job.attempt}</div></div><span className="shrink-0 text-xs font-medium tabular-nums">{job.progress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-muted"><div className="h-full bg-primary transition-[width] duration-200" style={{ width: `${Math.max(2, job.progress)}%` }} /></div>{job.state === 'waiting_for_terra' && <p className="mt-2 text-xs leading-5 text-amber-700">Waiting for Terra. The job remains queued.</p>}{job.error && <p className="mt-2 text-xs leading-5 text-destructive">{job.error}</p>}</div>;
+}
+
+function KnowledgeChatWorkspace({ knowledgeBase, additionalIds, setAdditionalIds, question, setQuestion, messages, working, ready, ask, openSettings }: {
+  knowledgeBase: KnowledgeBase;
+  additionalIds: string[];
+  setAdditionalIds: (ids: string[]) => void;
+  question: string;
+  setQuestion: (value: string) => void;
+  messages: KnowledgeChatLine[];
+  working: boolean;
+  ready: boolean;
+  ask: () => Promise<void>;
+  openSettings: () => void;
+}) {
+  const enabled = ready && knowledgeBase.terraContextEnabled;
+  return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+    <section className="border bg-card">
+      <header className="border-b px-4 py-3"><div className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /><h2 className="text-sm font-semibold">Chat with {knowledgeBase.name}</h2></div><p className="mt-1 text-xs leading-5 text-muted-foreground">Ask across every indexed document in this knowledge base. Add other knowledge bases when the question spans more than one collection.</p></header>
+      {!knowledgeBase.terraContextEnabled && <div className="flex flex-col justify-between gap-3 border-b bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center"><span>Terra context is off. Enable it before document text can be sent to the local AI runtime.</span><Button size="sm" variant="outline" onClick={openSettings}>Open settings</Button></div>}
+      {!ready && <div className="border-b bg-amber-50 px-4 py-3 text-sm text-amber-950">At least one document must finish indexing before chat is available.</div>}
+      <div className="min-h-72">
+        {!messages.length ? <div className="px-5 py-14 text-center"><BookOpenText className="mx-auto h-6 w-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">Start with a question about the documents</p><p className="mx-auto mt-1 max-w-lg text-sm leading-6 text-muted-foreground">Terra retrieves relevant GTE-indexed passages, answers from them, and cites the exact document evidence.</p></div> : <div className="divide-y">{messages.map((message, index) => <article className="px-5 py-4" key={`${message.role}-${index}`}><div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{message.role === 'user' ? 'You' : 'Terra'}</div><p className="mt-2 whitespace-pre-wrap text-sm leading-7">{message.content}</p>{message.result?.citations.length ? <details className="mt-3"><summary className="cursor-pointer text-xs font-medium">Cited passages ({message.result.citations.length})</summary><div className="mt-2 divide-y border">{message.result.citations.map((citation) => <div className="px-3 py-2" key={citation.sourceRef}><div className="text-xs font-semibold">[{citation.sourceRef}] {citation.documentName || citation.title}</div><div className="mt-1 text-[11px] text-muted-foreground">{citation.title}{citation.page ? ` · page ${citation.page}` : ''}{citation.section ? ` · ${citation.section}` : ''}</div><blockquote className="mt-2 border-l-2 pl-3 text-xs leading-5 text-muted-foreground">{citation.excerpt}</blockquote></div>)}</div></details> : null}</article>)}</div>}
+        {working && <div className="flex items-center gap-2 border-t px-5 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Retrieving passages and checking the answer…</div>}
+      </div>
+      <footer className="border-t p-4"><Label htmlFor="knowledge-chat-question">Question</Label><div className="mt-2 flex flex-col gap-2 sm:flex-row"><Textarea id="knowledge-chat-question" className="min-h-20 flex-1" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder="What does this knowledge say about onboarding ownership?" /><Button className="sm:self-end" disabled={!enabled || question.trim().length < 3 || working} onClick={() => void ask()}>{working ? <Loader2 className="animate-spin" /> : <Send />}Ask Terra</Button></div></footer>
+    </section>
+    <aside className="space-y-4">
+      <section className="border bg-card p-4"><div className="text-sm font-semibold">Primary knowledge base</div><div className="mt-3 border px-3 py-2"><div className="text-sm font-medium">{knowledgeBase.name}</div><div className="mt-1 text-xs text-muted-foreground">{knowledgeBase.readyDocumentCount} ready documents · {knowledgeBase.chunkCount} chunks</div></div></section>
+      <section className="border bg-card p-4"><KnowledgeBasePicker value={additionalIds} onChange={(ids) => setAdditionalIds(ids.filter((id) => id !== knowledgeBase.id))} max={4} allowPrivate excludeIds={[knowledgeBase.id]} disabled={working} label="Add knowledge bases" description="Optional. Ask one question across up to five compatible knowledge bases." /></section>
+      <section className="border bg-card px-4 py-3 text-xs leading-5 text-muted-foreground"><div className="font-semibold text-foreground">How grounding works</div><p className="mt-1">GTE runs on CPU to retrieve passages. BGE reranks them. Terra receives only the selected evidence and must return inline source references.</p></section>
+    </aside>
+  </div>;
 }
 
 function SearchWorkspace({ query, setQuery, working, search, result, ready, terraAnswerEnabled }: { query: string; setQuery: (value: string) => void; working: string; search: () => Promise<void>; result: KnowledgeSearchResult | null; ready: boolean; terraAnswerEnabled: boolean }) {

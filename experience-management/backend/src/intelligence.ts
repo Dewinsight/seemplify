@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import { socialListeningResultFor } from './aiSchemas.js';
 import type { SessionUser } from './auth.js';
 import {
-  auditKnowledge, createKnowledgeMarkdownDocument, getKnowledgeBase, getKnowledgeDocument, getKnowledgeJob,
+  auditKnowledge, createKnowledgeMarkdownDocument, getKnowledgeBase, getKnowledgeContext, getKnowledgeDocument, getKnowledgeJob,
+  listKnowledgeBases,
   type KnowledgeBaseRef, type KnowledgeDocumentRecord, type KnowledgeJobRecord
 } from './knowledgeRepository.js';
 import { createJob, db, getJob, getJobProviderResult, listSocialMentionsByIdsForSpace } from './database.js';
@@ -652,8 +653,29 @@ export function publishSocialIntelligenceReport(user: SessionUser, spaceId: stri
     deduplicated: created.deduplicated || !publicationInserted };
 }
 
-export type IntelligenceSource = { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string; payload?: unknown };
-function availableSources(spaceId: string, withPayload = false): IntelligenceSource[] {
+export type HistoricalIntelligenceSource = {
+  ref: string;
+  type: 'survey' | 'social';
+  title: string;
+  kind: string;
+  createdAt: string;
+  preview: string;
+  payload?: unknown;
+};
+export type IntelligenceSource = HistoricalIntelligenceSource | {
+  ref: string;
+  type: 'knowledge';
+  title: string;
+  kind: 'knowledge_base';
+  createdAt: string;
+  preview: string;
+  available?: boolean;
+  disabledReason?: string;
+  knowledgeBaseId?: string;
+  documentCount?: number;
+  terraContextEnabled?: boolean;
+};
+function availableSources(spaceId: string, withPayload = false): HistoricalIntelligenceSource[] {
   const surveys = (db.prepare(`SELECT i.id,i.kind,i.payload_json,i.created_at,s.title survey_title FROM insights i JOIN surveys s ON s.id=i.survey_id
     WHERE s.space_id=? AND i.kind IN ('ai_insights','executive_report') ORDER BY i.created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
       const payload = parseJson(row.payload_json, {}); return { ref: `survey-insight:${row.id}`, type: 'survey' as const,
@@ -670,14 +692,43 @@ function availableSources(spaceId: string, withPayload = false): IntelligenceSou
   });
   return [...surveys, ...social].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
-export function listIntelligenceSources(_user: SessionUser, spaceId: string) { return availableSources(spaceId, false); }
+export function listIntelligenceSources(user: SessionUser, spaceId: string) {
+  const reports = availableSources(spaceId, false);
+  const knowledge = listKnowledgeBases(spaceId, false, user.id).map((base): IntelligenceSource => {
+    const ready = ['ready', 'indexing', 'degraded'].includes(base.status)
+      && base.currentVersion > 0 && base.readyDocumentCount > 0;
+    const shareable = base.privacy === 'space';
+    const available = ready && shareable && base.allowTerraContext;
+    const disabledReason = !ready
+      ? 'Index at least one document before using this knowledge base.'
+      : !shareable
+        ? 'Private knowledge can be chatted with inside its workspace, but cannot be attached to a shared analysis.'
+        : !base.allowTerraContext
+          ? 'Enable Terra context in knowledge-base settings to use this source.'
+          : undefined;
+    return {
+      ref: `knowledge-base:${base.id}`,
+      type: 'knowledge',
+      kind: 'knowledge_base',
+      title: base.name,
+      createdAt: base.updatedAt,
+      preview: base.description || `${base.readyDocumentCount} ready document${base.readyDocumentCount === 1 ? '' : 's'} with ${base.chunkCount} indexed chunks.`,
+      available,
+      ...(disabledReason ? { disabledReason } : {}),
+      knowledgeBaseId: base.id,
+      documentCount: base.documentCount,
+      terraContextEnabled: base.allowTerraContext
+    };
+  });
+  return [...reports, ...knowledge].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
 
 export function resolveIntelligenceSourceSnapshots(spaceId: string, sourceRefs: string[]) {
   const requested = [...new Set(sourceRefs)];
   const byRef = new Map(availableSources(spaceId, true).map((source) => [source.ref, source]));
   const selected = requested.map((ref) => byRef.get(ref));
   if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
-  return selected as IntelligenceSource[];
+  return selected as HistoricalIntelligenceSource[];
 }
 
 function rowIntelligenceReport(row: any) {
@@ -701,7 +752,13 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
   title: string; objective?: string; sourceRefs: string[]; knowledgeBaseRefs?: KnowledgeBaseRef[]; idempotencyKey?: string;
 }) {
   const requested = [...new Set(input.sourceRefs)].slice(0, 12).sort();
-  if (requested.length < 2) throw new IntelligenceError('Select at least two historical reports to synthesize.');
+  const knowledgeSourceCount = new Set((input.knowledgeBaseRefs || []).map((ref) => ref.id)).size;
+  if (requested.length + knowledgeSourceCount < 2) {
+    throw new IntelligenceError('Select at least two evidence sources to synthesize.');
+  }
+  if (requested.length + knowledgeSourceCount > 12) {
+    throw new IntelligenceError('Choose no more than twelve evidence sources.');
+  }
   const selected = resolveIntelligenceSourceSnapshots(spaceId, requested);
   const snapshot = selected.map((source) => ({ ref: source!.ref, type: source!.type, title: source!.title, kind: source!.kind,
     createdAt: source!.createdAt, payload: source!.payload }));
@@ -755,7 +812,14 @@ export function intelligenceExecutionInput(id: string, spaceId?: string) {
     ? db.prepare('SELECT * FROM intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
     : db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
   if (!row) throw new IntelligenceError('Intelligence report was deleted.', 404);
-  return { id: row.id, title: row.title, objective: row.objective, sources: parseJson<Array<{ ref: string; type: string; title: string; payload: unknown }>>(row.source_snapshot_json, []) };
+  return {
+    id: row.id,
+    title: row.title,
+    objective: row.objective,
+    sources: parseJson<Array<{ ref: string; type: string; title: string; payload: unknown }>>(row.source_snapshot_json, []),
+    knowledgeBaseIds: parseJson<Array<{ id?: string }>>(row.knowledge_refs_json, [])
+      .map((ref) => String(ref?.id || '')).filter(Boolean)
+  };
 }
 export function completeIntelligenceReport(id: string, output: any, runtime: unknown, spaceId?: string) {
   const current = spaceId
@@ -763,7 +827,16 @@ export function completeIntelligenceReport(id: string, output: any, runtime: unk
     : db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
   if (!current) throw new IntelligenceError('Intelligence report was deleted.', 404);
   if (current?.state === 'completed' && current.result_json) return rowIntelligenceReport(current);
-  const input = intelligenceExecutionInput(id, spaceId); const sources = new Map(input.sources.map((source) => [source.ref, { body: normalizedEvidence(source.payload), type: source.type }]));
+  const input = intelligenceExecutionInput(id, spaceId);
+  const sources = new Map(input.sources.map((source) => [source.ref, {
+    body: normalizedEvidence(source.payload), type: source.type, groupRef: source.ref
+  }]));
+  const knowledgeContext = current.ai_job_id ? getKnowledgeContext(String(current.ai_job_id), String(current.space_id)) : null;
+  for (const citation of knowledgeContext?.citations || []) {
+    sources.set(citation.sourceRef, {
+      body: normalizedEvidence(citation.excerpt), type: 'knowledge', groupRef: `knowledge-base:${citation.knowledgeBaseId}`
+    });
+  }
   const findings = [...(output.themes || []), ...(output.convergence || []), ...(output.divergence || []), ...(output.risks || []),
     ...(output.opportunities || []), ...(output.recommendations || [])];
   for (const finding of findings) for (const evidence of finding.evidence || []) {
@@ -774,13 +847,17 @@ export function completeIntelligenceReport(id: string, output: any, runtime: unk
       throw new IntelligenceError(`Terra returned evidence that was not present in ${String(evidence.sourceRef)}.`);
     }
   }
-  const selectedTypes = new Set(input.sources.map((source) => source.type));
+  const selectedTypes = new Set([
+    ...input.sources.map((source) => source.type),
+    ...(input.knowledgeBaseIds.length ? ['knowledge'] : [])
+  ]);
   for (const finding of [...(output.convergence || []), ...(output.divergence || [])]) {
     const references = new Set<string>((finding.evidence || []).map((evidence: any) => String(evidence.sourceRef)));
-    if (references.size < 2) throw new IntelligenceError('Convergence and divergence findings must cite at least two selected reports.');
+    const sourceGroups = new Set([...references].map((reference) => sources.get(reference)?.groupRef).filter(Boolean));
+    if (sourceGroups.size < 2) throw new IntelligenceError('Convergence and divergence findings must cite at least two selected evidence sources.');
     if (selectedTypes.size > 1) {
       const evidenceTypes = new Set([...references].map((reference) => sources.get(reference)?.type).filter(Boolean));
-      if (evidenceTypes.size < 2) throw new IntelligenceError('Cross-source convergence and divergence must cite both survey and social evidence.');
+      if (evidenceTypes.size < 2) throw new IntelligenceError('Cross-source convergence and divergence must cite more than one selected source type.');
     }
   }
   const timestamp = now();

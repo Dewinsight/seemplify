@@ -48,6 +48,7 @@ export function normalizeKnowledgeBase(value: unknown): KnowledgeBase {
     relationshipCount: count(item.relationshipCount),
     storageBytes: count(item.storageBytes),
     createdBy: item.createdBy ? String(item.createdBy) : null,
+    embeddingProfile: item.embeddingProfile && typeof item.embeddingProfile === 'object' ? item.embeddingProfile : undefined,
     createdAt: String(item.createdAt || ''),
     updatedAt: String(item.updatedAt || ''),
     lastIndexedAt: item.lastIndexedAt ? String(item.lastIndexedAt) : null

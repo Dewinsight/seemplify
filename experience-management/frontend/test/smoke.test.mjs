@@ -109,6 +109,7 @@ test('ships the native agreement preparation and signing workspaces', () => {
 test('exposes multi-account X listening, human-reviewed replies, cross-source intelligence, and journey mapping', () => {
   const social = fs.readFileSync(path.join(source, 'pages', 'SocialListeningPage.tsx'), 'utf8');
   const intelligence = fs.readFileSync(path.join(source, 'pages', 'IntelligencePage.tsx'), 'utf8');
+  const researchChat = fs.readFileSync(path.join(source, 'lib', 'researchChat.ts'), 'utf8');
   const journeys = fs.readFileSync(path.join(source, 'pages', 'JourneysPage.tsx'), 'utf8');
   const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
   for (const endpoint of ['/api/integrations/x', '/api/integrations/x/connect', '/api/integrations/x/mentions', '/api/social/reports', '/api/social/reply-drafts']) assert.match(social, new RegExp(endpoint.replaceAll('/', '\\/')));
@@ -128,7 +129,8 @@ test('exposes multi-account X listening, human-reviewed replies, cross-source in
   assert.match(social, /selectedConnectionRef/);
   assert.doesNotMatch(social, /Import pasted text|Choose CSV, JSON or TXT/);
   for (const endpoint of ['/api/intelligence/sources', '/api/intelligence/reports']) assert.match(intelligence, new RegExp(endpoint.replaceAll('/', '\\/')));
-  for (const feature of ['Build an analysis', 'Choose 2', 'Source snapshots are captured', 'Survey reports', 'Social reports', 'Run analysis', 'Executive summary', 'Where sources converge', 'Where sources diverge', 'Limitations']) assert.match(intelligence, new RegExp(feature));
+  assert.match(researchChat, /\/api\/intelligence\/chat/);
+  for (const feature of ['Build an analysis', 'Choose 2', 'Source snapshots are captured', 'Survey intelligence', 'Social intelligence', 'Knowledge bases', 'Ask selected sources', 'Run analysis', 'Executive summary', 'Where sources converge', 'Where sources diverge', 'Limitations', 'Ask this analysis']) assert.match(intelligence, new RegExp(feature));
   assert.match(intelligence, /selectedRefs\.length < 2/);
   assert.match(intelligence, /current\.length < 12/);
   assert.match(shell, /label: 'Intelligence'/);
@@ -236,7 +238,7 @@ test('ships explicit knowledge grounding with durable indexing, retrieval citati
   assert.match(app, /path="\/knowledge-bases\/:id"/);
   assert.match(shell, /label: 'Knowledge bases'/);
   for (const feature of ['New knowledge base', 'Allow as Terra context', 'Everyone in this space', 'Private to me']) assert.match(list, new RegExp(feature));
-  for (const feature of ['Drop files here', 'Upload and index', 'Search & test', 'Citations', 'Graph & provenance', 'Relationship provenance', 'Indexing history', 'Durable attempts remain visible']) assert.match(workspace, new RegExp(feature));
+  for (const feature of ['Drop files here', 'Upload and index', 'Chat', 'Chat with', 'Add knowledge bases', 'Search & test', 'Citations', 'Graph & provenance', 'Relationship provenance', 'Indexing history', 'Durable attempts remain visible']) assert.match(workspace, new RegExp(feature));
   for (const endpoint of ['/api/knowledge-bases', '/documents', '/indexing-jobs', '/search', '/graph']) assert.match(knowledgeApi, new RegExp(endpoint.replaceAll('/', '\\/')));
   assert.match(api, /export function multipart/);
   assert.match(knowledgeApi, /multipart\('POST', body\)/);
@@ -252,11 +254,16 @@ test('ships explicit knowledge grounding with durable indexing, retrieval citati
   assert.match(list, /relevant excerpts may be sent to the Terra local-cloud runtime/);
   assert.match(workspace, /\.png,\.jpg,\.jpeg,\.tif,\.tiff/);
   assert.doesNotMatch(workspace, /\.doc,\.docx|\.ppt,\.pptx|\.xls,\.xlsx|\.rtf|\.json/);
-  for (const consumer of [createSurvey, intelligence, journeys]) {
+  for (const consumer of [createSurvey, journeys]) {
     assert.match(consumer, /useState<string\[\]>\(\[\]\)/);
     assert.match(consumer, /knowledgeBaseIds/);
     assert.match(consumer, /KnowledgeBasePicker/);
   }
+  assert.match(intelligence, /type: 'knowledge'/);
+  assert.match(intelligence, /Knowledge bases count as sources/);
+  assert.match(intelligence, /knowledge-base:\$\{id\}/);
+  assert.match(intelligence, /Enable and select/);
+  assert.doesNotMatch(intelligence, /knowledgeBaseIds.*useState/);
   assert.match(surveyAi, /useState<string\[\] \| null>\(null\)/);
   assert.match(surveyAi, /\/knowledge-bases`,\s*json\('PUT', \{ knowledgeBaseIds: nextIds \}\)/);
   assert.match(surveyAi, /knowledgeBaseIds === null \? body : \{ \.\.\.body, knowledgeBaseIds \}/);

@@ -125,8 +125,18 @@ export interface SocialIntelligencePublication {
   sourceSnapshotSha256?: string; artifactSha256?: string; url?: string | null; statusUrl?: string | null;
 }
 export interface SocialIntelligenceReport { id: string; connectionId: string | null; title: string; mentionIds: string[]; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string; observationWindow?: SocialIntelligenceObservationWindow | null; sourceSnapshotSha256?: string | null; publications?: SocialIntelligencePublication[] }
-export interface IntelligenceSource { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string }
+export interface IntelligenceSource {
+  ref: string; type: 'survey' | 'social' | 'knowledge'; title: string; kind: string; createdAt: string; preview: string;
+  available?: boolean; disabledReason?: string; knowledgeBaseId?: string; documentCount?: number; terraContextEnabled?: boolean;
+}
 export interface IntelligenceReport { id: string; title: string; objective: string; sourceRefs: { survey: string[]; social: string[] }; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export interface ResearchChatCitation {
+  sourceRef: string; title: string; kind: 'survey' | 'social' | 'knowledge' | 'intelligence'; excerpt: string;
+  knowledgeBaseId?: string; documentId?: string; documentName?: string; page?: number | null; section?: string | null;
+}
+export interface ResearchChatResult {
+  requestId: string; question: string; answer: string; citations: ResearchChatCitation[]; runtime?: Record<string, unknown> | null;
+}
 export interface AssistantConnection {
   id: string; email: string; provider: 'google' | 'microsoft' | string; status: 'connected' | 'degraded' | 'disconnected' | string;
   displayName?: string | null; scopes?: string[]; lastHealthAt?: string | null; lastError?: string | null; createdAt?: string;

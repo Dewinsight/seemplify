@@ -29,7 +29,7 @@ import {
 } from './campaigns.js';
 import { authenticateBrevoWebhook, parseBrevoWebhookPayload, processBrevoWebhookEvents } from './brevoWebhook.js';
 import { parseSocialMentionImport } from './socialImport.js';
-import { getTerraStatus } from './terraClient.js';
+import { getTerraStatus, TerraError } from './terraClient.js';
 import {
   createIntelligenceReport, createSocialIntelligenceReport, createSocialReplyDraft, getIntelligenceReport,
   IntelligenceError, listIntelligenceReports, listIntelligenceSources, listSocialIntelligenceReports,
@@ -58,6 +58,7 @@ import {
   updateSpaceMember
 } from './spaces.js';
 import { tutorialProgressRouter } from './tutorialProgress.js';
+import { answerResearchQuestion } from './researchChat.js';
 import {
   createRecoveryTicket, getRecoveryTicket, listRecoveryTickets, recordRecoveryTicketEvent, RecoveryTicketError, updateRecoveryTicket
 } from './recovery.js';
@@ -180,6 +181,7 @@ function intelligenceError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return sendError(response, error);
   if (error instanceof IntelligenceError) return response.status(error.status).json({ error: error.message });
   if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof TerraError) return response.status(error.status).json({ error: error.message, code: error.code });
   return response.status(500).json({ error: error instanceof Error ? error.message : 'The intelligence request could not be completed.' });
 }
 
@@ -930,15 +932,48 @@ app.get('/api/intelligence/reports/:id', noStore, (request, response) => {
 app.post('/api/intelligence/reports', (request, response) => {
   try {
     const input = z.object({ title: z.string().trim().min(2).max(180), objective: z.string().trim().max(1000).optional(),
-      sourceRefs: z.array(z.string().trim().min(3).max(200)).min(2).max(12),
+      sourceRefs: z.array(z.string().trim().min(3).max(200)).min(1).max(12),
       knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).strict().parse(request.body || {});
     const user = authenticatedUser(request); const space = authenticatedSpace(request);
-    const knowledgeBaseRefs = resolveKnowledgeBaseRefs(space.id, input.knowledgeBaseIds, {
+    const knowledgeSourceIds = input.sourceRefs.flatMap((ref) => {
+      const match = /^knowledge-base:([0-9a-f-]{36})$/iu.exec(ref);
+      return match ? [match[1]] : [];
+    });
+    const historicalSourceRefs = input.sourceRefs.filter((ref) => !ref.startsWith('knowledge-base:'));
+    const knowledgeBaseIds = [...new Set([...(input.knowledgeBaseIds || []), ...knowledgeSourceIds])];
+    if (historicalSourceRefs.length + knowledgeBaseIds.length < 2) {
+      throw new IntelligenceError('Select at least two evidence sources to synthesize.');
+    }
+    const knowledgeBaseRefs = resolveKnowledgeBaseRefs(space.id, knowledgeBaseIds, {
       requireTerra: true, viewerUserId: user.id, allowPrivate: false
     });
-    const created = createIntelligenceReport(user, space.id, { ...input, knowledgeBaseRefs, idempotencyKey: idempotencyKey(request) });
+    const created = createIntelligenceReport(user, space.id, {
+      title: input.title,
+      objective: input.objective,
+      sourceRefs: historicalSourceRefs,
+      knowledgeBaseRefs,
+      idempotencyKey: idempotencyKey(request)
+    });
     publishEvent('ai-job', created.job, space.id); void aiJobRunner.pump();
     return response.status(202).json({ report: created.report, jobId: created.job.id, state: created.job.state, deduplicated: !created.created, statusUrl: `/api/ai/jobs/${created.job.id}` });
+  } catch (error) { return intelligenceError(response, error); }
+});
+
+app.post('/api/intelligence/chat', async (request, response) => {
+  try {
+    const input = z.object({
+      sourceRefs: z.array(z.string().trim().min(3).max(200)).max(12).default([]),
+      reportId: z.string().uuid().optional(),
+      question: z.string().trim().min(3).max(4000),
+      history: z.array(z.object({
+        role: z.enum(['user', 'assistant']),
+        content: z.string().trim().min(1).max(12_000)
+      }).strict()).max(12).optional()
+    }).strict().refine((value) => value.sourceRefs.length > 0 || Boolean(value.reportId), {
+      message: 'Select at least one evidence source or completed analysis.'
+    }).parse(request.body || {});
+    const user = authenticatedUser(request); const space = authenticatedSpace(request);
+    return response.json(await answerResearchQuestion(user, space.id, input));
   } catch (error) { return intelligenceError(response, error); }
 });
 
