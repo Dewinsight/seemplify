@@ -22,6 +22,13 @@ const projectDir = path.resolve(scriptDir, '..');
 const backendDist = path.join(projectDir, 'backend', 'dist');
 const TEMP_TABLE = 'experience_runtime_preflight';
 
+// The PostgreSQL adapter creates an eval worker whose CommonJS dependencies
+// resolve from the process working directory. Deployment managers and the
+// Control Center may invoke this verifier from outside the isolated release,
+// so anchor dependency resolution to the verified project before importing
+// the built adapter.
+process.chdir(projectDir);
+
 function output(value, stream = process.stdout) {
   stream.write(`${JSON.stringify(value)}\n`);
 }
