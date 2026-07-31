@@ -227,10 +227,20 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
     return applyGeneratedSurvey(job, generated, result.runtime);
   }
   if (job.kind === 'social.analyze') {
-    const requestedIds = Array.isArray(job.input.mentionIds) ? job.input.mentionIds.map(String) : null;
+    const requestedIds = Array.isArray(job.input.mentionIds)
+      ? [...new Set(job.input.mentionIds.map(String).filter(Boolean))]
+      : null;
     const candidates = requestedIds
       ? listSocialMentionsByIdsForSpace(requestedIds, job.spaceId)
       : listSocialMentionsForSpace(job.spaceId, socialAnalysisLimit);
+    if (requestedIds && (!requestedIds.length || candidates.length !== requestedIds.length)) {
+      throw new TerraError(
+        'One or more source posts for this social analysis no longer exist in this space.',
+        'MENTION_SNAPSHOT_UNAVAILABLE',
+        409,
+        false
+      );
+    }
     const mentions = candidates.slice(0, socialAnalysisLimit);
     if (!mentions.length) throw new TerraError('No social mentions are available for analysis.', 'MENTIONS_REQUIRED', 400, false);
     const sourceRefs = mentions.map((mention) => mention.id);

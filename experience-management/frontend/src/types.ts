@@ -57,7 +57,8 @@ export interface AiJobKnowledgeContext {
   metrics: Record<string, any>;
   createdAt: string;
 }
-export interface AiJob { id: string; kind: string; surveyId: string | null; responseId: string | null; state: 'queued' | 'processing' | 'completed' | 'failed'; stage: string; progress: number; attempt: number; input: Record<string, any>; result: any; error: string | null; retryAt: string | null; createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string; knowledgeContext?: AiJobKnowledgeContext | null }
+export interface AiJobRetry { eligible: boolean; reason: string | null }
+export interface AiJob { id: string; kind: string; surveyId: string | null; responseId: string | null; state: 'queued' | 'processing' | 'completed' | 'failed'; stage: string; progress: number; attempt: number; input: Record<string, any>; result: any; error: string | null; retryAt: string | null; createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string; retry?: AiJobRetry | null; knowledgeContext?: AiJobKnowledgeContext | null }
 export interface Template { id: string; name: string; description: string; purpose: Survey['purpose']; primaryMetric: Survey['primaryMetric']; audience: string; questions: Partial<Question>[] }
 export interface SurveyDetail { survey: Survey; collectors: Collector[]; insights: { id: string; kind: string; payload: any; createdAt: string }[] }
 export interface SocialMention { id: string; source: 'x' | 'google_play' | 'app_store' | 'review' | 'forum' | 'other'; externalId?: string | null; xConnectionId?: string | null; ingestionKind?: 'account_post' | 'mention' | 'search' | null; author: string; content: string; url: string; language: string; publishedAt: string; metadata: Record<string, any>; analysis: any; createdAt: string }

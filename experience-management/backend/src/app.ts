@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import multer from 'multer';
 import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
+import { AiJobRetryError, aiJobRetryStatus, retryFailedAiJob } from './aiJobRetry.js';
 import {
   accountProfile, completeAccountOnboarding, currentSessionUser, forgotPassword, login, logout,
   requireAdmin, resendEmailVerification, resetPassword, session, signup, updateAccountProfile, verifyEmail
@@ -1536,7 +1537,8 @@ for (const route of [
 
 app.get('/api/ai/jobs', noStore, (request, response) => {
   const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
-  return response.json(listJobsForSpace(space.id, Math.min(500, Number(request.query.limit || 100)), user.id));
+  return response.json(listJobsForSpace(space.id, Math.min(500, Number(request.query.limit || 100)), user.id)
+    .map((job) => ({ ...job, retry: aiJobRetryStatus(job, user.id) })));
 });
 app.get('/api/ai/jobs/:id', noStore, (request, response) => {
   const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
@@ -1546,7 +1548,30 @@ app.get('/api/ai/jobs/:id', noStore, (request, response) => {
   return response.json({ ...job, knowledgeContext: context ? {
     query: context.query, knowledgeBases: context.knowledgeBases, citations: context.citations,
     metrics: context.metrics, createdAt: context.createdAt
-  } : null });
+  } : null, retry: aiJobRetryStatus(job, user.id) });
+});
+app.post('/api/ai/jobs/:id/retry', (request, response) => {
+  try {
+    z.object({}).strict().parse(request.body || {});
+    const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
+    // A retry reuses the existing durable row for idempotency and quota history,
+    // but it can consume another provider execution, so normal AI admission
+    // still applies before the failed row is requeued.
+    assertCanQueueAiAction(space.id);
+    const retried = retryFailedAiJob(String(request.params.id), space.id, user.id);
+    void aiJobRunner.pump();
+    return response.status(202).json({
+      job: { ...retried.job, retry: aiJobRetryStatus(retried.job, user.id) },
+      jobId: retried.job.id,
+      state: retried.job.state,
+      restarted: retried.restarted,
+      journalReused: retried.journalReused,
+      statusUrl: `/api/ai/jobs/${retried.job.id}`
+    });
+  } catch (error) {
+    if (error instanceof AiJobRetryError) return response.status(error.status).json({ error: error.message, code: error.code });
+    return sendError(response, error);
+  }
 });
 
 app.get('/api/surveys/:id/insights', noStore, (request, response) => {
