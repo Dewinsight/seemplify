@@ -28,8 +28,10 @@ function readSecret() {
   }
 }
 
-function usageIdentity(requestId: string) {
-  const eventId = `usage_${crypto.createHash('sha256').update(`experience:${requestId}`).digest('hex').slice(0, 48)}`;
+function usageIdentity(requestId: string, executionRevision = 0) {
+  const revision = Number.isSafeInteger(executionRevision) && executionRevision > 0 ? executionRevision : 0;
+  const executionKey = revision ? `${requestId}:execution:${revision}` : requestId;
+  const eventId = `usage_${crypto.createHash('sha256').update(`experience:${executionKey}`).digest('hex').slice(0, 48)}`;
   const gatewayExecutionId = `localexec_${crypto.createHash('sha256').update(eventId).digest('hex').slice(0, 48)}`;
   return { eventId, gatewayExecutionId };
 }
@@ -51,6 +53,7 @@ function signedHeaders(secret: string, body: string, requestPath: string) {
 export interface TerraCompletionInput {
   activity: string;
   requestId: string;
+  executionRevision?: number;
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   jsonSchema?: Record<string, unknown>;
   schemaName?: string;
@@ -63,7 +66,7 @@ export interface TerraCompletionInput {
 export async function completeWithTerra(input: TerraCompletionInput) {
   const secret = readSecret();
   const requestPath = '/v1/complete';
-  const identity = usageIdentity(input.requestId);
+  const identity = usageIdentity(input.requestId, input.executionRevision);
   const body = JSON.stringify({
     activity: input.activity,
     executionMode: 'local-only',

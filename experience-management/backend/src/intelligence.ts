@@ -325,11 +325,25 @@ export function retrySocialIntelligenceReport(_user: SessionUser, spaceId: strin
       }
     }
 
+    const recordedGeneration = Number(job.input.terraExecutionGeneration ?? 0);
+    const currentGeneration = Number.isSafeInteger(recordedGeneration) && recordedGeneration >= 0
+      ? recordedGeneration
+      : 0;
+    if (currentGeneration >= Number.MAX_SAFE_INTEGER) {
+      throw new IntelligenceError('This report has exhausted its safe Terra retry identities.', 409);
+    }
+    const nextInput = {
+      ...job.input,
+      terraExecutionGeneration: currentGeneration + 1,
+      terraExecutionReason: 'manual_retry',
+      terraCorrectionRequired: false,
+      terraSemanticCorrectionCount: 0
+    };
     const timestamp = now();
     const jobChanged = db.prepare(`UPDATE ai_jobs SET state='queued',stage='queued',progress=0,attempt=0,result_json=NULL,error=NULL,
-      retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=?,updated_at=?
+      retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=?,input_json=?,updated_at=?
       WHERE id=? AND space_id=? AND kind='social.report' AND state='failed'`)
-      .run(retainedJournal ? JSON.stringify(retainedJournal) : null, timestamp, job.id, spaceId).changes;
+      .run(retainedJournal ? JSON.stringify(retainedJournal) : null, JSON.stringify(nextInput), timestamp, job.id, spaceId).changes;
     const reportChanged = db.prepare(`UPDATE social_intelligence_reports SET state='queued',result_json=NULL,runtime_json=NULL,error=NULL,
       completed_at=NULL,updated_at=? WHERE id=? AND space_id=? AND state='failed'`)
       .run(timestamp, id, spaceId).changes;

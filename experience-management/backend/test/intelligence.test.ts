@@ -169,9 +169,11 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   assert.equal(retriedReport.body.state, 'queued');
   assert.equal(retriedReport.body.journalReused, true);
   assert.equal(retriedReport.body.deduplicated, false);
+  assert.equal(getJob(failedReport.body.jobId)?.input.terraExecutionGeneration, 1);
   const duplicateRetry = await owner.post(`/api/social/reports/${failedReport.body.report.id}/retry`).send({}).expect(202);
   assert.equal(duplicateRetry.body.jobId, failedReport.body.jobId);
   assert.equal(duplicateRetry.body.deduplicated, true);
+  assert.equal(getJob(failedReport.body.jobId)?.input.terraExecutionGeneration, 1);
   const retryJob = getJob(failedReport.body.jobId); assert.ok(retryJob);
   assert.equal(retryJob.state, 'queued');
   assert.equal(retryJob.attempt, 0);
@@ -190,9 +192,29 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
     activity: 'experience.social_listening', schemaName: 'experience_social_listening_report',
     output: { malformed: true }, runtime: { model: 'gpt-5.6-terra' }
   }), staleJournalReport.body.jobId);
+  const staleFailedAt = new Date().toISOString();
+  db.prepare(`UPDATE ai_jobs SET state='failed',stage='failed',progress=100,attempt=3,error=?,
+    completed_at=?,updated_at=? WHERE id=?`).run(
+      'Terra returned evidence that was not present in the saved sources.',
+      staleFailedAt, staleFailedAt, staleJournalReport.body.jobId
+    );
+  db.prepare(`UPDATE social_intelligence_reports SET state='failed',error=?,completed_at=?,updated_at=? WHERE id=?`).run(
+    'Terra returned evidence that was not present in the saved sources.',
+    staleFailedAt, staleFailedAt, staleJournalReport.body.report.id
+  );
+  const freshRetry = await owner.post(`/api/social/reports/${staleJournalReport.body.report.id}/retry`).send({}).expect(202);
+  assert.equal(freshRetry.body.report.id, staleJournalReport.body.report.id);
+  assert.equal(freshRetry.body.jobId, staleJournalReport.body.jobId);
+  assert.equal(freshRetry.body.journalReused, false);
+  assert.equal(getJob(staleJournalReport.body.jobId)?.input.terraExecutionGeneration, 1);
   let replacementProviderCalls = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (_url, init) => {
     replacementProviderCalls += 1;
+    const requestBody = JSON.parse(String(init?.body || '{}'));
+    assert.equal(requestBody.metering.requestId, staleJournalReport.body.jobId);
+    const originalEventId = `usage_${crypto.createHash('sha256')
+      .update(`experience:${staleJournalReport.body.jobId}`).digest('hex').slice(0, 48)}`;
+    assert.notEqual(requestBody.metering.eventId, originalEventId);
     return terraResponse({
       executiveSummary: 'One saved X post reports onboarding friction.',
       sentiment: { negative: 1, neutral: 0, positive: 0, mixed: 0 },
@@ -211,6 +233,75 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
     state: 'completed', stage: 'completed', progress: 100, result: replacedJournalResult,
     completedAt: new Date().toISOString()
   });
+
+  const correctiveReport = await owner.post('/api/social/reports').set('Idempotency-Key', crypto.randomUUID())
+    .send({ connectionId, title: 'Corrective execution report', mentionIds: [mentionId] }).expect(202);
+  db.prepare(`UPDATE ai_jobs SET state='processing',stage='dispatching',attempt=3 WHERE id=?`)
+    .run(correctiveReport.body.jobId);
+  const invalidEvidenceOutput = {
+    executiveSummary: 'One saved X post reports onboarding friction.',
+    sentiment: { negative: 1, neutral: 0, positive: 0, mixed: 0 },
+    themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative',
+      evidence: ['This evidence was not supplied by the saved post.'] }],
+    emergingTrends: [], risks: [], opportunities: [],
+    mentions: [{ mentionId: sourceRef, sentiment: 'negative', sentimentScore: -0.7, emotions: ['frustration'],
+      themes: ['onboarding'], summary: 'The author reports difficult onboarding.', risk: 'medium', evidence: sourceRef }]
+  };
+  const correctedEvidenceOutput = {
+    ...invalidEvidenceOutput,
+    themes: [{ name: 'Onboarding friction', mentions: 1, sentiment: 'negative', evidence: [sourceRef] }]
+  };
+  const correctionBodies: any[] = [];
+  globalThis.fetch = async (_url, init) => {
+    correctionBodies.push(JSON.parse(String(init?.body || '{}')));
+    return terraResponse(correctionBodies.length === 1 ? invalidEvidenceOutput : correctedEvidenceOutput);
+  };
+  const firstCorrectiveJob = getJob(correctiveReport.body.jobId); assert.ok(firstCorrectiveJob);
+  await assert.rejects(() => executeAiJob(firstCorrectiveJob),
+    (error: any) => error?.code === 'TERRA_EVIDENCE_RETRY' && error?.retryable === true);
+  const correctionScheduled = getJob(correctiveReport.body.jobId); assert.ok(correctionScheduled);
+  assert.equal(correctionScheduled.input.terraExecutionGeneration, 1);
+  assert.equal(correctionScheduled.input.terraCorrectionRequired, true);
+  assert.equal(correctionScheduled.input.terraExecutionReason, 'semantic_correction');
+  assert.equal(correctionScheduled.input.terraSemanticCorrectionCount, 1);
+  db.prepare(`UPDATE ai_jobs SET attempt=4 WHERE id=?`).run(correctiveReport.body.jobId);
+  const secondCorrectiveJob = getJob(correctiveReport.body.jobId); assert.ok(secondCorrectiveJob);
+  const correctedResult = await executeAiJob(secondCorrectiveJob);
+  updateJob(secondCorrectiveJob.id, {
+    state: 'completed', stage: 'completed', progress: 100, result: correctedResult,
+    completedAt: new Date().toISOString()
+  });
+  assert.equal(correctionBodies.length, 2);
+  assert.equal(correctionBodies[0].metering.requestId, correctiveReport.body.jobId);
+  assert.equal(correctionBodies[1].metering.requestId, correctiveReport.body.jobId);
+  assert.notEqual(correctionBodies[0].metering.eventId, correctionBodies[1].metering.eventId);
+  assert.match(correctionBodies[1].messages[1].content, /Corrective attempt:/);
+  assert.equal((correctedResult as any).output.id, correctiveReport.body.report.id);
+  assert.equal((correctedResult as any).output.state, 'completed');
+
+  const repeatedRetryReport = await owner.post('/api/social/reports').set('Idempotency-Key', crypto.randomUUID())
+    .send({ connectionId, title: 'Repeated manual retry report', mentionIds: [mentionId] }).expect(202);
+  const failRepeatedRetry = () => {
+    const failedAt = new Date().toISOString();
+    db.prepare(`UPDATE ai_jobs SET state='failed',stage='failed',progress=100,error='test failure',
+      completed_at=?,updated_at=? WHERE id=?`).run(failedAt, failedAt, repeatedRetryReport.body.jobId);
+    db.prepare(`UPDATE social_intelligence_reports SET state='failed',error='test failure',
+      completed_at=?,updated_at=? WHERE id=?`).run(failedAt, failedAt, repeatedRetryReport.body.report.id);
+  };
+  failRepeatedRetry();
+  const concurrentRetries = await Promise.all([
+    owner.post(`/api/social/reports/${repeatedRetryReport.body.report.id}/retry`).send({}),
+    owner.post(`/api/social/reports/${repeatedRetryReport.body.report.id}/retry`).send({})
+  ]);
+  assert.deepEqual(concurrentRetries.map((response) => response.status).sort(), [202, 202]);
+  assert.deepEqual(concurrentRetries.map((response) => response.body.deduplicated).sort(), [false, true]);
+  assert.equal(getJob(repeatedRetryReport.body.jobId)?.input.terraExecutionGeneration, 1);
+  assert.equal(getJob(repeatedRetryReport.body.jobId)?.input.terraSemanticCorrectionCount, 0);
+  assert.equal(getJob(repeatedRetryReport.body.jobId)?.input.terraCorrectionRequired, false);
+  failRepeatedRetry();
+  const secondManualRetry = await owner.post(`/api/social/reports/${repeatedRetryReport.body.report.id}/retry`).send({}).expect(202);
+  assert.equal(secondManualRetry.body.jobId, repeatedRetryReport.body.jobId);
+  assert.equal(getJob(repeatedRetryReport.body.jobId)?.input.terraExecutionGeneration, 2);
 
   const groundedBase = await owner.post('/api/knowledge-bases').send({
     name: 'Support policy', description: 'Approved support guidance', privacy: 'space', terraContextEnabled: true
