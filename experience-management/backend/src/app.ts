@@ -33,7 +33,7 @@ import { getTerraStatus } from './terraClient.js';
 import {
   createIntelligenceReport, createSocialIntelligenceReport, createSocialReplyDraft, getIntelligenceReport,
   IntelligenceError, listIntelligenceReports, listIntelligenceSources, listSocialIntelligenceReports,
-  listSocialReplyDrafts, retrySocialIntelligenceReport, updateSocialReplyDraft
+  listSocialReplyDrafts, publishSocialIntelligenceReport, retrySocialIntelligenceReport, updateSocialReplyDraft
 } from './intelligence.js';
 import { templates } from './templates.js';
 import { esignPublicRouter, esignRecipientRouter, esignRouter } from './esignRoutes.js';
@@ -41,7 +41,7 @@ import { getKnowledgeRuntimeStatus } from './knowledgeClient.js';
 import { supportsKnowledgeContext } from './knowledgeContext.js';
 import { knowledgeJobRunner } from './knowledgeJobs.js';
 import { knowledgeJobRoute, knowledgeRouter, surveyKnowledgeRoutes } from './knowledgeRoutes.js';
-import { getKnowledgeContext, KnowledgeError, resolveKnowledgeBaseRefs, surveyKnowledgeBaseIds } from './knowledgeRepository.js';
+import { getKnowledgeContext, knowledgeJobAudienceUserId, KnowledgeError, resolveKnowledgeBaseRefs, surveyKnowledgeBaseIds } from './knowledgeRepository.js';
 import { QUESTION_TYPES, type AiJob, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
 import {
   clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXExpansion, enqueueXSync,
@@ -884,6 +884,30 @@ app.post('/api/social/reports/:id/retry', (request, response) => {
       report: retried.report, jobId: retried.job.id, state: retried.job.state,
       deduplicated: !retried.restarted, journalReused: retried.journalReused,
       statusUrl: `/api/ai/jobs/${retried.job.id}`
+    });
+  } catch (error) { return intelligenceError(response, error); }
+});
+app.post('/api/social/reports/:id/publish', (request, response) => {
+  try {
+    const input = z.object({ knowledgeBaseId: z.string().uuid(), reviewed: z.literal(true) }).strict().parse(request.body || {});
+    const user = authenticatedUser(request); const space = authenticatedSpace(request);
+    const published = publishSocialIntelligenceReport(user, space.id, String(request.params.id), input);
+    if (published.job) {
+      publishEvent('knowledge-job', published.job, space.id, knowledgeJobAudienceUserId(published.job));
+      void knowledgeJobRunner.pump();
+    }
+    const publicJob = published.job ? {
+      id: published.job.id, knowledgeBaseId: published.job.knowledgeBaseId,
+      documentId: published.job.documentId, state: published.job.state,
+      stage: published.job.stage, progress: published.job.progress,
+      attempt: published.job.attempt, maxAttempts: published.job.maxAttempts,
+      error: published.job.error, retryAt: published.job.retryAt,
+      createdAt: published.job.createdAt, startedAt: published.job.startedAt,
+      completedAt: published.job.completedAt, updatedAt: published.job.updatedAt
+    } : null;
+    return response.status(202).json({
+      ...published, job: publicJob,
+      statusUrl: `/api/knowledge-bases/${published.publication.knowledgeBaseId}/indexing-jobs`
     });
   } catch (error) { return intelligenceError(response, error); }
 });

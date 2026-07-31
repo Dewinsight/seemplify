@@ -21,6 +21,7 @@ $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
 $PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
 $PostgresRuntime4UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v4-started'
 $PostgresRuntime5UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v5-started'
+$PostgresRuntime6UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v6-started'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
@@ -82,6 +83,9 @@ function Test-CommitSupportsPostgresRuntime([string]$Commit, [int]$RequiredVersi
   if ($RequiredVersion -ge 5) {
     $requiredPaths += 'experience-management/backend/migrations/postgres/0005_experience_assistant_phase1.sql'
   }
+  if ($RequiredVersion -ge 6) {
+    $requiredPaths += 'experience-management/backend/migrations/postgres/0006_reviewed_social_intelligence_publications.sql'
+  }
   foreach ($requiredPath in $requiredPaths) {
     $entry = (@(& git ls-tree --name-only $Commit -- $requiredPath 2>$null) -join '').Trim()
     if ($LASTEXITCODE -ne 0 -or $entry -ne $requiredPath) { return $false }
@@ -129,16 +133,23 @@ function Invoke-Deployment([switch]$ForceDeploy) {
       Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL cutover has started and this release is SQLite-only."
       return
     }
-    if (Test-Path -LiteralPath $PostgresRuntime5UpgradeMarker -PathType Leaf) {
-      if (-not (Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 5)) {
-        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 5 has started and this release is not runtime-v5-compatible."
+    if (Test-Path -LiteralPath $PostgresRuntime6UpgradeMarker -PathType Leaf) {
+      if (-not (Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 6)) {
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 6 has started and this release is not runtime-v6-compatible."
+        return
+      }
+    } elseif (Test-Path -LiteralPath $PostgresRuntime5UpgradeMarker -PathType Leaf) {
+      $runsOnVersion5 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 5
+      $upgradesVersion5 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 5 -TargetVersion 6
+      if (-not $runsOnVersion5 -and -not $upgradesVersion5) {
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 5 has started and this release can neither run on schema 5 nor upgrade it to schema 6."
         return
       }
     } elseif (Test-Path -LiteralPath $PostgresRuntime4UpgradeMarker -PathType Leaf) {
       $runsOnVersion4 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 4
-      $upgradesVersion4 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 4 -TargetVersion 5
+      $upgradesVersion4 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 4 -TargetVersion 6
       if (-not $runsOnVersion4 -and -not $upgradesVersion4) {
-        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 4 has started and this release can neither run on schema 4 nor upgrade it to schema 5."
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 4 has started and this release can neither run on schema 4 nor upgrade it to schema 6."
         return
       }
     }
@@ -173,7 +184,8 @@ function Invoke-Deployment([switch]$ForceDeploy) {
         $previousSupportsPostgres = $previousProject -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'backend\dist\databaseAdapter.js') -PathType Leaf) -and
           (Test-Path -LiteralPath (Join-Path $previousProject 'scripts\verify-postgres-runtime.mjs') -PathType Leaf)
-        $runtimeVersionStarted = if (Test-Path -LiteralPath $PostgresRuntime5UpgradeMarker -PathType Leaf) { 5 }
+        $runtimeVersionStarted = if (Test-Path -LiteralPath $PostgresRuntime6UpgradeMarker -PathType Leaf) { 6 }
+          elseif (Test-Path -LiteralPath $PostgresRuntime5UpgradeMarker -PathType Leaf) { 5 }
           elseif (Test-Path -LiteralPath $PostgresRuntime4UpgradeMarker -PathType Leaf) { 4 } else { 0 }
         $previousSupportsStartedRuntime = $previousProject -and $runtimeVersionStarted -gt 0 -and
           (Test-ProjectSupportsPostgresRuntimeVersion $previousProject $runtimeVersionStarted)

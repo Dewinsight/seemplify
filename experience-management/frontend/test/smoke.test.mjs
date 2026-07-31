@@ -304,8 +304,8 @@ test('refuses an incompatible rollback after the PostgreSQL runtime-v5 upgrade s
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 5,
-    maximumRuntimeSchemaVersion: 5,
+    minimumRuntimeSchemaVersion: 6,
+    maximumRuntimeSchemaVersion: 6,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });

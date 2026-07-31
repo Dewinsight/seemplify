@@ -115,7 +115,16 @@ export interface XIntegrationStatus {
   aggregateCounts: { collected: number; accountPosts: number; mentions: number; searchResults: number; analyzed: number };
 }
 export interface SocialReplyDraft { id: string; mentionId: string; connectionId: string | null; tone: string; instructions: string; state: 'queued' | 'ready' | 'edited' | 'archived' | 'failed'; generatedContent: string; content: string; rationale: string; safetyFlags: string[]; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
-export interface SocialIntelligenceReport { id: string; connectionId: string | null; title: string; mentionIds: string[]; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export interface SocialIntelligenceObservationWindow {
+  periodStart: string | null; periodEnd: string | null; asOf: string | null; postCount: number;
+  breakdown: { accountPosts: number; mentions: number; searchResults: number; unclassified: number };
+}
+export interface SocialIntelligencePublication {
+  reportId?: string; knowledgeBaseId: string; knowledgeBaseName?: string; documentId: string; jobId?: string;
+  state: string; reviewStatus?: 'reviewed'; publishedBy?: string | null; publishedAt: string | null;
+  sourceSnapshotSha256?: string; artifactSha256?: string; url?: string | null; statusUrl?: string | null;
+}
+export interface SocialIntelligenceReport { id: string; connectionId: string | null; title: string; mentionIds: string[]; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string; observationWindow?: SocialIntelligenceObservationWindow | null; sourceSnapshotSha256?: string | null; publications?: SocialIntelligencePublication[] }
 export interface IntelligenceSource { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string }
 export interface IntelligenceReport { id: string; title: string; objective: string; sourceRefs: { survey: string[]; social: string[] }; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
 export interface AssistantConnection {

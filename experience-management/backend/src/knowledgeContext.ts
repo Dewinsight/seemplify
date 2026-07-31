@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { config, qwenKnowledgeEmbeddingProfile } from './config.js';
 import { retrieveKnowledge } from './knowledgeClient.js';
 import {
-  auditKnowledge, getKnowledgeBase, getKnowledgeContext, KnowledgeError, saveKnowledgeContext,
+  auditKnowledge, excludeDerivedSocialIntelligenceCitations, getKnowledgeBase, getKnowledgeContext, KnowledgeError, saveKnowledgeContext,
   type KnowledgeBaseRef, type KnowledgeCitation
 } from './knowledgeRepository.js';
 import type { AiJob, AiJobKind } from './types.js';
@@ -12,6 +12,10 @@ const knowledgeGroundedJobKinds = new Set<AiJobKind>([
   'survey.generate', 'survey.improve', 'response.analyze', 'insights.generate', 'analyst.chat',
   'report.generate', 'social.analyze', 'social.report', 'intelligence.synthesize',
   'journey.generate', 'journey.optimize'
+]);
+
+const derivedSocialExclusionKinds = new Set<AiJobKind>([
+  'social.analyze', 'social.report', 'intelligence.synthesize'
 ]);
 
 export function supportsKnowledgeContext(kind: AiJobKind) {
@@ -79,7 +83,14 @@ export async function knowledgePromptContext(job: AiJob, query: string) {
       409, 'KNOWLEDGE_CONTEXT_ACTIVITY_UNSUPPORTED', false);
   }
   const existing = getKnowledgeContext(job.id, job.spaceId);
-  if (existing) return existing;
+  if (existing) {
+    if (!derivedSocialExclusionKinds.has(job.kind)) return existing;
+    const citations = excludeDerivedSocialIntelligenceCitations(job.spaceId, existing.citations);
+    return citations.length === existing.citations.length ? existing : {
+      ...existing, citations, contextText: evidenceContext(existing.knowledgeBases, citations),
+      metrics: { ...existing.metrics, excludedDerivedSocialIntelligence: existing.citations.length - citations.length }
+    };
+  }
   for (const ref of refs) {
     const current = getKnowledgeBase(ref.id, job.spaceId, true, job.requestedBy || undefined);
     if (!current || current.deletedAt || current.status === 'deleting') {
@@ -94,12 +105,19 @@ export async function knowledgePromptContext(job: AiJob, query: string) {
   }
   const retrieved = await retrieveKnowledge({ requestId: `${job.id}:knowledge`, spaceId: job.spaceId,
     knowledgeBases: refs, query, graphDepth: 2 });
-  const contextText = evidenceContext(refs, retrieved.citations);
+  const citations = derivedSocialExclusionKinds.has(job.kind)
+    ? excludeDerivedSocialIntelligenceCitations(job.spaceId, retrieved.citations) : retrieved.citations;
+  const metrics = { ...retrieved.metrics,
+    ...(citations.length === retrieved.citations.length ? {} : {
+      excludedDerivedSocialIntelligence: retrieved.citations.length - citations.length
+    }) };
+  const contextText = evidenceContext(refs, citations);
   const saved = saveKnowledgeContext({ aiJobId: job.id, spaceId: job.spaceId, query,
-    knowledgeBases: refs, citations: retrieved.citations, contextText, metrics: retrieved.metrics });
+    knowledgeBases: refs, citations, contextText, metrics });
   auditKnowledge({ spaceId: job.spaceId, aiJobId: job.id, actorUserId: job.requestedBy,
     action: 'knowledge.context_snapshot_created', detail: {
-      knowledgeBaseIds: refs.map((ref) => ref.id), citationCount: retrieved.citations.length,
+      knowledgeBaseIds: refs.map((ref) => ref.id), citationCount: citations.length,
+      excludedDerivedSocialIntelligence: retrieved.citations.length - citations.length,
       queryHash: crypto.createHash('sha256').update(query).digest('hex'), contextBytes: Buffer.byteLength(contextText, 'utf8')
     } });
   return saved;

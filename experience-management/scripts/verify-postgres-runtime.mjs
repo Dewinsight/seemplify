@@ -11,7 +11,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  RUNTIME_EXTENSION_TABLES,
+  runtimeExtensionTables,
   assertRuntimePrivileges,
   assertRuntimeSchemaContract,
   runtimeTableSetDifference
@@ -166,7 +166,7 @@ async function main() {
       FROM information_schema.tables
       WHERE table_schema=current_schema() AND table_type='BASE TABLE'
         AND table_name<>'experience_schema_version' ORDER BY table_name`).all()).map((row) => String(row.name));
-    const { unknownTables, missingTables } = runtimeTableSetDifference(tableNames, actualTableNames);
+    const { unknownTables, missingTables } = runtimeTableSetDifference(tableNames, actualTableNames, config.postgres.runtimeSchemaVersion);
     if (unknownTables.length || missingTables.length) {
       throw fail(`PostgreSQL tables differ from the source manifest plus runtime extensions (unknown: ${unknownTables.join(', ') || 'none'}; missing: ${missingTables.join(', ') || 'none'}).`, 'SOURCE_MANIFEST_MISMATCH');
     }
@@ -224,7 +224,7 @@ async function main() {
       runtimeSchemaVersion: health.runtimeSchemaVersion,
       sourceSha256: metadataSha256,
       tables: tableNames.length,
-      runtimeExtensionTables: [...RUNTIME_EXTENSION_TABLES].filter((name) => !tableNames.includes(name)).length,
+      runtimeExtensionTables: runtimeExtensionTables(config.postgres.runtimeSchemaVersion).filter((name) => !tableNames.includes(name)).length,
       runtimeContractIndexes: schemaContract.indexes,
       protectedPrivilegeTables: privilegeContract.protectedTables,
       rows: actualRows,

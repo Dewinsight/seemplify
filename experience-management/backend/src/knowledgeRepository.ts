@@ -315,6 +315,29 @@ const applyKnowledgeSchema = db.transaction(() => {
 });
 if (db.provider === 'sqlite') applyKnowledgeSchema();
 
+if (db.provider === 'sqlite') db.exec(`CREATE TABLE IF NOT EXISTS social_intelligence_publications (
+    -- report_id deliberately remains a provenance tombstone rather than a
+    -- cascading FK. Derived documents contain no retained raw-post snapshot.
+    report_id TEXT NOT NULL,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    knowledge_base_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    job_id TEXT,
+    source_requested_by TEXT NOT NULL,
+    published_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    review_status TEXT NOT NULL DEFAULT 'reviewed' CHECK(review_status='reviewed'),
+    source_snapshot_sha256 TEXT NOT NULL,
+    artifact_sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(report_id,knowledge_base_id),
+    UNIQUE(document_id),
+    FOREIGN KEY(knowledge_base_id,space_id) REFERENCES knowledge_bases(id,space_id) ON DELETE CASCADE,
+    FOREIGN KEY(document_id,space_id) REFERENCES knowledge_documents(id,space_id) ON DELETE CASCADE,
+    FOREIGN KEY(job_id) REFERENCES knowledge_jobs(id) ON DELETE SET NULL
+  );
+  CREATE INDEX IF NOT EXISTS social_intelligence_publications_space_created
+    ON social_intelligence_publications(space_id,created_at DESC);`);
+
 function assertKnowledgeEmbeddingProfileIdentity(profile: KnowledgeEmbeddingProfile) {
   const row = db.prepare(`SELECT provider,model,revision,dtype,dimensions FROM knowledge_embedding_profiles
     WHERE vector_index_version=?`).get(profile.vectorIndexVersion) as any;
@@ -322,6 +345,34 @@ function assertKnowledgeEmbeddingProfileIdentity(profile: KnowledgeEmbeddingProf
       || row.dtype !== profile.dtype || Number(row.dimensions) !== profile.dimensions) {
     throw new Error(`Knowledge embedding profile ${profile.vectorIndexVersion} has an immutable identity mismatch.`);
   }
+}
+
+/**
+ * Generated social intelligence must never become primary evidence for a later
+ * social or cross-source generation. Publication metadata is the durable
+ * trust boundary; filter by document identity rather than model-written tags.
+ */
+export function excludeDerivedSocialIntelligenceCitations(spaceId: string, citations: KnowledgeCitation[]) {
+  const documentIds = [...new Set(citations.map((citation) => citation.documentId).filter(Boolean))];
+  if (!documentIds.length) return citations;
+  const placeholders = documentIds.map(() => '?').join(',');
+  const derived = new Set((db.prepare(`SELECT document_id FROM social_intelligence_publications
+    WHERE space_id=? AND document_id IN (${placeholders})`).all(spaceId, ...documentIds) as Array<{ document_id: string }>)
+    .map((row) => row.document_id));
+  // The origin marker is committed in the same transaction as the knowledge
+  // document and index job. It closes the crash window before the higher-level
+  // publication registry row is written and remains available for recovery.
+  const originJobs = db.prepare(`SELECT document_id,input_json FROM knowledge_jobs
+    WHERE space_id=? AND kind='document.index' AND document_id IN (${placeholders})`)
+    .all(spaceId, ...documentIds) as Array<{ document_id: string; input_json: string }>;
+  for (const job of originJobs) {
+    const metadata = parseJson<Record<string, unknown>>(job.input_json, {}).metadata;
+    if (metadata && typeof metadata === 'object'
+        && (metadata as Record<string, unknown>).artifactType === 'derived_social_intelligence') {
+      derived.add(job.document_id);
+    }
+  }
+  return derived.size ? citations.filter((citation) => !derived.has(citation.documentId)) : citations;
 }
 
 if (db.provider === 'sqlite') {
@@ -1160,6 +1211,60 @@ export function createKnowledgeDocument(input: {
 
 export const createKnowledgeDocuments = db.transaction((inputs: Parameters<typeof createKnowledgeDocument>[0][]) =>
   inputs.map((input) => createKnowledgeDocument(input)));
+
+/**
+ * Stage a server-generated Markdown document through the same durable indexing
+ * path as an uploaded document. Callers must supply derived content only; this
+ * helper deliberately does not bypass storage quotas, document deduplication,
+ * embedding-profile snapshots, jobs, or knowledge audit events.
+ */
+export function createKnowledgeMarkdownDocument(input: {
+  spaceId: string; knowledgeBaseId: string; userId: string; originalName: string;
+  markdown: string; metadata?: Record<string, unknown>;
+}) {
+  const bytes = Buffer.from(input.markdown, 'utf8');
+  if (!bytes.length) throw new KnowledgeError('Generated knowledge content cannot be empty.', 400, 'KNOWLEDGE_DOCUMENT_EMPTY');
+  if (bytes.length > config.knowledgeMaxDocumentBytes) {
+    throw new KnowledgeError('The generated knowledge document exceeds the document size limit.', 413, 'KNOWLEDGE_DOCUMENT_TOO_LARGE');
+  }
+  if (knowledgeSpaceBytes(input.spaceId) + bytes.length > config.knowledgeMaxSpaceBytes) {
+    throw new KnowledgeError('This space has reached its knowledge storage allowance.', 413, 'KNOWLEDGE_SPACE_QUOTA');
+  }
+
+  const originalBase = path.basename(input.originalName).replace(/[\r\n]/gu, ' ').trim().slice(0, 252) || 'Derived intelligence';
+  const originalName = originalBase.toLowerCase().endsWith('.md') ? originalBase : `${originalBase}.md`;
+  const storedFilename = `${crypto.randomUUID()}.md`;
+  const stagedPath = path.resolve(config.knowledgeStorageDir, storedFilename);
+  const storageRoot = `${path.resolve(config.knowledgeStorageDir)}${path.sep}`.toLowerCase();
+  if (!stagedPath.toLowerCase().startsWith(storageRoot)) {
+    throw new KnowledgeError('The generated knowledge storage path is invalid.', 500, 'KNOWLEDGE_STORAGE_PATH_INVALID');
+  }
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  fs.writeFileSync(stagedPath, bytes, { flag: 'wx' });
+  try {
+    const created = createKnowledgeDocument({
+      spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBaseId, userId: input.userId,
+      storedFilename, originalName, mimeType: 'text/markdown', sizeBytes: bytes.length, sha256,
+      metadata: input.metadata || {}
+    });
+    if (created.deduplicated) fs.rmSync(stagedPath, { force: true });
+    return { ...created, sha256 };
+  } catch (error) {
+    fs.rmSync(stagedPath, { force: true });
+    // A concurrent publisher may have committed the identical immutable
+    // artifact after our preflight but before our insert. Resolve that race as
+    // a normal deduplicated publication rather than surfacing a transient
+    // unique-constraint failure.
+    const existing = db.prepare(`SELECT * FROM knowledge_documents WHERE knowledge_base_id=? AND space_id=?
+      AND sha256=? AND deleted_at IS NULL`).get(input.knowledgeBaseId, input.spaceId, sha256) as any;
+    if (existing) {
+      const active = db.prepare(`SELECT * FROM knowledge_jobs WHERE document_id=? AND state IN ('queued','processing')
+        ORDER BY created_at LIMIT 1`).get(existing.id) as any;
+      return { document: rowDocument(existing), job: active ? rowJob(active) : null, deduplicated: true, sha256 };
+    }
+    throw error;
+  }
+}
 
 export function queueKnowledgeDocumentReindex(documentId: string, knowledgeBaseId: string, spaceId: string, userId: string, idempotencyKey?: string) {
   const replay = idempotentKnowledgeJob({ spaceId, knowledgeBaseId, documentId, requestedBy: userId,

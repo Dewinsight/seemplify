@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'wouter';
 import {
   AlertTriangle, AtSign, BarChart3, Check, CheckSquare, Clipboard, Copy, Database, ExternalLink, FileText, Loader2,
   MessageSquareReply, MessageSquareText, Plus, Radar, RefreshCw, Search, Settings2, Square, Trash2, Users
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError, json } from '@/lib/api';
+import { getKnowledgeBases } from '@/lib/knowledgeBases';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { KnowledgeBasePicker } from '@/components/knowledge/KnowledgeBasePicker';
 import type {
-  SocialIntelligenceReport, SocialMention, SocialReplyDraft, XCollectionStream, XConnection, XExpansionEstimate,
+  KnowledgeBase, SocialIntelligencePublication, SocialIntelligenceReport, SocialMention, SocialReplyDraft, XCollectionStream, XConnection, XExpansionEstimate,
   XIntegrationStatus, XListeningQuery, XSyncJob
 } from '@/types';
 
@@ -31,7 +33,9 @@ const allExpansionStreams: XCollectionStream[] = ['account_posts', 'mentions', '
 
 function formatDate(value?: string | null) {
   if (!value) return 'Not yet';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return 'Not recorded';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(parsed);
 }
 function streamLabel(stream?: string | null) {
   return stream === 'account_post' ? 'Account post' : stream === 'mention' ? 'Mention' : stream === 'search' ? 'Search result' : 'X post';
@@ -49,18 +53,86 @@ function connectionLabel(connection: XConnection) {
   return connection.account?.username ? `@${connection.account.username}` : connection.account?.name || 'Pending account';
 }
 
-function SocialReportCard({ report, retrying, retry }: {
+function reportPeriod(report: SocialIntelligenceReport, mentionsById: ReadonlyMap<string, SocialMention>) {
+  const sources = report.mentionIds.map((id) => mentionsById.get(id)).filter((mention): mention is SocialMention => Boolean(mention));
+  const times = sources.map((mention) => new Date(mention.publishedAt).getTime()).filter(Number.isFinite);
+  const fallbackBreakdown = sources.reduce<Record<string, number>>((counts, mention) => {
+    const key = mention.ingestionKind || 'saved_posts'; counts[key] = (counts[key] || 0) + 1; return counts;
+  }, {});
+  const reportedBreakdown = report.observationWindow?.breakdown;
+  const suppliedBreakdown = reportedBreakdown && typeof reportedBreakdown === 'object'
+    ? Object.fromEntries(Object.entries(reportedBreakdown).filter(([, value]) => Number.isFinite(Number(value)) && Number(value) >= 0).map(([key, value]) => [key, Number(value)]))
+    : {};
+  const reportedPostCount = report.observationWindow?.postCount;
+  const postCount = Number.isFinite(Number(reportedPostCount)) ? Number(reportedPostCount) : report.mentionIds.length;
+  return {
+    start: report.observationWindow?.periodStart || (times.length ? new Date(Math.min(...times)).toISOString() : null),
+    end: report.observationWindow?.periodEnd || (times.length ? new Date(Math.max(...times)).toISOString() : null),
+    asOf: report.observationWindow?.asOf || report.completedAt || report.updatedAt,
+    postCount,
+    breakdown: Object.keys(suppliedBreakdown).length ? suppliedBreakdown : Object.keys(fallbackBreakdown).length ? fallbackBreakdown : { saved_posts: postCount }
+  };
+}
+
+function labelBreakdown(key: string) {
+  const labels: Record<string, string> = { account_post: 'Account posts', account_posts: 'Account posts', accountPosts: 'Account posts', mention: 'Mentions', mentions: 'Mentions', search: 'Search results', searches: 'Search results', search_results: 'Search results', searchResults: 'Search results', unclassified: 'Other saved posts', saved_posts: 'Saved posts' };
+  return labels[key] || key.replaceAll('_', ' ');
+}
+
+function runtimeFacts(runtime: any) {
+  if (!runtime || typeof runtime !== 'object') return [] as Array<[string, string]>;
+  const usage = runtime.usage && typeof runtime.usage === 'object' ? runtime.usage : {};
+  const facts: Array<[string, unknown]> = [
+    ['Provider', runtime.providerLabel || runtime.provider], ['Model', runtime.model],
+    ['Latency', Number.isFinite(Number(runtime.latencyMs)) ? `${Number(runtime.latencyMs)} ms` : null],
+    ['Input tokens', usage.inputTokens ?? runtime.inputTokens], ['Output tokens', usage.outputTokens ?? runtime.outputTokens],
+    ['Total tokens', usage.totalTokens ?? runtime.totalTokens], ['Execution', runtime.executionId || runtime.gatewayExecutionId]
+  ];
+  return facts.filter((entry): entry is [string, string | number] => entry[1] !== null && entry[1] !== undefined && entry[1] !== '')
+    .map(([label, value]) => [label, String(value)]);
+}
+
+function SocialReportCard({ report, mentionsById, knowledgeBases, knowledgeBasesLoading, knowledgeBasesError, retrying, publishing, retry, publish, reloadKnowledgeBases }: {
   report: SocialIntelligenceReport;
-  retrying: boolean;
+  mentionsById: ReadonlyMap<string, SocialMention>;
+  knowledgeBases: KnowledgeBase[];
+  knowledgeBasesLoading: boolean;
+  knowledgeBasesError: string;
+  retrying: boolean; publishing: boolean;
   retry: (report: SocialIntelligenceReport) => void;
+  publish: (report: SocialIntelligenceReport, knowledgeBaseId: string) => Promise<void>;
+  reloadKnowledgeBases: () => void;
 }) {
+  const [publishDialog, setPublishDialog] = useState(false);
+  const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState('');
+  const [publicationReviewed, setPublicationReviewed] = useState(false);
+  const period = reportPeriod(report, mentionsById);
+  const result = report.result || {};
+  const evidenceRefs = new Set<string>([
+    ...(result.themes || []).flatMap((item: any) => item.evidence || []),
+    ...(result.emergingTrends || []).flatMap((item: any) => item.evidence || []),
+    ...(result.risks || []).flatMap((item: any) => item.evidence || []),
+    ...(result.opportunities || []).flatMap((item: any) => item.evidence || []),
+    ...(result.mentions || []).map((item: any) => item.evidence)
+  ].map(String).map((value) => value.startsWith('x-post:') ? value.slice('x-post:'.length) : value).filter((value) => report.mentionIds.includes(value)));
+  const sentiment = ['negative', 'neutral', 'positive', 'mixed'].map((key) => [key, Number(result.sentiment?.[key] || 0)] as const);
+  const sentimentTotal = sentiment.reduce((total, [, count]) => total + count, 0);
+  const publications = report.publications || [];
+  const publishedKnowledgeBaseIds = new Set(publications.map((item) => item.knowledgeBaseId));
+  const availableKnowledgeBases = knowledgeBases.filter((base) => !publishedKnowledgeBaseIds.has(base.id));
+  const periodLabel = period.start && period.end ? `${formatDate(period.start)} – ${formatDate(period.end)}` : period.start || period.end ? formatDate(period.start || period.end) : 'Saved snapshot';
+
+  useEffect(() => {
+    if (publications.length) { setPublishDialog(false); setPublicationReviewed(false); setSelectedKnowledgeBaseId(''); }
+  }, [publications.length]);
+
   const retryButton = <Button size="sm" variant="outline" disabled={retrying} onClick={() => retry(report)}>
     {retrying ? <Loader2 className="animate-spin" /> : <RefreshCw />}Retry report
   </Button>;
   return <Card>
     <CardHeader className="border-b">
       <div className="flex items-start justify-between gap-3">
-        <div><CardTitle>{report.title}</CardTitle><CardDescription className="mt-1">{report.mentionIds.length} posts · {formatDate(report.createdAt)}</CardDescription></div>
+        <div><CardTitle>{report.title}</CardTitle><CardDescription className="mt-1">{period.postCount} posts · as of {formatDate(period.asOf)}</CardDescription></div>
         <Badge variant={report.state === 'completed' ? 'success' : report.state === 'failed' ? 'destructive' : 'warning'}>{report.state}</Badge>
       </div>
     </CardHeader>
@@ -75,14 +147,35 @@ function SocialReportCard({ report, retrying, retry }: {
       </div> : report.state === 'queued' ? <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
         <Loader2 className="h-4 w-4 animate-spin" />Waiting for Terra. This report is durable.
       </div> : report.result ? <>
+        <section className="grid divide-y border bg-muted/10 sm:grid-cols-[minmax(220px,1.4fr)_minmax(150px,0.8fr)_minmax(220px,1fr)] sm:divide-x sm:divide-y-0">
+          <div className="p-3"><div className="text-xs text-muted-foreground">Observation period</div><div className="mt-1 text-sm font-medium">{periodLabel}</div></div>
+          <div className="p-3"><div className="text-xs text-muted-foreground">Snapshot</div><div className="mt-1 text-sm font-medium">{period.postCount} saved posts</div></div>
+          <div className="p-3"><div className="text-xs text-muted-foreground">Discovery labels</div><div className="mt-1 text-sm font-medium">{Object.entries(period.breakdown).map(([key, value]) => `${labelBreakdown(key)} ${value}`).join(' · ')}</div><div className="mt-1 text-[11px] text-muted-foreground">A saved post can carry more than one label.</div></div>
+        </section>
         <section><h3 className="text-sm font-semibold">Executive summary</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{report.result.executiveSummary}</p></section>
-        {report.result.themes?.length > 0 && <section><h3 className="text-sm font-semibold">Themes</h3><div className="mt-2 divide-y border">{report.result.themes.map((theme: any) => <div className="p-3" key={theme.name}><div className="text-sm font-medium">{theme.name}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{theme.sentiment} · {theme.mentions} mentions</p></div>)}</div></section>}
-        {report.result.risks?.length > 0 && <section><h3 className="text-sm font-semibold">Risks</h3><ul className="mt-2 space-y-2 text-sm text-muted-foreground">{report.result.risks.map((risk: any, index: number) => <li className="border-l-2 border-amber-400 pl-3" key={index}>{risk.issue} — {risk.action}</li>)}</ul></section>}
+        {sentimentTotal > 0 && <section><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Sentiment</h3><span className="text-xs text-muted-foreground">{sentimentTotal} posts classified</span></div><div className="mt-2 flex h-2 overflow-hidden bg-muted" aria-label="Sentiment distribution">{sentiment.map(([key, count]) => count > 0 && <span key={key} title={`${labelBreakdown(key)} ${count}`} className={key === 'positive' ? 'bg-emerald-600' : key === 'negative' ? 'bg-red-600' : key === 'mixed' ? 'bg-amber-500' : 'bg-slate-400'} style={{ width: `${(count / sentimentTotal) * 100}%` }} />)}</div><div className="mt-2 grid grid-cols-2 divide-x border sm:grid-cols-4">{sentiment.map(([key, count]) => <div className="px-3 py-2" key={key}><div className="text-xs capitalize text-muted-foreground">{key}</div><div className="mt-0.5 text-sm font-semibold tabular-nums">{count} <span className="font-normal text-muted-foreground">({Math.round((count / sentimentTotal) * 100)}%)</span></div></div>)}</div></section>}
+        {report.result.themes?.length > 0 && <section><h3 className="text-sm font-semibold">Themes</h3><div className="mt-2 divide-y border">{report.result.themes.map((theme: any, index: number) => <div className="flex items-start justify-between gap-4 p-3" key={`${theme.name}-${index}`}><div><div className="text-sm font-medium">{theme.name}</div><p className="mt-1 text-xs leading-5 capitalize text-muted-foreground">{theme.sentiment} · {theme.mentions} mentions</p></div><span className="shrink-0 text-xs text-muted-foreground">{theme.evidence?.length || 0} sources</span></div>)}</div></section>}
+        {report.result.emergingTrends?.length > 0 && <section><h3 className="text-sm font-semibold">Emerging trends</h3><div className="mt-2 divide-y border">{report.result.emergingTrends.map((trend: any, index: number) => <div className="flex items-start justify-between gap-4 p-3" key={`${trend.trend}-${index}`}><p className="text-sm leading-6">{trend.trend}</p><div className="shrink-0 text-right"><Badge variant="outline" className="capitalize">{trend.direction}</Badge><div className="mt-1 text-[11px] text-muted-foreground">{trend.evidence?.length || 0} sources</div></div></div>)}</div></section>}
+        {(report.result.opportunities?.length > 0 || report.result.risks?.length > 0) && <div className="grid gap-5 lg:grid-cols-2">
+          {report.result.opportunities?.length > 0 && <section><h3 className="text-sm font-semibold">Opportunities</h3><div className="mt-2 divide-y border">{report.result.opportunities.map((item: any, index: number) => <div className="p-3" key={`${item.opportunity}-${index}`}><div className="text-sm font-medium">{item.opportunity}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.action}</p><div className="mt-2 text-[11px] text-muted-foreground">Grounded in {item.evidence?.length || 0} saved sources</div></div>)}</div></section>}
+          {report.result.risks?.length > 0 && <section><h3 className="text-sm font-semibold">Risks</h3><div className="mt-2 divide-y border">{report.result.risks.map((risk: any, index: number) => <div className="p-3" key={`${risk.issue}-${index}`}><div className="flex items-start justify-between gap-3"><div className="text-sm font-medium">{risk.issue}</div><Badge variant={['high', 'critical'].includes(risk.severity) ? 'destructive' : 'outline'} className="capitalize">{risk.severity}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{risk.action}</p><div className="mt-2 text-[11px] text-muted-foreground">Grounded in {risk.evidence?.length || 0} saved sources</div></div>)}</div></section>}
+        </div>}
+        <details className="border"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Evidence, provenance and runtime</summary><div className="space-y-5 border-t px-4 py-4">
+          <div className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4"><div><span className="text-muted-foreground">Report ID</span><div className="mt-1 break-all font-mono">{report.id}</div></div><div><span className="text-muted-foreground">AI job</span><div className="mt-1 break-all font-mono">{report.aiJobId}</div></div><div><span className="text-muted-foreground">Captured</span><div className="mt-1">{formatDate(period.asOf)}</div></div><div><span className="text-muted-foreground">Source snapshot</span><div className="mt-1 break-all font-mono">{report.sourceSnapshotSha256 || 'Not retained for this older report'}</div></div></div>
+          <div><div className="text-xs font-medium text-muted-foreground">Saved-source provenance ({report.mentionIds.length})</div><div className="mt-2 max-h-80 divide-y overflow-y-auto border">{report.mentionIds.map((sourceId) => { const source = mentionsById.get(sourceId); return <div className="px-3 py-2.5" key={sourceId}><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium">{source?.author || 'Saved X post'}</span><span className="font-mono text-[11px] text-muted-foreground">{sourceId}{evidenceRefs.has(sourceId) ? ' · cited' : ''}</span></div>{source ? <><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{source.content}</p><div className="mt-1 text-[11px] text-muted-foreground">{streamLabel(source.ingestionKind)} · {formatDate(source.publishedAt)}</div></> : <p className="mt-1 text-xs text-muted-foreground">The source remains part of the immutable report snapshot but is not in the current on-screen cache.</p>}</div>; })}</div></div>
+          <div><div className="text-xs font-medium text-muted-foreground">Runtime</div>{runtimeFacts(report.runtime).length ? <div className="mt-2 grid divide-y border sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">{runtimeFacts(report.runtime).map(([label, value]) => <div className="p-3" key={label}><div className="text-[11px] text-muted-foreground">{label}</div><div className="mt-1 break-all text-xs font-medium">{value}</div></div>)}</div> : <p className="mt-1 text-xs text-muted-foreground">Runtime telemetry was not retained for this older report.</p>}</div>
+        </div></details>
+        <section className="border bg-muted/10 px-4 py-4"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><h3 className="text-sm font-semibold">Knowledge publication</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Reviewed publications are dated, derived artifacts. The original saved X posts remain their evidence.</p></div>{availableKnowledgeBases.length > 0 && <Button size="sm" variant="outline" onClick={() => setPublishDialog(true)}><Database />{publications.length ? 'Publish to another' : 'Publish to knowledge base'}</Button>}</div>{publications.length > 0 ? <div className="mt-3 divide-y border bg-background">{publications.map((item) => { const target = knowledgeBases.find((base) => base.id === item.knowledgeBaseId); const active = !['ready', 'completed', 'failed', 'deleted'].includes(item.state); return <div className="flex flex-col justify-between gap-3 px-3 py-3 sm:flex-row sm:items-center" key={`${item.knowledgeBaseId}-${item.documentId}`}><div><div className="text-sm font-medium">{item.knowledgeBaseName || target?.name || 'Knowledge base'}</div><div className="mt-1 text-xs text-muted-foreground">{item.publishedAt ? `Published ${formatDate(item.publishedAt)}` : 'Publication recorded'} · document <span className="font-mono">{item.documentId.slice(0, 8)}</span>{item.state === 'deleted' ? ' · deleted from knowledge base' : ''}</div></div><div className="flex items-center gap-2"><Badge variant={item.state === 'failed' ? 'destructive' : ['ready', 'completed'].includes(item.state) ? 'success' : item.state === 'deleted' ? 'secondary' : 'warning'} className="capitalize">{active ? 'Indexing' : item.state.replaceAll('_', ' ')}</Badge><Button size="sm" variant="outline" asChild><Link to={`/knowledge-bases/${encodeURIComponent(item.knowledgeBaseId)}`}>Open knowledge base</Link></Button></div></div>; })}</div> : <p className="mt-3 text-xs text-muted-foreground">This report has not been published to a knowledge base.</p>}{!knowledgeBasesLoading && !knowledgeBasesError && availableKnowledgeBases.length === 0 && knowledgeBases.length > 0 && <p className="mt-3 text-xs text-muted-foreground">This report already has a publication record for every available knowledge base. A deleted derived document stays as a provenance tombstone; generate a new report version before publishing it again.</p>}</section>
       </> : <div className="border px-4 py-3" role="alert">
         <p className="text-sm font-semibold">The completed report has no readable result</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">The saved sources are intact. Refresh once; if this remains, share the report ID with support.</p>
       </div>}
     </CardContent>
+    <Dialog open={publishDialog} onOpenChange={(open) => { if (!publishing) { setPublishDialog(open); if (!open) setPublicationReviewed(false); } }}><DialogContent><DialogHeader><DialogTitle>Publish dated intelligence</DialogTitle><DialogDescription>Choose one knowledge base for this completed report. This action is duplicate-safe and does not alter the saved X evidence.</DialogDescription></DialogHeader><div className="space-y-4">
+      <div><Label htmlFor={`publish-kb-${report.id}`}>Knowledge base</Label><select id={`publish-kb-${report.id}`} className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedKnowledgeBaseId} disabled={publishing || knowledgeBasesLoading} onChange={(event) => setSelectedKnowledgeBaseId(event.target.value)}><option value="">{knowledgeBasesLoading ? 'Loading knowledge bases…' : 'Choose a knowledge base'}</option>{availableKnowledgeBases.map((base) => <option value={base.id} key={base.id}>{base.name} · {base.privacy === 'private' ? 'Private' : 'Space'}</option>)}</select>{knowledgeBasesError && <div className="mt-2 flex items-center justify-between gap-3 text-xs text-destructive" role="alert"><span>{knowledgeBasesError}</span><Button size="sm" variant="outline" onClick={reloadKnowledgeBases}>Retry</Button></div>}{!knowledgeBasesLoading && !knowledgeBasesError && knowledgeBases.length === 0 && <p className="mt-2 text-xs text-muted-foreground">Create a knowledge base before publishing. <Link className="font-medium underline" to="/knowledge-bases">Open knowledge bases</Link></p>}</div>
+      <label className="flex items-start gap-3 border border-amber-300 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-950"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0" checked={publicationReviewed} onChange={(event) => setPublicationReviewed(event.target.checked)} /><span>I reviewed this report and understand it will be stored as a dated, AI-derived artifact. The original saved X posts remain the evidence and are not replaced.</span></label>
+      <p className="text-xs leading-5 text-muted-foreground">One knowledge document is created for this report. Repeated publication requests resolve to that same document instead of creating duplicates.</p>
+    </div><DialogFooter><Button variant="outline" disabled={publishing} onClick={() => setPublishDialog(false)}>Cancel</Button><Button disabled={publishing || !selectedKnowledgeBaseId || !publicationReviewed} onClick={() => void publish(report, selectedKnowledgeBaseId)}>{publishing ? <Loader2 className="animate-spin" /> : <Database />}{publishing ? 'Publishing' : 'Publish dated report'}</Button></DialogFooter></DialogContent></Dialog>
   </Card>;
 }
 
@@ -111,9 +204,19 @@ export function SocialListeningPage() {
   const [replyForm, setReplyForm] = useState({ tone: 'helpful', instructions: '' });
   const [reportTitle, setReportTitle] = useState('X listening intelligence');
   const [knowledgeBaseIds, setKnowledgeBaseIds] = useState<string[]>([]);
+  const [publishKnowledgeBases, setPublishKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [publishKnowledgeBasesLoading, setPublishKnowledgeBasesLoading] = useState(true);
+  const [publishKnowledgeBasesError, setPublishKnowledgeBasesError] = useState('');
   const [draftEdits, setDraftEdits] = useState<Record<string, string>>({});
   const replyRequest = useRef({ fingerprint: '', key: '' }); const reportRequest = useRef({ fingerprint: '', key: '' });
   const expansionRequest = useRef({ fingerprint: '', key: '' });
+
+  const loadPublishKnowledgeBases = useCallback(async () => {
+    setPublishKnowledgeBasesLoading(true); setPublishKnowledgeBasesError('');
+    try { setPublishKnowledgeBases(await getKnowledgeBases()); }
+    catch (error) { setPublishKnowledgeBasesError(error instanceof Error ? error.message : 'Knowledge bases could not load.'); }
+    finally { setPublishKnowledgeBasesLoading(false); }
+  }, []);
 
   const load = useCallback(async (reason: RefreshReason = 'live', requestedConnectionId?: string | null) => {
     const sequence = ++refreshSequence.current; if (reason === 'manual') setRefreshing(true);
@@ -146,6 +249,7 @@ export function SocialListeningPage() {
   }, []);
 
   useEffect(() => { void load('initial'); }, [load]);
+  useEffect(() => { void loadPublishKnowledgeBases(); }, [loadPublishKnowledgeBases]);
   useLiveRefresh(useCallback(() => { void load('live'); }, [load]));
   useEffect(() => {
     const outcome = new URLSearchParams(window.location.search).get('x'); if (!outcome) return;
@@ -170,6 +274,7 @@ export function SocialListeningPage() {
   const dispatchingSync = status?.syncJobs.find((job) => ['queued', 'processing', 'waiting_rate_limit'].includes(job.state));
   const visibleReplyDrafts = replyDrafts.filter((draft) => draft.connectionId === selectedConnectionId);
   const newestMentions = useMemo(() => [...mentions].sort((left, right) => new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime()), [mentions]);
+  const mentionsById = useMemo(() => new Map(mentions.map((mention) => [mention.id, mention])), [mentions]);
   const filteredMentions = newestMentions.filter((mention) => stream === 'all' || mention.ingestionKind === stream || mention.metadata?.x?.streams?.includes(stream));
   const visibleMentions = filteredMentions.slice(0, savedVisibleLimit);
   const defaultReportMentionIds = useMemo(() => newestMentions.slice(0, reportLimit).map((mention) => mention.id), [newestMentions, reportLimit]);
@@ -187,7 +292,8 @@ export function SocialListeningPage() {
   ].filter((value): value is string => Boolean(value)) : [];
   const activeReports = reports.filter((report) => report.state === 'queued').length;
   const activeDrafts = visibleReplyDrafts.filter((draft) => draft.state === 'queued').length;
-  const hasActiveSocialWork = Boolean(dispatchingSync || activeReports || activeDrafts);
+  const activePublications = reports.some((report) => (report.publications || []).some((publication) => !['ready', 'completed', 'failed'].includes(publication.state)));
+  const hasActiveSocialWork = Boolean(dispatchingSync || activeReports || activeDrafts || activePublications);
   useEffect(() => {
     if (!hasActiveSocialWork) return;
     const timer = window.setInterval(() => { void load('live'); }, 4_000);
@@ -271,9 +377,9 @@ export function SocialListeningPage() {
     finally { setWorking(''); }
   }
   async function deleteHistory() {
-    if (!connection || !window.confirm(`Permanently delete the retained X posts, reply drafts, social reports, sync audit, and derived combined reports for ${connectionLabel(connection)}?`)) return;
+    if (!connection || !window.confirm(`Permanently delete the retained X posts, reply drafts, social reports, sync audit, and derived combined reports for ${connectionLabel(connection)}? Manually published knowledge documents remain and must be deleted from their knowledge base separately.`)) return;
     setWorking('delete-history');
-    try { await api(`/api/integrations/x/connections/${connection.id}/history`, { method: 'DELETE' }); await load('manual'); toast.success('Retained X history and derived intelligence deleted.'); }
+    try { await api(`/api/integrations/x/connections/${connection.id}/history`, { method: 'DELETE' }); await load('manual'); toast.success('Retained X history and its saved reports were deleted. Published knowledge documents were kept.'); }
     catch (error) { toast.error(error instanceof Error ? error.message : 'Could not delete X history.'); }
     finally { setWorking(''); }
   }
@@ -363,6 +469,25 @@ export function SocialListeningPage() {
       toast.error(error instanceof Error ? error.message : 'Could not retry this report.');
     } finally { setWorking(''); }
   }
+  async function publishReport(report: SocialIntelligenceReport, knowledgeBaseId: string) {
+    if (!knowledgeBaseId || report.state !== 'completed') return;
+    setWorking(`publish:${report.id}`);
+    try {
+      const response = await api<{
+        report?: SocialIntelligenceReport; publication: SocialIntelligencePublication;
+        deduplicated?: boolean; statusUrl?: string | null;
+      }>(`/api/social/reports/${encodeURIComponent(report.id)}/publish`, json('POST', { knowledgeBaseId, reviewed: true }));
+      const publication = { ...response.publication, statusUrl: response.statusUrl || response.publication.statusUrl || null };
+      setReports((current) => current.map((item) => {
+        if (item.id !== report.id) return item;
+        const returned = response.report?.id === report.id ? response.report : item;
+        const publications = (returned.publications || item.publications || []).filter((entry) => entry.knowledgeBaseId !== publication.knowledgeBaseId);
+        return { ...returned, publications: [publication, ...publications] };
+      }));
+      toast.success(response.deduplicated ? 'This report is already published to that knowledge base.' : 'Reviewed intelligence published. Indexing has started.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not publish this intelligence report.'); }
+    finally { setWorking(''); }
+  }
   async function copyText(value: string, label: string) {
     try { await navigator.clipboard.writeText(value); toast.success(`${label} copied.`); }
     catch { toast.error('Clipboard access was unavailable.'); }
@@ -422,7 +547,7 @@ export function SocialListeningPage() {
 
     {connection && view === 'queries' && <Card><CardHeader className="border-b"><div className="flex items-start justify-between gap-4"><div><CardTitle>Listening queries</CardTitle><CardDescription className="mt-1">Recent-search queries run for {connectionLabel(connection)} and consume X API credits.</CardDescription></div>{canManageCollection ? <Button size="sm" onClick={() => openQuery()}><Plus />Add query</Button> : <span className="text-xs text-muted-foreground">Owner/admin managed</span>}</div></CardHeader><CardContent className="p-0">{status.queries.length ? <div className="divide-y">{status.queries.map((query) => <div className="flex flex-col justify-between gap-3 p-5 md:flex-row md:items-center" key={query.id}><div><div className="flex items-center gap-2"><span className="text-sm font-semibold">{query.label}</span><Badge variant={query.enabled ? 'success' : 'secondary'}>{query.enabled ? 'Enabled' : 'Paused'}</Badge>{query.catchUpPending && <Badge variant="warning">Catch-up pending</Badge>}{query.historyExhausted && <Badge variant="secondary">History loaded</Badge>}</div><code className="mt-1 block break-all text-xs text-muted-foreground">{query.query}</code><div className="mt-2 text-xs text-muted-foreground">Last success: {formatDate(query.lastSuccessAt)}{query.lastError ? ` · ${query.lastError}` : ''}</div></div>{canManageCollection && <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openQuery(query)}>Edit</Button><Button size="icon" variant="ghost" aria-label={`Delete ${query.label}`} onClick={() => void deleteQuery(query)}><Trash2 /></Button></div>}</div>)}</div> : <div className="px-5 py-14 text-center"><Search className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No listening queries</div><p className="mt-1 text-sm text-muted-foreground">Account posts and mentions still sync without a public search query.</p></div>}</CardContent></Card>}
 
-    {connection && view === 'intelligence' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Social intelligence history</h2><p className="mt-1 text-sm text-muted-foreground">Each report keeps its exact selected-post snapshot and Terra runtime metadata.</p></div>{activeReports > 0 && <Badge variant="warning">{activeReports} processing</Badge>}</div>{reports.length ? reports.map((report) => <SocialReportCard key={report.id} report={report} retrying={working === `report:${report.id}`} retry={(item) => void retryReport(item)} />) : <Card><CardContent className="py-14 text-center"><FileText className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No saved social reports</div><p className="mt-1 text-sm text-muted-foreground">Select collected posts in Listening and generate the first report.</p></CardContent></Card>}</div>}
+    {connection && view === 'intelligence' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Social intelligence history</h2><p className="mt-1 text-sm text-muted-foreground">Each report keeps its exact selected-post snapshot, dated observation window, provenance, and Terra runtime metadata.</p></div>{activeReports > 0 && <Badge variant="warning">{activeReports} processing</Badge>}</div>{reports.length ? reports.map((report) => <SocialReportCard key={report.id} report={report} mentionsById={mentionsById} knowledgeBases={publishKnowledgeBases} knowledgeBasesLoading={publishKnowledgeBasesLoading} knowledgeBasesError={publishKnowledgeBasesError} retrying={working === `report:${report.id}`} publishing={working === `publish:${report.id}`} retry={(item) => void retryReport(item)} publish={publishReport} reloadKnowledgeBases={() => void loadPublishKnowledgeBases()} />) : <Card><CardContent className="py-14 text-center"><FileText className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No saved social reports</div><p className="mt-1 text-sm text-muted-foreground">Select collected posts in Listening and generate the first report.</p></CardContent></Card>}</div>}
 
     {connection && view === 'replies' && <div className="space-y-4"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Reply assistant</h2><p className="mt-1 text-sm text-muted-foreground">Drafts require human review. Seemplify does not post, like, follow, or message on X.</p></div>{activeDrafts > 0 && <Badge variant="warning">{activeDrafts} generating</Badge>}</div>{visibleReplyDrafts.length ? visibleReplyDrafts.map((draft) => { const mention = mentions.find((item) => item.id === draft.mentionId); return <Card key={draft.id}><CardHeader className="border-b"><div className="flex items-start justify-between"><div><CardTitle>{mention?.author || 'X reply draft'}</CardTitle><CardDescription className="mt-1">{draft.tone} · {formatDate(draft.createdAt)}</CardDescription></div><Badge variant={draft.state === 'failed' ? 'destructive' : draft.state === 'queued' ? 'warning' : 'success'}>{draft.state}</Badge></div></CardHeader><CardContent className="pt-5">{draft.state === 'queued' ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Terra is generating a draft.</div> : draft.state === 'failed' ? <p className="text-sm text-destructive">{draft.error}</p> : <div className="space-y-3"><Label htmlFor={`reply-${draft.id}`}>Editable draft</Label><Textarea id={`reply-${draft.id}`} maxLength={280} value={draftEdits[draft.id] ?? draft.content} onChange={(event) => setDraftEdits((current) => ({ ...current, [draft.id]: event.target.value }))} /><div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{(draftEdits[draft.id] ?? draft.content).length}/280 · Draft only — never posted automatically</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void copyText(draftEdits[draft.id] ?? draft.content, 'Reply draft')}><Copy />Copy</Button>{mention?.url && <Button size="sm" variant="outline" asChild><a href={mention.url} target="_blank" rel="noreferrer"><ExternalLink />Open on X</a></Button>}<Button size="sm" disabled={working === `draft:${draft.id}`} onClick={() => void saveReplyDraft(draft)}>{working === `draft:${draft.id}` ? <Loader2 className="animate-spin" /> : <Check />}Save draft</Button></div></div>{draft.rationale && <p className="border-t pt-3 text-xs leading-5 text-muted-foreground">Why Terra suggested this: {draft.rationale}</p>}</div>}</CardContent></Card>; }) : <Card><CardContent className="py-14 text-center"><MessageSquareReply className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">No reply drafts</div><p className="mt-1 text-sm text-muted-foreground">Choose Draft reply beside a collected X post.</p></CardContent></Card>}</div>}
 
@@ -434,7 +559,7 @@ export function SocialListeningPage() {
         {!canManageCollection && <div className="border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">These controls are read-only for members. A space owner or admin manages API usage, authorization, and retained history.</div>}
         <div className="grid max-w-2xl gap-4 sm:grid-cols-2"><div><Label htmlFor="sync-frequency">Sync frequency</Label><select id="sync-frequency" value={connection.syncIntervalMinutes} onChange={(event) => void updateConnection({ syncIntervalMinutes: Number(event.target.value) })} disabled={!canManageCollection || working === 'settings'} className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">{syncIntervals.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div><label className="flex items-center justify-between gap-4 border px-4 py-3"><span><span className="block text-sm font-medium">Automatic sync</span><span className="mt-0.5 block text-xs text-muted-foreground">Next: {connection.autoSync ? formatDate(connection.nextSyncAt) : 'Disabled'}</span></span><input type="checkbox" className="h-4 w-4" disabled={!canManageCollection || working === 'settings' || connection.status !== 'connected'} checked={connection.autoSync} onChange={(event) => void updateConnection({ autoSync: event.target.checked })} /></label></div>
         <div className="border-t pt-5"><div className="text-sm font-semibold">Authorization</div><p className="mt-1 text-sm text-muted-foreground">{connection.authType === 'oauth2' ? `OAuth 2 PKCE · scopes: ${connection.scopes.join(', ') || 'read access'} · token refreshes securely` : 'Legacy OAuth 1 connection. Reconnect after OAuth 2 configuration to receive scoped refreshable access.'}</p>{canManageCollection && (connection.status === 'disconnected' ? <Button className="mt-4" onClick={() => void connect()}><AtSign />Reconnect through X</Button> : <Button className="mt-4" variant="outline" disabled={working === 'disconnect'} onClick={() => void disconnect()}>{working === 'disconnect' ? <Loader2 className="animate-spin" /> : <Trash2 />}Disconnect account</Button>)}</div>
-        <div className="border-t pt-5"><div className="text-sm font-semibold">Retained history</div><p className="mt-1 text-sm text-muted-foreground">Deleting removes collected posts unique to this account, reply drafts, social reports, dependent combined reports, and sync audit records.</p>{canManageCollection && <Button className="mt-4" variant="destructive" disabled={working === 'delete-history'} onClick={() => void deleteHistory()}>{working === 'delete-history' ? <Loader2 className="animate-spin" /> : <Trash2 />}Delete X history</Button>}</div>
+        <div className="border-t pt-5"><div className="text-sm font-semibold">Retained history</div><p className="mt-1 text-sm text-muted-foreground">Deleting removes collected posts unique to this account, reply drafts, social reports, dependent combined reports, and sync audit records. Manually published derived documents remain in their knowledge bases and must be deleted there separately.</p>{canManageCollection && <Button className="mt-4" variant="destructive" disabled={working === 'delete-history'} onClick={() => void deleteHistory()}>{working === 'delete-history' ? <Loader2 className="animate-spin" /> : <Trash2 />}Delete X history</Button>}</div>
       </CardContent>
     </Card>}
 
