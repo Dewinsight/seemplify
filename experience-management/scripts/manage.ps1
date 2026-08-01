@@ -8,12 +8,18 @@ $SourceProjectDir = Split-Path -Parent $PSScriptRoot
 $RuntimeCompatibilityScript = Join-Path $PSScriptRoot 'postgres-runtime-compatibility.ps1'
 if (-not (Test-Path -LiteralPath $RuntimeCompatibilityScript -PathType Leaf)) { throw 'The PostgreSQL runtime compatibility contract is missing.' }
 . $RuntimeCompatibilityScript
-$isolatedDeploymentMarker = '\.local-runtime\experience-management\deployments\'
-$isolatedDeploymentIndex = $SourceProjectDir.IndexOf($isolatedDeploymentMarker, [StringComparison]::OrdinalIgnoreCase)
-$RepositoryDir = if ($isolatedDeploymentIndex -ge 0) {
-  $SourceProjectDir.Substring(0, $isolatedDeploymentIndex)
-} else {
-  Split-Path -Parent $SourceProjectDir
+$SourceParentDir = Split-Path -Parent $SourceProjectDir
+$RepositoryDir = $SourceParentDir
+# Isolated releases live below <repository>\.local-runtime\experience-management\deployments.
+# Resolve the owning repository instead of creating a second runtime tree beside
+# the deployment directory. This keeps database markers, secrets, uploads and
+# the active-project pointer stable across source and isolated-release starts.
+if ((Split-Path -Leaf $SourceParentDir) -eq 'deployments') {
+  $managedRuntimeDir = Split-Path -Parent $SourceParentDir
+  $localRuntimeDir = Split-Path -Parent $managedRuntimeDir
+  if ((Split-Path -Leaf $managedRuntimeDir) -eq 'experience-management' -and (Split-Path -Leaf $localRuntimeDir) -eq '.local-runtime') {
+    $RepositoryDir = Split-Path -Parent $localRuntimeDir
+  }
 }
 $RuntimeDir = Join-Path $RepositoryDir '.local-runtime\experience-management'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'

@@ -43,7 +43,7 @@ function dockerPsql(databaseName, sql, allowFailure = false) {
 function runUpgrade(extra = [], expectedStatus = 0) {
   const result = spawnSync(process.execPath, [
     path.join(projectDir, 'scripts', 'upgrade-postgres-schema.mjs'),
-    '--target-version', '5',
+    '--target-version', '7',
     '--expected-source-version', '1',
     '--expected-source-sha256', sourceSha256,
     '--pg-host', host,
@@ -134,11 +134,11 @@ try {
 
   runUpgrade();
   runUpgrade();
-  await assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 5 });
-  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 5);
+  await assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 7 });
+  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 7);
   const assistantTables = (await ownerClient.query(`SELECT to_regclass(name) name FROM unnest(ARRAY[
     'assistant_nylas_connections','assistant_nylas_oauth_states','assistant_runs',
-    'assistant_actions','assistant_reminders','assistant_audit_events'
+    'assistant_actions','assistant_reminders','assistant_audit_events','assistant_outbound_messages'
   ]) AS names(name)`)).rows;
   assert.ok(assistantTables.every((row) => row.name), 'Runtime schema 5 assistant tables are incomplete.');
   const assistantColumns = (await ownerClient.query(`SELECT table_name,column_name FROM information_schema.columns
@@ -181,7 +181,7 @@ try {
   emit('upgrade_and_idempotency_passed');
 
   const wrongSource = spawnSync(process.execPath, [
-    path.join(projectDir, 'scripts', 'upgrade-postgres-schema.mjs'), '--target-version', '5',
+    path.join(projectDir, 'scripts', 'upgrade-postgres-schema.mjs'), '--target-version', '7',
     '--expected-source-version', '1', '--expected-source-sha256', 'f'.repeat(64),
     '--pg-host', host, '--pg-port', String(port), '--pg-database', database,
     '--pg-user', ownerRole, '--pg-password-file', passwordFile, '--pg-ssl', 'disable', '--json'
@@ -198,12 +198,16 @@ try {
   fs.writeFileSync(path.join(migrationDir, '0004_experience_assistant.sql'), assistantMigration.replace(/\r?\n/gu, '\r\n'));
   const assistantPhase1Migration = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', '0005_experience_assistant_phase1.sql'), 'utf8');
   fs.writeFileSync(path.join(migrationDir, '0005_experience_assistant_phase1.sql'), assistantPhase1Migration.replace(/\r?\n/gu, '\r\n'));
+  const reviewedIntelligenceMigration = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', '0006_reviewed_social_intelligence_publications.sql'), 'utf8');
+  fs.writeFileSync(path.join(migrationDir, '0006_reviewed_social_intelligence_publications.sql'), reviewedIntelligenceMigration.replace(/\r?\n/gu, '\r\n'));
+  const reviewedReplyMigration = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', '0007_assistant_reviewed_replies.sql'), 'utf8');
+  fs.writeFileSync(path.join(migrationDir, '0007_assistant_reviewed_replies.sql'), reviewedReplyMigration.replace(/\r?\n/gu, '\r\n'));
   runUpgrade(['--migrations-dir', migrationDir]);
-  fs.writeFileSync(path.join(migrationDir, '0006_intentional_failure.sql'), `CREATE TABLE should_rollback(id TEXT PRIMARY KEY);\nSELECT * FROM definitely_missing_table;\n`);
-  const failedUpgrade = runUpgrade(['--target-version', '6', '--migrations-dir', migrationDir], 1);
+  fs.writeFileSync(path.join(migrationDir, '0008_intentional_failure.sql'), `CREATE TABLE should_rollback(id TEXT PRIMARY KEY);\nSELECT * FROM definitely_missing_table;\n`);
+  const failedUpgrade = runUpgrade(['--target-version', '8', '--migrations-dir', migrationDir], 1);
   assert.match(failedUpgrade.stderr, /definitely_missing_table/u);
   assert.equal((await ownerClient.query("SELECT to_regclass('public.should_rollback') name")).rows[0].name, null);
-  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 5);
+  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 7);
   emit('checksum_normalization_and_rollback_passed');
 
   let privilegeSql = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', 'runtime_privileges.sql'), 'utf8');
@@ -223,7 +227,7 @@ try {
   try {
     await ownerClient.query('ALTER TABLE assistant_runs DROP COLUMN output_json');
     await assert.rejects(
-      assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 5 }),
+      assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 7 }),
       (error) => error?.code === 'RUNTIME_SCHEMA_COLUMN_MISMATCH'
     );
   } finally { await ownerClient.query('ROLLBACK'); }
@@ -231,7 +235,7 @@ try {
 
   await ownerClient.query('DROP INDEX platform_audit_events_target');
   await assert.rejects(
-    assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 5 }),
+    assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 7 }),
     (error) => error?.code === 'RUNTIME_SCHEMA_INDEX_MISMATCH'
   );
   emit('schema_drift_detection_passed');

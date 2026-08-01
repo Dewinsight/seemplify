@@ -24,12 +24,14 @@ function readSecret() {
     if (!value) throw new Error('empty');
     return value;
   } catch {
-    throw new TerraError('The shared Experience AI service secret is not configured.', 'TERRA_NOT_CONFIGURED', 503, true);
+    throw new TerraError('The shared Terra service secret is not configured.', 'TERRA_NOT_CONFIGURED', 503, true);
   }
 }
 
-function usageIdentity(requestId: string) {
-  const eventId = `usage_${crypto.createHash('sha256').update(`experience:${requestId}`).digest('hex').slice(0, 48)}`;
+function usageIdentity(requestId: string, executionRevision = 0) {
+  const revision = Number.isSafeInteger(executionRevision) && executionRevision > 0 ? executionRevision : 0;
+  const executionKey = revision ? `${requestId}:execution:${revision}` : requestId;
+  const eventId = `usage_${crypto.createHash('sha256').update(`experience:${executionKey}`).digest('hex').slice(0, 48)}`;
   const gatewayExecutionId = `localexec_${crypto.createHash('sha256').update(eventId).digest('hex').slice(0, 48)}`;
   return { eventId, gatewayExecutionId };
 }
@@ -51,6 +53,7 @@ function signedHeaders(secret: string, body: string, requestPath: string) {
 export interface TerraCompletionInput {
   activity: string;
   requestId: string;
+  executionRevision?: number;
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   jsonSchema?: Record<string, unknown>;
   schemaName?: string;
@@ -63,7 +66,7 @@ export interface TerraCompletionInput {
 export async function completeWithTerra(input: TerraCompletionInput) {
   const secret = readSecret();
   const requestPath = '/v1/complete';
-  const identity = usageIdentity(input.requestId);
+  const identity = usageIdentity(input.requestId, input.executionRevision);
   const body = JSON.stringify({
     activity: input.activity,
     executionMode: 'local-only',
@@ -92,13 +95,21 @@ export async function completeWithTerra(input: TerraCompletionInput) {
       signal: AbortSignal.timeout(input.timeoutMs || 250_000)
     });
   } catch (error) {
-    throw new TerraError(`Experience AI is unreachable: ${error instanceof Error ? error.message : String(error)}`, 'TERRA_UNAVAILABLE', 503, true);
+    throw new TerraError(`Terra is unreachable: ${error instanceof Error ? error.message : String(error)}`, 'TERRA_UNAVAILABLE', 503, true);
   }
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) {
+    const gatewayCode = typeof payload.code === 'string' && payload.code.trim()
+      ? payload.code.trim()
+      : 'TERRA_REQUEST_FAILED';
+    const gatewayMessage = typeof payload.message === 'string' && payload.message.trim()
+      ? payload.message.trim()
+      : typeof payload.error === 'string' && payload.error.trim()
+        ? payload.error.trim()
+        : `${gatewayCode} (HTTP ${response.status})`;
     throw new TerraError(
-      payload.message || payload.error || `Experience AI returned HTTP ${response.status}`,
-      payload.code || 'TERRA_REQUEST_FAILED',
+      `Terra rejected ${input.activity}: ${gatewayMessage}`,
+      gatewayCode,
       response.status,
       payload.retryable !== false && response.status >= 429
     );

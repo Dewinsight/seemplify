@@ -43,4 +43,3 @@ export function resetNylasSecretKeyCacheForTests() { cachedKey = null; }
 export function nylasSecretEncryptionConfigured() {
   try { encryptionKey(); return true; } catch { return false; }
 }
-

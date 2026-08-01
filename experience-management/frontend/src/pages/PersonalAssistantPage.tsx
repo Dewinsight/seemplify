@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, BookOpenCheck, CalendarDays, CheckSquare, ChevronRight, CircleAlert, Clock3, Copy, FilePenLine,
-  FileText, Inbox, ListTodo, Loader2, MailCheck, MailOpen, MessageSquareText, PanelRightClose, PanelRightOpen,
-  Paperclip, Plus, RefreshCw, Save, Search, ShieldCheck, Square, Star
+  FileText, Inbox, ListTodo, Loader2, MailCheck, MailOpen, MessageSquareText, PanelRightClose,
+  Paperclip, Plus, RefreshCw, Save, Search, Send, ShieldCheck, Sparkles, Square, Star, Users
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, json } from '@/lib/api';
@@ -12,10 +12,12 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { RichEmailEditor, emailBodyToHtml, emailBodyToPlainText } from '@/components/assistant/RichEmailEditor';
 import { cn } from '@/lib/utils';
 import type {
   AssistantAction, AssistantActionItem, AssistantAuditEvent, AssistantCalendar, AssistantCalendarEvent,
@@ -25,6 +27,8 @@ import type {
 
 type WorkspaceTab = 'mailbox' | 'work-products' | 'actions' | 'calendar' | 'knowledge' | 'history' | 'audit';
 type MobileMailboxView = 'threads' | 'conversation';
+type MailboxAssistantMode = 'insights' | 'reply';
+type MailboxThreadFilter = 'all' | 'unread' | 'attachments';
 type WorkProductCalendarEvidence = {
   connectionId: string;
   calendarId: string;
@@ -115,17 +119,33 @@ function messageInitial(message: AssistantMessage) {
   return value.slice(0, 1).toUpperCase();
 }
 
+function connectionCanSend(connection?: AssistantConnection | null) {
+  if (!connection) return false;
+  const scopes = new Set((connection.scopes || []).map((scope) => scope.toLocaleLowerCase()));
+  return connection.provider === 'microsoft'
+    ? scopes.has('mail.send')
+    : scopes.has('https://www.googleapis.com/auth/gmail.send')
+      || scopes.has('https://www.googleapis.com/auth/gmail.modify');
+}
+
+function replyRecipientPreview(detail: AssistantThreadDetail | null, mailboxEmail: string, mode: 'reply' | 'reply_all') {
+  const own = mailboxEmail.toLocaleLowerCase();
+  const anchor = [...(detail?.messages || [])].reverse().find((message) =>
+    message.from.some((participant) => participant.email.toLocaleLowerCase() !== own)) || detail?.messages.at(-1);
+  if (!anchor) return [];
+  const source = mode === 'reply_all'
+    ? [...anchor.from, ...anchor.to, ...anchor.cc]
+    : anchor.from.some((participant) => participant.email.toLocaleLowerCase() !== own) ? anchor.from : [...anchor.to, ...anchor.cc];
+  return [...new Map(source
+    .filter((participant) => participant.email.toLocaleLowerCase() !== own)
+    .map((participant) => [participant.email.toLocaleLowerCase(), participantLabel(participant)])).values()];
+}
+
 function RunBadge({ run }: { run: AssistantRun }) {
   const waiting = run.stage?.startsWith('waiting_for_');
   const variant = run.state === 'completed' ? 'success' : run.state === 'failed' ? 'destructive' : waiting ? 'warning' : 'secondary';
   const label = waiting ? run.stage.replaceAll('_', ' ') : run.state === 'processing' ? `${run.progress}%` : run.state;
   return <Badge variant={variant}>{label}</Badge>;
-}
-
-function ConnectionMark({ connection }: { connection: AssistantConnection }) {
-  return <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border bg-background text-xs font-semibold">
-    {connection.provider === 'microsoft' ? 'M' : 'G'}
-  </div>;
 }
 
 function ResultList({ title, values }: { title: string; values?: unknown[] }) {
@@ -160,6 +180,7 @@ export function PersonalAssistantPage() {
   const [threadId, setThreadId] = useState('');
   const [threadSearch, setThreadSearch] = useState('');
   const [threadQuery, setThreadQuery] = useState('');
+  const [threadFilter, setThreadFilter] = useState<MailboxThreadFilter>('all');
   const [threadDetail, setThreadDetail] = useState<AssistantThreadDetail | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadLoadingMore, setThreadLoadingMore] = useState(false);
@@ -171,6 +192,10 @@ export function PersonalAssistantPage() {
       ? window.matchMedia('(min-width: 1536px)').matches
       : false
   );
+  const [assistantMode, setAssistantMode] = useState<MailboxAssistantMode>('insights');
+  const [threadQuestion, setThreadQuestion] = useState('');
+  const [replyMode, setReplyMode] = useState<'reply' | 'reply_all'>('reply');
+  const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState('');
   const [instructions, setInstructions] = useState('Draft a concise, professional response. Do not make commitments that are not in the thread.');
   const [tone, setTone] = useState('professional');
@@ -216,13 +241,17 @@ export function PersonalAssistantPage() {
   const calendarEventRequest = useRef(0);
   const runRequest = useRef({ fingerprint: '', key: '' });
   const workProductRequest = useRef({ fingerprint: '', key: '' });
+  const sendRequest = useRef({ fingerprint: '', key: '' });
+  const workspaceRequest = useRef(0);
 
   const loadWorkspace = useCallback(async (quiet = false) => {
+    const requestId = ++workspaceRequest.current;
     const [overviewResult, runResult, sourceResult] = await Promise.allSettled([
       api<AssistantOverview>('/api/assistant/overview'),
       api<AssistantRun[]>('/api/assistant/runs?limit=100'),
       api<IntelligenceSource[]>('/api/intelligence/sources')
     ]);
+    if (requestId !== workspaceRequest.current) return;
     if (overviewResult.status === 'fulfilled') {
       const connected = overviewResult.value.connections.filter((item) => item.status === 'connected');
       connectedConnectionIds.current = new Set(connected.map((item) => item.id));
@@ -349,6 +378,8 @@ export function PersonalAssistantPage() {
     try {
       const parameters = new URLSearchParams({ connectionId: requestedConnection, limit: '40' });
       if (threadQuery) parameters.set('search', threadQuery);
+      else if (threadFilter === 'unread') parameters.set('unread', 'true');
+      else if (threadFilter === 'attachments') parameters.set('hasAttachment', 'true');
       const result = await api<AssistantThread[] | AssistantThreadPage>(`/api/assistant/mailbox/threads?${parameters.toString()}`);
       if (requestId !== threadRequest.current || activeConnection.current !== requestedConnection) return;
       const page = threadPage(result);
@@ -362,7 +393,7 @@ export function PersonalAssistantPage() {
     } finally {
       if (requestId === threadRequest.current) setThreadLoading(false);
     }
-  }, [connectionId, threadQuery]);
+  }, [connectionId, threadFilter, threadQuery]);
 
   const loadMoreThreads = useCallback(async () => {
     const requestedConnection = connectionId;
@@ -374,6 +405,8 @@ export function PersonalAssistantPage() {
     try {
       const parameters = new URLSearchParams({ connectionId: requestedConnection, limit: '40', cursor });
       if (threadQuery) parameters.set('search', threadQuery);
+      else if (threadFilter === 'unread') parameters.set('unread', 'true');
+      else if (threadFilter === 'attachments') parameters.set('hasAttachment', 'true');
       const result = await api<AssistantThread[] | AssistantThreadPage>(`/api/assistant/mailbox/threads?${parameters.toString()}`);
       if (requestId !== threadRequest.current || activeConnection.current !== requestedConnection
         || activeThreadSearch.current !== requestedSearch) return;
@@ -389,7 +422,7 @@ export function PersonalAssistantPage() {
         || activeThreadSearch.current !== requestedSearch) return;
       toast.error(reason instanceof Error ? reason.message : 'More mailbox threads could not load.');
     } finally { setThreadLoadingMore(false); }
-  }, [connectionId, threadCursor, threadLoadingMore, threadQuery]);
+  }, [connectionId, threadCursor, threadFilter, threadLoadingMore, threadQuery]);
 
   const loadThreadDetail = useCallback(async () => {
     const requestedConnection = connectionId;
@@ -463,22 +496,24 @@ export function PersonalAssistantPage() {
     ['assistant.email_summary', 'assistant.email_draft', 'email_summary', 'email_draft'].includes(run.kind)
     && run.connectionId === connectionId && run.subjectRef === threadId
   );
-  const selectedMailboxRun = selectedRun && mailboxRuns.some((run) => run.id === selectedRun.id)
-    ? selectedRun : mailboxRuns[0] || null;
+  const selectedMailboxSummaryRun = mailboxRuns.find((run) =>
+    ['assistant.email_summary', 'email_summary'].includes(run.kind)) || null;
+  const selectedMailboxDraftRun = mailboxRuns.find((run) =>
+    ['assistant.email_draft', 'email_draft'].includes(run.kind)) || null;
   const workProductRuns = runs.filter((run) => ['assistant.work_product', 'work_product'].includes(run.kind));
   const selectedWorkProductRun = selectedRun && workProductRuns.some((run) => run.id === selectedRun.id)
     ? selectedRun : workProductRuns[0] || null;
-  const editableRun = tab === 'mailbox' ? selectedMailboxRun : tab === 'work-products' ? selectedWorkProductRun : selectedRun;
+  const editableRun = tab === 'mailbox' ? selectedMailboxDraftRun : tab === 'work-products' ? selectedWorkProductRun : selectedRun;
   const draftDirty = Boolean(editableRun?.draft && (
     draftSubject !== (editableRun.draft.subject || '') || draftBody !== (editableRun.draft.body || '')
   ));
   useUnsavedChanges(draftDirty);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!editableRun?.draft) return;
     setDraftSubject(editableRun.draft.subject || '');
     setDraftBody(editableRun.draft.body || '');
     setDraftRevision(editableRun.draft.revision || 0);
-  }, [editableRun?.id, editableRun?.draft?.revision]);
+  }, [editableRun?.id, editableRun?.draft?.revision, editableRun?.draft?.subject, editableRun?.draft?.body]);
 
   const groupedSources = useMemo(() => ({
     survey: sources.filter((source) => source.type === 'survey'),
@@ -522,7 +557,7 @@ export function PersonalAssistantPage() {
     finally { setWorking(''); }
   }
 
-  async function startRun(kind: 'email-summary' | 'email-draft' | 'knowledge-answer') {
+  async function startRun(kind: 'email-summary' | 'email-draft' | 'knowledge-answer', options?: { instructions?: string }) {
     const emailRun = kind !== 'knowledge-answer';
     const activeMailbox = overview?.connections.find((connection) => connection.id === connectionId && connection.status === 'connected');
     if (emailRun && (!activeMailbox || !selectedThread)) return toast.error('Select a connected mailbox thread first.');
@@ -532,8 +567,15 @@ export function PersonalAssistantPage() {
     if (!confirmDraftDiscard()) return;
     setWorking(kind);
     try {
-      const body = kind === 'email-summary' ? { connectionId, threadId: selectedThread?.id }
-        : kind === 'email-draft' ? { connectionId, threadId: selectedThread?.id, instructions, tone }
+      const body = kind === 'email-summary' ? {
+        connectionId, threadId: selectedThread?.id,
+        ...(options?.instructions?.trim() ? { instructions: options.instructions.trim() } : {})
+      }
+        : kind === 'email-draft' ? {
+          connectionId, threadId: selectedThread?.id,
+          instructions: options?.instructions?.trim() || instructions,
+          tone
+        }
           : { question, sourceRefs, knowledgeBaseIds: knowledgeAnswerKnowledgeIds };
       const fingerprint = JSON.stringify({ kind, body });
       if (runRequest.current.fingerprint !== fingerprint) runRequest.current = { fingerprint, key: crypto.randomUUID() };
@@ -542,9 +584,17 @@ export function PersonalAssistantPage() {
       });
       runRequest.current = { fingerprint: '', key: '' };
       if (result.run) setSelectedRunId(result.run.id);
-      await loadWorkspace(true);
+      if (kind === 'email-draft' && result.run?.draft) {
+        setDraftSubject(result.run.draft.subject || '');
+        setDraftBody(result.run.draft.body || '');
+        setDraftRevision(result.run.draft.revision || 0);
+      }
+      void loadWorkspace(true);
       setTab(kind === 'knowledge-answer' ? 'knowledge' : 'mailbox');
-      if (emailRun) setAssistantOpen(true);
+      if (emailRun) {
+        setAssistantMode(kind === 'email-draft' ? 'reply' : 'insights');
+        setAssistantOpen(true);
+      }
       toast.success('Assistant work queued. It is safe to leave this page.');
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Assistant work could not be queued.'); }
     finally { setWorking(''); }
@@ -673,6 +723,45 @@ export function PersonalAssistantPage() {
     finally { setWorking(''); }
   }
 
+  async function askThread(value = threadQuestion) {
+    const question = value.trim();
+    if (!question) { toast.error('Ask Terra a question about this conversation.'); return; }
+    await startRun('email-summary', {
+      instructions: `Answer this user question using only the supplied email thread: ${question}`
+    });
+  }
+
+  async function sendSavedReply() {
+    const run = selectedMailboxDraftRun;
+    if (!run?.draft || !readerThread || !activeMailbox) return;
+    if (draftDirty || draftRevision !== run.draft.revision) {
+      return toast.error('Save the latest draft before sending.');
+    }
+    const fingerprint = JSON.stringify({ runId: run.id, revision: draftRevision, mode: replyMode });
+    if (sendRequest.current.fingerprint !== fingerprint) {
+      sendRequest.current = { fingerprint, key: crypto.randomUUID() };
+    }
+    setWorking('send-reply');
+    try {
+      await api(`/api/assistant/mailbox/threads/${encodeURIComponent(readerThread.id)}/reply`, {
+        ...json('POST', {
+          connectionId: activeMailbox.id,
+          runId: run.id,
+          revision: draftRevision,
+          mode: replyMode,
+          confirmation: 'send'
+        }),
+        headers: { 'idempotency-key': sendRequest.current.key }
+      });
+      sendRequest.current = { fingerprint: '', key: '' };
+      setSendConfirmOpen(false);
+      await Promise.all([loadWorkspace(true), loadThreadDetail(), loadAssistantOperations()]);
+      toast.success('Reply sent and recorded in the assistant audit.');
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : 'The reply could not be sent.');
+    } finally { setWorking(''); }
+  }
+
   function toggleSource(ref: string) {
     setSourceRefs((current) => current.includes(ref) ? current.filter((item) => item !== ref) : current.length < 12 ? [...current, ref] : current);
   }
@@ -745,15 +834,16 @@ export function PersonalAssistantPage() {
     setSelectedRunId(id);
   }
 
-  const assistantRuntime = overview?.ai || overview?.terra;
-  const runtimeReady = assistantRuntime?.ready === true;
+  const runtimeReady = overview?.terra?.ready === true;
   const workerBusy = (overview?.worker?.active || 0) + (overview?.worker?.queued || 0);
   const connectedCount = overview?.connections.filter((connection) => connection.status === 'connected').length || 0;
   const activeMailbox = overview?.connections.find((connection) => connection.id === connectionId) || null;
+  const activeMailboxCanSend = connectionCanSend(activeMailbox);
+  const sendRecipients = replyRecipientPreview(detail, activeMailbox?.email || '', replyMode);
 
-  return <div className="space-y-4">
+  return <div className="space-y-3">
     <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Personal assistant</h1><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Browse connected mail, prepare grounded executive work, track actions, and use approved calendar and knowledge context. Nothing is sent or changed without human review.</p></div>
+      <div><h1 className="text-2xl font-semibold tracking-tight">Personal assistant</h1><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Read, understand, and reply to important conversations with Terra. Every provider action requires your review.</p></div>
       <Button size="sm" variant="outline" onClick={() => { void loadWorkspace(); void loadThreads(); }}><RefreshCw />Refresh</Button>
     </header>
 
@@ -764,7 +854,7 @@ export function PersonalAssistantPage() {
       : <>
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y py-2.5 text-xs text-muted-foreground">
       <ServiceStatus ready={Boolean(overview.configured)} text={`${connectedCount} mailbox${connectedCount === 1 ? '' : 'es'} connected`} />
-      <ServiceStatus ready={runtimeReady} text={runtimeReady ? `${assistantRuntime?.providerLabel || assistantRuntime?.model || 'Experience AI'} ready` : 'Experience AI unavailable'} />
+      <ServiceStatus ready={runtimeReady} text={runtimeReady ? `${overview.terra?.providerLabel || overview.terra?.model || 'Terra'} ready` : 'Terra unavailable'} />
       <ServiceStatus ready={overview?.worker?.running !== false} text={workerBusy ? `${workerBusy} assistant request${workerBusy === 1 ? '' : 's'} active` : 'Assistant queue idle'} />
       <span className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5" />Human review required</span>
     </div>
@@ -780,16 +870,13 @@ export function PersonalAssistantPage() {
         <TabsTrigger className="shrink-0" value="audit">Audit</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="mailbox" className="mt-4">
-        <div className="relative flex h-[calc(100dvh-15rem)] min-h-[560px] max-h-[920px] overflow-hidden rounded-lg border bg-card shadow-panel">
-          <MailboxAccountRail
-            overview={overview} selected={connectionId} setSelected={selectConnection} working={working}
-            connect={connect} disconnect={disconnect} loading={loading}
-          />
+      <TabsContent value="mailbox" className="mt-3">
+        <div className="relative flex h-[calc(100dvh-13.5rem)] min-h-[600px] max-h-[980px] overflow-hidden rounded-md border bg-card">
           <MailboxThreadList
             activeConnection={activeMailbox} connections={overview?.connections || []} selectedConnection={connectionId}
             setSelectedConnection={selectConnection} configured={overview?.configured === true}
-            connect={connect} working={working} search={threadSearch} setSearch={changeThreadSearch}
+            connect={connect} disconnect={disconnect} working={working} search={threadSearch} setSearch={changeThreadSearch}
+            filter={threadFilter} setFilter={setThreadFilter}
             threads={threads} selectedThread={threadId} selectThread={selectThread}
             loading={loading || threadLoading} error={threadError} retry={() => void loadThreads()}
             nextCursor={threadCursor} loadingMore={threadLoadingMore} loadMore={() => void loadMoreThreads()}
@@ -798,14 +885,20 @@ export function PersonalAssistantPage() {
           <ConversationReader
             thread={readerThread} detail={detail} loading={threadDetailLoading} error={threadDetailError}
             retry={() => void loadThreadDetail()} mobileView={mobileMailboxView}
-            back={() => setMobileMailboxView('threads')} openAssistant={() => setAssistantOpen(true)}
+            back={() => setMobileMailboxView('threads')}
+            openAssistant={() => { setAssistantMode('insights'); setAssistantOpen(true); }}
+            openReply={() => { setAssistantMode('reply'); setAssistantOpen(true); }}
           />
           {assistantOpen && <MailboxAssistantPanel
-            thread={readerThread} run={selectedMailboxRun} close={() => setAssistantOpen(false)}
+            thread={readerThread} summaryRun={selectedMailboxSummaryRun} draftRun={selectedMailboxDraftRun}
+            mode={assistantMode} setMode={setAssistantMode} close={() => setAssistantOpen(false)}
             working={working} startRun={startRun} tone={tone} setTone={setTone}
             instructions={instructions} setInstructions={setInstructions}
+            question={threadQuestion} setQuestion={setThreadQuestion} askThread={askThread}
             draftSubject={draftSubject} draftBody={draftBody} setDraftSubject={setDraftSubject}
-            setDraftBody={setDraftBody} saveDraft={saveDraft}
+            setDraftBody={setDraftBody} saveDraft={saveDraft} draftDirty={draftDirty}
+            canSend={activeMailboxCanSend} reconnect={() => void connect(activeMailbox?.provider === 'microsoft' ? 'microsoft' : 'google')}
+            replyMode={replyMode} setReplyMode={setReplyMode} reviewSend={() => setSendConfirmOpen(true)}
           />}
         </div>
       </TabsContent>
@@ -897,6 +990,24 @@ export function PersonalAssistantPage() {
         <AuditPane events={auditEvents} error={operationError} refresh={() => void loadAssistantOperations()} />
       </TabsContent>
     </Tabs>
+    <Dialog open={sendConfirmOpen} onOpenChange={(open) => { if (working !== 'send-reply') setSendConfirmOpen(open); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Send this reply?</DialogTitle>
+          <DialogDescription>This is the only step that changes your mailbox. Nylas will send the saved draft as you.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 text-sm">
+          <div><div className="font-medium">To</div><div className="mt-1 text-muted-foreground">{sendRecipients.join(', ') || 'No recipient available'}</div></div>
+          <div><div className="font-medium">Subject</div><div className="mt-1 break-words text-muted-foreground">{draftSubject}</div></div>
+          <div className="max-h-48 overflow-y-auto border bg-muted/20 p-3 leading-6 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc" dangerouslySetInnerHTML={{ __html: emailBodyToHtml(draftBody) }} />
+          <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />The provider message ID, recipients, and content hashes will be retained in the audit trail.</div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" disabled={working === 'send-reply'} onClick={() => setSendConfirmOpen(false)}>Keep editing</Button>
+          <Button disabled={working === 'send-reply' || !sendRecipients.length} onClick={() => void sendSavedReply()}>{working === 'send-reply' ? <Loader2 className="animate-spin" /> : <Send />}Send reply</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>}
   </div>;
 }
@@ -1163,7 +1274,7 @@ function WorkProductDetail({
       </div>
       {(run.state === 'queued' || run.state === 'processing') && <div className="flex items-center gap-3 border px-4 py-5 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Experience AI is preparing this durable request.
+        Terra is preparing this durable request.
         <span className="ml-auto text-xs">{run.progress}%</span>
       </div>}
       {run.error && <div className="border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{run.error}</div>}
@@ -1556,75 +1667,26 @@ function ServiceStatus({ ready, text }: { ready: boolean; text: string }) {
   return <span className="flex items-center gap-2"><span className={cn('h-1.5 w-1.5 rounded-full', ready ? 'bg-emerald-600' : 'bg-amber-600')} />{text}</span>;
 }
 
-function MailboxAccountRail({ overview, selected, setSelected, working, connect, disconnect, loading }: {
-  overview: AssistantOverview | null; selected: string; setSelected: (id: string) => void; working: string;
-  connect: (provider: 'google' | 'microsoft') => Promise<void>; disconnect: (connection: AssistantConnection) => Promise<void>;
-  loading: boolean;
-}) {
-  const selectedConnection = overview?.connections.find((connection) => connection.id === selected) || null;
-  return <aside className="hidden w-[204px] shrink-0 flex-col border-r bg-muted/20 lg:flex" aria-label="Mailbox accounts and views">
-    <div className="border-b px-3 py-3">
-      <div className="text-sm font-semibold">Mail</div>
-      <p className="mt-1 text-xs text-muted-foreground">Connected accounts are read only.</p>
-    </div>
-    <div className="min-h-0 flex-1 overflow-y-auto p-2">
-      <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Mailboxes</div>
-      {loading && !overview ? <div className="space-y-2 px-2 py-2">{[0, 1].map((item) => <div key={item} className="h-9 animate-pulse bg-muted" />)}</div>
-        : overview?.connections.length ? <div className="space-y-1">{overview.connections.map((connection) => {
-          const active = connection.status === 'connected';
-          return <button
-            key={connection.id}
-            type="button"
-            disabled={!active}
-            aria-pressed={active && selected === connection.id}
-            onClick={() => setSelected(connection.id)}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
-              active && selected === connection.id && 'bg-secondary text-secondary-foreground'
-            )}
-          >
-            <ConnectionMark connection={connection} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-semibold">{connection.displayName || connection.email}</span>
-              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{connection.email}</span>
-            </span>
-          </button>;
-        })}</div> : <p className="px-2 py-3 text-xs leading-5 text-muted-foreground">No connected mailbox.</p>}
-      <div className="mt-4 px-2 py-1 text-xs font-medium text-muted-foreground">View</div>
-      <div className="flex items-center gap-2 rounded-md bg-secondary px-2 py-2 text-xs font-medium text-secondary-foreground"><MailOpen className="h-4 w-4" />Recent mail</div>
-    </div>
-    <div className="space-y-2 border-t p-2">
-      <Button className="w-full justify-start" size="sm" variant="ghost" disabled={!overview?.configured || working !== ''} onClick={() => void connect('google')}>Connect Google</Button>
-      <Button className="w-full justify-start" size="sm" variant="ghost" disabled={!overview?.configured || working !== ''} onClick={() => void connect('microsoft')}>Connect Microsoft</Button>
-      {selectedConnection?.status === 'connected' && <button
-        type="button"
-        className="w-full px-2 py-1.5 text-left text-xs text-muted-foreground hover:text-destructive hover:underline"
-        disabled={working === `disconnect:${selectedConnection.id}`}
-        onClick={() => void disconnect(selectedConnection)}
-      >Disconnect selected</button>}
-    </div>
-  </aside>;
-}
-
-function MailboxThreadList({ activeConnection, connections, selectedConnection, setSelectedConnection, configured, connect, working,
-  search, setSearch, threads, selectedThread, selectThread, loading, error, retry, nextCursor, loadingMore, loadMore, mobileView }: {
+function MailboxThreadList({ activeConnection, connections, selectedConnection, setSelectedConnection, configured, connect, disconnect, working,
+  search, setSearch, filter, setFilter, threads, selectedThread, selectThread, loading, error, retry, nextCursor, loadingMore, loadMore, mobileView }: {
   activeConnection: AssistantConnection | null; connections: AssistantConnection[]; selectedConnection: string;
   setSelectedConnection: (id: string) => void; configured: boolean;
-  connect: (provider: 'google' | 'microsoft') => Promise<void>; working: string;
+  connect: (provider: 'google' | 'microsoft') => Promise<void>; disconnect: (connection: AssistantConnection) => Promise<void>; working: string;
   search: string; setSearch: (value: string) => void; threads: AssistantThread[]; selectedThread: string;
+  filter: MailboxThreadFilter; setFilter: (value: MailboxThreadFilter) => void;
   selectThread: (id: string) => void; loading: boolean; error: string; retry: () => void;
   nextCursor: string | null; loadingMore: boolean; loadMore: () => void; mobileView: MobileMailboxView;
 }) {
   return <section className={cn(
-    'min-w-0 flex-col border-r bg-card md:flex md:w-[360px] md:shrink-0 xl:w-[380px]',
+    'min-w-0 flex-col border-r bg-card md:flex md:w-[340px] md:shrink-0 xl:w-[360px]',
     mobileView === 'threads' ? 'flex w-full' : 'hidden'
   )}>
     <div className="shrink-0 border-b p-3">
-      <div className="mb-2 lg:hidden">
+      <div className="mb-3 flex items-center gap-2">
         <label className="sr-only" htmlFor="assistant-mailbox-select">Connected mailbox</label>
         <select
           id="assistant-mailbox-select"
-          className="h-9 w-full rounded-md border-input bg-background px-3 text-sm"
+          className="h-9 min-w-0 flex-1 rounded-md border-input bg-background px-3 text-sm"
           disabled={!connections.some((connection) => connection.status === 'connected')}
           value={selectedConnection}
           onChange={(event) => setSelectedConnection(event.target.value)}
@@ -1633,6 +1695,14 @@ function MailboxThreadList({ activeConnection, connections, selectedConnection, 
           {connections.filter((connection) => connection.status === 'connected').map((connection) =>
             <option key={connection.id} value={connection.id}>{connection.displayName || connection.email} · {connection.email}</option>)}
         </select>
+        <details className="relative">
+          <summary aria-label="Mailbox accounts" className="flex h-9 cursor-pointer list-none items-center gap-1 rounded-md border bg-background px-2.5 text-xs font-medium hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-ring"><Plus className="h-4 w-4" />Mailbox</summary>
+          <div className="absolute right-0 z-30 mt-1 w-48 border bg-background p-1 shadow-panel">
+            <button type="button" className="w-full px-3 py-2 text-left text-sm hover:bg-muted" disabled={!configured || working !== ''} onClick={() => void connect('google')}>Connect Google</button>
+            <button type="button" className="w-full px-3 py-2 text-left text-sm hover:bg-muted" disabled={!configured || working !== ''} onClick={() => void connect('microsoft')}>Connect Microsoft</button>
+            {activeConnection && <button type="button" className="w-full border-t px-3 py-2 text-left text-sm text-destructive hover:bg-muted" disabled={working !== ''} onClick={() => void disconnect(activeConnection)}>Disconnect current</button>}
+          </div>
+        </details>
       </div>
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
@@ -1641,7 +1711,15 @@ function MailboxThreadList({ activeConnection, connections, selectedConnection, 
         </div>
         <Button type="button" size="icon" variant="ghost" aria-label="Refresh conversations" onClick={retry}><RefreshCw /></Button>
       </div>
-      {activeConnection && <div className="mt-2 truncate text-xs text-muted-foreground">{activeConnection.displayName || activeConnection.email}</div>}
+      <div className="mt-3 flex items-center gap-4 border-t pt-2" aria-label="Mailbox filters">
+        {([['all', 'All'], ['unread', 'Unread'], ['attachments', 'Attachments']] as const).map(([value, label]) => <button
+          key={value}
+          type="button"
+          aria-pressed={filter === value}
+          className={cn('border-b-2 border-transparent py-1 text-xs text-muted-foreground hover:text-foreground', filter === value && 'border-foreground font-medium text-foreground')}
+          onClick={() => setFilter(value)}
+        >{label}</button>)}
+      </div>
     </div>
     <div role="region" aria-label="Mailbox conversations" className="min-h-0 flex-1 overflow-y-auto">
       {error && <div className="flex items-start justify-between gap-3 border-b bg-amber-50 px-3 py-3 text-xs text-amber-950" role="alert"><span>{error}</span><button className="shrink-0 font-semibold underline" onClick={retry}>Retry</button></div>}
@@ -1695,9 +1773,9 @@ function formatFileSize(value?: number | null) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ConversationReader({ thread, detail, loading, error, retry, mobileView, back, openAssistant }: {
+function ConversationReader({ thread, detail, loading, error, retry, mobileView, back, openAssistant, openReply }: {
   thread: AssistantThread | null; detail: AssistantThreadDetail | null; loading: boolean; error: string; retry: () => void;
-  mobileView: MobileMailboxView; back: () => void; openAssistant: () => void;
+  mobileView: MobileMailboxView; back: () => void; openAssistant: () => void; openReply: () => void;
 }) {
   const loadedMessageCount = detail?.loadedMessageCount ?? detail?.messages.length ?? 0;
   const totalMessageCount = detail?.totalMessageCount ?? thread?.messageCount ?? loadedMessageCount;
@@ -1711,10 +1789,13 @@ function ConversationReader({ thread, detail, loading, error, retry, mobileView,
         <h2 className="truncate text-base font-semibold">{thread?.subject || 'Select a conversation'}</h2>
         {thread && <p className="mt-1 truncate text-xs text-muted-foreground">{thread.participants.map(participantLabel).join(', ')} · {totalMessageCount} message{totalMessageCount === 1 ? '' : 's'}</p>}
       </div>
-      <Button type="button" size="sm" variant="outline" aria-label="Open assistant" onClick={openAssistant}><PanelRightOpen /><span className="hidden xl:inline">Assistant</span></Button>
+      <div className="flex shrink-0 gap-2">
+        <Button type="button" size="sm" variant="outline" aria-label="Open assistant" onClick={openAssistant}><Sparkles /><span className="hidden xl:inline">Ask Terra</span></Button>
+        <Button type="button" size="sm" disabled={!thread} onClick={openReply}><FilePenLine />Reply</Button>
+      </div>
     </header>
     <div className="min-h-0 flex-1 overflow-y-auto">
-      {detail && <div
+      {detail?.messagesTruncated && <div
         className={cn('border-b px-4 py-2 text-xs', detail.messagesTruncated ? 'bg-amber-50 text-amber-950' : 'bg-muted/25 text-muted-foreground')}
         data-testid="assistant-thread-load-metadata"
         role="status"
@@ -1726,10 +1807,10 @@ function ConversationReader({ thread, detail, loading, error, retry, mobileView,
           ? ` ${formatFileSize(detail.loadedMessageBytes)} of the ${formatFileSize(detail.threadByteLimit)} thread budget was loaded.`
           : ''}
       </div>}
-      {!thread ? <div className="grid h-full min-h-[320px] place-items-center px-6 text-center"><div><MailOpen className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">Choose a conversation</div><p className="mt-1 text-sm text-muted-foreground">The full read-only thread will open here.</p></div></div>
+      {!thread ? <div className="grid h-full min-h-[320px] place-items-center px-6 text-center"><div><MailOpen className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">Choose a conversation</div><p className="mt-1 text-sm text-muted-foreground">Read the thread, ask Terra, or prepare a reviewed reply.</p></div></div>
         : loading || !detail && !error ? <ConversationSkeleton />
           : error ? <div className="mx-auto max-w-xl px-6 py-12 text-center"><CircleAlert className="mx-auto h-5 w-5 text-amber-700" /><div className="mt-3 text-sm font-semibold">Conversation unavailable</div><p className="mt-1 text-sm leading-6 text-muted-foreground">{error}</p><Button className="mt-4" size="sm" variant="outline" onClick={retry}>Retry conversation</Button>{thread.snippet && <p className="mt-6 border-l-2 pl-4 text-left text-sm leading-6 text-muted-foreground">{thread.snippet}</p>}</div>
-            : detail?.messages.length ? <div>{detail.messages.map((message) => <MailboxMessage key={message.id} message={message} bodyByteLimit={detail.messageBodyByteLimit} />)}</div>
+            : detail?.messages.length ? <div className="mx-auto max-w-4xl">{detail.messages.map((message) => <MailboxMessage key={message.id} message={message} bodyByteLimit={detail.messageBodyByteLimit} />)}</div>
               : <div className="px-6 py-12 text-center text-sm text-muted-foreground">This conversation has no readable messages.</div>}
     </div>
   </section>;
@@ -1764,38 +1845,76 @@ function MailboxMessage({ message, bodyByteLimit }: { message: AssistantMessage;
   </article>;
 }
 
-function MailboxAssistantPanel({ thread, run, close, working, startRun, tone, setTone, instructions, setInstructions,
-  draftSubject, draftBody, setDraftSubject, setDraftBody, saveDraft }: {
-  thread: AssistantThread | null; run: AssistantRun | null; close: () => void; working: string;
-  startRun: (kind: 'email-summary' | 'email-draft' | 'knowledge-answer') => Promise<unknown>;
+function MailboxAssistantPanel({
+  thread, summaryRun, draftRun, mode, setMode, close, working, startRun, tone, setTone, instructions, setInstructions,
+  question, setQuestion, askThread, draftSubject, draftBody, setDraftSubject, setDraftBody, saveDraft, draftDirty,
+  canSend, reconnect, replyMode, setReplyMode, reviewSend
+}: {
+  thread: AssistantThread | null; summaryRun: AssistantRun | null; draftRun: AssistantRun | null;
+  mode: MailboxAssistantMode; setMode: (value: MailboxAssistantMode) => void; close: () => void; working: string;
+  startRun: (kind: 'email-summary' | 'email-draft' | 'knowledge-answer', options?: { instructions?: string }) => Promise<unknown>;
   tone: string; setTone: (value: string) => void; instructions: string; setInstructions: (value: string) => void;
+  question: string; setQuestion: (value: string) => void; askThread: (value?: string) => Promise<void>;
   draftSubject: string; draftBody: string; setDraftSubject: (value: string) => void; setDraftBody: (value: string) => void;
-  saveDraft: () => void;
+  saveDraft: () => void; draftDirty: boolean; canSend: boolean; reconnect: () => void;
+  replyMode: 'reply' | 'reply_all'; setReplyMode: (value: 'reply' | 'reply_all') => void; reviewSend: () => void;
 }) {
-  return <aside className="absolute inset-y-0 right-0 z-20 flex w-full flex-col border-l bg-card shadow-panel sm:w-[390px] 2xl:relative 2xl:z-0 2xl:w-[360px] 2xl:shadow-none" aria-label="Mailbox assistant">
+  const busy = working !== '';
+  const quickQuestions = [
+    ['What needs a reply?', 'What specifically needs a response, and what is the deadline?'],
+    ['Find commitments', 'List every commitment, owner, and date stated in this thread.'],
+    ['Extract actions', 'Extract the concrete next actions supported by this thread.']
+  ] as const;
+  return <aside className="absolute inset-y-0 right-0 z-20 flex w-full flex-col border-l bg-card shadow-panel sm:w-[430px] 2xl:relative 2xl:z-0 2xl:w-[420px] 2xl:shadow-none" aria-label="Mailbox assistant">
     <header className="flex h-16 shrink-0 items-center justify-between border-b px-4">
-      <div><div className="text-sm font-semibold">Assistant</div><div className="mt-0.5 text-xs text-muted-foreground">Advisory output for this conversation</div></div>
+      <div><div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4" />Terra</div><div className="mt-0.5 text-xs text-muted-foreground">Grounded in this conversation</div></div>
       <Button type="button" size="icon" variant="ghost" aria-label="Close assistant" onClick={close}><PanelRightClose /></Button>
     </header>
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="space-y-4 border-b p-4">
-        <div className="grid grid-cols-2 gap-2">
-          <Button type="button" size="sm" variant="outline" disabled={!thread || working !== ''} onClick={() => void startRun('email-summary')}>{working === 'email-summary' ? <Loader2 className="animate-spin" /> : <MessageSquareText />}Summarise thread</Button>
-          <Button type="button" size="sm" variant="outline" disabled={!thread || working !== ''} onClick={() => void startRun('email-draft')}>{working === 'email-draft' ? <Loader2 className="animate-spin" /> : <FilePenLine />}Prepare reply draft</Button>
-        </div>
-        <div>
-          <Label htmlFor="assistant-tone">Draft tone</Label>
-          <select id="assistant-tone" className="mt-2 h-9 w-full rounded-md border-input bg-background px-3 text-sm" value={tone} onChange={(event) => setTone(event.target.value)}>
-            <option value="professional">Professional</option><option value="concise">Concise</option><option value="warm">Warm</option><option value="empathetic">Empathetic</option>
-          </select>
-        </div>
-        <div><Label htmlFor="assistant-instructions">Draft instructions</Label><Textarea id="assistant-instructions" className="mt-2 min-h-20" value={instructions} maxLength={1000} onChange={(event) => setInstructions(event.target.value)} /></div>
-        <div className="flex gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />Nothing is sent or changed in the mailbox.</div>
-      </div>
-      {run ? <RunDetail embedded run={run} draftSubject={draftSubject} draftBody={draftBody} setDraftSubject={setDraftSubject} setDraftBody={setDraftBody} saveDraft={saveDraft} saving={working === 'save-draft'} />
-        : <div className="px-5 py-10 text-center"><MessageSquareText className="mx-auto h-5 w-5 text-muted-foreground" /><div className="mt-3 text-sm font-medium">{thread ? 'No assistant work for this conversation' : 'Select a conversation'}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{thread ? 'Summaries and drafts are durable and remain available in History.' : 'Choose a thread before asking Terra to help.'}</p></div>}
+    <div className="grid h-11 shrink-0 grid-cols-2 border-b" role="tablist" aria-label="Terra conversation tools">
+      <button type="button" role="tab" aria-selected={mode === 'insights'} className={cn('border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground', mode === 'insights' && 'border-foreground font-medium text-foreground')} onClick={() => setMode('insights')}>Insights</button>
+      <button type="button" role="tab" aria-selected={mode === 'reply'} className={cn('border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground', mode === 'reply' && 'border-foreground font-medium text-foreground')} onClick={() => setMode('reply')}>Reply</button>
     </div>
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      {mode === 'insights' ? <>
+        <div className="space-y-4 border-b p-4">
+          <div>
+            <Label htmlFor="assistant-thread-question">Ask about this thread</Label>
+            <Textarea id="assistant-thread-question" className="mt-2 min-h-20" placeholder="What has been agreed, and what still needs a decision?" value={question} maxLength={1500} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void askThread(); }} />
+            <div className="mt-2 flex justify-end"><Button size="sm" disabled={!thread || busy || !question.trim()} onClick={() => void askThread()}>{working === 'email-summary' ? <Loader2 className="animate-spin" /> : <Sparkles />}Ask Terra</Button></div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {quickQuestions.map(([label, prompt]) => <Button key={label} type="button" size="sm" variant="outline" disabled={!thread || busy} onClick={() => { setQuestion(prompt); void askThread(prompt); }}>{label}</Button>)}
+            <Button type="button" size="sm" variant="outline" disabled={!thread || busy} onClick={() => void startRun('email-summary')}>Summarise</Button>
+          </div>
+        </div>
+        {summaryRun ? <RunDetail embedded run={summaryRun} draftSubject="" draftBody="" setDraftSubject={() => undefined} setDraftBody={() => undefined} saveDraft={() => undefined} saving={false} />
+          : <AssistantEmpty thread={thread} text="Ask a question or create a concise summary. Terra will use only the loaded thread." />}
+      </> : <>
+        <div className="space-y-4 border-b p-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+            <div><Label htmlFor="assistant-tone">Tone</Label><select id="assistant-tone" className="mt-2 h-9 w-full rounded-md border-input bg-background px-3 text-sm" value={tone} onChange={(event) => setTone(event.target.value)}><option value="professional">Professional</option><option value="concise">Concise</option><option value="warm">Warm</option><option value="empathetic">Empathetic</option><option value="direct">Direct</option></select></div>
+            <Button type="button" size="sm" disabled={!thread || busy} onClick={() => void startRun('email-draft')}>{working === 'email-draft' ? <Loader2 className="animate-spin" /> : <Sparkles />}{draftRun ? 'Regenerate' : 'Draft reply'}</Button>
+          </div>
+          <div><Label htmlFor="assistant-instructions">What should the reply achieve?</Label><Textarea id="assistant-instructions" className="mt-2 min-h-20" value={instructions} maxLength={2000} onChange={(event) => setInstructions(event.target.value)} /></div>
+          {draftRun && <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy} onClick={() => void startRun('email-draft', { instructions: `${instructions}\nMake the reply materially shorter.` })}>Make shorter</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => void startRun('email-draft', { instructions: `${instructions}\nMake the reply warmer while preserving every fact.` })}>Make warmer</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => void startRun('email-draft', { instructions: `${instructions}\nMake the requested next step explicit.` })}>Clarify next step</Button></div>}
+        </div>
+        {draftRun ? <RunDetail embedded run={draftRun} draftSubject={draftSubject} draftBody={draftBody} setDraftSubject={setDraftSubject} setDraftBody={setDraftBody} saveDraft={saveDraft} saving={working === 'save-draft'} />
+          : <AssistantEmpty thread={thread} text="Set the tone and outcome, then ask Terra for an editable reply." />}
+      </>}
+    </div>
+    {mode === 'reply' && draftRun?.draft && !draftRun.delivery?.sentAt && <div className="shrink-0 space-y-3 border-t bg-background p-4">
+      <div className="grid grid-cols-2 gap-2" role="group" aria-label="Reply recipients">
+        <Button size="sm" variant={replyMode === 'reply' ? 'secondary' : 'outline'} onClick={() => setReplyMode('reply')}>Reply</Button>
+        <Button size="sm" variant={replyMode === 'reply_all' ? 'secondary' : 'outline'} onClick={() => setReplyMode('reply_all')}><Users />Reply all</Button>
+      </div>
+      {canSend ? <Button className="w-full" disabled={busy || draftDirty || !draftSubject.trim() || !emailBodyToPlainText(draftBody)} onClick={reviewSend}><Send />{draftDirty ? 'Save changes before sending' : 'Review and send'}</Button>
+        : <div className="space-y-2"><p className="text-xs leading-5 text-muted-foreground">This mailbox was connected with read-only access. Reconnect once to approve reply sending.</p><Button className="w-full" variant="outline" disabled={busy} onClick={reconnect}>Enable replies</Button></div>}
+    </div>}
   </aside>;
+}
+
+function AssistantEmpty({ thread, text }: { thread: AssistantThread | null; text: string }) {
+  return <div className="px-5 py-12 text-center"><MessageSquareText className="mx-auto h-5 w-5 text-muted-foreground" /><div className="mt-3 text-sm font-medium">{thread ? 'Terra is ready' : 'Select a conversation'}</div><p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{thread ? text : 'Choose a thread before asking Terra to help.'}</p></div>;
 }
 
 function SourceGroup({ title, sources, selected, toggle }: { title: string; sources: IntelligenceSource[]; selected: string[]; toggle: (ref: string) => void }) {
@@ -1845,10 +1964,17 @@ function RunDetail({ run, draftSubject, draftBody, setDraftSubject, setDraftBody
 }) {
   const output = run.output || {};
   const summary = output.summary;
-  return <Card className={cn(embedded && 'rounded-none border-0 shadow-none')} data-testid="assistant-run-detail"><CardHeader className="border-b"><div className="flex items-start justify-between gap-3"><div><CardTitle>{runTitle(run)}</CardTitle><CardDescription className="mt-1">Queued {formatDateTime(run.createdAt)} · Advisory output</CardDescription></div><RunBadge run={run} /></div></CardHeader><CardContent className="space-y-5 pt-5">
-    {(run.state === 'queued' || run.state === 'processing') && <div className="flex items-center gap-3 border px-4 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{run.stage?.startsWith('waiting_for_') ? 'waiting for Experience AI' : 'Experience AI is processing this durable request.'}<span className="ml-auto text-xs">{run.progress}%</span></div>}
+  const emailDraft = ['assistant.email_draft', 'email_draft'].includes(run.kind);
+  return <Card className={cn(embedded && 'rounded-none border-0 shadow-none')} data-testid="assistant-run-detail"><CardHeader className="border-b"><div className="flex items-start justify-between gap-3"><div><CardTitle>{runTitle(run)}</CardTitle><CardDescription className="mt-1">{formatDateTime(run.createdAt)} · Saved assistant output</CardDescription></div><RunBadge run={run} /></div></CardHeader><CardContent className="space-y-5 pt-5">
+    {(run.state === 'queued' || run.state === 'processing') && <div className="flex items-center gap-3 border px-4 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{run.stage?.startsWith('waiting_for_') ? run.stage.replaceAll('_', ' ') : 'Terra is processing this durable request.'}<span className="ml-auto text-xs">{run.progress}%</span></div>}
     {run.error && <div className="border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{run.error}</div>}
-    {['assistant.email_draft', 'email_draft'].includes(run.kind) && run.draft ? <div className="space-y-4"><div className="flex gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">Draft only — nothing has been sent</div><p className="mt-1 text-xs leading-5">Review and edit this copy, then use your normal approved mail process when you are ready.</p></div></div><div><Label htmlFor={`draft-subject-${run.id}`}>Subject</Label><Input id={`draft-subject-${run.id}`} className="mt-2" value={draftSubject} maxLength={500} onChange={(event) => setDraftSubject(event.target.value)} /></div><div><Label htmlFor={`draft-body-${run.id}`}>Editable draft</Label><Textarea id={`draft-body-${run.id}`} className="mt-2 min-h-56" value={draftBody} maxLength={12_000} onChange={(event) => setDraftBody(event.target.value)} /></div><div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Revision {run.draft.revision} · Original generation is retained for audit.</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(`${draftSubject}\n\n${draftBody}`); toast.success('Draft copied.'); }}><Copy />Copy</Button><Button size="sm" disabled={saving || !draftSubject.trim() || !draftBody.trim()} onClick={saveDraft}>{saving ? <Loader2 className="animate-spin" /> : <Save />}Save draft</Button></div></div></div> : <>
+    {emailDraft && run.draft ? <div className="space-y-4">
+      {run.delivery?.sentAt ? <div className="flex gap-3 border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"><MailCheck className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">Reply sent</div><p className="mt-1 text-xs leading-5">Sent {formatDateTime(run.delivery.sentAt)} to {run.delivery.recipients.join(', ')}.</p></div></div>
+        : <div className="flex gap-3 border bg-muted/20 px-4 py-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div><div className="font-semibold">Review required</div><p className="mt-1 text-xs leading-5 text-muted-foreground">Terra prepared this draft. Saving it does not send anything.</p></div></div>}
+      <div><Label htmlFor={`draft-subject-${run.id}`}>Subject</Label><Input id={`draft-subject-${run.id}`} className="mt-2" value={draftSubject} maxLength={500} disabled={Boolean(run.delivery?.sentAt)} onChange={(event) => setDraftSubject(event.target.value)} /></div>
+      <div><Label className="mb-2 block" htmlFor={`draft-body-${run.id}`}>Reply</Label><RichEmailEditor id={`draft-body-${run.id}`} value={draftBody} maxLength={12_000} disabled={Boolean(run.delivery?.sentAt)} onChange={setDraftBody} /></div>
+      {!run.delivery?.sentAt && <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Revision {run.draft.revision} · Generated copy is retained for audit.</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(`${draftSubject}\n\n${emailBodyToPlainText(draftBody)}`); toast.success('Draft copied.'); }}><Copy />Copy</Button><Button size="sm" disabled={saving || !draftSubject.trim() || !emailBodyToPlainText(draftBody)} onClick={saveDraft}>{saving ? <Loader2 className="animate-spin" /> : <Save />}Save draft</Button></div></div>}
+    </div> : <>
       {summary && <section><h3 className="text-sm font-semibold">{['assistant.knowledge_answer', 'knowledge_answer'].includes(run.kind) ? 'Answer' : 'Summary'}</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{summary}</p></section>}
       {['assistant.knowledge_answer', 'knowledge_answer'].includes(run.kind) && output.answer && !summary && <section><h3 className="text-sm font-semibold">Answer</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{output.answer}</p></section>}
       <ResultList title="Key points" values={output.keyPoints} /><ResultList title="Action items" values={output.actionItems} /><ResultList title="Open questions" values={output.openQuestions} />

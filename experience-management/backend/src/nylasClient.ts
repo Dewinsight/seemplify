@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { normalizeEmailDraftHtml } from './emailDraftHtml.js';
 
 export type NylasProvider = 'google' | 'microsoft';
 
@@ -22,18 +23,20 @@ const safeScopes: Record<NylasProvider, readonly string[]> = {
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/calendar.readonly'
   ],
-  microsoft: ['offline_access', 'openid', 'profile', 'User.Read', 'Mail.Read', 'Calendars.Read']
+  microsoft: ['offline_access', 'openid', 'profile', 'User.Read', 'Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'Calendars.Read']
 };
 
 const defaultScopes: Record<NylasProvider, readonly string[]> = {
   google: [
     'openid', 'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/calendar.readonly'
   ],
-  microsoft: ['offline_access', 'openid', 'profile', 'User.Read', 'Mail.Read', 'Calendars.Read']
+  microsoft: ['offline_access', 'openid', 'profile', 'User.Read', 'Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'Calendars.Read']
 };
 
 export function nylasRedirectUri() {
@@ -497,6 +500,59 @@ export async function getNylasThreadSnapshot(grantId: string, threadId: string):
     messageBodyByteLimit: maxMessageBodyBytes,
     threadByteLimit: maxThreadBytes
   };
+}
+
+export interface NylasReplyRecipient {
+  name?: string;
+  email: string;
+}
+
+export async function sendNylasReply(grantId: string, input: {
+  replyToMessageId: string;
+  to: NylasReplyRecipient[];
+  cc?: NylasReplyRecipient[];
+  subject: string;
+  body: string;
+  idempotencyKey: string;
+}) {
+  const replyToMessageId = cleanText(input.replyToMessageId, 300);
+  const subject = cleanText(input.subject, 500);
+  const body = normalizeEmailDraftHtml(input.body);
+  const normalizeRecipients = (values: NylasReplyRecipient[] = []) => values
+    .map((value) => ({
+      email: cleanText(value.email, 254).toLocaleLowerCase('en-US'),
+      ...(cleanText(value.name, 200) ? { name: cleanText(value.name, 200) } : {})
+    }))
+    .filter((value) => value.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.email));
+  const to = normalizeRecipients(input.to);
+  const cc = normalizeRecipients(input.cc);
+  if (!replyToMessageId || !subject || !body || !to.length) {
+    throw new NylasError('The reply is missing a recipient, subject, body, or source message.', 400, 'NYLAS_REPLY_INVALID');
+  }
+  const payload = await nylasRequest(
+    `/v3/grants/${encodeURIComponent(grantId)}/messages/send?fields=include_basic_headers`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.nylasApiKey}`,
+        'content-type': 'application/json',
+        'idempotency-key': cleanText(input.idempotencyKey, 256)
+      },
+      body: JSON.stringify({
+        to,
+        ...(cc.length ? { cc } : {}),
+        subject,
+        body,
+        is_plaintext: false,
+        reply_to_message_id: replyToMessageId
+      })
+    },
+    512 * 1024
+  );
+  const message = payloadData(payload);
+  const id = cleanText(message?.id || message?.message_id, 300);
+  if (!id) throw new NylasError('Nylas accepted the reply but returned no message identifier.', 502, 'NYLAS_REPLY_RESPONSE_INVALID');
+  return { id, threadId: cleanText(message?.thread_id, 300) || null };
 }
 
 export interface AssistantCalendar {

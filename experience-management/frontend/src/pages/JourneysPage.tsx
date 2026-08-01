@@ -18,6 +18,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { KnowledgeBasePicker } from '@/components/knowledge/KnowledgeBasePicker';
 import type { AiJob, Journey, JourneyStage, JourneyVersion } from '@/types';
 
 type WorkingAction = 'generate' | 'optimize' | 'save' | 'restore' | 'delete' | null;
@@ -166,6 +167,8 @@ function EvidenceNotice({ journey }: { journey: Journey }) {
   const basis = journey.provenance?.evidenceBasis || 'unknown';
   const explanation = basis === 'brief_only'
     ? 'Terra created this map from the written brief. It has not analysed survey responses, interviews, tickets, or social posts for this map.'
+    : basis === 'knowledge_grounded'
+      ? 'Terra used the written brief or map together with the selected, version-pinned knowledge sources. The map remains a hypothesis until its claims are checked against customer evidence.'
     : basis === 'workspace_authored'
       ? 'Your team authored or edited this map. The statements are still working assumptions until they are checked against customer research.'
       : 'The evidence source for this older map is unknown. Treat its statements as assumptions until they are checked against customer research.';
@@ -208,6 +211,8 @@ export function JourneysPage() {
   const [industry, setIndustry] = useState('B2B software');
   const [objective, setObjective] = useState('Reduce onboarding friction and improve retention');
   const [focus, setFocus] = useState('Find missing touchpoints, friction, ownership gaps, and measurable improvements.');
+  const [generationKnowledgeBaseIds, setGenerationKnowledgeBaseIds] = useState<string[]>([]);
+  const [auditKnowledgeBaseIds, setAuditKnowledgeBaseIds] = useState<string[]>([]);
   const [workingAction, setWorkingAction] = useState<WorkingAction>(null);
   const [restoringVersionId, setRestoringVersionId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -282,9 +287,9 @@ export function JourneysPage() {
     if (brief.trim().length < 10) return toast.error('Add a more detailed journey brief.');
     setWorkingAction('generate');
     try {
-      const queued = await api<{ jobId: string }>('/api/ai/journeys', json('POST', { brief, audience, industry, objective }));
+      const queued = await api<{ jobId: string }>('/api/ai/journeys', json('POST', { brief, audience, industry, objective, knowledgeBaseIds: generationKnowledgeBaseIds }));
       setCreateOpen(false);
-      toast.success('Journey generation queued with Experience AI.');
+      toast.success('Journey generation queued with Terra.');
       await load();
       const job = await waitForJob(queued.jobId, () => void load());
       const journey = job.result?.output?.journey as Journey | undefined;
@@ -302,8 +307,8 @@ export function JourneysPage() {
     if (!selected) return;
     setWorkingAction('optimize');
     try {
-      const queued = await api<{ jobId: string; deduplicated: boolean }>(`/api/journeys/${selected.id}/ai/optimize`, json('POST', { focus }));
-      toast.success(queued.deduplicated ? 'This exact audit is already active. Following its progress.' : 'Journey audit queued with Experience AI.');
+      const queued = await api<{ jobId: string; deduplicated: boolean }>(`/api/journeys/${selected.id}/ai/optimize`, json('POST', { focus, knowledgeBaseIds: auditKnowledgeBaseIds }));
+      toast.success(queued.deduplicated ? 'This exact audit is already active. Following its progress.' : 'Journey audit queued with Terra.');
       await load();
       await waitForJob(queued.jobId, () => void load());
       await load();
@@ -514,7 +519,7 @@ export function JourneysPage() {
 
     {currentJob && <div className="border bg-card px-4 py-3" role="status" aria-live="polite">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium"><Loader2 className="h-4 w-4 animate-spin" />{currentJob.kind === 'journey.generate' ? 'Experience AI is generating a journey map' : 'Experience AI is auditing a journey map'}</div>
+        <div className="flex items-center gap-2 text-sm font-medium"><Loader2 className="h-4 w-4 animate-spin" />{currentJob.kind === 'journey.generate' ? 'Terra is generating a journey map' : 'Terra is auditing a journey map'}</div>
         <span className="text-xs text-muted-foreground">{currentJob.state === 'queued' ? 'Waiting in the durable AI queue' : `${Math.max(0, Math.min(100, currentJob.progress || 0))}% · ${currentJob.stage || 'Processing'}`}</span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden bg-muted" aria-hidden="true"><div className="h-full bg-primary transition-[width]" style={{ width: `${Math.max(3, Math.min(100, currentJob.progress || 3))}%` }} /></div>
@@ -658,12 +663,13 @@ export function JourneysPage() {
 
           <Card>
             <CardHeader>
-              <div className="flex items-start gap-3"><CircleGauge className="mt-0.5 h-5 w-5 text-muted-foreground" /><div><CardTitle>Audit this journey with Experience AI</CardTitle><CardDescription className="mt-1 leading-5">Ask Experience AI to find missing stages, weak measures, and unsupported actions. An audit improves the working hypothesis; it does not add customer evidence.</CardDescription></div></div>
+              <div className="flex items-start gap-3"><CircleGauge className="mt-0.5 h-5 w-5 text-muted-foreground" /><div><CardTitle>Audit this journey with Terra</CardTitle><CardDescription className="mt-1 leading-5">Ask Terra to find missing stages, weak measures, and unsupported actions. An audit improves the working hypothesis; it does not add customer evidence.</CardDescription></div></div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"><strong>This revises the current map.</strong> A restorable snapshot is saved automatically before Terra applies its changes.</div>
               <Label htmlFor="journey-focus">Audit focus</Label>
               <Textarea id="journey-focus" rows={3} value={focus} onChange={(event) => setFocus(event.target.value)} />
+              <KnowledgeBasePicker value={auditKnowledgeBaseIds} onChange={setAuditKnowledgeBaseIds} disabled={workingAction !== null} description="Optional. Ground this audit in selected operational or research documents." />
               <Button onClick={optimizeJourney} disabled={workingAction !== null}>{workingAction === 'optimize' ? <Loader2 className="animate-spin" /> : <Sparkles />}Audit and improve</Button>
             </CardContent>
           </Card>
@@ -686,7 +692,7 @@ export function JourneysPage() {
       <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Generate a journey map</DialogTitle>
-          <DialogDescription>Terra uses only this brief to draft the map. No survey responses, interviews, tickets, or social posts are included automatically.</DialogDescription>
+          <DialogDescription>Terra uses this brief and only the knowledge bases you explicitly select. Survey responses, interviews, tickets, and social posts are not included automatically.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5"><Label htmlFor="journey-brief">Customer lifecycle brief</Label><Textarea id="journey-brief" rows={5} value={brief} onChange={(event) => setBrief(event.target.value)} /><p className="text-xs text-muted-foreground">Describe the starting point, desired outcome, important transitions, and known touchpoints.</p></div>
@@ -695,11 +701,12 @@ export function JourneysPage() {
             <div className="space-y-1.5"><Label htmlFor="journey-industry">Industry</Label><Input id="journey-industry" value={industry} onChange={(event) => setIndustry(event.target.value)} /></div>
           </div>
           <div className="space-y-1.5"><Label htmlFor="journey-objective">Business objective</Label><Textarea id="journey-objective" rows={3} value={objective} onChange={(event) => setObjective(event.target.value)} /></div>
+          <KnowledgeBasePicker value={generationKnowledgeBaseIds} onChange={setGenerationKnowledgeBaseIds} disabled={workingAction !== null} description="Optional. Select up to five sources to ground this map." />
           <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950"><strong>Output:</strong> an editable hypothesis. Validate pain points and opportunities with customer research before prioritising work.</div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button onClick={generateJourney} disabled={workingAction !== null}>{workingAction === 'generate' ? <Loader2 className="animate-spin" /> : <Sparkles />}Generate with Experience AI</Button>
+          <Button onClick={generateJourney} disabled={workingAction !== null}>{workingAction === 'generate' ? <Loader2 className="animate-spin" /> : <Sparkles />}Generate with Terra</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
