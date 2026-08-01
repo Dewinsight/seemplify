@@ -33,6 +33,7 @@ import { nylasSecretEncryptionConfigured } from './nylasSecrets.js';
 import { getSpaceForUser, resolveRequestSpace, SpaceError } from './spaces.js';
 import { assertCanQueueAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import { getTerraStatus } from './terraClient.js';
+import { normalizeEmailDraftHtml } from './emailDraftHtml.js';
 
 const providerInput = z.object({ provider: z.enum(['google', 'microsoft']) }).strict();
 const threadQuery = z.object({
@@ -72,7 +73,7 @@ const knowledgeInput = z.object({
   message: 'Select at least one saved source or knowledge base.'
 });
 const draftInput = z.object({
-  subject: z.string().trim().min(1).max(500), body: z.string().trim().min(1).max(24_000),
+  subject: z.string().trim().min(1).max(500), body: z.string().trim().min(1).max(48_000),
   revision: z.number().int().min(1)
 }).strict();
 const replyInput = z.object({
@@ -477,9 +478,10 @@ assistantRouter.post('/mailbox/threads/:threadId/reply', async (request, respons
     const snapshot = await getNylasThreadSnapshot(connection.grantId, threadId);
     const target = replyTarget(snapshot, connection.email, input.mode);
     const timestamp = new Date().toISOString();
+    const outboundBody = normalizeEmailDraftHtml(run.draft.body);
     const recipients = target.recipients.map((recipient) => recipient.email);
     const subjectSha256 = crypto.createHash('sha256').update(run.draft.subject).digest('hex');
-    const bodySha256 = crypto.createHash('sha256').update(run.draft.body).digest('hex');
+    const bodySha256 = crypto.createHash('sha256').update(outboundBody).digest('hex');
     auditIdentity = { spaceId: space.id, userId: user.id, runId: run.id, threadId };
 
     const reservation = db.transaction(() => {
@@ -530,7 +532,7 @@ assistantRouter.post('/mailbox/threads/:threadId/reply', async (request, respons
       to: target.to,
       cc: target.cc,
       subject: run.draft.subject,
-      body: run.draft.body,
+      body: outboundBody,
       idempotencyKey: reservation.providerKey
     });
     const sentAt = new Date().toISOString();

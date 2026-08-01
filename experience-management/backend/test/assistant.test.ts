@@ -700,7 +700,8 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   assert.equal(providerSend.method, 'POST');
   assert.deepEqual(providerSend.body.to, [{ email: 'customer@example.test' }]);
   assert.equal(providerSend.body.reply_to_message_id, 'msg-4');
-  assert.equal(providerSend.body.is_plaintext, true);
+  assert.equal(providerSend.body.is_plaintext, false);
+  assert.equal(providerSend.body.body, '<p>Thank you. We are reviewing the identity step.</p>');
   const idempotentReply = await owner.post('/api/assistant/mailbox/threads/thread-1/reply').send({
     connectionId: firstConnectionId,
     runId: draftCreated.body.run.id,
@@ -951,7 +952,9 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
     revision: 2
   }).expect(200);
   assert.equal(boundedEmailDraft.body.draft.revision, 3);
-  assert.equal(boundedEmailDraft.body.draft.body.length, 12_000);
+  const boundedEmailText = boundedEmailDraft.body.draft.body.replace(/<[^>]*>/gu, '');
+  assert.ok(boundedEmailText.length <= 12_000);
+  assert.equal(boundedEmailText, longHumanReviewDraft.slice(0, 12_000).trim());
 
   const correspondenceCreated = await owner.post('/api/assistant/runs/work-product').send({
     documentType: 'correspondence',

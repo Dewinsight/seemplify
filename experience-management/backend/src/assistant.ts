@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { emailDraftPlainText, normalizeEmailDraftHtml } from './emailDraftHtml.js';
 import type { SessionUser } from './auth.js';
 import { config } from './config.js';
 import { createJob, db, getJob } from './database.js';
@@ -806,8 +807,15 @@ export function updateAssistantDraft(id: string, spaceId: string, userId: string
     throw new AssistantError('This assistant run does not have an editable draft.', 409, 'ASSISTANT_DRAFT_NOT_READY');
   }
   const subject = providerHtmlToText(input.subject, 500);
-  const body = providerHtmlToText(input.body, current.kind === 'work_product' ? 24_000 : 12_000);
-  if (!subject || !body) throw new AssistantError('Draft subject and body are required.', 400, 'ASSISTANT_DRAFT_INVALID');
+  const emailBodyInput = String(input.body || '');
+  const boundedEmailBody = /<[a-z][\s\S]*>/iu.test(emailBodyInput) ? emailBodyInput : emailBodyInput.slice(0, 12_000);
+  const body = current.kind === 'email_draft'
+    ? normalizeEmailDraftHtml(boundedEmailBody)
+    : providerHtmlToText(input.body, 24_000);
+  const bodyText = current.kind === 'email_draft' ? emailDraftPlainText(body) : body;
+  if (!subject || !bodyText || bodyText.length > (current.kind === 'work_product' ? 24_000 : 12_000) || body.length > 48_000) {
+    throw new AssistantError('Draft subject and body are required and must stay within the editor limit.', 400, 'ASSISTANT_DRAFT_INVALID');
+  }
   const timestamp = new Date().toISOString();
   const changed = db.prepare(`UPDATE assistant_runs SET draft_subject=?,draft_body=?,draft_revision=draft_revision+1,
       draft_updated_at=?,updated_at=? WHERE id=? AND space_id=? AND requested_by=? AND draft_revision=?`)

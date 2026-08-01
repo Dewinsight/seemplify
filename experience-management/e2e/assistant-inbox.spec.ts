@@ -280,7 +280,7 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
   await page.getByRole('tab', { name: 'Reply' }).click();
   await page.getByRole('button', { name: 'Draft reply' }).click();
   await expect(page.getByText('Review required')).toBeVisible();
-  await expect(page.getByLabel('Reply', { exact: true })).toHaveValue('Thank you. I will review the board paper.');
+  await expect(page.getByLabel('Reply', { exact: true })).toHaveText('Thank you. I will review the board paper.');
   await page.getByLabel('Reply', { exact: true }).fill('Unsaved executive response.');
 
   let accountGuardSeen = false;
@@ -292,7 +292,7 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
   await page.getByLabel('Connected mailbox').selectOption(secondConnectionId);
   expect(accountGuardSeen).toBe(true);
   await expect(reader).toContainText('Executive update');
-  await expect(page.getByLabel('Reply', { exact: true })).toHaveValue('Unsaved executive response.');
+  await expect(page.getByLabel('Reply', { exact: true })).toHaveText('Unsaved executive response.');
 
   let tabGuardSeen = false;
   page.once('dialog', async (dialog) => {
@@ -303,7 +303,7 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
   await page.getByRole('tab', { name: 'Work products' }).click();
   expect(tabGuardSeen).toBe(true);
   await expect(page.getByRole('tab', { name: 'Mailbox' })).toHaveAttribute('data-state', 'active');
-  await expect(page.getByLabel('Reply', { exact: true })).toHaveValue('Unsaved executive response.');
+  await expect(page.getByLabel('Reply', { exact: true })).toHaveText('Unsaved executive response.');
 });
 
 test('mailbox switching rejects late list and conversation responses from the previous account', async ({ page }, testInfo) => {

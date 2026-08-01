@@ -68,7 +68,7 @@ async function selectMailbox(page: Page, id: string, accessibleName: RegExp) {
   else await page.getByLabel('Connected mailbox').selectOption(id);
 }
 
-test('personal assistant summarises mail, preserves an editable draft, and cites selected Experience evidence', async ({ page }) => {
+test('personal assistant summarises mail, preserves an editable draft, and cites selected Experience evidence', async ({ page }, testInfo) => {
   let runs: any[] = [];
   let savedDraftBody = '';
   const overview = {
@@ -166,9 +166,19 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   await page.getByRole('button', { name: 'Draft reply' }).click();
   await expect(page.getByText('Review required')).toBeVisible();
   const draft = page.getByLabel('Reply', { exact: true });
+  if (process.env.CAPTURE_VISUALS) {
+    await draft.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('assistant-rich-reply-editor.png'), fullPage: false });
+  }
   await draft.fill('Hi Ada,\n\nI have reviewed the section and will send my comments by Friday.\n\nRegards,\nMichael');
+  await expect(page.getByRole('toolbar', { name: 'Reply formatting' })).toBeVisible();
+  await draft.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await page.getByRole('button', { name: 'Bold', exact: true }).click();
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect.poll(() => savedDraftBody).toContain('send my comments by Friday');
+  expect(savedDraftBody).toContain('<strong>');
+  await page.mouse.move(0, 0);
+  await expect(page.getByText('Draft saved. Nothing was sent.')).toBeHidden({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Review and send' }).click();
   await expect(page.getByRole('heading', { name: 'Send this reply?' })).toBeVisible();
   await page.getByRole('button', { name: 'Send reply' }).click();

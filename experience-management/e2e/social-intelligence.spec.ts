@@ -429,10 +429,12 @@ test('Intelligence combines immutable survey and social report snapshots into sa
   const surveyRef = 'survey:insight-q2';
   const secondSurveyRef = 'survey:executive-retention';
   const socialRef = 'social:x-onboarding';
+  const knowledgeRef = 'knowledge-base:customer-policy';
   const sources = [
     { ref: surveyRef, type: 'survey', title: 'Q2 onboarding insights', kind: 'insights', createdAt: now, preview: 'Customers struggle to find the first setup milestone.' },
     { ref: secondSurveyRef, type: 'survey', title: 'Retention executive report', kind: 'report', createdAt: now, preview: 'Retention improves after teams invite a colleague.' },
-    { ref: socialRef, type: 'social', title: 'X onboarding intelligence', kind: 'social', createdAt: now, preview: 'Recent X posts mention setup guidance and unclear roles.' }
+    { ref: socialRef, type: 'social', title: 'X onboarding intelligence', kind: 'social', createdAt: now, preview: 'Recent X posts mention setup guidance and unclear roles.' },
+    { ref: knowledgeRef, type: 'knowledge', title: 'Customer policy library', kind: 'knowledge_base', createdAt: now, preview: 'Approved customer onboarding and support policies.', knowledgeBaseId: 'customer-policy', documentCount: 8, terraContextEnabled: true }
   ];
   let reports: any[] = [{
     id: 'combined-existing', title: 'Onboarding evidence review', objective: 'Compare onboarding friction across research channels.',
@@ -459,6 +461,7 @@ test('Intelligence combines immutable survey and social report snapshots into sa
       const queued = { id: 'combined-new', title: createPayload.title, objective: createPayload.objective,
         sourceRefs: { survey: createPayload.sourceRefs.filter((ref: string) => ref.startsWith('survey:')),
           social: createPayload.sourceRefs.filter((ref: string) => ref.startsWith('social:')) },
+        knowledgeBaseIds: createPayload.sourceRefs.filter((ref: string) => ref.startsWith('knowledge-base:')).map((ref: string) => ref.replace('knowledge-base:', '')),
         state: 'queued', result: null, runtime: null, aiJobId: 'combined-new-job', error: null, createdAt: now,
         completedAt: null, updatedAt: now };
       reports = [queued, ...reports];
@@ -476,29 +479,43 @@ test('Intelligence combines immutable survey and social report snapshots into sa
   await expect(page.getByRole('heading', { name: 'Onboarding evidence review' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Executive summary' })).toBeVisible();
   await expect(page.getByText('Survey and social evidence both point to unclear setup guidance.')).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: testInfo.outputPath('completed-intelligence-workspace.png'), fullPage: true });
+  }
+  await page.getByRole('button', { name: 'Ask Terra', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Ask this analysis', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'What is the strongest finding?', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to report', exact: true }).click();
+  await page.getByRole('button', { name: 'Findings', exact: true }).click();
   await page.getByText('Evidence (1)').click();
   await expect(page.getByText('I did not know what to configure first.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Where sources converge' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Where sources diverge' })).toBeVisible();
+  await page.getByRole('button', { name: 'Actions', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Limitations' })).toBeVisible();
-  await expect(page.getByText(/1840 tokens/)).toBeVisible();
+  await page.getByRole('button', { name: 'Sources (2)', exact: true }).click();
+  await expect(page.getByText('1,840')).toBeVisible();
 
   const runAnalysis = page.getByRole('button', { name: 'Run analysis' });
   await expect(runAnalysis).toBeDisabled();
   await page.getByRole('button', { name: /Q2 onboarding insights/ }).click();
   await expect(runAnalysis).toBeDisabled();
-  await page.getByRole('button', { name: /X onboarding intelligence/ }).click();
+  await page.getByRole('button', { name: /Customer policy library/ }).click();
   await expect(page.getByText('2 of 12 selected')).toBeVisible();
   await expect(runAnalysis).toBeEnabled();
   await runAnalysis.click();
 
   await expect(page.getByText('Combined intelligence queued durably.')).toBeVisible();
-  expect(createPayload.sourceRefs).toEqual([surveyRef, socialRef]);
+  expect(createPayload.sourceRefs).toEqual([surveyRef, knowledgeRef]);
   await expect(page.getByRole('heading', { name: 'Combined experience intelligence' })).toBeVisible();
   await expect(page.getByText('Terra analysis is queued or processing. It will remain available after navigation or restart.')).toBeVisible();
   await expect(page.getByText('0 of 12 selected')).toBeVisible();
 
   const viewport = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
   expect(viewport.documentWidth).toBeLessThanOrEqual(viewport.viewportWidth + 1);
-  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('combined-intelligence.png'), fullPage: true });
+  if (process.env.CAPTURE_VISUALS) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: testInfo.outputPath('combined-intelligence.png'), fullPage: true });
+  }
 });

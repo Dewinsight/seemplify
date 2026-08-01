@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { RichEmailEditor, emailBodyToHtml, emailBodyToPlainText } from '@/components/assistant/RichEmailEditor';
 import { cn } from '@/lib/utils';
 import type {
   AssistantAction, AssistantActionItem, AssistantAuditEvent, AssistantCalendar, AssistantCalendarEvent,
@@ -509,7 +510,7 @@ export function PersonalAssistantPage() {
     setDraftSubject(editableRun.draft.subject || '');
     setDraftBody(editableRun.draft.body || '');
     setDraftRevision(editableRun.draft.revision || 0);
-  }, [editableRun?.id, editableRun?.draft?.revision]);
+  }, [editableRun?.id, editableRun?.draft?.revision, editableRun?.draft?.subject, editableRun?.draft?.body]);
 
   const groupedSources = useMemo(() => ({
     survey: sources.filter((source) => source.type === 'survey'),
@@ -580,6 +581,11 @@ export function PersonalAssistantPage() {
       });
       runRequest.current = { fingerprint: '', key: '' };
       if (result.run) setSelectedRunId(result.run.id);
+      if (kind === 'email-draft' && result.run?.draft) {
+        setDraftSubject(result.run.draft.subject || '');
+        setDraftBody(result.run.draft.body || '');
+        setDraftRevision(result.run.draft.revision || 0);
+      }
       await loadWorkspace(true);
       setTab(kind === 'knowledge-answer' ? 'knowledge' : 'mailbox');
       if (emailRun) {
@@ -990,7 +996,7 @@ export function PersonalAssistantPage() {
         <div className="space-y-4 text-sm">
           <div><div className="font-medium">To</div><div className="mt-1 text-muted-foreground">{sendRecipients.join(', ') || 'No recipient available'}</div></div>
           <div><div className="font-medium">Subject</div><div className="mt-1 break-words text-muted-foreground">{draftSubject}</div></div>
-          <div className="max-h-48 overflow-y-auto whitespace-pre-wrap border bg-muted/20 p-3 leading-6">{draftBody}</div>
+          <div className="max-h-48 overflow-y-auto border bg-muted/20 p-3 leading-6 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc" dangerouslySetInnerHTML={{ __html: emailBodyToHtml(draftBody) }} />
           <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />The provider message ID, recipients, and content hashes will be retained in the audit trail.</div>
         </div>
         <DialogFooter>
@@ -1898,7 +1904,7 @@ function MailboxAssistantPanel({
         <Button size="sm" variant={replyMode === 'reply' ? 'secondary' : 'outline'} onClick={() => setReplyMode('reply')}>Reply</Button>
         <Button size="sm" variant={replyMode === 'reply_all' ? 'secondary' : 'outline'} onClick={() => setReplyMode('reply_all')}><Users />Reply all</Button>
       </div>
-      {canSend ? <Button className="w-full" disabled={busy || draftDirty || !draftSubject.trim() || !draftBody.trim()} onClick={reviewSend}><Send />{draftDirty ? 'Save changes before sending' : 'Review and send'}</Button>
+      {canSend ? <Button className="w-full" disabled={busy || draftDirty || !draftSubject.trim() || !emailBodyToPlainText(draftBody)} onClick={reviewSend}><Send />{draftDirty ? 'Save changes before sending' : 'Review and send'}</Button>
         : <div className="space-y-2"><p className="text-xs leading-5 text-muted-foreground">This mailbox was connected with read-only access. Reconnect once to approve reply sending.</p><Button className="w-full" variant="outline" disabled={busy} onClick={reconnect}>Enable replies</Button></div>}
     </div>}
   </aside>;
@@ -1963,8 +1969,8 @@ function RunDetail({ run, draftSubject, draftBody, setDraftSubject, setDraftBody
       {run.delivery?.sentAt ? <div className="flex gap-3 border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"><MailCheck className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">Reply sent</div><p className="mt-1 text-xs leading-5">Sent {formatDateTime(run.delivery.sentAt)} to {run.delivery.recipients.join(', ')}.</p></div></div>
         : <div className="flex gap-3 border bg-muted/20 px-4 py-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div><div className="font-semibold">Review required</div><p className="mt-1 text-xs leading-5 text-muted-foreground">Terra prepared this draft. Saving it does not send anything.</p></div></div>}
       <div><Label htmlFor={`draft-subject-${run.id}`}>Subject</Label><Input id={`draft-subject-${run.id}`} className="mt-2" value={draftSubject} maxLength={500} disabled={Boolean(run.delivery?.sentAt)} onChange={(event) => setDraftSubject(event.target.value)} /></div>
-      <div><div className="flex items-center justify-between"><Label htmlFor={`draft-body-${run.id}`}>Reply</Label><span className="text-[11px] text-muted-foreground">{draftBody.length.toLocaleString()} characters</span></div><Textarea id={`draft-body-${run.id}`} className="mt-2 min-h-56" value={draftBody} maxLength={12_000} disabled={Boolean(run.delivery?.sentAt)} onChange={(event) => setDraftBody(event.target.value)} /></div>
-      {!run.delivery?.sentAt && <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Revision {run.draft.revision} · Generated copy is retained for audit.</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(`${draftSubject}\n\n${draftBody}`); toast.success('Draft copied.'); }}><Copy />Copy</Button><Button size="sm" disabled={saving || !draftSubject.trim() || !draftBody.trim()} onClick={saveDraft}>{saving ? <Loader2 className="animate-spin" /> : <Save />}Save draft</Button></div></div>}
+      <div><Label className="mb-2 block" htmlFor={`draft-body-${run.id}`}>Reply</Label><RichEmailEditor id={`draft-body-${run.id}`} value={draftBody} maxLength={12_000} disabled={Boolean(run.delivery?.sentAt)} onChange={setDraftBody} /></div>
+      {!run.delivery?.sentAt && <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Revision {run.draft.revision} · Generated copy is retained for audit.</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(`${draftSubject}\n\n${emailBodyToPlainText(draftBody)}`); toast.success('Draft copied.'); }}><Copy />Copy</Button><Button size="sm" disabled={saving || !draftSubject.trim() || !emailBodyToPlainText(draftBody)} onClick={saveDraft}>{saving ? <Loader2 className="animate-spin" /> : <Save />}Save draft</Button></div></div>}
     </div> : <>
       {summary && <section><h3 className="text-sm font-semibold">{['assistant.knowledge_answer', 'knowledge_answer'].includes(run.kind) ? 'Answer' : 'Summary'}</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{summary}</p></section>}
       {['assistant.knowledge_answer', 'knowledge_answer'].includes(run.kind) && output.answer && !summary && <section><h3 className="text-sm font-semibold">Answer</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{output.answer}</p></section>}

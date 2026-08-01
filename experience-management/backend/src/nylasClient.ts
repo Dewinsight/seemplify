@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { normalizeEmailDraftHtml } from './emailDraftHtml.js';
 
 export type NylasProvider = 'google' | 'microsoft';
 
@@ -516,11 +517,7 @@ export async function sendNylasReply(grantId: string, input: {
 }) {
   const replyToMessageId = cleanText(input.replyToMessageId, 300);
   const subject = cleanText(input.subject, 500);
-  const body = String(input.body || '')
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '')
-    .replace(/\r\n?/gu, '\n')
-    .trim()
-    .slice(0, 24_000);
+  const body = normalizeEmailDraftHtml(input.body);
   const normalizeRecipients = (values: NylasReplyRecipient[] = []) => values
     .map((value) => ({
       email: cleanText(value.email, 254).toLocaleLowerCase('en-US'),
@@ -546,7 +543,7 @@ export async function sendNylasReply(grantId: string, input: {
         ...(cc.length ? { cc } : {}),
         subject,
         body,
-        is_plaintext: true,
+        is_plaintext: false,
         reply_to_message_id: replyToMessageId
       })
     },
