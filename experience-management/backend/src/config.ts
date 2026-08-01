@@ -33,6 +33,44 @@ function loadSharedBrevoEnvironment() {
 
 export const brevoEnvironmentSource = loadSharedBrevoEnvironment();
 
+const nylasEnvironmentKeys = [
+  'NYLAS_CLIENT_ID',
+  'NYLAS_API_KEY',
+  'NYLAS_API_URI',
+  'NYLAS_CONNECT_SCOPES',
+  'NYLAS_REDIRECT_URI',
+  'NYLAS_WEBHOOK_SECRET'
+] as const;
+
+function loadSharedNylasEnvironment() {
+  const configured = process.env.NYLAS_ENV_FILE
+    ? path.resolve(backendDir, process.env.NYLAS_ENV_FILE)
+    : null;
+  // Nylas credentials must be explicitly assigned to Experience Management or
+  // supplied by the Recruiter hand-off requested by the operator. Never scan
+  // another product's environment for an account-wide API key.
+  const candidates = [
+    configured,
+    path.join(repositoryDir, 'recruiter', 'backend', '.env')
+  ].filter((value): value is string => Boolean(value));
+  let source: string | null = null;
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    const parsed = dotenv.parse(fs.readFileSync(candidate));
+    let used = false;
+    for (const key of nylasEnvironmentKeys) {
+      if (!process.env[key] && parsed[key]) {
+        process.env[key] = parsed[key];
+        used = true;
+      }
+    }
+    if (used && !source) source = candidate;
+  }
+  return source;
+}
+
+export const nylasEnvironmentSource = loadSharedNylasEnvironment();
+
 function resolveFromBackend(value: string) {
   return path.isAbsolute(value) ? value : path.resolve(backendDir, value);
 }
@@ -75,6 +113,21 @@ export const config = {
       || '../../.local-runtime/llm/service-secret'
   ),
   aiWorkerConcurrency: Math.max(1, Math.min(16, Number(process.env.AI_WORKER_CONCURRENCY || 4))),
+  nylasClientId: String(process.env.NYLAS_CLIENT_ID || '').trim(),
+  nylasApiKey: String(process.env.NYLAS_API_KEY || '').trim(),
+  nylasApiUri: String(process.env.NYLAS_API_URI || 'https://api.us.nylas.com').replace(/\/+$/, ''),
+  nylasConnectScopes: String(process.env.NYLAS_CONNECT_SCOPES || '')
+    .split(/[\s,]+/).map((scope) => scope.trim()).filter(Boolean),
+  nylasRedirectUri: String(process.env.NYLAS_REDIRECT_URI || '').trim(),
+  nylasCredentialEncryptionKeyFile: resolveFromBackend(
+    process.env.NYLAS_CREDENTIAL_ENCRYPTION_KEY_FILE || '../../.local-runtime/experience-management/nylas-credential-encryption-key'
+  ),
+  nylasOAuthStateMinutes: boundedNumber(process.env.NYLAS_OAUTH_STATE_MINUTES, 10, 1, 30),
+  nylasRequestTimeoutMs: boundedNumber(process.env.NYLAS_REQUEST_TIMEOUT_MS, 20_000, 2_000, 60_000),
+  nylasMaxThreadMessages: boundedNumber(process.env.NYLAS_MAX_THREAD_MESSAGES, 16, 1, 30),
+  nylasMessageDetailConcurrency: boundedNumber(process.env.NYLAS_MESSAGE_DETAIL_CONCURRENCY, 6, 1, 12),
+  nylasMaxMessageBodyBytes: boundedNumber(process.env.NYLAS_MAX_MESSAGE_BODY_BYTES, 128 * 1024, 1024, 1024 * 1024),
+  nylasMaxThreadBytes: boundedNumber(process.env.NYLAS_MAX_THREAD_BYTES, 1024 * 1024, 16 * 1024, 8 * 1024 * 1024),
   brevoApiKey: process.env.BREVO_API_KEY || '',
   brevoApiUrl: process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email',
   brevoFromEmail: process.env.BREVO_FROM_EMAIL || 'no-reply@seemplifyai.com',

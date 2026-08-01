@@ -37,7 +37,9 @@ const CVProcessingAuditSchema = new mongoose.Schema({
   processingAttempts: { type: Number, default: 0 },
   retry: {
     manualRequests: { type: Number, default: 0, min: 0 },
+    deferredCycles: { type: Number, default: 0, min: 0 },
     nextAttemptAt: Date,
+    lastDeferredAt: Date,
     availableUntil: Date,
     requestedStage: String,
     lastRequestedAt: Date,

@@ -170,7 +170,9 @@ const CVProcessingJobSchema = new mongoose.Schema({
       default: 'failed'
     },
     manualRequests: { type: Number, default: 0, min: 0 },
+    deferredCycles: { type: Number, default: 0, min: 0 },
     nextAttemptAt: Date,
+    lastDeferredAt: Date,
     availableUntil: Date,
     lastRequestedAt: Date,
     lastRequestedBy: RetryActorSchema
@@ -186,6 +188,10 @@ const CVProcessingJobSchema = new mongoose.Schema({
     at: Date
   },
   candidate: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate' },
+  // Set when the CV is uploaded against a candidate that already exists
+  // (e.g. created up-front from a public application form). When present,
+  // completion enriches this candidate instead of creating a new one.
+  linkedCandidate: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate' },
   startedAt: Date,
   completedAt: Date,
   failedAt: Date,

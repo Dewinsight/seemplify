@@ -2,6 +2,8 @@ const Candidate = require('../models/Candidate');
 const Notification = require('../models/Notification');
 const fs = require('fs');
 const util = require('util');
+const archiver = require('archiver');
+const PDFDocument = require('pdfkit');
 // Import the new services
 const CVParsingService = require('../services/cvParsingService');
 const CloudinaryUploadService = require('../services/cloudinaryUploadService');
@@ -533,6 +535,73 @@ exports.createCandidateManually = async (req, res) => {
   }
 };
 
+// @desc    Create a candidate directly from a public job-application form,
+//          before/without any CV parsing. Position/experience/education are
+//          schema-required but unknown at this point, so they get the same
+//          placeholder values the CV pipeline uses until/unless a background
+//          CV upload later enriches this record.
+exports.createPublicCandidate = async (req, res) => {
+  const decodedBody = decodeObjectHtmlEntities(req.body);
+  const {
+    firstName,
+    lastName,
+    email,
+    phone,
+    jobId,
+    isOrganizationStaff,
+    coverLetter,
+  } = decodedBody;
+
+  try {
+    if (!firstName || !lastName || !email || !phone) {
+      return res.status(400).json({ msg: 'firstName, lastName, email and phone are required' });
+    }
+
+    const Job = require('../models/Job');
+    const job = await Job.findById(jobId).select('_id title organization isPublic status').lean();
+    if (!job) {
+      return res.status(404).json({ msg: 'Job not found' });
+    }
+    if (!job.isPublic || job.status !== 'active') {
+      return res.status(403).json({ msg: 'This job is not accepting public applications', code: 'PUBLIC_JOB_NOT_PUBLIC' });
+    }
+
+    const candidate = new Candidate({
+      firstName,
+      lastName,
+      email,
+      phone,
+      position: job.title || 'Position TBD',
+      experience: 'See CV',
+      education: 'See CV',
+      coverLetter: coverLetter || '',
+      status: 'New',
+      source: 'public',
+      isInternalCandidate: Boolean(isOrganizationStaff),
+      organization: job.organization,
+      jobAppliedFor: job._id,
+    });
+
+    await candidate.save();
+
+    gptAnalysisService.cache.onCandidateAdded(candidate._id);
+
+    res.status(201).json({
+      msg: 'Candidate created successfully',
+      candidate: {
+        _id: candidate._id,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        email: candidate.email,
+        phone: candidate.phone,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating public candidate:', error);
+    res.status(500).json({ msg: 'Server error', error: error.message });
+  }
+};
+
 // Check if candidate embedding exists
 exports.checkEmbeddingStatus = async (req, res) => {
   try {
@@ -1008,6 +1077,118 @@ exports.bulkDeleteCandidates = async (req, res) => {
   } catch (error) {
     console.error('Error bulk deleting candidates:', error);
     res.status(500).json({ msg: 'Server error', error: error.message });
+  }
+};
+
+function buildCandidateProfilePdf(candidate) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks = [];
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      doc.fontSize(18).text(`${candidate.firstName} ${candidate.lastName}`, { underline: true });
+      doc.moveDown(0.5);
+
+      const field = (label, value) => {
+        doc.fontSize(11).fillColor('#555555').text(label, { continued: false });
+        doc.fontSize(12).fillColor('#000000').text(value || 'N/A');
+        doc.moveDown(0.6);
+      };
+
+      field('Email', candidate.email);
+      field('Phone', candidate.phone);
+      field('Location', candidate.location);
+      field('Position Applied For', candidate.position);
+      field('Status', candidate.status);
+      field('Source', candidate.source);
+      field('Experience', candidate.experience);
+      field('Education', candidate.education);
+      field('Skills', Array.isArray(candidate.skills) ? candidate.skills.join(', ') : candidate.skills);
+      field('Application Date', candidate.createdAt ? new Date(candidate.createdAt).toLocaleDateString() : '');
+      if (candidate.coverLetter) field('Cover Letter', candidate.coverLetter);
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+// Bulk download: one ZIP with a subfolder per selected candidate, each
+// containing a generated profile.pdf and (if present) their CV file.
+exports.bulkDownloadCandidates = async (req, res) => {
+  try {
+    const { candidateIds } = req.body || {};
+    const organizationId = req.user.currentOrganization;
+
+    if (!Array.isArray(candidateIds) || candidateIds.length === 0) {
+      return res.status(400).json({ msg: 'candidateIds must be a non-empty array' });
+    }
+
+    const candidates = await Candidate.find({
+      _id: { $in: candidateIds },
+      organization: organizationId
+    });
+
+    if (candidates.length === 0) {
+      return res.status(404).json({ msg: 'No accessible candidates found for the given IDs' });
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="candidates.zip"');
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (error) => {
+      console.error('Error building candidates ZIP:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ msg: 'Failed to build ZIP archive' });
+      } else {
+        res.end();
+      }
+    });
+    archive.pipe(res);
+
+    const usedFolderNames = new Set();
+    for (const candidate of candidates) {
+      let folderName = `${candidate.lastName || 'candidate'}_${candidate.firstName || ''}`.trim().replace(/[^a-z0-9_-]/gi, '_');
+      if (usedFolderNames.has(folderName)) {
+        folderName = `${folderName}_${String(candidate._id).slice(-6)}`;
+      }
+      usedFolderNames.add(folderName);
+
+      try {
+        const profilePdf = await buildCandidateProfilePdf(candidate);
+        archive.append(profilePdf, { name: `${folderName}/profile.pdf` });
+      } catch (error) {
+        console.warn(`⚠️ Failed to generate profile PDF for candidate ${candidate._id}:`, error.message);
+      }
+
+      if (candidate.cloudinaryPublicId) {
+        try {
+          const deliveryType = candidate.cloudinaryDeliveryType || 'upload';
+          const downloadUrl = cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId, deliveryType);
+          const response = await fetch(downloadUrl);
+          if (!response.ok) throw new Error(`CV download failed: ${response.status}`);
+          const cvBuffer = Buffer.from(await response.arrayBuffer());
+          const extension = (candidate.resumeUrl || '').split('.').pop()?.split('?')[0] || 'pdf';
+          archive.append(cvBuffer, { name: `${folderName}/cv.${extension}` });
+        } catch (error) {
+          console.warn(`⚠️ Failed to fetch CV for candidate ${candidate._id}:`, error.message);
+        }
+      }
+    }
+
+    await archive.finalize();
+  } catch (error) {
+    console.error('Error bulk downloading candidates:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ msg: 'Server error', error: error.message });
+    } else {
+      res.end();
+    }
   }
 };
 

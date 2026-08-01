@@ -5,6 +5,10 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  ENGINE_IDS,
+  claudeChildEnv,
+  claudeExecArgs,
+  claudePrompt,
   codexPrompt,
   codexChildEnv,
   codexExecArgs,
@@ -13,6 +17,7 @@ const {
   hasOpenObjectSchema,
   ollamaMessages,
   parseCodexJsonl,
+  parseClaudeJson,
   recoverCodexUsage,
   parseStructuredContent,
   prepareInferenceInput,
@@ -24,6 +29,65 @@ const {
   stripThinkingText,
   vllmMessages
 } = require('./engine-adapters.cjs');
+
+test('Claude is a managed engine with tool-disabled schema-constrained execution', () => {
+  assert.ok(ENGINE_IDS.includes('claude'));
+  const input = {
+    activity: 'candidate.cv_parse',
+    messages: [{ role: 'user', content: 'Jane Doe' }],
+    jsonSchema: {
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: ['name'],
+      additionalProperties: false
+    }
+  };
+  const args = claudeExecArgs({ model: 'sonnet' }, input);
+  assert.deepEqual(args.slice(0, 5), ['-p', '--model', 'sonnet', '--effort', 'medium']);
+  assert.deepEqual(args.slice(args.indexOf('--tools'), args.indexOf('--tools') + 2), ['--tools', '']);
+  assert.ok(args.includes('--no-session-persistence'));
+  assert.ok(args.includes('--disable-slash-commands'));
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.ok(args.includes('--json-schema'));
+  assert.match(args.at(-1), /managed Seemplify Claude local-cloud inference engine/);
+  assert.match(claudePrompt(input), /Extract only CV facts explicitly present/);
+});
+
+test('Claude child environment keeps only authentication/runtime settings', () => {
+  const env = claudeChildEnv({
+    PATH: 'C:\\Windows\\System32',
+    USERPROFILE: 'C:\\Users\\runtime',
+    CLAUDE_CONFIG_DIR: 'C:\\profiles\\claude-a',
+    ANTHROPIC_API_KEY: 'allowed-auth',
+    LOCAL_LLM_SHARED_SECRET: 'sentinel-must-not-leak'
+  });
+  assert.equal(env.CLAUDE_CONFIG_DIR, 'C:\\profiles\\claude-a');
+  assert.equal(env.ANTHROPIC_API_KEY, 'allowed-auth');
+  assert.equal(env.LOCAL_LLM_SHARED_SECRET, undefined);
+});
+
+test('Claude JSON output preserves structured content, token usage, cache usage, and cost', () => {
+  const parsed = parseClaudeJson(JSON.stringify({
+    is_error: false,
+    subtype: 'success',
+    result: '{"name":"Jane Doe"}',
+    structured_output: { name: 'Jane Doe' },
+    total_cost_usd: 0.03125,
+    usage: {
+      input_tokens: 10,
+      cache_creation_input_tokens: 20,
+      cache_read_input_tokens: 30,
+      output_tokens: 15
+    }
+  }));
+  assert.deepEqual(parsed.structuredOutput, { name: 'Jane Doe' });
+  assert.equal(parsed.usage.prompt_tokens, 60);
+  assert.equal(parsed.usage.completion_tokens, 15);
+  assert.equal(parsed.usage.total_tokens, 75);
+  assert.equal(parsed.usage.prompt_tokens_details.cached_tokens, 30);
+  assert.equal(parsed.usage.prompt_tokens_details.cache_write_tokens, 20);
+  assert.equal(parsed.estimatedCostUsd, 0.03125);
+});
 
 test('Codex child environment keeps runtime/auth settings and excludes unrelated service secrets', () => {
   const env = codexChildEnv({

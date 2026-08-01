@@ -14,7 +14,7 @@ function cleanText(value: unknown, maximum: number) { return String(value || '')
 function preview(payload: unknown) {
   if (payload && typeof payload === 'object') {
     const value = payload as Record<string, unknown>;
-    return cleanText(value.executiveSummary || value.summary || value.title || JSON.stringify(payload), 240);
+    return cleanText(value.executiveSummary || value.summary || value.answer || value.title || JSON.stringify(payload), 240);
   }
   return cleanText(payload, 240);
 }
@@ -249,12 +249,12 @@ export function completeSocialIntelligenceReport(id: string, output: unknown, ru
   return rowSocialReport(db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id));
 }
 
-type IntelligenceSource = { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string; payload?: unknown };
+export type IntelligenceSource = { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string; payload?: unknown };
 function availableSources(spaceId: string, withPayload = false): IntelligenceSource[] {
   const surveys = (db.prepare(`SELECT i.id,i.kind,i.payload_json,i.created_at,s.title survey_title FROM insights i JOIN surveys s ON s.id=i.survey_id
-    WHERE s.space_id=? AND i.kind IN ('ai_insights','executive_report') ORDER BY i.created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
-      const payload = parseJson(row.payload_json, {}); return { ref: `survey-insight:${row.id}`, type: 'survey' as const,
-      title: `${row.survey_title} · ${row.kind === 'executive_report' ? 'Executive report' : 'AI insights'}`, kind: row.kind,
+    WHERE s.space_id=? AND i.kind IN ('ai_insights','executive_report','knowledge_entry') ORDER BY i.created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
+      const payload = parseJson<Record<string, any>>(row.payload_json, {}); const sourceLabel = row.kind === 'knowledge_entry' ? cleanText(payload.title || payload.question || 'Knowledge entry', 120) : row.kind === 'executive_report' ? 'Executive report' : 'AI insights'; return { ref: `survey-insight:${row.id}`, type: 'survey' as const,
+      title: `${row.survey_title} · ${sourceLabel}`, kind: row.kind,
         createdAt: row.created_at, preview: preview(payload), ...(withPayload ? { payload } : {}) };
     });
   const social = (db.prepare(`SELECT * FROM social_intelligence_reports WHERE space_id=? AND state='completed' ORDER BY created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
@@ -264,6 +264,14 @@ function availableSources(spaceId: string, withPayload = false): IntelligenceSou
   return [...surveys, ...social].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 export function listIntelligenceSources(_user: SessionUser, spaceId: string) { return availableSources(spaceId, false); }
+
+export function resolveIntelligenceSourceSnapshots(spaceId: string, sourceRefs: string[]) {
+  const requested = [...new Set(sourceRefs)];
+  const byRef = new Map(availableSources(spaceId, true).map((source) => [source.ref, source]));
+  const selected = requested.map((ref) => byRef.get(ref));
+  if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
+  return selected as IntelligenceSource[];
+}
 
 function rowIntelligenceReport(row: any) {
   const job = artifactJob(row);
@@ -282,9 +290,7 @@ export function getIntelligenceReport(_user: SessionUser, spaceId: string, id: s
 export function createIntelligenceReport(user: SessionUser, spaceId: string, input: { title: string; objective?: string; sourceRefs: string[]; idempotencyKey?: string }) {
   const requested = [...new Set(input.sourceRefs)].slice(0, 12).sort();
   if (requested.length < 2) throw new IntelligenceError('Select at least two historical reports to synthesize.');
-  const sources = availableSources(spaceId, true); const byRef = new Map(sources.map((source) => [source.ref, source]));
-  const selected = requested.map((ref) => byRef.get(ref));
-  if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
+  const selected = resolveIntelligenceSourceSnapshots(spaceId, requested);
   const snapshot = selected.map((source) => ({ ref: source!.ref, type: source!.type, title: source!.title, kind: source!.kind,
     createdAt: source!.createdAt, payload: source!.payload }));
   const snapshotJson = JSON.stringify(snapshot);

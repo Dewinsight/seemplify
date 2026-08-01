@@ -1068,13 +1068,16 @@ export function listJobs(limit = 100) {
   return (db.prepare('SELECT * FROM ai_jobs ORDER BY created_at DESC LIMIT ?').all(limit) as any[]).map(rowJob);
 }
 
-export function getJobForSpace(id: string, spaceId: string): AiJob | null {
-  const row = db.prepare('SELECT * FROM ai_jobs WHERE id=? AND space_id=?').get(id, spaceId) as any;
+export function getJobForSpace(id: string, spaceId: string, viewerUserId?: string): AiJob | null {
+  const row = db.prepare(`SELECT * FROM ai_jobs WHERE id=? AND space_id=?
+    AND (kind NOT LIKE 'assistant.%' OR requested_by=?)`).get(id, spaceId, viewerUserId || '') as any;
   return row ? rowJob(row) : null;
 }
 
-export function listJobsForSpace(spaceId: string, limit = 100) {
-  return (db.prepare('SELECT * FROM ai_jobs WHERE space_id=? ORDER BY created_at DESC LIMIT ?').all(spaceId, limit) as any[]).map(rowJob);
+export function listJobsForSpace(spaceId: string, limit = 100, viewerUserId?: string) {
+  return (db.prepare(`SELECT * FROM ai_jobs WHERE space_id=?
+    AND (kind NOT LIKE 'assistant.%' OR requested_by=?) ORDER BY created_at DESC LIMIT ?`)
+    .all(spaceId, viewerUserId || '', limit) as any[]).map(rowJob);
 }
 
 export function getJobProviderResult(id: string): { activity: string; schemaName: string; output: unknown; runtime: unknown } | null {

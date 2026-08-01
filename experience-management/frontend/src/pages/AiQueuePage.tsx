@@ -13,7 +13,8 @@ export function AiQueuePage() {
   useEffect(() => { load(); }, [load]);
   useLiveRefresh(load);
   const counts = useMemo(() => Object.fromEntries(['queued', 'processing', 'completed', 'failed'].map((state) => [state, jobs.filter((job) => job.state === state).length])), [jobs]);
-  const metrics = [['Queued', counts.queued], ['Processing', counts.processing], ['Completed', counts.completed], ['Failed', counts.failed], ['Worker slots', `${runtime?.worker?.active || 0}/${runtime?.worker?.concurrency || 1}`], ['Runtime', runtime?.terra?.ready === true ? (runtime?.terra?.providerLabel || 'Ready') : 'Unavailable']];
+  const managedRuntime = runtime?.ai || runtime?.terra;
+  const metrics = [['Queued', counts.queued], ['Processing', counts.processing], ['Completed', counts.completed], ['Failed', counts.failed], ['Worker slots', `${runtime?.worker?.active || 0}/${runtime?.worker?.concurrency || 1}`], ['Runtime', managedRuntime?.ready === true ? (managedRuntime?.providerLabel || 'Ready') : 'Unavailable']];
   return <div className="space-y-6">
     <div><h1 className="page-title">Experience AI queue</h1><p className="page-description">Live and historical view of every Experience AI request. A single request uses the same durable queue as a burst.</p></div>
     <div className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 lg:grid-cols-6">{metrics.map(([label, value]) => <div className="border-b border-r p-4" key={label}><div className="text-xs font-medium text-muted-foreground">{label}</div><div className="mt-2 text-xl font-semibold">{value}</div></div>)}</div>

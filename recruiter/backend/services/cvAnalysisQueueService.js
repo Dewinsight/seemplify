@@ -150,6 +150,14 @@ const TELEMETRY_ACTIVE_STATES = Object.freeze([
 const TELEMETRY_RECENT_LIMIT = 24;
 const ADMIN_TELEMETRY_LIMIT = 25;
 const MAX_BOUNDED_FAILURE_ATTEMPTS = 5;
+const DEFERRED_RETRY_BASE_MS = Math.max(
+  60_000,
+  Number(process.env.CV_DEFERRED_RETRY_BASE_MS || 30 * 60 * 1000)
+);
+const DEFERRED_RETRY_MAX_MS = Math.max(
+  DEFERRED_RETRY_BASE_MS,
+  Number(process.env.CV_DEFERRED_RETRY_MAX_MS || 6 * 60 * 60 * 1000)
+);
 const MAX_BILLING_FAILURE_ATTEMPTS = Math.max(
   1,
   Number(process.env.CV_BILLING_MAX_ATTEMPTS || 5)
@@ -344,6 +352,8 @@ function retrySummary(job = {}, { includeActor = false, includeCapabilities = fa
     available: available && (durableAvailable || extractedTextAvailable) && (cloudinaryAvailable || durableAvailable),
     availableUntil,
     nextAttemptAt: job.retry?.nextAttemptAt || null,
+    deferredCycles: Number(job.retry?.deferredCycles || 0),
+    lastDeferredAt: job.retry?.lastDeferredAt || null,
     requestedStage: job.retry?.requestedStage || 'failed',
     manualRequests: Number(job.retry?.manualRequests || 0),
     automaticRetries: trail.filter((attempt) => attempt.trigger === 'automatic').length,
@@ -437,7 +447,9 @@ function auditDocument(job) {
     processingAttempts: operational.processingAttempts,
     retry: {
       manualRequests: Number(job.retry?.manualRequests || 0),
+      deferredCycles: Number(job.retry?.deferredCycles || 0),
       nextAttemptAt: job.retry?.nextAttemptAt,
+      lastDeferredAt: job.retry?.lastDeferredAt,
       availableUntil: job.retry?.availableUntil,
       requestedStage: job.retry?.requestedStage,
       lastRequestedAt: job.retry?.lastRequestedAt,
@@ -513,6 +525,8 @@ function auditOperationalJob(job) {
       available: false,
       availableUntil: job.retry?.availableUntil || null,
       nextAttemptAt: job.retry?.nextAttemptAt || null,
+      deferredCycles: Number(job.retry?.deferredCycles || 0),
+      lastDeferredAt: job.retry?.lastDeferredAt || null,
       requestedStage: job.retry?.requestedStage || 'failed',
       manualRequests: Number(job.retry?.manualRequests || 0),
       automaticRetries: (job.attemptHistory || []).filter((attempt) => attempt.trigger === 'automatic').length,
@@ -611,6 +625,10 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
     progress: Math.min(100, Math.max(0, Number(job.progress || 0))),
     attempts: Math.max(0, Number(job.attempts || 0)),
     processingAttempts: Math.max(0, Number(job.processingAttempts || job.attempts || 0)),
+    retry: {
+      nextAttemptAt: externalQueueDate(job.nextAttemptAt) || undefined,
+      deferredCycles: Math.max(0, Number(job.deferredCycles || 0))
+    },
     organizationKey: externalQueueText(job.organizationId, 200),
     actorKey: externalQueueText(job.actorId, 200) || undefined,
     jobKey: externalQueueText(job.jobId, 200) || undefined,
@@ -991,7 +1009,22 @@ function isUnboundedRuntimeDeferral(error) {
   return isOfflineError(error) || isBusyError(error);
 }
 
+function isRetryableProcessingError(error) {
+  if (!error || error.permanent === true) return false;
+  if (isUnboundedRuntimeDeferral(error) || error.retryable === true) return true;
+  const status = Number(error.statusCode || error.status || 0);
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function deferredRetryDelay(cycles = 1) {
+  const exponent = Math.max(0, Math.min(10, Number(cycles || 1) - 1));
+  return Math.min(DEFERRED_RETRY_MAX_MS, DEFERRED_RETRY_BASE_MS * (2 ** exponent));
+}
+
 function cvBackoffDelay(attemptsMade, error) {
+  if (Number.isFinite(Number(error?.retryAfterMs)) && Number(error.retryAfterMs) > 0) {
+    return Math.min(DEFERRED_RETRY_MAX_MS, Number(error.retryAfterMs));
+  }
   const exponent = Math.max(0, Math.min(10, Number(attemptsMade || 1) - 1));
   const exponential = 30_000 * (2 ** exponent);
   return Math.min(exponential, isUnboundedRuntimeDeferral(error) ? 5 * 60_000 : 10 * 60_000);
@@ -1225,6 +1258,16 @@ async function submitUpload(req, source = 'private', options = {}) {
     ? idempotentStatusToken(organizationId, idempotencyKey)
     : crypto.randomBytes(32).toString('base64url');
   const publicId = `cv_${crypto.randomUUID()}`;
+
+  let linkedCandidate;
+  if (options.linkedCandidateId && mongoose.isValidObjectId(options.linkedCandidateId)) {
+    const candidateDoc = await Candidate.findOne({
+      _id: options.linkedCandidateId,
+      organization: organizationId
+    }).select('_id').lean();
+    if (candidateDoc) linkedCandidate = candidateDoc._id;
+  }
+
   let durableFile;
   let job;
   try {
@@ -1261,6 +1304,7 @@ async function submitUpload(req, source = 'private', options = {}) {
       fileType: req.file.mimetype,
       fileSize: req.file.size,
       durableFile,
+      linkedCandidate,
       formData: safeFormData(req.body)
     });
     await syncHistorySafely(job);
@@ -2001,6 +2045,10 @@ async function releaseCloudinaryAsset(processingJob) {
 }
 
 async function createCandidateOnce(processingJob, analysis) {
+  if (processingJob.linkedCandidate) {
+    return mergeAnalysisOntoCandidate(processingJob, analysis);
+  }
+
   const filter = { 'processingMetadata.cvProcessingJobId': processingJob.publicId };
   const existing = await Candidate.findOne(filter);
   if (existing) return existing;
@@ -2019,6 +2067,38 @@ async function createCandidateOnce(processingJob, analysis) {
     if (duplicate) return duplicate;
     throw error;
   }
+}
+
+// Attaches CV-extracted fields to a candidate that was already created (e.g.
+// from a public application form) rather than creating a fresh one. The
+// applicant's own submitted identity fields are left untouched — only the
+// CV-derived enrichment fields are merged in.
+async function mergeAnalysisOntoCandidate(processingJob, analysis) {
+  const existing = await Candidate.findById(processingJob.linkedCandidate);
+  if (!existing) {
+    // Linked candidate is gone (deleted) - fall back to normal creation so
+    // the extracted data isn't lost.
+    processingJob.linkedCandidate = undefined;
+    return createCandidateOnce(processingJob, analysis);
+  }
+
+  const payload = candidatePayload(processingJob, analysis);
+  const {
+    firstName, lastName, email, phone, coverLetter,
+    organization, createdBy, jobAppliedFor, status, source,
+    ...enrichmentFields
+  } = payload;
+  // The candidate already has a real position (the job applied for) - only
+  // let extraction override it if the CV actually named one.
+  if (!(analysis.extractedFields || {}).position) {
+    delete enrichmentFields.position;
+  }
+
+  return Candidate.findByIdAndUpdate(
+    existing._id,
+    { $set: enrichmentFields },
+    { new: true, runValidators: true }
+  );
 }
 
 const COMPLETION_EFFECT_NAMES = [
@@ -2528,19 +2608,35 @@ async function processJob(bullJob, workerToken) {
     });
     const failedStage = processingJob.stage || 'ingesting';
     const unboundedDeferral = isUnboundedRuntimeDeferral(error);
+    const retryableServiceFailure = !unboundedDeferral && isRetryableProcessingError(error);
     const boundedFailureAttempts = Number(processingJob.boundedFailureAttempts || 0)
       + (unboundedDeferral ? 0 : 1);
+    const deferred = retryableServiceFailure
+      && boundedFailureAttempts >= MAX_BOUNDED_FAILURE_ATTEMPTS;
+    const deferredCycles = deferred
+      ? Number(processingJob.retry?.deferredCycles || 0) + 1
+      : Number(processingJob.retry?.deferredCycles || 0);
     const terminal = error.permanent === true
-      || (!unboundedDeferral && boundedFailureAttempts >= MAX_BOUNDED_FAILURE_ATTEMPTS);
+      || (!unboundedDeferral && !retryableServiceFailure
+        && boundedFailureAttempts >= MAX_BOUNDED_FAILURE_ATTEMPTS);
     const failedAt = terminal ? new Date() : null;
+    const retryDelay = deferred
+      ? deferredRetryDelay(deferredCycles)
+      : cvBackoffDelay(Number(bullJob.attemptsMade || 0) + 1, error);
+    if (deferred) error.retryAfterMs = retryDelay;
     const nextAttemptAt = terminal
       ? null
-      : new Date(Date.now() + cvBackoffDelay(Number(bullJob.attemptsMade || 0) + 1, error));
+      : new Date(Date.now() + retryDelay);
     const failureUpdate = {
       $set: {
-        state: terminal ? 'failed' : unboundedDeferral ? 'waiting_for_local_runtime' : 'queued',
+        state: terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_local_runtime' : 'queued',
         stage: terminal ? 'failed' : (processingJob.stage || 'ingesting'),
         progress: terminal ? processingJob.progress : Math.max(5, Number(processingJob.progress || 5)),
+        ...(deferred ? {
+          boundedFailureAttempts: 0,
+          'retry.deferredCycles': deferredCycles,
+          'retry.lastDeferredAt': new Date()
+        } : {}),
         ...(terminal ? { failedAt } : {}),
         ...(!terminal ? {
           'retry.pendingTrigger': 'automatic',
@@ -2556,10 +2652,10 @@ async function processJob(bullJob, workerToken) {
       }
     };
     failureUpdate.$unset = { expiresAt: 1 };
-    if (!unboundedDeferral) failureUpdate.$inc = { boundedFailureAttempts: 1 };
+    if (!unboundedDeferral && !deferred) failureUpdate.$inc = { boundedFailureAttempts: 1 };
     await CVProcessingJob.updateOne({ _id: processingJob._id }, failureUpdate);
-    processingJob.boundedFailureAttempts = boundedFailureAttempts;
-    processingJob.state = terminal ? 'failed' : unboundedDeferral ? 'waiting_for_local_runtime' : 'queued';
+    processingJob.boundedFailureAttempts = deferred ? 0 : boundedFailureAttempts;
+    processingJob.state = terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_local_runtime' : 'queued';
     processingJob.stage = terminal ? 'failed' : failedStage;
     processingJob.failedAt = failedAt || processingJob.failedAt;
     processingJob.lastError = {
@@ -2573,11 +2669,13 @@ async function processJob(bullJob, workerToken) {
         ...(processingJob.retry?.toObject?.() || processingJob.retry || {}),
         pendingTrigger: 'automatic',
         requestedStage: 'failed',
-        nextAttemptAt
+        nextAttemptAt,
+        deferredCycles,
+        ...(deferred ? { lastDeferredAt: new Date() } : {})
       };
     }
     await finishProcessingAttempt(processingJob, processingAttempt, {
-      status: unboundedDeferral ? 'waiting_for_runtime' : 'failed',
+      status: (unboundedDeferral || deferred) ? 'waiting_for_runtime' : 'failed',
       stage: failedStage,
       error
     });
@@ -2783,6 +2881,51 @@ async function retryFailedJob(publicId, {
     effectiveStage,
     requestedAt
   };
+}
+
+async function retryJobNow(publicId, { requestedBy, stage = 'failed' } = {}) {
+  const job = await CVProcessingJob.findOne({ publicId: String(publicId || '') }).select('+resumeText');
+  if (!job) throw manualRetryError('CV_JOB_NOT_FOUND', 'CV processing job was not found', 404);
+  if (job.source === 'ai-interview') {
+    throw manualRetryError('CV_RETRY_EXTERNAL_JOB', 'AI Interview CV jobs retry automatically in the AI Interview service');
+  }
+  if (job.state === 'failed') {
+    return retryFailedJob(job.publicId, {
+      administrator: true,
+      requestedBy: requestedBy || { type: 'system', name: 'Local Control Center' },
+      stage
+    });
+  }
+  if (job.state !== 'waiting_for_local_runtime') {
+    throw manualRetryError(
+      'CV_RETRY_NOT_WAITING',
+      job.state === 'processing' ? 'This CV is already processing' : 'This CV job is not waiting for a retry'
+    );
+  }
+
+  const q = await getQueue();
+  const queued = await q.getJob(job.publicId);
+  if (!queued) {
+    await enqueueJob(job);
+  } else if (await queued.getState() === 'delayed') {
+    await queued.promote();
+  }
+  await CVProcessingJob.updateOne(
+    { _id: job._id, state: 'waiting_for_local_runtime' },
+    {
+      $set: {
+        state: 'queued',
+        'retry.pendingTrigger': 'manual',
+        'retry.lastRequestedAt': new Date(),
+        'retry.lastRequestedBy': retryActor(requestedBy || { type: 'system', name: 'Local Control Center' })
+      },
+      $unset: { 'retry.nextAttemptAt': 1 },
+      $inc: { 'retry.manualRequests': 1 }
+    }
+  );
+  await syncHistorySafely(job._id);
+  publishTelemetrySoon(0);
+  return { job: await CVProcessingJob.findById(job._id), queueAvailable: true, requestedAt: new Date() };
 }
 
 function cleanupIsDue(resource, now) {
@@ -3667,10 +3810,13 @@ module.exports = {
   listHistory,
   publishTelemetry,
   retryFailedJob,
+  retryJobNow,
   cvBackoffDelay,
   isBusyError,
   isOfflineError,
   isUnboundedRuntimeDeferral,
+  isRetryableProcessingError,
+  deferredRetryDelay,
   publicState,
   recoverPendingPrivateBilling,
   recoverStaleJobs,

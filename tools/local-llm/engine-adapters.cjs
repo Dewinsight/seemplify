@@ -8,6 +8,9 @@ const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
 const codexInstallDir = path.join(runtimeDir, 'codex-cli');
 const codexScript = path.join(codexInstallDir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
 const codexWorkspace = path.join(runtimeDir, 'codex-workspace');
+const claudeInstallDir = path.join(runtimeDir, 'claude-cli');
+const claudeExecutable = path.join(claudeInstallDir, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+const claudeWorkspace = path.join(runtimeDir, 'claude-workspace');
 
 const ENGINE_DEFAULTS = Object.freeze({
   ollama: {
@@ -23,6 +26,10 @@ const ENGINE_DEFAULTS = Object.freeze({
   codex: {
     label: 'Codex CLI',
     model: 'gpt-5.6-terra'
+  },
+  claude: {
+    label: 'Claude Code',
+    model: 'sonnet'
   }
 });
 
@@ -993,11 +1000,202 @@ async function runCodex(input, state) {
   }
 }
 
+function claudePrompt(input) {
+  return codexPrompt(input).replace(
+    'managed Seemplify local-cloud inference engine',
+    'managed Seemplify Claude local-cloud inference engine'
+  );
+}
+
+const CLAUDE_ENV_ALLOWLIST = new Set([
+  ...CODEX_ENV_ALLOWLIST,
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CONFIG_DIR'
+]);
+
+function claudeChildEnv(source = process.env) {
+  const env = {};
+  for (const [key, value] of Object.entries(source || {})) {
+    if (value === undefined || !CLAUDE_ENV_ALLOWLIST.has(key.toUpperCase())) continue;
+    env[key] = String(value);
+  }
+  return env;
+}
+
+function normalizedClaudeUsage(rawUsage = {}) {
+  const usageReported = Boolean(rawUsage && typeof rawUsage === 'object' && [
+    'input_tokens',
+    'output_tokens',
+    'cache_creation_input_tokens',
+    'cache_read_input_tokens'
+  ].some((field) => Object.hasOwn(rawUsage, field)));
+  const directInputTokens = Number(rawUsage.input_tokens || 0);
+  const cacheWriteTokens = Number(rawUsage.cache_creation_input_tokens || 0);
+  const cachedTokens = Number(rawUsage.cache_read_input_tokens || 0);
+  const outputTokens = Number(rawUsage.output_tokens || 0);
+  const inputTokens = directInputTokens + cacheWriteTokens + cachedTokens;
+  return {
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+      prompt_tokens_details: {
+        cached_tokens: cachedTokens,
+        cache_write_tokens: cacheWriteTokens
+      },
+      completion_tokens_details: { reasoning_tokens: 0 }
+    },
+    usageReported
+  };
+}
+
+function parseClaudeJson(output) {
+  let envelope;
+  try {
+    envelope = JSON.parse(String(output || '').trim());
+  } catch {
+    const error = new Error('Claude Code returned malformed JSON output');
+    error.code = 'CLAUDE_JSON_INVALID';
+    throw error;
+  }
+  const { usage, usageReported } = normalizedClaudeUsage(envelope.usage || {});
+  if (envelope.is_error || envelope.subtype === 'error' || envelope.api_error_status) {
+    const error = new Error(String(envelope.result || envelope.error || 'Claude Code inference failed'));
+    error.code = String(envelope.api_error_status || 'CLAUDE_TURN_FAILED');
+    error.claudeUsage = usage;
+    error.usageReported = usageReported;
+    throw error;
+  }
+  return {
+    content: envelope.structured_output === undefined
+      ? String(envelope.result || '')
+      : JSON.stringify(envelope.structured_output),
+    structuredOutput: envelope.structured_output,
+    usage,
+    usageReported,
+    estimatedCostUsd: Number.isFinite(Number(envelope.total_cost_usd))
+      ? Number(envelope.total_cost_usd)
+      : null
+  };
+}
+
+function claudeExecArgs(engine, input) {
+  const args = [
+    '-p',
+    '--model', engine.model,
+    '--effort', 'medium',
+    '--tools', '',
+    '--no-session-persistence',
+    '--disable-slash-commands',
+    '--strict-mcp-config',
+    '--mcp-config', '{"mcpServers":{}}',
+    '--output-format', 'json'
+  ];
+  if (input.jsonSchema) args.push('--json-schema', JSON.stringify(input.jsonSchema));
+  args.push(claudePrompt(input));
+  return args;
+}
+
+async function removeClaudeRequestDir(requestDir, options = {}) {
+  return removeCodexRequestDir(requestDir, options);
+}
+
+async function runClaude(input, state) {
+  const engine = engineSettings({ ...state, selectedEngine: 'claude' });
+  if (!fs.existsSync(claudeExecutable)) {
+    const error = new Error('Claude Code CLI is not installed for the managed runtime');
+    error.code = 'CLAUDE_NOT_INSTALLED';
+    throw error;
+  }
+  const effectiveInput = prepareInferenceInput(input);
+  fs.mkdirSync(claudeWorkspace, { recursive: true });
+  const requestDir = path.join(claudeWorkspace, crypto.randomUUID());
+  fs.mkdirSync(requestDir, { recursive: true });
+  const startedAt = Date.now();
+  try {
+    let result;
+    try {
+      await effectiveInput.onProviderDispatch?.();
+      result = await spawnCapture(claudeExecutable, claudeExecArgs(engine, effectiveInput), {
+        input: '',
+        cwd: requestDir,
+        timeoutMs: Number(input.timeoutMs || 240_000),
+        signal: effectiveInput.signal,
+        env: claudeChildEnv()
+      });
+    } catch (error) {
+      if (error.capturedStdout) {
+        try {
+          const recovered = parseClaudeJson(error.capturedStdout);
+          attachUsageEnvelope(error, {
+            id: crypto.randomUUID(),
+            engine: 'claude',
+            model: engine.model,
+            usage: recovered.usage,
+            usageReported: recovered.usageReported
+          });
+        } catch {}
+        delete error.capturedStdout;
+      }
+      throw error;
+    }
+    let claudeResult;
+    try {
+      claudeResult = parseClaudeJson(result.stdout);
+    } catch (error) {
+      if (error.claudeUsage) {
+        attachUsageEnvelope(error, {
+          id: crypto.randomUUID(),
+          engine: 'claude',
+          model: engine.model,
+          usage: error.claudeUsage,
+          usageReported: error.usageReported
+        });
+        delete error.claudeUsage;
+        delete error.usageReported;
+      }
+      throw error;
+    }
+    let parsed;
+    try {
+      parsed = effectiveInput.jsonSchema
+        ? (claudeResult.structuredOutput === undefined
+          ? parseStructuredContent(claudeResult.content, 'Claude Code')
+          : { content: claudeResult.content, data: claudeResult.structuredOutput })
+        : { content: stripThinkingText(claudeResult.content), data: undefined };
+      if (!parsed.content) throw new Error('Claude Code returned an empty response');
+    } catch (error) {
+      throw attachUsageEnvelope(error, {
+        id: crypto.randomUUID(),
+        engine: 'claude',
+        model: engine.model,
+        usage: claudeResult.usage,
+        usageReported: claudeResult.usageReported
+      });
+    }
+    return {
+      id: crypto.randomUUID(),
+      engine: 'claude',
+      model: engine.model,
+      ...finalizeOutput(parsed, effectiveInput),
+      usage: claudeResult.usage,
+      usageReported: claudeResult.usageReported,
+      estimatedCostUsd: claudeResult.estimatedCostUsd,
+      metrics: { latencyMs: Date.now() - startedAt }
+    };
+  } finally {
+    await removeClaudeRequestDir(requestDir);
+  }
+}
+
 async function analyzeWithEngine(input, state) {
   const engine = engineSettings(state);
   if (engine.id === 'ollama') return runOllama(input, state);
   if (engine.id === 'vllm') return runVllm(input, state);
   if (engine.id === 'codex') return runCodex(input, state);
+  if (engine.id === 'claude') return runClaude(input, state);
   throw new Error(`Unsupported inference engine ${engine.id}`);
 }
 
@@ -1022,11 +1220,12 @@ async function engineHealth(state) {
         modelInstalled: (data.data || []).some((item) => item.id === engine.model)
       };
     }
+    const executable = engine.id === 'claude' ? claudeExecutable : codexScript;
     return {
-      ok: fs.existsSync(codexScript),
+      ok: fs.existsSync(executable),
       engine: engine.id,
       model: engine.model,
-      modelInstalled: fs.existsSync(codexScript)
+      modelInstalled: fs.existsSync(executable)
     };
   } catch (error) {
     return { ok: false, engine: engine.id, model: engine.model, modelInstalled: false, error: error.message };
@@ -1042,6 +1241,11 @@ module.exports = {
   codexExecArgs,
   codexInstallDir,
   codexScript,
+  claudeChildEnv,
+  claudeExecArgs,
+  claudeExecutable,
+  claudeInstallDir,
+  claudePrompt,
   engineHealth,
   engineSettings,
   finalizeOutput,
@@ -1049,6 +1253,7 @@ module.exports = {
   attachUsageEnvelope,
   hasOpenObjectSchema,
   normalizeToolCalls,
+  normalizedClaudeUsage,
   ollamaMessages,
   parseCodexJsonl,
   recoverCodexUsage,
@@ -1060,6 +1265,9 @@ module.exports = {
   runVllm,
   shouldEnvelopeOllamaText,
   spawnCapture,
+  parseClaudeJson,
+  removeClaudeRequestDir,
+  runClaude,
   stripThinkingText,
   terminateChildTree,
   vllmMessages

@@ -24,7 +24,7 @@ function readSecret() {
     if (!value) throw new Error('empty');
     return value;
   } catch {
-    throw new TerraError('The shared Terra service secret is not configured.', 'TERRA_NOT_CONFIGURED', 503, true);
+    throw new TerraError('The shared Experience AI service secret is not configured.', 'TERRA_NOT_CONFIGURED', 503, true);
   }
 }
 
@@ -92,12 +92,12 @@ export async function completeWithTerra(input: TerraCompletionInput) {
       signal: AbortSignal.timeout(input.timeoutMs || 250_000)
     });
   } catch (error) {
-    throw new TerraError(`Terra is unreachable: ${error instanceof Error ? error.message : String(error)}`, 'TERRA_UNAVAILABLE', 503, true);
+    throw new TerraError(`Experience AI is unreachable: ${error instanceof Error ? error.message : String(error)}`, 'TERRA_UNAVAILABLE', 503, true);
   }
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) {
     throw new TerraError(
-      payload.message || payload.error || `Terra returned HTTP ${response.status}`,
+      payload.message || payload.error || `Experience AI returned HTTP ${response.status}`,
       payload.code || 'TERRA_REQUEST_FAILED',
       response.status,
       payload.retryable !== false && response.status >= 429

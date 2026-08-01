@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, Megaphone, Menu, Plus, Radar, Route, Settings2, Sparkles, X } from 'lucide-react';
+import { BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, Megaphone, Menu, Plus, Radar, Route, Settings2, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
@@ -15,6 +15,7 @@ const navigation = [
   { to: '/agreements', label: 'Agreements', icon: FileSignature },
   { to: '/social-listening', label: 'Social listening', icon: Radar },
   { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit },
+  { to: '/assistant', label: 'Personal assistant', icon: MailCheck },
   { to: '/journeys', label: 'Journey maps', icon: Route },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
   { to: '/tickets', label: 'Service recovery', icon: Inbox },
@@ -127,7 +128,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
   }, [mobileOpen]);
-  useEffect(() => { api<any>('/api/runtime').then(setRuntime).catch(() => setRuntime({ terra: { reachable: false } })); const timer = setInterval(() => api<any>('/api/runtime').then(setRuntime).catch(() => null), 30_000); return () => clearInterval(timer); }, []);
+  useEffect(() => { api<any>('/api/runtime').then(setRuntime).catch(() => setRuntime({ ai: { reachable: false } })); const timer = setInterval(() => api<any>('/api/runtime').then(setRuntime).catch(() => null), 15_000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     let cancelled = false;
     void api<AuthSession>('/api/auth/session').then(async (nextSession) => {
@@ -167,9 +168,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(location.pathname);
   const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
-  const terraReady = runtime?.terra?.ready === true;
-  const runtimeState: RuntimeState = runtime === null ? 'checking' : terraReady ? 'ready' : 'unavailable';
-  const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
+  const managedRuntime = runtime?.ai || runtime?.terra;
+  const runtimeReady = managedRuntime?.ready === true;
+  const runtimeState: RuntimeState = runtime === null ? 'checking' : runtimeReady ? 'ready' : 'unavailable';
+  const runtimeLabel = managedRuntime?.providerLabel || 'Experience AI';
   const creationAction = location.pathname.startsWith('/agreements')
     ? { to: '/agreements/new', label: 'New agreement' }
     : location.pathname === '/' || location.pathname.startsWith('/surveys')

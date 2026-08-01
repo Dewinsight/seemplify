@@ -44,7 +44,7 @@ export function CreateSurveyPage() {
     <Button variant="ghost" size="sm" asChild><Link to="/surveys"><ArrowLeft />Back to surveys</Link></Button>
     <div><h1 className="page-title">Create a survey</h1><p className="page-description">Start with a proven research structure or describe the decision you need to make.</p></div>
     <Tabs defaultValue="ai">
-      <TabsList><TabsTrigger value="ai">Generate with Terra</TabsTrigger><TabsTrigger value="templates">Templates</TabsTrigger><TabsTrigger value="blank">Start blank</TabsTrigger></TabsList>
+      <TabsList><TabsTrigger value="ai">Generate with Experience AI</TabsTrigger><TabsTrigger value="templates">Templates</TabsTrigger><TabsTrigger value="blank">Start blank</TabsTrigger></TabsList>
       <TabsContent value="ai">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <Card><CardHeader><CardTitle>Research brief</CardTitle><CardDescription>Terra will turn the objective into an unbiased, decision-ready survey.</CardDescription></CardHeader><CardContent className="space-y-4">

@@ -238,6 +238,8 @@ function errorDetails(payload, status, provider = 'groq') {
     ? 'Groq'
     : provider === 'local-codex'
       ? 'Terra'
+      : provider === 'local-claude'
+        ? 'Claude Sonnet'
       : isManagedLocalProvider(provider) ? 'Managed AI runtime' : 'Azure';
   return {
     code,
@@ -692,13 +694,18 @@ class AIRuntimeService {
     const usageEventId = deriveRuntimeUsageEventId({ context, route });
     const sourceApp = String(context.sourceApp || input.context?.sourceApp || 'recruiter').slice(0, 64);
     const experienceProfile = String(route.activity || '').startsWith('experience.');
+    const requiredEngine = route.provider === 'local-codex'
+      ? 'codex'
+      : route.provider === 'local-claude'
+        ? 'claude'
+        : undefined;
     const body = JSON.stringify({
       activity: route.activity,
       model: route.model,
       executionMode: 'local-only',
       runtimeProfile: experienceProfile ? 'experience-management' : undefined,
-      requiredEngine: route.provider === 'local-codex' && !experienceProfile ? 'codex' : undefined,
-      requiredModel: route.provider === 'local-codex' && !experienceProfile ? route.model : undefined,
+      requiredEngine: !experienceProfile ? requiredEngine : undefined,
+      requiredModel: requiredEngine && !experienceProfile ? route.model : undefined,
       messages: input.messages,
       jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
       schemaName: input.schemaName,
@@ -873,7 +880,9 @@ class AIRuntimeService {
         )).slice(0, 100)
         : 'unreported',
       usage,
-      estimatedCostUsd: calculateEstimatedCost(usage, route.modelConfig?.pricing),
+      estimatedCostUsd: Number.isFinite(Number(data?.estimatedCostUsd))
+        ? Math.max(0, Number(data.estimatedCostUsd))
+        : calculateEstimatedCost(usage, route.modelConfig?.pricing),
       rateLimit
     };
     const result = await recordUsage(event);

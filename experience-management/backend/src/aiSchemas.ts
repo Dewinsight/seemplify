@@ -1,4 +1,9 @@
 import { z } from 'zod';
+
+export {
+  assistantEmailDraftResult, assistantEmailSummaryResult, assistantJsonSchemas,
+  assistantKnowledgeAnswerResult
+} from './assistantSchemas.js';
 import { QUESTION_TYPES } from './types.js';
 
 const generatedQuestion = z.object({

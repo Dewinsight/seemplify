@@ -5,7 +5,7 @@ const { recordUsage } = require('./usageService');
 const SIGNATURE_SKEW_MS = 5 * 60 * 1000;
 const NONCE_TTL_MS = 10 * 60 * 1000;
 const MAX_TOKEN_COUNT = 100_000_000;
-const ALLOWED_PROVIDERS = new Set(['local-codex', 'local-ollama', 'local-vllm']);
+const ALLOWED_PROVIDERS = new Set(['local-codex', 'local-claude', 'local-ollama', 'local-vllm']);
 const seenNonces = new Map();
 
 function text(value, maximumLength) {
@@ -132,6 +132,10 @@ function validateLocalUsageEnvelope(payload = {}) {
   if (httpStatus && (!Number.isInteger(httpStatus) || httpStatus < 100 || httpStatus > 599)) {
     throw validationError('Local usage HTTP status is invalid');
   }
+  const estimatedCostUsd = Number(input.estimatedCostUsd || 0);
+  if (!Number.isFinite(estimatedCostUsd) || estimatedCostUsd < 0 || estimatedCostUsd > 1_000_000) {
+    throw validationError('Local usage estimated cost is invalid');
+  }
   return {
     eventId,
     gatewayExecutionId,
@@ -148,6 +152,7 @@ function validateLocalUsageEnvelope(payload = {}) {
     usageReported: input.usageReported === true,
     usageSource: text(input.usageSource || (input.usageReported ? 'local-gateway' : 'unreported'), 100),
     usage,
+    estimatedCostUsd,
     occurredAt
   };
 }
@@ -178,7 +183,7 @@ async function ingestLocalUsageEnvelope(payload, { recordUsageImpl = recordUsage
       completion_tokens_details: { reasoning_tokens: event.usage.reasoningTokens },
       total_tokens: event.usage.totalTokens
     },
-    estimatedCostUsd: 0,
+    estimatedCostUsd: event.estimatedCostUsd,
     createdAt: event.occurredAt
   });
   return {

@@ -7,6 +7,8 @@ const LOCAL_MANAGED_MODEL = 'managed-local-gpu';
 const LOCAL_CV_MODEL = LOCAL_MANAGED_MODEL;
 const TERRA_PROVIDER = 'local-codex';
 const TERRA_MODEL = 'gpt-5.6-terra';
+const CLAUDE_PROVIDER = 'local-claude';
+const CLAUDE_SONNET_MODEL = 'sonnet';
 const DEFAULT_LOCAL_FAILOVER = Object.freeze({
   enabled: true,
   intervalMinutes: 30,
@@ -70,8 +72,35 @@ const DEFAULT_MODELS = Object.freeze([
     enabled: true,
     localCloud: true,
     managed: true
+  },
+  {
+    id: CLAUDE_SONNET_MODEL,
+    provider: CLAUDE_PROVIDER,
+    label: 'Claude Sonnet (Claude Code local-cloud)',
+    capabilities: ['text', 'reasoning', 'json_object', 'json_schema', 'tools'],
+    pricing: { inputPerMillionUsd: 0, cachedInputPerMillionUsd: 0, outputPerMillionUsd: 0 },
+    documentedLimits: { concurrency: 32 },
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+    available: true,
+    enabled: true,
+    localCloud: true,
+    managed: true
   }
 ]);
+
+function experienceActivity(label, reasoningEffort = 'medium') {
+  return {
+    label,
+    group: 'Experience Management',
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
+    reasoningEffort,
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  };
+}
 
 const ACTIVITY_DEFINITIONS = Object.freeze({
   'recruiter.general': { label: 'Recruiter AI - general', group: 'Recruiter', model: GROQ_120B, reasoningEffort: 'medium' },
@@ -180,6 +209,20 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     lockedProvider: true,
     failoverPolicy: 'wait_local'
   },
+  'experience.knowledge_answer': experienceActivity('Experience knowledge answer', 'high'),
+  'experience.knowledge_graph_extract': experienceActivity('Experience knowledge graph extraction', 'high'),
+  'experience.social_reply_draft': experienceActivity('Experience social reply draft'),
+  'experience.cross_source_intelligence': experienceActivity('Experience cross-source intelligence', 'high'),
+  'experience.assistant.email_summarise': experienceActivity('Experience assistant email summarisation'),
+  'experience.assistant.email_draft': experienceActivity('Experience assistant email draft'),
+  'experience.assistant.document_summarise': experienceActivity('Experience assistant document summarisation'),
+  'experience.assistant.document_compare': experienceActivity('Experience assistant document comparison', 'high'),
+  'experience.assistant.meeting_prepare': experienceActivity('Experience assistant meeting preparation', 'high'),
+  'experience.assistant.meeting_minutes': experienceActivity('Experience assistant meeting minutes'),
+  'experience.assistant.action_extract': experienceActivity('Experience assistant action extraction'),
+  'experience.assistant.knowledge_answer': experienceActivity('Experience assistant knowledge answer', 'high'),
+  'experience.assistant.executive_brief': experienceActivity('Experience assistant executive brief', 'high'),
+  'experience.assistant.correspondence_draft': experienceActivity('Experience assistant correspondence draft'),
   'interview.questions': {
     label: 'Interview question generation',
     group: 'Interviews',
@@ -224,7 +267,7 @@ function failoverPolicyForRoute(activity, provider) {
 }
 
 function isManagedLocalProvider(provider) {
-  return ['local-codex', 'local-ollama', 'local-vllm'].includes(String(provider || '').trim().toLowerCase());
+  return ['local-codex', 'local-claude', 'local-ollama', 'local-vllm'].includes(String(provider || '').trim().toLowerCase());
 }
 
 const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
@@ -264,6 +307,11 @@ function localProviderLabel(provider, model) {
         ? `Codex local-cloud: ${normalizedModel}`
         : 'Codex local-cloud';
   }
+  if (normalizedProvider === 'local-claude') {
+    return normalizedModel
+      ? `Claude Code local-cloud: ${normalizedModel}`
+      : 'Claude Code local-cloud';
+  }
   if (normalizedProvider === 'local-ollama') {
     return !normalizedModel || normalizedModel === LOCAL_MANAGED_MODEL
       ? 'Managed local runtime'
@@ -293,6 +341,8 @@ function createDefaultRuntimeSettings() {
 
 module.exports = {
   ACTIVITY_DEFINITIONS,
+  CLAUDE_PROVIDER,
+  CLAUDE_SONNET_MODEL,
   DEFAULT_ALERT_SETTINGS,
   DEFAULT_LOCAL_FAILOVER,
   DEFAULT_ROLLOUT_SETTINGS,

@@ -8,10 +8,11 @@ import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
 import { currentSessionUser, forgotPassword, login, logout, requireAdmin, resetPassword, session, signup } from './auth.js';
 import { computeAnalytics } from './analytics.js';
+import { assistantRouter, nylasCallback } from './assistantRoutes.js';
 import { config } from './config.js';
 import {
   createCollector, createJob, createJourney, createResponse, db, deleteJourney, deleteSurvey, findActiveJourneyOptimization, getCollectorBySlug, getJob, getJobForSpace,
-  getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJourneyVersionSummaries,
+  getJourney, getResponse, getSurvey, insertInsight, insertSocialMentions, listCollectors, listInsights, listJourneyVersionSummaries,
   listJobsForSpace, listJourneys, listResponses, listSocialMentionsByIds, listSocialMentionsByIdsForSpace, listSocialMentionsForSpace, listSurveys, restoreJourneyVersion, saveSurvey, updateJourney
 } from './database.js';
 import { attachEventStream, publishEvent } from './events.js';
@@ -73,7 +74,8 @@ app.get('/api/auth/session', noStore, session);
 app.use('/api', (request, response, next) => {
   const publicRoute = request.path.startsWith('/public/collectors/') || request.path.startsWith('/public/campaigns/unsubscribe/')
     || request.path.startsWith('/public/esign/') || request.path.startsWith('/public/spaces/invitations/') || request.path.startsWith('/public/uploads/')
-    || request.path === '/webhooks/brevo/transactional' || request.path === '/integrations/x/callback';
+    || request.path === '/webhooks/brevo/transactional' || request.path === '/integrations/x/callback'
+    || request.path === '/integrations/nylas/callback';
   if (publicRoute) return next();
   response.setHeader('Cache-Control', 'private, no-store');
   response.vary('Cookie');
@@ -374,6 +376,8 @@ function noStore(_request: express.Request, response: express.Response, next: ex
 app.get('/health', (_request, response) => response.json({ status: 'ok', service: 'seemplify-experience', database: 'sqlite', at: new Date().toISOString() }));
 app.use('/api/esign', esignRouter);
 app.use('/api/public/esign', esignPublicRouter);
+app.use('/api/assistant', assistantRouter);
+app.get('/api/integrations/nylas/callback', noStore, nylasCallback);
 app.get('/api/events', (request, response) => {
   const user = authenticatedUser(request);
   const space = resolveRequestSpace(request, user.id);
@@ -383,13 +387,15 @@ app.get('/api/events', (request, response) => {
   });
 });
 app.get('/api/runtime', noStore, async (request, response) => {
-  const space = authenticatedSpace(request);
-  response.json({ terra: await getTerraStatus(), email: emailStatus(), worker: aiJobRunner.status(space.id) });
+  const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
+  const ai = await getTerraStatus();
+  response.json({ ai, terra: ai, email: emailStatus(), worker: aiJobRunner.status(space.id, user.id) });
 });
 app.get('/api/bootstrap', noStore, (request, response) => {
-  const space = authenticatedSpace(request);
+  const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
   const surveys = listSurveys(space.id);
-  const jobCounts = db.prepare(`SELECT state,COUNT(*) count FROM ai_jobs WHERE space_id=? GROUP BY state`).all(space.id);
+  const jobCounts = db.prepare(`SELECT state,COUNT(*) count FROM ai_jobs WHERE space_id=?
+    AND (kind NOT LIKE 'assistant.%' OR requested_by=?) GROUP BY state`).all(space.id, user.id);
   response.json({
     surveys,
     overview: {
@@ -399,7 +405,7 @@ app.get('/api/bootstrap', noStore, (request, response) => {
       openTickets: Number((db.prepare("SELECT COUNT(*) count FROM tickets t JOIN surveys s ON s.id=t.survey_id WHERE s.space_id=? AND t.status<>'closed'").get(space.id) as any).count),
       aiJobs: jobCounts
     },
-    recentJobs: listJobsForSpace(space.id, 12), email: emailStatus(), space
+    recentJobs: listJobsForSpace(space.id, 12, user.id), email: emailStatus(), space
   });
 });
 
@@ -1313,15 +1319,39 @@ for (const route of [
   });
 }
 
-app.get('/api/ai/jobs', noStore, (request, response) => response.json(listJobsForSpace(authenticatedSpace(request).id, Math.min(500, Number(request.query.limit || 100)))));
+app.get('/api/ai/jobs', noStore, (request, response) => {
+  const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
+  return response.json(listJobsForSpace(space.id, Math.min(500, Number(request.query.limit || 100)), user.id));
+});
 app.get('/api/ai/jobs/:id', noStore, (request, response) => {
-  const job = getJobForSpace(String(request.params.id), authenticatedSpace(request).id);
+  const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
+  const job = getJobForSpace(String(request.params.id), space.id, user.id);
   return job ? response.json(job) : response.status(404).json({ error: 'AI job not found.' });
 });
 
 app.get('/api/surveys/:id/insights', noStore, (request, response) => {
   const survey = getSurvey(String(request.params.id), authenticatedSpace(request).id);
   return survey ? response.json(listInsights(survey.id)) : response.status(404).json({ error: 'Survey not found.' });
+});
+app.post('/api/surveys/:id/insights/:insightId/knowledge', (request, response) => {
+  try {
+    const space = authenticatedSpace(request); const survey = requireSurvey(String(request.params.id), space.id);
+    const titleInput = z.object({ title: z.string().trim().min(3).max(180).optional() }).strict().parse(request.body || {});
+    const source = db.prepare(`SELECT i.* FROM insights i JOIN surveys s ON s.id=i.survey_id
+      WHERE i.id=? AND i.survey_id=? AND s.space_id=? AND i.kind='research_answer'`).get(String(request.params.insightId), survey.id, space.id) as any;
+    if (!source) return response.status(404).json({ error: 'Saved research answer not found.' });
+    const existing = db.prepare(`SELECT * FROM insights WHERE survey_id=? AND kind='knowledge_entry'
+      AND json_extract(payload_json,'$.sourceInsightId')=? LIMIT 1`).get(survey.id, source.id) as any;
+    if (existing) return response.json(listInsights(survey.id).find((item) => item.id === existing.id));
+    const payload = JSON.parse(source.payload_json || '{}');
+    const saved = insertInsight(survey.id, 'knowledge_entry', {
+      title: titleInput.title || String(payload.question || 'Research answer').slice(0, 180),
+      question: payload.question, answer: payload.answer, evidence: payload.evidence || [], caveats: payload.caveats || [],
+      sourceInsightId: source.id, provenance: { type: 'survey_research_answer', surveyId: survey.id, createdAt: source.created_at }
+    });
+    publishEvent('data-changed', { surveyId: survey.id, reason: 'knowledge-entry-created', insightId: saved.id }, space.id);
+    return response.status(201).json(saved);
+  } catch (error) { return sendError(response, error, 400); }
 });
 app.get('/api/surveys/:id/tickets', noStore, (request, response) => {
   const survey = getSurvey(String(request.params.id), authenticatedSpace(request).id);

@@ -16,8 +16,10 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /SurveyStudioPage/);
   assert.match(app, /SocialListeningPage/);
   assert.match(app, /IntelligencePage/);
+  assert.match(app, /PersonalAssistantPage/);
   assert.match(app, /JourneysPage/);
   assert.match(app, /path="\/intelligence"/);
+  assert.match(app, /path="\/assistant"/);
   assert.match(app, /path="\/campaigns"/);
   assert.match(app, /path="\/campaigns\/:id"/);
   assert.match(app, /path="\/agreements"/);
@@ -27,6 +29,21 @@ test('registers protected admin and public response routes', () => {
   assert.match(app, /CertificateVerificationPage/);
   assert.match(app, /path="\/join\/:token"/);
   assert.match(app, /path="\/settings\/space"/);
+});
+test('keeps the Experience personal assistant private, durable, grounded, and human reviewed', () => {
+  const assistant = fs.readFileSync(path.join(source, 'pages', 'PersonalAssistantPage.tsx'), 'utf8');
+  const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');
+  for (const endpoint of [
+    '/api/assistant/overview', '/api/assistant/threads', '/api/assistant/runs'
+  ]) assert.match(assistant, new RegExp(endpoint.replaceAll('/', '\\/')));
+  for (const activity of ['email-summary', 'email-draft', 'knowledge-answer']) assert.match(assistant, new RegExp(activity));
+  for (const feature of [
+    'Personal assistant', 'Mailbox connections', 'Workspace knowledge', 'Assistant history',
+    'Draft only — nothing has been sent', 'Original generation is retained for audit',
+    'The selected evidence is snapshotted before queueing', 'Private to your account within the active space'
+  ]) assert.match(assistant, new RegExp(feature));
+  assert.doesNotMatch(assistant, />Send<|name="Send"|\/send/);
+  assert.match(shell, /label: 'Personal assistant'/);
 });
 test('keeps space selection, membership management, invitations, uploads, and live events tenant-aware', () => {
   const api = fs.readFileSync(path.join(source, 'lib', 'api.ts'), 'utf8');
@@ -120,9 +137,17 @@ test('ships a survey-specific email campaign workspace with audience, sequencing
   assert.match(contactImport, /customData/);
   assert.match(contactImport, /knownIndexes/);
 });
-test('keeps every Experience AI action visible in the survey workspace', () => {
+test('focuses the survey workspace on saved intelligence instead of translation', () => {
   const ai = fs.readFileSync(path.join(source, 'components', 'survey', 'AiTab.tsx'), 'utf8');
-  for (const action of ['improve', 'insights', 'report', 'translate', 'ask']) assert.match(ai, new RegExp(`['\"]${action}['\"]`));
+  for (const action of ['improve', 'insights', 'report', 'ask']) assert.match(ai, new RegExp(`['\"]${action}['\"]`));
+  assert.doesNotMatch(ai, /run\(['\"]translate['\"]/);
+  assert.doesNotMatch(ai, /French/);
+  assert.match(ai, /Saved survey intelligence/);
+  assert.match(ai, /IntelligenceOutput/);
+  assert.match(ai, /research_answer/);
+  assert.match(ai, /knowledge_entry/);
+  assert.match(ai, /Add to knowledge base/);
+  assert.match(ai, /Answers are saved automatically/);
 });
 test('recovers a stale lazy-loaded deployment asset at most once per recovery window', () => {
   const main = fs.readFileSync(path.join(source, 'main.tsx'), 'utf8');

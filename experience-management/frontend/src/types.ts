@@ -38,6 +38,43 @@ export interface SocialReplyDraft { id: string; mentionId: string; connectionId:
 export interface SocialIntelligenceReport { id: string; connectionId: string | null; title: string; mentionIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
 export interface IntelligenceSource { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string }
 export interface IntelligenceReport { id: string; title: string; objective: string; sourceRefs: { survey: string[]; social: string[] }; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export interface AssistantConnection {
+  id: string; email: string; provider: 'google' | 'microsoft' | string; status: 'connected' | 'degraded' | 'disconnected' | string;
+  displayName?: string | null; scopes?: string[]; lastHealthAt?: string | null; lastError?: string | null; createdAt?: string;
+}
+export interface AssistantThreadParticipant { name?: string | null; email: string }
+export interface AssistantThread {
+  id: string; subject: string; snippet: string; participants: Array<AssistantThreadParticipant | string>; messageCount: number;
+  lastMessageAt: string | null; unread?: boolean;
+}
+export type AssistantRunKind = 'assistant.email_summary' | 'assistant.email_draft' | 'assistant.knowledge_answer' | 'email_summary' | 'email_draft' | 'knowledge_answer';
+export interface AssistantDraft {
+  subject: string; body: string; generatedSubject?: string; generatedBody?: string; revision: number; updatedAt?: string;
+}
+export interface AssistantOutput {
+  summary?: string; answer?: string; subject?: string; body?: string; rationale?: string;
+  keyPoints?: unknown[]; actionItems?: unknown[]; openQuestions?: unknown[]; safetyFlags?: string[];
+  citations?: Array<{ sourceRef: string; excerpt: string }>;
+  limitations?: unknown[]; caveats?: unknown[];
+}
+export interface AssistantRuntime {
+  id?: string; provider?: string; providerLabel?: string; engine?: string; model?: string;
+  usage?: { totalTokens?: number; total_tokens?: number; [key: string]: unknown };
+  latencyMs?: number; queueWaitMs?: number;
+}
+export interface AssistantRun {
+  id: string; jobId: string; kind: AssistantRunKind; state: 'queued' | 'processing' | 'completed' | 'failed';
+  stage: string; progress: number; attempt?: number; connectionId?: string | null; subjectRef?: string | null; sourceRefs?: string[];
+  output?: AssistantOutput | null; runtime?: AssistantRuntime | null; draft?: AssistantDraft | null;
+  generatedDraft?: Pick<AssistantDraft, 'subject' | 'body'> | null; advisoryOnly?: boolean; externalDispatched?: boolean;
+  error: string | null; createdAt: string; startedAt?: string | null; completedAt: string | null; updatedAt: string;
+}
+export interface AssistantOverview {
+  configured: boolean; callbackUrl?: string; configurationError?: string | null; connections: AssistantConnection[];
+  worker?: { running: boolean; active: number; queued: number; concurrency: number };
+  ai?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
+  terra?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
+}
 export interface JourneyStage { name: string; goal: string; touchpoints: string[]; customerActions: string[]; emotions: string[]; painPoints: string[]; metrics: string[]; opportunities: string[]; recommendedActions: string[] }
 export interface JourneyProvenance {
   origin: 'workspace' | 'terra' | 'legacy';

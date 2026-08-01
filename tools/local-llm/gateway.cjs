@@ -29,6 +29,15 @@ const {
   ACTIVITY_DEFINITIONS,
   localProviderLabel
 } = require('../../recruiter/backend/config/aiRuntimeCatalog');
+const {
+  RUNTIME_PROFILE_DEFINITIONS,
+  RUNTIME_PROFILE_IDS,
+  defaultApplicationDefaults,
+  isRuntimeProfile,
+  mergeApplicationDefaults,
+  runtimeProfileForActivity,
+  runtimeProfileFromStatusInput
+} = require('./runtime-profiles.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
@@ -94,9 +103,7 @@ function defaultState() {
     autoStart: true,
     selectionMode: 'automatic',
     selectedEngine: 'codex',
-    applicationDefaults: {
-      experienceManagement: { engine: 'codex', model: 'gpt-5.6-terra' }
-    },
+    applicationDefaults: defaultApplicationDefaults(),
     engines: Object.fromEntries(Object.entries(ENGINE_DEFAULTS).map(([id, item]) => [
       id,
       { model: item.model, ...(item.baseUrl ? { baseUrl: item.baseUrl } : {}) }
@@ -132,10 +139,7 @@ function readStoredState() {
     return {
       ...defaults,
       ...saved,
-      applicationDefaults: {
-        ...defaults.applicationDefaults,
-        ...(saved.applicationDefaults || {})
-      },
+      applicationDefaults: mergeApplicationDefaults(saved.applicationDefaults),
       engines: Object.fromEntries(Object.keys(ENGINE_DEFAULTS).map((id) => [
         id,
         { ...defaults.engines[id], ...(saved.engines?.[id] || {}) }
@@ -152,10 +156,17 @@ function readState() {
 }
 
 function stateForRuntimeProfile(state, runtimeProfile) {
-  if (runtimeProfile !== 'experience-management') return state;
-  const profile = state.applicationDefaults?.experienceManagement || {};
-  const engine = ENGINE_IDS.includes(profile.engine) ? profile.engine : 'codex';
-  const model = String(profile.model || state.engines?.[engine]?.model || ENGINE_DEFAULTS[engine]?.model || '');
+  const definition = RUNTIME_PROFILE_DEFINITIONS[runtimeProfile];
+  if (!definition) return state;
+  const profile = state.applicationDefaults?.[definition.stateKey] || {};
+  const engine = ENGINE_IDS.includes(profile.engine) ? profile.engine : definition.defaultEngine;
+  const model = String(
+    profile.model
+    || state.engines?.[engine]?.model
+    || ENGINE_DEFAULTS[engine]?.model
+    || definition.defaultModel
+    || ''
+  );
   return {
     ...state,
     selectedEngine: engine,
@@ -298,7 +309,7 @@ function activitySchedulerLimits(activity) {
   const state = readState();
   const executionState = stateForRuntimeProfile(
     state,
-    String(activity || '').startsWith('experience.') ? 'experience-management' : ''
+    runtimeProfileForActivity(activity)
   );
   const selected = engineSettings(executionState);
   const available = !shuttingDown && state.enabled && !state.paused;
@@ -442,6 +453,8 @@ function normalizeQueueTelemetry(input = {}) {
         stage: queueText(job?.stage, 40) || null,
         progress: Math.min(100, queueCount(job?.progress)),
         attempts: queueCount(job?.attempts),
+        nextAttemptAt: queueTimestamp(job?.nextAttemptAt || job?.retry?.nextAttemptAt),
+        deferredCycles: queueCount(job?.deferredCycles ?? job?.retry?.deferredCycles),
         createdAt: queueTimestamp(job?.createdAt),
         startedAt: queueTimestamp(job?.startedAt),
         completedAt: queueTimestamp(job?.completedAt),
@@ -581,11 +594,11 @@ function queueHistoryPath(inputUrl) {
   return `/api/internal/local-cv-queue/history?${params.toString()}`;
 }
 
-function signQueueHistoryPath(requestPath) {
+function signQueueHistoryPath(requestPath, method = 'GET') {
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(24).toString('base64url');
   const signature = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\nGET\n${requestPath}`)
+    .update(`${timestamp}\n${nonce}\n${String(method).toUpperCase()}\n${requestPath}`)
     .digest('base64url');
   return { timestamp, nonce, signature };
 }
@@ -628,6 +641,86 @@ async function fetchProviderTelemetry() {
         code: queueText(input?.code, 80) || 'PROVIDER_TELEMETRY_UNAVAILABLE',
         message: 'Hosted AI provider telemetry is unavailable'
       };
+  return { status: upstream.status, payload };
+}
+
+function executionModeForEngine(engine) {
+  return ['codex', 'claude'].includes(String(engine || '').toLowerCase())
+    ? 'local-cloud'
+    : 'local';
+}
+
+async function retryQueueJob(jobId, stage = 'failed') {
+  if (!/^cv_[A-Za-z0-9_-]{8,100}$/.test(String(jobId || ''))) {
+    return { status: 400, payload: { code: 'CV_JOB_ID_INVALID', message: 'CV job identifier is invalid' } };
+  }
+  const requestPath = `/api/internal/local-cv-queue/jobs/${encodeURIComponent(jobId)}/retry`;
+  const signed = signQueueHistoryPath(requestPath, 'POST');
+  const body = JSON.stringify({ stage: ['failed', 'parsing', 'analysis'].includes(stage) ? stage : 'failed' });
+  const upstream = await fetch(`${recruiterBackendUrl}${requestPath}`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'x-seemplify-timestamp': signed.timestamp,
+      'x-seemplify-nonce': signed.nonce,
+      'x-seemplify-signature': signed.signature
+    },
+    body,
+    signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(10_000) : undefined
+  });
+  const payload = await upstream.json().catch(() => ({
+    code: 'CV_RETRY_INVALID_RESPONSE',
+    message: 'The recruiter backend returned an invalid retry response'
+  }));
+  return { status: upstream.status, payload };
+}
+
+function activityAnalyticsPath(inputUrl) {
+  const params = new URLSearchParams();
+  const range = String(inputUrl.searchParams.get('range') || '24h');
+  params.set('range', ['1h', '24h', '7d', '30d', '90d'].includes(range) ? range : '24h');
+  return `/api/internal/local-cv-queue/activity-analytics?${params.toString()}`;
+}
+
+function activityHistoryPath(inputUrl) {
+  const params = new URLSearchParams();
+  const range = String(inputUrl.searchParams.get('range') || '24h');
+  params.set('range', ['1h', '24h', '7d', '30d', '90d'].includes(range) ? range : '24h');
+  params.set('page', String(Math.max(1, Math.min(100_000, Number(inputUrl.searchParams.get('page')) || 1))));
+  params.set('limit', String(Math.max(10, Math.min(100, Number(inputUrl.searchParams.get('limit')) || 25))));
+  const filters = {
+    status: /^(success|failed)$/,
+    provider: /^[A-Za-z0-9._-]{1,80}$/,
+    activity: /^[A-Za-z0-9._:-]{1,120}$/,
+    sourceApp: /^[A-Za-z0-9._:-]{1,80}$/,
+    organizationId: /^[A-Za-z0-9._:-]{1,120}$/,
+    actorId: /^[A-Za-z0-9._:@+-]{1,160}$/
+  };
+  for (const [name, pattern] of Object.entries(filters)) {
+    const value = String(inputUrl.searchParams.get(name) || '').trim();
+    if (value && pattern.test(value)) params.set(name, value);
+  }
+  const search = queueText(inputUrl.searchParams.get('search'), 100);
+  if (search) params.set('search', search);
+  return `/api/internal/local-cv-queue/activity-history?${params.toString()}`;
+}
+
+async function fetchSignedHosted(requestPath, timeoutMs = 8_000) {
+  const signed = signQueueHistoryPath(requestPath);
+  const upstream = await fetch(`${recruiterBackendUrl}${requestPath}`, {
+    headers: {
+      accept: 'application/json',
+      'x-seemplify-timestamp': signed.timestamp,
+      'x-seemplify-nonce': signed.nonce,
+      'x-seemplify-signature': signed.signature
+    },
+    signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+  });
+  const payload = await upstream.json().catch(() => ({
+    code: 'AI_ACTIVITY_INVALID_RESPONSE',
+    message: 'The hosted backend returned an invalid AI activity response'
+  }));
   return { status: upstream.status, payload };
 }
 
@@ -756,8 +849,19 @@ function statusPayload() {
     model: selected.model,
     provider: `local-${selected.id}`,
     providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
-    executionMode: selected.id === 'codex' ? 'local-cloud' : 'local',
+    executionMode: executionModeForEngine(selected.id),
     applicationDefaults: state.applicationDefaults,
+    runtimeProfiles: RUNTIME_PROFILE_IDS.map((id) => {
+      const profileState = stateForRuntimeProfile(state, id);
+      const profileEngine = engineSettings(profileState);
+      return {
+        id,
+        engine: profileEngine.id,
+        model: profileEngine.model,
+        provider: `local-${profileEngine.id}`,
+        executionMode: executionModeForEngine(profileEngine.id)
+      };
+    }),
     cvLocalEligible,
     engines: Object.entries(state.engines || {}).map(([id, value]) => ({
       id,
@@ -879,6 +983,7 @@ function atSourceUsageRecord({
   usage,
   usageReported,
   usageSource,
+  estimatedCostUsd,
   occurredAt = new Date().toISOString()
 }) {
   if (!metering) return null;
@@ -894,6 +999,7 @@ function atSourceUsageRecord({
     latencyMs,
     usageReported: usageReported === true,
     usageSource: usageReported === true ? usageSource : 'unreported',
+    estimatedCostUsd: Math.max(0, Number(estimatedCostUsd || 0)),
     ...meteredTokenCounts(usage),
     occurredAt
   };
@@ -967,10 +1073,21 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   } catch (error) {
     return sendJson(response, error.status || 400, { code: error.code, message: error.message });
   }
-  const runtimeProfile = String(input.runtimeProfile || '').trim().toLowerCase();
-  if (runtimeProfile && runtimeProfile !== 'experience-management') {
+  const requestedRuntimeProfile = String(input.runtimeProfile || '').trim().toLowerCase();
+  if (requestedRuntimeProfile && !isRuntimeProfile(requestedRuntimeProfile)) {
     return sendJson(response, 400, { code: 'INVALID_RUNTIME_PROFILE' });
   }
+  const activityRuntimeProfile = runtimeProfileForActivity(input.activity);
+  if (
+    requestedRuntimeProfile
+    && requestedRuntimeProfile !== activityRuntimeProfile
+  ) {
+    return sendJson(response, 400, {
+      code: 'RUNTIME_PROFILE_ACTIVITY_MISMATCH',
+      message: 'The requested runtime profile does not govern this activity'
+    });
+  }
+  const runtimeProfile = requestedRuntimeProfile || activityRuntimeProfile;
   const executionState = stateForRuntimeProfile(state, runtimeProfile);
   const selected = engineSettings(executionState);
   if (input.executionMode === 'local-only' && !ENGINE_IDS.includes(selected.id)) {
@@ -1135,7 +1252,8 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       latencyMs,
       usage: data.usage,
       usageReported: data.usageReported,
-      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported'
+      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
+      estimatedCostUsd: data.estimatedCostUsd
     });
     const responsePayload = {
       id: responseId,
@@ -1152,6 +1270,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       usage: data.usage,
       usageReported: data.usageReported === true,
       usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
+      estimatedCostUsd: data.estimatedCostUsd,
       metrics: {
         ...(data.metrics || {}),
         queueWaitMs: permit.waitMs,
@@ -1399,6 +1518,47 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 503, { code: 'PROVIDER_TELEMETRY_UNAVAILABLE', message: error.message });
     }
   }
+  const queueRetryMatch = request.method === 'POST'
+    && url.pathname.match(/^\/control\/queue-retry\/(cv_[A-Za-z0-9_-]{8,100})$/);
+  if (queueRetryMatch) {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const input = JSON.parse(await readBody(request) || '{}');
+      const result = await retryQueueJob(queueRetryMatch[1], input.stage);
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'CV_RETRY_UNAVAILABLE', message: error.message });
+    }
+  }
+  if (request.method === 'GET' && url.pathname === '/control/activity-analytics') {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const result = await fetchSignedHosted(activityAnalyticsPath(url));
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'AI_ACTIVITY_ANALYTICS_UNAVAILABLE', message: error.message });
+    }
+  }
+  if (request.method === 'GET' && url.pathname === '/control/activity-history') {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const result = await fetchSignedHosted(activityHistoryPath(url), 10_000);
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'AI_ACTIVITY_HISTORY_UNAVAILABLE', message: error.message });
+    }
+  }
+  const activityDetailMatch = request.method === 'GET'
+    && url.pathname.match(/^\/control\/activity-history\/([a-f\d]{24})$/i);
+  if (activityDetailMatch) {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const result = await fetchSignedHosted(`/api/internal/local-cv-queue/activity-history/${activityDetailMatch[1]}`);
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'AI_ACTIVITY_DETAIL_UNAVAILABLE', message: error.message });
+    }
+  }
   if (request.method === 'PUT' && url.pathname === '/control/state') {
     if (!isLocalControlRequest(request)) {
       return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
@@ -1437,17 +1597,33 @@ const server = http.createServer(async (request, response) => {
         }
       }
       if (input.applicationDefaults && typeof input.applicationDefaults === 'object') {
-        const requested = input.applicationDefaults.experienceManagement;
-        if (requested !== undefined) {
+        const knownApplicationDefaultKeys = new Set(RUNTIME_PROFILE_IDS.map((id) => (
+          RUNTIME_PROFILE_DEFINITIONS[id].stateKey
+        )));
+        const unknownApplicationDefaultKey = Object.keys(input.applicationDefaults).find((key) => (
+          !knownApplicationDefaultKeys.has(key)
+        ));
+        if (unknownApplicationDefaultKey) {
+          const error = new Error(`Unsupported runtime profile ${unknownApplicationDefaultKey}`);
+          error.code = 'INVALID_RUNTIME_PROFILE';
+          error.status = 400;
+          throw error;
+        }
+        const currentApplicationDefaults = readState().applicationDefaults;
+        const nextApplicationDefaults = { ...currentApplicationDefaults };
+        let applicationDefaultChanged = false;
+        for (const id of RUNTIME_PROFILE_IDS) {
+          const definition = RUNTIME_PROFILE_DEFINITIONS[id];
+          const requested = input.applicationDefaults[definition.stateKey];
+          if (requested === undefined) continue;
           const engine = String(requested?.engine || '').trim().toLowerCase();
           const model = String(requested?.model || '').trim();
-          if (!ENGINE_IDS.includes(engine)) throw new Error('Unsupported Experience Management engine');
-          if (!/^[A-Za-z0-9._:/-]{2,200}$/.test(model)) throw new Error('Invalid Experience Management model identifier');
-          allowed.applicationDefaults = {
-            ...readState().applicationDefaults,
-            experienceManagement: { engine, model }
-          };
+          if (!ENGINE_IDS.includes(engine)) throw new Error(`Unsupported ${id} engine`);
+          if (!/^[A-Za-z0-9._:/-]{2,200}$/.test(model)) throw new Error(`Invalid ${id} model identifier`);
+          nextApplicationDefaults[definition.stateKey] = { engine, model };
+          applicationDefaultChanged = true;
         }
+        if (applicationDefaultChanged) allowed.applicationDefaults = nextApplicationDefaults;
       }
       if (requestedConcurrency !== null) {
         const current = readStoredState();
@@ -1505,9 +1681,10 @@ const server = http.createServer(async (request, response) => {
       const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const input = JSON.parse(rawBody || '{}');
-      const runtimeProfile = input.source === 'experience-management' || input.runtimeProfile === 'experience-management'
-        ? 'experience-management'
-        : '';
+      const runtimeProfile = runtimeProfileFromStatusInput(input);
+      if (runtimeProfile && !isRuntimeProfile(runtimeProfile)) {
+        return sendJson(response, 400, { code: 'INVALID_RUNTIME_PROFILE' });
+      }
       const state = readState();
       const executionState = stateForRuntimeProfile(state, runtimeProfile);
       const selected = engineSettings(executionState);
@@ -1520,7 +1697,7 @@ const server = http.createServer(async (request, response) => {
           model: selected.model,
           provider: `local-${selected.id}`,
           providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
-          executionMode: selected.id === 'codex' ? 'local-cloud' : 'local'
+          executionMode: executionModeForEngine(selected.id)
         } : {}),
         health
       });

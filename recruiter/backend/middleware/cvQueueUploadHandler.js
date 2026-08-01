@@ -1,12 +1,13 @@
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
 
-function queueUpload(source, queueService = cvAnalysisQueue) {
+function queueUpload(source, queueService = cvAnalysisQueue, getExtraOptions) {
   return async (req, res) => {
     try {
+      const extraOptions = typeof getExtraOptions === 'function' ? getExtraOptions(req) : undefined;
       const result = await queueService.submitUpload(
         req,
         source,
-        { deferEnqueue: source === 'private' }
+        { deferEnqueue: source === 'private', ...extraOptions }
       );
       const finalization = source === 'private'
         ? await queueService.finalizePrivateUploadSubmission(result.job, req)

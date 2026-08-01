@@ -37,6 +37,47 @@ test('local runtime outages remain retryable and receive bounded exponential bac
   assert.equal(queueService.backoffDelay(20, { code: 'AI_LOCAL_UNAVAILABLE' }), 300_000);
 });
 
+test('retryable service failures enter a deferred retry window after five attempts', () => {
+  const transient = { retryable: true, status: 503 };
+  assert.equal(queueService.isRetryableProcessingError(transient), true);
+  assert.equal(queueService.backoffDelay(4, transient), 240_000);
+  assert.equal(queueService.backoffDelay(5, transient), 1_800_000);
+  assert.equal(queueService.backoffDelay(10, transient), 3_600_000);
+  assert.equal(queueService.isRetryableProcessingError(new Error('invalid document')), false);
+});
+
+test('five transient AI Interview CV failures remain durable and are parked for later', async () => {
+  const submitted = await queueService.submit({
+    file: {
+      buffer: Buffer.from('Katherine Johnson\nkatherine@example.com\nSenior mathematician with extensive orbital mechanics experience.'),
+      originalname: 'katherine.txt', mimetype: 'text/plain', size: 104
+    },
+    organizationId: 'org-deferred', actorId: 'user-deferred', jobId: 'job-deferred',
+    mode: 'import', idempotencyKey: 'deferred-five-attempts'
+  });
+  await queueService.init({
+    analyze: async () => {
+      throw Object.assign(new Error('temporary upstream outage'), {
+        code: 'UPSTREAM_UNAVAILABLE', retryable: true, status: 503
+      });
+    },
+    onCompleted: async () => ({ candidate: { _id: 'unused' } })
+  });
+  for (let index = 0; index < 5; index += 1) {
+    await assert.rejects(() => queueService._processJobForTests({
+      data: { processingJobId: submitted.job.publicId }, attemptsMade: index,
+      async updateProgress() {}, discard() { this.discarded = true; }
+    }), /temporary upstream outage/);
+  }
+  const stored = (await readStore()).cvProcessingJobs.find((item) => item.publicId === submitted.job.publicId);
+  assert.equal(stored.state, 'waiting_for_local_runtime');
+  assert.equal(stored.attempts, 5);
+  assert.equal(stored.failureCount, 0);
+  assert.equal(stored.deferredCycles, 1);
+  assert.ok(new Date(stored.nextAttemptAt).getTime() > Date.now());
+  assert.equal(stored.expiresAt, undefined);
+});
+
 test('worker terminality uses stored real failures rather than BullMQ attemptsMade', async () => {
   const submitted = await queueService.submit({
     file: {
@@ -310,6 +351,8 @@ test('public CV job state never exposes extracted resume text or token hashes', 
     failedAt: null,
     attempts: 0,
     failureCount: 0,
+    deferredCycles: 0,
+    nextAttemptAt: null,
     candidateId: null,
     error: undefined
   });

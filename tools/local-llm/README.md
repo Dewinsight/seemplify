@@ -4,6 +4,22 @@ This Windows-only runtime keeps Ollama on `127.0.0.1:11434` and exposes the
 signed Seemplify AI gateway on `127.0.0.1:11435`. CV requests use
 `/v1/cv/analyze`; other catalogued AI activities use `/v1/complete`.
 
+## Application runtime profiles
+
+Signed `/v1/complete` and `/v1/status` requests can select an application
+runtime with `runtimeProfile`. The `experience-management` profile defaults to
+the Codex local-cloud `gpt-5.6-terra` runtime. Its selected engine and model are
+exposed in `runtimeProfiles` and can be managed through the local-only control
+API under `applicationDefaults.experienceManagement` or with
+`-Action set-experience-default`.
+
+Experience activities are deny-by-default: only activities registered in the
+AI runtime catalog are accepted, including the governed
+`experience.assistant.*` operations. Their scheduler lanes use the Experience
+Management profile when evaluating approved concurrency. The gateway infers
+that profile when the caller omits it, while an explicit unknown profile is
+rejected.
+
 Runtime state and secrets are written to `.local-runtime/llm` and are ignored by
 Git. The public Cloudflare hostname routes to the gateway, never to Ollama.
 

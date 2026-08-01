@@ -284,7 +284,7 @@ export function JourneysPage() {
     try {
       const queued = await api<{ jobId: string }>('/api/ai/journeys', json('POST', { brief, audience, industry, objective }));
       setCreateOpen(false);
-      toast.success('Journey generation queued with Terra.');
+      toast.success('Journey generation queued with Experience AI.');
       await load();
       const job = await waitForJob(queued.jobId, () => void load());
       const journey = job.result?.output?.journey as Journey | undefined;
@@ -303,7 +303,7 @@ export function JourneysPage() {
     setWorkingAction('optimize');
     try {
       const queued = await api<{ jobId: string; deduplicated: boolean }>(`/api/journeys/${selected.id}/ai/optimize`, json('POST', { focus }));
-      toast.success(queued.deduplicated ? 'This exact audit is already active. Following its progress.' : 'Journey audit queued with Terra.');
+      toast.success(queued.deduplicated ? 'This exact audit is already active. Following its progress.' : 'Journey audit queued with Experience AI.');
       await load();
       await waitForJob(queued.jobId, () => void load());
       await load();
@@ -514,7 +514,7 @@ export function JourneysPage() {
 
     {currentJob && <div className="border bg-card px-4 py-3" role="status" aria-live="polite">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium"><Loader2 className="h-4 w-4 animate-spin" />{currentJob.kind === 'journey.generate' ? 'Terra is generating a journey map' : 'Terra is auditing a journey map'}</div>
+        <div className="flex items-center gap-2 text-sm font-medium"><Loader2 className="h-4 w-4 animate-spin" />{currentJob.kind === 'journey.generate' ? 'Experience AI is generating a journey map' : 'Experience AI is auditing a journey map'}</div>
         <span className="text-xs text-muted-foreground">{currentJob.state === 'queued' ? 'Waiting in the durable AI queue' : `${Math.max(0, Math.min(100, currentJob.progress || 0))}% · ${currentJob.stage || 'Processing'}`}</span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden bg-muted" aria-hidden="true"><div className="h-full bg-primary transition-[width]" style={{ width: `${Math.max(3, Math.min(100, currentJob.progress || 3))}%` }} /></div>
@@ -658,7 +658,7 @@ export function JourneysPage() {
 
           <Card>
             <CardHeader>
-              <div className="flex items-start gap-3"><CircleGauge className="mt-0.5 h-5 w-5 text-muted-foreground" /><div><CardTitle>Audit this journey with Terra</CardTitle><CardDescription className="mt-1 leading-5">Ask Terra to find missing stages, weak measures, and unsupported actions. An audit improves the working hypothesis; it does not add customer evidence.</CardDescription></div></div>
+              <div className="flex items-start gap-3"><CircleGauge className="mt-0.5 h-5 w-5 text-muted-foreground" /><div><CardTitle>Audit this journey with Experience AI</CardTitle><CardDescription className="mt-1 leading-5">Ask Experience AI to find missing stages, weak measures, and unsupported actions. An audit improves the working hypothesis; it does not add customer evidence.</CardDescription></div></div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"><strong>This revises the current map.</strong> A restorable snapshot is saved automatically before Terra applies its changes.</div>
@@ -699,7 +699,7 @@ export function JourneysPage() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button onClick={generateJourney} disabled={workingAction !== null}>{workingAction === 'generate' ? <Loader2 className="animate-spin" /> : <Sparkles />}Generate with Terra</Button>
+          <Button onClick={generateJourney} disabled={workingAction !== null}>{workingAction === 'generate' ? <Loader2 className="animate-spin" /> : <Sparkles />}Generate with Experience AI</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
