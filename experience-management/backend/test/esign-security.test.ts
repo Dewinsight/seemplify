@@ -40,6 +40,7 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
 const { config } = await import('../src/config.js');
+const { issueEmailVerificationToken } = await import('../src/auth.js');
 const { esignWorker } = await import('../src/esign.js');
 esignWorker.start();
 
@@ -65,7 +66,12 @@ async function signup(label: string) {
   identity += 1;
   const agent = request.agent(app);
   const email = `${label}-${identity}@example.com`;
-  await agent.post('/api/auth/signup').set('x-forwarded-for', `198.51.100.${identity}`).send({ name: `${label} user`, email, password: 'Security-Account-2026!' }).expect(201);
+  await agent.post('/api/auth/signup').set('x-forwarded-for', `198.51.100.${identity}`).send({ name: `${label} user`, email, password: 'Security-Account-2026!' }).expect(202);
+  const verification = issueEmailVerificationToken(email); assert.ok(verification);
+  await agent.post('/api/auth/verify-email').send({ token: verification.token }).expect(200);
+  await agent.post('/api/account/onboarding').send({
+    name: `${label} user`, timezone: 'UTC', primaryGoal: 'customer_experience'
+  }).expect(200);
   return { agent, email };
 }
 
@@ -209,6 +215,27 @@ test('resets draft-relative expiry at send and makes concurrent sends idempotent
   assert.equal(Number(invitations.count), 1);
   const sentAudits = db.prepare("SELECT COUNT(*) count FROM esign_audit_events WHERE envelope_id=? AND event_type='envelope.sent'").get(fixture.envelopeId) as any;
   assert.equal(Number(sentAudits.count), 1);
+});
+
+test('keeps only the ten newest active signing sessions', async () => {
+  const owner = await signup('session-cap-owner');
+  const fixture = await prepareEnvelope(owner.agent, 'Signing session cap', [{
+    name: 'Session Cap Signer', email: `session-cap-${identity}@example.com`
+  }]);
+  await owner.agent.post(`/api/esign/envelopes/${fixture.envelopeId}/send`).send({}).expect(200);
+  const invite = await invitation(owner.agent, fixture.envelopeId, fixture.recipients[0].id);
+
+  const sessions = [];
+  for (let index = 0; index < 12; index += 1) sessions.push(await openSigningSession(invite.token));
+
+  const counts = db.prepare(`SELECT
+    SUM(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) active_count,
+    SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) revoked_count
+    FROM esign_signing_sessions WHERE recipient_id=?`).get(fixture.recipients[0].id) as any;
+  assert.equal(Number(counts.active_count), 10);
+  assert.equal(Number(counts.revoked_count), 2);
+  for (const session of sessions.slice(0, 2)) await session.agent.get('/api/public/esign/session').expect(401);
+  for (const session of sessions.slice(2)) await session.agent.get('/api/public/esign/session').expect(200);
 });
 
 test('completes once across replayed sessions, encrypts supplied values, and detects evidence tampering', async () => {

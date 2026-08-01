@@ -16,6 +16,14 @@ const oauthCookieName = 'seemplify_x_oauth';
 const oauthLifetimeMs = 10 * 60_000;
 const manualSyncCooldownMs = 60_000;
 const allowedSyncIntervals = new Set([15, 30, 60, 180, 360, 720, 1440]);
+const normalSyncLimit = 50;
+const minimumExpansionLimit = 51;
+const maximumExpansionLimit = 500;
+const maximumEmptyPageHops = 3;
+const standardPostReadUsd = 0.005;
+const ownedPostReadUsd = 0.001;
+const collectionStreams = ['account_posts', 'mentions', 'searches'] as const;
+type XCollectionStream = typeof collectionStreams[number];
 
 function canManagePlatformXApp(user: SessionUser) {
   return user.email.trim().toLowerCase() === config.adminEmail.trim().toLowerCase();
@@ -25,6 +33,12 @@ function canManageSpaceXAccounts(user: SessionUser, spaceId: string) {
   const row = db.prepare(`SELECT role FROM space_memberships WHERE space_id=? AND user_id=?`)
     .get(spaceId, user.id) as { role: string } | undefined;
   return row?.role === 'owner' || row?.role === 'admin';
+}
+
+function requireSpaceXManager(user: SessionUser, spaceId: string, action = 'manage this X integration') {
+  if (!canManageSpaceXAccounts(user, spaceId)) {
+    throw new XIntegrationError(`Space owner or admin access is required to ${action}.`, 403);
+  }
 }
 
 export class XIntegrationError extends Error {
@@ -48,7 +62,9 @@ type XConnectionRow = {
   refresh_token_enc: string | null; auth_type: 'oauth1' | 'oauth2'; scopes_json: string; token_expires_at: string | null;
   x_user_id: string | null; username: string | null; display_name: string | null; profile_image_url: string | null;
   status: string; generation: number; auto_sync: number; sync_interval_minutes: number; next_sync_at: string | null; last_sync_at: string | null;
-  last_success_at: string | null; last_post_id: string | null; last_mention_id: string | null; last_error: string | null;
+  last_success_at: string | null; last_post_id: string | null; last_mention_id: string | null; oldest_post_id: string | null; oldest_mention_id: string | null; last_error: string | null;
+  post_backlog_token: string | null; post_backlog_since_id: string | null; post_backlog_newest_id: string | null; post_backlog_low_id: string | null; post_history_exhausted: number;
+  mention_backlog_token: string | null; mention_backlog_since_id: string | null; mention_backlog_newest_id: string | null; mention_backlog_low_id: string | null; mention_history_exhausted: number;
   rate_limit_json: string; created_at: string; updated_at: string;
 };
 
@@ -59,6 +75,11 @@ function safeEqual(left: string, right: string) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 function parseJson<T>(value: unknown, fallback: T): T { try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; } }
+function parseCollectionStreams(value: unknown): XCollectionStream[] {
+  const parsed = Array.isArray(value) ? value : parseJson<unknown[]>(value, []);
+  const selected = collectionStreams.filter((stream) => parsed.includes(stream));
+  return selected.length ? selected : [...collectionStreams];
+}
 function appContext(field: string) { return `x-app:${appId}:${field}:v1`; }
 function connectionContext(id: string, field: string) { return `x-connection:${id}:${field}:v1`; }
 function oauthContext(id: string) { return `x-oauth-request:${id}:secret:v1`; }
@@ -104,8 +125,10 @@ function spaceOwnsConnection(spaceId: string, connectionId: string) {
   if (!row) throw new XIntegrationError('X connection not found.', 404);
   return row;
 }
-function pendingUserIsSpaceMember(pending: { space_id: string; user_id: string }) {
-  return Boolean(db.prepare('SELECT 1 FROM space_memberships WHERE space_id=? AND user_id=?').get(pending.space_id, pending.user_id));
+function pendingUserCanManageSpaceX(pending: { space_id: string; user_id: string }) {
+  const membership = db.prepare('SELECT role FROM space_memberships WHERE space_id=? AND user_id=?')
+    .get(pending.space_id, pending.user_id) as { role: string } | undefined;
+  return membership?.role === 'owner' || membership?.role === 'admin';
 }
 function connectionHasCreditProbe(connectionId: string) {
   return Boolean(db.prepare(`SELECT 1 FROM x_sync_jobs WHERE connection_id=? AND credit_probe=1
@@ -129,14 +152,31 @@ function assertSyncGeneration(connectionId: string, generation: number, credenti
 
 function rowQuery(row: any) {
   return { id: row.id, label: row.label, query: row.query, enabled: Boolean(row.enabled), sinceId: row.since_id,
+    oldestId: row.oldest_id, catchUpPending: Boolean(row.backlog_token || row.backlog_low_id), historyExhausted: Boolean(row.history_exhausted),
+    configurationVersion: Number(row.configuration_version || 1),
     lastSyncAt: row.last_sync_at, lastSuccessAt: row.last_success_at, lastError: row.last_error,
     createdAt: row.created_at, updatedAt: row.updated_at };
 }
 function rowSyncJob(row: any) {
+  const targets = (db.prepare(`SELECT target_key,stream,query_id,budget,fetched_count,state,has_more,empty_page_hops,page_requests,token_fallback_used,updated_at,completed_at
+    FROM x_sync_target_checkpoints WHERE job_id=? ORDER BY target_order`).all(row.id) as any[]).map((target) => ({
+    key: target.target_key, stream: target.stream, queryId: target.query_id, budget: Number(target.budget),
+    fetchedCount: Number(target.fetched_count), remaining: Math.max(0, Number(target.budget) - Number(target.fetched_count)),
+    state: target.state, hasMore: Boolean(target.has_more), emptyPageHops: Number(target.empty_page_hops || 0),
+    pageRequests: Number(target.page_requests || 0), tokenFallbackUsed: Boolean(target.token_fallback_used),
+    updatedAt: target.updated_at, completedAt: target.completed_at
+  }));
   return { id: row.id, connectionId: row.connection_id, trigger: row.trigger_type, state: row.state, stage: row.stage,
+    mode: row.trigger_type === 'expansion' ? 'expansion' : 'incremental', requestedLimit: Number(row.requested_limit || normalSyncLimit),
+    streams: parseCollectionStreams(row.streams_json),
     progress: Number(row.progress), attempt: Number(row.attempt), creditProbe: Boolean(row.credit_probe), runAfter: row.run_after,
     postsFetched: Number(row.posts_fetched), mentionsFetched: Number(row.mentions_fetched), searchFetched: Number(row.search_fetched),
-    importedCount: Number(row.imported_count), analysisJobId: row.analysis_job_id, error: row.error,
+    importedCount: Number(row.imported_count), newCount: Number(row.imported_count), reusedCount: Number(row.reused_count || 0),
+    providerRequests: Number(row.provider_requests || 0), maximumPostsRead: Number(row.maximum_posts_read || row.requested_limit || normalSyncLimit),
+    hasMore: Boolean(row.has_more),
+    deferredSearchQueries: Number(row.deferred_search_queries || 0), selectedQueryIds: parseJson<string[]>(row.selected_query_ids_json, []), targets,
+    estimate: parseJson(row.estimate_json, null),
+    analysisJobId: row.analysis_job_id, error: row.error,
     createdAt: row.created_at, startedAt: row.started_at, completedAt: row.completed_at, updatedAt: row.updated_at };
 }
 function publicConnection(row: XConnectionRow | undefined) {
@@ -147,6 +187,13 @@ function publicConnection(row: XConnectionRow | undefined) {
       name: row.display_name, profileImageUrl: row.profile_image_url } : null,
     autoSync: Boolean(row.auto_sync), syncIntervalMinutes: Number(row.sync_interval_minutes), nextSyncAt: row.next_sync_at,
     lastSyncAt: row.last_sync_at, lastSuccessAt: row.last_success_at, lastError: row.last_error,
+    cursors: { latestPostId: row.last_post_id, latestMentionId: row.last_mention_id,
+      oldestPostId: row.oldest_post_id, oldestMentionId: row.oldest_mention_id },
+    catchUp: {
+      accountPosts: { pending: Boolean(row.post_backlog_token || row.post_backlog_low_id), lowId: row.post_backlog_low_id },
+      mentions: { pending: Boolean(row.mention_backlog_token || row.mention_backlog_low_id), lowId: row.mention_backlog_low_id }
+    },
+    history: { accountPostsExhausted: Boolean(row.post_history_exhausted), mentionsExhausted: Boolean(row.mention_history_exhausted) },
     rateLimits: parseJson(row.rate_limit_json, {}), createdAt: row.created_at, updatedAt: row.updated_at
   };
 }
@@ -225,6 +272,10 @@ export function getXIntegrationStatus(user: SessionUser, spaceId: string, select
   }, { collected: 0, accountPosts: 0, mentions: 0, searchResults: 0, analyzed: 0 });
   return {
     provider: 'x', callbackUrl: callbackUrl(), canManageAppCredentials: canManagePlatformXApp(user),
+    canManagePaidCollection: canManageSpaceXAccounts(user, spaceId),
+    collectionPolicy: { normalSyncLimit, minimumExpansionLimit, maximumExpansionLimit,
+      cacheStrategy: 'durable-pagination-with-low-boundary-fallback', alreadyStoredPostsAreNotReanalyzed: true,
+      incrementalSearchStrategy: 'one-oldest-or-catch-up-query-per-run' },
     app: { configured: Boolean(app?.client_id_enc && app.client_secret_enc || app?.consumer_key_enc && app.consumer_secret_enc),
       oauth2Configured: Boolean(app?.client_id_enc && app.client_secret_enc), consumerCredentialsConfigured: Boolean(app?.consumer_key_enc && app.consumer_secret_enc),
       bearerTokenConfigured: Boolean(app?.bearer_token_enc), credentialVersion: Number(app?.credential_version || 0), updatedAt: app?.updated_at || null,
@@ -261,6 +312,19 @@ export function saveXConfiguration(user: SessionUser, spaceId: string, input: Re
   if (accessSupplied && (existingUserConnections.length > 1 || existingUserConnections.some((connection) => connection.status !== 'disconnected'))) {
     throw new XIntegrationError('Static OAuth 1 account tokens cannot replace or ambiguously select a connected account. Use Add X account so each identity is authorized separately.', 409);
   }
+  const replaceableDisconnected = accessSupplied && existingUserConnections.length === 1 ? existingUserConnections[0] : null;
+  if (replaceableDisconnected) {
+    const retained = db.prepare(`SELECT
+      EXISTS(SELECT 1 FROM x_connection_mentions WHERE connection_id=?)
+      OR EXISTS(SELECT 1 FROM x_listening_queries WHERE connection_id=?)
+      OR EXISTS(SELECT 1 FROM x_sync_jobs WHERE connection_id=?)
+      OR EXISTS(SELECT 1 FROM social_reply_drafts WHERE connection_id=?)
+      OR EXISTS(SELECT 1 FROM social_intelligence_reports WHERE connection_id=?) retained`)
+      .get(...Array(5).fill(replaceableDisconnected.id)) as { retained: number };
+    if (retained.retained) {
+      throw new XIntegrationError('This disconnected X account still has retained history. Reconnect it with X OAuth, or delete its history before adding static credentials for another account.', 409);
+    }
+  }
   if (!current && !consumerSupplied && !clientSupplied) throw new XIntegrationError('Enter the X OAuth 2 client ID and client secret.');
   const appCredentialChanged = consumerSupplied || clientSupplied || input.bearerToken !== undefined;
   const version = Number(current?.credential_version || 0) + (appCredentialChanged ? 1 : 0) || 1;
@@ -292,13 +356,13 @@ export function saveXConfiguration(user: SessionUser, spaceId: string, input: Re
       for (const connection of connections) cancelConnectionSyncs(connection.id, consumerSupplied || clientSupplied ? 'X app credentials changed.' : 'X bearer token changed.', timestamp);
     }
     if (accessToken && accessTokenSecret) {
-      const existing = connectionForSpace(spaceId); const id = existing?.id || crypto.randomUUID();
-      if (existing) {
-        db.prepare(`UPDATE x_connections SET app_id=?,access_token_enc=?,access_token_secret_enc=?,refresh_token_enc=NULL,auth_type='oauth1',scopes_json='[]',token_expires_at=NULL,status='pending_verification',generation=generation+1,auto_sync=0,next_sync_at=NULL,last_error=NULL,updated_at=? WHERE id=?`)
-          .run(appId, encryptSecret(accessToken, connectionContext(id, 'access-token')), encryptSecret(accessTokenSecret, connectionContext(id, 'access-token-secret')), timestamp, id);
-        cancelConnectionSyncs(id, 'X account credentials changed.', timestamp);
-      }
-      else db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
+      // A disconnected row may still own posts, reports, drafts, and queries
+      // for account A. Never relabel that history by putting unverified static
+      // credentials for account B onto the same row; start with a clean,
+      // provisional identity instead.
+      if (replaceableDisconnected) db.prepare('DELETE FROM x_connections WHERE id=? AND space_id=?').run(replaceableDisconnected.id, spaceId);
+      const id = crypto.randomUUID();
+      db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
         VALUES (?,?,?,?,?,?,'pending_verification',0,60,'{}',?,?)`).run(id, spaceId, user.id, appId,
         encryptSecret(accessToken, connectionContext(id, 'access-token')), encryptSecret(accessTokenSecret, connectionContext(id, 'access-token-secret')), timestamp, timestamp);
     }
@@ -333,6 +397,7 @@ export function deleteXConfiguration(user: SessionUser) {
 }
 
 export function disconnectXAccount(user: SessionUser, spaceId: string, connectionId?: string | null) {
+  requireSpaceXManager(user, spaceId, 'disconnect X accounts');
   const connection = connectionForSpace(spaceId, connectionId);
   if (!connection) throw new XIntegrationError('X connection not found.', 404);
   const timestamp = now();
@@ -354,6 +419,7 @@ export function disconnectXAccount(user: SessionUser, spaceId: string, connectio
 }
 
 export function deleteXCollectedHistory(user: SessionUser, spaceId: string, connectionId?: string | null) {
+  requireSpaceXManager(user, spaceId, 'delete X history');
   const connection = connectionForSpace(spaceId, connectionId);
   if (!connection) throw new XIntegrationError('X connection history not found.', 404);
   const transaction = db.transaction(() => {
@@ -390,10 +456,14 @@ export function deleteXCollectedHistory(user: SessionUser, spaceId: string, conn
       // its listening queries and prevents anonymous tombstones accumulating.
       db.prepare('DELETE FROM x_connections WHERE id=? AND space_id=?').run(connection.id, spaceId);
     } else {
-      db.prepare(`UPDATE x_connections SET last_post_id=NULL,last_mention_id=NULL,generation=generation+1,auto_sync=0,next_sync_at=NULL,updated_at=? WHERE id=?`)
+      db.prepare(`UPDATE x_connections SET last_post_id=NULL,last_mention_id=NULL,oldest_post_id=NULL,oldest_mention_id=NULL,
+        post_backlog_token=NULL,post_backlog_since_id=NULL,post_backlog_newest_id=NULL,post_backlog_low_id=NULL,post_history_exhausted=0,
+        mention_backlog_token=NULL,mention_backlog_since_id=NULL,mention_backlog_newest_id=NULL,mention_backlog_low_id=NULL,mention_history_exhausted=0,
+        last_sync_at=NULL,last_success_at=NULL,last_error=NULL,rate_limit_json='{}',generation=generation+1,auto_sync=0,next_sync_at=NULL,updated_at=? WHERE id=?`)
         .run(now(), connection.id);
       for (const query of db.prepare('SELECT id FROM x_listening_queries WHERE connection_id=?').all(connection.id) as Array<{ id: string }>) {
-        db.prepare('UPDATE x_listening_queries SET since_id=NULL,updated_at=? WHERE id=?').run(now(), query.id);
+        db.prepare(`UPDATE x_listening_queries SET since_id=NULL,oldest_id=NULL,backlog_token=NULL,backlog_since_id=NULL,
+          backlog_newest_id=NULL,backlog_low_id=NULL,history_exhausted=0,last_sync_at=NULL,last_success_at=NULL,last_error=NULL,updated_at=? WHERE id=?`).run(now(), query.id);
       }
     }
     return { unlinked: ids.length, deleted, deletedAnalysisJobs: derivedJobIds.length,
@@ -416,6 +486,7 @@ export function listXCollectedMentions(_user: SessionUser, spaceId: string, limi
 }
 
 export function updateXConnectionSettings(_user: SessionUser, spaceId: string, input: { autoSync?: boolean; syncIntervalMinutes?: number }, connectionId?: string | null) {
+  requireSpaceXManager(_user, spaceId, 'change X synchronisation settings');
   const connection = connectionForSpace(spaceId, connectionId);
   if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
   const interval = input.syncIntervalMinutes ?? Number(connection.sync_interval_minutes);
@@ -464,6 +535,7 @@ function oauthRequestCleanup(timestamp: string) {
 }
 
 export async function startXOAuth(user: SessionUser, spaceId: string) {
+  requireSpaceXManager(user, spaceId, 'connect X accounts');
   const app = getApp(); const handshake = crypto.randomBytes(32).toString('base64url');
   const callback = callbackUrl(); const id = crypto.randomUUID(); const timestamp = now(); const expiresAt = new Date(Date.now() + oauthLifetimeMs).toISOString();
   if (app?.client_id_enc && app.client_secret_enc) {
@@ -496,7 +568,7 @@ function storeOAuth2Connection(input: { pending: any; account: { id: string; use
   return db.transaction(() => {
     const currentApp = getApp();
     if (!currentApp || Number(currentApp.credential_version) !== Number(input.pending.credential_version)
-      || !connectionSnapshotUnchanged(input.pending.space_id, input.snapshot) || !pendingUserIsSpaceMember(input.pending)) throw new XSyncCancelledError();
+      || !connectionSnapshotUnchanged(input.pending.space_id, input.snapshot) || !pendingUserCanManageSpaceX(input.pending)) throw new XSyncCancelledError();
     const timestamp = now();
     const existing = db.prepare('SELECT * FROM x_connections WHERE space_id=? AND x_user_id=?').get(input.pending.space_id, input.account.id) as XConnectionRow | undefined;
     const id = existing?.id || crypto.randomUUID();
@@ -529,7 +601,7 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
     if (input.error) return input.error === 'access_denied' ? 'denied' as const : 'failed' as const;
     const code = String(input.code || ''); if (!code || code.length > 2000) return 'failed' as const;
     try {
-      if (!pendingUserIsSpaceMember(pending)) return 'failed' as const;
+      if (!pendingUserCanManageSpaceX(pending)) return 'failed' as const;
       const app = getApp(); if (!app || Number(app.credential_version) !== Number(pending.credential_version)) return 'failed' as const;
       const snapshot = connectionMutationSnapshot(pending.space_id); const credentials = oauth2AppCredentials(app);
       const verifier = decryptSecret(pending.request_secret_enc, oauthContext(pending.id));
@@ -555,7 +627,7 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
   const verifier = String(input.oauthVerifier || '');
   if (!/^[A-Za-z0-9_-]{4,300}$/.test(verifier)) return 'failed' as const;
   try {
-    if (!pendingUserIsSpaceMember(pending)) return 'failed' as const;
+    if (!pendingUserCanManageSpaceX(pending)) return 'failed' as const;
     const app = getApp();
     if (!app || Number(app.credential_version) !== Number(pending.credential_version)) return 'failed' as const;
     const snapshot = connectionMutationSnapshot(pending.space_id);
@@ -571,7 +643,7 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
     const stored = db.transaction(() => {
       const currentApp = getApp(); const existing = db.prepare('SELECT * FROM x_connections WHERE space_id=? AND x_user_id=?').get(pending.space_id, account.id) as XConnectionRow | undefined;
       if (!currentApp || Number(currentApp.credential_version) !== Number(pending.credential_version)) throw new XSyncCancelledError();
-      if (!connectionSnapshotUnchanged(pending.space_id, snapshot) || !pendingUserIsSpaceMember(pending)) throw new XSyncCancelledError();
+      if (!connectionSnapshotUnchanged(pending.space_id, snapshot) || !pendingUserCanManageSpaceX(pending)) throw new XSyncCancelledError();
       const finalTimestamp = now(); const id = existing?.id || crypto.randomUUID();
       if (existing) {
         db.prepare(`UPDATE x_connections SET app_id=?,access_token_enc=?,access_token_secret_enc=?,refresh_token_enc=NULL,auth_type='oauth1',scopes_json='[]',token_expires_at=NULL,x_user_id=?,username=?,display_name=?,profile_image_url=?,status='connected',generation=generation+1,auto_sync=0,next_sync_at=NULL,last_error=NULL,updated_at=? WHERE id=?`)
@@ -594,7 +666,26 @@ export function listXQueries(_user: SessionUser, spaceId: string, connectionId?:
   const connection = connectionForSpace(spaceId, connectionId); if (!connection) return [];
   return (db.prepare('SELECT * FROM x_listening_queries WHERE connection_id=? ORDER BY created_at').all(connection.id) as any[]).map(rowQuery);
 }
+
+function unlinkQueryAssociations(connectionId: string, queryId: string) {
+  const rows = db.prepare(`SELECT mention_id,streams_json,query_ids_json FROM x_connection_mentions
+    WHERE connection_id=? AND query_ids_json LIKE ?`).all(connectionId, `%${queryId}%`) as Array<{
+      mention_id: string; streams_json: string; query_ids_json: string;
+    }>;
+  const update = db.prepare(`UPDATE x_connection_mentions SET streams_json=?,query_ids_json=?,last_seen_at=?
+    WHERE connection_id=? AND mention_id=?`);
+  const timestamp = now();
+  for (const row of rows) {
+    const queryIds = parseJson<string[]>(row.query_ids_json, []).filter((id) => id !== queryId);
+    if (queryIds.length === parseJson<string[]>(row.query_ids_json, []).length) continue;
+    const streams = parseJson<string[]>(row.streams_json, []);
+    update.run(JSON.stringify(queryIds.length ? streams : streams.filter((stream) => stream !== 'search')),
+      JSON.stringify(queryIds), timestamp, connectionId, row.mention_id);
+  }
+}
+
 export function createXQuery(_user: SessionUser, spaceId: string, input: { label: string; query: string; enabled?: boolean }, connectionId?: string | null) {
+  requireSpaceXManager(_user, spaceId, 'create X listening queries');
   const connection = connectionForSpace(spaceId, connectionId); if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
   const count = Number((db.prepare('SELECT COUNT(*) count FROM x_listening_queries WHERE connection_id=?').get(connection.id) as any).count);
   if (count >= 10) throw new XIntegrationError('A maximum of 10 listening queries can be active for one account.');
@@ -605,19 +696,33 @@ export function createXQuery(_user: SessionUser, spaceId: string, input: { label
   return rowQuery(db.prepare('SELECT * FROM x_listening_queries WHERE id=?').get(id));
 }
 export function updateXQuery(_user: SessionUser, spaceId: string, id: string, input: { label?: string; query?: string; enabled?: boolean }) {
+  requireSpaceXManager(_user, spaceId, 'change X listening queries');
   const current = db.prepare(`SELECT q.* FROM x_listening_queries q JOIN x_connections c ON c.id=q.connection_id
     WHERE q.id=? AND c.space_id=?`).get(id, spaceId) as any;
   if (!current) throw new XIntegrationError('Listening query not found.', 404);
-  db.prepare('UPDATE x_listening_queries SET label=?,query=?,enabled=?,since_id=?,updated_at=? WHERE id=? AND connection_id=?')
-    .run(input.label?.trim() ?? current.label, input.query?.trim() ?? current.query, input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0,
-      input.query !== undefined && input.query.trim() !== current.query ? null : current.since_id, now(), id, current.connection_id);
+  const queryChanged = input.query !== undefined && input.query.trim() !== current.query;
+  db.transaction(() => {
+    if (queryChanged) unlinkQueryAssociations(current.connection_id, id);
+    db.prepare(`UPDATE x_listening_queries SET label=?,query=?,enabled=?,since_id=?,oldest_id=?,backlog_token=?,backlog_since_id=?,
+      backlog_newest_id=?,backlog_low_id=?,history_exhausted=?,configuration_version=configuration_version+1,updated_at=? WHERE id=? AND connection_id=?`)
+      .run(input.label?.trim() ?? current.label, input.query?.trim() ?? current.query, input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0,
+        queryChanged ? null : current.since_id, queryChanged ? null : current.oldest_id,
+        queryChanged ? null : current.backlog_token, queryChanged ? null : current.backlog_since_id,
+        queryChanged ? null : current.backlog_newest_id, queryChanged ? null : current.backlog_low_id,
+        queryChanged ? 0 : current.history_exhausted, now(), id, current.connection_id);
+  })();
   publishEvent('data-changed', { reason: 'x-query-updated', id }, spaceId);
   return rowQuery(db.prepare('SELECT * FROM x_listening_queries WHERE id=?').get(id));
 }
 export function deleteXQuery(_user: SessionUser, spaceId: string, id: string) {
-  const current = db.prepare(`SELECT q.id FROM x_listening_queries q JOIN x_connections c ON c.id=q.connection_id
-    WHERE q.id=? AND c.space_id=?`).get(id, spaceId) as { id: string } | undefined;
-  if (!current || !db.prepare('DELETE FROM x_listening_queries WHERE id=?').run(id).changes) throw new XIntegrationError('Listening query not found.', 404);
+  requireSpaceXManager(_user, spaceId, 'delete X listening queries');
+  const current = db.prepare(`SELECT q.id,q.connection_id FROM x_listening_queries q JOIN x_connections c ON c.id=q.connection_id
+    WHERE q.id=? AND c.space_id=?`).get(id, spaceId) as { id: string; connection_id: string } | undefined;
+  if (!current) throw new XIntegrationError('Listening query not found.', 404);
+  db.transaction(() => {
+    unlinkQueryAssociations(current.connection_id, id);
+    if (!db.prepare('DELETE FROM x_listening_queries WHERE id=?').run(id).changes) throw new XIntegrationError('Listening query not found.', 404);
+  })();
   publishEvent('data-changed', { reason: 'x-query-deleted', id }, spaceId);
 }
 
@@ -629,14 +734,163 @@ function greatestId(values: Array<string | null | undefined>) {
   return values.filter((value): value is string => Boolean(value && /^\d+$/.test(value)))
     .reduce<string | null>((largest, value) => !largest || BigInt(value) > BigInt(largest) ? value : largest, null);
 }
+function lowestId(values: Array<string | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value && /^\d+$/.test(value)))
+    .reduce<string | null>((lowest, value) => !lowest || BigInt(value) < BigInt(lowest) ? value : lowest, null);
+}
+function previousId(value: string | null | undefined) {
+  if (!value || !/^\d+$/.test(value) || BigInt(value) <= 0n) return null;
+  return (BigInt(value) - 1n).toString();
+}
 type XPost = { id: string; text?: string; created_at?: string; lang?: string; author_id?: string; public_metrics?: Record<string, number>; note_tweet?: { text?: string } };
 type XPostPage = { data?: XPost[]; includes?: { users?: Array<{ id: string; username?: string; name?: string; profile_image_url?: string }> }; meta?: { newest_id?: string; next_token?: string; result_count?: number } };
 type CollectedPost = { post: XPost; stream: 'account_post' | 'mention' | 'search'; queryId?: string; users?: NonNullable<XPostPage['includes']>['users'] };
+type XFetchTarget = {
+  stream: XCollectionStream; budget: number; minimumPageSize: number;
+  query?: { id: string; query: string; since_id: string | null; oldest_id: string | null; updated_at: string; last_sync_at: string | null;
+    backlog_token: string | null; backlog_since_id: string | null; backlog_newest_id: string | null; backlog_low_id: string | null;
+    history_exhausted: number; configuration_version: number };
+};
+
+function collectionPlan(connection: XConnectionRow, requestedLimit: number, streams: XCollectionStream[], mode: 'incremental' | 'expansion') {
+  const candidates: Array<Omit<XFetchTarget, 'budget'>> = [];
+  const exhaustedTargets: string[] = [];
+  if (streams.includes('account_posts')) {
+    if (mode === 'expansion' && connection.post_history_exhausted) exhaustedTargets.push('account_posts');
+    else candidates.push({ stream: 'account_posts', minimumPageSize: 5 });
+  }
+  if (streams.includes('mentions')) {
+    if (mode === 'expansion' && connection.mention_history_exhausted) exhaustedTargets.push('mentions');
+    else candidates.push({ stream: 'mentions', minimumPageSize: 5 });
+  }
+  let allQueryRows: NonNullable<XFetchTarget['query']>[] = []; let deferredQueryIds: string[] = [];
+  if (streams.includes('searches')) {
+    allQueryRows = db.prepare(`SELECT id,query,since_id,oldest_id,updated_at,last_sync_at,backlog_token,backlog_since_id,
+        backlog_newest_id,backlog_low_id,history_exhausted,configuration_version FROM x_listening_queries
+      WHERE connection_id=? AND enabled=1 ORDER BY
+        CASE WHEN backlog_token IS NOT NULL OR backlog_low_id IS NOT NULL THEN 0 WHEN last_sync_at IS NULL THEN 1 ELSE 2 END,
+        last_sync_at,created_at`)
+      .all(connection.id) as NonNullable<XFetchTarget['query']>[];
+    // Incremental sync rotates through one listening query per run so account
+    // posts and mentions retain useful capacity inside the 50-post ceiling.
+    // Explicit expansion may include every query that fits its larger budget.
+    const eligible = mode === 'expansion' ? allQueryRows.filter((query) => {
+      if (query.history_exhausted) exhaustedTargets.push(`query:${query.id}`);
+      return !query.history_exhausted;
+    }) : allQueryRows;
+    const selected = mode === 'incremental' ? eligible.slice(0, 1) : eligible;
+    if (mode === 'incremental') deferredQueryIds = eligible.slice(1).map((query) => query.id);
+    for (const query of selected) candidates.push({ stream: 'searches', minimumPageSize: 10, query });
+  }
+  const selected: Array<Omit<XFetchTarget, 'budget'>> = [];
+  let minimumTotal = 0;
+  for (const candidate of candidates) {
+    if (minimumTotal + candidate.minimumPageSize > requestedLimit) {
+      if (mode === 'expansion') throw new XIntegrationError(`Increase the expansion limit to include every requested search query (minimum ${minimumTotal + candidate.minimumPageSize}).`, 422);
+      continue;
+    }
+    selected.push(candidate); minimumTotal += candidate.minimumPageSize;
+  }
+  if (!selected.length) throw new XIntegrationError(mode === 'expansion' && exhaustedTargets.length
+    ? 'All requested X history streams are exhausted.' : 'No enabled X collection stream fits the requested limit.', 409);
+  const budgets = selected.map((candidate) => candidate.minimumPageSize);
+  let remaining = requestedLimit - minimumTotal;
+  for (let index = 0; remaining > 0; index = (index + 1) % selected.length) {
+    budgets[index] += 1; remaining -= 1;
+  }
+  const targets = selected.map((candidate, index): XFetchTarget => ({ ...candidate, budget: budgets[index] }));
+  return { targets, maximumPostsRead: budgets.reduce((total, value) => total + value, 0),
+    // X accepts up to 100 posts per collection page. This is a request-count
+    // estimate, not the minimum allocation used by our fair budget splitter.
+    providerRequests: targets.reduce((total, target) => total + Math.ceil(target.budget / 100), connection.x_user_id ? 0 : 1),
+    selectedQueryIds: targets.flatMap((target) => target.query ? [target.query.id] : []), deferredQueryIds, exhaustedTargets,
+    activeSearchQueryCount: allQueryRows.length };
+}
+
+type XCollectionPlan = ReturnType<typeof collectionPlan>;
+
+function expansionPlanFingerprint(connection: XConnectionRow, boundedLimit: number, streams: XCollectionStream[], plan: XCollectionPlan) {
+  const app = getApp();
+  const targetSnapshot = plan.targets.map((target) => ({
+    key: target.query ? `query:${target.query.id}` : target.stream,
+    stream: target.stream,
+    budget: target.budget,
+    startUntilId: target.stream === 'account_posts' ? connection.oldest_post_id
+      : target.stream === 'mentions' ? connection.oldest_mention_id : target.query!.oldest_id,
+    historyExhausted: target.stream === 'account_posts' ? Boolean(connection.post_history_exhausted)
+      : target.stream === 'mentions' ? Boolean(connection.mention_history_exhausted) : Boolean(target.query!.history_exhausted),
+    queryId: target.query?.id || null,
+    queryText: target.query?.query || null,
+    queryVersion: target.query?.configuration_version || null
+  }));
+  const snapshot = JSON.stringify({
+    connectionId: connection.id,
+    connectionGeneration: Number(connection.generation),
+    appCredentialVersion: Number(app?.credential_version || 0),
+    boundedLimit,
+    streams,
+    selectedQueryIds: plan.selectedQueryIds,
+    deferredQueryIds: plan.deferredQueryIds,
+    exhaustedTargets: plan.exhaustedTargets,
+    targets: targetSnapshot
+  });
+  // Salt the public fingerprint with encrypted app material. Clients can hold
+  // and replay the opaque value but cannot forge a different accepted plan.
+  const salt = `${app?.consumer_key_enc || app?.client_id_enc || appId}:${app?.credential_version || 0}`;
+  return `xplan_${sha256(`${salt}\n${snapshot}`)}`;
+}
+
+function expansionEstimateFromPlan(connection: XConnectionRow, requestedLimit: number, boundedLimit: number,
+  selectedStreams: XCollectionStream[], plan: XCollectionPlan, canManagePaidCollection = false) {
+  const budgets = plan.targets.reduce<Record<string, number>>((result, target) => {
+    const key = target.query ? `query:${target.query.id}` : target.stream;
+    result[key] = target.budget; return result;
+  }, {});
+  return {
+    connectionId: connection.id, mode: 'expansion' as const, requestedLimit, boundedLimit, canManagePaidCollection,
+    planFingerprint: expansionPlanFingerprint(connection, boundedLimit, selectedStreams, plan),
+    minimumLimit: minimumExpansionLimit, maximumLimit: maximumExpansionLimit, normalSyncLimit,
+    streams: selectedStreams, storedCount: connectionCounts(connection.id).collected, alreadyStoredExcluded: false,
+    cachedPostsDeduplicatedAfterFetch: true,
+    estimated: {
+      maximumNewPosts: plan.maximumPostsRead, maximumProviderRows: plan.maximumPostsRead, maximumUniqueNewPosts: plan.maximumPostsRead,
+      providerRequests: plan.providerRequests,
+      payablePostsUpperBound: plan.maximumPostsRead, standardPostReadUsd,
+      maximumEstimatedCostUsd: Number((plan.maximumPostsRead * standardPostReadUsd).toFixed(3)),
+      ownedPostReadUsd, pricingBasis: 'standard-post-read-upper-bound', budgets
+    },
+    cache: {
+      strategy: 'since-and-until-cursors', incrementalHighWater: Boolean(connection.last_post_id || connection.last_mention_id),
+      historicalLowWater: Boolean(connection.oldest_post_id || connection.oldest_mention_id),
+      providerCursorAvoidance: true, crossStreamOverlapPossible: true
+    },
+    selectedQueryIds: plan.selectedQueryIds, selectedQueryCount: plan.selectedQueryIds.length,
+    deferredSearchQueryIds: plan.deferredQueryIds, deferredQueryCount: plan.deferredQueryIds.length,
+    exhaustedTargets: plan.exhaustedTargets, historyExhaustedStreams: plan.exhaustedTargets,
+    eligibleTargets: plan.targets.map((target) => target.query ? `query:${target.query.id}` : target.stream),
+    pricingCheckedAt: '2026-07-30',
+    disclaimer: 'Upper-bound estimate only. X may return fewer posts; exact availability is intentionally not probed because an estimate request can itself consume paid API capacity.',
+    ownedReadNote: 'The lower owned-read rate applies only when X determines the authenticated account is the developer-app owner; Seemplify does not assume eligibility.',
+    generatedAt: now()
+  };
+}
+
+function expansionEstimate(connection: XConnectionRow, requestedLimit: number, streams: XCollectionStream[], canManagePaidCollection = false) {
+  const boundedLimit = Math.max(minimumExpansionLimit, Math.min(maximumExpansionLimit, Math.floor(requestedLimit)));
+  const selectedStreams = parseCollectionStreams(streams);
+  return expansionEstimateFromPlan(connection, requestedLimit, boundedLimit, selectedStreams,
+    collectionPlan(connection, boundedLimit, selectedStreams, 'expansion'), canManagePaidCollection);
+}
+
+export function estimateXExpansion(user: SessionUser, spaceId: string, connectionId: string, requestedLimit: number, streams: XCollectionStream[]) {
+  const connection = spaceOwnsConnection(spaceId, connectionId);
+  return expansionEstimate(connection, requestedLimit, streams, canManageSpaceXAccounts(user, spaceId));
+}
 
 function upsertCollectedPosts(connection: XConnectionRow, collected: CollectedPost[]) {
   const grouped = new Map<string, CollectedPost[]>();
   for (const item of collected) if (/^\d+$/.test(String(item.post.id || ''))) grouped.set(item.post.id, [...(grouped.get(item.post.id) || []), item]);
-  const insertedIds: string[] = []; const pendingAnalysisIds: string[] = []; const timestamp = now();
+  const insertedIds: string[] = []; let reusedCount = 0; const timestamp = now();
   for (const [postId, discoveries] of grouped) {
     const first = discoveries[0]; const post = first.post;
     const users = discoveries.flatMap((item) => item.users || []); const author = users.find((item) => item.id === post.author_id);
@@ -657,6 +911,7 @@ function upsertCollectedPosts(connection: XConnectionRow, collected: CollectedPo
     const published = post.created_at && !Number.isNaN(Date.parse(post.created_at)) ? new Date(post.created_at).toISOString() : timestamp;
     const url = `https://x.com/${validUsername || 'i'}/status/${postId}`;
     if (existing) {
+      reusedCount += 1;
       db.prepare(`UPDATE social_mentions SET author=?,content=?,url=?,language=?,published_at=?,metadata_json=? WHERE id=?`)
         .run(validUsername ? `@${validUsername}` : author?.name || connection.display_name || '', content, url, post.lang || '', published, JSON.stringify(metadata), existing.id);
     } else {
@@ -673,36 +928,32 @@ function upsertCollectedPosts(connection: XConnectionRow, collected: CollectedPo
     db.prepare(`INSERT INTO x_connection_mentions (connection_id,mention_id,streams_json,query_ids_json,discovered_at,last_seen_at)
       VALUES (?,?,?,?,?,?) ON CONFLICT(connection_id,mention_id) DO UPDATE SET streams_json=excluded.streams_json,query_ids_json=excluded.query_ids_json,last_seen_at=excluded.last_seen_at`)
       .run(connection.id, mentionId, JSON.stringify(linkStreams), JSON.stringify(linkQueries), currentLink?.discovered_at || timestamp, timestamp);
-    if (!existing?.analysis_json) pendingAnalysisIds.push(mentionId);
   }
-  return { insertedIds, pendingAnalysisIds: [...new Set(pendingAnalysisIds)] };
+  return { insertedIds, reusedCount };
 }
 
 function persistCollectedBatch(input: {
   connection: XConnectionRow; collected: CollectedPost[]; jobId: string; generation: number; credentialVersion: number;
-  assertBatchCurrent?: () => void; afterPersist?: () => void;
+  assertBatchCurrent?: () => void; afterPersist?: () => void; autoAnalyze?: boolean;
 }) {
   return db.transaction(() => {
     assertSyncGeneration(input.connection.id, input.generation, input.credentialVersion);
     input.assertBatchCurrent?.();
     const latestConnection = db.prepare('SELECT * FROM x_connections WHERE id=?').get(input.connection.id) as XConnectionRow;
-    const { insertedIds, pendingAnalysisIds } = upsertCollectedPosts(latestConnection, input.collected);
-    const recoveryIds = (db.prepare(`SELECT m.id FROM x_connection_mentions cm JOIN social_mentions m ON m.id=cm.mention_id
-      WHERE cm.connection_id=? AND m.analysis_json IS NULL ORDER BY cm.discovered_at LIMIT 2000`).all(input.connection.id) as Array<{ id: string }>).map((row) => row.id);
-    const activeInputs = db.prepare("SELECT input_json FROM ai_jobs WHERE space_id=? AND kind='social.analyze' AND state IN ('queued','processing')")
-      .all(input.connection.space_id) as Array<{ input_json: string }>;
-    const activeIds = new Set(activeInputs.flatMap((row) => {
-      const value = parseJson<{ mentionIds?: unknown[] }>(row.input_json, {}); return Array.isArray(value.mentionIds) ? value.mentionIds.map(String) : [];
-    }));
-    const analysisIds = [...new Set([...pendingAnalysisIds, ...recoveryIds])].filter((id) => !activeIds.has(id));
+    const { insertedIds, reusedCount } = upsertCollectedPosts(latestConnection, input.collected);
+    // Automatic Terra work is intentionally limited to posts inserted by this
+    // bounded incremental run. Cached historical gaps are never silently
+    // drained, and an explicit expansion stores posts without triggering a
+    // potentially large analysis bill.
+    const analysisIds = input.autoAnalyze === false ? [] : insertedIds.slice(0, normalSyncLimit);
     const analysisJobs: ReturnType<typeof createJob>[] = [];
-    for (let index = 0; index < analysisIds.length; index += 200) {
-      analysisJobs.push(createJob('social.analyze', { mentionIds: analysisIds.slice(index, index + 200), source: 'x-sync', xSyncJobId: input.jobId }, input.connection.space_id, null, null, input.connection.user_id));
+    for (let index = 0; index < analysisIds.length; index += normalSyncLimit) {
+      analysisJobs.push(createJob('social.analyze', { mentionIds: analysisIds.slice(index, index + normalSyncLimit), source: 'x-sync', xSyncJobId: input.jobId }, input.connection.space_id, null, null, input.connection.user_id));
     }
     input.afterPersist?.();
-    db.prepare('UPDATE x_sync_jobs SET imported_count=imported_count+?,analysis_job_id=COALESCE(analysis_job_id,?),updated_at=? WHERE id=?')
-      .run(insertedIds.length, analysisJobs[0]?.id || null, now(), input.jobId);
-    return { insertedIds, analysisJobs };
+    db.prepare('UPDATE x_sync_jobs SET imported_count=imported_count+?,reused_count=reused_count+?,analysis_job_id=COALESCE(analysis_job_id,?),updated_at=? WHERE id=?')
+      .run(insertedIds.length, reusedCount, analysisJobs[0]?.id || null, now(), input.jobId);
+    return { insertedIds, reusedCount, analysisJobs };
   })();
 }
 
@@ -742,26 +993,19 @@ async function connectionDataAuth(connection: XConnectionRow, app: XAppRow): Pro
   return { consumerKey: appSecrets.consumerKey, consumerSecret: appSecrets.consumerSecret,
     accessToken: accountSecrets.accessToken, accessTokenSecret: accountSecrets.accessTokenSecret };
 }
-async function fetchPostPages(input: {
+async function fetchPostPage(input: {
   path: string; parameters: Record<string, string | null | undefined>; auth: XDataAuth;
-  maxPages: number; onPage?: (count: number, page: number) => void; assertCurrent?: () => void;
+  maximumResults: number; onRequest?: () => void; assertCurrent?: () => void;
 }) {
-  const posts: XPost[] = []; const users = new Map<string, NonNullable<NonNullable<XPostPage['includes']>['users']>[number]>();
-  let paginationToken: string | undefined; let newestId: string | null = null; let rate: XRateLimit | null = null;
-  // Each completed endpoint is checkpointed before the next one starts. The
-  // page cap bounds memory/credit spend, and a truncated walk never advances
-  // its high-water cursor.
-  for (let page = 1; page <= input.maxPages; page += 1) {
-    const result = await getXJson<XPostPage>({ path: apiPath(input.path, { ...input.parameters, pagination_token: paginationToken }), ...input.auth });
-    input.assertCurrent?.();
-    rate = result.rate; const pagePosts = result.data.data || [];
-    posts.push(...pagePosts); for (const user of result.data.includes?.users || []) users.set(user.id, user);
-    newestId = greatestId([newestId, result.data.meta?.newest_id, ...pagePosts.map((post) => post.id)]);
-    input.onPage?.(posts.length, page);
-    paginationToken = result.data.meta?.next_token;
-    if (!paginationToken) return { posts, users: [...users.values()], newestId, rate, pages: page };
-  }
-  throw new XApiError(`The X result set exceeded ${input.maxPages * 100} posts. Narrow the listening query before trying again; no cursor was advanced.`, 422, 'provider');
+  input.onRequest?.();
+  const result = await getXJson<XPostPage>({ path: apiPath(input.path, {
+    ...input.parameters, max_results: String(input.maximumResults)
+  }), ...input.auth });
+  input.assertCurrent?.();
+  const posts = (result.data.data || []).slice(0, input.maximumResults);
+  return { posts, users: result.data.includes?.users || [],
+    newestId: greatestId([result.data.meta?.newest_id, ...posts.map((post) => post.id)]),
+    nextToken: result.data.meta?.next_token || null, rate: result.rate };
 }
 function retryTime(attempt: number) { return new Date(Date.now() + Math.min(60, 2 ** Math.max(0, attempt - 1)) * 60_000).toISOString(); }
 function nextSchedule(connection: XConnectionRow) { return connection.auto_sync && connection.status === 'connected' ? new Date(Date.now() + Number(connection.sync_interval_minutes) * 60_000).toISOString() : null; }
@@ -771,6 +1015,90 @@ function syncProgress(jobId: string, stage: string, progress: number, _counts: {
   db.prepare('UPDATE x_sync_jobs SET stage=?,progress=?,updated_at=? WHERE id=?').run(stage, progress, now(), jobId);
   const row = db.prepare(`SELECT c.space_id FROM x_sync_jobs j JOIN x_connections c ON c.id=j.connection_id WHERE j.id=?`).get(jobId) as { space_id: string } | undefined;
   if (row) publishEvent('data-changed', { reason: 'x-sync-progress', jobId, stage, progress }, row.space_id);
+}
+
+function recordProviderRequest(jobId: string) {
+  db.prepare('UPDATE x_sync_jobs SET provider_requests=provider_requests+1,updated_at=? WHERE id=?').run(now(), jobId);
+}
+
+function recordTargetProviderRequest(jobId: string, targetKey: string) {
+  const timestamp = now();
+  db.transaction(() => {
+    db.prepare('UPDATE x_sync_jobs SET provider_requests=provider_requests+1,updated_at=? WHERE id=?').run(timestamp, jobId);
+    db.prepare('UPDATE x_sync_target_checkpoints SET page_requests=page_requests+1,updated_at=? WHERE job_id=? AND target_key=?')
+      .run(timestamp, jobId, targetKey);
+  })();
+}
+
+type XTargetCheckpoint = {
+  job_id: string; target_key: string; target_order: number; stream: XCollectionStream; query_id: string | null;
+  query_text: string | null; query_updated_at: string | null; query_version: number | null; budget: number; fetched_count: number; state: string;
+  pagination_token: string | null; start_since_id: string | null; start_until_id: string | null;
+  target_newest_id: string | null; last_low_id: string | null; token_fallback_used: number;
+  empty_page_hops: number; page_requests: number; has_more: number;
+};
+
+function targetCheckpoints(jobId: string) {
+  return db.prepare('SELECT * FROM x_sync_target_checkpoints WHERE job_id=? ORDER BY target_order').all(jobId) as XTargetCheckpoint[];
+}
+
+function insertTargetCheckpointRows(jobId: string, connection: XConnectionRow, mode: 'incremental' | 'expansion', plan: XCollectionPlan, timestamp: string) {
+  for (const [index, target] of plan.targets.entries()) {
+    const key = target.query ? `query:${target.query.id}` : target.stream;
+    let paginationToken: string | null = null; let startSince: string | null = null;
+    let startUntil: string | null = null; let targetNewest: string | null = null; let lastLow: string | null = null;
+    if (mode === 'incremental') {
+      if (target.stream === 'account_posts') {
+        paginationToken = connection.post_backlog_token; startSince = connection.post_backlog_since_id ?? connection.last_post_id;
+        targetNewest = connection.post_backlog_newest_id; lastLow = connection.post_backlog_low_id;
+      } else if (target.stream === 'mentions') {
+        paginationToken = connection.mention_backlog_token; startSince = connection.mention_backlog_since_id ?? connection.last_mention_id;
+        targetNewest = connection.mention_backlog_newest_id; lastLow = connection.mention_backlog_low_id;
+      } else {
+        paginationToken = target.query!.backlog_token; startSince = target.query!.backlog_since_id ?? target.query!.since_id;
+        targetNewest = target.query!.backlog_newest_id; lastLow = target.query!.backlog_low_id;
+      }
+    } else {
+      startUntil = target.stream === 'account_posts' ? connection.oldest_post_id
+        : target.stream === 'mentions' ? connection.oldest_mention_id : target.query!.oldest_id;
+    }
+    db.prepare(`INSERT INTO x_sync_target_checkpoints
+        (job_id,target_key,target_order,stream,query_id,query_text,query_updated_at,query_version,budget,fetched_count,state,pagination_token,
+         start_since_id,start_until_id,target_newest_id,last_low_id,token_fallback_used,has_more,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,0,'queued',?,?,?,?,?,0,0,?,?)`).run(
+      jobId, key, index, target.stream, target.query?.id || null, target.query?.query || null, target.query?.updated_at || null,
+      target.query?.configuration_version || null, target.budget, paginationToken, startSince, startUntil, targetNewest, lastLow, timestamp, timestamp);
+  }
+}
+
+function initializeTargetCheckpoints(job: any, connection: XConnectionRow, mode: 'incremental' | 'expansion', requestedLimit: number, streams: XCollectionStream[]) {
+  const existing = targetCheckpoints(job.id); if (existing.length) return existing;
+  const plan = collectionPlan(connection, requestedLimit, streams, mode); const timestamp = now();
+  db.transaction(() => {
+    insertTargetCheckpointRows(job.id, connection, mode, plan, timestamp);
+    db.prepare(`UPDATE x_sync_jobs SET requested_limit=?,maximum_posts_read=?,streams_json=?,deferred_search_queries=?,
+      selected_query_ids_json=?,updated_at=? WHERE id=?`).run(requestedLimit, plan.maximumPostsRead, JSON.stringify(streams),
+      plan.deferredQueryIds.length, JSON.stringify(plan.selectedQueryIds), timestamp, job.id);
+  })();
+  return targetCheckpoints(job.id);
+}
+
+function endpointUntilBoundary(stream: XCollectionStream, boundary: string | null) {
+  return stream === 'searches' ? boundary : previousId(boundary);
+}
+
+function clearExpiredPagination(checkpoint: XTargetCheckpoint, mode: 'incremental' | 'expansion') {
+  const timestamp = now();
+  db.transaction(() => {
+    db.prepare("UPDATE x_sync_target_checkpoints SET pagination_token=NULL,token_fallback_used=1,state='queued',updated_at=? WHERE job_id=? AND target_key=?")
+      .run(timestamp, checkpoint.job_id, checkpoint.target_key);
+    if (mode !== 'incremental') return;
+    if (checkpoint.stream === 'account_posts') db.prepare('UPDATE x_connections SET post_backlog_token=NULL,updated_at=? WHERE id=(SELECT connection_id FROM x_sync_jobs WHERE id=?)')
+      .run(timestamp, checkpoint.job_id);
+    else if (checkpoint.stream === 'mentions') db.prepare('UPDATE x_connections SET mention_backlog_token=NULL,updated_at=? WHERE id=(SELECT connection_id FROM x_sync_jobs WHERE id=?)')
+      .run(timestamp, checkpoint.job_id);
+    else db.prepare('UPDATE x_listening_queries SET backlog_token=NULL,updated_at=? WHERE id=?').run(timestamp, checkpoint.query_id);
+  })();
 }
 
 async function executeSyncJob(job: any) {
@@ -784,101 +1112,179 @@ async function executeSyncJob(job: any) {
     const syncGeneration = Number(connection.generation); const appCredentialVersion = Number(app.credential_version);
     assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
     const oauthCredentials = await connectionDataAuth(connection, app);
-    syncProgress(job.id, 'verifying_account', 10);
-    const profileResult = await getXJson<{ data?: { id?: string; username?: string; name?: string; profile_image_url?: string } }>({
-      path: '/2/users/me?user.fields=id,name,username,profile_image_url', ...oauthCredentials
-    });
-    assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
-    rates.profile = profileResult.rate; const profile = profileResult.data.data;
+    syncProgress(job.id, connection.x_user_id ? 'planning_collection' : 'verifying_account', 10);
+    // OAuth connection already verifies and stores the account identity. Reuse
+    // that cache on every ordinary sync instead of paying for /users/me again;
+    // legacy static credentials are verified once and then follow the same path.
+    let profile: { id?: string; username?: string; name?: string; profile_image_url?: string } | undefined = connection.x_user_id
+      ? { id: connection.x_user_id, username: connection.username || undefined, name: connection.display_name || undefined, profile_image_url: connection.profile_image_url || undefined }
+      : undefined;
+    if (!profile?.id || !profile.username) {
+      recordProviderRequest(job.id);
+      const profileResult = await getXJson<{ data?: { id?: string; username?: string; name?: string; profile_image_url?: string } }>({
+        path: '/2/users/me?user.fields=id,name,username,profile_image_url', ...oauthCredentials
+      });
+      assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
+      rates.profile = profileResult.rate; profile = profileResult.data.data;
+    }
     if (!profile?.id || !profile.username || connection.x_user_id && connection.x_user_id !== profile.id) throw new XApiError('The connected X account identity changed. Reconnect the account.', 401, 'authentication');
     const timestamp = now();
     db.prepare(`UPDATE x_connections SET x_user_id=?,username=?,display_name=?,profile_image_url=?,status='connected',last_error=NULL,last_sync_at=?,updated_at=? WHERE id=?`)
       .run(profile.id, profile.username, profile.name || profile.username, profile.profile_image_url || null, timestamp, timestamp, connection.id);
     const refreshed = db.prepare('SELECT * FROM x_connections WHERE id=?').get(connection.id) as XConnectionRow;
-
-    syncProgress(job.id, 'fetching_posts', 20);
-    const postsResult = await fetchPostPages({ path: `/2/users/${profile.id}/tweets`, maxPages: 32, parameters: {
-      max_results: '100', since_id: refreshed.last_post_id, exclude: 'retweets',
-      'tweet.fields': 'id,text,created_at,lang,author_id,public_metrics,note_tweet', expansions: 'author_id', 'user.fields': 'id,name,username,profile_image_url'
-    }, auth: oauthCredentials, assertCurrent: () => assertSyncGeneration(connection!.id, syncGeneration, appCredentialVersion),
-      onPage: (count, page) => syncProgress(job.id, 'fetching_posts', Math.min(34, 20 + page), { posts: count }) });
-    assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
-    if (postsResult.rate) rates.posts = postsResult.rate; const posts = postsResult.posts;
-    const savedPosts = persistCollectedBatch({ connection: refreshed,
-      collected: posts.map((post) => ({ post, stream: 'account_post' as const, users: postsResult.users })),
-      jobId: job.id, generation: syncGeneration, credentialVersion: appCredentialVersion,
-      afterPersist: () => {
-        db.prepare('UPDATE x_connections SET last_post_id=?,updated_at=? WHERE id=?').run(
-          greatestId([refreshed.last_post_id, postsResult.newestId, ...posts.map((post) => post.id)]), now(), connection!.id);
-        db.prepare('UPDATE x_sync_jobs SET posts_fetched=posts_fetched+?,updated_at=? WHERE id=?').run(posts.length, now(), job.id);
-      } });
-    dispatchAnalysisJobs(savedPosts.analysisJobs);
-
-    syncProgress(job.id, 'fetching_mentions', 40, { posts: posts.length });
-    const mentionsResult = await fetchPostPages({ path: `/2/users/${profile.id}/mentions`, maxPages: 10, parameters: {
-      max_results: '100', since_id: refreshed.last_mention_id,
-      'tweet.fields': 'id,text,created_at,lang,author_id,public_metrics,note_tweet', expansions: 'author_id', 'user.fields': 'id,name,username,profile_image_url'
-    }, auth: oauthCredentials, assertCurrent: () => assertSyncGeneration(connection!.id, syncGeneration, appCredentialVersion),
-      onPage: (count, page) => syncProgress(job.id, 'fetching_mentions', Math.min(54, 40 + page), { posts: posts.length, mentions: count }) });
-    assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
-    if (mentionsResult.rate) rates.mentions = mentionsResult.rate; const mentions = mentionsResult.posts;
-    const savedMentions = persistCollectedBatch({ connection: refreshed,
-      collected: mentions.map((post) => ({ post, stream: 'mention' as const, users: mentionsResult.users })),
-      jobId: job.id, generation: syncGeneration, credentialVersion: appCredentialVersion,
-      afterPersist: () => {
-        db.prepare('UPDATE x_connections SET last_mention_id=?,updated_at=? WHERE id=?').run(
-          greatestId([refreshed.last_mention_id, mentionsResult.newestId, ...mentions.map((post) => post.id)]), now(), connection!.id);
-        db.prepare('UPDATE x_sync_jobs SET mentions_fetched=mentions_fetched+?,updated_at=? WHERE id=?').run(mentions.length, now(), job.id);
-      } });
-    dispatchAnalysisJobs(savedMentions.analysisJobs);
-
-    const queryRows = db.prepare('SELECT * FROM x_listening_queries WHERE connection_id=? AND enabled=1 ORDER BY created_at LIMIT 10').all(connection.id) as any[];
+    const mode = job.trigger_type === 'expansion' ? 'expansion' as const : 'incremental' as const;
+    const requestedLimit = mode === 'expansion'
+      ? Math.max(minimumExpansionLimit, Math.min(maximumExpansionLimit, Number(job.requested_limit || minimumExpansionLimit)))
+      : normalSyncLimit;
+    const streams = parseCollectionStreams(job.streams_json);
+    const checkpoints = initializeTargetCheckpoints(job, refreshed, mode, requestedLimit, streams);
     const queryOutcomes: Array<{ id: string; cursor: string | null; error: string | null; successful: boolean }> = [];
-    let searchCount = 0;
-    for (let index = 0; index < queryRows.length; index += 1) {
-      const queryRow = queryRows[index];
-      const baseProgress = 58 + Math.floor((index / Math.max(1, queryRows.length)) * 18);
-      syncProgress(job.id, 'running_searches', baseProgress, { posts: posts.length, mentions: mentions.length, search: searchCount });
-      const searchAuth: XDataAuth | null = connection.auth_type === 'oauth2'
-        ? oauthCredentials
-        : appBearerToken(app) ? { bearerToken: appBearerToken(app)! } : null;
-      if (!searchAuth) {
-        queryOutcomes.push({ id: queryRow.id, cursor: queryRow.since_id, error: 'A bearer token is required for recent search.', successful: false }); continue;
-      }
+    const persistedCounts = db.prepare('SELECT posts_fetched,mentions_fetched,search_fetched FROM x_sync_jobs WHERE id=?').get(job.id) as any;
+    const fetched = { posts: Number(persistedCounts.posts_fetched), mentions: Number(persistedCounts.mentions_fetched), search: Number(persistedCounts.search_fetched) };
+    for (let index = 0; index < checkpoints.length; index += 1) {
+      let checkpoint = (db.prepare('SELECT * FROM x_sync_target_checkpoints WHERE job_id=? AND target_key=?').get(job.id, checkpoints[index].target_key) as XTargetCheckpoint);
+      if (checkpoint.state === 'completed' || checkpoint.state === 'skipped') continue;
+      const progress = 18 + Math.floor((index / Math.max(1, checkpoints.length)) * 66);
+      const stage = checkpoint.stream === 'account_posts' ? 'fetching_posts' : checkpoint.stream === 'mentions' ? 'fetching_mentions' : 'running_searches';
+      syncProgress(job.id, stage, progress, fetched);
       try {
-        const searchResult = await fetchPostPages({ path: '/2/tweets/search/recent', maxPages: 10, parameters: {
-          query: queryRow.query, max_results: '100', since_id: queryRow.since_id,
-          'tweet.fields': 'id,text,created_at,lang,author_id,public_metrics,note_tweet', expansions: 'author_id', 'user.fields': 'id,name,username,profile_image_url'
-        }, auth: searchAuth, assertCurrent: () => assertSyncGeneration(connection!.id, syncGeneration, appCredentialVersion),
-          onPage: (count, page) => syncProgress(job.id, 'running_searches', Math.min(78, baseProgress + page),
-          { posts: posts.length, mentions: mentions.length, search: searchCount + count }) });
-        assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
-        if (searchResult.rate) rates[`search:${queryRow.id}`] = searchResult.rate; const found = searchResult.posts; searchCount += found.length;
-        const searchCompletedAt = now(); const cursor = greatestId([queryRow.since_id, searchResult.newestId, ...found.map((post) => post.id)]);
-        const savedSearch = persistCollectedBatch({ connection: refreshed,
-          collected: found.map((post) => ({ post, stream: 'search' as const, queryId: queryRow.id, users: searchResult.users })),
-          jobId: job.id, generation: syncGeneration, credentialVersion: appCredentialVersion,
-          assertBatchCurrent: () => {
-            const current = db.prepare('SELECT query,updated_at FROM x_listening_queries WHERE id=? AND connection_id=?').get(queryRow.id, connection!.id) as { query: string; updated_at: string } | undefined;
-            if (!current || current.query !== queryRow.query || current.updated_at !== queryRow.updated_at) throw new XQueryChangedError();
-          },
-          afterPersist: () => {
-            db.prepare('UPDATE x_listening_queries SET since_id=?,last_sync_at=?,last_success_at=?,last_error=NULL,updated_at=? WHERE id=? AND connection_id=?')
-              .run(cursor, searchCompletedAt, searchCompletedAt, searchCompletedAt, queryRow.id, connection!.id);
-            db.prepare('UPDATE x_sync_jobs SET search_fetched=search_fetched+?,updated_at=? WHERE id=?').run(found.length, searchCompletedAt, job.id);
-          } });
-        dispatchAnalysisJobs(savedSearch.analysisJobs);
+        const searchAuth: XDataAuth | null = checkpoint.stream !== 'searches' || connection.auth_type === 'oauth2'
+          ? oauthCredentials : appBearerToken(app) ? { bearerToken: appBearerToken(app)! } : null;
+        if (!searchAuth) throw new XApiError('A bearer token is required for recent search.', 403, 'permission');
+        const minimumPageSize = checkpoint.stream === 'searches' ? 10 : 5;
+        while (checkpoint.state !== 'completed' && checkpoint.state !== 'skipped') {
+          const remaining = Number(checkpoint.budget) - Number(checkpoint.fetched_count);
+          if (remaining < minimumPageSize) {
+            db.prepare("UPDATE x_sync_target_checkpoints SET state='completed',completed_at=?,updated_at=? WHERE job_id=? AND target_key=?")
+              .run(now(), now(), job.id, checkpoint.target_key);
+            break;
+          }
+          const maximumTargetRequests = Math.ceil(Number(checkpoint.budget) / minimumPageSize) + maximumEmptyPageHops + 2;
+          if (Number(checkpoint.page_requests) >= maximumTargetRequests) {
+            throw new XIntegrationError('X pagination exceeded the safe per-target request limit. Start a new sync to continue from the last committed cursor.', 502);
+          }
+          const path = checkpoint.stream === 'account_posts' ? `/2/users/${profile.id}/tweets`
+            : checkpoint.stream === 'mentions' ? `/2/users/${profile.id}/mentions` : '/2/tweets/search/recent';
+          const fallbackBoundary = checkpoint.pagination_token ? null : checkpoint.last_low_id;
+          const assertQueryCurrent = checkpoint.query_id ? () => {
+            const current = db.prepare('SELECT query,configuration_version,enabled FROM x_listening_queries WHERE id=? AND connection_id=?')
+              .get(checkpoint.query_id, connection!.id) as { query: string; configuration_version: number; enabled: number } | undefined;
+            if (!current || !current.enabled || current.query !== checkpoint.query_text
+              || Number(current.configuration_version) !== Number(checkpoint.query_version)) throw new XQueryChangedError();
+          } : undefined;
+          // Check immediately before every billable call. The post-response
+          // check remains as the second half of the optimistic concurrency
+          // guard in case a query changes while X is serving the page.
+          assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
+          assertQueryCurrent?.();
+          let result;
+          try {
+            result = await fetchPostPage({ path, maximumResults: Math.min(100, remaining), parameters: {
+              query: checkpoint.query_text, since_id: mode === 'incremental' ? checkpoint.start_since_id : null,
+              until_id: fallbackBoundary ? endpointUntilBoundary(checkpoint.stream, fallbackBoundary)
+                : mode === 'expansion' ? endpointUntilBoundary(checkpoint.stream, checkpoint.start_until_id) : null,
+              pagination_token: checkpoint.pagination_token, exclude: checkpoint.stream === 'account_posts' ? 'retweets' : null,
+              'tweet.fields': 'id,text,created_at,lang,author_id,public_metrics,note_tweet', expansions: 'author_id', 'user.fields': 'id,name,username,profile_image_url'
+            }, auth: searchAuth, assertCurrent: () => assertSyncGeneration(connection!.id, syncGeneration, appCredentialVersion),
+              onRequest: () => recordTargetProviderRequest(job.id, checkpoint.target_key) });
+          } catch (error) {
+            // X pagination tokens are opaque and can expire. Once only, drop an
+            // invalid token and continue below the last committed low boundary;
+            // this avoids both a permanent gap and replaying the first page.
+            if (checkpoint.pagination_token && !checkpoint.token_fallback_used
+              && error instanceof XApiError && error.code === 'provider' && error.status === 400) {
+              clearExpiredPagination(checkpoint, mode);
+              checkpoint = db.prepare('SELECT * FROM x_sync_target_checkpoints WHERE job_id=? AND target_key=?').get(job.id, checkpoint.target_key) as XTargetCheckpoint;
+              continue;
+            }
+            throw error;
+          }
+          assertSyncGeneration(connection.id, syncGeneration, appCredentialVersion);
+          const found = result.posts; const resultIds = found.map((post) => post.id); const pageCompletedAt = now();
+          if (result.nextToken && result.nextToken === checkpoint.pagination_token) {
+            if (!checkpoint.token_fallback_used) {
+              clearExpiredPagination(checkpoint, mode);
+              checkpoint = db.prepare('SELECT * FROM x_sync_target_checkpoints WHERE job_id=? AND target_key=?').get(job.id, checkpoint.target_key) as XTargetCheckpoint;
+              continue;
+            }
+            throw new XIntegrationError('X returned a repeating pagination token. Start a new sync to continue from the last committed cursor.', 502);
+          }
+          const nextFetched = Number(checkpoint.fetched_count) + found.length;
+          const nextNewest = greatestId([checkpoint.target_newest_id, result.newestId, ...resultIds]);
+          const nextLow = lowestId([checkpoint.last_low_id, ...resultIds]); const hasMore = Boolean(result.nextToken);
+          const nextEmptyPageHops = found.length ? 0 : Number(checkpoint.empty_page_hops || 0) + 1;
+          if (hasMore && !found.length && nextEmptyPageHops > maximumEmptyPageHops) {
+            throw new XIntegrationError('X returned too many empty pagination pages. Start a new sync to continue safely.', 502);
+          }
+          const canContinue = hasMore && Number(checkpoint.budget) - nextFetched >= minimumPageSize;
+          const nextState = canContinue ? 'processing' : 'completed';
+          if (result.rate) rates[checkpoint.query_id ? `search:${checkpoint.query_id}` : checkpoint.stream] = result.rate;
+          const savedBatch = persistCollectedBatch({ connection: refreshed,
+            collected: found.map((post) => ({ post,
+              stream: checkpoint.stream === 'account_posts' ? 'account_post' as const : checkpoint.stream === 'mentions' ? 'mention' as const : 'search' as const,
+              queryId: checkpoint.query_id || undefined, users: result.users })),
+            jobId: job.id, generation: syncGeneration, credentialVersion: appCredentialVersion, autoAnalyze: mode === 'incremental',
+            assertBatchCurrent: assertQueryCurrent,
+            afterPersist: () => {
+              if (checkpoint.stream === 'account_posts') {
+                const current = db.prepare('SELECT last_post_id,oldest_post_id,post_history_exhausted FROM x_connections WHERE id=?').get(connection!.id) as any;
+                const highWater = mode === 'incremental' && !hasMore ? greatestId([current.last_post_id, nextNewest])
+                  : mode === 'expansion' && !current.last_post_id ? nextNewest : current.last_post_id;
+                db.prepare(`UPDATE x_connections SET last_post_id=?,oldest_post_id=?,post_backlog_token=?,post_backlog_since_id=?,
+                  post_backlog_newest_id=?,post_backlog_low_id=?,post_history_exhausted=?,updated_at=? WHERE id=?`).run(
+                  highWater, lowestId([current.oldest_post_id, ...resultIds]), mode === 'incremental' && hasMore ? result.nextToken : null,
+                  mode === 'incremental' && hasMore ? checkpoint.start_since_id : null, mode === 'incremental' && hasMore ? nextNewest : null,
+                  mode === 'incremental' && hasMore ? nextLow : null,
+                  mode === 'expansion' ? hasMore ? 0 : 1 : current.post_history_exhausted, pageCompletedAt, connection!.id);
+              } else if (checkpoint.stream === 'mentions') {
+                const current = db.prepare('SELECT last_mention_id,oldest_mention_id,mention_history_exhausted FROM x_connections WHERE id=?').get(connection!.id) as any;
+                const highWater = mode === 'incremental' && !hasMore ? greatestId([current.last_mention_id, nextNewest])
+                  : mode === 'expansion' && !current.last_mention_id ? nextNewest : current.last_mention_id;
+                db.prepare(`UPDATE x_connections SET last_mention_id=?,oldest_mention_id=?,mention_backlog_token=?,mention_backlog_since_id=?,
+                  mention_backlog_newest_id=?,mention_backlog_low_id=?,mention_history_exhausted=?,updated_at=? WHERE id=?`).run(
+                  highWater, lowestId([current.oldest_mention_id, ...resultIds]), mode === 'incremental' && hasMore ? result.nextToken : null,
+                  mode === 'incremental' && hasMore ? checkpoint.start_since_id : null, mode === 'incremental' && hasMore ? nextNewest : null,
+                  mode === 'incremental' && hasMore ? nextLow : null,
+                  mode === 'expansion' ? hasMore ? 0 : 1 : current.mention_history_exhausted, pageCompletedAt, connection!.id);
+              } else {
+                const current = db.prepare('SELECT since_id,oldest_id,history_exhausted FROM x_listening_queries WHERE id=? AND connection_id=?').get(checkpoint.query_id, connection!.id) as any;
+                const highWater = mode === 'incremental' && !hasMore ? greatestId([current.since_id, nextNewest])
+                  : mode === 'expansion' && !current.since_id ? nextNewest : current.since_id;
+                db.prepare(`UPDATE x_listening_queries SET since_id=?,oldest_id=?,backlog_token=?,backlog_since_id=?,backlog_newest_id=?,backlog_low_id=?,
+                  history_exhausted=?,last_sync_at=?,last_success_at=?,last_error=NULL,updated_at=? WHERE id=? AND connection_id=?`).run(
+                  highWater, lowestId([current.oldest_id, ...resultIds]), mode === 'incremental' && hasMore ? result.nextToken : null,
+                  mode === 'incremental' && hasMore ? checkpoint.start_since_id : null, mode === 'incremental' && hasMore ? nextNewest : null,
+                  mode === 'incremental' && hasMore ? nextLow : null,
+                  mode === 'expansion' ? hasMore ? 0 : 1 : current.history_exhausted,
+                  pageCompletedAt, pageCompletedAt, pageCompletedAt, checkpoint.query_id, connection!.id);
+              }
+              const countColumn = checkpoint.stream === 'account_posts' ? 'posts_fetched' : checkpoint.stream === 'mentions' ? 'mentions_fetched' : 'search_fetched';
+              db.prepare(`UPDATE x_sync_jobs SET ${countColumn}=${countColumn}+?,updated_at=? WHERE id=?`).run(found.length, pageCompletedAt, job.id);
+              db.prepare(`UPDATE x_sync_target_checkpoints SET fetched_count=?,state=?,pagination_token=?,target_newest_id=?,last_low_id=?,
+                empty_page_hops=?,has_more=?,completed_at=?,updated_at=? WHERE job_id=? AND target_key=?`).run(nextFetched, nextState, result.nextToken,
+                nextNewest, nextLow, nextEmptyPageHops, hasMore ? 1 : 0, nextState === 'completed' ? pageCompletedAt : null, pageCompletedAt, job.id, checkpoint.target_key);
+            } });
+          dispatchAnalysisJobs(savedBatch.analysisJobs);
+          if (checkpoint.stream === 'account_posts') fetched.posts += found.length;
+          else if (checkpoint.stream === 'mentions') fetched.mentions += found.length;
+          else fetched.search += found.length;
+          checkpoint = db.prepare('SELECT * FROM x_sync_target_checkpoints WHERE job_id=? AND target_key=?').get(job.id, checkpoint.target_key) as XTargetCheckpoint;
+          syncProgress(job.id, stage, Math.min(86, progress + 1), fetched);
+        }
       } catch (error) {
         if (error instanceof XSyncCancelledError) throw error;
         if (!(error instanceof XQueryChangedError) && !(error instanceof XApiError)) throw error;
+        if (!checkpoint.query_id) throw error;
         const message = error instanceof Error ? error.message : 'Search failed.';
-        queryOutcomes.push({ id: queryRow.id, cursor: queryRow.since_id, error: message.slice(0, 500), successful: false });
+        queryOutcomes.push({ id: checkpoint.query_id, cursor: checkpoint.start_since_id, error: message.slice(0, 500), successful: false });
         if (error instanceof XApiError && (error.code === 'rate_limit' || error.retryable)) throw error;
         if (error instanceof XApiError && ['authentication', 'billing', 'permission'].includes(error.code)) throw error;
+        db.prepare("UPDATE x_sync_target_checkpoints SET state='skipped',completed_at=?,updated_at=? WHERE job_id=? AND target_key=?")
+          .run(now(), now(), job.id, checkpoint.target_key);
       }
     }
 
-    syncProgress(job.id, 'finalizing', 90, { posts: posts.length, mentions: mentions.length, search: searchCount });
+    syncProgress(job.id, 'finalizing', 90, fetched);
     const completedAt = now();
     const saved = db.transaction(() => {
       assertSyncGeneration(connection!.id, syncGeneration, appCredentialVersion);
@@ -889,8 +1295,9 @@ async function executeSyncJob(job: any) {
       }
       db.prepare(`UPDATE x_connections SET last_sync_at=?,last_success_at=?,last_error=NULL,rate_limit_json=?,next_sync_at=?,status='connected',updated_at=? WHERE id=?`)
         .run(completedAt, completedAt, JSON.stringify(rates), nextSchedule({ ...latestConnection, status: 'connected' }), completedAt, connection!.id);
-      db.prepare(`UPDATE x_sync_jobs SET state='completed',stage='completed',progress=100,error=NULL,run_after=NULL,completed_at=?,updated_at=? WHERE id=?`)
-        .run(completedAt, completedAt, job.id);
+      const hasMore = Boolean(db.prepare("SELECT 1 FROM x_sync_target_checkpoints WHERE job_id=? AND state='completed' AND has_more=1 LIMIT 1").get(job.id));
+      db.prepare(`UPDATE x_sync_jobs SET state='completed',stage='completed',progress=100,has_more=?,error=NULL,run_after=NULL,completed_at=?,updated_at=? WHERE id=?`)
+        .run(hasMore ? 1 : 0, completedAt, completedAt, job.id);
       db.prepare("UPDATE x_apps SET billing_status='ready',billing_problem_type=NULL,billing_checked_at=?,updated_at=? WHERE id=?")
         .run(completedAt, completedAt, appId);
       db.prepare(`UPDATE x_sync_jobs SET state='queued',stage='credits_restored',error=NULL,run_after=NULL,updated_at=?
@@ -947,8 +1354,9 @@ const claimNextSync = db.transaction(() => {
   const timestamp = now();
   const billingStatus = getApp()?.billing_status || 'unknown';
   if (billingStatus === 'credits_depleted') return null;
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE SKIP LOCKED' : '';
   const row = db.prepare(`SELECT * FROM x_sync_jobs WHERE state IN ('queued','waiting_rate_limit') AND (run_after IS NULL OR run_after<=?)
-    AND (?<>'checking_credits' OR credit_probe=1) ORDER BY created_at LIMIT 1`).get(timestamp, billingStatus) as any;
+    AND (?<>'checking_credits' OR credit_probe=1) ORDER BY created_at LIMIT 1${lock}`).get(timestamp, billingStatus) as any;
   if (!row) return null;
   const changed = db.prepare(`UPDATE x_sync_jobs SET state='processing',stage='starting',progress=5,attempt=attempt+1,run_after=NULL,started_at=COALESCE(started_at,?),updated_at=? WHERE id=? AND state IN ('queued','waiting_rate_limit')`)
     .run(timestamp, timestamp, row.id).changes;
@@ -960,15 +1368,73 @@ function enqueueForConnection(connection: XConnectionRow, trigger: 'manual' | 's
   if (existing) return { job: rowSyncJob(existing), created: false };
   const id = crypto.randomUUID(); const timestamp = now();
   const billingBlocked = ['credits_depleted', 'checking_credits'].includes(getApp()?.billing_status || '') && !creditProbe;
-  db.prepare(`INSERT INTO x_sync_jobs (id,connection_id,trigger_type,state,stage,progress,attempt,credit_probe,error,created_at,updated_at) VALUES (?,?,?,?,?,0,0,?,?,?,?)`)
+  db.prepare(`INSERT INTO x_sync_jobs (id,connection_id,trigger_type,state,stage,progress,attempt,credit_probe,requested_limit,streams_json,maximum_posts_read,error,created_at,updated_at)
+    VALUES (?,?,?,?,?,0,0,?,50,?,50,?,?,?)`)
     .run(id, connection.id, trigger, billingBlocked ? 'waiting_billing' : 'queued', billingBlocked ? 'credits_required' : creditProbe ? 'checking_credits' : 'queued',
-      creditProbe ? 1 : 0, billingBlocked ? 'X API credits are depleted. Add credits in the X Developer Console, then retry this sync.' : null, timestamp, timestamp);
+      creditProbe ? 1 : 0, JSON.stringify(collectionStreams),
+      billingBlocked ? 'X API credits are depleted. Add credits in the X Developer Console, then retry this sync.' : null, timestamp, timestamp);
   const job = db.prepare('SELECT * FROM x_sync_jobs WHERE id=?').get(id) as any;
   publishEvent('data-changed', { reason: 'x-sync-queued', jobId: id }, connection.space_id);
   return { job: rowSyncJob(job), created: true };
 }
 
+export function enqueueXExpansion(_user: SessionUser, spaceId: string, connectionId: string, input: {
+  limit: number; streams: XCollectionStream[]; planFingerprint: string; idempotencyKey?: string;
+}) {
+  const connection = spaceOwnsConnection(spaceId, connectionId);
+  requireSpaceXManager(_user, spaceId, 'load paid X history');
+  if (!input.idempotencyKey) throw new XIntegrationError('An Idempotency-Key header is required when loading more X history.', 400);
+  const streams = parseCollectionStreams(input.streams);
+  const boundedLimit = Math.max(minimumExpansionLimit, Math.min(maximumExpansionLimit, Math.floor(input.limit)));
+  // Resolve the immutable request before looking at mutable cursors or query
+  // configuration. A replay must return the originally accepted plan even if
+  // that plan has since exhausted history or the account was disconnected.
+  const replay = db.prepare('SELECT * FROM x_sync_jobs WHERE connection_id=? AND idempotency_key=?').get(connection.id, input.idempotencyKey) as any;
+  if (replay) {
+    if (replay.trigger_type !== 'expansion' || Number(replay.requested_limit) !== boundedLimit
+      || JSON.stringify(parseCollectionStreams(replay.streams_json)) !== JSON.stringify(streams)) {
+      throw new XIntegrationError('This idempotency key was already used for a different X history request.', 409);
+    }
+    const storedEstimate = parseJson<any>(replay.estimate_json, null);
+    if (!storedEstimate) throw new XIntegrationError('The original expansion predates immutable estimates and cannot be replayed safely.', 409);
+    if (storedEstimate.planFingerprint !== input.planFingerprint) {
+      throw new XIntegrationError('This expansion confirmation does not match the originally accepted estimate.', 409);
+    }
+    return { job: rowSyncJob(replay), created: false, estimate: storedEstimate };
+  }
+  if (!['connected', 'pending_verification', 'action_required'].includes(connection.status)) throw new XIntegrationError('Reconnect the X account before loading more posts.', 409);
+  const created = db.transaction(() => {
+    const current = spaceOwnsConnection(spaceId, connectionId);
+    const active = db.prepare(`SELECT id FROM x_sync_jobs WHERE connection_id=?
+      AND state IN ('queued','processing','waiting_rate_limit','waiting_billing') LIMIT 1`).get(current.id) as { id: string } | undefined;
+    if (active) throw new XIntegrationError('Wait for the active X collection job before loading more history.', 409);
+    const plan = collectionPlan(current, boundedLimit, streams, 'expansion');
+    const estimate = expansionEstimateFromPlan(current, input.limit, boundedLimit, streams, plan, true);
+    if (estimate.planFingerprint !== input.planFingerprint) {
+      throw new XIntegrationError('The X collection plan changed. Refresh the cost estimate before confirming paid history.', 409);
+    }
+    const id = crypto.randomUUID(); const timestamp = now();
+    const billingBlocked = ['credits_depleted', 'checking_credits'].includes(getApp()?.billing_status || '');
+    db.prepare(`INSERT INTO x_sync_jobs
+        (id,connection_id,trigger_type,state,stage,progress,attempt,credit_probe,requested_limit,streams_json,maximum_posts_read,
+         deferred_search_queries,selected_query_ids_json,idempotency_key,estimate_json,error,created_at,updated_at)
+      VALUES (?,?,'expansion',?,?,0,0,0,?,?,?,?,?,?,?,?,?,?)`).run(
+      id, current.id, billingBlocked ? 'waiting_billing' : 'queued', billingBlocked ? 'credits_required' : 'queued',
+      boundedLimit, JSON.stringify(streams), plan.maximumPostsRead, plan.deferredQueryIds.length, JSON.stringify(plan.selectedQueryIds),
+      input.idempotencyKey, JSON.stringify(estimate),
+      billingBlocked ? 'X API credits are depleted. Add credits in the X Developer Console, then retry this sync.' : null,
+      timestamp, timestamp);
+    insertTargetCheckpointRows(id, current, 'expansion', plan, timestamp);
+    return { id, billingBlocked, estimate };
+  })();
+  const job = db.prepare('SELECT * FROM x_sync_jobs WHERE id=?').get(created.id) as any;
+  publishEvent('data-changed', { reason: 'x-expansion-queued', jobId: created.id, requestedLimit: boundedLimit }, spaceId);
+  if (!created.billingBlocked) void xSyncRunner.pump();
+  return { job: rowSyncJob(job), created: true, estimate: created.estimate };
+}
+
 export function enqueueXSync(_user: SessionUser, spaceId: string, connectionId?: string | null) {
+  requireSpaceXManager(_user, spaceId, 'run paid X synchronisation');
   const connection = connectionForSpace(spaceId, connectionId); if (!connection) throw new XIntegrationError('Connect an X account first.', 409);
   if (!['connected', 'pending_verification', 'action_required'].includes(connection.status)) throw new XIntegrationError('Reconnect the X account before synchronising.', 409);
   const active = db.prepare(`SELECT * FROM x_sync_jobs WHERE connection_id=? AND state IN ('queued','processing','waiting_rate_limit','waiting_billing') ORDER BY created_at LIMIT 1`).get(connection.id) as any;

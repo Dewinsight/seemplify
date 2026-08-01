@@ -12,6 +12,36 @@ let cookie = '';
 const smokeJobIds = [];
 const mentionIds = [];
 const journeyIds = [];
+async function removeSmokeJobs(ids) {
+  if (!ids.length) return;
+  const healthResponse = await fetch(`${baseUrl}/health`);
+  const health = healthResponse.ok ? await healthResponse.json() : null;
+  if (health?.database === 'postgres') {
+    const { Client } = await import('pg');
+    const passwordFile = process.env.POSTGRES_PASSWORD_FILE
+      || path.join(repository, '.local-runtime', 'experience-management', 'postgres-password');
+    const client = new Client({
+      host: process.env.POSTGRES_HOST || '127.0.0.1',
+      port: Number(process.env.POSTGRES_PORT || 5432),
+      database: process.env.POSTGRES_DATABASE || 'seemplify_experience',
+      user: process.env.POSTGRES_USER || 'seemplify_experience_app',
+      password: fs.readFileSync(passwordFile, 'utf8').trim(),
+      ssl: false
+    });
+    await client.connect();
+    try { await client.query('DELETE FROM ai_jobs WHERE id=ANY($1::text[])', [ids]); }
+    finally { await client.end(); }
+    return;
+  }
+  const databasePath = process.env.DATABASE_PATH
+    || path.join(repository, '.local-runtime', 'experience-management', 'experience.sqlite');
+  if (!fs.existsSync(databasePath)) return;
+  const database = new Database(databasePath);
+  try {
+    const placeholders = ids.map(() => '?').join(',');
+    database.prepare(`DELETE FROM ai_jobs WHERE id IN (${placeholders})`).run(...ids);
+  } finally { database.close(); }
+}
 async function call(url, options = {}) {
   const response = await fetch(`${baseUrl}${url}`, { ...options, headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...options.headers } });
   if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
@@ -93,14 +123,5 @@ try {
     }
   }
   for (const mentionId of mentionIds) await call(`/api/social/mentions/${mentionId}`, { method: 'DELETE' }).catch(() => null);
-  if (baseUrl.startsWith('http://127.0.0.1') && smokeJobIds.length) {
-    const databasePath = process.env.DATABASE_PATH || path.join(repository, '.local-runtime', 'experience-management', 'experience.sqlite');
-    if (fs.existsSync(databasePath)) {
-      const database = new Database(databasePath);
-      try {
-        const placeholders = smokeJobIds.map(() => '?').join(',');
-        database.prepare(`DELETE FROM ai_jobs WHERE id IN (${placeholders})`).run(...smokeJobIds);
-      } finally { database.close(); }
-    }
-  }
+  if (baseUrl.startsWith('http://127.0.0.1')) await removeSmokeJobs(smokeJobIds);
 }

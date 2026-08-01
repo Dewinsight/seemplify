@@ -8,7 +8,7 @@ export default {
     container: { center: true, padding: '1.25rem', screens: { '2xl': '1380px' } },
     extend: {
       colors: {
-        border: 'hsl(var(--border))', input: 'hsl(var(--input))', ring: 'hsl(var(--ring))',
+        border: 'hsl(var(--border) / 0.5)', input: 'hsl(var(--input) / 0.5)', ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))', foreground: 'hsl(var(--foreground))',
         primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
         secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },

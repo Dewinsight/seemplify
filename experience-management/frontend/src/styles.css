@@ -45,7 +45,41 @@
   .metric-value { @apply text-2xl font-semibold tracking-[-0.035em]; }
 }
 
+/* Touch browsers use overlay scrollbars. Prevent react-remove-scroll from
+   applying desktop scrollbar compensation that widens the mobile viewport. */
+@media (hover: none) and (pointer: coarse) {
+  html body[data-scroll-locked] {
+    --removed-body-scroll-bar-size: 0px !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+/* Radix delegates modal scroll locking to react-remove-scroll. Mobile browser
+   emulation can report a desktop-sized innerWidth while retaining the mobile
+   layout viewport, which is then mistaken for an 89px scrollbar. Scope the
+   zero-compensation fallback to this responsive lesson rather than changing
+   scrollbar handling for every desktop dialog. */
+@media (max-width: 767px) {
+  html[data-section-tutorial-open] { overflow-x: clip; }
+  html[data-section-tutorial-open] body[data-scroll-locked] {
+    --removed-body-scroll-bar-size: 0px !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
 @media print {
   .no-print { display: none !important; }
   body { background: white; }
 }
+
+.email-editor .tiptap p { margin: 0.45rem 0; }
+.email-editor .tiptap p:first-child { margin-top: 0; }
+.email-editor .tiptap p:last-child { margin-bottom: 0; }
+.email-editor .tiptap ul { margin: 0.6rem 0; list-style: disc; padding-left: 1.5rem; }
+.email-editor .tiptap ol { margin: 0.6rem 0; list-style: decimal; padding-left: 1.5rem; }
+.email-editor .tiptap li > p { margin: 0.15rem 0; }
+.email-editor .tiptap blockquote { margin: 0.75rem 0; border-left: 2px solid hsl(var(--border)); padding-left: 0.85rem; color: hsl(var(--muted-foreground)); }
+.email-editor .tiptap a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+.email-editor .tiptap p.is-editor-empty:first-child::before { color: hsl(var(--muted-foreground)); content: attr(data-placeholder); float: left; height: 0; pointer-events: none; }

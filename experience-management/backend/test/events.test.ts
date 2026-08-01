@@ -53,3 +53,32 @@ test('closes an existing event stream as soon as its space membership is revoked
   publishEvent('survey', { surveyId: 'later-private-survey' }, 'space-revoked');
   assert.equal(response.writes.length, count);
 });
+
+test('redacts private knowledge identifiers, inputs and errors from space-wide job events', () => {
+  const response = new EventStreamResponse();
+  attachEventStream({} as any, response as any, 'shared-space');
+  publishEvent('knowledge-job', {
+    id: 'opaque-job', spaceId: 'shared-space', knowledgeBaseId: 'private-base', documentId: 'private-document',
+    state: 'queued', stage: 'waiting_for_knowledge_runtime', progress: 0, updatedAt: '2026-07-30T00:00:00.000Z',
+    input: { originalName: 'board-plan.pdf' }, error: 'C:\\private\\board-plan.pdf failed'
+  }, 'shared-space');
+  const event = response.writes.at(-1) || '';
+  assert.match(event, /opaque-job/); assert.match(event, /waiting_for_knowledge_runtime/);
+  assert.doesNotMatch(event, /private-base|private-document|board-plan|originalName|error/);
+  response.emit('close');
+});
+
+test('delivers a private knowledge job only to its requesting user', () => {
+  const owner = new EventStreamResponse(); const collaborator = new EventStreamResponse();
+  attachEventStream({} as any, owner as any, 'shared-space', () => true, 'owner-user');
+  attachEventStream({} as any, collaborator as any, 'shared-space', () => true, 'collaborator-user');
+  const ownerBefore = owner.writes.length; const collaboratorBefore = collaborator.writes.length;
+  publishEvent('knowledge-job', {
+    id: 'private-job', state: 'queued', stage: 'queued', progress: 0,
+    updatedAt: '2026-07-30T00:00:00.000Z'
+  }, 'shared-space', 'owner-user');
+  assert.equal(owner.writes.length, ownerBefore + 1);
+  assert.match(owner.writes.at(-1) || '', /private-job/);
+  assert.equal(collaborator.writes.length, collaboratorBefore);
+  owner.emit('close'); collaborator.emit('close');
+});

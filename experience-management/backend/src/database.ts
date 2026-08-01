@@ -1,9 +1,14 @@
 import crypto from 'node:crypto';
-import Database from 'better-sqlite3';
 import { config } from './config.js';
+import { createDatabase } from './databaseAdapter.js';
 import type { AiJob, Collector, Journey, JourneyProvenance, JourneyVersion, JourneyVersionSummary, Question, ResponseRecord, SocialMention, Survey } from './types.js';
 
-export const db = new Database(config.databasePath);
+export const db = createDatabase(config);
+
+// SQLite retains its historical in-process migrations for development and
+// isolated tests. PostgreSQL is provisioned only by the offline, checksummed
+// migrator and is version-asserted before this module can continue loading.
+if (db.provider === 'sqlite') {
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
@@ -102,6 +107,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS insights (
     id TEXT PRIMARY KEY,
     survey_id TEXT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+    ai_job_id TEXT REFERENCES ai_jobs(id) ON DELETE SET NULL,
     kind TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     created_at TEXT NOT NULL
@@ -193,6 +199,18 @@ db.exec(`
     last_success_at TEXT,
     last_post_id TEXT,
     last_mention_id TEXT,
+    oldest_post_id TEXT,
+    oldest_mention_id TEXT,
+    post_backlog_token TEXT,
+    post_backlog_since_id TEXT,
+    post_backlog_newest_id TEXT,
+    post_backlog_low_id TEXT,
+    post_history_exhausted INTEGER NOT NULL DEFAULT 0,
+    mention_backlog_token TEXT,
+    mention_backlog_since_id TEXT,
+    mention_backlog_newest_id TEXT,
+    mention_backlog_low_id TEXT,
+    mention_history_exhausted INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
     rate_limit_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
@@ -219,7 +237,14 @@ db.exec(`
     label TEXT NOT NULL,
     query TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
+    configuration_version INTEGER NOT NULL DEFAULT 1,
     since_id TEXT,
+    oldest_id TEXT,
+    backlog_token TEXT,
+    backlog_since_id TEXT,
+    backlog_newest_id TEXT,
+    backlog_low_id TEXT,
+    history_exhausted INTEGER NOT NULL DEFAULT 0,
     last_sync_at TEXT,
     last_success_at TEXT,
     last_error TEXT,
@@ -236,6 +261,16 @@ db.exec(`
     progress INTEGER NOT NULL DEFAULT 0,
     attempt INTEGER NOT NULL DEFAULT 0,
     credit_probe INTEGER NOT NULL DEFAULT 0,
+    requested_limit INTEGER NOT NULL DEFAULT 50,
+    streams_json TEXT NOT NULL DEFAULT '["account_posts","mentions","searches"]',
+    reused_count INTEGER NOT NULL DEFAULT 0,
+    provider_requests INTEGER NOT NULL DEFAULT 0,
+    maximum_posts_read INTEGER NOT NULL DEFAULT 50,
+    has_more INTEGER NOT NULL DEFAULT 0,
+    deferred_search_queries INTEGER NOT NULL DEFAULT 0,
+    selected_query_ids_json TEXT NOT NULL DEFAULT '[]',
+    idempotency_key TEXT,
+    estimate_json TEXT,
     run_after TEXT,
     posts_fetched INTEGER NOT NULL DEFAULT 0,
     mentions_fetched INTEGER NOT NULL DEFAULT 0,
@@ -249,7 +284,34 @@ db.exec(`
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS x_sync_jobs_dispatch ON x_sync_jobs(state,run_after,created_at);
-  CREATE UNIQUE INDEX IF NOT EXISTS x_sync_jobs_one_active ON x_sync_jobs(connection_id) WHERE state IN ('queued','processing','waiting_rate_limit','waiting_billing');
+  CREATE INDEX IF NOT EXISTS x_sync_jobs_connection_state ON x_sync_jobs(connection_id,state,created_at);
+  CREATE TABLE IF NOT EXISTS x_sync_target_checkpoints (
+    job_id TEXT NOT NULL REFERENCES x_sync_jobs(id) ON DELETE CASCADE,
+    target_key TEXT NOT NULL,
+    target_order INTEGER NOT NULL,
+    stream TEXT NOT NULL,
+    query_id TEXT,
+    query_text TEXT,
+    query_updated_at TEXT,
+    query_version INTEGER,
+    budget INTEGER NOT NULL,
+    fetched_count INTEGER NOT NULL DEFAULT 0,
+    state TEXT NOT NULL DEFAULT 'queued',
+    pagination_token TEXT,
+    start_since_id TEXT,
+    start_until_id TEXT,
+    target_newest_id TEXT,
+    last_low_id TEXT,
+    token_fallback_used INTEGER NOT NULL DEFAULT 0,
+    empty_page_hops INTEGER NOT NULL DEFAULT 0,
+    page_requests INTEGER NOT NULL DEFAULT 0,
+    has_more INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(job_id,target_key)
+  );
+  CREATE INDEX IF NOT EXISTS x_sync_target_checkpoints_state ON x_sync_target_checkpoints(job_id,state,target_order);
   CREATE TABLE IF NOT EXISTS x_connection_mentions (
     connection_id TEXT NOT NULL REFERENCES x_connections(id) ON DELETE CASCADE,
     mention_id TEXT NOT NULL REFERENCES social_mentions(id) ON DELETE CASCADE,
@@ -307,6 +369,7 @@ db.exec(`
     objective TEXT NOT NULL DEFAULT '',
     source_refs_json TEXT NOT NULL DEFAULT '{}',
     source_snapshot_json TEXT NOT NULL DEFAULT '[]',
+    knowledge_refs_json TEXT NOT NULL DEFAULT '[]',
     state TEXT NOT NULL DEFAULT 'queued',
     result_json TEXT,
     runtime_json TEXT,
@@ -358,6 +421,7 @@ db.exec(`
     survey_id TEXT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
     collector_id TEXT NOT NULL REFERENCES collectors(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
+    sender_name TEXT NOT NULL DEFAULT '' CHECK(length(sender_name) <= 150),
     status TEXT NOT NULL DEFAULT 'draft',
     stop_on_response INTEGER NOT NULL DEFAULT 1,
     start_at TEXT,
@@ -679,6 +743,302 @@ db.exec(`CREATE TABLE IF NOT EXISTS esign_email_events (
 ); CREATE INDEX IF NOT EXISTS esign_email_events_delivery ON esign_email_events(delivery_id,event_at);`);
 db.prepare('INSERT OR IGNORE INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)').run(2, 'native_esign_hardening', new Date().toISOString());
 
+const applyAccountLifecycleSchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(3);
+  if (applied) return;
+  const existingUsers = Number((db.prepare('SELECT COUNT(*) count FROM users').get() as { count: number }).count || 0);
+  const userColumns = new Set((db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!userColumns.has('email_verified_at')) db.exec('ALTER TABLE users ADD COLUMN email_verified_at TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      pending_invitation_id TEXT,
+      expires_at TEXT NOT NULL,
+      sent_at TEXT NOT NULL,
+      used_at TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS email_verification_lookup
+      ON email_verification_tokens(token_hash,used_at,expires_at);
+    CREATE INDEX IF NOT EXISTS email_verification_user_recent
+      ON email_verification_tokens(user_id,sent_at DESC);
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      job_title TEXT NOT NULL DEFAULT '',
+      organization_name TEXT NOT NULL DEFAULT '',
+      timezone TEXT NOT NULL DEFAULT '',
+      primary_goal TEXT NOT NULL DEFAULT '',
+      onboarding_version INTEGER NOT NULL DEFAULT 0,
+      onboarding_completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  if (existingUsers > 0) {
+    // Accounts that predate verification and onboarding have already been in
+    // active use. Grandfather them exactly once so rollout cannot lock them out.
+    db.prepare('UPDATE users SET email_verified_at=COALESCE(email_verified_at,created_at)').run();
+    db.prepare(`INSERT OR IGNORE INTO user_profiles
+      (user_id,job_title,organization_name,timezone,primary_goal,onboarding_version,onboarding_completed_at,created_at,updated_at)
+      SELECT id,'','','','',1,created_at,created_at,updated_at FROM users`).run();
+  }
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(3, 'account_verification_and_profiles', new Date().toISOString());
+});
+applyAccountLifecycleSchema();
+
+const applyAccountClaimSchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(4);
+  if (applied) return;
+  const verificationColumns = new Set((db.prepare('PRAGMA table_info(email_verification_tokens)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!verificationColumns.has('pending_password_hash')) {
+    db.exec('ALTER TABLE email_verification_tokens ADD COLUMN pending_password_hash TEXT');
+  }
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(4, 'safe_unverified_account_claims', new Date().toISOString());
+});
+applyAccountClaimSchema();
+
+const applyVerifiedClaimSchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(5);
+  if (applied) return;
+  const verificationColumns = new Set((db.prepare('PRAGMA table_info(email_verification_tokens)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!verificationColumns.has('requires_password_setup')) {
+    db.exec('ALTER TABLE email_verification_tokens ADD COLUMN requires_password_setup INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!verificationColumns.has('delivery_failed_at')) {
+    db.exec('ALTER TABLE email_verification_tokens ADD COLUMN delivery_failed_at TEXT');
+  }
+  const resetColumns = new Set((db.prepare('PRAGMA table_info(password_reset_tokens)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!resetColumns.has('pending_invitation_id')) {
+    db.exec('ALTER TABLE password_reset_tokens ADD COLUMN pending_invitation_id TEXT');
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_email_attempts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      delivered_at TEXT,
+      failed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS account_email_attempts_user_recent
+      ON account_email_attempts(user_id,created_at DESC);
+  `);
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(5, 'verified_account_claims_and_mail_limits', new Date().toISOString());
+});
+applyVerifiedClaimSchema();
+
+const applyPersistentAccountClaimState = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(6);
+  if (applied) return;
+  const userColumns = new Set((db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!userColumns.has('password_claim_required')) {
+    db.exec('ALTER TABLE users ADD COLUMN password_claim_required INTEGER NOT NULL DEFAULT 0');
+  }
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(6, 'persistent_account_claim_state', new Date().toISOString());
+});
+applyPersistentAccountClaimState();
+
+const applyAccountAbuseProtection = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(7);
+  if (applied) return;
+  const verificationColumns = new Set((db.prepare('PRAGMA table_info(email_verification_tokens)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!verificationColumns.has('resend_exemption_used_at')) {
+    db.exec('ALTER TABLE email_verification_tokens ADD COLUMN resend_exemption_used_at TEXT');
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS auth_login_attempts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS auth_login_attempts_user_recent
+      ON auth_login_attempts(user_id,created_at DESC);
+  `);
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(7, 'account_abuse_protection', new Date().toISOString());
+});
+applyAccountAbuseProtection();
+
+const applyPrivateLoginIdentityThrottle = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(8);
+  if (applied) return;
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS auth_identity_attempts (
+      id TEXT PRIMARY KEY,
+      identity_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS auth_identity_attempts_recent
+      ON auth_identity_attempts(identity_hash,created_at DESC);
+  `);
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(8, 'private_login_identity_throttle', new Date().toISOString());
+});
+applyPrivateLoginIdentityThrottle();
+
+const applyAccountReturnIntent = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(10);
+  if (applied) return;
+  const verificationColumns = new Set((db.prepare('PRAGMA table_info(email_verification_tokens)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!verificationColumns.has('return_path')) {
+    db.exec('ALTER TABLE email_verification_tokens ADD COLUMN return_path TEXT');
+  }
+  const resetColumns = new Set((db.prepare('PRAGMA table_info(password_reset_tokens)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!resetColumns.has('return_path')) {
+    db.exec('ALTER TABLE password_reset_tokens ADD COLUMN return_path TEXT');
+  }
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(10, 'account_return_intent', new Date().toISOString());
+});
+applyAccountReturnIntent();
+
+const applyTutorialProgressSchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(11);
+  if (applied) return;
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tutorial_progress (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tutorial_key TEXT NOT NULL,
+      version INTEGER NOT NULL CHECK(version BETWEEN 1 AND 10000),
+      status TEXT NOT NULL CHECK(status IN ('in_progress','completed','dismissed')),
+      last_step INTEGER CHECK(last_step IS NULL OR last_step BETWEEN 0 AND 10000),
+      first_opened_at TEXT NOT NULL,
+      completed_at TEXT,
+      dismissed_at TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(user_id,tutorial_key)
+    );
+    CREATE INDEX IF NOT EXISTS tutorial_progress_user_updated
+      ON tutorial_progress(user_id,updated_at DESC);
+  `);
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(11, 'account_tutorial_progress', new Date().toISOString());
+});
+applyTutorialProgressSchema();
+
+const applyCampaignSenderNameSchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(12);
+  if (applied) return;
+  const columns = new Set((db.prepare('PRAGMA table_info(campaigns)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!columns.has('sender_name')) {
+    db.exec("ALTER TABLE campaigns ADD COLUMN sender_name TEXT NOT NULL DEFAULT '' CHECK(length(sender_name) <= 150)");
+  }
+  const senderName = String(config.brevoFromName || '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 150) || 'Experience Management';
+  db.prepare("UPDATE campaigns SET sender_name=? WHERE trim(sender_name)='' ").run(senderName);
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(12, 'campaign_sender_display_name', new Date().toISOString());
+});
+applyCampaignSenderNameSchema();
+
+const applyReusableEsignSignatureSchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(13);
+  if (applied) return;
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS esign_saved_signatures (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      recipient_identity_hash TEXT,
+      mode TEXT NOT NULL CHECK(mode IN ('typed','drawn','uploaded')),
+      label TEXT NOT NULL DEFAULT '',
+      mime_type TEXT,
+      display_text_enc TEXT,
+      storage_key TEXT UNIQUE,
+      sha256 TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_used_at TEXT,
+      CHECK(owner_user_id IS NOT NULL OR recipient_identity_hash IS NOT NULL),
+      CHECK(
+        (mode='typed' AND display_text_enc IS NOT NULL AND storage_key IS NULL AND mime_type IS NULL)
+        OR (mode IN ('drawn','uploaded') AND display_text_enc IS NULL AND storage_key IS NOT NULL AND mime_type IN ('image/png','image/jpeg'))
+      )
+    );
+    CREATE INDEX IF NOT EXISTS esign_saved_signatures_user
+      ON esign_saved_signatures(owner_user_id,updated_at DESC) WHERE owner_user_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS esign_saved_signatures_recipient
+      ON esign_saved_signatures(recipient_identity_hash,updated_at DESC) WHERE recipient_identity_hash IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS esign_saved_signature_events (
+      id TEXT PRIMARY KEY,
+      signature_id TEXT,
+      owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      recipient_identity_hash TEXT,
+      envelope_id TEXT REFERENCES esign_envelopes(id) ON DELETE SET NULL,
+      recipient_id TEXT REFERENCES esign_recipients(id) ON DELETE SET NULL,
+      actor_type TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS esign_saved_signature_events_user
+      ON esign_saved_signature_events(owner_user_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS esign_saved_signature_events_recipient
+      ON esign_saved_signature_events(recipient_identity_hash,created_at DESC);
+  `);
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(13, 'reusable_esign_signatures', new Date().toISOString());
+});
+applyReusableEsignSignatureSchema();
+
+// Migration 13 briefly shipped during development with an exclusive owner
+// constraint. Rebuild only that early table shape so account-owned signatures
+// can also carry the recipient identity used by a later signing invitation.
+const applyReusableEsignSignatureIdentitySchema = db.transaction(() => {
+  const applied = db.prepare('SELECT 1 FROM schema_migrations WHERE version=?').get(14);
+  if (applied) return;
+  const table = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='esign_saved_signatures'").get() as { sql?: string } | undefined;
+  const supportsDualIdentity = /CHECK\s*\(\s*owner_user_id\s+IS\s+NOT\s+NULL\s+OR\s+recipient_identity_hash\s+IS\s+NOT\s+NULL\s*\)/iu.test(table?.sql || '');
+  if (!supportsDualIdentity) {
+    db.exec(`
+      DROP TABLE IF EXISTS esign_saved_signatures_v14;
+      CREATE TABLE esign_saved_signatures_v14 (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        recipient_identity_hash TEXT,
+        mode TEXT NOT NULL CHECK(mode IN ('typed','drawn','uploaded')),
+        label TEXT NOT NULL DEFAULT '',
+        mime_type TEXT,
+        display_text_enc TEXT,
+        storage_key TEXT UNIQUE,
+        sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_used_at TEXT,
+        CHECK(owner_user_id IS NOT NULL OR recipient_identity_hash IS NOT NULL),
+        CHECK(
+          (mode='typed' AND display_text_enc IS NOT NULL AND storage_key IS NULL AND mime_type IS NULL)
+          OR (mode IN ('drawn','uploaded') AND display_text_enc IS NULL AND storage_key IS NOT NULL AND mime_type IN ('image/png','image/jpeg'))
+        )
+      );
+      INSERT INTO esign_saved_signatures_v14
+        (id,owner_user_id,recipient_identity_hash,mode,label,mime_type,display_text_enc,storage_key,sha256,created_at,updated_at,last_used_at)
+      SELECT id,owner_user_id,recipient_identity_hash,mode,label,mime_type,display_text_enc,storage_key,sha256,created_at,updated_at,last_used_at
+        FROM esign_saved_signatures;
+      DROP TABLE esign_saved_signatures;
+      ALTER TABLE esign_saved_signatures_v14 RENAME TO esign_saved_signatures;
+      CREATE INDEX esign_saved_signatures_user
+        ON esign_saved_signatures(owner_user_id,updated_at DESC) WHERE owner_user_id IS NOT NULL;
+      CREATE INDEX esign_saved_signatures_recipient
+        ON esign_saved_signatures(recipient_identity_hash,updated_at DESC) WHERE recipient_identity_hash IS NOT NULL;
+    `);
+  }
+  db.prepare('INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(14, 'reusable_esign_signature_identity_scope', new Date().toISOString());
+});
+applyReusableEsignSignatureIdentitySchema();
+
 const campaignDeliveryColumns = new Set((db.prepare('PRAGMA table_info(campaign_deliveries)').all() as any[]).map((column) => String(column.name)));
 for (const column of [
   'first_attempt_at', 'provider_status', 'delivered_at', 'opened_at', 'clicked_at', 'bounced_at',
@@ -735,11 +1095,98 @@ if (!xAppColumns.has('billing_problem_type')) db.exec('ALTER TABLE x_apps ADD CO
 if (!xAppColumns.has('billing_checked_at')) db.exec('ALTER TABLE x_apps ADD COLUMN billing_checked_at TEXT');
 const xOAuthColumns = new Set((db.prepare('PRAGMA table_info(x_oauth_requests)').all() as any[]).map((column) => String(column.name)));
 if (!xOAuthColumns.has('flow')) db.exec("ALTER TABLE x_oauth_requests ADD COLUMN flow TEXT NOT NULL DEFAULT 'oauth1'");
+const xConnectionCursorColumns = new Set((db.prepare('PRAGMA table_info(x_connections)').all() as any[]).map((column) => String(column.name)));
+if (!xConnectionCursorColumns.has('oldest_post_id')) db.exec('ALTER TABLE x_connections ADD COLUMN oldest_post_id TEXT');
+if (!xConnectionCursorColumns.has('oldest_mention_id')) db.exec('ALTER TABLE x_connections ADD COLUMN oldest_mention_id TEXT');
+if (!xConnectionCursorColumns.has('post_backlog_token')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_token TEXT');
+if (!xConnectionCursorColumns.has('post_backlog_since_id')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_since_id TEXT');
+if (!xConnectionCursorColumns.has('post_backlog_newest_id')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_newest_id TEXT');
+if (!xConnectionCursorColumns.has('post_backlog_low_id')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_low_id TEXT');
+if (!xConnectionCursorColumns.has('post_history_exhausted')) db.exec('ALTER TABLE x_connections ADD COLUMN post_history_exhausted INTEGER NOT NULL DEFAULT 0');
+if (!xConnectionCursorColumns.has('mention_backlog_token')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_token TEXT');
+if (!xConnectionCursorColumns.has('mention_backlog_since_id')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_since_id TEXT');
+if (!xConnectionCursorColumns.has('mention_backlog_newest_id')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_newest_id TEXT');
+if (!xConnectionCursorColumns.has('mention_backlog_low_id')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_low_id TEXT');
+if (!xConnectionCursorColumns.has('mention_history_exhausted')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_history_exhausted INTEGER NOT NULL DEFAULT 0');
+const xQueryCursorColumns = new Set((db.prepare('PRAGMA table_info(x_listening_queries)').all() as any[]).map((column) => String(column.name)));
+if (!xQueryCursorColumns.has('oldest_id')) db.exec('ALTER TABLE x_listening_queries ADD COLUMN oldest_id TEXT');
+if (!xQueryCursorColumns.has('backlog_token')) db.exec('ALTER TABLE x_listening_queries ADD COLUMN backlog_token TEXT');
+if (!xQueryCursorColumns.has('backlog_since_id')) db.exec('ALTER TABLE x_listening_queries ADD COLUMN backlog_since_id TEXT');
+if (!xQueryCursorColumns.has('backlog_newest_id')) db.exec('ALTER TABLE x_listening_queries ADD COLUMN backlog_newest_id TEXT');
+if (!xQueryCursorColumns.has('backlog_low_id')) db.exec('ALTER TABLE x_listening_queries ADD COLUMN backlog_low_id TEXT');
+if (!xQueryCursorColumns.has('history_exhausted')) db.exec('ALTER TABLE x_listening_queries ADD COLUMN history_exhausted INTEGER NOT NULL DEFAULT 0');
+if (!xQueryCursorColumns.has('configuration_version')) db.exec('ALTER TABLE x_listening_queries ADD COLUMN configuration_version INTEGER NOT NULL DEFAULT 1');
 const xSyncJobColumns = new Set((db.prepare('PRAGMA table_info(x_sync_jobs)').all() as any[]).map((column) => String(column.name)));
 if (!xSyncJobColumns.has('credit_probe')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN credit_probe INTEGER NOT NULL DEFAULT 0');
+if (!xSyncJobColumns.has('requested_limit')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN requested_limit INTEGER NOT NULL DEFAULT 50');
+if (!xSyncJobColumns.has('streams_json')) db.exec(`ALTER TABLE x_sync_jobs ADD COLUMN streams_json TEXT NOT NULL DEFAULT '["account_posts","mentions","searches"]'`);
+if (!xSyncJobColumns.has('reused_count')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN reused_count INTEGER NOT NULL DEFAULT 0');
+if (!xSyncJobColumns.has('provider_requests')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN provider_requests INTEGER NOT NULL DEFAULT 0');
+if (!xSyncJobColumns.has('maximum_posts_read')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN maximum_posts_read INTEGER NOT NULL DEFAULT 50');
+if (!xSyncJobColumns.has('has_more')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN has_more INTEGER NOT NULL DEFAULT 0');
+if (!xSyncJobColumns.has('deferred_search_queries')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN deferred_search_queries INTEGER NOT NULL DEFAULT 0');
+if (!xSyncJobColumns.has('selected_query_ids_json')) db.exec("ALTER TABLE x_sync_jobs ADD COLUMN selected_query_ids_json TEXT NOT NULL DEFAULT '[]'");
+if (!xSyncJobColumns.has('idempotency_key')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN idempotency_key TEXT');
+if (!xSyncJobColumns.has('estimate_json')) db.exec('ALTER TABLE x_sync_jobs ADD COLUMN estimate_json TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS x_sync_jobs_idempotency ON x_sync_jobs(connection_id,idempotency_key) WHERE idempotency_key IS NOT NULL');
+db.exec('DROP INDEX IF EXISTS x_sync_jobs_one_active; CREATE INDEX IF NOT EXISTS x_sync_jobs_connection_state ON x_sync_jobs(connection_id,state,created_at)');
+db.exec(`CREATE TABLE IF NOT EXISTS x_sync_target_checkpoints (
+    job_id TEXT NOT NULL REFERENCES x_sync_jobs(id) ON DELETE CASCADE,
+    target_key TEXT NOT NULL,target_order INTEGER NOT NULL,stream TEXT NOT NULL,query_id TEXT,query_text TEXT,query_updated_at TEXT,query_version INTEGER,
+    budget INTEGER NOT NULL,fetched_count INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'queued',pagination_token TEXT,
+    start_since_id TEXT,start_until_id TEXT,target_newest_id TEXT,last_low_id TEXT,token_fallback_used INTEGER NOT NULL DEFAULT 0,
+    empty_page_hops INTEGER NOT NULL DEFAULT 0,page_requests INTEGER NOT NULL DEFAULT 0,has_more INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,completed_at TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(job_id,target_key)
+  );
+  CREATE INDEX IF NOT EXISTS x_sync_target_checkpoints_state ON x_sync_target_checkpoints(job_id,state,target_order);`);
+const xSyncTargetColumns = new Set((db.prepare('PRAGMA table_info(x_sync_target_checkpoints)').all() as any[]).map((column) => String(column.name)));
+if (!xSyncTargetColumns.has('last_low_id')) db.exec('ALTER TABLE x_sync_target_checkpoints ADD COLUMN last_low_id TEXT');
+if (!xSyncTargetColumns.has('query_version')) db.exec('ALTER TABLE x_sync_target_checkpoints ADD COLUMN query_version INTEGER');
+if (!xSyncTargetColumns.has('token_fallback_used')) db.exec('ALTER TABLE x_sync_target_checkpoints ADD COLUMN token_fallback_used INTEGER NOT NULL DEFAULT 0');
+if (!xSyncTargetColumns.has('empty_page_hops')) db.exec('ALTER TABLE x_sync_target_checkpoints ADD COLUMN empty_page_hops INTEGER NOT NULL DEFAULT 0');
+if (!xSyncTargetColumns.has('page_requests')) db.exec('ALTER TABLE x_sync_target_checkpoints ADD COLUMN page_requests INTEGER NOT NULL DEFAULT 0');
+// Jobs created by releases before page checkpoints cannot safely resume after
+// any provider rows were counted: granting a fresh budget could exceed the
+// advertised ceiling and charge for the first page twice. Keep the audit row,
+// but require the operator to start a new cursor-safe request.
+const cursorUpgradeAt = new Date().toISOString();
+db.prepare(`UPDATE x_sync_jobs SET state='cancelled',stage='cursor_upgrade_required',progress=100,
+  error='This X job predates immutable cursor checkpoints. Start a new sync to continue safely.',
+  run_after=NULL,completed_at=?,updated_at=?
+  WHERE state IN ('queued','processing','waiting_rate_limit','waiting_billing')
+    AND ((trigger_type='expansion' AND (estimate_json IS NULL OR NOT EXISTS (
+      SELECT 1 FROM x_sync_target_checkpoints checkpoint WHERE checkpoint.job_id=x_sync_jobs.id)))
+      OR (posts_fetched+mentions_fetched+search_fetched>0 AND NOT EXISTS (
+        SELECT 1 FROM x_sync_target_checkpoints checkpoint WHERE checkpoint.job_id=x_sync_jobs.id)))`)
+  .run(cursorUpgradeAt, cursorUpgradeAt);
+// Preserve both ends of each collected stream. The high-water IDs prevent
+// routine syncs from paying for already-seen posts, while the low-water IDs
+// let an explicit historical expansion continue backwards without changing
+// the incremental cursor or re-reading the current page.
+db.exec(`UPDATE x_connections SET oldest_post_id=(
+    SELECT m.external_id FROM x_connection_mentions cm JOIN social_mentions m ON m.id=cm.mention_id
+    WHERE cm.connection_id=x_connections.id AND m.external_id IS NOT NULL AND json_valid(cm.streams_json)
+      AND EXISTS (SELECT 1 FROM json_each(cm.streams_json) WHERE value='account_post')
+    ORDER BY length(m.external_id),m.external_id LIMIT 1
+  ) WHERE oldest_post_id IS NULL;
+  UPDATE x_connections SET oldest_mention_id=(
+    SELECT m.external_id FROM x_connection_mentions cm JOIN social_mentions m ON m.id=cm.mention_id
+    WHERE cm.connection_id=x_connections.id AND m.external_id IS NOT NULL AND json_valid(cm.streams_json)
+      AND EXISTS (SELECT 1 FROM json_each(cm.streams_json) WHERE value='mention')
+    ORDER BY length(m.external_id),m.external_id LIMIT 1
+  ) WHERE oldest_mention_id IS NULL;
+  UPDATE x_listening_queries SET oldest_id=(
+    SELECT m.external_id FROM x_connection_mentions cm JOIN social_mentions m ON m.id=cm.mention_id
+    WHERE cm.connection_id=x_listening_queries.connection_id AND m.external_id IS NOT NULL AND json_valid(cm.query_ids_json)
+      AND EXISTS (SELECT 1 FROM json_each(cm.query_ids_json) WHERE value=x_listening_queries.id)
+    ORDER BY length(m.external_id),m.external_id LIMIT 1
+  ) WHERE oldest_id IS NULL;`);
 const aiJobColumns = new Set((db.prepare('PRAGMA table_info(ai_jobs)').all() as any[]).map((column) => String(column.name)));
 if (!aiJobColumns.has('requested_by')) db.exec('ALTER TABLE ai_jobs ADD COLUMN requested_by TEXT REFERENCES users(id) ON DELETE SET NULL');
 if (!aiJobColumns.has('provider_result_json')) db.exec('ALTER TABLE ai_jobs ADD COLUMN provider_result_json TEXT');
+const insightColumns = new Set((db.prepare('PRAGMA table_info(insights)').all() as any[]).map((column) => String(column.name)));
+if (!insightColumns.has('ai_job_id')) db.exec('ALTER TABLE insights ADD COLUMN ai_job_id TEXT REFERENCES ai_jobs(id) ON DELETE SET NULL');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS insights_ai_job_id ON insights(ai_job_id) WHERE ai_job_id IS NOT NULL');
 const replyDraftColumns = new Set((db.prepare('PRAGMA table_info(social_reply_drafts)').all() as any[]).map((column) => String(column.name)));
 if (!replyDraftColumns.has('idempotency_key')) db.exec('ALTER TABLE social_reply_drafts ADD COLUMN idempotency_key TEXT');
 const socialReportColumns = new Set((db.prepare('PRAGMA table_info(social_intelligence_reports)').all() as any[]).map((column) => String(column.name)));
@@ -774,6 +1221,10 @@ const xConnectionCompatibilityColumns = new Set((db.prepare('PRAGMA table_info(x
 if (!xConnectionCompatibilityColumns.has('last_post_id')) db.exec('ALTER TABLE x_connections ADD COLUMN last_post_id TEXT');
 if (!xConnectionCompatibilityColumns.has('last_mention_id')) db.exec('ALTER TABLE x_connections ADD COLUMN last_mention_id TEXT');
 if (!xConnectionCompatibilityColumns.has('generation')) db.exec('ALTER TABLE x_connections ADD COLUMN generation INTEGER NOT NULL DEFAULT 1');
+if (!xConnectionCompatibilityColumns.has('refresh_token_enc')) db.exec('ALTER TABLE x_connections ADD COLUMN refresh_token_enc TEXT');
+if (!xConnectionCompatibilityColumns.has('auth_type')) db.exec("ALTER TABLE x_connections ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'oauth1'");
+if (!xConnectionCompatibilityColumns.has('scopes_json')) db.exec("ALTER TABLE x_connections ADD COLUMN scopes_json TEXT NOT NULL DEFAULT '[]'");
+if (!xConnectionCompatibilityColumns.has('token_expires_at')) db.exec('ALTER TABLE x_connections ADD COLUMN token_expires_at TEXT');
 
 // Early versions allowed only one X account per Seemplify user by declaring
 // user_id UNIQUE. Rebuild the parent table in place so existing sync history,
@@ -807,16 +1258,32 @@ if (/user_id\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(xConnectionSql)) {
         last_success_at TEXT,
         last_post_id TEXT,
         last_mention_id TEXT,
+        oldest_post_id TEXT,
+        oldest_mention_id TEXT,
+        post_backlog_token TEXT,
+        post_backlog_since_id TEXT,
+        post_backlog_newest_id TEXT,
+        post_backlog_low_id TEXT,
+        post_history_exhausted INTEGER NOT NULL DEFAULT 0,
+        mention_backlog_token TEXT,
+        mention_backlog_since_id TEXT,
+        mention_backlog_newest_id TEXT,
+        mention_backlog_low_id TEXT,
+        mention_history_exhausted INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
         rate_limit_json TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
       INSERT INTO x_connections_next (
-        id,user_id,app_id,access_token_enc,access_token_secret_enc,x_user_id,username,display_name,profile_image_url,status,
-        generation,auto_sync,sync_interval_minutes,next_sync_at,last_sync_at,last_success_at,last_post_id,last_mention_id,last_error,rate_limit_json,created_at,updated_at
-      ) SELECT id,user_id,app_id,access_token_enc,access_token_secret_enc,x_user_id,username,display_name,profile_image_url,status,
-        generation,auto_sync,sync_interval_minutes,next_sync_at,last_sync_at,last_success_at,last_post_id,last_mention_id,last_error,rate_limit_json,created_at,updated_at
+        id,user_id,app_id,access_token_enc,access_token_secret_enc,refresh_token_enc,auth_type,scopes_json,token_expires_at,x_user_id,username,display_name,profile_image_url,status,
+        generation,auto_sync,sync_interval_minutes,next_sync_at,last_sync_at,last_success_at,last_post_id,last_mention_id,oldest_post_id,oldest_mention_id,
+        post_backlog_token,post_backlog_since_id,post_backlog_newest_id,post_backlog_low_id,post_history_exhausted,
+        mention_backlog_token,mention_backlog_since_id,mention_backlog_newest_id,mention_backlog_low_id,mention_history_exhausted,last_error,rate_limit_json,created_at,updated_at
+      ) SELECT id,user_id,app_id,access_token_enc,access_token_secret_enc,refresh_token_enc,auth_type,scopes_json,token_expires_at,x_user_id,username,display_name,profile_image_url,status,
+        generation,auto_sync,sync_interval_minutes,next_sync_at,last_sync_at,last_success_at,last_post_id,last_mention_id,oldest_post_id,oldest_mention_id,
+        post_backlog_token,post_backlog_since_id,post_backlog_newest_id,post_backlog_low_id,post_history_exhausted,
+        mention_backlog_token,mention_backlog_since_id,mention_backlog_newest_id,mention_backlog_low_id,mention_history_exhausted,last_error,rate_limit_json,created_at,updated_at
         FROM x_connections;
       DROP TABLE x_connections;
       ALTER TABLE x_connections_next RENAME TO x_connections;`);
@@ -828,23 +1295,24 @@ if (!xConnectionColumns.has('refresh_token_enc')) db.exec('ALTER TABLE x_connect
 if (!xConnectionColumns.has('auth_type')) db.exec("ALTER TABLE x_connections ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'oauth1'");
 if (!xConnectionColumns.has('scopes_json')) db.exec("ALTER TABLE x_connections ADD COLUMN scopes_json TEXT NOT NULL DEFAULT '[]'");
 if (!xConnectionColumns.has('token_expires_at')) db.exec('ALTER TABLE x_connections ADD COLUMN token_expires_at TEXT');
+if (!xConnectionColumns.has('oldest_post_id')) db.exec('ALTER TABLE x_connections ADD COLUMN oldest_post_id TEXT');
+if (!xConnectionColumns.has('oldest_mention_id')) db.exec('ALTER TABLE x_connections ADD COLUMN oldest_mention_id TEXT');
+if (!xConnectionColumns.has('post_backlog_token')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_token TEXT');
+if (!xConnectionColumns.has('post_backlog_since_id')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_since_id TEXT');
+if (!xConnectionColumns.has('post_backlog_newest_id')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_newest_id TEXT');
+if (!xConnectionColumns.has('post_backlog_low_id')) db.exec('ALTER TABLE x_connections ADD COLUMN post_backlog_low_id TEXT');
+if (!xConnectionColumns.has('post_history_exhausted')) db.exec('ALTER TABLE x_connections ADD COLUMN post_history_exhausted INTEGER NOT NULL DEFAULT 0');
+if (!xConnectionColumns.has('mention_backlog_token')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_token TEXT');
+if (!xConnectionColumns.has('mention_backlog_since_id')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_since_id TEXT');
+if (!xConnectionColumns.has('mention_backlog_newest_id')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_newest_id TEXT');
+if (!xConnectionColumns.has('mention_backlog_low_id')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_backlog_low_id TEXT');
+if (!xConnectionColumns.has('mention_history_exhausted')) db.exec('ALTER TABLE x_connections ADD COLUMN mention_history_exhausted INTEGER NOT NULL DEFAULT 0');
 db.exec('CREATE INDEX IF NOT EXISTS x_connections_schedule ON x_connections(auto_sync,next_sync_at)');
 if (!new Set((db.prepare('PRAGMA table_info(x_connections)').all() as Array<{ name: string }>).map((column) => column.name)).has('space_id')) {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS x_connections_user_account ON x_connections(user_id,x_user_id) WHERE x_user_id IS NOT NULL');
 }
 const xForeignKeyViolations = db.prepare('PRAGMA foreign_key_check').all();
 if (xForeignKeyViolations.length) throw new Error('X connection migration left invalid foreign keys.');
-const activeXSyncRows = db.prepare(`SELECT id,connection_id,state FROM x_sync_jobs
-  WHERE state IN ('queued','processing','waiting_rate_limit','waiting_billing')
-  ORDER BY CASE state WHEN 'processing' THEN 0 WHEN 'queued' THEN 1 WHEN 'waiting_rate_limit' THEN 2 ELSE 3 END,created_at`).all() as Array<{ id: string; connection_id: string; state: string }>;
-const retainedXSyncConnections = new Set<string>();
-for (const row of activeXSyncRows) {
-  if (!retainedXSyncConnections.has(row.connection_id)) { retainedXSyncConnections.add(row.connection_id); continue; }
-  const timestamp = new Date().toISOString();
-  db.prepare(`UPDATE x_sync_jobs SET state='cancelled',stage='duplicate_recovered',progress=100,
-    error='A duplicate X sync was removed during queue recovery.',run_after=NULL,completed_at=?,updated_at=? WHERE id=?`)
-    .run(timestamp, timestamp, row.id);
-}
 // Upgrade an in-flight probe created by releases that predate the durable
 // marker. While checking credits, every other dispatchable job is blocked in
 // waiting_billing, so the first dispatchable row is the probe to retain.
@@ -862,8 +1330,7 @@ if (legacyCreditProbe) {
     WHERE credit_probe=1 AND state IN ('queued','processing','waiting_rate_limit','waiting_billing')`).run(retainedCreditProbe.id);
 }
 db.exec(`DROP INDEX IF EXISTS x_sync_jobs_one_active;
-  CREATE UNIQUE INDEX x_sync_jobs_one_active ON x_sync_jobs(connection_id)
-  WHERE state IN ('queued','processing','waiting_rate_limit','waiting_billing');
+  CREATE INDEX IF NOT EXISTS x_sync_jobs_connection_state ON x_sync_jobs(connection_id,state,created_at);
   DROP INDEX IF EXISTS x_sync_jobs_one_credit_probe;
   CREATE UNIQUE INDEX x_sync_jobs_one_credit_probe ON x_sync_jobs(credit_probe)
   WHERE credit_probe=1 AND state IN ('queued','processing','waiting_rate_limit','waiting_billing');`);
@@ -887,9 +1354,12 @@ function normalizeQueuedIntelligenceArtifacts(table: string, keyColumns: string[
       WHERE id=? AND state IN ('queued','processing')`).run(timestamp, timestamp, row.ai_job_id);
   }
 }
+if (!new Set((db.prepare('PRAGMA table_info(intelligence_reports)').all() as Array<{ name: string }>).map((column) => column.name)).has('knowledge_refs_json')) {
+  db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
+}
 normalizeQueuedIntelligenceArtifacts('social_reply_drafts', ['requested_by', 'mention_id', 'tone', 'instructions']);
 normalizeQueuedIntelligenceArtifacts('social_intelligence_reports', ['user_id', 'connection_id', 'title', 'mention_ids_json']);
-normalizeQueuedIntelligenceArtifacts('intelligence_reports', ['user_id', 'title', 'objective', 'source_refs_json']);
+normalizeQueuedIntelligenceArtifacts('intelligence_reports', ['user_id', 'title', 'objective', 'source_refs_json', 'knowledge_refs_json']);
 if (!new Set((db.prepare('PRAGMA table_info(social_reply_drafts)').all() as Array<{ name: string }>).map((column) => column.name)).has('space_id')) {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS social_reply_drafts_one_active_request
       ON social_reply_drafts(requested_by,mention_id,tone,instructions) WHERE state='queued';
@@ -900,14 +1370,19 @@ if (!new Set((db.prepare('PRAGMA table_info(social_reply_drafts)').all() as Arra
     CREATE UNIQUE INDEX IF NOT EXISTS social_intelligence_reports_idempotency
       ON social_intelligence_reports(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_one_active_request
-      ON intelligence_reports(user_id,title,objective,source_refs_json) WHERE state='queued';
+      ON intelligence_reports(user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued';
     CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_idempotency
       ON intelligence_reports(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+}
 }
 
 const parseJson = <T>(value: unknown, fallback: T): T => {
   try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; }
 };
+
+const objectRecord = (value: unknown): Record<string, unknown> => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+);
 
 const rowSurvey = (row: any): Survey => ({
   id: row.id, title: row.title, description: row.description, purpose: row.purpose,
@@ -947,15 +1422,25 @@ export const saveSurvey = db.transaction((input: Partial<Survey> & { title: stri
   if (!spaceId) throw new Error('A space is required to save a survey.');
   const now = new Date().toISOString();
   const id = input.id || crypto.randomUUID();
-  const existing = db.prepare('SELECT space_id FROM surveys WHERE id=?').get(id) as { space_id: string } | undefined;
+  const existing = db.prepare('SELECT space_id,settings_json FROM surveys WHERE id=?').get(id) as { space_id: string; settings_json: string } | undefined;
   if (existing && existing.space_id !== spaceId) throw new Error('Survey not found.');
+  const incomingSettings = objectRecord(input.settings);
+  const currentSettings = existing ? objectRecord(parseJson(existing.settings_json, {})) : {};
+  const currentTranslations = objectRecord(currentSettings.translations);
+  const incomingTranslations = objectRecord(incomingSettings.translations);
+  // Translations are generated asynchronously. A Survey Studio draft can be
+  // older than the completed AI job, so a normal save must not erase those
+  // server-managed results. Existing translations win on the same language.
+  const settings = Object.keys(currentTranslations).length
+    ? { ...incomingSettings, translations: { ...incomingTranslations, ...currentTranslations } }
+    : incomingSettings;
   db.prepare(`INSERT INTO surveys (id,space_id,title,description,purpose,audience,status,primary_metric,language,thank_you_message,theme_json,settings_json,created_at,updated_at,published_at)
     VALUES (@id,@spaceId,@title,@description,@purpose,@audience,@status,@primaryMetric,@language,@thankYouMessage,@theme,@settings,@createdAt,@updatedAt,@publishedAt)
     ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,purpose=excluded.purpose,audience=excluded.audience,status=excluded.status,primary_metric=excluded.primary_metric,language=excluded.language,thank_you_message=excluded.thank_you_message,theme_json=excluded.theme_json,settings_json=excluded.settings_json,updated_at=excluded.updated_at,published_at=excluded.published_at`).run({
       id, spaceId, title: input.title.trim(), description: input.description || '', purpose: input.purpose || 'customer_experience',
       audience: input.audience || '', status: input.status || 'draft', primaryMetric: input.primaryMetric || 'nps',
       language: input.language || 'English', thankYouMessage: input.thankYouMessage || 'Thank you for sharing your feedback.',
-      theme: JSON.stringify(input.theme || {}), settings: JSON.stringify(input.settings || {}), createdAt: input.createdAt || now,
+      theme: JSON.stringify(input.theme || {}), settings: JSON.stringify(settings), createdAt: input.createdAt || now,
       updatedAt: now, publishedAt: input.publishedAt || null
     });
   if (questions) {
@@ -1038,17 +1523,45 @@ export function setResponseAnalysis(id: string, analysis: unknown) {
   db.prepare('UPDATE responses SET ai_analysis_json=?, analyzed_at=? WHERE id=?').run(JSON.stringify(analysis), new Date().toISOString(), id);
 }
 
-export function insertInsight(surveyId: string, kind: string, payload: unknown) {
-  const id = crypto.randomUUID();
-  db.prepare('INSERT INTO insights (id,survey_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)').run(id, surveyId, kind, JSON.stringify(payload), new Date().toISOString());
-  return { id, surveyId, kind, payload, createdAt: new Date().toISOString() };
+const rowInsight = (row: any) => ({
+  id: row.id, surveyId: row.survey_id, aiJobId: row.ai_job_id || null, kind: row.kind,
+  payload: parseJson(row.payload_json, {}), createdAt: row.created_at
+});
+
+export function insertInsight(surveyId: string, kind: string, payload: unknown, aiJobId: string | null = null) {
+  if (aiJobId) {
+    const replay = db.prepare('SELECT * FROM insights WHERE ai_job_id=?').get(aiJobId) as any;
+    if (replay) {
+      if (replay.survey_id !== surveyId || replay.kind !== kind) throw new Error('AI job is already attached to a different insight.');
+      return rowInsight(replay);
+    }
+  }
+  const id = crypto.randomUUID(); const createdAt = new Date().toISOString();
+  db.prepare('INSERT INTO insights (id,survey_id,ai_job_id,kind,payload_json,created_at) VALUES (?,?,?,?,?,?)')
+    .run(id, surveyId, aiJobId, kind, JSON.stringify(payload), createdAt);
+  return { id, surveyId, aiJobId, kind, payload, createdAt };
 }
 
 export function listInsights(surveyId: string) {
-  return (db.prepare('SELECT * FROM insights WHERE survey_id=? ORDER BY created_at DESC').all(surveyId) as any[]).map((row) => ({
-    id: row.id, surveyId: row.survey_id, kind: row.kind, payload: parseJson(row.payload_json, {}), createdAt: row.created_at
-  }));
+  return (db.prepare('SELECT * FROM insights WHERE survey_id=? ORDER BY created_at DESC').all(surveyId) as any[]).map(rowInsight);
 }
+
+export const applySurveyTranslation = db.transaction((input: {
+  aiJobId: string; surveyId: string; spaceId: string; language: string; translation: unknown;
+}) => {
+  const current = db.prepare('SELECT settings_json FROM surveys WHERE id=? AND space_id=?')
+    .get(input.surveyId, input.spaceId) as { settings_json: string } | undefined;
+  if (!current) return null;
+  const settings = objectRecord(parseJson(current.settings_json, {}));
+  const translations = objectRecord(settings.translations);
+  // The insight is the durable application journal. On a retry, its original
+  // payload wins even if a caller supplies a different value for the same job.
+  const insight = insertInsight(input.surveyId, 'translation', input.translation, input.aiJobId);
+  const updatedAt = new Date().toISOString();
+  db.prepare('UPDATE surveys SET settings_json=?,updated_at=? WHERE id=? AND space_id=?')
+    .run(JSON.stringify({ ...settings, translations: { ...translations, [input.language]: insight.payload } }), updatedAt, input.surveyId, input.spaceId);
+  return { survey: getSurvey(input.surveyId, input.spaceId)!, insight };
+});
 
 export function rowJob(row: any): AiJob {
   return {
@@ -1091,6 +1604,11 @@ export function saveJobProviderResult(id: string, value: { activity: string; sch
   return getJobProviderResult(id);
 }
 
+export function clearJobProviderResult(id: string) {
+  db.prepare('UPDATE ai_jobs SET provider_result_json=NULL,updated_at=? WHERE id=?')
+    .run(new Date().toISOString(), id);
+}
+
 export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, spaceId: string, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
   if (!spaceId) throw new Error('A space is required to queue AI work.');
   if (surveyId && !db.prepare('SELECT 1 FROM surveys WHERE id=? AND space_id=?').get(surveyId, spaceId)) {
@@ -1109,6 +1627,7 @@ export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, s
 
 export const claimNextJob = db.transaction((): AiJob | null => {
   const now = new Date().toISOString();
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE OF candidate SKIP LOCKED' : '';
   // JavaScript timestamps have millisecond precision, so rowid preserves
   // insertion-order FIFO when several durable jobs are enqueued together.
   const row = db.prepare(`SELECT candidate.* FROM ai_jobs candidate
@@ -1123,7 +1642,7 @@ export const claimNextJob = db.transaction((): AiJob | null => {
       COALESCE((SELECT MAX(started_at) FROM ai_jobs served
         WHERE served.space_id=candidate.space_id AND served.started_at IS NOT NULL),''),
       candidate.created_at,candidate.rowid
-    LIMIT 1`).get(now, now) as any;
+    LIMIT 1${lock}`).get(now, now) as any;
   if (!row) return null;
   const changed = db.prepare(`UPDATE ai_jobs SET state='processing',stage='dispatching',progress=5,attempt=attempt+1,started_at=?,updated_at=? WHERE id=? AND state='queued'`).run(now, now, row.id).changes;
   return changed ? getJob(row.id) : null;

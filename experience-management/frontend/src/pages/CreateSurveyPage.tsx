@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { KnowledgeBasePicker } from '@/components/knowledge/KnowledgeBasePicker';
 import type { AiJob, Survey, Template } from '@/types';
 
 export function CreateSurveyPage() {
@@ -18,13 +19,14 @@ export function CreateSurveyPage() {
   const [purpose, setPurpose] = useState('customer_experience');
   const [audience, setAudience] = useState('');
   const [language, setLanguage] = useState('English');
+  const [knowledgeBaseIds, setKnowledgeBaseIds] = useState<string[]>([]);
   const [working, setWorking] = useState<string | null>(null);
   const [job, setJob] = useState<AiJob | null>(null);
   useEffect(() => { api<Template[]>('/api/templates').then(setTemplates); }, []);
   async function generate() {
     try {
       setWorking('ai');
-      const queued = await api<{ jobId: string }>('/api/ai/surveys', json('POST', { brief, purpose, audience, language, numberOfQuestions: 10 }));
+      const queued = await api<{ jobId: string }>('/api/ai/surveys', json('POST', { brief, purpose, audience, language, numberOfQuestions: 10, knowledgeBaseIds }));
       const completed = await waitForJob(queued.jobId, setJob);
       const id = completed.result?.output?.survey?.id;
       if (!id) throw new Error('Generated survey was not returned.');
@@ -51,6 +53,7 @@ export function CreateSurveyPage() {
             <div><Label htmlFor="brief" className="field-label">What do you need to learn?</Label><Textarea id="brief" rows={7} placeholder="We need to understand why recently onboarded customers abandon setup, which steps create the most effort, and what would make them confident enough to activate..." value={brief} onChange={(event) => setBrief(event.target.value)} /></div>
             <div className="grid gap-4 sm:grid-cols-2"><div><Label className="field-label">Programme</Label><select className="h-9 w-full rounded-md border-input bg-background text-sm focus:border-ring focus:ring-ring" value={purpose} onChange={(event) => setPurpose(event.target.value)}><option value="customer_experience">Customer experience</option><option value="employee_experience">Employee experience</option><option value="market_research">Market research</option></select></div><div><Label className="field-label">Language</Label><Input value={language} onChange={(event) => setLanguage(event.target.value)} /></div></div>
             <div><Label className="field-label">Audience</Label><Input placeholder="e.g. customers in their first 30 days" value={audience} onChange={(event) => setAudience(event.target.value)} /></div>
+            <KnowledgeBasePicker value={knowledgeBaseIds} onChange={setKnowledgeBaseIds} disabled={Boolean(working)} description="Optional. Select up to five sources to ground survey terminology and context." />
             <Button onClick={generate} disabled={brief.trim().length < 10 || Boolean(working)}>{working === 'ai' ? <Loader2 className="animate-spin" /> : <Sparkles />}Generate survey</Button>
             {job && <div className="border bg-muted/30 p-4 text-sm"><div className="flex justify-between"><span className="font-medium">{job.stage.replaceAll('_', ' ')}</span><span>{job.progress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-secondary"><div className="h-full bg-primary transition-all" style={{ width: `${job.progress}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">This job is durable. You can leave the page while Terra works.</p></div>}
           </CardContent></Card>
