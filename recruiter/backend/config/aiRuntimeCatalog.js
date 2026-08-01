@@ -73,6 +73,19 @@ const DEFAULT_MODELS = Object.freeze([
   }
 ]);
 
+function experienceActivity(label, reasoningEffort = 'medium') {
+  return {
+    label,
+    group: 'Experience Management',
+    model: TERRA_MODEL,
+    provider: TERRA_PROVIDER,
+    reasoningEffort,
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  };
+}
+
 const ACTIVITY_DEFINITIONS = Object.freeze({
   'recruiter.general': { label: 'Recruiter AI - general', group: 'Recruiter', model: GROQ_120B, reasoningEffort: 'medium' },
   'candidate.cv_parse': {
@@ -180,6 +193,20 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     lockedProvider: true,
     failoverPolicy: 'wait_local'
   },
+  'experience.knowledge_answer': experienceActivity('Experience knowledge answer', 'high'),
+  'experience.knowledge_graph_extract': experienceActivity('Experience knowledge graph extraction', 'high'),
+  'experience.social_reply_draft': experienceActivity('Experience social reply draft'),
+  'experience.cross_source_intelligence': experienceActivity('Experience cross-source intelligence', 'high'),
+  'experience.assistant.email_summarise': experienceActivity('Experience assistant email summarisation'),
+  'experience.assistant.email_draft': experienceActivity('Experience assistant email draft'),
+  'experience.assistant.document_summarise': experienceActivity('Experience assistant document summarisation'),
+  'experience.assistant.document_compare': experienceActivity('Experience assistant document comparison', 'high'),
+  'experience.assistant.meeting_prepare': experienceActivity('Experience assistant meeting preparation', 'high'),
+  'experience.assistant.meeting_minutes': experienceActivity('Experience assistant meeting minutes'),
+  'experience.assistant.action_extract': experienceActivity('Experience assistant action extraction'),
+  'experience.assistant.knowledge_answer': experienceActivity('Experience assistant knowledge answer', 'high'),
+  'experience.assistant.executive_brief': experienceActivity('Experience assistant executive brief', 'high'),
+  'experience.assistant.correspondence_draft': experienceActivity('Experience assistant correspondence draft'),
   'interview.questions': {
     label: 'Interview question generation',
     group: 'Interviews',
