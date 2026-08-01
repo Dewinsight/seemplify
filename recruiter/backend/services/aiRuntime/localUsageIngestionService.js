@@ -5,7 +5,7 @@ const { recordUsage } = require('./usageService');
 const SIGNATURE_SKEW_MS = 5 * 60 * 1000;
 const NONCE_TTL_MS = 10 * 60 * 1000;
 const MAX_TOKEN_COUNT = 100_000_000;
-const ALLOWED_PROVIDERS = new Set(['local-codex', 'local-ollama', 'local-vllm']);
+const ALLOWED_PROVIDERS = new Set(['local-codex', 'local-claude', 'local-ollama', 'local-vllm']);
 const seenNonces = new Map();
 
 function text(value, maximumLength) {

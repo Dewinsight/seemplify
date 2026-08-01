@@ -120,6 +120,19 @@ test('ingestion maps only non-PII metering metadata into the authoritative usage
   assert.equal(recorded.organizationName, undefined);
 });
 
+test('ingestion accepts Claude Code local-cloud usage metadata', () => {
+  const event = validateLocalUsageEnvelope(envelope({
+    provider: 'local-claude',
+    model: 'sonnet',
+    providerRequestId: 'claude-provider-1',
+    usageSource: 'claude-response'
+  }));
+
+  assert.equal(event.provider, 'local-claude');
+  assert.equal(event.model, 'sonnet');
+  assert.equal(event.usageSource, 'claude-response');
+});
+
 test('ingestion rejects forged execution IDs and inconsistent token composition', () => {
   assert.throws(
     () => validateLocalUsageEnvelope(envelope({ gatewayExecutionId: `localexec_${'0'.repeat(48)}` })),

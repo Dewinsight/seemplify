@@ -224,7 +224,7 @@ function failoverPolicyForRoute(activity, provider) {
 }
 
 function isManagedLocalProvider(provider) {
-  return ['local-codex', 'local-ollama', 'local-vllm'].includes(String(provider || '').trim().toLowerCase());
+  return ['local-codex', 'local-claude', 'local-ollama', 'local-vllm'].includes(String(provider || '').trim().toLowerCase());
 }
 
 const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
@@ -263,6 +263,11 @@ function localProviderLabel(provider, model) {
       : normalizedModel
         ? `Codex local-cloud: ${normalizedModel}`
         : 'Codex local-cloud';
+  }
+  if (normalizedProvider === 'local-claude') {
+    return normalizedModel
+      ? `Claude Code local-cloud: ${normalizedModel}`
+      : 'Claude Code local-cloud';
   }
   if (normalizedProvider === 'local-ollama') {
     return !normalizedModel || normalizedModel === LOCAL_MANAGED_MODEL
