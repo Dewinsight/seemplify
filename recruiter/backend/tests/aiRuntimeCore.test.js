@@ -6,6 +6,8 @@ const { createInternalServiceAuth } = require('../middleware/internalServiceAuth
 const { requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const {
   ACTIVITY_DEFINITIONS,
+  CLAUDE_PROVIDER,
+  CLAUDE_SONNET_MODEL,
   createDefaultRuntimeSettings,
   GROQ_120B,
   GROQ_20B,
@@ -88,15 +90,24 @@ test('default routing keeps CV and questions on managed local inference while Ex
     Object.keys(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS)
       .filter((activity) => activity.startsWith('experience.'))
   );
+  const crmActivities = new Set(
+    Object.entries(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS)
+      .filter(([, definition]) => definition.provider === 'local-claude')
+      .map(([activity]) => activity)
+  );
 
   for (const route of settings.routes) {
     const expectedModel = terraActivities.has(route.activity)
       ? TERRA_MODEL
+      : crmActivities.has(route.activity)
+        ? 'sonnet'
       : localActivities.has(route.activity)
         ? LOCAL_CV_MODEL
         : liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B;
     const expectedProvider = terraActivities.has(route.activity)
       ? TERRA_PROVIDER
+      : crmActivities.has(route.activity)
+        ? 'local-claude'
       : localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq';
     assert.equal(route.model, expectedModel, route.activity);
     assert.equal(route.provider, expectedProvider, route.activity);
@@ -106,10 +117,10 @@ test('default routing keeps CV and questions on managed local inference while Ex
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.chat.clarification').reasoningEffort, 'low');
 });
 
-test('configurable activities can use local inference while CV and Experience provider locks remain enforced', () => {
+test('configurable activities can use local inference while CV, Experience, and CRM provider locks remain enforced', () => {
   const settings = createDefaultRuntimeSettings();
   for (const route of settings.routes) {
-    if (!route.activity.startsWith('experience.')) {
+    if (ACTIVITY_DEFINITIONS[route.activity]?.lockedProvider !== true) {
       route.provider = LOCAL_PROVIDER;
       route.model = LOCAL_CV_MODEL;
     }
@@ -757,6 +768,7 @@ test('default catalog keeps CV and question generation local and pins every Expe
     'experience.assistant.knowledge_answer',
     'experience.assistant.meeting_minutes',
     'experience.assistant.meeting_prepare',
+    'experience.assistant.work_product',
     'experience.cross_source_intelligence',
     'experience.insight_generation',
     'experience.journey_mapping',
@@ -770,11 +782,15 @@ test('default catalog keeps CV and question generation local and pins every Expe
     'experience.translation'
   ]);
   assert.equal(terraRoutes.every((route) => route.model === TERRA_MODEL && route.failoverPolicy === 'wait_local'), true);
-  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route) && !terraRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
+  const claudeRoutes = settings.routes.filter((route) => route.provider === CLAUDE_PROVIDER);
+  assert.ok(claudeRoutes.length > 0);
+  assert.equal(claudeRoutes.every((route) => route.model === CLAUDE_SONNET_MODEL && route.failoverPolicy === 'wait_local'), true);
+  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route) && !terraRoutes.includes(route) && !claudeRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-120b'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-20b'), true);
   assert.equal(settings.models.some((model) => model.id === LOCAL_CV_MODEL), true);
   assert.equal(settings.models.some((model) => model.id === TERRA_MODEL && model.provider === TERRA_PROVIDER), true);
+  assert.equal(settings.models.some((model) => model.id === CLAUDE_SONNET_MODEL && model.provider === CLAUDE_PROVIDER), true);
   assert.deepEqual(settings.rollout, {
     groqPercent: 100,
     azureBaselineEnabled: false,

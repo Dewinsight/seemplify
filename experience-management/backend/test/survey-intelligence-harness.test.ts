@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
-import { insightResult } from '../src/aiSchemas.js';
+import { analystChatResult, insightResult } from '../src/aiSchemas.js';
 
 const aiJobsSource = fs.readFileSync(new URL('../src/aiJobs.ts', import.meta.url), 'utf8');
 
@@ -30,4 +30,20 @@ test('survey intelligence harness rejects translation leakage', () => {
   assert.match(aiJobsSource, /insertInsight\(survey\.id, 'ai_insights', result\.output(?:, job\.id)?\)/);
   assert.match(aiJobsSource, /insertInsight\(survey\.id, 'research_answer'/);
   assert.match(aiJobsSource, /savedInsightId: saved\.id/);
+});
+
+test('survey research answer schema rejects placeholder analysis', () => {
+  assert.equal(analystChatResult.safeParse({
+    answer: 'test',
+    evidence: [{ responseId: 'response-1', excerpt: 'test', relevance: 'test' }],
+    caveats: ['test'],
+    suggestedQuestions: ['test']
+  }).success, false);
+  assert.equal(analystChatResult.safeParse({
+    answer: 'The completed response identifies setup and connectivity friction as the clearest immediate priority, while the single-response sample limits broader conclusions.',
+    evidence: [{ responseId: 'response-1', excerpt: 'Connection issues',
+      relevance: 'This directly identifies one of the problems reported by the respondent.' }],
+    caveats: ['Only one completed response is available, so the finding is directional.'],
+    suggestedQuestions: ['Which part of setup created the greatest difficulty for the respondent?']
+  }).success, true);
 });

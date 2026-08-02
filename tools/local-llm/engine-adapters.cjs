@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { resolveExecutionPolicy } = require('./execution-policy.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
@@ -153,9 +154,24 @@ function normalizeToolCalls(toolCalls = []) {
     .filter(Boolean);
 }
 
+function responseFormatInstruction(input) {
+  const format = input.executionPlan?.responseFormat || input.executionProfile?.responseFormat;
+  if (format === 'markdown') {
+    return 'Format the user-visible answer as clean, concise Markdown with headings or lists only when they improve a substantive analysis.';
+  }
+  if (format === 'plain_text') {
+    return 'Return concise plain text suited to the requested short-form task. Do not add decorative Markdown headings.';
+  }
+  return '';
+}
+
 function prepareInferenceInput(input) {
   const tools = Array.isArray(input.tools) ? input.tools.filter((tool) => tool?.function?.name) : [];
-  if (!tools.length || input.toolChoice === 'none') return { ...input, toolEmulation: false };
+  const formatInstruction = responseFormatInstruction(input);
+  const messages = formatInstruction
+    ? [{ role: 'system', content: formatInstruction }, ...input.messages]
+    : input.messages;
+  if (!tools.length || input.toolChoice === 'none') return { ...input, messages, toolEmulation: false };
   const allowedNames = tools.map((tool) => tool.function.name);
   const toolSchema = {
     type: 'object',
@@ -193,9 +209,68 @@ function prepareInferenceInput(input) {
           `Available tools: ${JSON.stringify(tools)}`
         ].join(' ')
       },
-      ...input.messages
+      ...messages
     ]
   };
+}
+
+const PLACEHOLDER_OUTPUTS = new Set([
+  'test', 'testing', 'todo', 'tbd', 'placeholder', 'sample', 'example',
+  'n/a', 'na', 'none', 'null', 'unknown', 'string', 'text'
+]);
+
+function normalizedOutputText(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s.!?_-]+/g, ' ');
+}
+
+function isPlaceholderOutput(value) {
+  const normalized = normalizedOutputText(value);
+  const words = normalized.split(' ').filter(Boolean);
+  return PLACEHOLDER_OUTPUTS.has(normalized)
+    || /^(?:test|todo|placeholder|sample|example)(?: \d+)?$/u.test(normalized)
+    || (words.length > 1 && words.every((word) => PLACEHOLDER_OUTPUTS.has(word)));
+}
+
+function structuredQualityIssue(data, input = {}) {
+  if (!input.jsonSchema || !data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const workload = input.executionPlan?.workload || input.executionProfile?.workload;
+  if (!['deep-analysis', 'grounded-answer'].includes(workload)) return null;
+
+  for (const key of ['answer', 'executiveSummary', 'summary', 'analysis']) {
+    if (typeof data[key] === 'string' && isPlaceholderOutput(data[key])) {
+      return `The structured ${key} is placeholder text`;
+    }
+  }
+
+  const narrativeKeys = /answer|summary|analysis|detail|explanation|rationale|relevance|excerpt|caveat|suggestedquestion|recommend|finding|risk|opportun|body|methodology/iu;
+  const narratives = [];
+  function visit(value, key = '') {
+    if (typeof value === 'string') {
+      if (narrativeKeys.test(key)) narratives.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, key);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    for (const [childKey, childValue] of Object.entries(value)) visit(childValue, childKey);
+  }
+  visit(data);
+  if (narratives.length >= 2 && narratives.every(isPlaceholderOutput)) {
+    return 'Every narrative field in the structured response is placeholder text';
+  }
+  return null;
+}
+
+function assertStructuredQuality(data, input) {
+  const issue = structuredQualityIssue(data, input);
+  if (!issue) return;
+  const error = new Error(`The local model returned unusable placeholder output: ${issue}`);
+  error.code = 'LOCAL_LLM_LOW_QUALITY_OUTPUT';
+  error.status = 502;
+  error.retryable = true;
+  throw error;
 }
 
 function finalizeOutput(parsed, effectiveInput, { nativeToolCalls = [], finishReason = 'stop' } = {}) {
@@ -212,6 +287,7 @@ function finalizeOutput(parsed, effectiveInput, { nativeToolCalls = [], finishRe
       finishReason: toolCalls.length ? 'tool_calls' : 'stop'
     };
   }
+  assertStructuredQuality(parsed.data, effectiveInput);
   const toolCalls = normalizeToolCalls(nativeToolCalls);
   return {
     ...parsed,
@@ -718,7 +794,10 @@ function codexPrompt(input) {
       '</required_json_schema>'
     );
   } else {
-    instructions.push('Return only the complete user-visible answer. Do not include private reasoning or execution commentary.');
+    instructions.push(
+      'Return only the complete user-visible answer. Do not include private reasoning or execution commentary.',
+      responseFormatInstruction(input)
+    );
   }
   return [
     ...instructions,
@@ -1004,6 +1083,11 @@ async function runCodex(input, state) {
 
 function claudeSystemPrompt(input) {
   const isCv = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(input.activity);
+  const structuredQuality = input.jsonSchema && ['deep-analysis', 'grounded-answer'].includes(
+    input.executionPlan?.workload || input.executionProfile?.workload
+  )
+    ? 'Every narrative field must contain substantive task-specific content. Never use test text, placeholders, sample values, filler, or repeated words merely to satisfy the schema.'
+    : '';
   return [
     'You are the managed Seemplify Claude local-cloud inference engine.',
     'Do not use tools, commands, files, network access, or external knowledge.',
@@ -1013,26 +1097,16 @@ function claudeSystemPrompt(input) {
       ? (isCv
         ? 'Extract only CV facts explicitly present. Use empty strings or arrays for missing facts.'
         : 'Complete the requested activity using only the supplied conversation and return schema-conforming data.')
-      : 'Return only the complete user-visible answer without private reasoning or execution commentary.'
+      : 'Return only the complete user-visible answer without private reasoning or execution commentary.',
+    structuredQuality,
+    responseFormatInstruction(input)
   ].join(' ');
 }
 
 function claudeExecutionProfile(input) {
-  const inputBytes = Buffer.byteLength(JSON.stringify(input.messages || []), 'utf8');
-  if (inputBytes > 1_200_000) {
-    const error = new Error('Claude request context exceeds the managed 1.2 MB safety limit');
-    error.code = 'LOCAL_LLM_CONTEXT_TOO_LARGE';
-    error.status = 413;
-    error.retryable = false;
-    throw error;
-  }
-  const requested = Math.max(1, Number(input.maxTokens || 4000));
-  const longContext = inputBytes > 300_000;
-  if (longContext) return { id: 'long-context', inputBytes, maxTokens: Math.min(requested, 16000), timeoutMs: 420000, maxBudgetUsd: 3.5 };
-  if (input.reasoningEffort === 'high') return { id: 'deep-analysis', inputBytes, maxTokens: Math.min(requested, 12000), timeoutMs: 360000, maxBudgetUsd: 2.5 };
-  if (input.jsonSchema) return { id: 'structured', inputBytes, maxTokens: Math.min(requested, 8000), timeoutMs: 300000, maxBudgetUsd: 1.5 };
-  if (input.reasoningEffort === 'low') return { id: 'fast', inputBytes, maxTokens: Math.min(requested, 1500), timeoutMs: 120000, maxBudgetUsd: 0.5 };
-  return { id: 'standard', inputBytes, maxTokens: Math.min(requested, 4000), timeoutMs: 240000, maxBudgetUsd: 1 };
+  const supplied = input.executionPlan || input.executionProfile;
+  const policy = supplied?.classifierVersion ? supplied : resolveExecutionPolicy(input);
+  return { ...policy, id: policy.workload };
 }
 
 function claudePrompt(input) {
@@ -1095,9 +1169,18 @@ function parseClaudeJson(output) {
     throw error;
   }
   const { usage, usageReported } = normalizedClaudeUsage(envelope.usage || {});
-  if (envelope.is_error || envelope.subtype === 'error' || envelope.api_error_status) {
-    const error = new Error(String(envelope.result || envelope.error || 'Claude Code inference failed'));
-    error.code = String(envelope.api_error_status || 'CLAUDE_TURN_FAILED');
+  const subtype = String(envelope.subtype || '').toLowerCase();
+  const terminalReason = String(envelope.terminal_reason || '').toLowerCase();
+  if (envelope.is_error || subtype.startsWith('error') || envelope.api_error_status) {
+    const reachedTurnLimit = terminalReason === 'max_turns' || subtype === 'error_max_turns';
+    const error = new Error(reachedTurnLimit
+      ? 'Claude Code reached the gateway turn limit before completing the response'
+      : 'Claude Code inference failed');
+    error.code = reachedTurnLimit
+      ? 'CLAUDE_MAX_TURNS'
+      : String(envelope.api_error_status || 'CLAUDE_TURN_FAILED');
+    error.terminalReason = terminalReason || undefined;
+    error.numTurns = Number.isFinite(Number(envelope.num_turns)) ? Number(envelope.num_turns) : undefined;
     error.claudeUsage = usage;
     error.usageReported = usageReported;
     throw error;
@@ -1109,6 +1192,8 @@ function parseClaudeJson(output) {
     structuredOutput: envelope.structured_output,
     usage,
     usageReported,
+    numTurns: Number.isFinite(Number(envelope.num_turns)) ? Number(envelope.num_turns) : undefined,
+    terminalReason: terminalReason || undefined,
     estimatedCostUsd: Number.isFinite(Number(envelope.total_cost_usd))
       ? Number(envelope.total_cost_usd)
       : null
@@ -1116,7 +1201,8 @@ function parseClaudeJson(output) {
 }
 
 function claudeExecArgs(engine, input) {
-  const requestedEffort = String(input.reasoningEffort || 'medium').toLowerCase();
+  const executionProfile = claudeExecutionProfile(input);
+  const requestedEffort = String(executionProfile.reasoningEffort || 'medium').toLowerCase();
   const effort = ['low', 'medium', 'high'].includes(requestedEffort) ? requestedEffort : 'medium';
   const args = [
     '-p',
@@ -1124,8 +1210,8 @@ function claudeExecArgs(engine, input) {
     '--effort', effort,
     '--safe-mode',
     '--system-prompt', claudeSystemPrompt(input),
-    '--max-turns', '1',
-    '--max-budget-usd', String(input.executionProfile?.maxBudgetUsd ?? 1),
+    '--max-turns', String(executionProfile.maxTurns),
+    '--max-budget-usd', String(executionProfile.maxBudgetUsd),
     '--tools', '',
     '--no-session-persistence',
     '--disable-slash-commands',
@@ -1151,6 +1237,7 @@ async function runClaude(input, state) {
   const effectiveInput = prepareInferenceInput(input);
   const executionProfile = claudeExecutionProfile(effectiveInput);
   effectiveInput.executionProfile = executionProfile;
+  effectiveInput.reasoningEffort = executionProfile.reasoningEffort;
   effectiveInput.maxTokens = executionProfile.maxTokens;
   effectiveInput.timeoutMs = Math.min(
     executionProfile.timeoutMs,
@@ -1175,6 +1262,7 @@ async function runClaude(input, state) {
       });
     } catch (error) {
       if (error.capturedStdout) {
+        let recoveredError;
         try {
           const recovered = parseClaudeJson(error.capturedStdout);
           attachUsageEnvelope(error, {
@@ -1184,8 +1272,25 @@ async function runClaude(input, state) {
             usage: recovered.usage,
             usageReported: recovered.usageReported
           });
-        } catch {}
+        } catch (parseError) {
+          if (parseError.claudeUsage) {
+            attachUsageEnvelope(parseError, {
+              id: crypto.randomUUID(),
+              engine: 'claude',
+              model: engine.model,
+              usage: parseError.claudeUsage,
+              usageReported: parseError.usageReported
+            });
+            delete parseError.claudeUsage;
+            delete parseError.usageReported;
+            if (parseError.code === 'CLAUDE_MAX_TURNS') {
+              parseError.message = `Claude Code could not complete within the ${executionProfile.maxTurns}-turn gateway limit`;
+            }
+            recoveredError = parseError;
+          }
+        }
         delete error.capturedStdout;
+        if (recoveredError) throw recoveredError;
       }
       throw error;
     }
@@ -1234,6 +1339,19 @@ async function runClaude(input, state) {
       metrics: {
         latencyMs: Date.now() - startedAt,
         executionProfile: executionProfile.id,
+        executionPolicy: {
+          classifierVersion: executionProfile.classifierVersion,
+          workload: executionProfile.workload,
+          outputMode: executionProfile.outputMode,
+          responseFormat: executionProfile.responseFormat,
+          reasoningEffort: executionProfile.reasoningEffort,
+          maxTurns: executionProfile.maxTurns,
+          confidence: executionProfile.confidence,
+          fallback: executionProfile.fallback,
+          reason: executionProfile.reason
+        },
+        actualTurns: claudeResult.numTurns,
+        terminalReason: claudeResult.terminalReason,
         inputBytes: executionProfile.inputBytes,
         outputTokenBudget: executionProfile.maxTokens,
         timeoutMs: effectiveInput.timeoutMs
@@ -1315,6 +1433,8 @@ module.exports = {
   recoverCodexUsage,
   parseStructuredContent,
   prepareInferenceInput,
+  structuredQualityIssue,
+  responseFormatInstruction,
   removeCodexRequestDir,
   runCodex,
   runOllama,

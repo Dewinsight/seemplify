@@ -286,11 +286,21 @@ const genericSpecs = [
   ['report-analysis', 'report.analysis', 'Summarize a synthetic report showing offer acceptance rose from 70% to 80%.', 'Offer acceptance increased by 10 percentage points.', ['10 percentage points']],
   ['chat-introduction', 'ai_interview.chat.introduction', 'Introduce this question without revealing an answer: How did you improve API reliability?', 'How did you improve API reliability? You may ask for clarification or answer when ready.', ['API reliability', 'clarification']],
   ['chat-acknowledgement', 'ai_interview.chat.acknowledgement', 'Acknowledge an answer without scoring it and direct the candidate to confirm.', 'Thank you. Use the confirm button when you are ready to continue.', ['confirm']]
+  ,['crm-knowledge-ask', 'knowledge.ask', 'Using only policy-1, explain the escalation window of 48 hours.', 'Policy-1 states that the escalation window is 48 hours.', ['policy-1', '48 hours']]
+  ,['crm-source-ingestion', 'knowledge.source_ingestion', 'Summarize the supplied source metadata for policy-1.', 'Policy-1 is the supplied knowledge source.', ['policy-1', 'knowledge source']]
+  ,['crm-draft-generation', 'knowledge.draft_generation', 'Draft a grounded policy note using policy-1 and its 48-hour escalation window.', 'Draft: policy-1 requires escalation within 48 hours.', ['policy-1', '48 hours']]
+  ,['crm-inbox-classification', 'inbox.classification', 'Classify this message: I cannot access my account.', 'Account access issue', ['account', 'access']]
+  ,['crm-case-recommendation', 'case.recommendation', 'Recommend the next step for a case with an unverified billing postcode after failed payments.', 'Verify the billing postcode before retrying the payment.', ['verify', 'billing postcode']]
+  ,['crm-ai-advisory', 'ai.advisory', 'Advise an agent handling three failed payments after an address change.', 'Verify the changed billing address before another payment attempt.', ['verify', 'billing address']]
+  ,['crm-ai-copilot', 'ai.copilot', 'Help an agent explain the next safe action for a failed payment.', 'Confirm the customer billing details and document the outcome.', ['billing details', 'document']]
+  ,['crm-summarization', 'summarization', 'Summarize: the customer changed address and three payments failed.', 'Three payments failed after the customer changed address.', ['three payments', 'changed address']]
+  ,['crm-action-classification', 'action.classification', 'Classify this action: verify the customer billing postcode.', 'Verification action', ['verification']]
+  ,['crm-interview-reasoning', 'ai.interview.reasoning', 'Assess only this evidence: the candidate reduced incidents by 35%.', 'The supplied evidence shows a measured reliability improvement of 35%.', ['reliability', '35%']]
+  ,['crm-interview-chat', 'ai.interview.chat', 'Ask a concise follow-up about how the candidate reduced incidents by 35%.', 'Which actions directly contributed to the 35% incident reduction?', ['actions', '35%']]
 ];
 
 const textActivities = new Set([
   'recruiter.general',
-  'candidate.insights',
   'job.normalize',
   'matching.report',
   'assistant.chat',
@@ -301,6 +311,9 @@ const textActivities = new Set([
   'report.analysis',
   'ai_interview.chat.introduction',
   'ai_interview.chat.acknowledgement'
+  ,'knowledge.ask', 'knowledge.source_ingestion', 'knowledge.draft_generation',
+  'inbox.classification', 'case.recommendation', 'ai.advisory', 'ai.copilot',
+  'summarization', 'action.classification', 'ai.interview.reasoning', 'ai.interview.chat'
 ]);
 
 fixtures.push(...genericSpecs.map(([id, activity, prompt, result, keywords, quality = {}]) => {
@@ -568,6 +581,27 @@ const experienceFixtures = [
     schema: strictObject({ subject: { type: 'string' }, body: { type: 'string' }, factsUsed: stringArray, missingInformation: stringArray, warnings: stringArray }),
     keywords: ['approval', 'onboarding guide', 'draft'],
     output: { subject: 'Approval request: revised onboarding guide', body: 'Please review the revised onboarding guide and confirm approval.', factsUsed: ['A revised guide is ready for review.'], missingInformation: ['Approval deadline'], warnings: ['Draft only; human approval is required before sending.'] }
+  },
+  {
+    id: 'experience-knowledge-answer', activity: 'experience.knowledge_answer',
+    prompt: 'Answer using only policy-1: what is the escalation window?',
+    schema: strictObject({ answer: { type: 'string' }, citationSourceRefs: stringArray }),
+    keywords: ['48 hours', 'policy-1'],
+    output: { answer: 'Policy-1 sets the escalation window at 48 hours [policy-1].', citationSourceRefs: ['policy-1'] }
+  },
+  {
+    id: 'experience-knowledge-graph-extract', activity: 'experience.knowledge_graph_extract',
+    prompt: 'Extract a graph from: Ada owns the escalation policy.',
+    schema: strictObject({ entities: { type: 'array', items: strictObject({ localId: { type: 'string' }, name: { type: 'string' } }) }, claims: { type: 'array', items: strictObject({ localId: { type: 'string' }, predicate: { type: 'string' } }) }, relations: { type: 'array', items: strictObject({ sourceEntityId: { type: 'string' }, type: { type: 'string' }, targetEntityId: { type: 'string' } }) } }),
+    keywords: ['Ada', 'escalation'],
+    output: { entities: [{ localId: 'e1', name: 'Ada' }], claims: [{ localId: 'c1', predicate: 'owns escalation policy' }], relations: [] }
+  },
+  {
+    id: 'experience-assistant-work-product', activity: 'experience.assistant.work_product',
+    prompt: 'Create a decision brief from supplied onboarding evidence and action ownership.',
+    schema: strictObject({ title: { type: 'string' }, executiveSummary: { type: 'string' }, body: { type: 'string' }, decisions: stringArray, actionItems: { type: 'array', items: strictObject({ action: { type: 'string' }, owner: { type: 'string' }, dueDate: { type: 'string' }, sourceRef: { type: 'string' } }) }, citations: { type: 'array', items: assistantCitationSchema }, limitations: stringArray }),
+    keywords: ['onboarding', 'owner', 'decision-1'],
+    output: { title: 'Onboarding decision brief', executiveSummary: 'Setup clarity is the supplied priority.', body: 'Decision-1 supports revising the onboarding guide and assigning an owner.', decisions: ['Revise the onboarding guide.'], actionItems: [{ action: 'Assign an owner.', owner: 'Unassigned', dueDate: 'Not supplied', sourceRef: 'decision-1' }], citations: [{ sourceRef: 'decision-1', excerpt: 'Revise the onboarding guide.' }], limitations: ['No due date was supplied.'] }
   }
 ];
 fixtures.push(...experienceFixtures.map((fixture) => ({
