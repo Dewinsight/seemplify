@@ -216,9 +216,10 @@ test('ships a survey-specific email campaign workspace with audience, sequencing
   assert.match(contactImport, /customData/);
   assert.match(contactImport, /knownIndexes/);
 });
-test('keeps every Experience AI action visible in the survey workspace', () => {
+test('keeps decision-ready Experience AI actions visible without translation controls', () => {
   const ai = fs.readFileSync(path.join(source, 'components', 'survey', 'AiTab.tsx'), 'utf8');
-  for (const action of ['improve', 'insights', 'report', 'translate', 'ask']) assert.match(ai, new RegExp(`['\"]${action}['\"]`));
+  for (const action of ['improve', 'insights', 'report', 'ask']) assert.match(ai, new RegExp(`['\"]${action}['\"]`));
+  assert.doesNotMatch(ai, /['\"]translate['\"]|Translate survey|surveyTranslationRemoval/);
 });
 test('ships explicit knowledge grounding with durable indexing, retrieval citations, and graph provenance', () => {
   const app = fs.readFileSync(path.join(source, 'App.tsx'), 'utf8');
@@ -270,7 +271,8 @@ test('ships explicit knowledge grounding with durable indexing, retrieval citati
   assert.match(picker, /Uses a different embedding profile/);
   assert.match(surveyAi, /requestId !== insightRequestRef\.current/);
   assert.match(surveyAi, /aria-expanded=\{expanded\}/);
-  assert.match(surveyAi, /<TranslationDetails/);
+  assert.doesNotMatch(surveyAi, /TranslationDetails|Translate survey|surveyTranslationRemoval/);
+  assert.match(surveyAi, /Saved survey intelligence/);
   assert.match(surveyAi, /await loadInsights\(savedInsightKind\[path\]\)/);
 
   for (const deterministicFile of [

@@ -632,8 +632,8 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   assert.equal(initialState.approvedConcurrency, 1);
   assert.equal(initialState.concurrency, 1);
   assert.deepEqual(initialState.applicationDefaults.experienceManagement, {
-    engine: 'codex',
-    model: 'gpt-5.6-terra'
+    engine: 'claude',
+    model: 'sonnet'
   });
   assert.deepEqual(Object.keys(initialState.applicationDefaults), ['experienceManagement', 'xplorerCrm']);
   try {
