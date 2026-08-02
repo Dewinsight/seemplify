@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Calendar, CheckCircle, AlertCircle, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, CheckCircle, AlertCircle, AlertTriangle, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
 import { Button } from '../button';
 import { Alert, AlertDescription, AlertTitle } from '../alert';
 import { Badge } from '../badge';
@@ -39,6 +39,9 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
   const [isVerifying, setIsVerifying] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+  const [showAuthHelper, setShowAuthHelper] = useState(false);
+  const [activeAuthUrl, setActiveAuthUrl] = useState<string | null>(null);
+  const authWindowRef = useRef<Window | null>(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>(data.calendarProvider || 'google');
   const [serverError, setServerError] = useState<string | null>(null);
@@ -60,6 +63,26 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
     }
   ];
 
+  const isMicrosoftGrantProvider = (provider?: string) => {
+    const normalized = String(provider || '').toLowerCase();
+    return normalized.includes('microsoft') || normalized.includes('outlook') || normalized.includes('azure');
+  };
+
+  const normalizeProviderId = (provider?: string): 'google' | 'microsoft' => {
+    return isMicrosoftGrantProvider(provider) ? 'microsoft' : 'google';
+  };
+
+  const getMissingTeamsScopes = (scopes: any[] = []) => {
+    const normalizedScopes = scopes.map(scope => String(scope).toLowerCase());
+    const hasCalendarsReadWrite = normalizedScopes.some(scope => scope.includes('calendars.readwrite'));
+    const hasOnlineMeetingsReadWrite = normalizedScopes.some(scope => scope.includes('onlinemeetings.readwrite'));
+
+    return [
+      !hasCalendarsReadWrite ? 'Calendars.ReadWrite' : null,
+      !hasOnlineMeetingsReadWrite ? 'OnlineMeetings.ReadWrite' : null
+    ].filter(Boolean) as string[];
+  };
+
   useEffect(() => {
     if (state.user?._id) {
       checkCalendarStatus();
@@ -80,19 +103,48 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
       console.log('Grant verification result:', verification);
       
       if (verification.valid && verification.calendarConnected) {
-        console.log(`✅ Calendar verified with Nylas - Provider: ${verification.grantInfo?.provider}`);
+        const grantProvider = verification.grantInfo?.provider || 'google';
+        const providerId = normalizeProviderId(grantProvider);
+        const missingTeamsScopes = isMicrosoftGrantProvider(grantProvider)
+          ? getMissingTeamsScopes(verification.grantInfo?.scopes || [])
+          : [];
+
+        if (missingTeamsScopes.length > 0) {
+          const missingScopeText = missingTeamsScopes.join(', ');
+          const scopeErrorMessage = `Microsoft Teams permissions are incomplete. Missing: ${missingScopeText}. Reconnect Microsoft calendar and accept all requested scopes.`;
+          console.warn(`Teams scope check failed: ${scopeErrorMessage}`);
+          setServerError(scopeErrorMessage);
+          setCalendarStatus({
+            connected: false,
+            provider: 'microsoft',
+            verified: false,
+            error: 'TEAMS_SCOPE_MISSING'
+          });
+          updateData({
+            calendarConnected: false,
+            calendarProvider: 'microsoft',
+            provider: 'microsoft'
+          });
+          setSelectedProvider('microsoft');
+
+          return { connected: false, provider: 'microsoft', missingScopes: missingTeamsScopes };
+        }
+
+        console.log(`Calendar verified with Nylas - Provider: ${grantProvider}`);
         setCalendarStatus({
           connected: true,
-          provider: verification.grantInfo?.provider || 'google',
+          provider: providerId,
           verified: true
         });
         updateData({ 
           calendarConnected: true, 
-          calendarProvider: verification.grantInfo?.provider || 'google',
-          provider: verification.grantInfo?.provider || 'google'
+          calendarProvider: providerId,
+          calendarEmail: verification.grantInfo?.email || '',
+          provider: providerId
         });
+        setSelectedProvider(providerId);
         
-        return { connected: true, provider: verification.grantInfo?.provider };
+        return { connected: true, provider: providerId };
       } else {
         console.log(`❌ Calendar not connected or invalid - Status: ${verification.status}`);
         
@@ -162,9 +214,11 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
     } else {
       setIsConnecting(true);
     }
+    setShowAuthHelper(true);
     
     try {
       const result = await interviewService.connectCalendar(selectedProvider, forceAccountSelection);
+      setActiveAuthUrl(result.authUrl || null);
       
       if (result.authUrl) {
         // Open OAuth in a popup window
@@ -178,6 +232,7 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
           'calendar_oauth',
           `width=${width},height=${height},left=${left},top=${top},toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes`
         );
+        authWindowRef.current = popup;
 
         if (!popup) {
           // Fallback to new tab if popup blocked
@@ -207,6 +262,7 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
             // Reset loading states immediately
             setIsConnecting(false);
             setIsSwitchingAccount(false);
+            setShowAuthHelper(false);
             
             toast.success('Calendar connected successfully!');
             
@@ -311,6 +367,9 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
       toast.error(error.message || `Failed to connect ${selectedProvider} calendar. Please try again.`);
       setIsConnecting(false);
       setIsSwitchingAccount(false);
+      setShowAuthHelper(false);
+      setActiveAuthUrl(null);
+      authWindowRef.current = null;
     }
   };
 
@@ -441,6 +500,42 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
             </div>
           </div>
 
+          {selectedProvider === 'microsoft' && (
+            <Alert variant="warning" className="max-w-md mx-auto">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Microsoft Teams configuration required (for Notetaker)</AlertTitle>
+              <AlertDescription>
+                <p className="mt-2">
+                  If you plan to use Teams meetings with the AI notetaker, your Microsoft 365 admin must enable:
+                </p>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>
+                    Allow participants to join before meeting organizer joins: <strong>ENABLED</strong>
+                  </li>
+                  <li>
+                    Waiting room: <strong>DISABLED</strong> (or bot allowlisted)
+                  </li>
+                  <li>
+                    Cloud recording: <strong>ENABLED</strong>
+                  </li>
+                  <li>
+                    Transcription: <strong>ENABLED</strong>
+                  </li>
+                </ul>
+                <p className="mt-2">
+                  <a
+                    href="/docs/teams-admin-setup"
+                    className="text-blue-700 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View detailed setup guide -&gt;
+                  </a>
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex justify-center">
             <Button
               onClick={() => handleConnectCalendar(false)}
@@ -481,14 +576,132 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
           setPendingAccountSwitch(false);
           setIsConnecting(false);
           setIsSwitchingAccount(false);
+          setShowAuthHelper(false);
         }}
       />
 
-      <div className="flex justify-between pt-6">
+      {showAuthHelper && (
+        <div className="fixed right-4 lg:right-8 top-1/2 -translate-y-1/2 z-[12000] w-[400px] max-w-[calc(100vw-2rem)] rounded-2xl border border-blue-200 bg-white shadow-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-t-2xl">
+            <div className="flex items-center gap-2 text-blue-900 font-semibold">
+              <ExternalLink className="h-4 w-4" />
+              Authentication Guide
+            </div>
+            <p className="text-xs text-blue-800 mt-1">
+              Follow these exact steps in the popup to complete safely.
+            </p>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="space-y-2 text-sm">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold">1</span>
+                  <div>
+                    <p className="font-medium text-gray-900">On Nylas warning page</p>
+                    <p className="text-gray-600">Click <strong>"I understand, continue"</strong>.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-bold">2</span>
+                  <div>
+                    <p className="font-medium text-gray-900">Confirm sandbox warning</p>
+                    <p className="text-gray-600">Click <strong>"Authenticate anyway"</strong>.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-600 text-white text-xs font-bold">3</span>
+                  <div>
+                    <p className="font-medium text-gray-900">On Google permission screen</p>
+                    <p className="text-gray-600">Tick <strong>"Select all"</strong>, then continue/allow.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-green-600 text-white text-xs font-bold">4</span>
+                  <div>
+                    <p className="font-medium text-gray-900">Return here and verify</p>
+                    <p className="text-gray-600">Back in SmartHR, click <strong>"I Completed Authentication"</strong>.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+              <div className="flex items-start gap-2">
+                <CheckCircle className="h-4 w-4 mt-0.5 text-blue-600" />
+                <div>
+                  <p className="font-semibold">Tip</p>
+                  <p>If the popup is hidden behind windows, use <strong>Open Authentication Window</strong> below.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <Button
+                className="w-full"
+                variant="outline"
+                disabled={!activeAuthUrl}
+                onClick={() => {
+                  if (!activeAuthUrl) return;
+                  const reopened = window.open(
+                    activeAuthUrl,
+                    'calendar_oauth',
+                    'width=600,height=700,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no'
+                  );
+                  if (reopened) {
+                    authWindowRef.current = reopened;
+                    reopened.focus();
+                  } else {
+                    toast.error('Popup was blocked. Please allow popups for this site.');
+                  }
+                }}
+              >
+                Open Authentication Window
+              </Button>
+              <Button
+                className="w-full"
+                onClick={async () => {
+                  const result = await checkCalendarStatus();
+                  if (result?.connected) {
+                    setIsConnecting(false);
+                    setIsSwitchingAccount(false);
+                    setShowAuthHelper(false);
+                    setActiveAuthUrl(null);
+                    toast.success('Calendar connected successfully');
+                  } else {
+                    toast.info('Still waiting for authentication to complete');
+                  }
+                }}
+              >
+                I Completed Authentication
+              </Button>
+              <Button
+                className="w-full"
+                variant="ghost"
+                onClick={() => {
+                  setShowAuthHelper(false);
+                  setIsConnecting(false);
+                  setIsSwitchingAccount(false);
+                }}
+              >
+                Dismiss Guide
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="step-nav-actions hidden flex justify-between pt-6">
         <Button
           variant="outline"
           onClick={() => checkCalendarStatus()}
           disabled={isVerifying}
+          data-step-action="refresh"
         >
           {isVerifying ? (
             <>
@@ -506,6 +719,7 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
         <Button
           onClick={handleContinue}
           disabled={!calendarStatus.connected || !calendarStatus.verified}
+          data-step-action="next"
         >
           Continue
         </Button>
@@ -513,3 +727,4 @@ export function CalendarConnectionStep({ data, updateData, onNext }: CalendarCon
     </div>
   );
 }
+

@@ -9,6 +9,8 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const Rule = require('../models/Rule');
+const Organization = require('../models/Organization');
+const { ensureGovernanceConfigForOrganization, buildRuleEffectsFromCategory } = require('../services/governanceConfigService');
 
 const escalationRules = [
     // 4.1 Employment & HR Decisions
@@ -169,24 +171,41 @@ async function seedEscalationRules() {
         await mongoose.connect(process.env.MONGO_URI);
         console.log('Connected to MongoDB');
 
+        // Find or create Testing org
+        let org = await Organization.findOne({ slug: 'testing' });
+        if (!org) {
+            org = await new Organization({
+                name: 'Testing',
+                slug: 'testing',
+                description: 'Default organization'
+            }).save();
+            console.log('Created Testing organization');
+        }
+        await ensureGovernanceConfigForOrganization(org._id);
+
         let created = 0;
         let skipped = 0;
 
         for (const rule of escalationRules) {
-            // Check if rule already exists
-            const existing = await Rule.findOne({ name: rule.name });
+            // Check if rule already exists in this org
+            const existing = await Rule.findOne({ name: rule.name, organization: org._id });
             if (existing) {
-                console.log(`⏭️  Skipped (exists): ${rule.name}`);
+                console.log(`Skipped (exists): ${rule.name}`);
                 skipped++;
             } else {
-                await Rule.create(rule);
-                console.log(`✅ Created: ${rule.name}`);
+                await Rule.create({
+                    ...rule,
+                    organization: org._id,
+                    category: 'ESCALATION',
+                    effects: buildRuleEffectsFromCategory('ESCALATION')
+                });
+                console.log(`Created: ${rule.name}`);
                 created++;
             }
         }
 
-        console.log(`\n📊 Summary: ${created} created, ${skipped} skipped`);
-        console.log('✅ Escalation rules seeding complete!');
+        console.log(`\nSummary: ${created} created, ${skipped} skipped`);
+        console.log('Escalation rules seeding complete!');
 
         await mongoose.connection.close();
         process.exit(0);

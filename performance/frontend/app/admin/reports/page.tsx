@@ -10,18 +10,16 @@ import {
 } from '@mui/material';
 import {
   Assessment, TrendingUp, People, Feedback as FeedbackIcon,
-  Download, CalendarMonth, BarChart
+  Download
 } from '@mui/icons-material';
-import { useSession } from 'next-auth/react';
 import {
   BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Legend
+  PieChart, Pie, Cell, Legend
 } from 'recharts';
 
 const COLORS = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function ReportsPage() {
-  const { data: session, status } = useSession();
   const { isHRAdmin, isLoading: userLoading } = useUserContext();
   const { report: orgReport, isLoading: orgLoading } = useOrgSummaryReport();
   const { cycles } = useReviewCycles();
@@ -30,7 +28,7 @@ export default function ReportsPage() {
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
   const { report: cycleReport, isLoading: cycleLoading } = useReviewCycleReport(selectedCycleId);
 
-  if (status === 'loading' || userLoading || orgLoading) {
+  if (userLoading || orgLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
         <CircularProgress />

@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const { Issuer, generators } = require('openid-client');
 const { requireAuth } = require('../middleware/rbac');
+const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -251,6 +252,31 @@ router.get('/oidc/callback', async (req, res) => {
       req.session.currentOrganizationId = userinfo.organizations[0].id;
     }
 
+    // Verify subscription access for the current organization
+    if (req.session.currentOrganizationId) {
+      console.log('🔒 Verifying subscription access for org:', req.session.currentOrganizationId);
+      const subscriptionCheck = await verifySubscriptionAccess(
+        req.session.currentOrganizationId,
+        tokenSet.access_token
+      );
+
+      if (!subscriptionCheck.allowed) {
+        console.log('❌ Subscription access denied for payroll-management:', subscriptionCheck.reason);
+        // Clear session since we're not allowing access
+        req.session.destroy((err) => {
+          if (err) console.error('Session destroy error:', err);
+        });
+        // Redirect to IDP subscription required page
+        const subscriptionUrl = getSubscriptionRequiredUrl(
+          'payroll-management',
+          req.session.currentOrganizationId,
+          subscriptionCheck.reason
+        );
+        return res.redirect(subscriptionUrl);
+      }
+      console.log('✅ Subscription access verified for payroll-management');
+    }
+
     // Clear OIDC cookies
     res.clearCookie('oidc_verifier');
     res.clearCookie('oidc_state');
@@ -360,6 +386,24 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
         code: 'NOT_MEMBER'
       });
     }
+
+    // Verify subscription access for the target organization
+    console.log('🔒 Verifying subscription access for org:', organizationId);
+    const subscriptionCheck = await verifySubscriptionAccess(
+      organizationId,
+      user.accessToken
+    );
+
+    if (!subscriptionCheck.allowed) {
+      console.log('❌ Organization switch denied - no subscription:', subscriptionCheck.reason);
+      return res.status(403).json({
+        error: 'This organization does not have access to Payroll Management',
+        code: 'SUBSCRIPTION_REQUIRED',
+        reason: subscriptionCheck.reason,
+        subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.IDP_ISSUER_URL || 'http://localhost:4000'}/plans`
+      });
+    }
+    console.log('✅ Subscription access verified for payroll-management');
 
     // Switch the active organization - update both ID and full object
     req.session.currentOrganizationId = organizationId;

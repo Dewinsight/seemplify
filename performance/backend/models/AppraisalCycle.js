@@ -22,6 +22,18 @@ const appraisalCycleSchema = new mongoose.Schema({
     index: true
   },
 
+  // Scope of the appraisal cycle
+  scope: {
+    type: {
+      type: String,
+      enum: ['organization', 'department', 'team'],
+      default: 'organization'
+    },
+    targetIds: [{
+      type: String // IDs of departments or teams
+    }]
+  },
+
   // Cycle Type
   cycleType: {
     type: String,
@@ -172,7 +184,7 @@ appraisalCycleSchema.index({ organizationId: 1, status: 1 });
 appraisalCycleSchema.index({ organizationId: 1, periodStart: 1, periodEnd: 1 });
 
 // Default rating scale labels
-appraisalCycleSchema.pre('save', function(next) {
+appraisalCycleSchema.pre('save', function (next) {
   if (!this.ratingScale.labels || this.ratingScale.labels.length === 0) {
     this.ratingScale.labels = [
       { value: 1, label: 'Needs Improvement', description: 'Performance consistently below expectations', color: '#ef4444' },

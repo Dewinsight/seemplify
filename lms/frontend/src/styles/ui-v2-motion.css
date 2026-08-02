@@ -1,0 +1,57 @@
+@keyframes lms-fade-up {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.ui-skin-v2 .lms-home-section {
+	animation: lms-fade-up 0.32s ease both;
+}
+
+.ui-skin-v2 .lms-home-section:nth-of-type(2) {
+	animation-delay: 0.04s;
+}
+
+.ui-skin-v2 .lms-home-section:nth-of-type(3) {
+	animation-delay: 0.08s;
+}
+
+.ui-skin-v2 .lms-course-card,
+.ui-skin-v2 .lms-batch-card,
+.ui-skin-v2 .lms-job-card,
+.ui-skin-v2 .lms-sidebar-link,
+.ui-skin-v2 .lms-mobile-nav-button {
+	transition:
+		transform 0.22s ease,
+		box-shadow 0.22s ease,
+		border-color 0.22s ease,
+		background-color 0.22s ease,
+		color 0.22s ease;
+}
+
+.ui-skin-v2 .lms-course-card:hover,
+.ui-skin-v2 .lms-batch-card:hover,
+.ui-skin-v2 .lms-job-card:hover {
+	transform: translateY(-3px);
+	box-shadow: var(--v2-shadow);
+}
+
+.ui-skin-v2 .lms-home-section-link:hover {
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ui-skin-v2 *,
+	.ui-skin-v2 *::before,
+	.ui-skin-v2 *::after {
+		animation: none !important;
+		transition: none !important;
+		scroll-behavior: auto !important;
+	}
+}

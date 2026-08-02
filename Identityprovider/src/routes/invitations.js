@@ -2,15 +2,94 @@ import express from 'express'
 import { Organization } from '../models/Organization.js'
 import { OrganizationInvite } from '../models/OrganizationInvite.js'
 import { Account } from '../models/Account.js'
+import { Team } from '../models/Team.js'
 import { emailService } from '../services/emailService.js'
+import { getHubApps } from '../config/hubApps.js'
+import {
+  APP_ACCESS_MODE_SELECTED,
+  buildValidAppIdSet,
+  normalizeAppAccess
+} from '../utils/appAccess.js'
 import {
   requireAuth,
   requireOrganizationMember,
   requireOrganizationAdmin,
   rateLimit
 } from '../middleware/permissions.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
+
+function getHubAppMetadata() {
+  const apps = getHubApps().map(app => ({
+    appId: app.appId,
+    name: app.name
+  }))
+
+  return {
+    apps,
+    appIdSet: buildValidAppIdSet(apps),
+    appNameById: new Map(apps.map(app => [app.appId, app.name]))
+  }
+}
+
+function normalizeEmployeeId(value = '') {
+  return String(value || '').trim()
+}
+
+function getEmployeeIdKey(value = '') {
+  return normalizeEmployeeId(value).toLowerCase()
+}
+
+async function hasPendingInviteWithEmployeeId(organizationId, employeeId, excludeInvitationId = null) {
+  const employeeIdKey = getEmployeeIdKey(employeeId)
+  if (!employeeIdKey) return false
+
+  const pendingInvites = await OrganizationInvite.find({
+    organization: organizationId,
+    status: 'pending',
+    expiresAt: { $gt: new Date() }
+  }).select('employeeId')
+
+  return pendingInvites.some((invite) => {
+    if (excludeInvitationId && invite._id.toString() === excludeInvitationId.toString()) {
+      return false
+    }
+
+    return getEmployeeIdKey(invite.employeeId) === employeeIdKey
+  })
+}
+
+function parseInvitationAppAccess(reqBody = {}, validAppIds = null) {
+  const appAccessPayload = reqBody.appAccess && typeof reqBody.appAccess === 'object'
+    ? reqBody.appAccess
+    : {
+      mode: reqBody.appAccessMode,
+      appIds: reqBody.selectedAppIds
+    }
+
+  const normalized = normalizeAppAccess(appAccessPayload, validAppIds)
+
+  if (normalized.mode === APP_ACCESS_MODE_SELECTED && normalized.appIds.length === 0) {
+    throw new Error('Select at least one app when using selected apps access')
+  }
+
+  return normalized
+}
+
+function formatAppAccessHtml(appAccess, appNameById = new Map()) {
+  const normalized = normalizeAppAccess(appAccess)
+  if (normalized.mode !== APP_ACCESS_MODE_SELECTED) {
+    return '<p><strong>App Access:</strong> All apps available to your organization plan</p>'
+  }
+
+  const appNames = normalized.appIds.map(appId => appNameById.get(appId) || appId)
+  if (appNames.length === 0) {
+    return '<p><strong>App Access:</strong> Selected apps only</p>'
+  }
+
+  return `<p><strong>App Access:</strong> ${appNames.join(', ')}</p>`
+}
 
 // IMPORTANT: Order matters! More specific routes must come before generic ones
 // Routes for /api/invitations/* (invitation-specific operations)
@@ -41,10 +120,15 @@ router.get('/pending',
           description: inv.organization.description
         },
         role: inv.role,
+        designation: inv.designation || '',
+        employeeId: inv.employeeId || '',
+        department: inv.department || null,
+        team: inv.team || null,
         invitedBy: {
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
         },
+        appAccess: normalizeAppAccess(inv.appAccess),
         expiresAt: inv.expiresAt,
         createdAt: inv.createdAt
       })))
@@ -82,8 +166,8 @@ router.post('/:invitationId/resend',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        return res.status(403).json({ error: 'Admin or owner role required' })
+      if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
       }
 
       // Generate new token
@@ -96,6 +180,7 @@ router.post('/:invitationId/resend',
 
       // Resend email
       const inviteUrl = `${process.env.ISSUER_URL}/invitations/accept?token=${plainToken}`
+      const { appNameById } = getHubAppMetadata()
 
       try {
         await emailService.sendEmail({
@@ -105,6 +190,9 @@ router.post('/:invitationId/resend',
             <h2>Reminder: You've been invited to join ${invitation.organization.name}</h2>
             <p>This is a reminder that you have a pending invitation to join this organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${invitation.role}</p>
+            <p><strong>Designation:</strong> ${invitation.designation || 'Not specified'}</p>
+            ${invitation.employeeId ? `<p><strong>Employee ID:</strong> ${invitation.employeeId}</p>` : ''}
+            ${formatAppAccessHtml(invitation.appAccess, appNameById)}
             <p>Click the link below to accept the invitation:</p>
             <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
             <p style="color: #666; font-size: 14px; margin-top: 16px;">
@@ -148,8 +236,8 @@ router.delete('/:invitationId',
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
 
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        return res.status(403).json({ error: 'Admin or owner role required' })
+      if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
       }
 
       await OrganizationInvite.findByIdAndDelete(req.params.invitationId)
@@ -198,7 +286,25 @@ router.post('/accept/:invitationId',
 
       // Add user to organization
       const organization = await Organization.findById(invitation.organization._id)
-      await organization.addMember(req.user._id, invitation.role, invitation.invitedBy)
+      await organization.addMember(
+        req.user._id,
+        invitation.role,
+        invitation.invitedBy,
+        normalizeAppAccess(invitation.appAccess),
+        {
+          designation: invitation.designation,
+          employeeId: invitation.employeeId
+        }
+      )
+
+      if (invitation.team) {
+        const team = await Team.findById(invitation.team)
+        if (team) {
+          await team.addMember(req.user._id, 'member')
+        }
+      }
+
+      invalidateClaimsCache(req.user.sub)
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 
@@ -258,7 +364,25 @@ router.post('/:token/accept',
 
       // Add user to organization
       const organization = await Organization.findById(matchedInvite.organization._id)
-      await organization.addMember(req.user._id, matchedInvite.role, matchedInvite.invitedBy)
+      await organization.addMember(
+        req.user._id,
+        matchedInvite.role,
+        matchedInvite.invitedBy,
+        normalizeAppAccess(matchedInvite.appAccess),
+        {
+          designation: matchedInvite.designation,
+          employeeId: matchedInvite.employeeId
+        }
+      )
+
+      if (matchedInvite.team) {
+        const team = await Team.findById(matchedInvite.team)
+        if (team) {
+          await team.addMember(req.user._id, 'member')
+        }
+      }
+
+      invalidateClaimsCache(req.user.sub)
 
       console.log('✅ Invitation accepted:', req.user.email, 'joined', organization.name)
 
@@ -386,11 +510,16 @@ router.get('/:orgId/invitations',
         id: inv._id,
         email: inv.email,
         role: inv.role,
+        designation: inv.designation || '',
+        employeeId: inv.employeeId || '',
+        department: inv.department || null,
+        team: inv.team || null,
         status: inv.status,
         invitedBy: {
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
         },
+        appAccess: normalizeAppAccess(inv.appAccess),
         expiresAt: inv.expiresAt,
         createdAt: inv.createdAt
       })))
@@ -409,7 +538,6 @@ router.get('/:orgId/invitations',
 router.post('/:orgId/invitations',
   requireAuth,
   requireOrganizationMember,
-  requireOrganizationAdmin,
   rateLimit({ keyPrefix: 'invite', maxRequests: 50, windowMs: 60 * 60 * 1000 }), // 50 per hour
   async (req, res) => {
     try {
@@ -420,10 +548,50 @@ router.post('/:orgId/invitations',
         body: req.body
       })
 
-      const { email, role = 'recruiter' } = req.body
+      const canInvite = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
+      if (!canInvite) {
+        return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+      }
+
+      await req.organization.save()
+
+      const {
+        email,
+        role = 'recruiter',
+        designation: rawDesignation = '',
+        employeeId: rawEmployeeId = '',
+        department: requestedDepartmentId = null,
+        team: teamId = null
+      } = req.body
+      const { appIdSet, appNameById } = getHubAppMetadata()
+      const designation = String(rawDesignation || '').trim()
+      const employeeId = normalizeEmployeeId(rawEmployeeId)
 
       if (!email || !email.includes('@')) {
         return res.status(400).json({ error: 'Valid email is required' })
+      }
+
+      if (!designation) {
+        return res.status(400).json({ error: 'Designation is required' })
+      }
+
+      if (!teamId) {
+        return res.status(400).json({ error: 'Team is required' })
+      }
+
+      const invitedTeam = await Team.findById(teamId).select('name organization department').lean()
+      if (!invitedTeam || invitedTeam.organization.toString() !== req.params.orgId) {
+        return res.status(400).json({ error: 'Invalid team' })
+      }
+
+      const departmentId = invitedTeam.department?.toString() || null
+      const department = departmentId ? req.organization.getDepartmentById(departmentId) : null
+      if (!department) {
+        return res.status(400).json({ error: 'Selected team must belong to a valid department' })
+      }
+
+      if (requestedDepartmentId && requestedDepartmentId.toString() !== departmentId) {
+        return res.status(400).json({ error: 'Selected team does not belong to the selected department' })
       }
 
       const normalizedEmail = email.toLowerCase().trim()
@@ -432,6 +600,13 @@ router.post('/:orgId/invitations',
       const validRoles = ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` })
+      }
+
+      let appAccess
+      try {
+        appAccess = parseInvitationAppAccess(req.body, appIdSet)
+      } catch (validationError) {
+        return res.status(400).json({ error: validationError.message })
       }
 
       // Check if user is already a member
@@ -445,6 +620,16 @@ router.post('/:orgId/invitations',
         if (isMember) {
           return res.status(400).json({ error: 'User is already a member of this organization' })
         }
+      }
+
+      try {
+        req.organization.assertActiveEmployeeIdAvailable(employeeId)
+      } catch (validationError) {
+        return res.status(400).json({ error: validationError.message })
+      }
+
+      if (await hasPendingInviteWithEmployeeId(req.params.orgId, employeeId)) {
+        return res.status(400).json({ error: 'Employee ID is already pending on another invitation' })
       }
 
       // Check for existing pending invite
@@ -461,6 +646,11 @@ router.post('/:orgId/invitations',
         organization: req.params.orgId,
         email: normalizedEmail,
         role,
+        designation,
+        employeeId: employeeId || undefined,
+        department: departmentId,
+        team: teamId,
+        appAccess,
         tokenHash,
         invitedBy: req.user._id,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -477,6 +667,11 @@ router.post('/:orgId/invitations',
             <h2>You've been invited to join ${req.organization.name}</h2>
             <p><strong>${req.user.profile?.name || req.user.email}</strong> has invited you to join their organization on AIIN Identity.</p>
             <p><strong>Role:</strong> ${role}</p>
+            <p><strong>Designation:</strong> ${designation}</p>
+            ${employeeId ? `<p><strong>Employee ID:</strong> ${employeeId}</p>` : ''}
+            <p><strong>Department:</strong> ${department.name}</p>
+            <p><strong>Team:</strong> ${invitedTeam.name}</p>
+            ${formatAppAccessHtml(appAccess, appNameById)}
             <p>Click the link below to accept the invitation:</p>
             <p><a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #60a5fa, #a855f7); color: white; text-decoration: none; border-radius: 8px;">Accept Invitation</a></p>
             <p style="color: #666; font-size: 14px; margin-top: 16px;">
@@ -499,6 +694,11 @@ router.post('/:orgId/invitations',
         id: invitation._id,
         email: invitation.email,
         role: invitation.role,
+        designation: invitation.designation,
+        employeeId: invitation.employeeId || '',
+        department: invitation.department,
+        team: invitation.team,
+        appAccess: normalizeAppAccess(invitation.appAccess),
         expiresAt: invitation.expiresAt,
         message: 'Invitation sent successfully'
       })

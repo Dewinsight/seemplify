@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title><%= analytics.campaign.name %> - Campaign Analytics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .campaign-detail-grid { display:grid; grid-template-columns:minmax(0, 1.3fr) minmax(340px, .7fr); gap:20px; align-items:start; }
+    .campaign-detail-stack { display:grid; gap:20px; }
+    .campaign-detail-summary { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:16px; }
+    .campaign-detail-card { border:1px solid var(--border); border-radius:18px; background:var(--panel); padding:18px; }
+    .campaign-detail-sticky { position:sticky; top:20px; }
+    .campaign-detail-table { width:100%; border-collapse:collapse; }
+    .campaign-detail-table th, .campaign-detail-table td { padding:12px 14px; border-bottom:1px solid var(--border); text-align:left; }
+    .campaign-detail-table th { font-size:12px; text-transform:uppercase; color:var(--muted); letter-spacing:.08em; }
+    .campaign-detail-table tr { cursor:pointer; }
+    .campaign-detail-table tr:hover td { background:var(--hover-bg); }
+    .campaign-link-row { display:grid; gap:8px; }
+    .campaign-timeline { display:grid; gap:10px; }
+    .campaign-timeline-item { border-left:2px solid rgba(99,102,241,.35); padding-left:12px; }
+    .campaign-recipient-preview { border:1px solid var(--border); border-radius:16px; padding:16px; background:var(--panel-strong); max-height:380px; overflow:auto; }
+    @media (max-width: 1180px) { .campaign-detail-grid { grid-template-columns:1fr; } .campaign-detail-sticky { position:static; } }
+    @media (max-width: 1040px) { .campaign-detail-summary { grid-template-columns:repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 820px) { .campaign-detail-summary { grid-template-columns:1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'campaigns' }) %>
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1><%= analytics.campaign.name %></h1>
+          <div style="color:var(--muted); font-size:13px; margin-top:4px;"><%= analytics.campaign.status %> • <%= analytics.campaign.sender?.email || 'No sender configured' %> • <%= analytics.campaign.audience?.name || 'No audience' %></div>
+        </div>
+        <div class="admin-header-actions">
+          <a href="/admin/campaigns" class="btn btn-secondary">Back to Console</a>
+        </div>
+      </div>
+
+      <div class="campaign-detail-summary">
+        <div class="campaign-detail-card"><div class="admin-stat-label">Queued</div><div class="admin-stat-value"><%= analytics.campaign.metrics?.queued || 0 %></div></div>
+        <div class="campaign-detail-card"><div class="admin-stat-label">Sent</div><div class="admin-stat-value"><%= analytics.campaign.metrics?.sent || 0 %></div></div>
+        <div class="campaign-detail-card"><div class="admin-stat-label">Opened</div><div class="admin-stat-value"><%= analytics.campaign.metrics?.opened || 0 %></div></div>
+        <div class="campaign-detail-card"><div class="admin-stat-label">Clicked</div><div class="admin-stat-value"><%= analytics.campaign.metrics?.clicked || 0 %></div></div>
+        <div class="campaign-detail-card"><div class="admin-stat-label">Signups</div><div class="admin-stat-value"><%= analytics.campaign.metrics?.signups || 0 %></div></div>
+        <div class="campaign-detail-card"><div class="admin-stat-label">Demo Requests</div><div class="admin-stat-value"><%= analytics.campaign.metrics?.demoRequests || 0 %></div></div>
+      </div>
+
+      <div class="campaign-detail-grid" style="margin-top:20px;">
+        <section class="campaign-detail-stack">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Batches</div>
+                <div class="admin-card-subtitle">Every launched campaign is paced into smaller Brevo child campaigns.</div>
+              </div>
+            </div>
+            <div class="admin-table-container">
+              <table class="campaign-detail-table">
+                <thead>
+                  <tr>
+                    <th>Batch</th>
+                    <th>Status</th>
+                    <th>Recipients</th>
+                    <th>Scheduled</th>
+                    <th>Brevo Campaign</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% analytics.batches.forEach((batch) => { %>
+                    <tr>
+                      <td>#<%= batch.sequence %></td>
+                      <td><%= batch.status %></td>
+                      <td><%= batch.recipientCount %></td>
+                      <td><%= batch.scheduledAt ? new Date(batch.scheduledAt).toLocaleString() : 'N/A' %></td>
+                      <td><%= batch.brevo?.childCampaignId || 'Pending' %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Clicked URLs</div>
+                <div class="admin-card-subtitle">Top campaign links captured from Brevo webhook activity.</div>
+              </div>
+            </div>
+            <div class="campaign-link-row">
+              <% if (analytics.topLinks.length === 0) { %>
+                <div class="campaign-empty-state">No clicks recorded yet.</div>
+              <% } %>
+              <% analytics.topLinks.forEach((item) => { %>
+                <div class="campaign-detail-card">
+                  <div style="font-weight:700; color:var(--text);"><%= item.uniqueClicks %> clicks</div>
+                  <div class="admin-card-subtitle" style="word-break:break-all;"><%= item.url %></div>
+                  <div class="admin-card-subtitle">Last click: <%= item.lastClickedAt ? new Date(item.lastClickedAt).toLocaleString() : 'N/A' %></div>
+                </div>
+              <% }) %>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Recipients</div>
+                <div class="admin-card-subtitle">Click a recipient to inspect their delivery, engagement, and conversion timeline.</div>
+              </div>
+            </div>
+            <div class="admin-table-container">
+              <table class="campaign-detail-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Opened</th>
+                    <th>Clicked</th>
+                    <th>Company</th>
+                  </tr>
+                </thead>
+                <tbody id="recipientRows">
+                  <% analytics.recipients.forEach((recipient) => { %>
+                    <tr data-recipient-id="<%= recipient._id %>">
+                      <td><%= recipient.email %></td>
+                      <td><%= recipient.status %></td>
+                      <td><%= recipient.openedAt ? new Date(recipient.openedAt).toLocaleString() : 'No' %></td>
+                      <td><%= recipient.clickedAt ? new Date(recipient.clickedAt).toLocaleString() : 'No' %></td>
+                      <td><%= recipient.companyName || 'N/A' %></td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <aside class="campaign-detail-sticky">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Recipient Drilldown</div>
+                <div class="admin-card-subtitle">Per-recipient event timeline, website visits, and rendered personalization preview.</div>
+              </div>
+            </div>
+            <div id="recipientDrilldown" class="campaign-empty-state">Select a recipient from the table to inspect the message timeline.</div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const campaignId = <%- JSON.stringify(String(analytics.campaign._id)) %>;
+    const rows = document.getElementById('recipientRows');
+    const drilldown = document.getElementById('recipientDrilldown');
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    rows.addEventListener('click', async (event) => {
+      const row = event.target.closest('[data-recipient-id]');
+      if (!row) return;
+
+      const recipientId = row.getAttribute('data-recipient-id');
+      drilldown.innerHTML = '<div class="admin-card-subtitle">Loading recipient analytics...</div>';
+
+      const response = await fetch(`/api/admin/campaigns/${encodeURIComponent(campaignId)}/recipients/${encodeURIComponent(recipientId)}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        drilldown.innerHTML = `<div class="campaign-empty-state">${escapeHtml(payload.error || 'Failed to load recipient analytics.')}</div>`;
+        return;
+      }
+
+      const recipient = payload.recipient || {};
+      const visits = Array.isArray(payload.visits) ? payload.visits : [];
+      const timeline = Array.isArray(payload.timeline) ? payload.timeline : [];
+      const conversion = recipient.conversion || null;
+
+      drilldown.innerHTML = `
+        <div style="display:grid; gap:16px;">
+          <div>
+            <div style="font-weight:700; color:var(--text);">${escapeHtml(recipient.email || '')}</div>
+            <div class="admin-card-subtitle">${escapeHtml(recipient.companyName || 'No company')} • ${escapeHtml(recipient.status || '')}</div>
+          </div>
+          <div class="campaign-detail-card">
+            <div class="admin-card-title" style="font-size:14px;">Rendered personalization</div>
+            <div class="campaign-recipient-preview" style="margin-top:12px;">
+              <strong>Opening</strong>
+              <div style="margin:8px 0 16px; color:var(--text);">${escapeHtml(recipient.personalization?.customOpening || 'N/A')}</div>
+              <strong>Benefits</strong>
+              <div style="margin-top:8px; color:var(--text);">${escapeHtml(recipient.personalization?.customBenefits || 'N/A')}</div>
+            </div>
+          </div>
+          <div class="campaign-detail-card">
+            <div class="admin-card-title" style="font-size:14px;">Timeline</div>
+            <div class="campaign-timeline" style="margin-top:12px;">
+              ${timeline.length === 0 ? '<div class="admin-card-subtitle">No events recorded yet.</div>' : timeline.map((item) => `
+                <div class="campaign-timeline-item">
+                  <div style="font-weight:700; color:var(--text);">${escapeHtml(item.label)}</div>
+                  <div class="admin-card-subtitle">${item.at ? new Date(item.at).toLocaleString() : 'N/A'}</div>
+                  ${item.url ? `<div class="admin-card-subtitle" style="word-break:break-all;">${escapeHtml(item.url)}</div>` : ''}
+                  ${item.reason ? `<div class="admin-card-subtitle">${escapeHtml(item.reason)}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="campaign-detail-card">
+            <div class="admin-card-title" style="font-size:14px;">Conversion</div>
+            <div style="margin-top:12px;">
+              ${!conversion || !conversion.type ? '<div class="admin-card-subtitle">No attributed conversion recorded for this recipient yet.</div>' : `
+                <div style="font-weight:700; color:var(--text);">${escapeHtml(conversion.type)}</div>
+                <div class="admin-card-subtitle">${conversion.convertedAt ? new Date(conversion.convertedAt).toLocaleString() : 'N/A'}</div>
+                ${conversion.visitorId ? `<div class="admin-card-subtitle">Visitor: ${escapeHtml(conversion.visitorId)}</div>` : ''}
+              `}
+            </div>
+          </div>
+          <div class="campaign-detail-card">
+            <div class="admin-card-title" style="font-size:14px;">Attributed visits</div>
+            <div class="campaign-timeline" style="margin-top:12px;">
+              ${visits.length === 0 ? '<div class="admin-card-subtitle">No attributed website or conversion events yet.</div>' : visits.map((visit) => `
+                <div class="campaign-timeline-item">
+                  <div style="font-weight:700; color:var(--text);">${escapeHtml(visit.eventType || '')}</div>
+                  <div class="admin-card-subtitle">${visit.occurredAt ? new Date(visit.occurredAt).toLocaleString() : 'N/A'}</div>
+                  <div class="admin-card-subtitle">${escapeHtml(visit.pageUrl || visit.path || '')}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

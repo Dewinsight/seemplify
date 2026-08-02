@@ -1,3 +1,38 @@
+function getOrganizationTeams(userinfo = {}, organizationId) {
+  return (userinfo.teams || []).filter(team => team.organizationId === organizationId);
+}
+
+function getDepartmentHeadScope(userinfo = {}, organizationId) {
+  const organization = (userinfo.organizations || []).find(org => org.id === organizationId);
+  const headedDepartments = Array.isArray(organization?.departmentHeadPermissions)
+    ? organization.departmentHeadPermissions.map((department) => String(department.id)).filter(Boolean)
+    : [];
+
+  if (headedDepartments.length === 0) {
+    return {
+      headedDepartmentIds: [],
+      directReports: [],
+      teams: [],
+    };
+  }
+
+  const scopedTeams = getOrganizationTeams(userinfo, organizationId).filter(team =>
+    team.departmentId && headedDepartments.includes(String(team.departmentId))
+  );
+
+  const directReports = new Set();
+  scopedTeams.forEach((team) => {
+    (team.directReports || []).forEach((id) => directReports.add(String(id)));
+    (team.directReportAccountIds || []).forEach((id) => directReports.add(String(id)));
+  });
+
+  return {
+    headedDepartmentIds: headedDepartments,
+    directReports: Array.from(directReports),
+    teams: scopedTeams,
+  };
+}
+
 // Middleware to require and validate organization selection
 
 const requireOrganization = async (req, res, next) => {
@@ -43,9 +78,10 @@ const requireOrganization = async (req, res, next) => {
     req.organizationRole = userOrg.role;
     req.organizationName = userOrg.name;
     req.organizationPermissions = userOrg.appPermissions?.['leave-management'] || [];
-
-    // Get team-based permissions (from line_manager role)
-    req.teamPermissions = userOrg.teamPermissions || [];
+    req.teamPermissionRows = Array.isArray(userOrg.teamPermissions) ? userOrg.teamPermissions : [];
+    req.teamPermissions = req.teamPermissionRows.flatMap(row => row.permissions || []);
+    req.departmentHeadPermissions = Array.isArray(userOrg.departmentHeadPermissions) ? userOrg.departmentHeadPermissions : [];
+    req.departmentHeadScope = getDepartmentHeadScope(req.user?.userinfo || req.user, orgId);
 
     // Persist selection in session
     if (req.session) {
@@ -77,6 +113,7 @@ const requireLeavePermission = (permission) => {
       const permissions = req.organizationPermissions || [];
       const teamPermissions = req.teamPermissions || [];
       const role = req.organizationRole;
+      const hasDepartmentHeadAccess = (req.departmentHeadPermissions || []).length > 0;
 
       // Owner has all permissions
       if (role === 'owner' || permissions.includes('*')) {
@@ -108,6 +145,13 @@ const requireLeavePermission = (permission) => {
       // Check team-based permissions (line_manager role)
       if (teamPermissions.includes(permission)) {
         req.hasTeamPermission = true;
+        req.scopedEmployeeIds = req.teamPermissionRows.flatMap(row => row.directReports || row.directReportAccountIds || []);
+        return next();
+      }
+
+      if (hasDepartmentHeadAccess && ['approve_leaves', 'view_team_leaves', 'view_direct_reports_leaves'].includes(permission)) {
+        req.hasDepartmentHeadAccess = true;
+        req.scopedEmployeeIds = req.departmentHeadScope.directReports || [];
         return next();
       }
 
@@ -157,6 +201,16 @@ const canApproveLeaveForUser = async (approverId, requesterId, organizationId, u
         roleType: team.role,
       };
     }
+  }
+
+  const departmentHeadScope = getDepartmentHeadScope(userinfo, organizationId);
+  if (departmentHeadScope.directReports.includes(String(requesterId))) {
+    return {
+      canApprove: true,
+      reason: 'department_head',
+      roleType: 'department_head',
+      departmentIds: departmentHeadScope.headedDepartmentIds,
+    };
   }
 
   // Check parent team hierarchy

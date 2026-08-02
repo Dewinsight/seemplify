@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+	<meta http-equiv="Pragma" content="no-cache">
+	<meta http-equiv="Expires" content="0">
+	<title>Stanbic IBTC STEM Series</title>
+	<link rel="icon" href="/assets/lms/images/stanbic/stanbic-ibtc-icon-official.png" type="image/png">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+	<style>
+		.page-header,
+		.breadcrumb-container,
+		footer,
+		.navbar,
+		.web-footer {
+			display: none !important;
+		}
+
+		:root {
+			--stanbic-blue: #003f9e;
+			--stanbic-navy: #001a4d;
+			--stanbic-sky: #00a1e4;
+			--stanbic-gold: #f6b21a;
+			--stanbic-bg: #eef4fb;
+			--stanbic-ink: #08224a;
+			--stanbic-muted: #64748b;
+			--stanbic-border: #ccd8e8;
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			min-height: 100vh;
+			width: 100%;
+			max-width: 100%;
+			overflow-x: hidden;
+			background: var(--stanbic-bg);
+			color: var(--stanbic-ink);
+			font-family: "Nunito", "Baloo 2", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+		}
+
+		.stanbic-login-page {
+			min-height: 100vh;
+			width: 100%;
+			max-width: 100%;
+			display: grid;
+			grid-template-columns: minmax(0, 1.2fr) minmax(22rem, 0.8fr);
+			background: var(--stanbic-bg);
+		}
+
+		.stanbic-hero {
+			position: relative;
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+			justify-content: space-between;
+			padding: clamp(1.5rem, 4vw, 4.5rem);
+			background:
+				linear-gradient(90deg, rgba(0, 20, 58, 0.86), rgba(0, 20, 58, 0.48) 54%, rgba(0, 20, 58, 0.18)),
+				url("/assets/lms/images/stanbic/stanbic-stem-jss-bg-ai.png") center / cover no-repeat;
+			color: #ffffff;
+			overflow: hidden;
+		}
+
+		.stanbic-brand {
+			position: relative;
+			z-index: 1;
+		}
+
+		.stanbic-brand img {
+			display: block;
+			width: 4.4rem;
+			height: 5.05rem;
+			object-fit: contain;
+			flex: 0 0 auto;
+		}
+
+		.stanbic-icon-mark {
+			display: inline-flex;
+			align-items: center;
+		}
+
+		.stanbic-logo-mark {
+			display: block;
+			width: min(17rem, 100%);
+			height: auto;
+			object-fit: contain;
+		}
+
+		.mobile-brand .stanbic-logo-mark {
+			width: min(15.5rem, 100%);
+		}
+
+		.stanbic-hero-copy {
+			position: relative;
+			z-index: 1;
+			max-width: 46rem;
+			padding-bottom: 2rem;
+		}
+
+		.stanbic-kicker {
+			margin: 0 0 0.85rem;
+			color: #dceaff;
+			font-size: 0.9rem;
+			font-weight: 800;
+			text-transform: uppercase;
+		}
+
+		.stanbic-hero h1 {
+			margin: 0;
+			max-width: 46rem;
+			font-size: clamp(2.35rem, 4.1vw, 4.35rem);
+			line-height: 1.04;
+			font-weight: 850;
+			letter-spacing: 0;
+			font-family: "Fredoka One", "Baloo 2", "Nunito", system-ui, sans-serif;
+		}
+
+		.stanbic-hero h1 span {
+			display: block;
+		}
+
+		.stanbic-hero p {
+			max-width: 39rem;
+			margin: 1.25rem 0 0;
+			color: #e5efff;
+			font-size: clamp(1rem, 1.6vw, 1.25rem);
+			line-height: 1.55;
+		}
+
+		.stanbic-levels {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.6rem;
+			margin: 1.65rem 0 0;
+		}
+
+		.stanbic-levels span {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2rem;
+			border: 1px solid rgba(255, 255, 255, 0.32);
+			border-radius: 0.5rem;
+			background: rgba(255, 255, 255, 0.12);
+			padding: 0.4rem 0.7rem;
+			color: #ffffff;
+			font-size: 0.86rem;
+			font-weight: 700;
+		}
+
+		.hero-start-btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			margin-top: 1.75rem;
+			min-height: 2.9rem;
+			padding: 0.75rem 1rem;
+			border: 0;
+			border-radius: 0.5rem;
+			background: var(--stanbic-gold);
+			color: #071f48;
+			font: inherit;
+			font-weight: 800;
+			text-decoration: none;
+			cursor: pointer;
+			box-shadow: 0 14px 28px rgba(0, 16, 49, 0.24);
+		}
+
+		.login-section {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 100%;
+			max-width: 100%;
+			min-width: 0;
+			min-height: 100vh;
+			padding: clamp(1rem, 4vw, 3rem);
+			background: #ffffff;
+		}
+
+		.login-container {
+			width: 100%;
+			min-width: 0;
+			max-width: 27rem;
+		}
+
+		.mobile-brand {
+			display: none;
+			margin-bottom: 1.5rem;
+		}
+
+		.mobile-brand img {
+			display: block;
+			width: 3.6rem;
+			height: 4.1rem;
+			object-fit: contain;
+			flex: 0 0 auto;
+		}
+
+		.login-card {
+			width: 100%;
+			min-width: 0;
+			border: 1px solid var(--stanbic-border);
+			border-radius: 0.5rem;
+			background: #ffffff;
+			padding: clamp(1.25rem, 3vw, 2rem);
+			box-shadow: 0 18px 38px rgba(8, 34, 74, 0.12);
+		}
+
+		.card-header {
+			margin-bottom: 1.5rem;
+		}
+
+		.card-header img {
+			display: block;
+			width: 3rem;
+			height: 3.45rem;
+			object-fit: contain;
+			margin-bottom: 1.4rem;
+		}
+
+		.mobile-brand .stanbic-logo-mark,
+		.card-header .stanbic-logo-mark {
+			width: min(17rem, 100%);
+			height: auto;
+			object-fit: contain;
+		}
+
+		.card-title {
+			margin: 0;
+			color: var(--stanbic-ink);
+			font-size: 1.65rem;
+			font-weight: 850;
+			line-height: 1.12;
+			letter-spacing: 0;
+			overflow-wrap: anywhere;
+			font-family: "Fredoka One", "Baloo 2", "Nunito", system-ui, sans-serif;
+		}
+
+		.card-description {
+			margin: 0.5rem 0 0;
+			color: var(--stanbic-muted);
+			font-size: 0.98rem;
+			line-height: 1.5;
+			overflow-wrap: anywhere;
+		}
+
+		.email-login-form,
+		#loginFormFields,
+		#forgotPasswordFormFields,
+		#signupFormFields {
+			display: flex;
+			flex-direction: column;
+			gap: 1rem;
+		}
+
+		.form-group {
+			margin: 0;
+		}
+
+		.form-group input {
+			width: 100%;
+			min-height: 3rem;
+			border: 1px solid var(--stanbic-border);
+			border-radius: 0.5rem;
+			background: #f8fbff;
+			color: var(--stanbic-ink);
+			padding: 0.8rem 0.9rem;
+			font: inherit;
+			font-size: 0.95rem;
+			outline: none;
+			transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+		}
+
+		.form-group input::placeholder {
+			color: #7b8da5;
+		}
+
+		.form-group input:focus {
+			border-color: var(--stanbic-blue);
+			background: #ffffff;
+			box-shadow: 0 0 0 3px rgba(0, 63, 158, 0.14);
+		}
+
+		.form-links {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 0.75rem;
+			flex-wrap: wrap;
+		}
+
+		.form-links .link-option,
+		.signup-prompt .signup-link {
+			color: var(--stanbic-blue);
+			font-size: 0.86rem;
+			font-weight: 700;
+			text-decoration: none;
+		}
+
+		.form-links .link-option:hover,
+		.signup-prompt .signup-link:hover {
+			text-decoration: underline;
+		}
+
+		.form-links .link-sep {
+			display: none;
+		}
+
+		.email-login-btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 100%;
+			min-height: 3rem;
+			border: 0;
+			border-radius: 0.5rem;
+			background: var(--stanbic-blue);
+			color: #ffffff;
+			font: inherit;
+			font-size: 0.98rem;
+			font-weight: 800;
+			cursor: pointer;
+			transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+		}
+
+		.email-login-btn:hover {
+			background: #002f77;
+			box-shadow: 0 12px 24px rgba(0, 63, 158, 0.22);
+			transform: translateY(-1px);
+		}
+
+		.email-login-btn:disabled {
+			opacity: 0.65;
+			cursor: not-allowed;
+			transform: none;
+			box-shadow: none;
+		}
+
+		.login-error {
+			display: none;
+			border: 1px solid rgba(185, 28, 28, 0.28);
+			border-radius: 0.5rem;
+			background: #fff1f2;
+			color: #991b1b;
+			padding: 0.75rem 0.85rem;
+			font-size: 0.9rem;
+			line-height: 1.45;
+		}
+
+		.signup-prompt {
+			margin: 0;
+			color: var(--stanbic-muted);
+			font-size: 0.88rem;
+			line-height: 1.45;
+			text-align: center;
+		}
+
+		.security-notice {
+			margin-top: 1rem;
+			color: var(--stanbic-muted);
+			font-size: 0.82rem;
+			line-height: 1.45;
+			text-align: center;
+		}
+
+		@media (max-width: 980px) {
+			.stanbic-login-page {
+				grid-template-columns: 1fr;
+			}
+
+			.stanbic-hero {
+				min-height: 45vh;
+			}
+
+			.login-section {
+				min-height: auto;
+			}
+		}
+
+		@media (max-width: 640px) {
+			.stanbic-hero {
+				display: none;
+			}
+
+			.mobile-brand {
+				display: block;
+				margin-left: 0;
+				margin-right: auto;
+			}
+
+			.login-section {
+				display: block;
+				min-height: 100vh;
+				align-items: flex-start;
+				padding: 1.25rem 0.75rem;
+				overflow-x: hidden;
+			}
+
+			.login-container {
+				width: 100%;
+				max-width: 22.25rem;
+				margin-left: 0;
+				margin-right: auto;
+				overflow-x: hidden;
+			}
+
+			.login-card {
+				width: 100%;
+				max-width: 100%;
+				padding: 1.15rem;
+				box-shadow: none;
+			}
+
+			.card-header img {
+				width: 2.75rem;
+				height: 3.15rem;
+				margin-bottom: 1rem;
+			}
+
+			.mobile-brand .stanbic-logo-mark,
+			.card-header .stanbic-logo-mark {
+				width: min(13.25rem, 100%);
+				height: auto;
+			}
+
+			.card-title {
+				max-width: 100%;
+				display: block;
+				font-size: 1rem;
+				line-height: 1.16;
+				white-space: normal;
+				word-break: break-word;
+				overflow-wrap: anywhere;
+			}
+
+			.card-description {
+				max-width: 100%;
+				font-size: 0.84rem;
+				overflow-wrap: break-word;
+			}
+
+			.form-links {
+				align-items: flex-start;
+				flex-direction: column;
+				gap: 0.45rem;
+			}
+
+			.security-notice {
+				padding: 0 0.25rem;
+				overflow-wrap: anywhere;
+			}
+		}
+	</style>
+</head>
+<body>
+	<main class="stanbic-login-page">
+		<section class="stanbic-hero" aria-label="Stanbic IBTC STEM Series">
+			<div class="stanbic-brand">
+				<div class="stanbic-icon-mark" aria-label="Stanbic IBTC">
+					<img src="/assets/lms/images/stanbic/stanbic-ibtc-icon-official.png" alt="">
+				</div>
+			</div>
+			<div class="stanbic-hero-copy">
+				<p class="stanbic-kicker">AI Learning Videos and Quizzes</p>
+				<h1><span>Welcome to the</span><span>Stanbic IBTC STEM Series</span></h1>
+				<p>Choose your school level, watch the AI learning videos, and complete the quizzes built for the Stanbic IBTC STEM initiative.</p>
+				<div class="stanbic-levels" aria-label="Learning levels">
+					<span>Primary</span>
+					<span>JSS</span>
+					<span>Senior Secondary</span>
+				</div>
+				<a class="hero-start-btn" href="#login-card" id="startLearningBtn">Start Learning</a>
+			</div>
+		</section>
+
+		<section class="login-section">
+			<div class="login-container">
+				<div class="mobile-brand">
+					<img
+						class="stanbic-logo-mark"
+						src="/assets/lms/images/stanbic/stanbic-ibtc-logo-official.png"
+						alt="Stanbic IBTC"
+					>
+				</div>
+
+				<div class="login-card" id="login-card">
+					<div class="card-header">
+						<img
+							class="stanbic-logo-mark"
+							src="/assets/lms/images/stanbic/stanbic-ibtc-logo-official.png"
+							alt="Stanbic IBTC"
+						>
+						<h2 class="card-title">Welcome to the Stanbic IBTC STEM Series</h2>
+						<p class="card-description">Sign in to start with Primary, JSS, or Senior Secondary learning.</p>
+					</div>
+
+					<form id="emailLoginForm" class="email-login-form" novalidate>
+						<div id="loginFormFields">
+							<div class="form-group">
+								<input type="text" id="email" name="usr" placeholder="Email or username" required autocomplete="username">
+							</div>
+							<div class="form-group" id="passwordGroup">
+								<input type="password" id="password" name="pwd" placeholder="Password" autocomplete="current-password">
+							</div>
+							<div class="form-links">
+								{% if login_with_email_link %}
+								<a href="#" class="link-option" id="toggleEmailLink">Email me a login link</a>
+								<span class="link-sep">|</span>
+								{% endif %}
+								<a href="#" class="link-option" id="forgotPasswordLink">Forgot password?</a>
+							</div>
+							<button type="submit" class="email-login-btn" id="emailLoginBtn"><span>Start Learning</span></button>
+							{% if signup_enabled %}
+							<p class="signup-prompt">Need an account? <a href="#" class="signup-link" id="showSignupForm">Sign up</a></p>
+							{% endif %}
+						</div>
+						<div id="forgotPasswordFormFields" style="display:none;">
+							<div class="form-group">
+								<input type="email" id="forgotEmail" placeholder="Enter your email" autocomplete="email">
+							</div>
+							<button type="button" class="email-login-btn" id="sendResetBtn"><span>Send reset link</span></button>
+							<p class="signup-prompt"><a href="#" class="signup-link" id="showLoginFromForgot">Back to sign in</a></p>
+						</div>
+						{% if signup_enabled %}
+						<div id="signupFormFields" style="display:none;">
+							<div class="form-group">
+								<input type="text" id="signup_fullname" placeholder="Full name" required>
+							</div>
+							<div class="form-group">
+								<input type="email" id="signup_email" placeholder="Email" required>
+							</div>
+							<button type="button" class="email-login-btn" id="signupBtn"><span>Sign up</span></button>
+							<p class="signup-prompt">Have an account? <a href="#" class="signup-link" id="showLoginForm">Sign in</a></p>
+						</div>
+						{% endif %}
+						<div id="loginError" class="login-error"></div>
+					</form>
+				</div>
+
+				<div class="security-notice">Access is limited to authorized Stanbic IBTC STEM learners and reviewers.</div>
+			</div>
+		</section>
+	</main>
+
+	<script>
+	(function() {
+		const loginWithEmailLink = {{ 'true' if login_with_email_link else 'false' }};
+		const searchParams = new URLSearchParams(window.location.search);
+		let useEmailLinkMode = false;
+
+		function parseApiResponse(response, text) {
+			try {
+				return JSON.parse(text);
+			} catch (_) {
+				return { exc: 1, message: response.ok ? 'Unexpected response' : 'Server error. Please try again or contact support.' };
+			}
+		}
+
+		function extractServerMessage(data, fallback) {
+			if (!data) return fallback;
+
+			if (typeof data.message === 'string' && data.message.trim()) {
+				return data.message.trim();
+			}
+
+			if (Array.isArray(data.message)) {
+				if (typeof data.message[1] === 'string' && data.message[1].trim()) {
+					return data.message[1].trim();
+				}
+				if (typeof data.message[0] === 'string' && data.message[0].trim()) {
+					return data.message[0].trim();
+				}
+			}
+
+			if (typeof data._server_messages === 'string' && data._server_messages) {
+				try {
+					const serverMessages = JSON.parse(data._server_messages);
+					if (Array.isArray(serverMessages)) {
+						for (const rawMessage of serverMessages) {
+							if (typeof rawMessage !== 'string') continue;
+							try {
+								const parsed = JSON.parse(rawMessage);
+								if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
+									return parsed.message.trim();
+								}
+							} catch (_) {
+								if (rawMessage.trim()) return rawMessage.trim();
+							}
+						}
+					}
+				} catch (_) {
+					// ignore parse errors
+				}
+			}
+
+			if (typeof data.exception === 'string' && data.exception.includes(':')) {
+				const parts = data.exception.split(':');
+				const parsedMessage = parts.slice(1).join(':').trim();
+				if (parsedMessage) return parsedMessage;
+			}
+
+			return fallback;
+		}
+
+		function setMessageState(errorDiv, message, success) {
+			if (success) {
+				errorDiv.style.background = '#ecfdf5';
+				errorDiv.style.borderColor = 'rgba(5, 150, 105, 0.28)';
+				errorDiv.style.color = '#065f46';
+			} else {
+				errorDiv.style.background = '';
+				errorDiv.style.borderColor = '';
+				errorDiv.style.color = '';
+			}
+			errorDiv.textContent = message;
+			errorDiv.style.display = 'block';
+		}
+
+		function getTupleStatus(data) {
+			if (!data || !Array.isArray(data.message)) return null;
+			const rawStatus = data.message[0];
+			if (rawStatus === undefined || rawStatus === null || rawStatus === '') return null;
+			const status = Number(rawStatus);
+			return Number.isNaN(status) ? null : status;
+		}
+
+		function sanitizeRedirect(target) {
+			if (!target || typeof target !== 'string') return '';
+
+			let value = target.trim();
+			if (!value) return '';
+
+			if (/^https?:\/\//i.test(value) || value.startsWith('//')) {
+				return '';
+			}
+
+			if (!value.startsWith('/')) {
+				value = '/' + value;
+			}
+
+			if (/^\/(app|desk)(\/|$)/i.test(value)) {
+				return '';
+			}
+
+			return value;
+		}
+
+		function getRequestedRedirect(data) {
+			if (data && typeof data.redirect_to === 'string' && data.redirect_to.trim()) {
+				return data.redirect_to.trim();
+			}
+			if (data && typeof data.redirect_to_url === 'string' && data.redirect_to_url.trim()) {
+				return data.redirect_to_url.trim();
+			}
+			return searchParams.get('redirect_to') || searchParams.get('redirect-to') || '';
+		}
+
+		async function postForm(url, formData) {
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams(formData)
+			});
+			const text = await response.text();
+			return { response, data: parseApiResponse(response, text) };
+		}
+
+		const startLearningBtn = document.getElementById('startLearningBtn');
+		if (startLearningBtn) {
+			startLearningBtn.addEventListener('click', function(event) {
+				event.preventDefault();
+				document.getElementById('login-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+				setTimeout(() => document.getElementById('email').focus(), 220);
+			});
+		}
+
+		document.getElementById('emailLoginForm').addEventListener('submit', async function(event) {
+			event.preventDefault();
+			const btn = document.getElementById('emailLoginBtn');
+			const btnText = btn.querySelector('span');
+			const errorDiv = document.getElementById('loginError');
+			const email = document.getElementById('email').value.trim();
+			const password = document.getElementById('password').value;
+
+			if (!email) {
+				errorDiv.textContent = 'Please enter your email.';
+				errorDiv.style.display = 'block';
+				return;
+			}
+
+			btn.disabled = true;
+			errorDiv.style.display = 'none';
+
+			if (useEmailLinkMode && loginWithEmailLink) {
+				btnText.textContent = 'Sending link...';
+				try {
+					const { response, data } = await postForm('/api/method/frappe.www.login.send_login_link', {
+						email: email
+					});
+					if (response.ok && !data.exc) {
+						const successMessage = extractServerMessage(data, 'Check your email for the login link.');
+						setMessageState(errorDiv, successMessage, true);
+					} else {
+						throw new Error(extractServerMessage(data, 'Failed to send login link.'));
+					}
+				} catch (err) {
+					setMessageState(errorDiv, err.message || 'Failed to send login link.', false);
+				}
+				btn.disabled = false;
+				btnText.textContent = 'Start Learning';
+				return;
+			}
+
+			if (!password) {
+				errorDiv.textContent = 'Please enter your password.';
+				errorDiv.style.display = 'block';
+				btn.disabled = false;
+				btnText.textContent = 'Start Learning';
+				return;
+			}
+
+			btnText.textContent = 'Signing in...';
+			try {
+				const { response, data } = await postForm('/api/method/login', {
+					usr: email,
+					pwd: password
+				});
+				if (response.ok && (data.message === 'Logged In' || data.message === 'No App')) {
+					const requestedRedirect = sanitizeRedirect(getRequestedRedirect(data));
+					const redirectTo = requestedRedirect && !/^\/lms\/?$/i.test(requestedRedirect)
+						? requestedRedirect
+						: '/lms/programs';
+					window.location.href = redirectTo;
+				} else {
+					throw new Error(extractServerMessage(data, 'Invalid email or password'));
+				}
+			} catch (error) {
+				setMessageState(errorDiv, error.message || 'Login failed. Please try again.', false);
+				btn.disabled = false;
+				btnText.textContent = 'Start Learning';
+			}
+		});
+
+		{% if login_with_email_link %}
+		document.getElementById('toggleEmailLink').addEventListener('click', function(e) {
+			e.preventDefault();
+			useEmailLinkMode = !useEmailLinkMode;
+			const pwGroup = document.getElementById('passwordGroup');
+			const pwInput = document.getElementById('password');
+			const linkEl = document.getElementById('toggleEmailLink');
+			if (useEmailLinkMode) {
+				pwGroup.style.display = 'none';
+				pwInput.removeAttribute('required');
+				pwInput.value = '';
+				linkEl.textContent = 'Use password instead';
+			} else {
+				pwGroup.style.display = '';
+				pwInput.setAttribute('required', 'required');
+				linkEl.textContent = 'Email me a login link';
+			}
+		});
+		{% endif %}
+
+		const loginFormFields = document.getElementById('loginFormFields');
+		const forgotPasswordFormFields = document.getElementById('forgotPasswordFormFields');
+		const errorDiv = document.getElementById('loginError');
+
+		document.getElementById('forgotPasswordLink').addEventListener('click', function(e) {
+			e.preventDefault();
+			loginFormFields.style.display = 'none';
+			forgotPasswordFormFields.style.display = 'flex';
+			document.getElementById('forgotEmail').value = document.getElementById('email').value.trim();
+			document.getElementById('forgotEmail').focus();
+			errorDiv.style.display = 'none';
+		});
+
+		document.getElementById('showLoginFromForgot').addEventListener('click', function(e) {
+			e.preventDefault();
+			forgotPasswordFormFields.style.display = 'none';
+			loginFormFields.style.display = 'flex';
+			errorDiv.style.display = 'none';
+		});
+
+		document.getElementById('sendResetBtn').addEventListener('click', async function() {
+			const email = document.getElementById('forgotEmail').value.trim();
+			if (!email) {
+				errorDiv.textContent = 'Please enter your email.';
+				errorDiv.style.display = 'block';
+				return;
+			}
+			const btn = document.getElementById('sendResetBtn');
+			btn.disabled = true;
+			btn.querySelector('span').textContent = 'Sending...';
+			errorDiv.style.display = 'none';
+			try {
+				const { response, data } = await postForm('/api/method/lms.lms.user.reset_password', {
+					user: email
+				});
+				if (response.ok && !data.exc) {
+					const successMessage = extractServerMessage(data, 'Check your email for the password reset link.');
+					setMessageState(errorDiv, successMessage, true);
+				} else {
+					throw new Error(extractServerMessage(data, 'Failed to send reset link.'));
+				}
+			} catch (err) {
+				setMessageState(errorDiv, err.message || 'Failed to send reset link.', false);
+			}
+			btn.disabled = false;
+			btn.querySelector('span').textContent = 'Send reset link';
+		});
+
+		{% if signup_enabled %}
+		const signupFormFields = document.getElementById('signupFormFields');
+		document.getElementById('showSignupForm').addEventListener('click', function(e) {
+			e.preventDefault();
+			loginFormFields.style.display = 'none';
+			signupFormFields.style.display = 'flex';
+			errorDiv.style.display = 'none';
+		});
+		document.getElementById('showLoginForm').addEventListener('click', function(e) {
+			e.preventDefault();
+			signupFormFields.style.display = 'none';
+			loginFormFields.style.display = 'flex';
+			errorDiv.style.display = 'none';
+		});
+		document.getElementById('signupBtn').addEventListener('click', async function(e) {
+			e.preventDefault();
+			const fullName = document.getElementById('signup_fullname').value.trim();
+			const signupEmail = document.getElementById('signup_email').value.trim();
+			if (!fullName || !signupEmail) {
+				errorDiv.textContent = 'Please enter your full name and email.';
+				errorDiv.style.display = 'block';
+				return;
+			}
+			const btn = document.getElementById('signupBtn');
+			btn.disabled = true;
+			btn.querySelector('span').textContent = 'Signing up...';
+			errorDiv.style.display = 'none';
+			try {
+				const { response, data } = await postForm('/api/method/lms.lms.user.sign_up', {
+					email: signupEmail,
+					full_name: fullName,
+					verify_terms: 1,
+					user_category: ''
+				});
+				const signupStatus = getTupleStatus(data);
+				if (response.ok && !data.exc && signupStatus !== 0) {
+					const msg = extractServerMessage(data, 'Please check your email for verification.');
+					setMessageState(errorDiv, msg, true);
+					signupFormFields.style.display = 'none';
+					loginFormFields.style.display = 'flex';
+				} else {
+					throw new Error(extractServerMessage(data, 'Sign up failed.'));
+				}
+			} catch (err) {
+				setMessageState(errorDiv, err.message || 'Sign up failed. Please try again.', false);
+			}
+			btn.disabled = false;
+			btn.querySelector('span').textContent = 'Sign up';
+		});
+		{% endif %}
+	})();
+	</script>
+</body>
+</html>

@@ -1,5 +1,26 @@
 const ToolService = require('./toolService');
-const AzureOpenAIService = require('./azureOpenAIService');
+const AIModelService = require('./aiModelService');
+
+const TOOL_SELECTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['message', 'toolCalls'],
+  properties: {
+    message: { type: 'string' },
+    toolCalls: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'parameters'],
+        properties: {
+          name: { type: 'string' },
+          parameters: { type: 'object', additionalProperties: true }
+        }
+      }
+    }
+  }
+};
 
 /**
  * AI Tool Executor - Allows the AI to intelligently select and execute tools
@@ -7,7 +28,7 @@ const AzureOpenAIService = require('./azureOpenAIService');
 class AIToolExecutor {
   constructor() {
     this.toolService = new ToolService();
-    this.azureOpenAIService = new AzureOpenAIService();
+    this.aiModelService = new AIModelService();
   }
 
   /**
@@ -24,17 +45,25 @@ class AIToolExecutor {
       const systemPrompt = this.createSystemPromptWithTools(availableTools, context);
 
       // Ask AI to determine which tools to use
-      const toolSelectionResponse = await this.azureOpenAIService.generateChatResponse(
-        userMessage,
-        systemPrompt
-      );
-
-      if (!toolSelectionResponse.success) {
-        throw new Error('Failed to get AI response for tool selection');
-      }
-
-      // Parse the AI response to extract tool calls
-      const toolCalls = this.parseToolCallsFromResponse(toolSelectionResponse.response);
+      const selectionStartedAt = Date.now();
+      const toolSelectionResponse = await this.aiModelService.structuredCompletion([
+        {
+          role: 'system',
+          content: `${systemPrompt}\n\nReturn the direct user-facing answer in message and any required calls in toolCalls.`
+        },
+        { role: 'user', content: userMessage }
+      ], {
+        activity: 'assistant.tool_selection',
+        promptVersion: 'assistant-tool-selection-v2',
+        context,
+        temperature: 0.2,
+        maxTokens: 1200,
+        jsonSchema: TOOL_SELECTION_SCHEMA,
+        schemaName: 'assistant_tool_selection',
+        schemaStrict: false
+      });
+      const selection = toolSelectionResponse.data;
+      const toolCalls = selection.toolCalls.filter((toolCall) => this.toolService.tools[toolCall.name]);
 
       let finalResponse = '';
       let toolResults = [];
@@ -83,7 +112,7 @@ class AIToolExecutor {
         );
       } else {
         // No tools needed, use the AI response directly
-        finalResponse = toolSelectionResponse.response;
+        finalResponse = selection.message;
       }
 
       return {
@@ -91,8 +120,8 @@ class AIToolExecutor {
         message: finalResponse,
         toolsUsed: toolCalls.map(tc => tc.name),
         toolResults: toolResults,
-        confidence: toolSelectionResponse.confidence || 0.85,
-        processingTime: toolSelectionResponse.processingTime
+        confidence: 0.85,
+        processingTime: Date.now() - selectionStartedAt
       };
 
     } catch (error) {
@@ -375,9 +404,10 @@ ORIGINAL USER REQUEST: ${originalMessage}
 
 Based on the tool results above, provide a comprehensive, helpful response to the user's request. Use the real data returned by the tools and format it in a user-friendly way.`;
 
-      const finalResponse = await this.azureOpenAIService.generateChatResponse(
+      const finalResponse = await this.aiModelService.generateChatResponse(
         `Please provide a comprehensive response based on the tool results for: ${originalMessage}`,
-        systemPrompt
+        systemPrompt,
+        { activity: 'assistant.chat' }
       );
 
       return finalResponse.success ? finalResponse.response : 'I was unable to process the tool results properly.';
@@ -529,4 +559,4 @@ Based on the tool results above, provide a comprehensive, helpful response to th
   }
 }
 
-module.exports = AIToolExecutor; 
+module.exports = AIToolExecutor;

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Profile Settings - AIIN Identity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: 'profile' }) %>
+
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>Profile Settings</h1>
+        <div class="header-subtitle">
+          Manage your personal information
+        </div>
+      </div>
+    </div>
+
+    <div id="alertSuccess" class="alert alert-success"></div>
+    <div id="alertError" class="alert alert-error"></div>
+
+    <div class="card">
+      <div class="avatar-section">
+        <div class="avatar">
+          <%= (user.profile?.name || user.email)[0].toUpperCase() %>
+        </div>
+        <div class="avatar-info">
+          <h3>
+            <%= user.profile?.name || 'No name set' %>
+          </h3>
+          <p>
+            <%= user.email %>
+          </p>
+        </div>
+      </div>
+
+      <form id="profileForm">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" value="<%= user.email %>" disabled>
+          <div class="form-hint">Email cannot be changed. Contact support if you need to update it.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="name">Full Name</label>
+          <input type="text" id="name" name="name" value="<%= user.profile?.name || '' %>"
+            placeholder="Enter your full name" maxlength="100">
+          <div class="form-hint">Your name will be displayed to other users in your organizations.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="preferredUsername">Preferred Username (Optional)</label>
+          <input type="text" id="preferredUsername" name="preferredUsername"
+            value="<%= user.profile?.preferred_username || '' %>" placeholder="Enter a username" maxlength="50">
+          <div class="form-hint">A unique username for display purposes.</div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="saveBtn">
+            <span id="btnText">Save Changes</span>
+            <span id="btnSpinner" style="display:none;">Saving...</span>
+          </button>
+          <a href="/" class="btn btn-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size: 18px; margin-bottom: 16px;">Account Information</h3>
+      <div style="display: grid; gap: 12px;">
+        <div>
+          <div style="font-size: 13px; color: var(--muted);">Account ID</div>
+          <div style="font-size: 14px; color: var(--text); font-family: monospace;">
+            <%= user.sub %>
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 13px; color: var(--muted);">Member Since</div>
+          <div style="font-size: 14px; color: var(--text);">
+            <%= new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric' , month: 'long' , day: 'numeric'
+              }) %>
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 13px; color: var(--muted);">Email Verified</div>
+          <div style="font-size: 14px; color: <%= user.emailVerified ? 'var(--success)' : 'var(--error)' %>;">
+            <%= user.emailVerified ? '✓ Verified' : '✗ Not Verified' %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('profileForm');
+    const saveBtn = document.getElementById('saveBtn');
+    const btnText = document.getElementById('btnText');
+    const btnSpinner = document.getElementById('btnSpinner');
+    const alertSuccess = document.getElementById('alertSuccess');
+    const alertError = document.getElementById('alertError');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Hide previous alerts
+      alertSuccess.classList.remove('show');
+      alertError.classList.remove('show');
+
+      // Disable button and show loading
+      saveBtn.disabled = true;
+      btnText.style.display = 'none';
+      btnSpinner.style.display = 'inline';
+
+      const formData = {
+        name: document.getElementById('name').value.trim(),
+        preferredUsername: document.getElementById('preferredUsername').value.trim() || null
+      };
+
+      try {
+        const response = await fetch('/api/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(formData)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          alertSuccess.textContent = data.message || 'Profile updated successfully!';
+          alertSuccess.classList.add('show');
+
+          // Update avatar if name changed
+          if (formData.name) {
+            const avatar = document.querySelector('.avatar');
+            avatar.textContent = formData.name[0].toUpperCase();
+
+            const avatarName = document.querySelector('.avatar-info h3');
+            avatarName.textContent = formData.name;
+          }
+
+          // Scroll to top to show success message
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          alertError.textContent = data.error || 'Failed to update profile';
+          alertError.classList.add('show');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      } catch (error) {
+        console.error('Profile update error:', error);
+        alertError.textContent = 'An error occurred while updating your profile';
+        alertError.classList.add('show');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } finally {
+        // Re-enable button
+        saveBtn.disabled = false;
+        btnText.style.display = 'inline';
+        btnSpinner.style.display = 'none';
+      }
+    });
+  </script>
+
+  <!-- Invitation Gatekeeper - Blocks page until invitation decision is made -->
+  <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,515 @@
+{
+  "summary": {
+    "scope": "system",
+    "dryRun": false,
+    "totalRulesScanned": 1900,
+    "uniqueRuleTemplates": 95,
+    "aiRefinedTemplates": 95,
+    "changedTemplates": 95,
+    "changedRules": 1900,
+    "failedBatches": 0
+  },
+  "failures": [],
+  "preview": [
+    {
+      "key": "SYSTEM:1",
+      "sampleRuleNameBefore": "AI Governance Checklist",
+      "sampleRuleNameAfter": "AI Governance Checklist Compliance",
+      "sampleCriteriaBefore": "All AI/ML initiatives must satisfy an 8-item governance checklist: (1) alignment with AI Governance Document, (2) AI Central Governance Team consulted, (3) change management plan included, (4) data readiness verified, (5) ethical considerations addressed, (6) human oversight defined, (7) bias and fairness assessed, (8) transparency and explainability addressed. All 8 items = proceed. 6–7 items = conditional approval with remediation. Fewer than 6 = reject.",
+      "sampleCriteriaAfter": "AI/ML initiative meets all 8 checklist items: alignment with governance document, governance team consultation, change management plan, data readiness, ethical review, human oversight, bias/fairness assessment, transparency/explainability. Pass: All 8 met. Conditional: 6–7 met (must remediate gaps). Fail: Fewer than 6 met.",
+      "categoryBefore": "GATE",
+      "categoryAfter": "GATE",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:5",
+      "sampleRuleNameBefore": "Data Readiness Gate (AI/ML)",
+      "sampleRuleNameAfter": "AI/ML Data Readiness Verification",
+      "sampleCriteriaBefore": "For AI/ML initiatives, four data conditions must be met: required data available and accessible, data quality sufficient, data governance and privacy addressed, data pipeline sustainable. All 4 = proceed. 2–3 = conditional with remediation. Fewer than 2 = reject.",
+      "sampleCriteriaAfter": "AI/ML project meets all 4 data requirements: data available, data quality sufficient, governance/privacy addressed, sustainable pipeline. Pass: All 4 met. Conditional: 2–3 met (must remediate gaps). Fail: Fewer than 2 met.",
+      "categoryBefore": "GATE",
+      "categoryAfter": "GATE",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:6",
+      "sampleRuleNameBefore": "Architecture Compliance Minimum",
+      "sampleRuleNameAfter": "Architecture Attribute Review",
+      "sampleCriteriaBefore": "All initiatives must address nine architecture attributes: Modularity, Availability, Interoperability, Maintainability, Performance, Scalability, Security, Usability, Suitability. Fewer than 5 attributes addressed triggers automatic Tier 3 escalation for architecture review.",
+      "sampleCriteriaAfter": "Initiative addresses at least 5 of 9 key architecture attributes (modularity, availability, interoperability, maintainability, performance, scalability, security, usability, suitability). Fail: Fewer than 5 triggers Tier 3 architecture escalation.",
+      "categoryBefore": "GATE",
+      "categoryAfter": "GATE",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:7",
+      "sampleRuleNameBefore": "AI Framework Alignment Gate",
+      "sampleRuleNameAfter": "AI Framework Alignment Verification",
+      "sampleCriteriaBefore": "AI initiatives not aligned with Sterling's 4-pillar AI Adoption Framework (Awareness & Governance, Change Management, People Development, AI-Driven Solutions) are capped at a maximum Strategic Alignment score of 2 and cannot exceed Tier 2.",
+      "sampleCriteriaAfter": "AI project fully aligns with all 4 pillars of Sterling's AI Adoption Framework: Awareness & Governance, Change Management, People Development, AI-Driven Solutions. Fail: Less than full alignment is capped at Strategic Alignment score 2 and cannot exceed Tier 2.",
+      "categoryBefore": "GATE",
+      "categoryAfter": "GATE",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:8",
+      "sampleRuleNameBefore": "HR/Employment Decision AI",
+      "sampleRuleNameAfter": "AI Use in HR Decisions Escalation",
+      "sampleCriteriaBefore": "Any AI system involved in recruitment screening, candidate selection, performance evaluation, promotion recommendations, termination decisions, or compensation determination automatically escalates to Tier 3 regardless of Priority Score.",
+      "sampleCriteriaAfter": "AI involved in recruitment, selection, performance, promotion, termination, or compensation causes automatic Tier 3 escalation.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:9",
+      "sampleRuleNameBefore": "Automated Customer Decisions",
+      "sampleRuleNameAfter": "AI Making Automated Customer Decisions Escalation",
+      "sampleCriteriaBefore": "Any AI that makes credit approval/denial, insurance underwriting/claims, account closure/denial, or pricing/terms decisions without human review automatically escalates to Tier 3.",
+      "sampleCriteriaAfter": "AI makes credit, insurance, account, pricing, or terms decisions without human review triggers automatic Tier 3 escalation.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:10",
+      "sampleRuleNameBefore": "Sensitive Data Processing",
+      "sampleRuleNameAfter": "Sensitive Data AI Processing Escalation",
+      "sampleCriteriaBefore": "Initiatives processing biometric data (facial recognition, fingerprints, voice), health/medical information, children's data, or aggregated sensitive financial data beyond standard banking automatically escalate to Tier 3.",
+      "sampleCriteriaAfter": "Initiative processes biometric, health/medical, children’s, or sensitive financial data beyond standard banking triggers automatic Tier 3 escalation.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:11",
+      "sampleRuleNameBefore": "High Brand/Reputational Risk",
+      "sampleRuleNameAfter": "High Brand/Reputational Risk AI Escalation",
+      "sampleCriteriaBefore": "Public-facing AI systems with high brand visibility, systems processing data for vulnerable populations, novel AI without industry precedent, and cross-border data transfers to high-risk jurisdictions automatically escalate to Tier 3.",
+      "sampleCriteriaAfter": "AI system is public-facing, processes vulnerable populations' data, is novel with no industry precedent, or transfers data cross-border to high-risk jurisdictions triggers automatic Tier 3 escalation.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:12",
+      "sampleRuleNameBefore": "Strategic Magnitude — Investment",
+      "sampleRuleNameAfter": "Strategic Investment Threshold Escalation",
+      "sampleCriteriaBefore": "Initiatives with total investment exceeding ₦1 billion or projected annual impact exceeding ₦500 million automatically escalate to Tier 3.",
+      "sampleCriteriaAfter": "Initiative investment exceeds ₦1 billion or projected annual impact exceeds ₦500 million triggers automatic Tier 3 escalation.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:13",
+      "sampleRuleNameBefore": "Strategic Magnitude — Market Position",
+      "sampleRuleNameAfter": "Strategic Market Position Change Escalation",
+      "sampleCriteriaBefore": "Initiatives that could move Sterling from Tier 2 to Tier 1 market positioning, create a new business line, or represent major market entry automatically escalate to Tier 3.",
+      "sampleCriteriaAfter": "Initiative shifts Sterling to Tier 1 market, creates new business line, or enables major market entry triggers automatic Tier 3 escalation.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:14",
+      "sampleRuleNameBefore": "Strategic Magnitude — Scale",
+      "sampleRuleNameAfter": "Platform Scale Threshold Escalation",
+      "sampleCriteriaBefore": "Platforms expected to serve more than 1 million customers or more than 1,000 businesses automatically escalate to Tier 3.",
+      "sampleCriteriaAfter": "Platform serves more than 1 million customers or more than 1,000 businesses triggers automatic Tier 3 escalation.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:15",
+      "sampleRuleNameBefore": "Custom LLM / AI Infrastructure",
+      "sampleRuleNameAfter": "Custom LLM/AI Infrastructure Project Escalation",
+      "sampleCriteriaBefore": "Any initiative building a Custom LLM, AI Database, or core internal AI infrastructure automatically escalates to Tier 3 as a strategic AI project.",
+      "sampleCriteriaAfter": "Initiative builds a Custom LLM, AI Database, or internal AI infrastructure triggers automatic Tier 3 escalation as a strategic project.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:16",
+      "sampleRuleNameBefore": "HEART Portfolio Shift",
+      "sampleRuleNameAfter": "Escalate HEART Portfolio Shift Above 60% Target",
+      "sampleCriteriaBefore": "Initiatives that would significantly change the HEART sector portfolio mix (either toward or away from the 60% target) automatically escalate to Tier 3 for strategic portfolio review.",
+      "sampleCriteriaAfter": "If an initiative would move the HEART sector portfolio mix above or below the 60% target, escalate to Tier 3 for strategic review.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:17",
+      "sampleRuleNameBefore": "Foreign/Impact Partnership",
+      "sampleRuleNameAfter": "Escalate Strategic Foreign or Impact Partnerships",
+      "sampleCriteriaBefore": "Initiatives involving strategic partnerships with major impact investors, foreign entities, or cross-border arrangements with data sovereignty implications automatically escalate to Tier 3.",
+      "sampleCriteriaAfter": "If an initiative includes a partnership with a major impact investor, foreign entity, or cross-border data arrangements, escalate to Tier 3.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:18",
+      "sampleRuleNameBefore": "Vulnerable Populations",
+      "sampleRuleNameAfter": "Escalate Initiatives Targeting Vulnerable Populations Without Safeguards",
+      "sampleCriteriaBefore": "Initiatives targeting vulnerable populations (elderly, children, financially distressed) without documented special safeguards automatically escalate to Tier 3.",
+      "sampleCriteriaAfter": "If an initiative targets elderly, children, or financially distressed populations and lacks documented special safeguards, escalate to Tier 3.",
+      "categoryBefore": "ESCALATION",
+      "categoryAfter": "ESCALATION",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:19",
+      "sampleRuleNameBefore": "Strategic Alignment",
+      "sampleRuleNameAfter": "Score Strategic Alignment with Sterling Priority",
+      "sampleCriteriaBefore": "Weight: 25% of Priority Score. Measures alignment with Sterling's vision (technological capability, customer-centricity, competitive differentiation), ASD framework (Agility, Specialization, Digitization), HEART sector priorities, social capitalism philosophy, and competitive positioning. Score 1 = tangential to strategy. Score 3 = supports a primary strategic pillar. Score 5 = transformational, advances multiple priorities and creates competitive differentiation.",
+      "sampleCriteriaAfter": "Assign score based on alignment: 1 = tangential, 3 = supports key strategic pillar, 5 = advances multiple priorities and creates competitive edge. Pass if score is assigned based on initiative details.",
+      "categoryBefore": "SCORING",
+      "categoryAfter": "SCORING",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:20",
+      "sampleRuleNameBefore": "Regulatory Risk",
+      "sampleRuleNameAfter": "Score Regulatory Risk Severity",
+      "sampleCriteriaBefore": "Weight: 25% of Priority Score. Measures the severity of the compliance need the initiative addresses. Score 1 = low-risk gap or minor regulatory enhancement. Score 3 = significant compliance requirement or meaningful risk exposure. Score 5 = critical regulatory mandate; non-compliance would cause penalties, licence risk, or systemic exposure.",
+      "sampleCriteriaAfter": "Assign score: 1 = minor compliance gap, 3 = significant compliance requirement or risk, 5 = critical mandate with penalty/license risk. Pass if score reflects initiative's regulatory impact.",
+      "categoryBefore": "SCORING",
+      "categoryAfter": "SCORING",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:21",
+      "sampleRuleNameBefore": "Business Impact",
+      "sampleRuleNameAfter": "Score Expected Annual Business Impact",
+      "sampleCriteriaBefore": "Weight: 20% of Priority Score. Measures expected annual value creation. Score 1 = below ₦50M. Score 2 = ₦50M–₦150M. Score 3 = ₦150M–₦300M. Score 4 = ₦300M–₦500M. Score 5 = above ₦500M or transformational impact on the business model.",
+      "sampleCriteriaAfter": "Assign score: 1 = below ₦50M, 2 = ₦50M–₦150M, 3 = ₦150M–₦300M, 4 = ₦300M–₦500M, 5 = above ₦500M or business model transformation. Pass if score reflects projected value.",
+      "categoryBefore": "SCORING",
+      "categoryAfter": "SCORING",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:22",
+      "sampleRuleNameBefore": "Implementation Complexity",
+      "sampleRuleNameAfter": "Score Ease of Implementation",
+      "sampleCriteriaBefore": "Weight: 15% of Priority Score. Higher scores mean easier implementation. Score 1 = extremely complex, >12 months, major barriers. Score 3 = moderate, 6–9 months, manageable. Score 5 = low complexity, <3 months, straightforward with proven approaches.",
+      "sampleCriteriaAfter": "Assign score: 1 = very complex (>12 months), 3 = moderate (6–9 months), 5 = straightforward (<3 months). Pass if score reflects implementation difficulty.",
+      "categoryBefore": "SCORING",
+      "categoryAfter": "SCORING",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:23",
+      "sampleRuleNameBefore": "Time-to-Value",
+      "sampleRuleNameAfter": "Score Time-to-Value",
+      "sampleCriteriaBefore": "Weight: 10% of Priority Score. Measures speed to measurable benefits. Score 1 = >18 months. Score 2 = 12–18 months. Score 3 = 6–12 months. Score 4 = 3–6 months. Score 5 = <3 months.",
+      "sampleCriteriaAfter": "Assign score based on speed to benefits: 1 = >18 months, 2 = 12–18 months, 3 = 6–12 months, 4 = 3–6 months, 5 = <3 months. Pass if score is applied to initiative.",
+      "categoryBefore": "SCORING",
+      "categoryAfter": "SCORING",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:24",
+      "sampleRuleNameBefore": "Resource Requirements",
+      "sampleRuleNameAfter": "Score Resource Demand",
+      "sampleCriteriaBefore": "Weight: 5% of Priority Score. Higher scores mean lower resource demands. Score 1 = extensive (large dedicated team, major infrastructure). Score 3 = moderate (part-time team, moderate infrastructure). Score 5 = minimal (existing team and infrastructure sufficient).",
+      "sampleCriteriaAfter": "Assign score: 1 = extensive resources, 3 = moderate resources, 5 = minimal resources needed. Pass if score reflects required team and infrastructure.",
+      "categoryBefore": "SCORING",
+      "categoryAfter": "SCORING",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:25",
+      "sampleRuleNameBefore": "Vision Alignment",
+      "sampleRuleNameAfter": "Score Alignment with Sterling Vision",
+      "sampleCriteriaBefore": "Evaluate contribution to Sterling's three-part vision: enhancing technological capability, entrenching customer-centric business model, and creating competitive differentiation. Score 5 = all three elements advanced with Group Head endorsement. Score 3 = one element advanced meaningfully. Score 1 = does not align.",
+      "sampleCriteriaAfter": "Assign score: 5 = advances technological capability, customer focus, and competitive differentiation with Group Head endorsement; 3 = advances one element; 1 = not aligned. Pass if score is applied per criteria.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:26",
+      "sampleRuleNameBefore": "ASD — Agility",
+      "sampleRuleNameAfter": "Score ASD Agility Advancement",
+      "sampleCriteriaBefore": "Assess whether the initiative builds adaptive, self-correcting capability. Score 5 = adapts to market changes, enables rapid iteration, reduces time-to-market >30%, builds reusable capabilities. Score 3 = improves flexibility in a single process. Score 1 = rigid single-purpose solution.",
+      "sampleCriteriaAfter": "Assign score: 5 = adapts to market changes, enables rapid iteration, reduces time-to-market >30%; 3 = improves flexibility in one process; 1 = rigid solution. Pass if score reflects initiative's agility impact.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:27",
+      "sampleRuleNameBefore": "ASD — Specialization",
+      "sampleRuleNameAfter": "Score ASD Specialization Advancement",
+      "sampleCriteriaBefore": "Assess whether the initiative builds deep sector expertise. Score 5 = proprietary HEART sector knowledge competitors cannot replicate, sector-specific solutions better than generic. Score 3 = some differentiated capability. Score 1 = generic commodity solution.",
+      "sampleCriteriaAfter": "Assign score: 5 = proprietary HEART sector knowledge and solutions; 3 = some sector differentiation; 1 = generic commodity solution. Pass if score reflects initiative's specialization.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:28",
+      "sampleRuleNameBefore": "ASD — Digitization",
+      "sampleRuleNameAfter": "Technology-Driven Efficiency and Scale",
+      "sampleCriteriaBefore": "Assess whether the initiative enables technology-driven efficiency and scale. Score 5 = transforms experience across multiple touchpoints, >50% efficiency improvement, scales without linear cost. Score 3 = digitizes one manual process. Score 1 = technology for its own sake.",
+      "sampleCriteriaAfter": "Pass if the initiative enables efficiency improvements of over 50% and scales to multiple customer touchpoints without a linear increase in cost. Fail if only one manual process is digitized or if the technology does not significantly improve efficiency.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:29",
+      "sampleRuleNameBefore": "HEART Sector Impact",
+      "sampleRuleNameAfter": "Direct HEART Sector Impact",
+      "sampleCriteriaBefore": "Assess direct impact on Health, Education, Agriculture, Renewable Energy, and/or Transportation sectors. Score 5 = finances or enables HEART sector at scale (see sector-specific thresholds). Score 3 = supports sector operations. Score 1 = no HEART relevance. If all five sectors served, automatic Score 5.",
+      "sampleCriteriaAfter": "Pass if the initiative finances or enables large-scale impact in Health, Education, Agriculture, Renewable Energy, or Transportation and directly supports operations in at least one sector. Fail if the initiative has no measurable relevance to any HEART sector.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:30",
+      "sampleRuleNameBefore": "Business Segment Fit",
+      "sampleRuleNameAfter": "Alignment to Strategic Business Segments",
+      "sampleCriteriaBefore": "Evaluate which customer tier is served. Tier 1 (highest priority): Individual Banking, Micro Banking, Alternative Finance, SME. Tier 2: Government/Institutional, Commercial. Tier 3: Large Corporate. Score 5 = Tier 1 at scale (>100K customers or >₦500M). Score 1 = no defined strategic segment.",
+      "sampleCriteriaAfter": "Pass if the initiative serves over 100,000 customers or generates more than ₦500 million in the highest-priority business segments (Individual, Micro, Alternative Finance, SME). Fail if no defined strategic segment is served.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:31",
+      "sampleRuleNameBefore": "500 for 50 in 5 Alignment",
+      "sampleRuleNameAfter": "500-for-50-in-5 Programme Support",
+      "sampleCriteriaBefore": "Assess contribution to Sterling's programme to build 500 Nigerian businesses into 50 globally acceptable enterprises in 5 years. Automatic Score 5 if initiative directly enables identification, mentoring, incubation, or financing for global scale.",
+      "sampleCriteriaAfter": "Pass if the initiative directly enables the identification, mentoring, incubation, or financing of businesses for global scale in support of the 500-for-50-in-5 programme. Fail otherwise.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:32",
+      "sampleRuleNameBefore": "Social Capitalism Impact",
+      "sampleRuleNameAfter": "Social and Environmental Impact with Profitability",
+      "sampleCriteriaBefore": "Sterling's formula: Impact + Risk + Revenue = Business. Score 5 = addresses critical social/environmental need at scale (>100K people), measurable impact on poverty/inclusion/sustainability, and profitable. Score 3 = some benefit (>1K people) with returns prioritized. Score 1 = purely profit-driven, no social consideration.",
+      "sampleCriteriaAfter": "Pass if the initiative measurably serves over 100,000 people, addresses critical social or environmental needs, and is profitable. Fail if only profit is considered and no significant social impact is achieved.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:33",
+      "sampleRuleNameBefore": "Stakeholder Value Breadth",
+      "sampleRuleNameAfter": "Value Creation for All Stakeholders",
+      "sampleCriteriaBefore": "Evaluate value creation across five groups: Customers, Employees, Shareholders, Regulators, Community/Vendors. Score 5 = measurable value to all five. Score 3 = two groups. Score 1 = benefits Sterling alone.",
+      "sampleCriteriaAfter": "Pass if measurable value is delivered to all five stakeholder groups: Customers, Employees, Shareholders, Regulators, and Community/Vendors. Fail if value is created for Sterling alone.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:34",
+      "sampleRuleNameBefore": "Financial Metrics Contribution",
+      "sampleRuleNameAfter": "Achievement of Key Financial Targets",
+      "sampleCriteriaBefore": "Assess contribution to primary targets: 5% market share, 5M retail customers, ROAE above peers, NPL below peers, double-digit revenue growth, cost of funds <5%, top-quartile diversified income. Score 5 = contributes to 3+ metrics. Score 3 = 1 metric. Score 1 = no financial contribution.",
+      "sampleCriteriaAfter": "Pass if the initiative contributes to at least three of the following: 5% market share, 5 million retail customers, ROAE above peers, NPL below peers, double-digit revenue growth, cost of funds below 5%, or top-quartile diversified income. Fail if no primary financial targets are addressed.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:35",
+      "sampleRuleNameBefore": "Innovation Classification",
+      "sampleRuleNameAfter": "Level of Innovation",
+      "sampleCriteriaBefore": "Classify as Transformative (new markets, disrupts industry, Nigeria-first capability, potential >₦1B/year in 3 years) or Incremental (optimizes existing processes). Score 5 = transformative with competitive moat. Score 3 = meaningful improvement adopting proven innovation. Score 1 = business-as-usual.",
+      "sampleCriteriaAfter": "Pass if the initiative is transformative, creating new markets or disruptive capabilities with potential revenue of over ₦1 billion/year in three years. Fail if it is a routine or business-as-usual improvement.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:36",
+      "sampleRuleNameBefore": "Digital Pillar Alignment",
+      "sampleRuleNameAfter": "Alignment with Digital IT Pillars",
+      "sampleCriteriaBefore": "Assess fit with three IT pillars: Digital Experiences (customer touchpoints), Digital Business (cloud, APIs, automation), Digital Workplace (collaboration, data access). Average scores across applicable pillars. All three addressed = automatic Score 5. Zero addressed = max score 2.",
+      "sampleCriteriaAfter": "Pass if the initiative addresses all three IT pillars: Digital Experiences, Digital Business, and Digital Workplace. Fail if none are addressed.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:37",
+      "sampleRuleNameBefore": "AI Maturity Contribution",
+      "sampleRuleNameAfter": "Advancement of AI Maturity",
+      "sampleCriteriaBefore": "Current maturity gaps: Regulatory & Ethical (2/5), Scalability (2/5), Infrastructure (2/5). Score 5 = improves 3+ dimensions. Score 3 = improves 1 dimension. Score 1 = adds complexity without capability gain.",
+      "sampleCriteriaAfter": "Pass if the initiative measurably improves at least three AI maturity dimensions (regulatory/ethical, scalability, infrastructure). Fail if it only increases complexity with no capability gain.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:38",
+      "sampleRuleNameBefore": "Competitive Differentiation",
+      "sampleRuleNameAfter": "Unique Competitive Advantage",
+      "sampleCriteriaBefore": "Score 5 = creates capability competitors cannot replicate, first-mover in high-value market. Score 3 = closes competitive gaps using best practices. Score 1 = no differentiation, commodity offering.",
+      "sampleCriteriaAfter": "Pass if the initiative creates a unique capability that competitors cannot easily replicate or establishes first-mover status in a high-value market. Fail if there is no differentiation or if the offer is a commodity.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:39",
+      "sampleRuleNameBefore": "Environmental Sustainability",
+      "sampleRuleNameAfter": "Environmental Sustainability Outcomes",
+      "sampleCriteriaBefore": "Score 5 = reduces carbon >1,000 tons/year, finances renewable energy at scale, promotes mass transit. Score 3 = some benefit (paper reduction, efficiency). Score 1 = increases emissions or finances harmful activities.",
+      "sampleCriteriaAfter": "Pass if the initiative reduces annual carbon emissions by more than 1,000 tons, finances renewable energy at scale, or promotes mass transit adoption. Fail if it increases emissions or finances environmentally harmful activities.",
+      "categoryBefore": "STRATEGIC",
+      "categoryAfter": "STRATEGIC",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:40",
+      "sampleRuleNameBefore": "5-Year Strategy Mention",
+      "sampleRuleNameAfter": "Linked to Sterling 5-Year Strategy",
+      "sampleCriteriaBefore": "Initiative is explicitly mentioned in or directly derived from Sterling's 5-Year Strategy Document.",
+      "sampleCriteriaAfter": "The initiative is explicitly named in or directly referenced by Sterling's current 5-Year Strategy Document.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:41",
+      "sampleRuleNameBefore": "MD Strategic Endorsement",
+      "sampleRuleNameAfter": "Managing Director Endorsed",
+      "sampleCriteriaBefore": "Initiative has been formally endorsed by the Managing Director as a strategic priority.",
+      "sampleCriteriaAfter": "The initiative has written strategic endorsement from the Managing Director.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:42",
+      "sampleRuleNameBefore": "Multi-HEART Platform",
+      "sampleRuleNameAfter": "Serves Multiple HEART Sectors",
+      "sampleCriteriaBefore": "Initiative creates a platform serving multiple HEART sectors simultaneously, advancing the 60% portfolio target across sector lines.",
+      "sampleCriteriaAfter": "The initiative delivers a platform serving at least two HEART sectors at the same time, supporting progress toward the 60% portfolio target.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:43",
+      "sampleRuleNameBefore": "500 for 50 in 5 Contribution",
+      "sampleRuleNameAfter": "Supports 500 for 50 in 5 Programme",
+      "sampleCriteriaBefore": "Initiative directly enables the identification, mentoring, incubation, or financing of Nigerian businesses within the \"500 for 50 in 5\" programme.",
+      "sampleCriteriaAfter": "The initiative directly identifies, mentors, incubates, or finances Nigerian businesses within the '500 for 50 in 5' programme.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:44",
+      "sampleRuleNameBefore": "Platform Ecosystem Effect",
+      "sampleRuleNameAfter": "Sterling Platform Ecosystem Integration",
+      "sampleCriteriaBefore": "Initiative creates an ecosystem where multiple Sterling digital platforms (Specta, Altmall, OnePay, etc.) work together, generating compounding value.",
+      "sampleCriteriaAfter": "The initiative enables two or more Sterling digital platforms (e.g., Specta, Altmall, OnePay) to interoperate and generate added value.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:45",
+      "sampleRuleNameBefore": "Reusable Platform Capability",
+      "sampleRuleNameAfter": "Meets All Reusable Platform Criteria",
+      "sampleCriteriaBefore": "Initiative creates a true platform: reusable across multiple use cases, API-first, scales without linear cost, creates network effects, supports partner ecosystem (5 of 5 characteristics).",
+      "sampleCriteriaAfter": "The initiative creates a platform meeting all five: reusable, API-first, scales nonlinearly, creates network effects, and supports an external partner ecosystem.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:46",
+      "sampleRuleNameBefore": "Bottom-of-Pyramid Focus",
+      "sampleRuleNameAfter": "Targets Low-Income and Excluded Groups",
+      "sampleCriteriaBefore": "Initiative serves low-income or financially excluded populations at scale, advancing financial inclusion and Sterling's social capitalism mission.",
+      "sampleCriteriaAfter": "The initiative serves at-scale low-income or financially excluded groups and supports Sterling's financial inclusion goals.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:47",
+      "sampleRuleNameBefore": "Environmental Impact",
+      "sampleRuleNameAfter": "Delivers Environmental Benefit",
+      "sampleCriteriaBefore": "Initiative delivers measurable environmental sustainability benefits: carbon reduction, clean energy promotion, or mass transit adoption.",
+      "sampleCriteriaAfter": "The initiative provides measurable environmental benefits, such as reduced carbon emissions, supports clean energy, or increases mass transit usage.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:48",
+      "sampleRuleNameBefore": "All-Stakeholder Value",
+      "sampleRuleNameAfter": "Delivers Value to All Stakeholders",
+      "sampleCriteriaBefore": "Initiative creates measurable value for all five stakeholder groups (Customers, Employees, Shareholders, Regulators, Community/Vendors).",
+      "sampleCriteriaAfter": "The initiative creates measurable value for all five stakeholder groups: Customers, Employees, Shareholders, Regulators, and Community/Vendors.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:49",
+      "sampleRuleNameBefore": "Multi-Platform Integration",
+      "sampleRuleNameAfter": "Integrates Multiple Sterling Platforms",
+      "sampleCriteriaBefore": "Initiative integrates two or more existing Sterling digital platforms, creating cross-platform synergies.",
+      "sampleCriteriaAfter": "The initiative connects at least two existing Sterling digital platforms to deliver combined benefits.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:50",
+      "sampleRuleNameBefore": "AI Maturity Builder",
+      "sampleRuleNameAfter": "Improves AI Maturity in Weak Areas",
+      "sampleCriteriaBefore": "Initiative directly improves one or more AI maturity dimensions currently scoring below 3/5 (Regulatory & Ethical, Scalability, Infrastructure).",
+      "sampleCriteriaAfter": "The initiative measurably raises at least one AI maturity dimension (Regulatory & Ethical, Scalability, or Infrastructure) that scored below 3 out of 5.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:51",
+      "sampleRuleNameBefore": "HEART Portfolio Contribution",
+      "sampleRuleNameAfter": "Directly Advances HEART Portfolio Target",
+      "sampleCriteriaBefore": "Initiative directly contributes to achieving the 60% HEART sector risk asset target.",
+      "sampleCriteriaAfter": "The initiative contributes directly to achieving the 60% HEART sector risk asset target.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:52",
+      "sampleRuleNameBefore": "Comprehensive Change Management",
+      "sampleRuleNameAfter": "Requires Full Change Management Plan",
+      "sampleCriteriaBefore": "Initiative includes a full change management plan following Sterling's three-phase framework (Preparing, Managing, Reinforcing) with all governance teams consulted.",
+      "sampleCriteriaAfter": "Initiative includes a documented change management plan that follows Sterling's three-phase framework (Preparing, Managing, Reinforcing) and confirms consultation with all governance teams.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    },
+    {
+      "key": "SYSTEM:53",
+      "sampleRuleNameBefore": "AI Workforce Capability",
+      "sampleRuleNameAfter": "Workforce AI Skills Development",
+      "sampleCriteriaBefore": "Initiative builds AI skills and capability in the workforce through AI Champions, training, and capstone projects.",
+      "sampleCriteriaAfter": "Initiative delivers AI skills development with at least one AI Champion, formal AI training, and completion of an AI-related capstone project for staff.",
+      "categoryBefore": "BOOST",
+      "categoryAfter": "BOOST",
+      "rulesAffected": 20
+    }
+  ]
+}

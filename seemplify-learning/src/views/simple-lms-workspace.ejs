@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    body.public-site.lmsv-workspace-page {
+      background: #f6f6f7;
+      color: #111827;
+    }
+    .workspace-shell {
+      width: min(1320px, 100%);
+      margin: 0 auto;
+      padding: 24px clamp(16px, 2vw, 20px) 32px;
+      display: grid;
+      gap: 16px;
+      flex: 1 0 auto;
+    }
+    .workspace-panel {
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.35);
+      padding: 20px clamp(16px, 2vw, 24px);
+    }
+    .welcome-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(210px, 280px);
+      gap: 16px;
+      align-items: start;
+    }
+    .welcome-main {
+      max-width: 880px;
+    }
+    .welcome-row h1 {
+      margin: 0;
+      font-size: clamp(32px, 3.1vw, 44px);
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+      text-wrap: balance;
+    }
+    .welcome-row p {
+      margin: 6px 0 0;
+      color: #64748b;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .welcome-actions {
+      display: grid;
+      gap: 10px;
+      justify-items: end;
+    }
+    .streak-chip {
+      border: 1px solid rgba(248, 113, 113, 0.28);
+      background: rgba(254, 242, 242, 0.9);
+      border-radius: 12px;
+      padding: 10px 14px;
+      display: grid;
+      gap: 2px;
+      min-width: 100%;
+    }
+    .streak-chip small {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #ef4444;
+      font-weight: 800;
+    }
+    .streak-chip strong {
+      font-size: 28px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: #111827;
+    }
+    .streak-chip span {
+      font-size: 13px;
+      color: #111827;
+      font-weight: 700;
+    }
+    .settings-icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      color: #334155;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: 0.18s ease;
+    }
+    .settings-icon-btn:hover {
+      border-color: #0ea5e9;
+      color: #0284c7;
+      background: rgba(6, 182, 212, 0.08);
+    }
+    .workspace-kpis {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .kpi-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 14px 16px;
+      display: grid;
+      gap: 8px;
+    }
+    .kpi-card small {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: #64748b;
+      font-weight: 800;
+    }
+    .kpi-card strong {
+      font-size: 27px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .section-head {
+      display: grid;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: clamp(24px, 2.6vw, 32px);
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-head h2::before {
+      content: '';
+      width: 6px;
+      height: 24px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #06b6d4, #0ea5e9);
+    }
+    .section-head p {
+      margin: 0;
+      color: #64748b;
+      font-size: 14px;
+    }
+    .course-continue-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .continue-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #ffffff;
+      box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.36);
+      display: grid;
+      grid-template-columns: minmax(180px, 0.82fr) minmax(0, 1.18fr);
+    }
+    .continue-media {
+      position: relative;
+      background: linear-gradient(135deg, #0f172a, #1e3a8a);
+    }
+    .continue-media img {
+      width: 100%;
+      height: 100%;
+      min-height: 210px;
+      object-fit: cover;
+      display: block;
+    }
+    .continue-body {
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .continue-meta {
+      margin: 0;
+      font-size: 12px;
+      color: #94a3b8;
+      letter-spacing: 0.01em;
+    }
+    .continue-title {
+      margin: 0;
+      color: #0f172a;
+      font-size: clamp(22px, 2.3vw, 28px);
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+    }
+    .continue-summary {
+      margin: 0;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .continue-progress-line {
+      margin: 2px 0 0;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 700;
+    }
+    .continue-progress-line span:last-child {
+      color: #0891b2;
+      font-size: 12px;
+    }
+    .progress-track {
+      height: 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+    }
+    .progress-track span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #22d3ee, #0891b2);
+    }
+    .continue-footer {
+      margin-top: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .category-pill {
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #475569;
+      background: #f8fafc;
+      font-weight: 700;
+    }
+    .resume-btn {
+      border: 1px solid transparent;
+      border-radius: 11px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 10px 14px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .resume-btn:hover {
+      background: #020617;
+      color: #ffffff;
+    }
+    .recommended-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .recommend-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #ffffff;
+      box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.33);
+      display: grid;
+      align-content: start;
+    }
+    .recommend-media {
+      background: linear-gradient(140deg, #0f172a, #1e3a8a);
+      min-height: 170px;
+      position: relative;
+    }
+    .recommend-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .recommend-body {
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .recommend-body h3 {
+      margin: 0;
+      color: #0f172a;
+      font-size: clamp(20px, 2.1vw, 24px);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+    .recommend-body p {
+      margin: 0;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .recommend-foot {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .recommend-foot a {
+      color: #334155;
+      text-decoration: none;
+    }
+    .recommend-foot a:hover {
+      color: #0284c7;
+    }
+    .workspace-settings-note {
+      margin: 6px 0 4px;
+      padding: 18px 0 8px;
+      border-top: 1px solid #dbe0e6;
+      text-align: center;
+      color: #64748b;
+      font-size: 14px;
+      letter-spacing: 0.01em;
+    }
+    .workspace-settings-note a {
+      color: #0f172a;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .workspace-settings-note a:hover {
+      color: #0284c7;
+    }
+    .empty-card {
+      border: 1px dashed #cbd5e1;
+      border-radius: 14px;
+      padding: 20px;
+      background: #ffffff;
+      text-align: center;
+      color: #64748b;
+      font-size: 14px;
+    }
+    @media (max-width: 1100px) {
+      .course-continue-grid,
+      .recommended-grid,
+      .workspace-kpis {
+        grid-template-columns: 1fr;
+      }
+      .continue-card {
+        grid-template-columns: 1fr;
+      }
+      .continue-media img {
+        min-height: 180px;
+      }
+      .welcome-row {
+        grid-template-columns: 1fr;
+      }
+      .welcome-actions {
+        justify-items: start;
+        grid-template-columns: auto auto;
+        align-items: center;
+      }
+      .streak-chip {
+        min-width: 0;
+      }
+    }
+    @media (max-width: 760px) {
+      .workspace-shell {
+        padding: 18px 12px 22px;
+        gap: 14px;
+      }
+      .workspace-panel {
+        padding: 14px;
+        border-radius: 14px;
+      }
+      .welcome-row h1,
+      .continue-title,
+      .recommend-body h3,
+      .section-head h2 {
+        font-size: clamp(22px, 8vw, 30px);
+      }
+      .streak-chip strong,
+      .kpi-card strong {
+        font-size: 24px;
+      }
+      .welcome-actions {
+        grid-template-columns: 1fr;
+        width: 100%;
+      }
+      .settings-icon-btn {
+        width: 40px;
+        height: 40px;
+      }
+    }
+  </style>
+</head>
+<body class="public-site lmsv-workspace-page">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: 'workspace' }) %>
+  <%
+    const learningName = brandLearningName || 'Seemplify Learning'
+    const userName = user?.profile?.name || user?.email || 'Learner'
+    const formatNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0
+    const niceTimeAgo = (value) => {
+      if (!value) return 'Last active recently'
+      const ts = new Date(value).getTime()
+      if (Number.isNaN(ts)) return 'Last active recently'
+      const diffMs = Date.now() - ts
+      const diffHours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)))
+      if (diffHours < 24) return `Last active ${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
+      const diffDays = Math.round(diffHours / 24)
+      if (diffDays <= 1) return 'Last active yesterday'
+      return `Last active ${diffDays} days ago`
+    }
+    const fallbackCourseVisuals = [
+      'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1573497019236-61f323342eb1?auto=format&fit=crop&w=1200&q=80'
+    ]
+    const categoryVisualHints = [
+      { match: ['data', 'analytics', 'ai', 'machine', 'science'], image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['project', 'management', 'leadership', 'business'], image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['communication', 'professional', 'soft'], image: 'https://images.unsplash.com/photo-1573497019236-61f323342eb1?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['engineering', 'dev', 'code', 'software'], image: 'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80' }
+    ]
+    const courseImageFor = (entry, index) => {
+      if (entry?.banner?.url) return entry.banner.url
+      const normalizedCategory = String(entry?.category || '').toLowerCase()
+      const match = categoryVisualHints.find((item) => item.match.some((term) => normalizedCategory.includes(term)))
+      if (match?.image) return match.image
+      return fallbackCourseVisuals[index % fallbackCourseVisuals.length]
+    }
+  %>
+
+  <main class="workspace-shell">
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (info) { %><div class="alert"><%= info %></div><% } %>
+
+    <section class="workspace-panel">
+      <div class="welcome-row">
+        <div class="welcome-main">
+          <h1>Welcome back, <%= userName %></h1>
+          <p>
+            You have <%= formatNumber(workspaceStats?.coursesInProgress) %> course<%= formatNumber(workspaceStats?.coursesInProgress) === 1 ? '' : 's' %> in progress.
+            Keep the momentum going!
+          </p>
+        </div>
+        <div class="welcome-actions">
+          <div class="streak-chip">
+            <small>Current Streak</small>
+            <strong><%= formatNumber(workspaceStats?.currentStreakDays) %> <span style="font-size:14px;font-weight:700;">Days</span></strong>
+          </div>
+          <a href="/simple-lms?view=settings" class="settings-icon-btn" aria-label="Open settings">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace-kpis">
+      <article class="kpi-card">
+        <small>Courses Enrolled</small>
+        <strong><%= formatNumber(workspaceStats?.coursesEnrolled) %></strong>
+      </article>
+      <article class="kpi-card">
+        <small>Lessons Completed</small>
+        <strong><%= formatNumber(workspaceStats?.lessonsCompleted) %></strong>
+      </article>
+      <article class="kpi-card">
+        <small>Hours Learned</small>
+        <strong><%= Number(formatNumber(workspaceStats?.hoursLearned)).toFixed(1) %></strong>
+      </article>
+    </section>
+
+    <section class="section-head">
+      <h2>Continue Learning</h2>
+    </section>
+
+    <% if (!continueLearningCards || continueLearningCards.length === 0) { %>
+      <section class="empty-card">No active courses yet. Explore the catalog and start a course.</section>
+    <% } else { %>
+      <section class="course-continue-grid">
+        <% continueLearningCards.forEach((entry, index) => { %>
+          <article class="continue-card">
+            <div class="continue-media">
+              <img src="<%= courseImageFor(entry.course, index) %>" alt="<%= entry.course.title %> banner">
+            </div>
+            <div class="continue-body">
+              <p class="continue-meta"><%= niceTimeAgo(entry.activityAt) %></p>
+              <h3 class="continue-title"><%= entry.course.title %></h3>
+              <p class="continue-summary"><%= entry.course.summaryText %></p>
+              <div class="continue-progress-line">
+                <span><%= formatNumber(entry.progressPercent) %>% Complete</span>
+                <% if (entry.remainingMinutes > 0) { %><span>~<%= formatNumber(entry.remainingMinutes) %> min left</span><% } %>
+              </div>
+              <div class="progress-track"><span style="width:<%= Math.max(0, Math.min(100, formatNumber(entry.progressPercent))) %>%;"></span></div>
+              <div class="continue-footer">
+                <span class="category-pill"><%= entry.course.category || entry.course.levelLabel %></span>
+                <a href="<%= entry.resumePath %>" class="resume-btn">Resume Lesson</a>
+              </div>
+            </div>
+          </article>
+        <% }) %>
+      </section>
+    <% } %>
+
+    <section class="section-head" style="margin-top:12px;">
+      <h2>Recommended For You</h2>
+      <p>Based on your interests and current enrollments.</p>
+    </section>
+
+    <% if (!recommendedLearningCards || recommendedLearningCards.length === 0) { %>
+      <section class="empty-card">No recommendations yet. Continue learning to unlock personalized picks.</section>
+    <% } else { %>
+      <section class="recommended-grid">
+        <% recommendedLearningCards.forEach((course, index) => { %>
+          <article class="recommend-card">
+            <div class="recommend-media">
+              <img src="<%= courseImageFor(course, index + 2) %>" alt="<%= course.title %> banner">
+            </div>
+            <div class="recommend-body">
+              <div class="category-pill" style="width:fit-content;"><%= course.category || course.levelLabel %></div>
+              <h3><%= course.title %></h3>
+              <p><%= course.summaryText %></p>
+              <div class="recommend-foot">
+                <span class="price"><%= course.displayPrice %></span>
+                <a href="<%= course.courseUrl %>">View Details ?</a>
+              </div>
+            </div>
+          </article>
+        <% }) %>
+      </section>
+    <% } %>
+
+    <p class="workspace-settings-note">
+      Manage your workspace, creator tools, and payments in
+      <a href="/simple-lms?view=settings">Settings</a>
+    </p>
+  </main>
+
+  <%- include('./partials/public-footer') %>
+</body>
+</html>

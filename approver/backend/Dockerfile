@@ -1,12 +1,15 @@
 # Dockerfile for Approver Backend (API Only)
 # No frontend serving - frontend is deployed separately
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 RUN npm ci --only=production
+
+# Data directory for uploaded logos (mount a volume to persist across deploys)
+VOLUME ["/app/uploads"]
 
 # Copy backend source
 COPY server.js ./
@@ -15,6 +18,8 @@ COPY middleware ./middleware
 COPY models ./models
 COPY routes ./routes
 COPY services ./services
+COPY utils ./utils
+COPY data ./data
 COPY scripts ./scripts
 
 EXPOSE 80

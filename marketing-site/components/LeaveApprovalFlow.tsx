@@ -45,10 +45,10 @@ const LeaveNode = ({ data }: { data: { label: string; sublabel: string; color: s
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className={`px-5 py-3.5 rounded-xl border ${data.color} ${data.active ? 'ring-1 ring-emerald-500/50 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950' : ''} bg-white dark:bg-zinc-900/90 backdrop-blur transition-all duration-300 shadow-sm dark:shadow-none`}
+      className={`px-5 py-3.5 rounded-xl border ${data.color} ${data.active ? 'ring-1 ring-violet-500/50 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950' : ''} bg-white dark:bg-zinc-900/90 backdrop-blur transition-all duration-300 shadow-sm dark:shadow-none`}
     >
       <div className="flex items-center gap-3">
-        <div className={`${data.active ? 'text-emerald-500 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400'} transition-colors duration-300`}>{data.icon}</div>
+        <div className={`${data.active ? 'text-violet-500 dark:text-violet-400' : 'text-zinc-500 dark:text-zinc-400'} transition-colors duration-300`}>{data.icon}</div>
         <div>
           <div className="font-medium text-zinc-900 dark:text-white text-sm">{data.label}</div>
           <div className="text-xs text-zinc-500">{data.sublabel}</div>
@@ -104,22 +104,22 @@ export default function LeaveApprovalFlow() {
       id: 'e1-2',
       source: '1',
       target: '2',
-      style: { stroke: activeStep >= 1 ? '#10b981' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 1 ? '#10b981' : '#3f3f46', width: 16, height: 16 }
+      style: { stroke: activeStep >= 1 ? '#8b5cf6' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 1 ? '#8b5cf6' : '#3f3f46', width: 16, height: 16 }
     },
     {
       id: 'e2-3',
       source: '2',
       target: '3',
-      style: { stroke: activeStep >= 2 ? '#10b981' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 2 ? '#10b981' : '#3f3f46', width: 16, height: 16 }
+      style: { stroke: activeStep >= 2 ? '#8b5cf6' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 2 ? '#8b5cf6' : '#3f3f46', width: 16, height: 16 }
     },
     {
       id: 'e3-4',
       source: '3',
       target: '4',
-      style: { stroke: activeStep >= 3 ? '#10b981' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 3 ? '#10b981' : '#3f3f46', width: 16, height: 16 }
+      style: { stroke: activeStep >= 3 ? '#8b5cf6' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 3 ? '#8b5cf6' : '#3f3f46', width: 16, height: 16 }
     },
   ]
 

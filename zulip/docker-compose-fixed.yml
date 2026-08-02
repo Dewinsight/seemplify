@@ -1,0 +1,143 @@
+# Seemplify Chat (Zulip) - Team Collaboration Platform
+# Deployed via Dokploy with Traefik SSL/HTTPS (File-based routing only)
+
+services:
+  database:
+    image: "zulip/zulip-postgresql:14"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "zulip"
+      POSTGRES_USER: "zulip"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - "postgresql-14:/var/lib/postgresql/data:rw"
+    networks:
+      - dokploy-network
+
+  memcached:
+    image: "memcached:alpine"
+    restart: unless-stopped
+    command:
+      - "sh"
+      - "-euc"
+      - |
+        echo 'mech_list: plain' > "$$SASL_CONF_PATH"
+        echo "zulip@$$HOSTNAME:$$MEMCACHED_PASSWORD" > "$$MEMCACHED_SASL_PWDB"
+        echo "zulip@localhost:$$MEMCACHED_PASSWORD" >> "$$MEMCACHED_SASL_PWDB"
+        exec memcached -S
+    environment:
+      SASL_CONF_PATH: "/home/memcache/memcached.conf"
+      MEMCACHED_SASL_PWDB: "/home/memcache/memcached-sasl-db"
+      MEMCACHED_PASSWORD: "${MEMCACHED_PASSWORD}"
+    networks:
+      - dokploy-network
+
+  rabbitmq:
+    image: "rabbitmq:4.1"
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: "zulip"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD}"
+    volumes:
+      - "rabbitmq:/var/lib/rabbitmq:rw"
+    networks:
+      - dokploy-network
+
+  redis:
+    image: "redis:alpine"
+    restart: unless-stopped
+    command:
+      - "sh"
+      - "-euc"
+      - |
+        echo "requirepass '$$REDIS_PASSWORD'" > /etc/redis.conf
+        exec redis-server /etc/redis.conf
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+    volumes:
+      - "redis:/data:rw"
+    networks:
+      - dokploy-network
+
+  zulip:
+    image: "zulip/docker-zulip:11.4-0"
+    restart: unless-stopped
+    container_name: code-zulip-1
+    environment:
+      # Database Configuration
+      DB_HOST: "database"
+      DB_HOST_PORT: "5432"
+      DB_USER: "zulip"
+      
+      # SSL handled by Traefik - use self-signed internally
+      SSL_CERTIFICATE_GENERATION: "self-signed"
+      
+      # Service Connections
+      SETTING_MEMCACHED_LOCATION: "memcached:11211"
+      SETTING_RABBITMQ_HOST: "rabbitmq"
+      SETTING_REDIS_HOST: "redis"
+      
+      # Secrets - must match service passwords above (set in Dokploy)
+      SECRETS_rabbitmq_password: "${RABBITMQ_PASSWORD}"
+      SECRETS_postgres_password: "${POSTGRES_PASSWORD}"
+      SECRETS_memcached_password: "${MEMCACHED_PASSWORD}"
+      SECRETS_redis_password: "${REDIS_PASSWORD}"
+      SECRETS_secret_key: "${SECRET_KEY}"
+      SECRETS_email_password: "${BREVO_SMTP_PASSWORD}"
+      
+      # Site Configuration
+      SETTING_EXTERNAL_HOST: "${EXTERNAL_HOST:-chat.seemplifyai.com}"
+      SETTING_ZULIP_ADMINISTRATOR: "${ADMIN_EMAIL}"
+      
+      # Brevo SMTP Configuration
+      SETTING_EMAIL_HOST: "${BREVO_SMTP_HOST:-smtp-relay.brevo.com}"
+      SETTING_EMAIL_HOST_USER: "${BREVO_SMTP_USER}"
+      SETTING_EMAIL_PORT: "${BREVO_SMTP_PORT:-587}"
+      SETTING_EMAIL_USE_SSL: "False"
+      SETTING_EMAIL_USE_TLS: "True"
+      SETTING_NOREPLY_EMAIL_ADDRESS: "${NOREPLY_EMAIL:-noreply@seemplifyai.com}"
+      
+      # Authentication - OIDC with Seemplify Identity Provider
+      # Note: Use Python syntax (True not true) as Zulip interprets this as Python
+      # oidc_url should be base URL only - Zulip appends /.well-known/openid-configuration automatically
+      # OIDC_CLIENT_SECRET is set in Dokploy environment variables
+      ZULIP_AUTH_BACKENDS: "GenericOpenIdConnectBackend"
+      SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS: '{"seemplify":{"display_name":"Seemplify","oidc_url":"https://auth.seemplifyai.com","client_id":"zulip","secret":"${OIDC_CLIENT_SECRET}","auto_signup":True}}'
+      
+      # Reverse Proxy Configuration (Traefik)
+      LOADBALANCER_IPS: "172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
+      DISABLE_HTTPS: "true"
+      
+      # Organization Settings
+      SETTING_ZULIP_ORG_NAME: "${ORG_NAME:-Seemplify}"
+      SETTING_ZULIP_ORG_ID: "seemplify"
+      
+      # Mobile Push Notifications (optional)
+      # SETTING_ZULIP_SERVICE_PUSH_NOTIFICATIONS: "True"
+      
+    volumes:
+      - "zulip:/data:rw"
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1048576
+    depends_on:
+      - database
+      - memcached
+      - rabbitmq
+      - redis
+    networks:
+      - dokploy-network
+    labels:
+      # Disable Traefik auto-discovery - use file-based config only
+      - "traefik.enable=false"
+
+volumes:
+  zulip:
+  postgresql-14:
+  rabbitmq:
+  redis:
+
+networks:
+  dokploy-network:
+    external: true

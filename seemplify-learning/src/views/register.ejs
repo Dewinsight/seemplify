@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .auth-wrap {
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+    .auth-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      padding: 20px;
+      display: grid;
+      gap: 12px;
+    }
+    .auth-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 28px;
+      letter-spacing: -0.02em;
+    }
+    .auth-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .auth-card label {
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .auth-card .input,
+    .intent-pill {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .auth-card .input:focus {
+      outline: none;
+      border-color: rgba(56, 189, 248, .7);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, .18);
+    }
+    .auth-footer {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .intent-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .intent-option {
+      display: grid;
+      align-items: start;
+      gap: 4px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color .2s ease, box-shadow .2s ease;
+      background: var(--field-bg);
+    }
+    .intent-option.active {
+      border-color: rgba(56, 189, 248, .75);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, .18);
+    }
+    .intent-option input {
+      margin: 0;
+      width: 16px;
+      height: 16px;
+    }
+    .intent-option-title {
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .intent-option-note {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .intent-note {
+      border: 1px solid rgba(56, 189, 248, .4);
+      border-radius: 10px;
+      background: rgba(56, 189, 248, .08);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.4;
+      display: none;
+    }
+    .intent-note.show {
+      display: block;
+    }
+    .hidden {
+      display: none;
+    }
+    @media (max-width: 720px) {
+      .intent-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <% const selectedIntent = typeof intent === 'string' ? intent : 'learn' %>
+  <% const selectedOrgName = typeof organizationName === 'string' ? organizationName : '' %>
+  <% const hasInviteToken = typeof inviteToken === 'string' && inviteToken.trim().length > 0 %>
+  <% const inviteActive = hasInviteToken && !inviteExpired && typeof inviteEmail === 'string' && inviteEmail.trim().length > 0 %>
+  <% const hasAdminInviteToken = typeof adminInviteToken === 'string' && adminInviteToken.trim().length > 0 %>
+  <% const adminInviteActive = hasAdminInviteToken && !adminInviteExpired && typeof adminInviteEmail === 'string' && adminInviteEmail.trim().length > 0 %>
+  <% const forcedInviteIntent = inviteActive || adminInviteActive ? 'learn' : selectedIntent %>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <h1 class="auth-title"><%= `Create ${brandLearningName || 'Seemplify Learning'} Account` %></h1>
+      <p class="auth-subtitle">
+        <%= inviteActive
+          ? 'You were invited to join as a sales agent. Complete your account to activate access.'
+          : (adminInviteActive
+            ? `You were invited to join as a ${String(adminInviteRole || 'admin').replace(/_/g, ' ')}. Complete registration to continue to verification.`
+            : 'Select your intent to tailor your onboarding and access level.') %>
+      </p>
+
+      <% if (error) { %>
+        <div class="alert alert-error"><%= error %></div>
+      <% } %>
+      <% if (inviteExpired) { %>
+        <div class="alert alert-error">This invite link is invalid or expired. Request a fresh invite from your channel partner admin.</div>
+      <% } %>
+      <% if (adminInviteExpired) { %>
+        <div class="alert alert-error">This admin invite link is invalid or expired. Request a fresh invite from a super admin.</div>
+      <% } %>
+      <% if (inviteActive) { %>
+        <div class="intent-note show">
+          Invited Organization: <strong><%= inviteOrganizationName || 'Partner Organization' %></strong><br>
+          Invited Email: <strong><%= inviteEmail %></strong>
+        </div>
+      <% } %>
+      <% if (adminInviteActive) { %>
+        <div class="intent-note show">
+          Invited Role: <strong><%= String(adminInviteRole || 'admin').replace(/_/g, ' ') %></strong><br>
+          Invited Email: <strong><%= adminInviteEmail %></strong>
+        </div>
+      <% } %>
+
+      <form method="post" action="/register" id="register-form" style="display:grid; gap:10px;">
+        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+        <input type="hidden" name="source" id="intent-source" value="<%= source || 'direct' %>">
+        <input type="hidden" name="return_to" value="<%= returnTo || '/simple-lms' %>">
+        <% if (hasInviteToken) { %>
+          <input type="hidden" name="invite_token" value="<%= inviteToken %>">
+        <% } %>
+        <% if (hasAdminInviteToken) { %>
+          <input type="hidden" name="admin_invite_token" value="<%= adminInviteToken %>">
+        <% } %>
+        <% if (inviteActive) { %>
+          <input type="hidden" name="intent" value="learn">
+        <% } %>
+        <% if (adminInviteActive) { %>
+          <input type="hidden" name="intent" value="learn">
+        <% } %>
+
+        <% if (!inviteActive && !adminInviteActive) { %>
+          <label>I want to</label>
+          <div class="intent-grid" id="intent-grid">
+            <label class="intent-option" data-intent="learn">
+              <input type="radio" name="intent" value="learn" <%= selectedIntent === 'learn' ? 'checked' : '' %>>
+              <span class="intent-option-title">Learn</span>
+              <p class="intent-option-note">Join as a learner and start taking courses.</p>
+            </label>
+            <label class="intent-option" data-intent="teach">
+              <input type="radio" name="intent" value="teach" <%= selectedIntent === 'teach' ? 'checked' : '' %>>
+              <span class="intent-option-title">Teach</span>
+              <p class="intent-option-note">Start publishing your own courses.</p>
+            </label>
+            <label class="intent-option" data-intent="partner">
+              <input type="radio" name="intent" value="partner" <%= selectedIntent === 'partner' ? 'checked' : '' %>>
+              <span class="intent-option-title">Partner</span>
+              <p class="intent-option-note">Apply to run a partner organization.</p>
+            </label>
+            <label class="intent-option" data-intent="channel_partner">
+              <input type="radio" name="intent" value="channel_partner" <%= selectedIntent === 'channel_partner' ? 'checked' : '' %>>
+              <span class="intent-option-title">Channel Partner</span>
+              <p class="intent-option-note">Apply to onboard and manage sales agents.</p>
+            </label>
+          </div>
+        <% } %>
+
+        <div id="partner-org-wrap" class="<%= ['partner', 'channel_partner'].includes(forcedInviteIntent) ? '' : 'hidden' %>">
+          <label>Organization Name</label>
+          <input class="input" type="text" name="organizationName" id="organization-name" value="<%= selectedOrgName %>" maxlength="160" placeholder="Your organization name">
+        </div>
+
+        <div id="partner-note" class="intent-note <%= ['partner', 'channel_partner'].includes(forcedInviteIntent) ? 'show' : '' %>">
+          Partner applications are reviewed by a platform admin before role activation.
+        </div>
+
+        <label>Full Name</label>
+        <input class="input" type="text" name="name" required placeholder="Jane Doe">
+
+        <label>Email</label>
+        <input
+          class="input"
+          type="email"
+          name="email"
+          required
+          placeholder="you@company.com"
+          value="<%= inviteActive ? inviteEmail : (adminInviteActive ? adminInviteEmail : '') %>"
+          <%= inviteActive || adminInviteActive ? 'readonly' : '' %>
+        >
+
+        <label>Password</label>
+        <input class="input" type="password" name="password" required minlength="8" placeholder="Minimum 8 characters">
+
+        <button class="btn btn-primary" type="submit" id="submit-label"><%= inviteActive ? 'Join as Sales Agent' : (adminInviteActive ? 'Create Admin Account' : 'Create account') %></button>
+      </form>
+
+      <p class="auth-footer">Already have an account? <a href="<%= loginUrl || '/login' %>">Sign in</a></p>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const intentGrid = document.getElementById('intent-grid')
+      const partnerOrgWrap = document.getElementById('partner-org-wrap')
+      const partnerNote = document.getElementById('partner-note')
+      const organizationNameInput = document.getElementById('organization-name')
+      const submitLabel = document.getElementById('submit-label')
+      const intentSource = document.getElementById('intent-source')
+      const inviteActive = <%= inviteActive ? 'true' : 'false' %>
+      const adminInviteActive = <%= adminInviteActive ? 'true' : 'false' %>
+
+      const submitTextByIntent = {
+        learn: 'Start Learning',
+        teach: 'Start Teaching',
+        partner: 'Apply as Partner',
+        channel_partner: 'Apply as Channel Partner'
+      }
+
+      const sourceByIntent = {
+        learn: 'direct',
+        teach: 'teach_landing',
+        partner: 'partner_registration',
+        channel_partner: 'channel_partner_registration'
+      }
+
+      const updateIntentUI = () => {
+        if (inviteActive || adminInviteActive || !intentGrid) {
+          return
+        }
+        const selected = intentGrid.querySelector('input[name="intent"]:checked')
+        const intent = selected ? selected.value : 'learn'
+
+        intentGrid.querySelectorAll('.intent-option').forEach((option) => {
+          option.classList.toggle('active', option.getAttribute('data-intent') === intent)
+        })
+
+        const isPartnerIntent = intent === 'partner' || intent === 'channel_partner'
+        partnerOrgWrap.classList.toggle('hidden', !isPartnerIntent)
+        partnerNote.classList.toggle('show', isPartnerIntent)
+        if (organizationNameInput) {
+          organizationNameInput.required = isPartnerIntent
+        }
+
+        submitLabel.textContent = submitTextByIntent[intent] || 'Create account'
+        if (intentSource) {
+          intentSource.value = sourceByIntent[intent] || intentSource.value || 'direct'
+        }
+      }
+
+      if (intentGrid) {
+        intentGrid.addEventListener('change', updateIntentUI)
+      }
+      updateIntentUI()
+    })()
+  </script>
+</body>
+</html>

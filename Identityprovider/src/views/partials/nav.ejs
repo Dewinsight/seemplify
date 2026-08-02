@@ -1,0 +1,261 @@
+<!-- Mobile Nav Checkbox (CSS-only toggle) -->
+<input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
+
+<!-- Mobile Nav Overlay (closes menu when clicked) -->
+<label for="mobile-nav-toggle" class="mobile-nav-overlay"></label>
+
+<!-- Mobile Drawer -->
+<div class="mobile-drawer">
+  <label for="mobile-nav-toggle" class="mobile-drawer-close" aria-label="Close menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M18 6L6 18M6 6l12 12"/>
+    </svg>
+  </label>
+  <div class="mobile-drawer-links">
+    <a href="/" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'home' ? ' active' : '' %>">Home</a>
+    <a href="/notifications" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>">Notifications</a>
+    <a href="/organizations" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'organizations' ? ' active' : '' %>">Organizations</a>
+    <a href="/subscription" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'subscription' ? ' active' : '' %>">Subscription</a>
+  </div>
+  <div class="mobile-drawer-user">
+    <div class="top-nav-user-info">
+      <div class="top-nav-user-name">
+        <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+      </div>
+      <div class="top-nav-user-email">
+        <%= user.email %>
+      </div>
+    </div>
+    <div class="mobile-drawer-account">
+      <a href="/notifications" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>">Notifications</a>
+      <a href="/profile" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
+      <a href="/invitations/pending" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
+    </div>
+    <a href="/logout" class="top-nav-logout">Sign out</a>
+  </div>
+</div>
+
+<!-- Top Navigation -->
+<nav class="top-nav">
+  <a href="<%- brand.name === 'Akwa Ibom State' ? 'https://akwaibom.aiinnigeria.com' : 'https://seemplifyai.com' %>" class="top-nav-brand">
+    <%- brand.navLogoHtml %>
+  </a>
+  <!-- Mobile Nav Toggle Label -->
+  <label for="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Toggle navigation">
+    <span></span>
+    <span></span>
+    <span></span>
+  </label>
+  <div class="top-nav-links">
+    <a href="/" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'home' ? ' active' : '' %>">Home</a>
+    <a href="/organizations" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'organizations' ? ' active' : '' %>">Organizations</a>
+    <a href="/subscription" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'subscription' ? ' active' : '' %>">Subscription</a>
+  </div>
+  <div class="top-nav-user">
+    <div class="theme-dropdown">
+      <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+        <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5" />
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+        </svg>
+        <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      </button>
+      <div class="theme-menu" id="theme-menu">
+        <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5" />
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+          Light
+        </button>
+        <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+          Dark
+        </button>
+        <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          System
+        </button>
+      </div>
+    </div>
+    <a
+      href="/notifications"
+      class="notification-icon notification-badge top-nav-notification-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>"
+      aria-label="Open notifications"
+      title="Notifications"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M15 17h5l-1.4-1.4a2 2 0 0 1-.6-1.4V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+        <path d="M9.5 17a2.5 2.5 0 0 0 5 0" />
+      </svg>
+      <span class="badge-count" data-notification-badge hidden>0</span>
+    </a>
+    <details class="user-dropdown">
+      <summary class="user-toggle">
+        <div class="top-nav-user-info">
+          <div class="top-nav-user-name">
+            <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+          </div>
+          <div class="top-nav-user-email">
+            <%= user.email %>
+          </div>
+        </div>
+        <svg class="user-toggle-caret" viewBox="0 0 20 20" fill="none">
+          <path d="M5 7l5 5 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </summary>
+      <div class="user-menu">
+        <a href="/notifications" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>">Notifications</a>
+        <a href="/profile" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
+        <a href="/invitations/pending" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
+        <a href="/logout" class="user-menu-link user-menu-logout">Sign out</a>
+      </div>
+    </details>
+  </div>
+</nav>
+<%
+  const navInitialPendingSignatureCount = Math.max(
+    0,
+    Number(
+      (typeof notificationSummary !== 'undefined' && notificationSummary?.pendingSignatureCount)
+      || (typeof pendingSignatureCount !== 'undefined' && pendingSignatureCount)
+      || 0
+    ) || 0
+  );
+  const navInitialNotificationTasks = (typeof notificationSummary !== 'undefined' && Array.isArray(notificationSummary?.tasks))
+    ? notificationSummary.tasks
+    : [];
+  const navInitialDocumentTask = navInitialNotificationTasks.find(task => task?.category === 'documents' && task?.actionUrl) || null;
+  const navPendingSignatureHref = navInitialDocumentTask?.actionUrl || '/notifications?category=documents';
+%>
+<div
+  class="top-action-strip"
+  data-pending-signature-banner
+  <%= navInitialPendingSignatureCount > 0 ? '' : 'hidden' %>
+>
+  <div class="top-action-strip__content">
+    <div class="top-action-strip__eyebrow">Signature Required</div>
+    <div class="top-action-strip__title">You have pending documents to sign</div>
+    <div class="top-action-strip__meta" data-pending-signature-copy>
+      <%= navInitialPendingSignatureCount === 1
+        ? '1 document is waiting for your signature.'
+        : `${navInitialPendingSignatureCount} documents are waiting for your signature.` %>
+    </div>
+  </div>
+  <a
+    href="<%= navPendingSignatureHref %>"
+    class="btn btn-primary btn-sm"
+    data-pending-signature-link
+    data-fallback-href="/notifications?category=documents"
+  >
+    Review &amp; Sign
+  </a>
+</div>
+<%
+  const navProfileCompletion = typeof profileCompletion === 'undefined' ? null : profileCompletion;
+  const navCurrentProfileSection = typeof currentProfileSection === 'undefined' ? '' : currentProfileSection;
+  const navProfileCompletionEnforced = typeof profileCompletionEnforced === 'undefined' ? false : profileCompletionEnforced;
+%>
+<%- include('profile-completion-wizard', {
+  profileCompletion: navProfileCompletion,
+  currentProfileSection: navCurrentProfileSection,
+  profileCompletionEnforced: navProfileCompletionEnforced
+}) %>
+<script>
+  (function initNotificationBadge() {
+    const badges = Array.from(document.querySelectorAll('[data-notification-badge]'));
+    const pendingSignatureBanner = document.querySelector('[data-pending-signature-banner]');
+    const pendingSignatureCopy = document.querySelector('[data-pending-signature-copy]');
+    const pendingSignatureLink = document.querySelector('[data-pending-signature-link]');
+    if (!badges.length && !pendingSignatureBanner) return;
+
+    const setCount = (count) => {
+      const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+      badges.forEach((badge) => {
+        if (safeCount > 0) {
+          badge.hidden = false;
+          badge.textContent = safeCount > 99 ? '99+' : String(safeCount);
+        } else {
+          badge.hidden = true;
+          badge.textContent = '0';
+        }
+      });
+    };
+
+    const setPendingSignatureBanner = (count) => {
+      if (!pendingSignatureBanner || !pendingSignatureCopy) return;
+
+      const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+      if (safeCount > 0) {
+        pendingSignatureBanner.hidden = false;
+        pendingSignatureCopy.textContent = safeCount === 1
+          ? '1 document is waiting for your signature.'
+          : `${safeCount} documents are waiting for your signature.`;
+      } else {
+        pendingSignatureBanner.hidden = true;
+        pendingSignatureCopy.textContent = '0 documents are waiting for your signature.';
+      }
+    };
+
+    const setPendingSignatureLink = (tasks) => {
+      if (!pendingSignatureLink) return;
+      const fallbackHref = pendingSignatureLink.dataset.fallbackHref || '/notifications?category=documents';
+      const nextHref = Array.isArray(tasks)
+        ? (tasks.find((task) => task && task.category === 'documents' && typeof task.actionUrl === 'string' && task.actionUrl.trim())?.actionUrl || fallbackHref)
+        : fallbackHref;
+      pendingSignatureLink.href = nextHref;
+    };
+
+    fetch('/api/notifications/summary', {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed (${response.status})`);
+        return response.json();
+      })
+      .then((payload) => {
+        setCount(payload?.totalUnread || 0);
+        setPendingSignatureBanner(payload?.pendingSignatureCount || 0);
+        setPendingSignatureLink(payload?.tasks || []);
+      })
+      .catch(() => {
+        setCount(0);
+        setPendingSignatureBanner(<%= navInitialPendingSignatureCount %>);
+      });
+  })();
+
+  (function initStickyTopNavState() {
+    const nav = document.querySelector('.top-nav');
+    if (!nav) return;
+
+    let ticking = false;
+    const maxShrinkScroll = 140;
+
+    const update = () => {
+      ticking = false;
+      const scrollY = Math.max(0, window.scrollY || window.pageYOffset || 0);
+      const progress = Math.min(1, scrollY / maxShrinkScroll);
+      nav.style.setProperty('--top-nav-progress', progress.toFixed(4));
+    };
+
+    update();
+    const requestUpdate = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    };
+
+    window.addEventListener('scroll', requestUpdate, { passive: true });
+    window.addEventListener('resize', requestUpdate, { passive: true });
+  })();
+</script>

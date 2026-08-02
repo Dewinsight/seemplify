@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 
 const OrganizationInviteSchema = new mongoose.Schema({
@@ -20,6 +20,37 @@ const OrganizationInviteSchema = new mongoose.Schema({
     type: String,
     enum: ['admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
     default: 'recruiter'
+  },
+  designation: {
+    type: String,
+    required: true,
+    trim: true,
+    maxLength: 120
+  },
+  employeeId: {
+    type: String,
+    trim: true,
+    maxLength: 80
+  },
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: true
+  },
+  team: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinTeam',
+    default: null
+  },
+  appAccess: {
+    mode: {
+      type: String,
+      enum: ['all', 'selected'],
+      default: 'all'
+    },
+    appIds: {
+      type: [String],
+      default: []
+    }
   },
   // CRITICAL: Store HASHED token, not plain token
   tokenHash: {

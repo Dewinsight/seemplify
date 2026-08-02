@@ -8,6 +8,8 @@ services:
       - dex
     ports:
       - 3000
+    volumes:
+      - outline_data-test-outline-khufpx:/var/lib/outline/data
     environment:
       NODE_ENV: production
       URL: ${URL}
@@ -17,11 +19,22 @@ services:
       DATABASE_URL: postgres://outline:${POSTGRES_PASSWORD}@postgres:5432/outline
       PGSSLMODE: disable
       REDIS_URL: redis://redis:6379
+      FILE_STORAGE: ${FILE_STORAGE:-local}
+      FILE_STORAGE_LOCAL_ROOT_DIR: ${FILE_STORAGE_LOCAL_ROOT_DIR:-/var/lib/outline/data}
+      FILE_STORAGE_UPLOAD_MAX_SIZE: ${FILE_STORAGE_UPLOAD_MAX_SIZE:-26214400}
       OIDC_CLIENT_ID: outline
       OIDC_CLIENT_SECRET: ${CLIENT_SECRET}
       OIDC_AUTH_URI: ${DEX_URL}/auth
       OIDC_TOKEN_URI: ${DEX_URL}/token
       OIDC_USERINFO_URI: ${DEX_URL}/userinfo
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_REPLY_EMAIL: ${SMTP_REPLY_EMAIL}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_TLS_CIPHERS: ${SMTP_TLS_CIPHERS:-}
     networks:
       - seemplify-outline-mrgajc
     labels:
@@ -80,6 +93,7 @@ services:
     networks:
       - seemplify-outline-mrgajc
 volumes:
+  outline_data-test-outline-khufpx: null
   postgres_data-test-outline-khufpx: null
   redis_data-test-outline-khufpx: null
 networks:

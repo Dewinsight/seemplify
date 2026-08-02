@@ -25,6 +25,7 @@ const { claimsRefreshMiddleware } = require('./middleware/claimsRefresh');
 
 // Import services
 const websocketService = require('./services/websocketService');
+const { initializeEmailService } = require('./services/emailService');
 
 const app = express();
 const PORT = process.env.PORT || 5002;
@@ -108,6 +109,9 @@ const startServer = async () => {
 
     // Initialize OIDC client
     await initializeOIDC();
+
+    // Initialize email service
+    initializeEmailService();
 
     // Start server
     const server = app.listen(PORT, () => {

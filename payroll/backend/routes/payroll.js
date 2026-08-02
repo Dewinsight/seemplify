@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
 const PayrollEngineService = require('../services/PayrollEngineService');
+const taxService = require('../services/TaxCalculationService');
+const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
+const { createPayslipPdf } = require('../services/payslipPdfService');
 const payrollEngineService = new PayrollEngineService();
 
 // Import RBAC middleware
@@ -20,6 +24,413 @@ const getUserInfo = (req) => ({
   name: req.session?.user?.name,
   role: req.currentOrganization?.role || req.session?.user?.currentRole
 });
+
+const HR_ADMIN_ORG_ROLES = new Set(['owner', 'admin', 'hr_manager']);
+const ORG_ADMIN_ONLY_ROLES = new Set(['owner', 'admin']);
+
+function getVisiblePayslipStatusesForRole(role) {
+  if (HR_ADMIN_ORG_ROLES.has(role)) {
+    // HR/Admin users can see their own draft-to-final lifecycle.
+    return ['draft', 'pending_approval', 'approved', 'exported', 'paid', 'revised'];
+  }
+  return ['approved', 'exported', 'paid'];
+}
+
+function requireOrganizationAdminOnly(req, res, next) {
+  return requireHRAdmin(req, res, () => {
+    const { role } = getUserInfo(req);
+    if (!ORG_ADMIN_ONLY_ROLES.has(role)) {
+      return res.status(403).json({
+        error: 'Only organization admins can retract payroll runs'
+      });
+    }
+
+    next();
+  });
+}
+
+const getIdpBaseUrl = () =>
+  process.env.IDP_URL ||
+  process.env.IDP_ISSUER_URL ||
+  process.env.OIDC_ISSUER_URL ||
+  process.env.OIDC_ISSUER ||
+  'http://localhost:4000';
+
+function getBearerAccessToken(req) {
+  const authHeader = String(req.headers?.authorization || '').trim();
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return '';
+  return authHeader.substring(7).trim();
+}
+
+function getIdpAccessToken(req) {
+  return String(req.session?.user?.accessToken || getBearerAccessToken(req) || '').trim();
+}
+
+function isIdpUpstreamAuthFailure(error) {
+  const status = Number(error?.response?.status || 0);
+  return status === 401 || status === 403;
+}
+
+function getIdpProxyErrorMessage(error, fallbackMessage) {
+  return (
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallbackMessage
+  );
+}
+
+function buildIdpListFallback(organizationId, key, syncError) {
+  return {
+    organizationId,
+    [key]: [],
+    syncAvailable: false,
+    syncError
+  };
+}
+
+async function fetchIdpOrgMembers(accessToken, organizationId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/members`;
+
+  const res = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function fetchIdpMemberPayrollSync(accessToken, organizationId, memberId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const encodedMemberId = encodeURIComponent(String(memberId || '').trim());
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/members/${encodedMemberId}/payroll-sync`;
+
+  const res = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function fetchIdpOrgTeams(accessToken, organizationId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/teams`;
+
+  const res = await axios.get(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function updateIdpMemberPayrollSync(accessToken, organizationId, memberId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const encodedMemberId = encodeURIComponent(String(memberId || '').trim());
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/members/${encodedMemberId}/payroll-sync`;
+
+  const res = await axios.put(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function addIdpTeamMember(accessToken, teamId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/teams/${teamId}/members`;
+
+  const res = await axios.post(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function assignIdpOnboarding(accessToken, organizationId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/assign`;
+
+  const res = await axios.post(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function sendIdpOnboardingReminder(accessToken, organizationId, memberId) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const encodedMemberId = encodeURIComponent(String(memberId || '').trim());
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/members/${encodedMemberId}/reminder`;
+
+  const res = await axios.post(url, {}, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+async function updateIdpOnboardingStatus(accessToken, organizationId, memberId, payload) {
+  const idpBaseUrl = getIdpBaseUrl();
+  const url = `${idpBaseUrl}/api/organizations/${organizationId}/onboarding/members/${memberId}/status`;
+
+  const res = await axios.patch(url, payload, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: 15000,
+  });
+
+  return res.data;
+}
+
+function getPrimaryMemberTeam(member = {}) {
+  const teamIds = Array.isArray(member?.teamIds) ? member.teamIds.map((value) => String(value || '').trim()).filter(Boolean) : [];
+  const teamNames = Array.isArray(member?.teamNames) ? member.teamNames.map((value) => String(value || '').trim()).filter(Boolean) : [];
+
+  return {
+    teamId: teamIds[0] || '',
+    teamName: teamNames[0] || '',
+  };
+}
+
+function buildEmployeeSnapshotFromMember(member = {}, existingEmployeeInfo = {}) {
+  const { teamId, teamName } = getPrimaryMemberTeam(member);
+  const idpDateOfBirth = member?.payrollSync?.personalInfo?.dateOfBirth
+    ? new Date(member.payrollSync.personalInfo.dateOfBirth)
+    : null;
+
+  return {
+    ...(existingEmployeeInfo || {}),
+    name: member.name || existingEmployeeInfo?.name,
+    email: member.email || existingEmployeeInfo?.email,
+    employeeId: member.employeeId || existingEmployeeInfo?.employeeId,
+    department: member.departmentName || '',
+    designation: member.designation || existingEmployeeInfo?.designation,
+    teamId: teamId || existingEmployeeInfo?.teamId || '',
+    teamName: teamName || existingEmployeeInfo?.teamName || '',
+    dateOfBirth: idpDateOfBirth || existingEmployeeInfo?.dateOfBirth || null,
+    lastSyncedAt: new Date()
+  };
+}
+
+function normalizePayrollBankAccountType(type = '', country = '') {
+  const rawType = String(type || '').trim().toLowerCase();
+  if (['checking', 'savings', 'current'].includes(rawType)) {
+    return rawType;
+  }
+
+  if (rawType === 'salary' || country === 'UK' || country === 'Nigeria') {
+    return 'current';
+  }
+
+  return 'checking';
+}
+
+function buildPayrollBankAccountsFromMember(member = {}, existingBankAccounts = []) {
+  const accounts = Array.isArray(member?.payrollSync?.banking?.accounts)
+    ? member.payrollSync.banking.accounts
+    : [];
+
+  if (accounts.length === 0) {
+    return Array.isArray(existingBankAccounts) ? existingBankAccounts : [];
+  }
+
+  const hasExplicitPrimary = accounts.some((account) => account?.isPrimary === true);
+
+  return accounts
+    .filter((account) => account && (account.bankName || account.accountNumber || account.iban))
+    .map((account, index) => {
+      const country = String(account.country || member?.payrollSync?.banking?.country || '').trim();
+      return {
+        isPrimary: hasExplicitPrimary ? account.isPrimary === true : index === 0,
+        accountName: account.accountHolderName || member.name || 'Primary',
+        accountNumber: account.accountNumber || '',
+        bankName: account.bankName || '',
+        branchCode: account.sortCode || account.bankCode || '',
+        swiftCode: account.bicSwift || '',
+        routingNumber: account.routingNumber || '',
+        iban: account.iban || '',
+        accountType: normalizePayrollBankAccountType(account.accountType, country),
+        splitPercentage: Number(account.percentage || 100),
+        isVerified: false,
+      };
+    });
+}
+
+function buildEmergencyContactFromMember(member = {}, existingEmergencyContact = null) {
+  const contact = member?.payrollSync?.emergencyContact;
+  if (!contact || (!contact.name && !contact.phone && !contact.email)) {
+    return existingEmergencyContact;
+  }
+
+  return {
+    ...(existingEmergencyContact || {}),
+    name: contact.name || existingEmergencyContact?.name || '',
+    relationship: contact.relationship || existingEmergencyContact?.relationship || '',
+    phone: contact.phone || existingEmergencyContact?.phone || '',
+    email: contact.email || existingEmergencyContact?.email || '',
+  };
+}
+
+function applyPayrollSyncFromMember(profile, member = {}) {
+  profile.employeeInfo = buildEmployeeSnapshotFromMember(member, profile.employeeInfo);
+  profile.bankAccounts = buildPayrollBankAccountsFromMember(member, profile.bankAccounts);
+  profile.emergencyContact = buildEmergencyContactFromMember(member, profile.emergencyContact);
+
+  const dependentsCount = Number(member?.payrollSync?.dependentsCount || 0);
+  if (dependentsCount > 0 && Number(profile?.taxConfig?.dependents || 0) === 0) {
+    profile.taxConfig = {
+      ...(profile.taxConfig || {}),
+      dependents: dependentsCount,
+    };
+  }
+
+  return profile;
+}
+
+function deriveLegacyCalculationRegime(taxConfig = {}) {
+  if (taxConfig.taxRegime === 'exempt') return 'none';
+
+  if (taxConfig.calculationMode === 'builtin' || taxConfig.calculationMode === 'configured') {
+    if (taxConfig.jurisdictionCode === 'GB') return 'progressive_uk';
+    if (taxConfig.jurisdictionCode === 'US') return 'progressive_us';
+    return 'progressive_generic';
+  }
+
+  if (taxConfig.manualCalculationType === 'none') return 'none';
+  if (taxConfig.manualCalculationType === 'flat') return 'flat';
+  return 'progressive_generic';
+}
+
+function normalizeTaxConfigPayload(input) {
+  if (input === undefined) return undefined;
+
+  const normalized = taxService.normalizeConfig(input || {});
+
+  return {
+    ...input,
+    ...normalized,
+    calculationRegime: deriveLegacyCalculationRegime(normalized),
+    jurisdictionConfigId: normalized.jurisdictionConfigId || null,
+    jurisdictionVersionId: normalized.jurisdictionVersionId || null,
+    employeeTaxInputs: (normalized.employeeTaxInputs && typeof normalized.employeeTaxInputs === 'object')
+      ? normalized.employeeTaxInputs
+      : {},
+    taxValidation: normalizeTaxValidationPayload(normalized.taxValidation),
+    flatTaxRate: Number(normalized.flatTaxRate || 0),
+    manualTaxFreeAllowance: Number(normalized.manualTaxFreeAllowance || 0),
+    socialSecurityRate: Number(normalized.socialSecurityRate || 0),
+    socialSecurityCap: Number(normalized.socialSecurityCap || 0),
+    additionalWithholding: Number(normalized.additionalWithholding || 0),
+    otherIncome: Number(normalized.otherIncome || 0),
+    deductionsAdjustment: Number(normalized.deductionsAdjustment || 0),
+    taxCredits: Number(normalized.taxCredits || 0),
+    dependents: Number(normalized.dependents || 0),
+    multipleJobs: !!normalized.multipleJobs,
+    customBrackets: Array.isArray(normalized.customBrackets)
+      ? normalized.customBrackets.map((bracket) => ({
+        min: Number(bracket.min || 0),
+        max: bracket.max === null || bracket.max === undefined ? null : Number(bracket.max),
+        rate: Number(bracket.rate || 0),
+      }))
+      : [],
+  };
+}
+
+function normalizeTaxValidationPayload(input = {}) {
+  const statusMap = {
+    valid: 'valid',
+    ready: 'valid',
+    configured: 'valid',
+    success: 'valid',
+    ok: 'valid',
+    warning: 'warning',
+    needs_configuration: 'warning',
+    pending_configuration: 'warning',
+    error: 'error',
+    invalid: 'error',
+    failed: 'error',
+    unknown: 'unknown',
+    pending: 'unknown',
+  };
+
+  const rawStatus = String(input?.status || '').trim().toLowerCase();
+  const normalizedStatus = statusMap[rawStatus] || 'unknown';
+  const validatedAt = input?.validatedAt ? new Date(input.validatedAt) : null;
+
+  return {
+    status: normalizedStatus,
+    messages: Array.isArray(input?.messages)
+      ? input.messages.map((message) => String(message || '').trim()).filter(Boolean)
+      : [],
+    validatedAt: validatedAt && !Number.isNaN(validatedAt.getTime()) ? validatedAt : null,
+  };
+}
+
+function normalizePayrollFlagsPayload(input, basicSalary, existingFlags = {}) {
+  const merged = {
+    ...(existingFlags || {}),
+    ...(input || {}),
+  };
+
+  if (!(Number(basicSalary || 0) > 0)) {
+    merged.includeInNextRun = false;
+    merged.requiresReview = true;
+    if (!String(merged.reviewReason || '').trim()) {
+      merged.reviewReason = 'Automatically excluded from payroll until payroll setup is completed.';
+    }
+  }
+
+  return merged;
+}
+
+function roundMoney(value) {
+  const parsed = Number(value || 0);
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function extractValidationMessages(error) {
+  if (!error || typeof error !== 'object') {
+    return [];
+  }
+
+  return Object.values(error.errors || {})
+    .map((entry) => String(entry?.message || '').trim())
+    .filter(Boolean);
+}
+
+function sumAllowanceAmount(allowances = [], { taxableOnly = false } = {}) {
+  return roundMoney(
+    (Array.isArray(allowances) ? allowances : [])
+      .filter((item) => item && item.isActive !== false)
+      .filter((item) => !taxableOnly || item.isTaxable !== false)
+      .reduce((sum, item) => sum + Math.max(0, toNumber(item.amount)), 0)
+  );
+}
+
+function sumRecurringDeductionAmount(deductions = [], grossPay = 0, { isPreTax = false } = {}) {
+  return roundMoney(
+    (Array.isArray(deductions) ? deductions : [])
+      .filter((item) => item && item.isActive !== false)
+      .filter((item) => !!item.isPreTax === isPreTax)
+      .reduce((sum, item) => {
+        if (item.isPercentage) {
+          return sum + (grossPay * (Math.max(0, toNumber(item.percentage)) / 100));
+        }
+        return sum + Math.max(0, toNumber(item.amount));
+      }, 0)
+  );
+}
 
 // =====================================================
 // PAYROLL PROFILE ROUTES (Employee & HR Admin)
@@ -42,6 +453,7 @@ router.get('/profile/me', requireAuth, async (req, res) => {
         organizationId,
         basicSalary: 0,
         currency: 'USD',
+        payrollFlags: normalizePayrollFlagsPayload({}, 0, {}),
         employeeInfo: {
           name: req.session.user?.name,
           email: req.session.user?.email
@@ -79,8 +491,9 @@ router.get('/profile/me', requireAuth, async (req, res) => {
  */
 router.get('/dashboard-stats', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
     const currentYear = new Date().getFullYear();
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     // Get profile for salary info
     const profile = await PayrollProfile.findOne({ userId, organizationId });
@@ -90,7 +503,7 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
       userId,
       organizationId,
       'payPeriod.year': currentYear,
-      status: { $in: ['approved', 'processed', 'paid'] }
+      status: { $in: visibleStatuses }
     }).sort({ 'payPeriod.month': -1 });
 
     // Calculate YTD
@@ -99,15 +512,15 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
     let ytdNetPay = 0;
 
     for (const slip of payslips) {
-      ytdGrossEarnings += slip.earnings?.totalGross || 0;
-      ytdTotalTax += slip.deductions?.income_tax || 0;
+      ytdGrossEarnings += slip.earningsSummary?.grossPay || 0;
+      ytdTotalTax += slip.taxBreakdown?.taxAmount || 0;
       ytdNetPay += slip.netPay || 0;
     }
 
     // Get next payday from latest payroll run
     const nextRun = await PayrollRun.findOne({
       organizationId,
-      status: { $in: ['pending_approval', 'approved', 'processing'] },
+      status: { $in: ['draft', 'calculating', 'calculated', 'pending_review', 'pending_approval', 'approved'] },
       'payPeriod.paymentDate': { $gte: new Date() }
     }).sort({ 'payPeriod.paymentDate': 1 });
 
@@ -137,6 +550,303 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Get Dashboard Stats Error:', err);
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+/**
+ * GET /api/payroll/admin/overview
+ * Lightweight stats for HR dashboard widgets
+ */
+router.get('/admin/overview', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = req.session?.user?.accessToken;
+
+    const [
+      activeProfiles,
+      pendingCompensationRequests,
+      pendingRuns,
+      latestRun
+    ] = await Promise.all([
+      PayrollProfile.find({ organizationId, isActive: true }, { userId: 1, basicSalary: 1 }).lean(),
+      CompensationRequest.countDocuments({ organizationId, status: { $in: ['pending', 'approved_l1'] } }),
+      PayrollRun.countDocuments({ organizationId, status: { $in: ['pending_review', 'pending_approval'] } }),
+      PayrollRun.getLatestByOrganization(organizationId).lean()
+    ]);
+
+    let activeEmployees = activeProfiles.length;
+    let profilesNeedingSetup = activeProfiles.filter((p) => Number(p.basicSalary || 0) <= 0).length;
+
+    const idpSync = {
+      source: 'payroll_profiles',
+      totalMembers: activeEmployees,
+      missingProfiles: 0,
+      syncedProfiles: activeProfiles.length,
+      failed: false
+    };
+
+    if (accessToken) {
+      try {
+        const idpData = await fetchIdpOrgMembers(accessToken, organizationId);
+        const idpMembers = Array.isArray(idpData?.members) ? idpData.members : [];
+        const memberIds = Array.from(new Set(
+          idpMembers
+            .map((m) => String(m?.sub || m?.id || '').trim())
+            .filter(Boolean)
+        ));
+
+        if (memberIds.length > 0) {
+          const profileByUserId = new Map(
+            activeProfiles.map((profile) => [String(profile.userId), profile])
+          );
+
+          let missingProfiles = 0;
+          let incompleteProfiles = 0;
+
+          for (const memberId of memberIds) {
+            const profile = profileByUserId.get(memberId);
+            if (!profile) {
+              missingProfiles += 1;
+              continue;
+            }
+            if (Number(profile.basicSalary || 0) <= 0) {
+              incompleteProfiles += 1;
+            }
+          }
+
+          activeEmployees = memberIds.length;
+          profilesNeedingSetup = missingProfiles + incompleteProfiles;
+          idpSync.source = 'identity_provider';
+          idpSync.totalMembers = memberIds.length;
+          idpSync.missingProfiles = missingProfiles;
+          idpSync.syncedProfiles = memberIds.length - missingProfiles;
+          idpSync.failed = false;
+        }
+      } catch (syncErr) {
+        console.warn('Admin overview IDP sync failed:', syncErr?.message || syncErr);
+        idpSync.failed = true;
+      }
+    }
+
+    res.json({
+      activeEmployees,
+      profilesNeedingSetup,
+      pendingCompensationRequests,
+      pendingRuns,
+      latestRun,
+      idpSync
+    });
+  } catch (err) {
+    console.error('Admin Overview Error:', err);
+    res.status(500).json({ error: 'Failed to fetch admin overview' });
+  }
+});
+
+/**
+ * GET /api/payroll/idp/members
+ * Proxy to IDP organization members (HR Admin only)
+ *
+ * This is used to list employees from the Identity Provider even if they haven't logged into Payroll yet.
+ */
+router.get('/idp/members', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'members',
+        'Identity Provider sync is currently unavailable for this session'
+      ));
+    }
+
+    const data = await fetchIdpOrgMembers(accessToken, organizationId);
+    res.json({
+      ...data,
+      organizationId: data?.organizationId || organizationId,
+      members: Array.isArray(data?.members) ? data.members : [],
+      syncAvailable: true
+    });
+  } catch (err) {
+    console.error('IDP Members Proxy Error:', err?.response?.data || err.message || err);
+    if (isIdpUpstreamAuthFailure(err)) {
+      const { organizationId } = getUserInfo(req);
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'members',
+        'Identity Provider session expired while loading members'
+      ));
+    }
+    res.status(err?.response?.status || 500).json({ error: 'Failed to fetch IDP members' });
+  }
+});
+
+router.get('/idp/teams', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'teams',
+        'Identity Provider sync is currently unavailable for this session'
+      ));
+    }
+
+    const data = await fetchIdpOrgTeams(accessToken, organizationId);
+    const teams = Array.isArray(data) ? data : (Array.isArray(data?.teams) ? data.teams : []);
+
+    res.json({
+      organizationId,
+      teams,
+      syncAvailable: true
+    });
+  } catch (err) {
+    console.error('IDP Teams Proxy Error:', err?.response?.data || err.message || err);
+    if (isIdpUpstreamAuthFailure(err)) {
+      const { organizationId } = getUserInfo(req);
+      return res.json(buildIdpListFallback(
+        organizationId,
+        'teams',
+        'Identity Provider session expired while loading teams'
+      ));
+    }
+    res.status(err?.response?.status || 500).json({ error: 'Failed to fetch IDP teams' });
+  }
+});
+
+router.post('/idp/teams/:teamId/members', requireHRAdmin, async (req, res) => {
+  try {
+    const accessToken = getIdpAccessToken(req);
+    const { teamId } = req.params;
+    const { accountId, role = 'member' } = req.body || {};
+
+    if (!accessToken) {
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+    }
+
+    if (!teamId || !accountId) {
+      return res.status(400).json({ error: 'teamId and accountId are required' });
+    }
+
+    const data = await addIdpTeamMember(accessToken, teamId, { accountId, role });
+    res.status(201).json(data);
+  } catch (err) {
+    console.error('IDP Team Member Add Proxy Error:', err?.response?.data || err.message || err);
+    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(status).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to assign member to team')
+    });
+  }
+});
+
+router.post('/idp/onboarding/assign', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+    const memberId = String(req.body?.memberId || '').trim();
+    const dueAt = req.body?.dueAt;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+    }
+
+    if (!memberId) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+
+    const data = await assignIdpOnboarding(accessToken, organizationId, {
+      memberId,
+      workflowType: 'onboarding',
+      useDefaultTemplate: true,
+      dueAt
+    });
+
+    res.status(201).json(data);
+  } catch (err) {
+    console.error('IDP Onboarding Assign Proxy Error:', err?.response?.data || err.message || err);
+    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(status).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to assign onboarding')
+    });
+  }
+});
+
+router.post('/idp/onboarding/members/:memberId/reminder', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+    const memberId = String(req.params?.memberId || '').trim();
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+    }
+
+    if (!memberId) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+
+    const data = await sendIdpOnboardingReminder(accessToken, organizationId, memberId);
+    res.json(data);
+  } catch (err) {
+    console.error('IDP Onboarding Reminder Proxy Error:', err?.response?.data || err.message || err);
+    const status = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(status).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to send onboarding reminder')
+    });
+  }
+});
+
+router.patch('/idp/onboarding/members/:memberId/status', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+    const memberId = String(req.params?.memberId || '').trim();
+    const status = String(req.body?.status || '').trim().toLowerCase();
+    const clearOverride = req.body?.clearOverride === true;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+    }
+
+    if (!memberId) {
+      return res.status(400).json({ error: 'memberId is required' });
+    }
+
+    const data = await updateIdpOnboardingStatus(accessToken, organizationId, memberId, {
+      status,
+      clearOverride
+    });
+
+    res.json(data);
+  } catch (err) {
+    console.error('IDP Onboarding Status Proxy Error:', err?.response?.data || err.message || err);
+    const statusCode = isIdpUpstreamAuthFailure(err) ? 502 : (err?.response?.status || 500);
+    res.status(statusCode).json({
+      error: getIdpProxyErrorMessage(err, 'Failed to update onboarding status')
+    });
   }
 });
 
@@ -180,8 +890,10 @@ router.get('/profiles', requireHRAdmin, async (req, res) => {
 router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+    let idpSync = null;
 
-    const profile = await PayrollProfile.findOne({
+    let profile = await PayrollProfile.findOne({
       userId: req.params.userId,
       organizationId
     }).populate('salaryGrade.gradeId');
@@ -190,10 +902,152 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    res.json(profile);
+    if (accessToken) {
+      try {
+        const member = await fetchIdpMemberPayrollSync(accessToken, organizationId, req.params.userId);
+        if (member) {
+          idpSync = member;
+          applyPayrollSyncFromMember(profile, member);
+          await profile.save();
+          profile = await PayrollProfile.findOne({
+            userId: req.params.userId,
+            organizationId
+          }).populate('salaryGrade.gradeId');
+        }
+      } catch (syncErr) {
+        console.warn('Profile IDP sync failed:', syncErr?.message || syncErr);
+      }
+    }
+
+    const payload = profile.toObject({ virtuals: true });
+    if (idpSync) {
+      payload.idpSync = idpSync;
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error('Get Profile Error:', err);
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+/**
+ * POST /api/payroll/profiles/:userId/tax-preview
+ * Preview tax and statutory calculations for the current profile form state
+ */
+router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+    const profile = await PayrollProfile.findOne({
+      userId: req.params.userId,
+      organizationId
+    });
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const basicSalary = Math.max(0, toNumber(req.body?.basicSalary, profile.basicSalary || 0));
+    const currency = String(req.body?.currency || profile.currency || 'USD').trim().toUpperCase() || 'USD';
+    const payFrequency = String(req.body?.payFrequency || profile.payFrequency || 'monthly').trim() || 'monthly';
+    const allowances = Array.isArray(req.body?.allowances) ? req.body.allowances : (profile.allowances || []);
+    const recurringDeductions = Array.isArray(req.body?.recurringDeductions)
+      ? req.body.recurringDeductions
+      : (profile.recurringDeductions || []);
+    const employeeInfo = {
+      ...(profile.employeeInfo || {}),
+      ...(req.body?.employeeInfo || {}),
+    };
+    const taxConfig = normalizeTaxConfigPayload(
+      req.body?.taxConfig !== undefined ? req.body.taxConfig : (profile.taxConfig || {})
+    ) || {};
+    const statutoryContributions = {
+      ...(profile.statutoryContributions || {}),
+      ...(req.body?.statutoryContributions || {}),
+    };
+
+    const totalAllowances = sumAllowanceAmount(allowances);
+    const taxableAllowances = sumAllowanceAmount(allowances, { taxableOnly: true });
+    const grossPay = roundMoney(basicSalary + totalAllowances);
+    const taxableEarnings = roundMoney(basicSalary + taxableAllowances);
+    const recurringPreTaxDeductions = sumRecurringDeductionAmount(recurringDeductions, grossPay, { isPreTax: true });
+    const recurringPostTaxDeductions = sumRecurringDeductionAmount(recurringDeductions, grossPay, { isPreTax: false });
+    const effectivePension = taxService.resolveEffectivePensionSettings(taxConfig, statutoryContributions);
+    const employeePensionAmount = effectivePension.enabled
+      ? roundMoney(grossPay * (toNumber(effectivePension.employeePercent) / 100))
+      : 0;
+    const employerPensionAmount = effectivePension.enabled
+      ? roundMoney(grossPay * (toNumber(effectivePension.employerPercent) / 100))
+      : 0;
+    const preTaxDeductions = roundMoney(recurringPreTaxDeductions + employeePensionAmount);
+    const taxableIncome = Math.max(0, roundMoney(taxableEarnings - preTaxDeductions));
+
+    const taxResult = await taxService.calculatePayrollTaxes({
+      organizationId,
+      taxConfig,
+      statutoryContributions,
+      grossPay,
+      taxableIncome,
+      basicSalary,
+      preTaxDeductions,
+      paymentDate: new Date(),
+      payFrequency,
+      employeeInfo,
+      ytdGrossPay: 0,
+      ytdTaxableIncome: 0,
+    });
+
+    const statutoryDeductions = roundMoney(taxResult?.statutoryContributions?.totalAmount || 0);
+    const incomeTax = roundMoney(taxResult?.incomeTax?.taxAmount || 0);
+    const estimatedEmployeeDeductions = roundMoney(
+      recurringPreTaxDeductions
+      + employeePensionAmount
+      + statutoryDeductions
+      + incomeTax
+      + recurringPostTaxDeductions
+    );
+    const estimatedNetPay = roundMoney(grossPay - estimatedEmployeeDeductions);
+
+    res.json({
+      currency,
+      payFrequency,
+      calculationMode: taxConfig.calculationMode,
+      validationErrors: Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [],
+      jurisdictionVersion: taxResult?.jurisdictionVersion ? {
+        _id: taxResult.jurisdictionVersion._id,
+        label: taxResult.jurisdictionVersion.label,
+        versionNumber: taxResult.jurisdictionVersion.versionNumber,
+        effectiveFrom: taxResult.jurisdictionVersion.effectiveFrom,
+        effectiveTo: taxResult.jurisdictionVersion.effectiveTo,
+      } : null,
+      summary: {
+        basicSalary: roundMoney(basicSalary),
+        grossPay,
+        taxableEarnings,
+        recurringPreTaxDeductions,
+        recurringPostTaxDeductions,
+        employeePensionAmount,
+        employerPensionAmount,
+        statutoryDeductions,
+        incomeTax,
+        estimatedEmployeeDeductions,
+        estimatedNetPay,
+      },
+      pension: {
+        enabled: effectivePension.enabled,
+        employeePercent: roundMoney(effectivePension.employeePercent),
+        employerPercent: roundMoney(effectivePension.employerPercent),
+        source: effectivePension.source,
+      },
+      incomeTax: taxResult?.incomeTax || {},
+      statutoryContributions: taxResult?.statutoryContributions || { totalAmount: 0, reducesTaxableIncome: 0, components: [] },
+    });
+  } catch (err) {
+    console.error('Tax Preview Error:', err);
+    res.status(500).json({
+      error: 'Failed to preview payroll tax',
+      details: err.message,
+    });
   }
 });
 
@@ -204,7 +1058,46 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
 router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
-    const { basicSalary, currency, allowances, recurringDeductions, benefits, taxConfig, status } = req.body;
+    const accessToken = getIdpAccessToken(req);
+    const {
+      basicSalary,
+      currency,
+      payFrequency,
+      employeeInfo,
+      allowances,
+      recurringDeductions,
+      benefits,
+      taxConfig,
+      statutoryContributions,
+      bankAccounts,
+      payrollFlags,
+      status,
+      isActive,
+      terminationDate,
+      terminationReason,
+      notes,
+      tags,
+      idpProfileSync
+    } = req.body || {};
+    const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
+    const normalizedBasicSalary = Math.max(0, toNumber(basicSalary, 0));
+    let syncedMember = null;
+
+    if (idpProfileSync !== undefined) {
+      if (!accessToken) {
+        return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+      }
+
+      try {
+        syncedMember = await updateIdpMemberPayrollSync(accessToken, organizationId, req.params.userId, idpProfileSync);
+      } catch (syncErr) {
+        console.error('Update IDP Member Payroll Sync Error:', syncErr?.response?.data || syncErr.message || syncErr);
+        const statusCode = isIdpUpstreamAuthFailure(syncErr) ? 502 : (syncErr?.response?.status || 500);
+        return res.status(statusCode).json({
+          error: getIdpProxyErrorMessage(syncErr, 'Failed to update employee profile in Identity Provider')
+        });
+      }
+    }
 
     let profile = await PayrollProfile.findOne({
       userId: req.params.userId,
@@ -216,24 +1109,51 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     }
 
     // Track salary changes
-    if (basicSalary !== undefined && basicSalary !== profile.basicSalary) {
-      profile.recordSalaryChange(basicSalary, 'market_adjustment', adminId, adminName, 'Updated by HR');
+    if (basicSalary !== undefined) {
+      if (normalizedBasicSalary !== Number(profile.basicSalary)) {
+        profile.recordSalaryChange(normalizedBasicSalary, 'market_adjustment', adminId, adminName, 'Updated by HR');
+      } else {
+        profile.basicSalary = normalizedBasicSalary;
+      }
     }
 
     // Update other fields
-    if (currency) profile.currency = currency;
-    if (allowances) profile.allowances = allowances;
-    if (recurringDeductions) profile.recurringDeductions = recurringDeductions;
-    if (benefits) profile.benefits = benefits;
-    if (taxConfig) profile.taxConfig = taxConfig;
-    if (status) profile.status = status;
+    if (currency !== undefined) profile.currency = currency;
+    if (payFrequency !== undefined) profile.payFrequency = payFrequency;
+    if (employeeInfo !== undefined) {
+      profile.employeeInfo = { ...(profile.employeeInfo || {}), ...(employeeInfo || {}) };
+    }
+    if (allowances !== undefined) profile.allowances = allowances;
+    if (recurringDeductions !== undefined) profile.recurringDeductions = recurringDeductions;
+    if (benefits !== undefined) profile.benefits = benefits;
+    if (normalizedTaxConfig !== undefined) profile.taxConfig = normalizedTaxConfig;
+    if (statutoryContributions !== undefined) {
+      profile.statutoryContributions = { ...(profile.statutoryContributions || {}), ...(statutoryContributions || {}) };
+    }
+    if (bankAccounts !== undefined) profile.bankAccounts = bankAccounts;
+    if (status !== undefined) profile.status = status;
+    if (isActive !== undefined) profile.isActive = !!isActive;
+    if (terminationDate !== undefined) profile.terminationDate = terminationDate ? new Date(terminationDate) : null;
+    if (terminationReason !== undefined) profile.terminationReason = terminationReason;
+    if (notes !== undefined) profile.notes = notes;
+    if (tags !== undefined) profile.tags = tags;
+    if (syncedMember) {
+      applyPayrollSyncFromMember(profile, syncedMember);
+    }
+    profile.payrollFlags = normalizePayrollFlagsPayload(payrollFlags, profile.basicSalary, profile.payrollFlags);
 
     profile.lastModifiedBy = adminId;
     await profile.save();
 
-    res.json({ success: true, profile });
+    res.json({ success: true, profile, idpSync: syncedMember });
   } catch (err) {
     console.error('Update Profile Error:', err);
+    if (err?.name === 'ValidationError') {
+      return res.status(400).json({
+        error: 'Invalid payroll profile data',
+        details: extractValidationMessages(err)
+      });
+    }
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
@@ -245,9 +1165,27 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
 router.post('/profiles', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId } = getUserInfo(req);
-    const { userId, basicSalary, currency, employeeInfo, allowances } = req.body;
+    const {
+      userId,
+      basicSalary,
+      currency,
+      payFrequency,
+      employeeInfo,
+      allowances,
+      recurringDeductions,
+      benefits,
+      taxConfig,
+      statutoryContributions,
+      bankAccounts,
+      payrollFlags,
+      status,
+      isActive,
+      notes,
+      tags
+    } = req.body || {};
+    const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
+    const normalizedBasicSalary = Math.max(0, toNumber(basicSalary, 0));
 
-    // Check if profile already exists
     const existing = await PayrollProfile.findOne({ userId, organizationId });
     if (existing) {
       return res.status(400).json({ error: 'Profile already exists for this user' });
@@ -256,18 +1194,29 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
     const profile = new PayrollProfile({
       userId,
       organizationId,
-      basicSalary: basicSalary || 0,
+      basicSalary: normalizedBasicSalary,
       currency: currency || 'USD',
+      payFrequency: payFrequency || 'monthly',
       employeeInfo: employeeInfo || {},
       allowances: allowances || [],
+      recurringDeductions: recurringDeductions || [],
+      benefits: benefits || {},
+      taxConfig: normalizedTaxConfig || {},
+      statutoryContributions: statutoryContributions || {},
+      bankAccounts: bankAccounts || [],
+      payrollFlags: normalizePayrollFlagsPayload(payrollFlags, normalizedBasicSalary, {}),
+      status: status || 'active',
+      isActive: isActive !== undefined ? !!isActive : true,
+      notes,
+      tags,
       createdBy: adminId
     });
 
     // Record initial salary
-    if (basicSalary > 0) {
+    if (normalizedBasicSalary > 0) {
       profile.salaryHistory.push({
         effectiveDate: new Date(),
-        newSalary: basicSalary,
+        newSalary: normalizedBasicSalary,
         changeReason: 'joining',
         approvedBy: adminId
       });
@@ -277,7 +1226,83 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
     res.status(201).json({ success: true, profile });
   } catch (err) {
     console.error('Create Profile Error:', err);
+    if (err?.name === 'ValidationError') {
+      return res.status(400).json({
+        error: 'Invalid payroll profile data',
+        details: extractValidationMessages(err)
+      });
+    }
     res.status(500).json({ error: 'Failed to create profile' });
+  }
+});
+
+/**
+ * POST /api/payroll/profiles/import-from-idp
+ * Create a payroll profile for an IDP member (HR Admin only)
+ *
+ * Body: { userId: "<idp_sub>" }
+ */
+router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId } = getUserInfo(req);
+    const accessToken = getIdpAccessToken(req);
+    const targetUserId = String(req.body?.userId || '').trim();
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'No organization selected' });
+    }
+
+    if (!accessToken) {
+      return res.status(502).json({ error: 'Identity Provider sync is currently unavailable' });
+    }
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const member = await fetchIdpMemberPayrollSync(accessToken, organizationId, targetUserId);
+
+    if (!member) {
+      return res.status(404).json({ error: 'Employee not found in IDP organization members' });
+    }
+
+    const resolvedUserId = String(member.sub || targetUserId).trim();
+    const existing = await PayrollProfile.findOne({
+      userId: { $in: Array.from(new Set([resolvedUserId, targetUserId].filter(Boolean))) },
+      organizationId
+    });
+
+    if (existing) {
+      existing.userId = resolvedUserId;
+      applyPayrollSyncFromMember(existing, member);
+      existing.payrollFlags = normalizePayrollFlagsPayload(undefined, existing.basicSalary, existing.payrollFlags);
+      await existing.save();
+      return res.json({ success: true, profile: existing, existed: true });
+    }
+
+    const profile = new PayrollProfile({
+      userId: resolvedUserId,
+      organizationId,
+      basicSalary: 0,
+      employeeInfo: buildEmployeeSnapshotFromMember(member),
+      bankAccounts: buildPayrollBankAccountsFromMember(member, []),
+      emergencyContact: buildEmergencyContactFromMember(member, null),
+      taxConfig: Number(member?.payrollSync?.dependentsCount || 0) > 0
+        ? { dependents: Number(member.payrollSync.dependentsCount) }
+        : {},
+      payrollFlags: normalizePayrollFlagsPayload({}, 0, {}),
+      createdBy: adminId,
+      status: 'active',
+      isActive: true,
+    });
+
+    await profile.save();
+
+    res.status(201).json({ success: true, profile, existed: false });
+  } catch (err) {
+    console.error('Import Profile From IDP Error:', err);
+    const statusCode = isIdpUpstreamAuthFailure(err) ? 502 : 500;
+    res.status(statusCode).json({ error: getIdpProxyErrorMessage(err, 'Failed to import profile from IDP') });
   }
 });
 
@@ -291,11 +1316,13 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
  */
 router.get('/my-payslips', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
     const { year, limit = 12 } = req.query;
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     const query = { userId, organizationId };
     if (year) query['payPeriod.year'] = parseInt(year);
+    query.status = { $in: visibleStatuses };
 
     const payslips = await Payslip.find(query)
       .populate('payrollRunId', 'runNumber payPeriod status')
@@ -315,12 +1342,14 @@ router.get('/my-payslips', requireAuth, async (req, res) => {
  */
 router.get('/my-payslips/:id', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     const payslip = await Payslip.findOne({
       _id: req.params.id,
       userId,
-      organizationId
+      organizationId,
+      status: { $in: visibleStatuses }
     }).populate('payrollRunId');
 
     if (!payslip) {
@@ -416,70 +1445,18 @@ router.get('/payslips/:id/pdf', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Generate PDF using pdfkit
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 50 });
-
     // Set response headers
     const filename = `payslip-${payslip.payslipNumber}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
+    const doc = createPayslipPdf({
+      payslip,
+      organization: req.currentOrganization || req.session?.user?.currentOrganization || {},
+    });
+
     // Pipe PDF to response
     doc.pipe(res);
-
-    // Header
-    doc.fontSize(20).text('PAYSLIP', { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(12).text(`Payslip Number: ${payslip.payslipNumber}`, { align: 'center' });
-    doc.text(`Period: ${payslip.periodDisplay || `${payslip.payPeriod?.month}/${payslip.payPeriod?.year}`}`, { align: 'center' });
-    doc.moveDown(2);
-
-    // Employee Details
-    doc.fontSize(14).text('EMPLOYEE DETAILS', { underline: true });
-    doc.fontSize(10);
-    doc.text(`Name: ${payslip.employeeSnapshot?.name || 'N/A'}`);
-    doc.text(`Employee ID: ${payslip.employeeSnapshot?.employeeId || 'N/A'}`);
-    doc.text(`Department: ${payslip.employeeSnapshot?.department || 'N/A'}`);
-    doc.text(`Designation: ${payslip.employeeSnapshot?.designation || 'N/A'}`);
-    doc.moveDown();
-
-    // Earnings
-    doc.fontSize(14).text('EARNINGS', { underline: true });
-    doc.fontSize(10);
-    
-    if (payslip.earnings && payslip.earnings.length > 0) {
-      payslip.earnings.forEach(earning => {
-        doc.text(`${earning.name}: ${payslip.currency} ${earning.amount.toLocaleString()}`);
-      });
-    }
-    
-    doc.fontSize(11).text(`Gross Pay: ${payslip.currency} ${(payslip.earningsSummary?.grossPay || 0).toLocaleString()}`, { bold: true });
-    doc.moveDown();
-
-    // Deductions
-    doc.fontSize(14).text('DEDUCTIONS', { underline: true });
-    doc.fontSize(10);
-    
-    if (payslip.deductions && payslip.deductions.length > 0) {
-      payslip.deductions.forEach(deduction => {
-        doc.text(`${deduction.name}: ${payslip.currency} ${deduction.amount.toLocaleString()}`);
-      });
-    }
-    
-    doc.fontSize(11).text(`Total Deductions: ${payslip.currency} ${(payslip.deductionsSummary?.totalDeductions || 0).toLocaleString()}`, { bold: true });
-    doc.moveDown(2);
-
-    // Net Pay
-    doc.fontSize(16).fillColor('green').text(`NET PAY: ${payslip.currency} ${(payslip.netPay || 0).toLocaleString()}`, { align: 'center' });
-    doc.fillColor('black');
-    doc.moveDown(2);
-
-    // Footer
-    doc.fontSize(8).text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
-    doc.text('This is a computer-generated document and does not require a signature.', { align: 'center' });
-
-    // Finalize PDF
     doc.end();
 
   } catch (err) {
@@ -605,33 +1582,20 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
     // =====================================================
     (async () => {
       try {
-        // Notify HR Admin that payroll is complete
+        // Notify HR Admin that payroll calculation is complete
+        // (employee payslip notifications should happen after approval/finalize)
         if (req.session?.user?.email) {
           await emailService.sendPayrollCompleteNotification(
             req.session.user.email,
             adminName,
             { month, year },
-            result.run?.totalEmployees || 0,
-            result.run?.totalGrossPayroll || 0,
-            'USD'
+            result.summary?.processed || result.summary?.totalEmployees || 0,
+            result.summary?.totalGrossPayroll || 0,
+            result.run?.summary?.currency || 'USD'
           );
         }
-
-        // Send payslip notifications to all employees
-        const payslips = await Payslip.find({ payrollRunId: run._id }).populate('userId');
-        for (const slip of payslips) {
-          if (slip.employeeInfo?.email) {
-            await emailService.sendPayslipNotification(
-              slip.employeeInfo.email,
-              slip.employeeInfo.name,
-              { month, year },
-              slip.netPay,
-              slip.currency || 'USD'
-            );
-          }
-        }
       } catch (emailErr) {
-        console.error('📧 Email notification error (non-blocking):', emailErr.message);
+        console.error('Email notification error (non-blocking):', emailErr.message);
       }
     })();
 
@@ -644,6 +1608,44 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
   } catch (err) {
     console.error('Create Payroll Run Error:', err);
     res.status(500).json({ error: 'Failed to create payroll run', details: err.message });
+  }
+});
+
+/**
+ * POST /api/payroll/runs/:id/recalculate
+ * Recalculate a payroll run (HR Admin only)
+ *
+ * This exists because payroll profiles/requests often change after an initial calculation.
+ * Allowed only before submission for approval.
+ */
+router.post('/runs/:id/recalculate', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId, name: adminName, role } = getUserInfo(req);
+    const run = await PayrollRun.findOne({ _id: req.params.id, organizationId });
+
+    if (!run) {
+      return res.status(404).json({ error: 'Payroll run not found' });
+    }
+
+    if (!['calculated', 'pending_review'].includes(run.status)) {
+      return res.status(400).json({ error: `Cannot recalculate run with status: ${run.status}` });
+    }
+
+    run.status = 'calculating';
+    run.addApproval('revised', adminId, adminName, role, req.body?.comments || 'Recalculated');
+    await run.save();
+
+    const result = await payrollEngineService.calculateRun(run._id, organizationId);
+
+    res.json({
+      success: true,
+      run: result.run,
+      summary: result.summary,
+      errors: result.errors
+    });
+  } catch (err) {
+    console.error('Recalculate Run Error:', err);
+    res.status(500).json({ error: 'Failed to recalculate payroll run', details: err.message });
   }
 });
 
@@ -725,13 +1727,12 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
 });
 
 /**
- * POST /api/payroll/runs/:id/process-payment
- * Mark payroll run as paid
+ * GET /api/payroll/runs/:id/payslips
+ * Get all payslips for a specific payroll run (HR Admin only)
  */
-router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
+router.get('/runs/:id/payslips', requireHRAdmin, async (req, res) => {
   try {
-    const { organizationId, userId: adminId } = getUserInfo(req);
-    const { bankReference, transactionId } = req.body;
+    const { organizationId } = getUserInfo(req);
 
     const run = await PayrollRun.findOne({
       _id: req.params.id,
@@ -742,83 +1743,348 @@ router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
 
-    if (run.status !== 'approved') {
-      return res.status(400).json({ error: `Cannot process payment for run with status: ${run.status}` });
+    const payslips = await Payslip.find({
+      payrollRunId: run._id,
+      organizationId
+    }).sort({ 'employeeSnapshot.name': 1 });
+
+    res.json({ success: true, run, payslips });
+  } catch (err) {
+    console.error('Get Run Payslips Error:', err);
+    res.status(500).json({ error: 'Failed to fetch run payslips' });
+  }
+});
+
+/**
+ * GET /api/payroll/runs/:id/export
+ * Export a payroll run as CSV for accounting (HR Admin only)
+ */
+router.get('/runs/:id/export', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId } = getUserInfo(req);
+
+    const run = await PayrollRun.findOne({
+      _id: req.params.id,
+      organizationId
+    }).lean();
+
+    if (!run) {
+      return res.status(404).json({ error: 'Payroll run not found' });
     }
 
-    run.status = 'paid';
-    run.paidAt = new Date();
-    run.paymentBatch = {
-      bankReference,
-      processedAt: new Date(),
-      status: 'completed'
-    };
+    if (run.status === 'cancelled') {
+      return res.status(400).json({ error: 'Cannot export a retracted payroll run' });
+    }
 
-    await run.save();
+    const payslips = await Payslip.find({
+      payrollRunId: run._id,
+      organizationId
+    }).sort({ 'employeeSnapshot.name': 1 }).lean();
 
-    // =====================================================
-    // UPDATE LOAN BALANCES & RECURRING DEDUCTIONS
-    // =====================================================
-    // Find all employees in this run who had a 'loan_repayment' deduction
-    // Decrease their remainingAmount in PayrollProfile
+    const userIds = Array.from(new Set(
+      payslips
+        .map((payslip) => String(payslip?.userId || '').trim())
+        .filter(Boolean)
+    ));
+    const profiles = userIds.length > 0
+      ? await PayrollProfile.find({ organizationId, userId: { $in: userIds } })
+        .select('userId currency employeeInfo bankAccounts')
+        .lean()
+      : [];
 
-    // We get the list of deductions from the stored payslips for this run
-    const payslips = await Payslip.find({ payrollRunId: run._id });
+    const runById = new Map([[String(run._id), run]]);
+    const profileByUserId = new Map(profiles.map((profile) => [String(profile.userId), profile]));
+    const { csv } = buildPayrollRegisterCsv({ payslips, runById, profileByUserId });
+    const filename = `payroll-register-${run.runNumber}.csv`;
 
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Export Run Error:', err);
+    res.status(500).json({ error: 'Failed to export payroll run' });
+  }
+});
+
+async function retractPayrollRun(runId, organizationId, adminId, adminName, comments) {
+  const run = await PayrollRun.findOne({ _id: runId, organizationId });
+  if (!run) {
+    const err = new Error('Payroll run not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (run.status === 'cancelled') {
+    const err = new Error('This payroll run has already been retracted');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (['calculating', 'processing_payment'].includes(run.status)) {
+    const err = new Error(`Cannot retract run while status is ${run.status}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const payslips = await Payslip.find({ payrollRunId: run._id, organizationId });
+
+  if (['exported', 'paid'].includes(run.status)) {
     for (const payslip of payslips) {
-      if (!payslip.deductions || payslip.deductions.length === 0) continue;
+      if (!Array.isArray(payslip.deductions) || payslip.deductions.length === 0) continue;
 
-      // Find loan repayment deductions
-      const loanDeductions = payslip.deductions.filter(d => d.type === 'loan_repayment');
+      const loanDeductions = payslip.deductions.filter((deduction) => deduction.type === 'loan_repayment');
+      if (loanDeductions.length === 0) continue;
 
-      if (loanDeductions.length > 0) {
-        const profile = await PayrollProfile.findOne({ userId: payslip.userId, organizationId });
+      const profile = await PayrollProfile.findOne({ userId: payslip.userId, organizationId });
+      if (!profile || !Array.isArray(profile.recurringDeductions)) continue;
 
-        if (profile && profile.recurringDeductions) {
-          let modified = false;
+      let modified = false;
+      for (const deduction of loanDeductions) {
+        const profileDeduction = profile.recurringDeductions.find((item) =>
+          item.type === 'loan_repayment' && item.name === deduction.name
+        );
+        if (!profileDeduction) continue;
 
-          loanDeductions.forEach(deduction => {
-            // Match the deduction in the profile (by name or type)
-            // Note: Ideally we'd link by ID, but for now we match by name/type
-            const profileDeduction = profile.recurringDeductions.find(pd =>
-              pd.type === 'loan_repayment' && pd.name === deduction.name
-            );
+        const currentRemaining = Number(profileDeduction.remainingAmount || 0);
+        const totalAmount = Number(
+          profileDeduction.totalAmount
+          || profileDeduction.remainingAmount
+          || deduction.amount
+          || 0
+        );
+        const restoredBalance = currentRemaining + Number(deduction.amount || 0);
 
-            if (profileDeduction && profileDeduction.remainingAmount > 0) {
-              profileDeduction.remainingAmount -= deduction.amount;
-              if (profileDeduction.remainingAmount < 0) profileDeduction.remainingAmount = 0;
+        profileDeduction.remainingAmount = totalAmount > 0
+          ? Math.min(restoredBalance, totalAmount)
+          : restoredBalance;
 
-              // Auto-deactivate if paid off
-              if (profileDeduction.remainingAmount === 0) {
-                profileDeduction.isActive = false;
-                profileDeduction.notes = (profileDeduction.notes || '') + ' [Paid Off via Run ' + run.runNumber + ']';
-              }
+        if (profileDeduction.remainingAmount > 0) {
+          profileDeduction.isActive = true;
+        }
 
-              modified = true;
-            }
-          });
+        modified = true;
+      }
 
-          if (modified) await profile.save();
+      if (modified) {
+        await profile.save();
+      }
+    }
+  }
+
+  const processedRequests = await CompensationRequest.find({
+    organizationId,
+    processedInRunId: run._id
+  }).select('_id').lean();
+  const processedRequestIds = processedRequests.map((request) => request._id);
+
+  if (processedRequestIds.length > 0) {
+    await CompensationRequest.updateMany(
+      {
+        _id: { $in: processedRequestIds },
+        organizationId
+      },
+      {
+        $set: {
+          status: 'approved',
+          processedInRunId: null
+        },
+        $unset: {
+          processedAt: ''
         }
       }
-    }
+    );
+  }
 
-    // Update payslips status
-    await Payslip.updateMany(
-      { payrollRunId: run._id },
+  const deletedPayslips = await Payslip.deleteMany({
+    payrollRunId: run._id,
+    organizationId
+  });
+
+  run.status = 'cancelled';
+  run.retractedAt = new Date();
+  run.retractedBy = adminId;
+  run.retractedByName = adminName;
+  run.retractionReason = comments || 'Retracted by organization admin';
+  run.addApproval('retracted', adminId, adminName, 'admin', comments || 'Retracted payroll run');
+
+  const warningNotes = [
+    `Retracted on ${run.retractedAt.toISOString()} by ${adminName || adminId}.`,
+    `Removed ${deletedPayslips.deletedCount || 0} payslip(s).`,
+    `Reset ${processedRequestIds.length} processed compensation request(s).`
+  ];
+  run.internalNotes = [run.internalNotes, ...warningNotes].filter(Boolean).join(' ');
+
+  await run.save();
+
+  return {
+    run,
+    deletedPayslips: deletedPayslips.deletedCount || 0,
+    resetCompensationRequests: processedRequestIds.length
+  };
+}
+
+async function finalizePayrollRun(runId, organizationId, adminId, adminName, comments) {
+  const run = await PayrollRun.findOne({ _id: runId, organizationId });
+  if (!run) {
+    const err = new Error('Payroll run not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (!['approved', 'exported', 'paid'].includes(run.status)) {
+    const err = new Error(`Cannot finalize run with status: ${run.status}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (run.status === 'exported') {
+    return run;
+  }
+
+  const payslips = await Payslip.find({ payrollRunId: run._id, organizationId });
+
+  // Update loan balances for deductions that were applied in this run
+  for (const payslip of payslips) {
+    if (!Array.isArray(payslip.deductions) || payslip.deductions.length === 0) continue;
+
+    const loanDeductions = payslip.deductions.filter(d => d.type === 'loan_repayment');
+    if (loanDeductions.length === 0) continue;
+
+    const profile = await PayrollProfile.findOne({ userId: payslip.userId, organizationId });
+    if (!profile || !Array.isArray(profile.recurringDeductions)) continue;
+
+    let modified = false;
+    loanDeductions.forEach(deduction => {
+      const profileDeduction = profile.recurringDeductions.find(pd =>
+        pd.type === 'loan_repayment' && pd.name === deduction.name
+      );
+      if (!profileDeduction || !(profileDeduction.remainingAmount > 0)) return;
+
+      profileDeduction.remainingAmount -= deduction.amount;
+      if (profileDeduction.remainingAmount < 0) profileDeduction.remainingAmount = 0;
+
+      if (profileDeduction.remainingAmount === 0) {
+        profileDeduction.isActive = false;
+        profileDeduction.notes = (profileDeduction.notes || '') + ` [Finalized via Run ${run.runNumber}]`;
+      }
+      modified = true;
+    });
+
+    if (modified) await profile.save();
+  }
+
+  // Mark variable comp requests included in payslips as processed
+  const requestIds = new Set();
+  for (const payslip of payslips) {
+    for (const e of payslip.earnings || []) {
+      if (e?.linkedRequestId) requestIds.add(e.linkedRequestId);
+    }
+  }
+
+  if (requestIds.size > 0) {
+    await CompensationRequest.updateMany(
       {
-        status: 'paid',
-        'paymentDetails.method': 'bank_transfer',
-        'paymentDetails.transactionId': transactionId,
-        'paymentDetails.paymentDate': new Date(),
-        'paymentDetails.bankReference': bankReference
+        _id: { $in: Array.from(requestIds) },
+        organizationId,
+        status: { $in: ['approved', 'approved_l1', 'approved_l2'] }
+      },
+      {
+        $set: {
+          status: 'processed',
+          processedAt: new Date(),
+          processedInRunId: run._id
+        }
       }
     );
+  }
 
+  // Mark payslips as exported/finalized
+  await Payslip.updateMany(
+    { payrollRunId: run._id, organizationId },
+    { status: 'exported' }
+  );
+
+  run.status = 'exported';
+  run.exportedAt = new Date();
+  run.exportedBy = adminId;
+  run.exportedByName = adminName;
+  if (comments) {
+    run.approvals = run.approvals || [];
+    run.approvals.push({
+      action: 'finalized',
+      actionBy: adminId,
+      actionByName: adminName,
+      actionByRole: 'hr_admin',
+      comments,
+      level: run.currentApprovalLevel + 1
+    });
+  }
+
+  await run.save();
+  return run;
+}
+
+/**
+ * POST /api/payroll/runs/:id/finalize
+ * Finalize/export payroll run (HR Admin only)
+ */
+router.post('/runs/:id/finalize', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const run = await finalizePayrollRun(req.params.id, organizationId, adminId, adminName, req.body?.comments);
     res.json({ success: true, run });
   } catch (err) {
-    console.error('Process Payment Error:', err);
-    res.status(500).json({ error: 'Failed to process payment' });
+    console.error('Finalize Run Error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to finalize payroll run' });
+  }
+});
+
+/**
+ * POST /api/payroll/runs/:id/process-payment
+ * Legacy alias for finalize (no actual payout processing)
+ */
+router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const run = await finalizePayrollRun(req.params.id, organizationId, adminId, adminName, req.body?.comments);
+    res.json({ success: true, run });
+  } catch (err) {
+    console.error('Process Payment (Legacy) Error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to finalize payroll run' });
+  }
+});
+
+/**
+ * POST /api/payroll/runs/:id/retract
+ * Retract a payroll run, remove generated payslips, and reopen processed requests
+ *
+ * Restricted to organization owner/admin only.
+ */
+router.post('/runs/:id/retract', requireOrganizationAdminOnly, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const result = await retractPayrollRun(
+      req.params.id,
+      organizationId,
+      adminId,
+      adminName,
+      req.body?.comments
+    );
+
+    res.json({
+      success: true,
+      run: result.run,
+      deletedPayslips: result.deletedPayslips,
+      resetCompensationRequests: result.resetCompensationRequests,
+      warnings: [
+        'Generated payslips for this run were removed.',
+        'Compensation requests finalized by this run were reopened.',
+        'Use this only when you need to re-run payroll for the month.'
+      ]
+    });
+  } catch (err) {
+    console.error('Retract Run Error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retract payroll run' });
   }
 });
 
@@ -839,7 +2105,7 @@ router.get('/analytics/summary', requireHRAdmin, async (req, res) => {
     const runs = await PayrollRun.find({
       organizationId,
       'payPeriod.year': parseInt(year),
-      status: { $in: ['calculated', 'approved', 'paid'] }
+      status: { $in: ['calculated', 'approved', 'exported', 'paid'] }
     }).sort({ 'payPeriod.month': 1 });
 
     // Calculate yearly totals
@@ -900,18 +2166,18 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
       Payslip.find({
         organizationId,
         'payPeriod.year': currentYear,
-        status: { $in: ['approved', 'paid'] }
+        status: { $in: ['approved', 'exported', 'paid'] }
       }),
       Payslip.find({
         organizationId,
         'payPeriod.year': previousYear,
-        status: { $in: ['approved', 'paid'] }
+        status: { $in: ['approved', 'exported', 'paid'] }
       }),
       PayrollProfile.find({ organizationId }),
       PayrollRun.find({
         organizationId,
         'payPeriod.year': currentYear,
-        status: { $in: ['calculated', 'approved', 'paid'] }
+        status: { $in: ['calculated', 'approved', 'exported', 'paid'] }
       }).sort({ 'payPeriod.month': 1 })
     ]);
 
@@ -1179,7 +2445,7 @@ router.get('/analytics/ytd/:userId', requireHRAdmin, async (req, res) => {
       userId: req.params.userId,
       organizationId,
       'payPeriod.year': parseInt(year),
-      status: { $in: ['approved', 'paid'] }
+      status: { $in: ['approved', 'exported', 'paid'] }
     });
 
     const ytd = {
@@ -1220,14 +2486,15 @@ router.get('/analytics/ytd/:userId', requireHRAdmin, async (req, res) => {
  */
 router.get('/my-ytd', requireAuth, async (req, res) => {
   try {
-    const { userId, organizationId } = getUserInfo(req);
+    const { userId, organizationId, role } = getUserInfo(req);
     const { year = new Date().getFullYear() } = req.query;
+    const visibleStatuses = getVisiblePayslipStatusesForRole(role);
 
     const payslips = await Payslip.find({
       userId,
       organizationId,
       'payPeriod.year': parseInt(year),
-      status: { $in: ['approved', 'paid'] }
+      status: { $in: visibleStatuses }
     });
 
     const ytd = {

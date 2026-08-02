@@ -1,0 +1,1 @@
+{"message":"Input validation failed","code":"BAD_REQUEST","data":{"code":"BAD_REQUEST","httpStatus":400,"path":"domain.create","zodError":{"formErrors":[],"fieldErrors":{"host":["Invalid input: expected string, received undefined"]}}},"issues":[{"expected":"string","code":"invalid_type","path":["host"],"message":"Invalid input: expected string, received undefined"}]}

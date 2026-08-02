@@ -1,5 +1,9 @@
 const jwt = require('jsonwebtoken');
 
+function resolveCurrentOrganization(payload = {}) {
+  return payload.currentOrganization || payload.current_organization || null;
+}
+
 // Middleware to validate hub tokens for IdP-initiated SSO
 const validateHubToken = async (req, res, next) => {
   const hubToken = req.query.hub_token;
@@ -35,7 +39,7 @@ const validateHubToken = async (req, res, next) => {
       name: decoded.name,
       organizations: decoded.organizations || [],
       teams: decoded.teams || [],
-      currentOrganization: decoded.currentOrganization,
+      currentOrganization: resolveCurrentOrganization(decoded),
     };
 
     // Store the hub token for potential userinfo lookup
@@ -96,7 +100,7 @@ const validateHubTokenDev = async (req, res, next) => {
       name: decoded.name,
       organizations: decoded.organizations || [],
       teams: decoded.teams || [],
-      currentOrganization: decoded.currentOrganization,
+      currentOrganization: resolveCurrentOrganization(decoded),
     };
 
     req.hubToken = hubToken;

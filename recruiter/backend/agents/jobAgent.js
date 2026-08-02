@@ -5,16 +5,28 @@
 
 const AiJobServiceClass = require('../services/aiJobService');
 const InterviewService = require('../services/interviewService');
-const AzureOpenAIService = require('../services/azureOpenAIService'); // Added for AI normalization
+const AIModelService = require('../services/aiModelService');
 // const LangchainAgentService = require('./langchainAgentService'); // Assuming this will be passed or accessible
+
+const SALARY_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['min', 'max', 'currency', 'period'],
+    properties: {
+        min: { type: ['integer', 'null'], minimum: 0 },
+        max: { type: ['integer', 'null'], minimum: 0 },
+        currency: { type: ['string', 'null'] },
+        period: { type: ['string', 'null'] }
+    }
+};
 
 class JobAgent {
     constructor(langchainAgentServiceInstance) {
         // this.langchainAgentService = langchainAgentServiceInstance; // For context, memory, communication
         this.aiJobService = new AiJobServiceClass(); // Create an instance of the service
         this.interviewService = new InterviewService(); // Create an instance of the interview service
-        this.azureOpenAIService = new AzureOpenAIService(); // Instantiate AzureOpenAIService
-        console.log('JobAgent initialized with AiJobService, InterviewService, and AzureOpenAIService');
+        this.aiModelService = new AIModelService();
+        console.log('JobAgent initialized with AiJobService, InterviewService, and AIModelService');
     }
 
     /**
@@ -44,7 +56,7 @@ class JobAgent {
         // Map level values using AI
         if (mappedParams.level && typeof mappedParams.level === 'string') {
             mappedParams.level = await this._normalizeFieldWithAI(
-                this.azureOpenAIService,
+                this.aiModelService,
                 mappedParams.level,
                 ['Entry', 'Mid', 'Senior', 'Lead', 'Executive'],
                 'job level',
@@ -55,7 +67,7 @@ class JobAgent {
         // Map experience values using AI
         if (mappedParams.experience && typeof mappedParams.experience === 'string') {
             mappedParams.experience = await this._normalizeFieldWithAI(
-                this.azureOpenAIService,
+                this.aiModelService,
                 mappedParams.experience,
                 ['0-1', '1-3', '3-5', '5-10', '10+'],
                 'years of experience',
@@ -66,7 +78,7 @@ class JobAgent {
         // Map education values using AI
         if (mappedParams.education && typeof mappedParams.education === 'string') {
             mappedParams.education = await this._normalizeFieldWithAI(
-                this.azureOpenAIService,
+                this.aiModelService,
                 mappedParams.education,
                 ['High School', 'Associate', 'Bachelor', 'Master', 'PhD', 'Professional Certificate', 'Vocational', 'Other'],
                 'education level',
@@ -93,7 +105,7 @@ class JobAgent {
         // Map job type values using AI
         if (mappedParams.type && typeof mappedParams.type === 'string') {
             mappedParams.type = await this._normalizeFieldWithAI(
-                this.azureOpenAIService,
+                this.aiModelService,
                 mappedParams.type,
                 ['Full-time', 'Part-time', 'Contract', 'Internship', 'Freelance', 'Temporary'],
                 'employment type',
@@ -1963,22 +1975,23 @@ The question has been permanently removed from the system.
 
     /**
      * Normalizes a given text field to one of the valid enum values using an LLM.
-     * @param {AzureOpenAIService} azureService - Instance of AzureOpenAIService.
+     * @param {AIModelService} aiService - Runtime-backed model service.
      * @param {string} text - The raw text input for the field.
      * @param {string[]} validEnums - An array of valid enum string values.
      * @param {string} fieldNameForPrompt - Descriptive name of the field for the LLM prompt.
      * @param {string} defaultValue - The default value to return if normalization fails or is uncertain.
      * @returns {Promise<string>} The normalized enum value or the default.
      */
-    async _normalizeFieldWithAI(azureService, text, validEnums, fieldNameForPrompt, defaultValue) {
+    async _normalizeFieldWithAI(aiService, text, validEnums, fieldNameForPrompt, defaultValue) {
         if (!text || typeof text !== 'string' || text.trim() === '') {
             return defaultValue;
         }
         const prompt = `Given the ${fieldNameForPrompt}: "${text.substring(0, 200)}"\nMap this to one of the following standard values: ${validEnums.join(', ')}.\nIf unsure or no clear match, default to "${defaultValue}".\nReturn only the single, most appropriate standard value string.`;
         try {
-            // Ensure this.azureOpenAIService is used if the azureService param is not passed or is null
-            const serviceToUse = azureService || this.azureOpenAIService;
-            const response = await serviceToUse.client.chat.completions.create({
+            const serviceToUse = aiService || this.aiModelService;
+            const response = await serviceToUse.requestCompletion({
+                activity: 'job.normalize',
+                promptVersion: 'job-enum-normalize-v1',
                 messages: [{ role: 'user', content: prompt }],
                 model: serviceToUse.modelName, // Consider using a smaller/faster model if available for such tasks
                 temperature: 0.1, // Low temperature for more deterministic output
@@ -2009,9 +2022,11 @@ Choose from: Engineering, Marketing, Sales, HR, Product, Operations, Finance, IT
 If "Other", suggest a more specific department name if possible.
 Return only the department name.`;
         try {
-            const response = await this.azureOpenAIService.client.chat.completions.create({
+            const response = await this.aiModelService.requestCompletion({
+                activity: 'job.normalize',
+                promptVersion: 'job-department-v1',
                 messages: [{ role: 'user', content: prompt }],
-                model: this.azureOpenAIService.modelName,
+                model: this.aiModelService.modelName,
                 temperature: 0.2,
                 max_tokens: 20
             });
@@ -2036,9 +2051,11 @@ If remote, specify "Remote". If hybrid, specify "Hybrid - City, State/Country".
 If no clear location can be determined from the input, return "To be determined".
 Return only the standardized location string.`;
         try {
-            const response = await this.azureOpenAIService.client.chat.completions.create({
+            const response = await this.aiModelService.requestCompletion({
+                activity: 'job.normalize',
+                promptVersion: 'job-location-v1',
                 messages: [{ role: 'user', content: prompt }],
-                model: this.azureOpenAIService.modelName,
+                model: this.aiModelService.modelName,
                 temperature: 0.2,
                 max_tokens: 30
             });
@@ -2062,20 +2079,21 @@ Return only the standardized location string.`;
 Parse this into a JSON object with fields: "min" (integer, e.g., 70000), "max" (integer, optional, e.g., 90000), "currency" (3-letter code, e.g., USD, EUR, GBP), "period" (e.g., annually, monthly, hourly).
 If only one number is mentioned, use it for both min and max.
 If currency or period is unclear, use reasonable defaults (USD, annually).
-If no parsable salary numbers are found, return null.
+If no parsable salary numbers are found, return an object with null for all four fields.
 Ensure min and max are numbers, not strings.
-Return only the JSON object or the literal string "null".`;
+Return only the JSON object.`;
         try {
-            const response = await this.azureOpenAIService.client.chat.completions.create({
+            const response = await this.aiModelService.requestStructuredCompletion({
+                activity: 'job.normalize',
+                promptVersion: 'job-salary-v2',
                 messages: [{ role: 'user', content: prompt }],
-                model: this.azureOpenAIService.modelName, // Or a model fine-tuned for JSON output
+                model: this.aiModelService.modelName,
                 temperature: 0.1,
-                max_tokens: 100,
-                // response_format: { type: "json_object" } // If using a model/API version that supports this
-            });
+                max_tokens: 100
+            }, { schema: SALARY_SCHEMA, schemaName: 'job_salary', schemaStrict: true });
             const content = response.choices[0]?.message?.content?.trim();
             if (content && content.toLowerCase() !== 'null') {
-                // Attempt to parse JSON, even if response_format is not strictly enforced by older models
+                // The runtime has already validated this against the salary schema.
                 try {
                     const parsedSalary = JSON.parse(content);
                     // Basic validation

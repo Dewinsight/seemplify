@@ -33,13 +33,16 @@ export const sessionStore = defineStore('lms-session', () => {
 		},
 	})
 
+	function doLogoutCleanup() {
+		userResource.reset()
+		user.value = null
+		window.location.reload()
+	}
+
 	const logout = createResource({
 		url: 'logout',
-		onSuccess() {
-			userResource.reset()
-			user.value = null
-			window.location.reload()
-		},
+		onSuccess: doLogoutCleanup,
+		onError: doLogoutCleanup,
 	})
 
 	const branding = createResource({

@@ -42,6 +42,10 @@ try {
 }
 
 const axios = require('axios');
+const {
+  getOrganizationRole: getOrganizationRoleFromSession,
+  isHrPlusRole
+} = require('../services/appraisalAccessService');
 
 // Validate Bearer token by calling IdP userinfo endpoint
 const getUserInfoFromIdP = async (accessToken) => {
@@ -71,8 +75,8 @@ const PERMISSIONS = {
   'okr:create:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'okr:edit:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'okr:view:team': ['team_lead', 'line_manager', 'hr_admin'],
-  'okr:view:direct_reports': ['line_manager', 'hr_admin'],
-  'okr:review:direct_reports': ['line_manager', 'hr_admin'],
+  'okr:view:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
+  'okr:review:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'okr:view:all': ['hr_admin'],
   'okr:create:team': ['line_manager', 'hr_admin'],
   'okr:create:organization': ['hr_admin'],
@@ -80,8 +84,8 @@ const PERMISSIONS = {
   // Review Permissions
   'review:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'review:self_assess': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
-  'review:view:direct_reports': ['line_manager', 'hr_admin'],
-  'review:conduct:direct_reports': ['line_manager', 'hr_admin'],
+  'review:view:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
+  'review:conduct:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'review:view:all': ['hr_admin'],
   'review:calibrate': ['hr_admin'],
 
@@ -95,13 +99,13 @@ const PERMISSIONS = {
   'feedback:view:sent': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'feedback:send': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'feedback:request': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
-  'feedback:view:direct_reports': ['line_manager', 'hr_admin'],
+  'feedback:view:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'feedback:view:all': ['hr_admin'],
 
   // Analytics Permissions
   'analytics:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'analytics:view:team': ['team_lead', 'line_manager', 'hr_admin'],
-  'analytics:view:direct_reports': ['line_manager', 'hr_admin'],
+  'analytics:view:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'analytics:view:organization': ['hr_admin'],
   'analytics:export': ['hr_admin'],
 
@@ -109,7 +113,7 @@ const PERMISSIONS = {
   'team:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
   'team:view:members': ['team_lead', 'line_manager', 'hr_admin'],
   'team:view:all': ['hr_admin'],
-  'user:view:direct_reports': ['line_manager', 'hr_admin'],
+  'user:view:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
   'user:view:all': ['hr_admin'],
 
   // Admin Permissions
@@ -124,16 +128,29 @@ const PERMISSIONS = {
 function getUserRole(user) {
   if (!user) return null;
 
-  // Check organization role for HR admin
-  const orgRole = user.organizationRole || user.userinfo?.organizations?.[0]?.role;
-  // HR Admin = all org roles EXCEPT 'staff'
-  const hrAdminRoles = ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer'];
-  if (hrAdminRoles.includes(orgRole)) {
+  const currentOrg = getCurrentOrganization(user);
+  const currentOrgId = currentOrg?.id || currentOrg?._id?.toString();
+
+  // Check organization role from member claims for current organization.
+  const orgRole = getOrganizationRoleFromSession(user, currentOrgId);
+  if (isHrPlusRole(orgRole)) {
     return 'hr_admin';
   }
 
+  const departmentHeadPermissions = Array.isArray(
+    (user.organizations || user.userinfo?.organizations || []).find((org) => org.id === currentOrgId)?.departmentHeadPermissions
+  )
+    ? (user.organizations || user.userinfo?.organizations || []).find((org) => org.id === currentOrgId)?.departmentHeadPermissions
+    : [];
+  if (departmentHeadPermissions.length > 0) {
+    return 'line_manager';
+  }
+
   // Check team roles from IdP claims
-  const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
+  const teams = (user.idpTeams || user.teams || user.userinfo?.teams || []).filter((team) => {
+    if (!currentOrgId) return true;
+    return !team.organizationId || team.organizationId === currentOrgId;
+  });
 
   // Check if user is a line manager in any team
   const isLineManager = teams.some(t =>
@@ -156,15 +173,25 @@ function getUserRole(user) {
 function getDirectReports(user) {
   if (!user) return [];
 
-  const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
+  const currentOrg = getCurrentOrganization(user);
+  const currentOrgId = currentOrg?.id || currentOrg?._id?.toString();
+  const teams = (user.idpTeams || user.teams || user.userinfo?.teams || []).filter((team) => {
+    if (!currentOrgId) return true;
+    return !team.organizationId || team.organizationId === currentOrgId;
+  });
   const teamPermissions = user.idpTeamPermissions || user.userinfo?.team_permissions || [];
+  const departmentHeadPermissions = (user.organizations || user.userinfo?.organizations || [])
+    .find((org) => org.id === currentOrgId)?.departmentHeadPermissions || [];
 
   const directReportIds = new Set();
 
-  // Get from teams where user is line_manager
+  // Get from teams where user has appraisal authority
   teams.forEach(team => {
-    if ((team.role === 'line_manager' || team.isManager) && team.directReports) {
+    if ((team.role === 'line_manager' || team.role === 'team_lead' || team.isManager) && team.directReports) {
       team.directReports.forEach(id => directReportIds.add(id));
+    }
+    if ((team.role === 'line_manager' || team.role === 'team_lead' || team.isManager) && team.directReportAccountIds) {
+      team.directReportAccountIds.forEach(id => directReportIds.add(id));
     }
   });
 
@@ -175,6 +202,15 @@ function getDirectReports(user) {
     }
   });
 
+  const headedDepartmentIds = departmentHeadPermissions.map((department) => String(department.id)).filter(Boolean);
+  if (headedDepartmentIds.length > 0) {
+    teams.forEach((team) => {
+      if (!team.departmentId || !headedDepartmentIds.includes(String(team.departmentId))) return;
+      (team.directReports || []).forEach(id => directReportIds.add(id));
+      (team.directReportAccountIds || []).forEach(id => directReportIds.add(id));
+    });
+  }
+
   return Array.from(directReportIds);
 }
 
@@ -184,12 +220,22 @@ function getDirectReports(user) {
 function getManagedTeams(user) {
   if (!user) return [];
 
-  const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
+  const currentOrg = getCurrentOrganization(user);
+  const currentOrgId = currentOrg?.id || currentOrg?._id?.toString();
+  const teams = (user.idpTeams || user.teams || user.userinfo?.teams || []).filter((team) => {
+    if (!currentOrgId) return true;
+    return !team.organizationId || team.organizationId === currentOrgId;
+  });
+
+  const departmentHeadPermissions = (user.organizations || user.userinfo?.organizations || [])
+    .find((org) => org.id === currentOrgId)?.departmentHeadPermissions || [];
+  const headedDepartmentIds = departmentHeadPermissions.map((department) => String(department.id)).filter(Boolean);
 
   return teams.filter(t =>
     t.role === 'line_manager' ||
     t.role === 'team_lead' ||
-    t.isManager
+    t.isManager ||
+    (t.departmentId && headedDepartmentIds.includes(String(t.departmentId)))
   );
 }
 
@@ -200,8 +246,46 @@ function getCurrentOrganization(user) {
   if (!user) return null;
 
   return user.currentOrganization ||
+    user.userinfo?.currentOrganization ||
     user.userinfo?.current_organization ||
     (user.organizations && user.organizations[0]);
+}
+
+/**
+ * Get user's current team (within current organization)
+ * Different from switching organizations - this is for switching teams within an org
+ */
+function getCurrentTeam(user) {
+  if (!user) return null;
+
+  // Check if currentTeam is explicitly set in session
+  if (user.currentTeam) {
+    return user.currentTeam;
+  }
+
+  // Fallback: Get primary team (first team in current organization, or first team with line_manager role)
+  const teams = user.idpTeams || user.teams || user.userinfo?.teams || [];
+  const currentOrg = getCurrentOrganization(user);
+  
+  if (!currentOrg) return null;
+
+  // Filter teams by current organization
+  const orgTeams = teams.filter(t => 
+    t.organizationId === currentOrg.id || 
+    t.organizationId === currentOrg._id?.toString() ||
+    t.organizationId === currentOrg
+  );
+
+  if (orgTeams.length === 0) return null;
+
+  // Priority: line_manager team > team_lead team > first team
+  const lineManagerTeam = orgTeams.find(t => t.role === 'line_manager' || t.isManager);
+  if (lineManagerTeam) return lineManagerTeam;
+
+  const teamLeadTeam = orgTeams.find(t => t.role === 'team_lead');
+  if (teamLeadTeam) return teamLeadTeam;
+
+  return orgTeams[0];
 }
 
 /**
@@ -227,8 +311,8 @@ function canAccessUserData(requestingUser, targetUserId) {
     return true;
   }
 
-  // Line managers can access direct reports
-  if (role === 'line_manager') {
+  // Team appraisers can access direct reports
+  if (role === 'line_manager' || role === 'team_lead') {
     const directReports = getDirectReports(requestingUser);
     return directReports.includes(targetUserId);
   }
@@ -247,7 +331,9 @@ const requireAuth = async (req, res, next) => {
       req.userRole = getUserRole(req.session.user);
       req.directReports = getDirectReports(req.session.user);
       req.managedTeams = getManagedTeams(req.session.user);
+      req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
       req.currentOrganization = getCurrentOrganization(req.session.user);
+      req.currentTeam = getCurrentTeam(req.session.user);
       return next();
     }
 
@@ -278,7 +364,9 @@ const requireAuth = async (req, res, next) => {
         req.userRole = getUserRole(req.session.user);
         req.directReports = getDirectReports(req.session.user);
         req.managedTeams = getManagedTeams(req.session.user);
+        req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
         req.currentOrganization = getCurrentOrganization(req.session.user);
+        req.currentTeam = getCurrentTeam(req.session.user);
 
         return next();
       } catch (tokenError) {
@@ -437,7 +525,7 @@ const requireHRAdmin = (req, res, next) => {
 };
 
 /**
- * Middleware: Require Line Manager role or higher
+ * Middleware: Require appraiser role or higher
  */
 const requireManager = (req, res, next) => {
   if (!req.session?.user) {
@@ -450,10 +538,10 @@ const requireManager = (req, res, next) => {
 
   const role = getUserRole(req.session.user);
 
-  if (role !== 'line_manager' && role !== 'hr_admin') {
+  if (role !== 'line_manager' && role !== 'team_lead' && role !== 'hr_admin') {
     return res.status(403).json({
       success: false,
-      error: 'Manager access required',
+      error: 'Manager or team lead access required',
       code: 'MANAGER_REQUIRED',
       userRole: role
     });
@@ -507,6 +595,7 @@ module.exports = {
   getDirectReports,
   getManagedTeams,
   getCurrentOrganization,
+  getCurrentTeam,
   hasPermission,
   canAccessUserData,
   requireAuth,
@@ -517,9 +606,3 @@ module.exports = {
   requireManager,
   requireDirectReportAccess
 };
-
-
-
-
-
-

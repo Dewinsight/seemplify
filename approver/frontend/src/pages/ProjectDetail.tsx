@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getUserDisplayName } from '../utils/userDisplay';
+import { hasAnyCapability } from '../utils/access';
+import { getSafeExternalUrl } from '../utils/urlSafety';
 
 interface RuleAnalysis {
     ruleName: string;
@@ -16,6 +19,8 @@ interface FormData {
     submitterEmail?: string;
     submitterPhone?: string;
     groupHeadName?: string;
+    confirmGroupHeadApproval?: boolean;
+    heartSectorClassification?: string;
     problemDescription?: string;
     whoAffected?: string;
     currentHandling?: string;
@@ -42,9 +47,9 @@ interface FormData {
 }
 
 interface ApprovalHistoryItem {
-    stage: 'AI' | 'Governance' | 'Executive';
+    stage: string;
     action: 'Approved' | 'Rejected' | 'Escalated';
-    by?: { username: string } | null;
+    by?: { username?: string; firstName?: string; lastName?: string } | null;
     reason?: string;
     score?: number;
     timestamp: string;
@@ -57,6 +62,15 @@ interface ScoringBreakdown {
     implementationComplexity?: { score: number; reason: string };
     timeToValue?: { score: number; reason: string };
     resourceRequirements?: { score: number; reason: string };
+}
+
+interface ScoringWeightsUsed {
+    strategicAlignment?: number;
+    regulatoryRisk?: number;
+    businessImpact?: number;
+    implementationComplexity?: number;
+    timeToValue?: number;
+    resourceRequirements?: number;
 }
 
 interface Project {
@@ -72,7 +86,9 @@ interface Project {
     priorityScore?: number;
     scoringBreakdown?: ScoringBreakdown;
     escalationTriggers?: string[];
+    needEnhancedOversight?: boolean;
     workflowStage?: string;
+    currentStageKey?: 'CenterOfExcellence' | 'Governance' | 'Executive' | null;
     approvalHistory?: ApprovalHistoryItem[];
     submittedAt?: string;
     analysisResult: {
@@ -80,11 +96,15 @@ interface Project {
         rulesAnalysis: RuleAnalysis[];
         summary: string;
         scoringBreakdown?: ScoringBreakdown;
+        scoringWeightsUsed?: ScoringWeightsUsed;
         priorityScore?: number;
         calculatedTier?: number;
     };
     requester: {
-        username: string;
+        _id?: string;
+        username?: string;
+        firstName?: string;
+        lastName?: string;
         department: string;
     };
     department?: { _id: string; name: string };
@@ -93,10 +113,38 @@ interface Project {
     createdAt: string;
 }
 
+const isRulePassEquivalent = (status: string) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    return normalized === 'pass' || normalized === 'triggered';
+};
+
+const getRuleStatusVisuals = (status: string) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'pass') {
+        return {
+            background: 'rgba(76, 175, 80, 0.1)',
+            border: '#4caf50',
+            text: '#4caf50'
+        };
+    }
+    if (normalized === 'triggered') {
+        return {
+            background: 'rgba(255, 193, 7, 0.12)',
+            border: '#ffc107',
+            text: '#ffca28'
+        };
+    }
+    return {
+        background: 'rgba(244, 67, 54, 0.1)',
+        border: '#f44336',
+        text: '#f44336'
+    };
+};
+
 const ProjectDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, activeOrganization } = useAuth();
     const [project, setProject] = useState<Project | null>(null);
     const [loading, setLoading] = useState(true);
     const [showOverride, setShowOverride] = useState(false);
@@ -175,31 +223,51 @@ const ProjectDetail: React.FC = () => {
         }
     };
 
+    const handleCoEReview = async (action: 'Approved' | 'Rejected') => {
+        setReviewLoading(true);
+        try {
+            await api.post('/projects/coe-review', {
+                projectId: id,
+                action,
+                reason: reviewReason || `Center of Excellence ${action.toLowerCase()}`
+            });
+            setReviewReason('');
+            fetchProject();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to submit CoE review');
+        } finally {
+            setReviewLoading(false);
+        }
+    };
+
     if (loading) return <div className="glass-panel">Loading...</div>;
     if (!project) return <div className="glass-panel">Project not found</div>;
 
-    const canOverride = (user?.isAdmin || user?.role === 'Admin' ||
-        user?.permissions?.some((p: any) => {
-            const roles = p.roles || (p.role ? [p.role] : []);
-            return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
-        })
-    );
+    const projectDeptId = project.department?._id || null;
+    const canOverride = hasAnyCapability(activeOrganization, ['projects.override'], projectDeptId);
+
+    // Check if user can perform CoE review
+    const canCoEReview = hasAnyCapability(activeOrganization, ['projects.review.coe'], projectDeptId);
 
     // Check if user can perform governance review
-    const canGovernanceReview = user?.isAdmin || user?.permissions?.some(
-        (p: any) => {
-            const roles = p.roles || (p.role ? [p.role] : []);
-            return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover'].includes(r));
-        }
-    );
+    const canGovernanceReview = hasAnyCapability(activeOrganization, ['projects.review.governance'], projectDeptId);
 
     // Check if user can perform executive review
-    const canExecutiveReview = user?.isAdmin || user?.permissions?.some(
-        (p: any) => {
-            const roles = p.roles || (p.role ? [p.role] : []);
-            return roles.includes('ExecutiveApprover');
-        }
+    const canExecutiveReview = hasAnyCapability(activeOrganization, ['projects.review.executive'], projectDeptId);
+    const canEditResubmit = Boolean(
+        activeOrganization?.isAdmin ||
+        (user?.id && project.requester?._id && String(user.id) === String(project.requester._id))
     );
+    const activeStageKey = project.currentStageKey
+        || (project.approvalStatus === 'Pending Center of Excellence' ? 'CenterOfExcellence' : null)
+        || (project.approvalStatus === 'Pending Governance' ? 'Governance' : null)
+        || (project.approvalStatus === 'Pending Executive' ? 'Executive' : null);
+    const isPendingCoE = activeStageKey === 'CenterOfExcellence';
+    const isPendingGovernance = activeStageKey === 'Governance';
+    const isPendingExecutive = activeStageKey === 'Executive';
+    const ruleAnalyses = project.analysisResult?.rulesAnalysis || [];
+    const rulesPassEquivalentCount = ruleAnalyses.filter((rule) => isRulePassEquivalent(rule.status)).length;
+    const safeRepoUrl = getSafeExternalUrl(project.repoUrl);
 
     return (
         <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
@@ -208,7 +276,7 @@ const ProjectDetail: React.FC = () => {
                     <div>
                         <h2 style={{ margin: '0 0 0.5rem 0' }}>{project.name}</h2>
                         <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-                            Submitted by <strong>{project.requester?.username}</strong> ({project.requester?.department}) on {new Date(project.createdAt).toLocaleDateString()}
+                            Submitted by <strong>{getUserDisplayName(project.requester, 'Unknown')}</strong> ({project.requester?.department}) on {new Date(project.createdAt).toLocaleDateString()}
                         </p>
                         {project.workflowStage && (
                             <span style={{
@@ -227,13 +295,22 @@ const ProjectDetail: React.FC = () => {
                         <div style={{
                             fontSize: '1.5rem',
                             fontWeight: 'bold',
-                            color: project.approvalStatus === 'Approved' ? '#4caf50' : '#f44336'
+                            color: project.approvalStatus?.toLowerCase().includes('approved') ? '#4caf50' : project.approvalStatus?.toLowerCase().includes('rejected') ? '#f44336' : '#ffd54f'
                         }}>
                             {project.approvalStatus}
                         </div>
                         <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                            Score: {project.score}/100
+                            {project.priorityScore != null ? (
+                                <>Priority Score: {project.priorityScore.toFixed(2)}/5.0 ({(project.priorityScore / 5 * 100).toFixed(0)}%)</>
+                            ) : (
+                                <>Score: {project.score}/100</>
+                            )}
                         </div>
+                        {project.analysisResult?.rulesAnalysis && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8, marginTop: '0.15rem' }}>
+                                Rules: {rulesPassEquivalentCount}/{project.analysisResult.rulesAnalysis.length} compliant ({project.score}% rule pass)
+                            </div>
+                        )}
                         {project.tier && (
                             <div style={{
                                 fontSize: '0.85rem',
@@ -242,6 +319,20 @@ const ProjectDetail: React.FC = () => {
                             }}>
                                 Tier {project.tier} {project.tier === 1 ? '(Low Risk)' : project.tier === 2 ? '(Moderate)' : '(High Risk)'}
                             </div>
+                        )}
+                        {project.needEnhancedOversight && (
+                            <div style={{ fontSize: '0.8rem', marginTop: '0.25rem', color: '#ff9800' }}>
+                                ⚠️ Enhanced oversight required (Priority Score 1.5–2.0)
+                            </div>
+                        )}
+                        {canEditResubmit && (
+                            <button
+                                className="btn-primary"
+                                onClick={() => navigate('/analyze?tab=new&editProjectId=' + project._id)}
+                                style={{ marginTop: '0.75rem' }}
+                            >
+                                Edit & Resubmit
+                            </button>
                         )}
                     </div>
                 </div>
@@ -258,6 +349,9 @@ const ProjectDetail: React.FC = () => {
                                 <div><span style={{ color: 'var(--text-secondary)' }}>Email:</span> {project.formData.submitterEmail}</div>
                                 {project.formData.submitterPhone && <div><span style={{ color: 'var(--text-secondary)' }}>Phone:</span> {project.formData.submitterPhone}</div>}
                                 <div><span style={{ color: 'var(--text-secondary)' }}>Group Head:</span> {project.formData.groupHeadName}</div>
+                                {project.formData.heartSectorClassification && (
+                                    <div><span style={{ color: 'var(--text-secondary)' }}>HEART Classification:</span> {(project.formData.heartSectorClassification as string).replace(/_/g, ' ')}</div>
+                                )}
                             </div>
                         </div>
 
@@ -386,9 +480,9 @@ const ProjectDetail: React.FC = () => {
                     <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                         <h4 style={{ margin: '0 0 0.5rem 0' }}>Description</h4>
                         <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{project.description}</p>
-                        {project.repoUrl && (
+                        {safeRepoUrl && (
                             <div style={{ marginTop: '0.5rem' }}>
-                                <a href={project.repoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sterling-gold)' }}>View Repository →</a>
+                                <a href={safeRepoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sterling-gold)' }}>View Repository →</a>
                             </div>
                         )}
                     </div>
@@ -409,6 +503,9 @@ const ProjectDetail: React.FC = () => {
                 {(project.scoringBreakdown || project.analysisResult?.scoringBreakdown) && (
                     <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                         <h4 style={{ margin: '0 0 1rem 0', color: 'var(--sterling-gold)' }}>📊 Priority Score Breakdown</h4>
+                        <div style={{ marginBottom: '0.85rem', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+                            Priority score uses weighted dimensions (0-5 scale). Tier is derived from this score, then rules can escalate tier upward via Set Tier effects.
+                        </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
                             {Object.entries(project.scoringBreakdown || project.analysisResult?.scoringBreakdown || {}).map(([key, val]: [string, any]) => (
                                 <div key={key} style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
@@ -420,6 +517,11 @@ const ProjectDetail: React.FC = () => {
                                             {val?.score}/5
                                         </strong>
                                     </div>
+                                    {typeof project.analysisResult?.scoringWeightsUsed?.[key as keyof ScoringWeightsUsed] === 'number' && (
+                                        <div style={{ fontSize: '0.75rem', opacity: 0.72, marginBottom: '0.15rem' }}>
+                                            Weight: {project.analysisResult?.scoringWeightsUsed?.[key as keyof ScoringWeightsUsed]}%
+                                        </div>
+                                    )}
                                     {val?.reason && <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>{val.reason}</div>}
                                 </div>
                             ))}
@@ -433,25 +535,28 @@ const ProjectDetail: React.FC = () => {
 
                 {/* Rule Analysis */}
                 <div style={{ display: 'grid', gap: '1rem' }}>
-                    {project.analysisResult?.rulesAnalysis?.map((rule, index) => (
-                        <div key={index} style={{
-                            padding: '1rem',
-                            background: rule.status.toLowerCase() === 'pass' ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)',
-                            borderLeft: `4px solid ${rule.status.toLowerCase() === 'pass' ? '#4caf50' : '#f44336'}`,
-                            borderRadius: '4px'
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                <strong>{rule.ruleName}</strong>
-                                <span style={{
-                                    fontWeight: 'bold',
-                                    color: rule.status.toLowerCase() === 'pass' ? '#4caf50' : '#f44336'
-                                }}>
-                                    {rule.status.toUpperCase()}
-                                </span>
+                    {project.analysisResult?.rulesAnalysis?.map((rule, index) => {
+                        const visuals = getRuleStatusVisuals(rule.status);
+                        return (
+                            <div key={index} style={{
+                                padding: '1rem',
+                                background: visuals.background,
+                                borderLeft: `4px solid ${visuals.border}`,
+                                borderRadius: '4px'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                    <strong>{rule.ruleName}</strong>
+                                    <span style={{
+                                        fontWeight: 'bold',
+                                        color: visuals.text
+                                    }}>
+                                        {rule.status.toUpperCase()}
+                                    </span>
+                                </div>
+                                <p style={{ margin: 0, fontSize: '0.9rem' }}>{rule.reason}</p>
                             </div>
-                            <p style={{ margin: 0, fontSize: '0.9rem' }}>{rule.reason}</p>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {project.analysisResult?.summary && (
@@ -484,7 +589,7 @@ const ProjectDetail: React.FC = () => {
                                         }}>
                                             {item.action}
                                         </span>
-                                        {item.by && <span style={{ marginLeft: '0.5rem', opacity: 0.7 }}>by {typeof item.by === 'object' ? item.by.username : 'System'}</span>}
+                                        {item.by && <span style={{ marginLeft: '0.5rem', opacity: 0.7 }}>by {typeof item.by === 'object' ? getUserDisplayName(item.by, 'System') : 'System'}</span>}
                                     </div>
                                     <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>
                                         {new Date(item.timestamp).toLocaleString()}
@@ -497,8 +602,39 @@ const ProjectDetail: React.FC = () => {
                 </div>
             )}
 
+            {/* CoE Review Panel */}
+            {isPendingCoE && canCoEReview && (
+                <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid #2196f3' }}>
+                    <h3 style={{ marginTop: 0, color: '#2196f3' }}>🏢 Center of Excellence Review Required</h3>
+                    <p style={{ opacity: 0.8 }}>This initiative requires Center of Excellence review before proceeding.</p>
+                    <textarea
+                        placeholder="Review notes (optional)"
+                        value={reviewReason}
+                        onChange={(e) => setReviewReason(e.target.value)}
+                        style={{ width: '100%', minHeight: '80px', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--glass-border)', borderRadius: '6px', color: 'white' }}
+                    />
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        <button
+                            className="btn-primary"
+                            onClick={() => handleCoEReview('Approved')}
+                            disabled={reviewLoading}
+                            style={{ background: '#4caf50', flex: 1 }}
+                        >
+                            ✅ Approve
+                        </button>
+                        <button
+                            onClick={() => handleCoEReview('Rejected')}
+                            disabled={reviewLoading}
+                            style={{ background: '#f44336', color: 'white', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
+                        >
+                            ❌ Reject
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Governance Review Panel */}
-            {project.approvalStatus === 'Pending Governance' && canGovernanceReview && (
+            {isPendingGovernance && canGovernanceReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid #ff9800' }}>
                     <h3 style={{ marginTop: 0, color: '#ff9800' }}>⚖️ Governance Committee Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This Tier {project.tier} initiative requires Governance Committee review before proceeding.</p>
@@ -534,7 +670,7 @@ const ProjectDetail: React.FC = () => {
             )}
 
             {/* Executive Review Panel */}
-            {project.approvalStatus === 'Pending Executive' && canExecutiveReview && (
+            {isPendingExecutive && canExecutiveReview && (
                 <div className="glass-panel" style={{ marginTop: '1.5rem', border: '2px solid var(--sterling-red)' }}>
                     <h3 style={{ marginTop: 0, color: 'var(--sterling-red)' }}>👔 Executive Review Required</h3>
                     <p style={{ opacity: 0.8 }}>This Tier 3 initiative requires Executive approval for final decision.</p>
@@ -607,7 +743,7 @@ const ProjectDetail: React.FC = () => {
                 </div>
             )}
 
-            {(user?.isAdmin || user?.role === 'Admin') && (
+            {activeOrganization?.isAdmin && (
                 <div style={{ marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid var(--glass-border)', textAlign: 'right' }}>
                     <button
                         onClick={async () => {
@@ -639,3 +775,4 @@ const ProjectDetail: React.FC = () => {
 };
 
 export default ProjectDetail;
+

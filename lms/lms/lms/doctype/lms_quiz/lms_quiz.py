@@ -18,13 +18,20 @@ from lms.lms.utils import (
 	generate_slug,
 )
 
+DEFAULT_PASSING_PERCENTAGE = 60
+
 
 class LMSQuiz(Document):
 	def validate(self):
+		self.set_default_passing_percentage()
 		self.validate_duplicate_questions()
 		self.validate_limit()
 		self.calculate_total_marks()
 		self.validate_open_ended_questions()
+
+	def set_default_passing_percentage(self):
+		if not cint(self.passing_percentage):
+			self.passing_percentage = DEFAULT_PASSING_PERCENTAGE
 
 	def validate_duplicate_questions(self):
 		questions = [row.question for row in self.questions]
@@ -44,7 +51,6 @@ class LMSQuiz(Document):
 	def calculate_total_marks(self):
 		if len(self.questions) == 0:
 			self.total_marks = 0
-			self.passing_percentage = 100
 			return
 
 		if self.limit_questions_to:
@@ -124,7 +130,8 @@ def quiz_summary(quiz, results):
 
 	score_out_of = quiz_details.total_marks
 	percentage = (score / score_out_of) * 100 if score_out_of else 0
-	submission = create_submission(quiz, results, score_out_of, quiz_details.passing_percentage)
+	passing_percentage = quiz_details.passing_percentage or DEFAULT_PASSING_PERCENTAGE
+	submission = create_submission(quiz, results, score_out_of, passing_percentage)
 
 	save_progress_after_quiz(quiz_details, percentage)
 
@@ -132,8 +139,9 @@ def quiz_summary(quiz, results):
 		"score": score,
 		"score_out_of": score_out_of,
 		"submission": submission.name,
-		"pass": percentage == quiz_details.passing_percentage,
+		"pass": percentage >= passing_percentage,
 		"percentage": percentage,
+		"passing_percentage": passing_percentage,
 		"is_open_ended": is_open_ended,
 	}
 
@@ -248,9 +256,8 @@ def create_submission(quiz, results, score_out_of, passing_percentage):
 
 
 def save_progress_after_quiz(quiz_details, percentage):
-	if percentage >= quiz_details.passing_percentage and quiz_details.lesson and quiz_details.course:
-		save_progress(quiz_details.lesson, quiz_details.course)
-	elif not quiz_details.passing_percentage:
+	passing_percentage = quiz_details.passing_percentage or DEFAULT_PASSING_PERCENTAGE
+	if percentage >= passing_percentage and quiz_details.lesson and quiz_details.course:
 		save_progress(quiz_details.lesson, quiz_details.course)
 
 

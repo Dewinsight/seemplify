@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timesheet Approved</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5; color: #18181b;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 40px 40px 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                                ✅ Timesheet Approved
+                            </h1>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <p style="margin: 0 0 20px; font-size: 16px; line-height: 24px; color: #3f3f46;">
+                                Hi <strong>{{employeeName}}</strong>,
+                            </p>
+                            
+                            <p style="margin: 0 0 20px; font-size: 16px; line-height: 24px; color: #3f3f46;">
+                                Great news! Your timesheet has been approved by <strong>{{approverName}}</strong>.
+                            </p>
+                            
+                            <!-- Timesheet Details -->
+                            <table width="100%" cellpadding="12" cellspacing="0" style="background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; margin: 24px 0;">
+                                <tr>
+                                    <td style="color: #166534; font-size: 14px; font-weight: 500;">Period</td>
+                                    <td style="color: #166534; font-size: 14px; font-weight: 600; text-align: right;">{{weekStart}} - {{weekEnd}}</td>
+                                </tr>
+                                <tr>
+                                    <td style="color: #166534; font-size: 14px; font-weight: 500; padding-top: 8px;">Total Hours Approved</td>
+                                    <td style="color: #10b981; font-size: 18px; font-weight: 700; text-align: right;">{{totalHours}} hrs</td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Comment -->
+                            <div style="padding: 16px; background-color: #f4f4f5; border-left: 3px solid #14b8a6; border-radius: 4px; margin: 24px 0;">
+                                <p style="margin: 0; font-size: 14px; font-weight: 600; color: #3f3f46; margin-bottom: 8px;">
+                                    Approver Comment:
+                                </p>
+                                <p style="margin: 0; font-size: 14px; color: #71717a; font-style: italic;">
+                                    "{{comment}}"
+                                </p>
+                            </div>
+                            
+                            <!-- CTA Button -->
+                            <table width="100%" cellpadding="0" cellspacing="0" style="margin: 32px 0 20px;">
+                                <tr>
+                                    <td align="center">
+                                        <a href="{{timesheetUrl}}" style="display: inline-block; padding: 14px 32px; background-color: #10b981; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: 600;">
+                                            View Timesheet
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <p style="margin: 24px 0 0; font-size: 14px; line-height: 20px; color: #71717a; text-align: center;">
+                                Your hours have been recorded and will be processed for payroll.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 24px 40px; background-color: #f4f4f5; border-radius: 0 0 8px 8px; text-align: center;">
+                            <p style="margin: 0; font-size: 12px; color: #71717a;">
+                                Time & Attendance by Seemplify<br>
+                                <a href="https://time.seemplifyai.com" style="color: #14b8a6; text-decoration: none;">time.seemplifyai.com</a>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

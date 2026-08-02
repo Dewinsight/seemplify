@@ -352,7 +352,7 @@ const meta = reactive({
 })
 
 onMounted(() => {
-	if (!user.data) window.location.href = '/login'
+	if (!user.data) window.location.href = '/lms-login'
 	if (props.batchName != 'new') {
 		fetchBatchInfo()
 	} else {

@@ -15,6 +15,8 @@ class LMSEnrollment(Document):
 		update_program_progress(self.member)
 
 	def validate_course_enrollment_eligibility(self):
+		from lms.lms.utils import validate_course_school_access
+
 		course_details = frappe.db.get_value(
 			"LMS Course",
 			self.course,
@@ -31,6 +33,8 @@ class LMSEnrollment(Document):
 
 		if self.enrollment_from_batch:
 			return
+
+		validate_course_school_access(self.course, self.member)
 
 		if not course_details.published:
 			frappe.throw(_("You cannot enroll in an unpublished course."))
@@ -65,6 +69,10 @@ def update_program_progress(member):
 	for program in programs:
 		total_progress = 0
 		courses = frappe.get_all("LMS Program Course", {"parent": program.parent}, pluck="course")
+		if not courses:
+			frappe.db.set_value("LMS Program Member", program.name, "progress", 0)
+			continue
+
 		for course in courses:
 			progress = frappe.db.get_value("LMS Enrollment", {"course": course, "member": member}, "progress")
 			progress = progress or 0

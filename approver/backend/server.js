@@ -12,10 +12,61 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 80;
 
+// Security headers
+app.use((req, res, next) => {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'self'");
+    next();
+});
+
+// Static files for uploaded logos
+const uploadsPath = path.join(__dirname, 'uploads');
+app.use('/api/uploads', express.static(uploadsPath));
+const organizationController = require('./controllers/organizationController');
+
+// Fallback logo serving from MongoDB when filesystem uploads are unavailable after redeploy.
+app.get('/api/uploads/logos/:filename', organizationController.serveLogo);
+
 // Middleware
+const configuredOrigins = (process.env.FRONTEND_URLS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+const devDefaultOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'http://localhost:5174'
+];
+
+const allowedOrigins = new Set([
+    ...configuredOrigins,
+    ...(process.env.NODE_ENV === 'production' ? [] : devDefaultOrigins)
+]);
+
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production' ? true : (process.env.FRONTEND_URL || 'http://localhost:5173'),
-    credentials: true
+    origin: (origin, callback) => {
+        // Allow non-browser requests (no Origin header).
+        if (!origin) return callback(null, true);
+
+        if (process.env.NODE_ENV === 'production') {
+            if (allowedOrigins.size === 0 || allowedOrigins.has(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error('Not allowed by CORS'));
+        }
+
+        if (allowedOrigins.has(origin)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id']
 }));
 app.use(express.json());
 

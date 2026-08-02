@@ -95,6 +95,71 @@ const TaxConfigSchema = new Schema({
     enum: ['standard', 'simplified', 'exempt', 'custom'],
     default: 'standard'
   },
+  calculationMode: {
+    type: String,
+    enum: ['builtin', 'manual', 'configured'],
+    default: 'configured'
+  },
+  jurisdictionCode: {
+    type: String,
+    uppercase: true,
+    trim: true,
+    maxlength: 16,
+    default: 'OTHER'
+  },
+  jurisdictionName: String,
+  jurisdictionConfigId: {
+    type: Schema.Types.ObjectId,
+    ref: 'TaxJurisdictionConfig',
+    default: null,
+  },
+  jurisdictionVersionId: {
+    type: Schema.Types.ObjectId,
+    default: null,
+  },
+  employeeTaxInputs: {
+    type: Schema.Types.Mixed,
+    default: {},
+  },
+  taxValidation: {
+    status: {
+      type: String,
+      enum: ['valid', 'warning', 'error', 'unknown'],
+      default: 'unknown',
+    },
+    messages: {
+      type: [String],
+      default: [],
+    },
+    validatedAt: Date,
+  },
+  taxSubdivision: String,
+  residencyStatus: {
+    type: String,
+    enum: ['resident', 'non_resident'],
+    default: 'resident'
+  },
+  manualCalculationType: {
+    type: String,
+    enum: ['none', 'flat', 'progressive'],
+    default: 'progressive'
+  },
+  manualTaxFreeAllowance: { type: Number, min: 0, default: 0 },
+  // Payroll calculation settings (kept generic; not a tax-filing system)
+  // Legacy compatibility field - superseded by calculationMode + jurisdictionCode.
+  calculationRegime: {
+    type: String,
+    enum: ['none', 'flat', 'progressive_uk', 'progressive_us', 'progressive_generic'],
+    default: 'flat'
+  },
+  flatTaxRate: { type: Number, min: 0, max: 100 }, // percent, used when calculationRegime='flat'
+  customBrackets: [{
+    min: { type: Number, required: true },
+    max: { type: Number, required: true }, // Use a large number instead of Infinity
+    rate: { type: Number, required: true, min: 0, max: 100 }
+  }],
+  socialSecurityRate: { type: Number, min: 0, max: 100 }, // percent (optional override)
+  socialSecurityCap: { type: Number, min: 0 }, // annual cap (optional override)
   taxExemptions: [{
     type: { type: String }, // e.g., 'housing_loan', 'education', 'charitable'
     amount: Number,
@@ -102,6 +167,10 @@ const TaxConfigSchema = new Schema({
     validUntil: Date
   }],
   additionalWithholding: { type: Number, default: 0 },
+  otherIncome: { type: Number, default: 0 }, // Annualized extra income for withholding worksheets
+  deductionsAdjustment: { type: Number, default: 0 }, // Annualized deduction adjustment
+  taxCredits: { type: Number, default: 0 }, // Annualized credit amount
+  multipleJobs: { type: Boolean, default: false }, // Used by the IRS Step 2 multiple-jobs tables
   // For countries with tax declarations
   taxDeclarationSubmitted: { type: Boolean, default: false },
   taxDeclarationYear: Number,
@@ -165,7 +234,9 @@ const PayrollProfileSchema = new Schema({
   currency: {
     type: String,
     default: 'USD',
-    enum: ['USD', 'EUR', 'GBP', 'INR', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY']
+    uppercase: true,
+    trim: true,
+    maxlength: 3
   },
   payFrequency: {
     type: String,
@@ -369,6 +440,7 @@ PayrollProfileSchema.methods.syncFromIdpUser = function (idpUser) {
     ...this.employeeInfo,
     name: idpUser.name,
     email: idpUser.email,
+    employeeId: idpUser.employeeId || this.employeeInfo?.employeeId,
     designation: idpUser.designation || idpUser.jobTitle,
     department: idpUser.department,
     teamId: idpUser.teamId,
@@ -383,18 +455,36 @@ PayrollProfileSchema.methods.syncFromIdpUser = function (idpUser) {
 
 // ===== STATICS =====
 
+function buildDefaultPayrollFlags(basicSalary, existingFlags = {}) {
+  const flags = {
+    ...(existingFlags || {}),
+  };
+
+  if (!(Number(basicSalary || 0) > 0)) {
+    flags.includeInNextRun = false;
+    flags.requiresReview = true;
+    if (!String(flags.reviewReason || '').trim()) {
+      flags.reviewReason = 'Automatically excluded from payroll until payroll setup is completed.';
+    }
+  }
+
+  return flags;
+}
+
 // Find or create profile for user
 PayrollProfileSchema.statics.findOrCreateForUser = async function (userId, organizationId, defaults = {}) {
   let profile = await this.findOne({ userId, organizationId });
 
   if (!profile) {
+    const basicSalary = Number(defaults.basicSalary || 0);
     profile = new this({
       userId,
       organizationId,
-      basicSalary: defaults.basicSalary || 0,
+      ...defaults,
+      basicSalary,
       currency: defaults.currency || 'USD',
       employeeInfo: defaults.employeeInfo || {},
-      ...defaults
+      payrollFlags: buildDefaultPayrollFlags(basicSalary, defaults.payrollFlags),
     });
     await profile.save();
   }
@@ -407,6 +497,7 @@ PayrollProfileSchema.statics.getActiveByOrganization = function (organizationId,
   const query = {
     organizationId,
     isActive: true,
+    basicSalary: { $gt: 0 },
     'payrollFlags.includeInNextRun': true
   };
 

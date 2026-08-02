@@ -1,7 +1,7 @@
 <template>
 	<button
 		v-if="link && !link.onlyMobile"
-		class="flex w-full h-7 cursor-pointer items-center rounded text-ink-gray-8 duration-300 ease-in-out focus:outline-none focus:transition-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+		class="lms-sidebar-link flex w-full h-7 cursor-pointer items-center rounded text-left text-ink-gray-8 duration-300 ease-in-out focus:outline-none focus:transition-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 		:class="
 			isActive ? 'bg-surface-selected shadow-sm' : 'hover:bg-surface-gray-2'
 		"
@@ -9,27 +9,37 @@
 	>
 		<div
 			class="flex items-center w-full duration-300 ease-in-out group"
-			:class="isCollapsed ? 'p-1 relative' : 'px-2 py-1'"
+			:class="
+				isCollapsed ? 'p-1 relative justify-center' : 'px-2 py-1 justify-start'
+			"
 		>
 			<Tooltip :text="__(link.label)" placement="right">
 				<slot name="icon">
-					<span class="grid h-5 w-6 flex-shrink-0 place-items-center">
+					<span class="lms-sidebar-link-icon grid h-5 w-6 flex-shrink-0 place-items-center">
 						<component
 							:is="icons[link.icon]"
-							class="h-4 w-4 stroke-1.5 text-ink-gray-8"
+							class="lms-sidebar-link-icon-svg h-4 w-4 stroke-1.5"
+							:class="isActive ? 'lms-sidebar-icon-active' : 'text-ink-gray-8'"
 						/>
 					</span>
 				</slot>
 			</Tooltip>
 			<span
-				class="flex-shrink-0 text-sm duration-300 ease-in-out"
+				class="lms-sidebar-link-label overflow-hidden text-left text-sm duration-300 ease-in-out"
 				:class="
 					isCollapsed
 						? 'ml-0 w-0 overflow-hidden opacity-0'
-						: 'ml-2 w-auto opacity-100'
+						: 'ml-2 min-w-0 flex-1 truncate opacity-100'
 				"
 			>
 				{{ __(link.label) }}
+			</span>
+			<span
+				v-if="showDecorativeIcon"
+				class="lms-sidebar-link-emoji"
+				aria-hidden="true"
+			>
+				{{ decorativeIcon }}
 			</span>
 			<span
 				v-if="link.count && !isCollapsed"
@@ -63,14 +73,17 @@
 </template>
 <script setup>
 import { Tooltip } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ContactUsEmail from '@/components/ContactUsEmail.vue'
 import * as icons from 'lucide-vue-next'
+import { getDecorativeNavIcon } from '@/utils'
+import { getUiSkin } from '@/composables/useUiSkin'
 
 const router = useRouter()
 const emit = defineEmits(['openModal', 'deletePage'])
 const showContactForm = ref(false)
+const uiSkin = ref(getUiSkin())
 
 const props = defineProps({
 	link: {
@@ -111,6 +124,27 @@ const isActive = computed(() => {
 		(props.activeTab && props.link?.label?.includes(props.activeTab))
 	)
 })
+
+const decorativeIcon = computed(() => {
+	return getDecorativeNavIcon(props.link?.label)
+})
+
+const showDecorativeIcon = computed(() => {
+	if (props.isCollapsed || !isV2Skin.value || !decorativeIcon.value) return false
+	const labelLength = props.link?.label?.length || 0
+	return labelLength <= 13
+})
+
+const isV2Skin = computed(() => {
+	return uiSkin.value === 'v2'
+})
+
+watch(
+	() => router.currentRoute.value.fullPath,
+	() => {
+		uiSkin.value = getUiSkin(window.location.search)
+	}
+)
 
 const openModal = (link) => {
 	emit('openModal', link)

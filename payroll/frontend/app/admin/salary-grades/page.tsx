@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api, { isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
+import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -33,6 +35,7 @@ interface SalaryGrade {
 
 export default function SalaryGradesPage() {
     const router = useRouter();
+    const { currencies } = usePayrollCurrencies();
     const [loading, setLoading] = useState(true);
     const [grades, setGrades] = useState<SalaryGrade[]>([]);
     const [showModal, setShowModal] = useState(false);
@@ -178,7 +181,7 @@ export default function SalaryGradesPage() {
                                         <span className="px-2 py-0.5 bg-zinc-800 rounded text-xs">L{grade.gradeLevel}</span>
                                     </td>
                                     <td className="px-5 py-4 font-mono text-emerald-400">
-                                        {grade.salaryRange.currency} {grade.salaryRange.minimum.toLocaleString()} - {grade.salaryRange.maximum.toLocaleString()}
+                                        {formatPayrollMoney(grade.salaryRange.minimum, grade.salaryRange.currency)} - {formatPayrollMoney(grade.salaryRange.maximum, grade.salaryRange.currency)}
                                     </td>
                                     <td className="px-5 py-4 text-zinc-500">{grade.department || '--'}</td>
                                     <td className="px-5 py-4 text-right">
@@ -194,7 +197,7 @@ export default function SalaryGradesPage() {
                             {grades.filter(g => g.isActive).length === 0 && (
                                 <tr>
                                     <td colSpan={6} className="px-5 py-8 text-center text-zinc-500">
-                                        No salary grades defined yet. Click "Add Grade" to create one.
+                                        No salary grades defined yet. Click &quot;Add Grade&quot; to create one.
                                     </td>
                                 </tr>
                             )}
@@ -257,9 +260,11 @@ export default function SalaryGradesPage() {
                                         onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
                                     >
-                                        <option value="USD">USD</option>
-                                        <option value="GBP">GBP</option>
-                                        <option value="EUR">EUR</option>
+                                        {currencies.map((currency) => (
+                                            <option key={currency.code} value={currency.code}>
+                                                {currency.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>

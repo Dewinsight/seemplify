@@ -1,21 +1,21 @@
 /** @type {import('next').NextConfig} */
+const API_PROXY_TARGET = (
+  process.env.API_PROXY_TARGET ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:5001' : 'https://api.seemplifyai.com')
+).replace(/\/$/, '')
+
 const nextConfig = {
   // Security: Hide technology information
   poweredByHeader: false,
 
   async rewrites() {
-    // Only use rewrites in local development, not in Docker/production
-    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL;
-    if (!apiUrl || apiUrl.includes('localhost')) {
-      return [
-        {
-          source: '/api/:path*',
-          destination: 'http://localhost:5001/api/:path*',
-        },
-      ];
-    }
-    // In Docker/production, frontend uses direct API calls (no rewrites needed)
-    return [];
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${API_PROXY_TARGET}/api/:path*`,
+      },
+    ]
   },
   
   // Security headers configuration
@@ -27,7 +27,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://api.nylas.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: http: blob:; connect-src 'self' https://api.seemplifyai.com https://api-dev.seemplifyai.com https://idp.seemplifyai.com https://auth.seemplifyai.com https://auth-dev.seemplifyai.com https://api.nylas.com https://api.brevo.com wss: ws: http://localhost:* https://thesmarthr.netlify.app https://*.azurewebsites.net wss://*.azurewebsites.net; media-src 'self' blob:; object-src 'none'; frame-src 'self' https://api.nylas.com https://idp.seemplifyai.com https://auth.seemplifyai.com https://auth-dev.seemplifyai.com; worker-src 'self' blob:; child-src 'self' blob:; form-action 'self' https://idp.seemplifyai.com https://auth.seemplifyai.com https://auth-dev.seemplifyai.com; upgrade-insecure-requests"
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://api.nylas.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: http: blob:; connect-src 'self' https://api.nylas.com https://api.brevo.com https://api.seemplifyai.com https://api-dev.seemplifyai.com https://auth.seemplifyai.com https://auth-dev.seemplifyai.com https://*.seemplifyai.com https://*.aiinnigeria.com wss: ws: http://localhost:* https://thesmarthr.netlify.app https://*.azurewebsites.net wss://*.azurewebsites.net; media-src 'self' blob:; object-src 'none'; frame-src 'self' blob: https://api.nylas.com; worker-src 'self' blob:; child-src 'self' blob:; form-action 'self'; upgrade-insecure-requests"
           },
           {
             key: 'X-Content-Type-Options',
@@ -43,7 +43,7 @@ const nextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'geolocation=(), microphone=(), camera=()'
+            value: 'geolocation=(), microphone=(self), camera=()'
           },
           {
             key: 'Strict-Transport-Security',
@@ -65,7 +65,7 @@ const nextConfig = {
   
   // Turbopack configuration (Next.js 16+)
   turbopack: {
-    // Empty config to silence Turbopack warnings
+    root: process.cwd(),
   },
   
   // Disable webpack dev middleware

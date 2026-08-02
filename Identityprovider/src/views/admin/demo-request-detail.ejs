@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Demo Request Details - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+    .detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
+      gap: 20px;
+    }
+    .detail-row {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .detail-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .detail-key {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    .detail-value {
+      color: var(--text);
+      word-break: break-word;
+    }
+    .detail-message {
+      white-space: pre-wrap;
+      line-height: 1.6;
+      color: var(--text);
+      margin: 0;
+    }
+    .detail-form-grid {
+      display: grid;
+      gap: 16px;
+    }
+    .detail-form-group {
+      display: grid;
+      gap: 8px;
+    }
+    .detail-form-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+    .detail-input,
+    .detail-textarea,
+    .detail-select {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel-strong);
+      color: var(--text);
+      padding: 12px 14px;
+      font: inherit;
+    }
+    .detail-textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+    .detail-notice {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      border: 1px solid transparent;
+    }
+    .detail-notice-success {
+      border-color: rgba(34, 197, 94, 0.35);
+      background: rgba(34, 197, 94, 0.08);
+      color: #22c55e;
+    }
+    .detail-notice-error {
+      border-color: rgba(239, 68, 68, 0.35);
+      background: rgba(239, 68, 68, 0.08);
+      color: #f87171;
+    }
+    @media (max-width: 960px) {
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 640px) {
+      .detail-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'demo-requests' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1>Demo Request</h1>
+          <div style="font-size: 13px; color: var(--muted);">
+            Submitted <%= new Date(request.createdAt).toLocaleString('en-GB') %>
+          </div>
+        </div>
+        <div class="admin-header-actions">
+          <a href="/admin/demo-requests" class="btn btn-secondary">Back to Queue</a>
+        </div>
+      </div>
+
+      <% if (notice) { %>
+        <div class="detail-notice detail-notice-<%= notice.type === 'error' ? 'error' : 'success' %>"><%= notice.message %></div>
+      <% } %>
+
+      <div class="detail-grid">
+        <section class="admin-card">
+          <div class="admin-card-header">
+            <div class="admin-card-title">Request Information</div>
+          </div>
+
+          <div class="detail-row">
+            <div class="detail-key">Name</div>
+            <div class="detail-value"><%= request.name %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Email</div>
+            <div class="detail-value"><%= request.email %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Company</div>
+            <div class="detail-value"><%= request.company || 'N/A' %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Role</div>
+            <div class="detail-value"><%= request.role || 'N/A' %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Phone</div>
+            <div class="detail-value"><%= request.phone || 'N/A' %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Status</div>
+            <div class="detail-value">
+              <span class="status-badge status-badge--<%= request.status === 'new' ? 'pending' : request.status %>"><%= request.status %></span>
+            </div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Admin Email</div>
+            <div class="detail-value"><%= request.adminNotificationSent ? 'Sent' : 'Not sent' %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">User Email</div>
+            <div class="detail-value"><%= request.requesterConfirmationSent ? 'Sent' : 'Not sent' %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Source</div>
+            <div class="detail-value"><%= request.source || 'identityprovider' %></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Message</div>
+            <div class="detail-value">
+              <p class="detail-message"><%= request.message || 'No additional message.' %></p>
+            </div>
+          </div>
+        </section>
+
+        <aside class="admin-card">
+          <div class="admin-card-header">
+            <div class="admin-card-title">Manage Request</div>
+          </div>
+
+          <form class="detail-form-grid" method="POST" action="/admin/demo-requests/<%= request._id %>/update">
+            <div class="detail-form-group">
+              <label for="status">Status</label>
+              <select class="detail-select" id="status" name="status" required>
+                <option value="new" <%= request.status === 'new' ? 'selected' : '' %>>New</option>
+                <option value="contacted" <%= request.status === 'contacted' ? 'selected' : '' %>>Contacted</option>
+                <option value="scheduled" <%= request.status === 'scheduled' ? 'selected' : '' %>>Scheduled</option>
+                <option value="closed" <%= request.status === 'closed' ? 'selected' : '' %>>Closed</option>
+                <option value="spam" <%= request.status === 'spam' ? 'selected' : '' %>>Spam</option>
+              </select>
+            </div>
+
+            <div class="detail-form-group">
+              <label for="scheduledFor">Scheduled For</label>
+              <input class="detail-input" type="datetime-local" id="scheduledFor" name="scheduledFor" value="<%= request.scheduledFor ? new Date(request.scheduledFor).toISOString().slice(0,16) : '' %>">
+            </div>
+
+            <div class="detail-form-group">
+              <label for="adminNotes">Admin Notes</label>
+              <textarea class="detail-textarea" id="adminNotes" name="adminNotes" placeholder="Internal notes about outreach, next steps, or outcome"><%= request.adminNotes || '' %></textarea>
+            </div>
+
+            <div class="detail-form-group">
+              <label>Processed By</label>
+              <div class="detail-value"><%= request.processedBy ? (request.processedBy.profile?.name || request.processedBy.email) : 'Not processed yet' %></div>
+            </div>
+
+            <div class="detail-form-group">
+              <label>Processed At</label>
+              <div class="detail-value"><%= request.processedAt ? new Date(request.processedAt).toLocaleString('en-GB') : 'Not processed yet' %></div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+          </form>
+        </aside>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

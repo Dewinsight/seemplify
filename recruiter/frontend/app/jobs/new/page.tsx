@@ -31,6 +31,7 @@ import { CurrencyManagementDialog } from "@/components/settings/currency-managem
 import { getCurrencies } from "@/services/currencyService"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 const jobFormSchema = z.object({
   title: z.string().min(2, {
@@ -111,15 +112,17 @@ const defaultValues: Partial<JobFormValues> = {
 
 // Define which fields are required for each tab
 const TAB_FIELD_MAPPING = {
-  basic: ['title', 'department', 'location', 'type', 'level'] as const,
-  description: ['description'] as const,
-  requirements: ['requirements', 'responsibilities', 'experience', 'education'] as const,
-  compensation: [] as const, // All fields optional in this tab
+  basic: ['title', 'department', 'location', 'type', 'level', 'experience', 'education', 'openings'] as const,
+  description: ['description', 'responsibilities'] as const,
+  requirements: ['requirements', 'skills', 'remote', 'applicationDeadline'] as const,
+  compensation: ['currency', 'minSalary', 'maxSalary', 'benefits', 'isPublic', 'candidateApplyLimit'] as const,
 }
 
 export default function CreateJobPage() {
   const router = useRouter()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiAssistantEnabled = isFeatureEnabled('aiAssistant')
   const [activeTab, setActiveTab] = useState("basic")
   const [completedTabs, setCompletedTabs] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -127,7 +130,7 @@ export default function CreateJobPage() {
   const [isGeneratingRequirements, setIsGeneratingRequirements] = useState(false)
   const [creationStep, setCreationStep] = useState<string>("")
   const [showProgress, setShowProgress] = useState(false)
-  
+
   // Success/Error modal states
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
@@ -150,10 +153,10 @@ export default function CreateJobPage() {
       try {
         const data = await getCurrencies()
         const orgDefaultCurrency = data.defaultCurrency || DEFAULT_CURRENCY
-        
+
         // Update the form's currency field with organization's default
         form.setValue('currency', orgDefaultCurrency)
-        
+
         console.log('✅ Set default currency to:', orgDefaultCurrency)
       } catch (error) {
         console.error('Failed to fetch default currency, using USD:', error)
@@ -161,7 +164,7 @@ export default function CreateJobPage() {
         form.setValue('currency', DEFAULT_CURRENCY)
       }
     }
-    
+
     fetchDefaultCurrency()
   }, [form])
 
@@ -220,6 +223,10 @@ export default function CreateJobPage() {
         } : undefined,
         applicationDeadline: cleanedData.applicationDeadline,
         status: 'active',
+        isPublic: cleanedData.isPublic,
+        candidateApplyLimit: cleanedData.isPublic
+          ? cleanedData.candidateApplyLimit
+          : undefined,
       };
 
       // Step 2: Creating job posting
@@ -227,32 +234,32 @@ export default function CreateJobPage() {
       await new Promise(resolve => setTimeout(resolve, 300))
 
       const result = await createJob(jobData);
-      
+
       // Step 3: Finalizing
       setCreationStep("Finalizing job creation...")
       await new Promise(resolve => setTimeout(resolve, 300))
-      
+
       setIsSubmitting(false);
       setShowProgress(false);
-      
+
       // Show success modal instead of toast + redirect
       setCreatedJob(result.job);
       setShowSuccessModal(true);
-      
+
     } catch (error: any) {
       setIsSubmitting(false);
       setShowProgress(false);
       setCreationStep("");
-      
+
       // Check if it's a credit error
       const isCreditError = handleError(error);
-      
+
       if (!isCreditError) {
         // Show error modal for non-credit errors
         setErrorDetails(error.message || "An unexpected error occurred while creating the job.");
         setShowErrorModal(true);
       }
-      
+
       console.error("Failed to create job:", error);
     }
   }
@@ -301,7 +308,7 @@ export default function CreateJobPage() {
       })
 
       form.setValue("description", result.description)
-      
+
       // If we got responsibilities array, convert to string and set it
       if (result.responsibilities && result.responsibilities.length > 0) {
         const responsibilitiesText = result.responsibilities.map(item => `• ${item}`).join('\n')
@@ -400,28 +407,51 @@ export default function CreateJobPage() {
   }
 
 
-  const handleNextTab = async (newTab: string) => {
+  const validateCurrentTab = async () => {
     const currentTabFields = TAB_FIELD_MAPPING[activeTab as keyof typeof TAB_FIELD_MAPPING]
-    const nextTabFields = TAB_FIELD_MAPPING[newTab as keyof typeof TAB_FIELD_MAPPING]
+    if (!currentTabFields) return true
 
-    // Check if all required fields in the next tab are filled
-    const isNextTabValid = nextTabFields.every(field => {
-      const formValue = form.getValues(field)
-      return formValue !== undefined && formValue !== null && formValue !== ""
-    })
+    // Trigger validation only for fields in the current tab
+    const isValid = await form.trigger(currentTabFields as any)
 
-    if (!isNextTabValid) {
+    if (!isValid) {
       toast({
-        title: "Incomplete Fields",
-        description: `Please fill in all required fields in the "${newTab}" tab before proceeding.`,
+        title: "Validation Error",
+        description: "Please fill in all required fields in the current section before proceeding.",
         variant: "destructive",
       })
-      return
     }
 
+    return isValid
+  }
+
+  const handleNextTab = async (newTab: string) => {
+    // Validate current tab before moving
+    const isCurrentTabValid = await validateCurrentTab()
+    if (!isCurrentTabValid) return
+
     setActiveTab(newTab)
-    // If going forward, validate current tab first
-    await handleNextTab(newTab)
+    setCompletedTabs(prev => Array.from(new Set([...prev, activeTab])))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const onTabChange = async (value: string) => {
+    const TAB_ORDER = ['basic', 'description', 'requirements', 'compensation']
+    const currentIndex = TAB_ORDER.indexOf(activeTab)
+    const nextIndex = TAB_ORDER.indexOf(value)
+
+    if (value === activeTab) return
+
+    // If moving forward, validate current tab
+    if (nextIndex > currentIndex) {
+      const isCurrentTabValid = await validateCurrentTab()
+      if (!isCurrentTabValid) return
+
+      setCompletedTabs(prev => Array.from(new Set([...prev, activeTab])))
+    }
+
+    setActiveTab(value)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // Navigation handlers for success/error modals
@@ -473,7 +503,7 @@ export default function CreateJobPage() {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
-        <div className="w-full lg:w-2/3">
+        <div className={aiAssistantEnabled ? "w-full lg:w-2/3" : "w-full"}>
           <Card>
             <CardHeader>
               <CardTitle>Job Details</CardTitle>
@@ -482,7 +512,7 @@ export default function CreateJobPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
                 <TabsList className="relative w-full overflow-x-auto bg-muted p-1 rounded-lg flex justify-start scrollbar-hide">
                   <TabsTrigger value="basic" className="flex-shrink-0">Basic Info</TabsTrigger>
                   <TabsTrigger value="description" className="flex-shrink-0">Description</TabsTrigger>
@@ -660,7 +690,7 @@ export default function CreateJobPage() {
                         />
                       </div>
                       <div className="flex justify-end">
-                        <Button type="button" onClick={() => setActiveTab("description")}>
+                        <Button type="button" onClick={() => handleNextTab("description")}>
                           Next <ChevronRight className="ml-2 h-4 w-4" />
                         </Button>
                       </div>
@@ -669,7 +699,7 @@ export default function CreateJobPage() {
                     <TabsContent value="description" className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-medium">Job Description *</h3>
-                        <TooltipProvider>
+                        {aiAssistantEnabled && <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -696,7 +726,7 @@ export default function CreateJobPage() {
                               <p>Generate a job description based on the title and department</p>
                             </TooltipContent>
                           </Tooltip>
-                        </TooltipProvider>
+                        </TooltipProvider>}
                       </div>
                       <FormField
                         control={form.control}
@@ -741,7 +771,7 @@ export default function CreateJobPage() {
                         <Button type="button" variant="outline" onClick={() => setActiveTab("basic")}>
                           Back
                         </Button>
-                        <Button type="button" onClick={() => setActiveTab("requirements")}>
+                        <Button type="button" onClick={() => handleNextTab("requirements")}>
                           Next <ChevronRight className="ml-2 h-4 w-4" />
                         </Button>
                       </div>
@@ -750,7 +780,7 @@ export default function CreateJobPage() {
                     <TabsContent value="requirements" className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-medium">Job Requirements *</h3>
-                        <TooltipProvider>
+                        {aiAssistantEnabled && <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -777,7 +807,7 @@ export default function CreateJobPage() {
                               <p>Generate job requirements based on the title and department</p>
                             </TooltipContent>
                           </Tooltip>
-                        </TooltipProvider>
+                        </TooltipProvider>}
                       </div>
                       <FormField
                         control={form.control}
@@ -856,7 +886,7 @@ export default function CreateJobPage() {
                         <Button type="button" variant="outline" onClick={() => setActiveTab("description")}>
                           Back
                         </Button>
-                        <Button type="button" onClick={() => setActiveTab("compensation")}>
+                        <Button type="button" onClick={() => handleNextTab("compensation")}>
                           Next <ChevronRight className="ml-2 h-4 w-4" />
                         </Button>
                       </div>
@@ -962,7 +992,7 @@ export default function CreateJobPage() {
                             Control how external candidates can apply and manage your credit allocation
                           </p>
                         </div>
-                        
+
                         <FormField
                           control={form.control}
                           name="isPublic"
@@ -985,7 +1015,7 @@ export default function CreateJobPage() {
                             </FormItem>
                           )}
                         />
-                        
+
                         {form.watch('isPublic') && (
                           <FormField
                             control={form.control}
@@ -1079,67 +1109,67 @@ export default function CreateJobPage() {
           </Card>
         </div>
 
-        <div className="w-full lg:w-1/3">
+        {aiAssistantEnabled && <div className="w-full lg:w-1/3">
           <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">AI Assistant</CardTitle>
-                <CardDescription>Let AI help you create an effective job posting</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-md bg-muted p-4">
-                  <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-purple-500" />
-                    AI-Powered Features
-                  </h3>
-                  <ul className="space-y-3 text-sm">
-                    <li className="flex items-start gap-2">
-                      <Wand2 className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
-                      <span>Generate job descriptions and requirements with one click</span>
-                    </li>
-                  </ul>
-                </div>
+            <CardHeader>
+              <CardTitle className="text-lg">AI Assistant</CardTitle>
+              <CardDescription>Let AI help you create an effective job posting</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-md bg-muted p-4">
+                <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-purple-500" />
+                  AI-Powered Features
+                </h3>
+                <ul className="space-y-3 text-sm">
+                  <li className="flex items-start gap-2">
+                    <Wand2 className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
+                    <span>Generate job descriptions and requirements with one click</span>
+                  </li>
+                </ul>
+              </div>
 
-                {aiAssistantError && (
-                  <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-3">
-                    <div className="flex items-start gap-2">
-                      <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
-                      <p className="text-sm text-red-800 dark:text-red-200">{aiAssistantError}</p>
-                    </div>
+              {aiAssistantError && (
+                <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-3">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+                    <p className="text-sm text-red-800 dark:text-red-200">{aiAssistantError}</p>
                   </div>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  <Button
-                    variant="outline"
-                    className="justify-start gap-2 text-sm"
-                    onClick={generateJobDescription}
-                    disabled={isGeneratingDescription}
-                  >
-                    {isGeneratingDescription ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="h-4 w-4" />
-                    )}
-                    Generate Job Description
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    className="justify-start gap-2 text-sm"
-                    onClick={generateJobRequirements}
-                    disabled={isGeneratingRequirements}
-                  >
-                    {isGeneratingRequirements ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="h-4 w-4" />
-                    )}
-                    Generate Requirements
-                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-        </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  className="justify-start gap-2 text-sm"
+                  onClick={generateJobDescription}
+                  disabled={isGeneratingDescription}
+                >
+                  {isGeneratingDescription ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-4 w-4" />
+                  )}
+                  Generate Job Description
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="justify-start gap-2 text-sm"
+                  onClick={generateJobRequirements}
+                  disabled={isGeneratingRequirements}
+                >
+                  {isGeneratingRequirements ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-4 w-4" />
+                  )}
+                  Generate Requirements
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>}
       </div>
 
       {/* Department Management Dialog */}
@@ -1151,7 +1181,7 @@ export default function CreateJobPage() {
               Create and manage your organization's departments
             </DialogDescription>
           </DialogHeader>
-          <DepartmentManagement 
+          <DepartmentManagement
             onDepartmentCreated={(department) => {
               // The department select will automatically update via global events
               console.log('New department created:', department.name);
@@ -1171,7 +1201,7 @@ export default function CreateJobPage() {
         onCurrencyChange={async () => {
           // Refresh the currency selector when currencies are updated
           setCurrencyRefreshKey(prev => prev + 1)
-          
+
           // Re-fetch default currency in case it changed
           try {
             const data = await getCurrencies()
@@ -1196,12 +1226,12 @@ export default function CreateJobPage() {
               Your job posting has been created and is now active.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="py-6 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
               <CheckCircle className="h-10 w-10 text-green-600" />
             </div>
-            
+
             {createdJob && (
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">{createdJob.title}</h3>
@@ -1211,7 +1241,7 @@ export default function CreateJobPage() {
               </div>
             )}
           </div>
-          
+
           <div className="flex gap-3">
             <Button
               className="flex-1"
@@ -1242,12 +1272,12 @@ export default function CreateJobPage() {
               We encountered an error while creating your job posting.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="py-6 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
               <XCircle className="h-10 w-10 text-red-600" />
             </div>
-            
+
             <div className="space-y-2">
               <p className="text-sm font-medium">Failed to create job posting</p>
               {errorDetails && (
@@ -1257,7 +1287,7 @@ export default function CreateJobPage() {
               )}
             </div>
           </div>
-          
+
           <div className="flex gap-3">
             <Button
               className="flex-1"
@@ -1277,10 +1307,10 @@ export default function CreateJobPage() {
       </Dialog>
 
       {/* Credit Error Dialog */}
-      <CreditErrorDialog 
-        open={showCreditDialog} 
-        onOpenChange={setShowCreditDialog} 
-        error={creditError} 
+      <CreditErrorDialog
+        open={showCreditDialog}
+        onOpenChange={setShowCreditDialog}
+        error={creditError}
       />
     </div>
   )

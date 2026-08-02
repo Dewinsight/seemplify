@@ -9,6 +9,10 @@
 
 const { Issuer } = require('openid-client')
 
+function resolveCurrentOrganization(userinfo = {}) {
+  return userinfo.currentOrganization || userinfo.current_organization || null
+}
+
 let cachedClient = null
 let cachedIssuer = null
 let cachedIssuerExpiry = null
@@ -62,7 +66,7 @@ async function claimsRefreshMiddleware(req, res, next) {
         req.session.user.organizations = freshUserinfo.organizations || []
         req.session.user.teams = freshUserinfo.teams || []
         req.session.user.team_permissions = freshUserinfo.team_permissions || []
-        req.session.user.currentOrganization = freshUserinfo.currentOrganization
+        req.session.user.currentOrganization = resolveCurrentOrganization(freshUserinfo)
 
         // Clear the refresh flag
         req.session.claimsNeedRefresh = false
@@ -107,7 +111,7 @@ async function periodicClaimsRefreshMiddleware(req, res, next) {
         req.session.user.organizations = freshUserinfo.organizations || []
         req.session.user.teams = freshUserinfo.teams || []
         req.session.user.team_permissions = freshUserinfo.team_permissions || []
-        req.session.user.currentOrganization = freshUserinfo.currentOrganization
+        req.session.user.currentOrganization = resolveCurrentOrganization(freshUserinfo)
 
         req.session.claimsLastRefreshed = now
         console.log(`✅ Periodic claims refresh completed for ${req.session.user.email}`)
@@ -143,7 +147,7 @@ async function forceClaimsRefresh(req) {
       req.session.user.organizations = freshUserinfo.organizations || []
       req.session.user.teams = freshUserinfo.teams || []
       req.session.user.team_permissions = freshUserinfo.team_permissions || []
-      req.session.user.currentOrganization = freshUserinfo.currentOrganization
+      req.session.user.currentOrganization = resolveCurrentOrganization(freshUserinfo)
 
       req.session.claimsLastRefreshed = Date.now()
       console.log(`✅ Force claims refresh completed for ${req.session.user.email}`)

@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -129,35 +128,19 @@ export function InterviewSetupTab({
   // If a scheduler is active, show it
   if (schedulerMode === 'single' || schedulerMode === 'multi') {
     return (
-      <div className="space-y-3 sm:space-y-4">
-        {/* Back button */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 sm:px-0">
-          <Button
-            variant="outline"
-            onClick={handleCancel}
-            className="h-10 sm:h-9 text-xs sm:text-sm w-full sm:w-auto"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Options
-          </Button>
-          <div className="text-center sm:text-left">
-            <h3 className="font-semibold text-base sm:text-lg">
-              {schedulerMode === 'single' ? 'Single Interview' : 'Multi-Candidate Interview'}
-            </h3>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              <span className="block sm:inline">{jobTitle}</span>
-              {schedulerMode === 'single' && selectedCandidateData && (
-                <span className="text-blue-600 block sm:inline"> • {selectedCandidateData.firstName} {selectedCandidateData.lastName}</span>
-              )}
-              {selectedStage && (
-                <span className="text-green-600 block sm:inline"> • {stages.find(s => s._id === selectedStage)?.name}</span>
-              )}
-            </p>
-          </div>
-        </div>
+      <Dialog open onOpenChange={(open) => !open && handleCancel()}>
+        <DialogContent className="w-[98vw] max-w-[1600px] h-[96vh] max-h-[96vh] p-0 overflow-hidden multi-step-scheduler-portal">
+          <DialogHeader className="sr-only">
+            <DialogTitle>
+              {schedulerMode === 'single' ? 'Single Interview Scheduler' : 'Multi-Candidate Interview Scheduler'}
+            </DialogTitle>
+            <DialogDescription>
+              {schedulerMode === 'single'
+                ? `Schedule an interview for ${selectedCandidateData ? `${selectedCandidateData.firstName} ${selectedCandidateData.lastName}` : 'the selected candidate'}`
+                : `Schedule a multi-candidate interview session for ${jobTitle}`}
+            </DialogDescription>
+          </DialogHeader>
 
-        {/* Scheduler */}
-        <div className="bg-white dark:bg-slate-900 rounded-lg border p-4 sm:p-6">
           <MultiStepInterviewScheduler
             candidateId={selectedCandidate} // Pre-filled for single interview
             candidateName={selectedCandidateData ? `${selectedCandidateData.firstName} ${selectedCandidateData.lastName}` : ''}
@@ -171,8 +154,8 @@ export function InterviewSetupTab({
             forceMultiCandidate={schedulerMode === 'multi'} // Set multi mode when multi-candidate selected
             onNavigateToShortlist={onNavigateToShortlist}
           />
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
     )
   }
 
@@ -181,7 +164,7 @@ export function InterviewSetupTab({
     <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="text-center space-y-2 px-4 sm:px-0">
-        <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground dark:text-gray-100">
+        <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-gray-100">
           Schedule Interviews
         </h2>
         <p className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto">
@@ -208,10 +191,10 @@ export function InterviewSetupTab({
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1 sm:mb-2">
-                    <h3 className="text-lg sm:text-xl font-bold text-foreground dark:text-gray-100">Single Interview</h3>
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100">Single Interview</h3>
                     <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-xs">Standard</Badge>
                   </div>
-                  <p className="text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                     Schedule one candidate at a time with personalized scheduling
                   </p>
                 </div>
@@ -530,15 +513,15 @@ export function InterviewSetupTab({
 
               {/* Features */}
               <div className="space-y-2 sm:space-y-2.5 pl-1">
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
                   <span>Personalized scheduling</span>
                 </div>
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
                   <span>AI notetaker & email templates</span>
                 </div>
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
                   <span>Flexible timing options</span>
                 </div>
@@ -592,10 +575,10 @@ export function InterviewSetupTab({
                   <Users className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 text-white" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg sm:text-xl font-bold text-foreground dark:text-gray-100 mb-1 sm:mb-2">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100 mb-1 sm:mb-2">
                     Multi-Candidate Interview
                   </h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                     Interview multiple candidates back-to-back in one session
                   </p>
                 </div>
@@ -644,15 +627,15 @@ export function InterviewSetupTab({
 
               {/* Features */}
               <div className="space-y-2 sm:space-y-2.5 pl-1">
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
                   <span>Single meeting link for all</span>
                 </div>
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
                   <span>AI notetaker with segmentation</span>
                 </div>
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground dark:text-gray-400">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                   <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
                   <span>15-90 min slots per candidate</span>
                 </div>
@@ -684,7 +667,7 @@ export function InterviewSetupTab({
       </div>
 
       {/* Info Footer */}
-      <div className="text-center text-xs sm:text-sm text-muted-foreground bg-muted/30 dark:bg-slate-900/50 rounded-lg p-3 sm:p-4 max-w-full sm:max-w-3xl mx-auto">
+      <div className="text-center text-xs sm:text-sm text-muted-foreground bg-gray-50 dark:bg-slate-900/50 rounded-lg p-3 sm:p-4 max-w-full sm:max-w-3xl mx-auto">
         <p>
           💡 <span className="font-medium">Tip:</span> Select the interview stage first, then choose your scheduling type. 
           Multi-candidate interviews use a shared meeting link with individual time slots - perfect for screening rounds!

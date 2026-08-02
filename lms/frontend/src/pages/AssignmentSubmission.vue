@@ -48,7 +48,7 @@ const title = createResource({
 
 onMounted(() => {
 	if (!user.data) {
-		window.location.href = '/login'
+		window.location.href = '/lms-login'
 	}
 
 	if (new URLSearchParams(window.location.search).get('fromLesson')) {

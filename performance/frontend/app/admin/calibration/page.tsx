@@ -13,12 +13,10 @@ import {
   Add, PlayArrow, CheckCircle, Edit, Insights, Assessment,
   Balance, TrendingUp, TrendingDown
 } from '@mui/icons-material';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
 export default function CalibrationPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
   const { isHRAdmin, isLoading: userLoading } = useUserContext();
   const { cycles } = useReviewCycles();
   const { sessions, isLoading, mutate } = useCalibrationSessions();
@@ -31,7 +29,7 @@ export default function CalibrationPage() {
     scheduledDate: ''
   });
 
-  if (status === 'loading' || userLoading || isLoading) {
+  if (userLoading || isLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
         <CircularProgress />

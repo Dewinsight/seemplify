@@ -1,235 +1,355 @@
 <!DOCTYPE html>
 <html>
-
 <head>
   <meta charset="UTF-8">
   <title>Members - <%= organization.name %> - AIIN Identity</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
+    .member-grid {
+      display: grid;
+      gap: 18px;
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .member-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .member-fields label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .app-access-box {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+    .app-access-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .app-access-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+    .split-layout {
+      display: grid;
+      gap: 18px;
+      margin-top: 28px;
+    }
+    .inline-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .mini-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
   </style>
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
 </head>
-
 <body>
-  <!-- Top Navigation -->
-  <nav class="top-nav">
-    <a href="https://seemplifyai.com" class="top-nav-brand">
-      <svg viewBox="0 0 100 100" aria-hidden="true">
-        <defs>
-          <linearGradient id="seemplifyNavGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#3b82f6" />
-            <stop offset="50%" stop-color="#8b5cf6" />
-            <stop offset="100%" stop-color="#ec4899" />
-          </linearGradient>
-        </defs>
-        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
-          stroke="url(#seemplifyNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <circle cx="65" cy="25" r="6" class="logo-dot" />
-        <circle cx="50" cy="50" r="6" class="logo-dot" />
-        <circle cx="35" cy="75" r="6" class="logo-dot" />
-      </svg>
-      <span>Seemplify</span>
-    </a>
-    <div class="top-nav-links">
-      <a href="/" class="top-nav-link">Home</a>
-      <a href="/organizations" class="top-nav-link active">Organizations</a>
-      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
-      <a href="/profile" class="top-nav-link">Profile</a>
-      <a href="/logout" class="top-nav-link">Logout</a>
-    </div>
-    <div class="top-nav-user">
-      <div class="theme-dropdown">
-        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5" />
-            <path
-              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </svg>
-          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            style="display:none;">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-        </button>
-        <div class="theme-menu" id="theme-menu">
-          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <circle cx="12" cy="12" r="5" />
-              <path
-                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-            </svg>
-            Light
-          </button>
-          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-            Dark
-          </button>
-          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            System
-          </button>
-        </div>
-      </div>
-      <div class="top-nav-user-info">
-        <div class="top-nav-user-name">
-          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
-        </div>
-        <div class="top-nav-user-email">
-          <%= user.email %>
-        </div>
-      </div>
-      <a href="/logout" class="top-nav-logout">Logout</a>
-    </div>
-  </nav>
+  <%- include('partials/nav', { activePage: 'organizations' }) %>
 
   <div class="container">
     <a href="/organizations" class="back-link">← Back to Organizations</a>
 
     <div class="header">
       <div>
-        <h1>Members</h1>
-        <div class="header-subtitle">
-          <%= organization.name %>
-        </div>
+        <h1>People & Structure</h1>
+        <div class="header-subtitle"><%= organization.name %></div>
       </div>
       <div class="header-actions">
-        <% if (['owner', 'admin' ].includes(yourRole)) { %>
-          <a href="/organizations/<%= organization._id %>/invitations" class="btn btn-primary">
-            + Invite Member
-          </a>
+        <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+          <a href="/organizations/<%= organization._id %>/onboarding" class="btn btn-secondary">Onboarding</a>
+          <a href="/organizations/<%= organization._id %>/invitations" class="btn btn-primary">+ Invite Member</a>
+        <% } %>
+        <% if (['owner', 'admin'].includes(yourRole)) { %>
+          <button type="button" class="btn btn-secondary" onclick="sendProfileReminders(this)">Send Profile Reminders</button>
+          <a href="/organizations/<%= organization._id %>/notifications" class="btn btn-secondary">Send Notification</a>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="split-layout">
+      <div class="card">
+        <div class="header" style="margin-bottom: 12px;">
+          <div>
+            <h2 style="margin: 0;">Departments</h2>
+            <div class="header-subtitle">Manage departments, department heads, and hierarchy from this same screen.</div>
+          </div>
+          <% if (canManageTeams) { %>
+            <button class="btn btn-secondary" onclick="showDepartmentModal()">+ Department</button>
           <% } %>
+        </div>
+        <div class="inline-grid">
+          <% departments.forEach(department => { %>
+            <div class="card" style="margin: 0;">
+              <div style="font-weight: 700;"><%= department.name %></div>
+              <div class="mini-meta">
+                <span>Parent: <%= departments.find(d => d.id === department.parentDepartment)?.name || 'Root' %></span>
+                <span>Head: <%= department.headName || 'Not assigned' %></span>
+              </div>
+              <% if (department.description) { %>
+                <div style="margin-top: 8px; color: var(--muted); font-size: 13px;"><%= department.description %></div>
+              <% } %>
+              <% if (canManageTeams) { %>
+                <div style="margin-top: 12px;">
+                  <button class="btn btn-secondary btn-sm" onclick='editDepartment(<%- JSON.stringify(department) %>)'>Edit</button>
+                </div>
+              <% } %>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="header" style="margin-bottom: 12px;">
+          <div>
+            <h2 style="margin: 0;">Teams</h2>
+            <div class="header-subtitle">Teams remain under departments, with hierarchy and membership managed here.</div>
+          </div>
+          <% if (canManageTeams) { %>
+            <button class="btn btn-primary" onclick="showCreateModal()">+ Team</button>
+          <% } %>
+        </div>
+
+        <% if (teams && teams.length > 0) { %>
+          <% teams.forEach(team => { %>
+            <div class="card team-card" data-team-id="<%= team.id %>" style="margin-bottom: 16px;">
+              <div class="team-info">
+                <div class="team-name"><%= team.name %></div>
+                <% if (team.description) { %><div class="team-description"><%= team.description %></div><% } %>
+                <div class="mini-meta">
+                  <span>Department: <strong><%= team.department?.name || 'General' %></strong></span>
+                  <span>Parent Team: <%= team.parentTeam?.name || 'None' %></span>
+                  <span>Line Manager: <span id="team-manager-<%= team.id %>"><%= team.manager?.name || team.manager?.email || 'Not assigned' %></span></span>
+                  <span id="team-member-count-<%= team.id %>"><%= team.memberCount || 0 %> member<%= team.memberCount !== 1 ? 's' : '' %></span>
+                </div>
+              </div>
+              <div class="team-actions">
+                <button class="btn btn-secondary btn-sm" onclick="manageMembers('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Members</button>
+                <% if (canManageTeams) { %>
+                  <button class="btn btn-secondary btn-sm" onclick='editTeam(<%- JSON.stringify(team) %>)'>Edit</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Delete</button>
+                <% } %>
+              </div>
+            </div>
+          <% }) %>
+        <% } else { %>
+          <div class="card empty-state" style="margin: 0;">
+            <h3>No teams yet</h3>
+            <p>Create teams to organize your department structure.</p>
+          </div>
+        <% } %>
       </div>
     </div>
 
     <div class="stats">
       <div class="stat">
-        <div class="stat-value">
-          <%= members.length %>
-        </div>
+        <div class="stat-value"><%= members.length %></div>
         <div class="stat-label">Total Members</div>
       </div>
       <div class="stat">
-        <div class="stat-value">
-          <%= ownerCount %>
-        </div>
-        <div class="stat-label">Owners</div>
+        <div class="stat-value"><%= departments.length %></div>
+        <div class="stat-label">Departments</div>
       </div>
       <div class="stat">
-        <div class="stat-value role-badge role-<%= yourRole %>">
-          <%= yourRole %>
-        </div>
+        <div class="stat-value role-badge role-<%= yourRole %>"><%= yourRole %></div>
         <div class="stat-label">Your Role</div>
       </div>
     </div>
 
-    <% if (typeof error !=='undefined' && error) { %>
-      <div class="alert alert-error">
-        <%= error %>
-      </div>
-      <% } %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
-        <% if (typeof success !=='undefined' && success) { %>
-          <div class="alert alert-success">
-            <%= success %>
+    <div class="toolbar">
+      <input id="memberSearch" type="text" class="role-select" placeholder="Search by name, email, employee ID, designation">
+      <select id="departmentFilter" class="role-select">
+        <option value="all">All Departments</option>
+        <option value="unassigned">Unassigned</option>
+        <% departments.forEach(department => { %>
+          <option value="<%= department.name %>"><%= department.name %></option>
+        <% }) %>
+      </select>
+      <select id="teamFilter" class="role-select">
+        <option value="all">All Teams</option>
+        <% teams.forEach(team => { %>
+          <option value="<%= team.name %>"><%= team.name %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="member-grid">
+      <% members.forEach(member => { %>
+        <div
+          class="card member-card"
+          data-member-id="<%= member.id %>"
+          data-member-name="<%= (member.name || '').toLowerCase() %>"
+          data-member-email="<%= (member.email || '').toLowerCase() %>"
+          data-member-employee-id="<%= (member.employeeId || '').toLowerCase() %>"
+          data-member-designation="<%= (member.designation || '').toLowerCase() %>"
+          data-member-department="<%= (member.departmentName || 'Unassigned').toLowerCase() %>"
+          data-member-teams="<%= (member.teamNames || []).join('||').toLowerCase() %>"
+        >
+          <div class="member-info">
+            <div class="member-name">
+              <%= member.name || 'No name' %>
+              <% if (member.isOwner) { %><span style="color: var(--brand-2); font-size: 12px;">(Primary Owner)</span><% } %>
+              <% if (member.id.toString() === user._id.toString()) { %><span style="color: var(--muted); font-size: 12px;">(You)</span><% } %>
+            </div>
+            <div class="member-email"><%= member.email %></div>
+            <div class="member-meta">
+              <span class="role-badge role-<%= member.role %>"><%= member.role %></span>
+              <span class="role-badge onboarding-badge onboarding-<%= member.onboardingStatus %>">Onboarding: <%= member.onboardingStatus.replace('_', ' ') %></span>
+              <span id="member-teams-<%= member.id %>">Teams: <%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></span>
+              <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
+            </div>
           </div>
-          <% } %>
 
-            <% members.forEach(member=> { %>
-              <div class="card member-card">
-                <div class="member-info">
-                  <div class="member-name">
-                    <%= member.name || 'No name' %>
-                      <% if (member.isOwner) { %>
-                        <span style="color: var(--brand-2); font-size: 12px;">(Primary Owner)</span>
-                        <% } %>
-                  </div>
-                  <div class="member-email">
-                    <%= member.email %>
-                  </div>
-                  <div class="member-meta">
-                    <span class="role-badge role-<%= member.role %>">
-                      <%= member.role %>
-                    </span>
-                    <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
-                  </div>
-                </div>
-                <div class="member-actions">
-                  <% if (['owner', 'admin' ].includes(yourRole) && member.id.toString() !==user._id.toString()) { %>
-                    <select class="role-select" onchange="updateRole('<%= member.id %>', this.value)"
-                      <%=member.role==='owner' && yourRole !=='owner' ? 'disabled' : '' %>>
-                      <option value="owner" <%=member.role==='owner' ? 'selected' : '' %>
-                        <%= yourRole !=='owner' ? 'disabled' : '' %>>Owner
-                      </option>
-                      <option value="admin" <%=member.role==='admin' ? 'selected' : '' %>>Admin</option>
-                      <option value="hr_manager" <%=member.role==='hr_manager' ? 'selected' : '' %>>HR Manager</option>
-                      <option value="recruiter" <%=member.role==='recruiter' ? 'selected' : '' %>>Recruiter</option>
-                      <option value="interviewer" <%=member.role==='interviewer' ? 'selected' : '' %>>Interviewer
-                      </option>
-                      <option value="staff" <%=member.role==='staff' ? 'selected' : '' %>>Staff
-                      </option>
-                    </select>
-                    <button class="btn btn-danger btn-sm"
-                      onclick="removeMember('<%= member.id %>', '<%= member.email %>')">
-                      Remove
-                    </button>
-                    <% } else if (member.id.toString()===user._id.toString()) { %>
-                      <span style="color: var(--muted); font-size: 13px;">(You)</span>
-                      <% } %>
+          <div class="member-fields">
+            <div>
+              <label>Department</label>
+              <div><strong id="member-department-<%= member.id %>"><%= member.departmentName || 'Unassigned' %></strong></div>
+              <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">Derived from active team assignments.</div>
+            </div>
+            <div>
+              <label>Designation</label>
+              <% if (canManageMemberMetadata) { %>
+                <input
+                  type="text"
+                  class="role-select"
+                  value="<%= member.designation || '' %>"
+                  placeholder="Set designation"
+                  onchange="updateDesignation('<%= member.id %>', this.value)"
+                />
+              <% } else { %>
+                <div><strong><%= member.designation || 'Not set' %></strong></div>
+              <% } %>
+            </div>
+            <div>
+              <label>Employee ID</label>
+              <% if (canManageMemberMetadata) { %>
+                <input
+                  type="text"
+                  class="role-select"
+                  value="<%= member.employeeId || '' %>"
+                  placeholder="Set employee ID"
+                  onchange="updateEmployeeId('<%= member.id %>', this.value)"
+                />
+              <% } else { %>
+                <div><strong><%= member.employeeId || 'Not set' %></strong></div>
+              <% } %>
+            </div>
+            <div>
+              <label>Role</label>
+              <% if (canManageMemberRoles && member.id.toString() !== user._id.toString()) { %>
+                <select class="role-select" onchange="updateRole('<%= member.id %>', this.value)" <%= member.role === 'owner' && yourRole !== 'owner' ? 'disabled' : '' %>>
+                  <option value="owner" <%= member.role === 'owner' ? 'selected' : '' %> <%= yourRole !== 'owner' ? 'disabled' : '' %>>Owner</option>
+                  <option value="admin" <%= member.role === 'admin' ? 'selected' : '' %>>Admin</option>
+                  <option value="hr_manager" <%= member.role === 'hr_manager' ? 'selected' : '' %>>HR Manager</option>
+                  <option value="recruiter" <%= member.role === 'recruiter' ? 'selected' : '' %>>Recruiter</option>
+                  <option value="interviewer" <%= member.role === 'interviewer' ? 'selected' : '' %>>Interviewer</option>
+                  <option value="staff" <%= member.role === 'staff' ? 'selected' : '' %>>Staff</option>
+                </select>
+              <% } else { %>
+                <div><strong><%= member.role %></strong></div>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="app-access-box">
+            <label style="display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px;">App Access</label>
+            <div style="margin-bottom: 8px;">
+              <% if (canManageMemberMetadata) { %>
+                <select class="role-select" onchange="toggleMemberAppMode('<%= member.id %>', this.value)">
+                  <option value="all" <%= member.appAccess?.mode !== 'selected' ? 'selected' : '' %>>All apps</option>
+                  <option value="selected" <%= member.appAccess?.mode === 'selected' ? 'selected' : '' %>>Selected apps only</option>
+                </select>
+              <% } else { %>
+                <strong><%= member.appAccessLabel || 'All apps' %></strong>
+              <% } %>
+            </div>
+            <% if (canManageMemberMetadata) { %>
+              <div id="member-apps-<%= member.id %>" style="<%= member.appAccess?.mode === 'selected' ? '' : 'display:none;' %>">
+                <div class="app-access-grid">
+                  <% availableApps.forEach(app => { %>
+                    <label class="app-access-item">
+                      <input
+                        type="checkbox"
+                        data-member-app="<%= member.id %>"
+                        value="<%= app.appId %>"
+                        <%= member.appAccess?.appIds?.includes(app.appId) ? 'checked' : '' %>
+                        onchange="saveMemberAppAccess('<%= member.id %>')"
+                      >
+                      <span><strong><%= app.name %></strong></span>
+                    </label>
+                  <% }) %>
                 </div>
               </div>
-              <% }) %>
+            <% } else if (member.appAccessAppNames?.length) { %>
+              <div><%= member.appAccessAppNames.join(', ') %></div>
+            <% } %>
+          </div>
 
-                <% if (yourRole==='owner' ) { %>
-                  <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
-                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                      <button class="btn btn-primary" onclick="showTransferModal()">
-                        Transfer Ownership
-                      </button>
-                      <% if (ownerCount> 1) { %>
-                        <button class="btn btn-danger" onclick="leaveOrganization()">
-                          Leave Organization
-                        </button>
-                        <% } %>
-                    </div>
-                  </div>
-                  <% } else if (yourRole !=='owner' ) { %>
-                    <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
-                      <button class="btn btn-danger" onclick="leaveOrganization()">
-                        Leave Organization
-                      </button>
-                    </div>
-                    <% } %>
+          <% if (canManageMemberRoles && member.id.toString() !== user._id.toString()) { %>
+            <div class="member-actions" style="margin-top: 16px;">
+              <button class="btn btn-danger btn-sm" onclick="removeMember('<%= member.id %>', '<%= member.email %>')">Remove</button>
+            </div>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+
+    <% if (yourRole === 'owner') { %>
+      <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="showTransferModal()">Transfer Ownership</button>
+          <% if (ownerCount > 1) { %><button class="btn btn-danger" onclick="leaveOrganization()">Leave Organization</button><% } %>
+        </div>
+      </div>
+    <% } else { %>
+      <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
+        <button class="btn btn-danger" onclick="leaveOrganization()">Leave Organization</button>
+      </div>
+    <% } %>
   </div>
 
-  <!-- Transfer Ownership Modal -->
   <div class="modal" id="transferModal">
     <div class="modal-content">
       <div class="modal-header">
         <h2>Transfer Ownership</h2>
         <button class="modal-close" onclick="hideTransferModal()">&times;</button>
       </div>
-      <p style="color: var(--muted); margin-bottom: 16px;">
-        Select a member to transfer ownership to. You will become an admin after transfer.
-      </p>
+      <p style="color: var(--muted); margin-bottom: 16px;">Select a member to transfer ownership to. You will become an admin after transfer.</p>
       <div class="form-group">
         <label for="newOwner">New Owner</label>
         <select id="newOwner">
-          <% members.filter(m=> m.role !== 'owner').forEach(member => { %>
-            <option value="<%= member.id %>">
-              <%= member.name || member.email %>
-            </option>
-            <% }) %>
+          <% members.filter(m => m.role !== 'owner').forEach(member => { %>
+            <option value="<%= member.id %>"><%= member.name || member.email %></option>
+          <% }) %>
         </select>
       </div>
       <div class="form-actions">
@@ -239,43 +359,407 @@
     </div>
   </div>
 
+  <div class="modal" id="departmentModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="departmentModalTitle">Create Department</h2>
+        <button class="modal-close" onclick="hideDepartmentModal()">&times;</button>
+      </div>
+      <form id="departmentForm">
+        <input type="hidden" id="departmentId">
+        <div class="form-group">
+          <label for="departmentName">Department Name *</label>
+          <input type="text" id="departmentName" required maxlength="120">
+        </div>
+        <div class="form-group">
+          <label for="departmentDescription">Description</label>
+          <textarea id="departmentDescription" maxlength="500"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="parentDepartment">Parent Department</label>
+          <select id="parentDepartment"></select>
+        </div>
+        <div class="form-group">
+          <label for="departmentHead">Head of Department</label>
+          <select id="departmentHead"></select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideDepartmentModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Department</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="createModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Team</h2>
+        <button class="modal-close" onclick="hideCreateModal()">&times;</button>
+      </div>
+      <form id="createForm">
+        <div class="form-group">
+          <label for="teamName">Team Name *</label>
+          <input type="text" id="teamName" required maxlength="100">
+        </div>
+        <div class="form-group">
+          <label for="teamDescription">Description</label>
+          <textarea id="teamDescription" maxlength="500"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="teamDepartment">Department *</label>
+          <select id="teamDepartment" required onchange="syncParentTeamOptions('teamDepartment', 'parentTeam', '')"></select>
+        </div>
+        <div class="form-group">
+          <label for="parentTeam">Parent Team (optional)</label>
+          <select id="parentTeam"></select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideCreateModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Team</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="editModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit Team</h2>
+        <button class="modal-close" onclick="hideEditModal()">&times;</button>
+      </div>
+      <form id="editForm">
+        <input type="hidden" id="editTeamId">
+        <div class="form-group">
+          <label for="editTeamName">Team Name *</label>
+          <input type="text" id="editTeamName" required maxlength="100">
+        </div>
+        <div class="form-group">
+          <label for="editTeamDescription">Description</label>
+          <textarea id="editTeamDescription" maxlength="500"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="editTeamDepartment">Department *</label>
+          <select id="editTeamDepartment" required onchange="syncParentTeamOptions('editTeamDepartment', 'editParentTeam', document.getElementById('editTeamId').value)"></select>
+        </div>
+        <div class="form-group">
+          <label for="editParentTeam">Parent Team (optional)</label>
+          <select id="editParentTeam"></select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideEditModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="membersModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="membersModalTitle">Team Members</h2>
+        <button class="modal-close" onclick="hideMembersModal()">&times;</button>
+      </div>
+      <div id="membersModalContent"></div>
+    </div>
+  </div>
+
   <script>
     const orgId = '<%= organization._id %>';
+    const memberCards = Array.from(document.querySelectorAll('.member-card'));
+    const departments = <%- JSON.stringify(departments || []) %>;
+    const orgMembers = <%- JSON.stringify(orgMembers || []) %>;
+    const teams = <%- JSON.stringify(teams || []) %>;
+    let activeMembersTeamId = '';
+
+    function normalizeId(value) {
+      return value == null ? '' : String(value);
+    }
+
+    function normalizeTeam(team) {
+      if (!team) return null;
+      return {
+        ...team,
+        id: normalizeId(team.id),
+        department: team.department ? {
+          ...team.department,
+          id: normalizeId(team.department.id)
+        } : null,
+        parentTeam: team.parentTeam ? {
+          ...team.parentTeam,
+          id: normalizeId(team.parentTeam.id)
+        } : null,
+        manager: team.manager ? {
+          ...team.manager,
+          id: normalizeId(team.manager.id)
+        } : null,
+        members: Array.isArray(team.members) ? team.members.map((member) => ({
+          ...member,
+          id: normalizeId(member.id)
+        })) : [],
+        memberCount: Number(team.memberCount || (team.members || []).length || 0)
+      };
+    }
+
+    function getTeamById(teamId) {
+      return teams.find((team) => normalizeId(team.id) === normalizeId(teamId)) || null;
+    }
+
+    function getOrgMemberById(memberId) {
+      return orgMembers.find((member) => normalizeId(member.id) === normalizeId(memberId)) || null;
+    }
+
+    function getMemberTeamAssignments(memberId) {
+      const normalizedMemberId = normalizeId(memberId);
+      return teams.filter((team) => (team.members || []).some((member) => normalizeId(member.id) === normalizedMemberId));
+    }
+
+    function deriveTeamManager(team) {
+      const lineManager = (team.members || []).find((member) => member.role === 'line_manager');
+      if (!lineManager) return null;
+
+      return {
+        id: normalizeId(lineManager.id),
+        email: lineManager.email || '',
+        name: lineManager.name || ''
+      };
+    }
+
+    function upsertTeamState(teamData) {
+      const normalizedTeam = normalizeTeam(teamData);
+      if (!normalizedTeam) return null;
+
+      const existingIndex = teams.findIndex((team) => normalizeId(team.id) === normalizedTeam.id);
+      if (existingIndex === -1) {
+        teams.push(normalizedTeam);
+      } else {
+        teams.splice(existingIndex, 1, {
+          ...teams[existingIndex],
+          ...normalizedTeam
+        });
+      }
+
+      return getTeamById(normalizedTeam.id);
+    }
+
+    function syncTeamCard(teamId) {
+      const team = getTeamById(teamId);
+      if (!team) return null;
+
+      team.manager = deriveTeamManager(team);
+      team.memberCount = (team.members || []).length;
+
+      const managerEl = document.getElementById(`team-manager-${team.id}`);
+      if (managerEl) {
+        managerEl.textContent = team.manager?.name || team.manager?.email || 'Not assigned';
+      }
+
+      const memberCountEl = document.getElementById(`team-member-count-${team.id}`);
+      if (memberCountEl) {
+        const memberCount = team.memberCount || 0;
+        memberCountEl.textContent = `${memberCount} member${memberCount === 1 ? '' : 's'}`;
+      }
+
+      return team;
+    }
+
+    function syncMemberCard(memberId) {
+      const member = getOrgMemberById(memberId);
+      if (!member) return;
+
+      const memberTeams = getMemberTeamAssignments(memberId);
+      const primaryDepartment = memberTeams[0]?.department || null;
+
+      member.teamNames = memberTeams.map((team) => team.name);
+      member.departmentId = primaryDepartment?.id || '';
+      member.departmentName = primaryDepartment?.name || '';
+
+      const memberCard = memberCards.find((card) => normalizeId(card.dataset.memberId) === normalizeId(memberId));
+      if (memberCard) {
+        memberCard.dataset.memberEmployeeId = (member.employeeId || '').toLowerCase();
+        memberCard.dataset.memberDesignation = (member.designation || '').toLowerCase();
+        memberCard.dataset.memberDepartment = (member.departmentName || 'Unassigned').toLowerCase();
+        memberCard.dataset.memberTeams = (member.teamNames || []).join('||').toLowerCase();
+      }
+
+      const teamsEl = document.getElementById(`member-teams-${normalizeId(memberId)}`);
+      if (teamsEl) {
+        teamsEl.textContent = `Teams: ${member.teamNames?.length ? member.teamNames.join(', ') : 'No team'}`;
+      }
+
+      const departmentEl = document.getElementById(`member-department-${normalizeId(memberId)}`);
+      if (departmentEl) {
+        departmentEl.textContent = member.departmentName || 'Unassigned';
+      }
+    }
+
+    function syncMemberState(memberId) {
+      syncMemberCard(memberId);
+      applyMemberFilters();
+    }
+
+    async function refreshTeamState(teamId) {
+      const response = await fetch(`/api/teams/${teamId}`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to load team');
+      }
+
+      const team = upsertTeamState(await response.json());
+      return syncTeamCard(team?.id || teamId);
+    }
+
+    function renderMembersModal(team) {
+      const currentTeam = upsertTeamState(team);
+      if (!currentTeam) return;
+
+      activeMembersTeamId = currentTeam.id;
+      document.getElementById('membersModalTitle').textContent = `Team Members - ${currentTeam.name}`;
+      document.getElementById('membersModal').classList.add('active');
+
+      const availableMembers = orgMembers.filter((member) => {
+        if ((currentTeam.members || []).some((current) => normalizeId(current.id) === normalizeId(member.id))) return false;
+        return !member.departmentId || normalizeId(member.departmentId) === normalizeId(currentTeam.department?.id);
+      });
+
+      document.getElementById('membersModalContent').innerHTML = `
+        <div class="mini-meta" style="margin-bottom: 16px;">
+          <span>Department: ${escapeHtml(currentTeam.department?.name || 'General')}</span>
+          <span>Assigning a member to this team sets their department to this team's department.</span>
+          <span>The member marked Line Manager is treated as the team's manager.</span>
+        </div>
+        ${(currentTeam.members || []).map(member => `
+          <div class="card" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
+              <div>
+                <div style="font-weight: 600;">${escapeHtml(member.name || member.email)}${member.employeeId ? ` [${escapeHtml(member.employeeId)}]` : ''}</div>
+                <div style="color: var(--muted); font-size: 13px;">${escapeHtml(member.email)}</div>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select onchange="updateTeamMemberRole('${currentTeam.id}', '${member.id}', this.value)">
+                  <option value="member" ${member.role === 'member' ? 'selected' : ''}>Member</option>
+                  <option value="line_manager" ${member.role === 'line_manager' ? 'selected' : ''}>Line Manager (manages team)</option>
+                  <option value="team_lead" ${member.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
+                </select>
+                <button class="btn btn-danger btn-sm" onclick="removeMemberFromTeam('${currentTeam.id}', '${member.id}', '${escapeHtml(member.name || member.email)}')">Remove</button>
+              </div>
+            </div>
+          </div>
+        `).join('') || '<p style="color: var(--muted);">No members yet.</p>'}
+        <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line);">
+          <form onsubmit="event.preventDefault(); addMemberToTeam('${currentTeam.id}');">
+            <div class="form-group">
+              <label for="newMemberId">Add Member</label>
+              <select id="newMemberId" required>
+                <option value="">Choose a member...</option>
+                ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)}${member.employeeId ? ` [${escapeHtml(member.employeeId)}]` : ''} (${escapeHtml(member.departmentName || 'Unassigned')})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="newMemberRole">Role</label>
+              <select id="newMemberRole">
+                <option value="member">Member</option>
+                <option value="line_manager">Line Manager (manages team)</option>
+                <option value="team_lead">Team Lead</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit">Add Member</button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    async function refreshMembersModal(teamId, affectedMemberIds = []) {
+      const team = await refreshTeamState(teamId);
+      affectedMemberIds.forEach((memberId) => syncMemberState(memberId));
+
+      if (normalizeId(activeMembersTeamId) === normalizeId(teamId)) {
+        renderMembersModal(team);
+      }
+    }
+
+    async function updateMember(memberId, payload, errorMessage) {
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/members/${memberId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          alert(data.error || errorMessage);
+          window.location.reload();
+          return;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        const member = getOrgMemberById(memberId);
+        if (member) {
+          if (Object.prototype.hasOwnProperty.call(payload, 'designation')) {
+            member.designation = String(data.designation ?? payload.designation ?? '').trim();
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'employeeId')) {
+            member.employeeId = String(data.employeeId ?? payload.employeeId ?? '').trim();
+          }
+        }
+
+        syncMemberState(memberId);
+      } catch (error) {
+        alert(errorMessage);
+        window.location.reload();
+      }
+    }
 
     async function updateRole(memberId, newRole) {
       if (!confirm(`Change role to ${newRole}?`)) {
         window.location.reload();
         return;
       }
+      await updateMember(memberId, { role: newRole }, 'Failed to update role');
+    }
 
-      try {
-        const response = await fetch(`/api/organizations/${orgId}/members/${memberId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: newRole })
-        });
+    async function updateDesignation(memberId, designation) {
+      await updateMember(memberId, { designation }, 'Failed to update designation');
+    }
 
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to update role');
-          window.location.reload();
-        }
-      } catch (error) {
-        alert('Failed to update role');
-        window.location.reload();
+    async function updateEmployeeId(memberId, employeeId) {
+      await updateMember(memberId, { employeeId }, 'Failed to update employee ID');
+    }
+
+    async function updateAppAccess(memberId, appAccess) {
+      await updateMember(memberId, { appAccess }, 'Failed to update app access');
+    }
+
+    function toggleMemberAppMode(memberId, mode) {
+      const container = document.getElementById(`member-apps-${memberId}`);
+      if (container) {
+        container.style.display = mode === 'selected' ? '' : 'none';
       }
+
+      if (mode === 'all') {
+        updateAppAccess(memberId, { mode: 'all', appIds: [] });
+        return;
+      }
+
+      saveMemberAppAccess(memberId);
+    }
+
+    function saveMemberAppAccess(memberId) {
+      const selectedAppIds = Array.from(document.querySelectorAll(`input[data-member-app="${memberId}"]:checked`)).map((input) => input.value);
+      if (selectedAppIds.length === 0) {
+        alert('Select at least one app when using selected apps access.');
+        return;
+      }
+      updateAppAccess(memberId, { mode: 'selected', appIds: selectedAppIds });
     }
 
     async function removeMember(memberId, email) {
       if (!confirm(`Remove ${email} from this organization?`)) return;
-
       try {
-        const response = await fetch(`/api/organizations/${orgId}/members/${memberId}`, {
-          method: 'DELETE'
-        });
-
+        const response = await fetch(`/api/organizations/${orgId}/members/${memberId}`, { method: 'DELETE' });
         if (response.ok) {
           window.location.reload();
         } else {
@@ -287,14 +771,42 @@
       }
     }
 
-    async function leaveOrganization() {
-      if (!confirm('Are you sure you want to leave this organization?')) return;
+    async function sendProfileReminders(button) {
+      if (!confirm('Send profile reminders to all active members in this organization who still have incomplete profiles?')) return;
+
+      const originalLabel = button ? button.textContent : '';
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Sending...';
+      }
 
       try {
-        const response = await fetch(`/api/organizations/${orgId}/leave`, {
+        const response = await fetch(`/api/organizations/${orgId}/members/profile-reminders`, {
           method: 'POST'
         });
+        const data = await response.json().catch(() => ({}));
 
+        if (!response.ok) {
+          alert(data.error || 'Failed to send profile reminders');
+          return;
+        }
+
+        const successMessage = data.message || 'Profile reminders sent';
+        window.location.href = `/organizations/${orgId}/members?success=${encodeURIComponent(successMessage)}`;
+      } catch (error) {
+        alert('Failed to send profile reminders');
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
+      }
+    }
+
+    async function leaveOrganization() {
+      if (!confirm('Are you sure you want to leave this organization?')) return;
+      try {
+        const response = await fetch(`/api/organizations/${orgId}/leave`, { method: 'POST' });
         if (response.ok) {
           window.location.href = '/organizations';
         } else {
@@ -320,16 +832,13 @@
         alert('Please select a new owner');
         return;
       }
-
       if (!confirm('Are you sure you want to transfer ownership? This cannot be undone.')) return;
-
       try {
         const response = await fetch(`/api/organizations/${orgId}/transfer-ownership`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ newOwnerId })
         });
-
         if (response.ok) {
           window.location.reload();
         } else {
@@ -340,10 +849,273 @@
         alert('Failed to transfer ownership');
       }
     }
-  </script>
 
-  <!-- Invitation Gatekeeper - Blocks page until invitation decision is made -->
+    function applyMemberFilters() {
+      const searchValue = String(document.getElementById('memberSearch').value || '').trim().toLowerCase();
+      const departmentValue = String(document.getElementById('departmentFilter').value || 'all').toLowerCase();
+      const teamValue = String(document.getElementById('teamFilter').value || 'all').toLowerCase();
+
+      memberCards.forEach((card) => {
+        const haystack = [
+          card.dataset.memberName || '',
+          card.dataset.memberEmail || '',
+          card.dataset.memberEmployeeId || '',
+          card.dataset.memberDesignation || ''
+        ].join(' ');
+
+        const department = card.dataset.memberDepartment || '';
+        const teams = (card.dataset.memberTeams || '').split('||').filter(Boolean);
+
+        const matchesSearch = !searchValue || haystack.includes(searchValue);
+        const matchesDepartment = departmentValue === 'all' ||
+          (departmentValue === 'unassigned' ? !department || department === 'unassigned' : department === departmentValue);
+        const matchesTeam = teamValue === 'all' || teams.includes(teamValue);
+
+        card.style.display = matchesSearch && matchesDepartment && matchesTeam ? '' : 'none';
+      });
+    }
+
+    document.getElementById('memberSearch').addEventListener('input', applyMemberFilters);
+    document.getElementById('departmentFilter').addEventListener('change', applyMemberFilters);
+    document.getElementById('teamFilter').addEventListener('change', applyMemberFilters);
+
+    function setOptions(selectId, options, placeholder, selectedValue = '') {
+      const select = document.getElementById(selectId);
+      select.innerHTML = placeholder ? `<option value="">${placeholder}</option>` : '';
+      options.forEach(option => {
+        const el = document.createElement('option');
+        el.value = option.value;
+        el.textContent = option.label;
+        if (selectedValue && selectedValue === option.value) el.selected = true;
+        select.appendChild(el);
+      });
+    }
+
+    function hydrateDepartmentSelectors() {
+      const departmentOptions = departments.map(department => ({ value: department.id, label: department.name }));
+      setOptions('teamDepartment', departmentOptions, '');
+      setOptions('editTeamDepartment', departmentOptions, '');
+      setOptions('parentDepartment', departments.map(department => ({ value: department.id, label: department.name })), 'Root / no parent');
+      setOptions('departmentHead', orgMembers.map(member => ({ value: member.id, label: `${member.name || member.email} (${member.departmentName || 'Unassigned'})` })), 'No head assigned');
+    }
+
+    function syncParentTeamOptions(departmentSelectId, teamSelectId, currentTeamId) {
+      const departmentId = String(document.getElementById(departmentSelectId).value || '');
+      const currentId = String(currentTeamId || '');
+      const filteredTeams = teams.filter((team) => {
+        const teamDepartmentId = String(team?.department?.id || '');
+        const teamId = String(team?.id || '');
+        return teamDepartmentId === departmentId && teamId !== currentId;
+      });
+      setOptions(teamSelectId, filteredTeams.map(team => ({ value: team.id, label: team.name })), 'No parent team');
+    }
+
+    function showDepartmentModal() {
+      document.getElementById('departmentModalTitle').textContent = 'Create Department';
+      document.getElementById('departmentForm').reset();
+      document.getElementById('departmentId').value = '';
+      hydrateDepartmentSelectors();
+      document.getElementById('departmentModal').classList.add('active');
+    }
+
+    function editDepartment(department) {
+      hydrateDepartmentSelectors();
+      document.getElementById('departmentModalTitle').textContent = 'Edit Department';
+      document.getElementById('departmentId').value = department.id;
+      document.getElementById('departmentName').value = department.name || '';
+      document.getElementById('departmentDescription').value = department.description || '';
+      document.getElementById('parentDepartment').value = department.parentDepartment || '';
+      document.getElementById('departmentHead').value = department.headAccount || '';
+      document.getElementById('departmentModal').classList.add('active');
+    }
+
+    function hideDepartmentModal() {
+      document.getElementById('departmentModal').classList.remove('active');
+    }
+
+    function showCreateModal() {
+      document.getElementById('createForm').reset();
+      hydrateDepartmentSelectors();
+      if (departments[0]) document.getElementById('teamDepartment').value = departments[0].id;
+      syncParentTeamOptions('teamDepartment', 'parentTeam', '');
+      document.getElementById('createModal').classList.add('active');
+    }
+
+    function hideCreateModal() {
+      document.getElementById('createModal').classList.remove('active');
+    }
+
+    function editTeam(team) {
+      hydrateDepartmentSelectors();
+      document.getElementById('editTeamId').value = team.id;
+      document.getElementById('editTeamName').value = team.name || '';
+      document.getElementById('editTeamDescription').value = team.description || '';
+      document.getElementById('editTeamDepartment').value = team.department?.id || '';
+      syncParentTeamOptions('editTeamDepartment', 'editParentTeam', team.id);
+      document.getElementById('editParentTeam').value = team.parentTeam?.id || '';
+      document.getElementById('editModal').classList.add('active');
+    }
+
+    function hideEditModal() {
+      document.getElementById('editModal').classList.remove('active');
+    }
+
+    async function manageMembers(teamId, teamName) {
+      activeMembersTeamId = normalizeId(teamId);
+      try {
+        const team = await refreshTeamState(teamId);
+        renderMembersModal(team);
+      } catch (error) {
+        activeMembersTeamId = '';
+        alert(error.message || `Failed to load ${teamName || 'team'} members`);
+      }
+    }
+
+    function hideMembersModal() {
+      activeMembersTeamId = '';
+      document.getElementById('membersModal').classList.remove('active');
+    }
+
+    async function addMemberToTeam(teamId) {
+      const accountId = document.getElementById('newMemberId').value;
+      const role = document.getElementById('newMemberRole').value;
+      if (!accountId) return;
+      const response = await fetch(`/api/teams/${teamId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId, role })
+      });
+      if (response.ok) {
+        await refreshMembersModal(teamId, [accountId]);
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to add member');
+      }
+    }
+
+    async function removeMemberFromTeam(teamId, memberId, memberName) {
+      if (!confirm(`Remove ${memberName} from this team?`)) return;
+      const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, { method: 'DELETE' });
+      if (response.ok) {
+        await refreshMembersModal(teamId, [memberId]);
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to remove member');
+      }
+    }
+
+    async function updateTeamMemberRole(teamId, memberId, role) {
+      const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role })
+      });
+      if (response.ok) {
+        await refreshMembersModal(teamId, [memberId]);
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to update role');
+      }
+    }
+
+    document.getElementById('departmentForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const departmentId = document.getElementById('departmentId').value;
+      const payload = {
+        name: document.getElementById('departmentName').value,
+        description: document.getElementById('departmentDescription').value,
+        parentDepartment: document.getElementById('parentDepartment').value || null,
+        headAccount: document.getElementById('departmentHead').value || null
+      };
+      const url = departmentId
+        ? `/api/organizations/${orgId}/departments/${departmentId}`
+        : `/api/organizations/${orgId}/departments`;
+      const method = departmentId ? 'PUT' : 'POST';
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to save department');
+      }
+    });
+
+    document.getElementById('createForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const response = await fetch(`/api/organizations/${orgId}/teams`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('teamName').value,
+          description: document.getElementById('teamDescription').value,
+          departmentId: document.getElementById('teamDepartment').value,
+          parentTeamId: document.getElementById('parentTeam').value || null
+        })
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create team');
+      }
+    });
+
+    document.getElementById('editForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const teamId = document.getElementById('editTeamId').value;
+      const response = await fetch(`/api/teams/${teamId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('editTeamName').value,
+          description: document.getElementById('editTeamDescription').value,
+          departmentId: document.getElementById('editTeamDepartment').value,
+          parentTeamId: document.getElementById('editParentTeam').value || null
+        })
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to update team');
+      }
+    });
+
+    async function deleteTeam(teamId, name) {
+      if (!confirm(`Delete team "${name}"? This cannot be undone.`)) return;
+      const response = await fetch(`/api/teams/${teamId}`, { method: 'DELETE' });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to delete team');
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', (event) => {
+        if (event.target.classList.contains('modal')) {
+          modal.classList.remove('active');
+        }
+      });
+    });
+
+    hydrateDepartmentSelectors();
+    if (departments[0] && document.getElementById('teamDepartment')) {
+      document.getElementById('teamDepartment').value = departments[0].id;
+      syncParentTeamOptions('teamDepartment', 'parentTeam', '');
+    }
+  </script>
   <script src="/js/invitation-gatekeeper.js"></script>
 </body>
-
 </html>

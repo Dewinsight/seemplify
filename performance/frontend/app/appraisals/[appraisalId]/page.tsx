@@ -12,7 +12,7 @@ import {
 import {
   ArrowBack, Edit, PlayArrow, CheckCircle, Schedule, Person,
   ExpandMore, Star, Assignment, TrendingUp, Chat, Description,
-  Psychology, Flag, Warning, Groups
+  Psychology, Flag, Warning, Groups, ArrowForward, AssessmentOutlined
 } from '@mui/icons-material';
 
 interface TabPanelProps {
@@ -30,18 +30,27 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
+function normalizeIdentityEmail(value?: string | null) {
+  if (!value || typeof value !== 'string') return null;
+  return value.trim().toLowerCase();
+}
+
 const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' | 'error'; icon: React.ReactNode }> = {
   'not_started': { label: 'Not Started', color: 'default', icon: <Schedule /> },
   'goal_setting': { label: 'Goal Setting', color: 'info', icon: <Edit /> },
+  'goal_approval_pending': { label: 'Goal Approval Pending', color: 'warning', icon: <Schedule /> },
   'self_assessment_pending': { label: 'Self-Assessment Pending', color: 'warning', icon: <Assignment /> },
   'self_assessment_in_progress': { label: 'Self-Assessment In Progress', color: 'info', icon: <Edit /> },
   'self_assessment_submitted': { label: 'Self-Assessment Submitted', color: 'success', icon: <CheckCircle /> },
   'manager_review_pending': { label: 'Manager Review Pending', color: 'warning', icon: <Person /> },
   'manager_review_in_progress': { label: 'Manager Review In Progress', color: 'info', icon: <Edit /> },
-  'manager_review_submitted': { label: 'Manager Review Submitted', color: 'success', icon: <CheckCircle /> },
+  'manager_review_submitted': { label: 'Review Submitted - Ready for Discussion', color: 'success', icon: <CheckCircle /> },
   'discussion_scheduled': { label: 'Discussion Scheduled', color: 'info', icon: <Chat /> },
   'discussion_completed': { label: 'Discussion Completed', color: 'success', icon: <CheckCircle /> },
   'calibration_pending': { label: 'Calibration Pending', color: 'warning', icon: <TrendingUp /> },
+  'calibration_in_progress': { label: 'Calibration In Progress', color: 'info', icon: <TrendingUp /> },
+  'calibration_completed': { label: 'Calibration Completed', color: 'success', icon: <CheckCircle /> },
+  'final_review_pending': { label: 'Final Review Pending', color: 'warning', icon: <AssessmentOutlined /> },
   'completed': { label: 'Completed', color: 'success', icon: <CheckCircle /> },
 };
 
@@ -92,8 +101,29 @@ export default function AppraisalDetailPage() {
     );
   }
 
-  const isEmployee = appraisal.employee?.userId === user?.id;
-  const isAssignedManager = appraisal.manager?.userId === user?.id;
+  const identityUser = user as { id?: string; sub?: string; email?: string } | null;
+  const requesterIds = Array.from(
+    new Set(
+      [identityUser?.id, identityUser?.sub]
+        .filter(Boolean)
+        .map((value) => String(value))
+    )
+  );
+  const requesterEmail = normalizeIdentityEmail(identityUser?.email);
+  const employeeUserId = appraisal.employee?.userId ? String(appraisal.employee.userId) : null;
+  const employeeEmail = normalizeIdentityEmail(appraisal.employee?.email);
+  const managerUserId = appraisal.manager?.userId ? String(appraisal.manager.userId) : null;
+  const managerEmail = normalizeIdentityEmail(appraisal.manager?.email);
+
+  const isEmployee = Boolean(
+    (employeeUserId && requesterIds.includes(employeeUserId)) ||
+    (employeeEmail && requesterEmail && employeeEmail === requesterEmail)
+  );
+  const isAssignedManager = Boolean(
+    (managerUserId && requesterIds.includes(managerUserId)) ||
+    (managerEmail && requesterEmail && managerEmail === requesterEmail)
+  );
+  const hasManagerAccess = isAssignedManager || (isManager && !isEmployee) || isHRAdmin;
   const config = statusConfig[appraisal.status] || statusConfig['not_started'];
 
   // Determine active workflow step
@@ -154,6 +184,16 @@ export default function AppraisalDetailPage() {
                 Set Goals
               </Button>
             )}
+            {isEmployee && (appraisal.status === 'goal_approval_pending') && (
+              <Button
+                variant="outlined"
+                color="warning"
+                disabled
+                startIcon={<Schedule />}
+              >
+                Waiting for Goal Approval
+              </Button>
+            )}
             {isEmployee && (appraisal.status === 'self_assessment_pending' || appraisal.status === 'self_assessment_in_progress') && (
               <Button
                 variant="contained"
@@ -164,7 +204,7 @@ export default function AppraisalDetailPage() {
               </Button>
             )}
 
-            {(activeStep === 3) && (
+            {(activeStep === 3 || appraisal.status === 'manager_review_submitted') && (
               <Button
                 variant="contained"
                 startIcon={<Groups />}
@@ -173,7 +213,7 @@ export default function AppraisalDetailPage() {
                 {appraisal.status === 'discussion_completed' ? 'View Discussion' : 'Open Discussion'}
               </Button>
             )}
-            {isAssignedManager && (appraisal.status === 'self_assessment_submitted' || appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
+            {hasManagerAccess && (appraisal.status === 'self_assessment_submitted' || appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
               <Button
                 variant="contained"
                 startIcon={<PlayArrow />}
@@ -182,9 +222,49 @@ export default function AppraisalDetailPage() {
                 {appraisal.status === 'manager_review_in_progress' ? 'Continue' : 'Start'} Review
               </Button>
             )}
+
+            {hasManagerAccess && (appraisal.status === 'calibration_pending' || appraisal.status === 'calibration_in_progress') && (
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={<TrendingUp />}
+                onClick={() => router.push(`/appraisals/${appraisalId}/calibration`)}
+              >
+                {appraisal.status === 'calibration_in_progress' ? 'Continue Calibration' : 'Start Calibration'}
+              </Button>
+            )}
+
+            {hasManagerAccess && appraisal.status === 'final_review_pending' && (
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<CheckCircle />}
+                onClick={() => router.push(`/appraisals/${appraisalId}/final-review`)}
+              >
+                Finalize Appraisal
+              </Button>
+            )}
           </Box>
         </Box>
       </Box>
+
+      {isEmployee && (appraisal.status === 'manager_review_pending' || appraisal.status === 'manager_review_in_progress') && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" fontWeight={700}>Self-assessment completed</Typography>
+          <Typography variant="body2">
+            Your part is complete. Your manager is now handling the review stage.
+          </Typography>
+        </Alert>
+      )}
+
+      {hasManagerAccess && !isEmployee && (appraisal.status === 'manager_review_pending' || appraisal.status === 'self_assessment_submitted') && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" fontWeight={700}>Manager action required</Typography>
+          <Typography variant="body2">
+            Self-assessment is submitted. Start manager review to continue the workflow.
+          </Typography>
+        </Alert>
+      )}
 
       {/* Workflow Progress */}
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -229,106 +309,16 @@ export default function AppraisalDetailPage() {
       {/* Tabs */}
       <Paper sx={{ mb: 3 }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab label="Overview" />
+          {/* <Tab label="Overview" /> REMOVED */}
           <Tab label="Self-Assessment" disabled={!selfAssessment?.submittedAt && !isEmployee} />
-          <Tab label="Manager Review" disabled={!managerReview?.submittedAt && !isAssignedManager && !isHRAdmin} />
+          <Tab label="Manager Review" disabled={!managerReview?.submittedAt && !hasManagerAccess} />
           {appraisal.finalRating?.overall && <Tab label="Final Rating" />}
         </Tabs>
 
-        {/* Overview Tab */}
+        {/* Overview Tab REMOVED */}
+
+        {/* Self-Assessment Tab - Now Index 0 */}
         <TabPanel value={tabValue} index={0}>
-          <Box sx={{ px: 3 }}>
-            <Grid container spacing={3}>
-              {/* Employee Info */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                      <Person sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Employee
-                    </Typography>
-                    <Typography variant="body1">{appraisal.employee?.name}</Typography>
-                    <Typography variant="body2" color="text.secondary">{appraisal.employee?.email}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {appraisal.employee?.jobTitle} • {appraisal.employee?.department}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Manager Info */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                      <Person sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Manager
-                    </Typography>
-                    <Typography variant="body1">{appraisal.manager?.name}</Typography>
-                    <Typography variant="body2" color="text.secondary">{appraisal.manager?.email}</Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Cycle Info */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                      <Flag sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Review Cycle
-                    </Typography>
-                    <Typography variant="body1">{cycle?.name || 'N/A'}</Typography>
-                    {cycle?.periodStart && (
-                      <Typography variant="body2" color="text.secondary">
-                        {new Date(cycle.periodStart).toLocaleDateString()} - {new Date(cycle.periodEnd).toLocaleDateString()}
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Ratings Summary */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                      <Star sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Ratings
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                      {selfAssessment?.overallSelfRating && (
-                        <Chip
-                          label={`Self: ${selfAssessment.overallSelfRating}/5`}
-                          variant="outlined"
-                          size="small"
-                        />
-                      )}
-                      {managerReview?.overallManagerRating && (
-                        <Chip
-                          label={`Manager: ${managerReview.overallManagerRating}/5`}
-                          color="primary"
-                          variant="outlined"
-                          size="small"
-                        />
-                      )}
-                      {appraisal.finalRating?.overall && (
-                        <Chip
-                          label={`Final: ${appraisal.finalRating.overall}/5`}
-                          color="success"
-                          size="small"
-                        />
-                      )}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          </Box>
-        </TabPanel>
-
-        {/* Self-Assessment Tab */}
-        <TabPanel value={tabValue} index={1}>
           <Box sx={{ px: 3 }}>
             {selfAssessment?.submittedAt ? (
               <>
@@ -390,7 +380,7 @@ export default function AppraisalDetailPage() {
                 </Accordion>
 
                 {/* Overall Self Rating */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
                   <Typography variant="subtitle1" fontWeight={600}>Overall Self-Rating</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
                     <Rating value={selfAssessment.overallSelfRating} readOnly size="large" />
@@ -442,8 +432,8 @@ export default function AppraisalDetailPage() {
           </Box>
         </TabPanel>
 
-        {/* Manager Review Tab */}
-        <TabPanel value={tabValue} index={2}>
+        {/* Manager Review Tab - Now Index 1 */}
+        <TabPanel value={tabValue} index={1}>
           <Box sx={{ px: 3 }}>
             {managerReview?.submittedAt ? (
               <>
@@ -531,7 +521,7 @@ export default function AppraisalDetailPage() {
                 </Accordion>
 
                 {/* Overall Manager Rating */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
                   <Typography variant="subtitle1" fontWeight={600}>Overall Manager Rating</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
                     <Rating value={managerReview.overallManagerRating} readOnly size="large" />
@@ -549,9 +539,9 @@ export default function AppraisalDetailPage() {
           </Box>
         </TabPanel>
 
-        {/* Final Rating Tab */}
+        {/* Final Rating Tab - Now Index 2 */}
         {appraisal.finalRating?.overall && (
-          <TabPanel value={tabValue} index={3}>
+          <TabPanel value={tabValue} index={2}>
             <Box sx={{ px: 3 }}>
               <Card sx={{ p: 3, textAlign: 'center', bgcolor: 'success.lighter' }}>
                 <Typography variant="h6" gutterBottom>Final Performance Rating</Typography>

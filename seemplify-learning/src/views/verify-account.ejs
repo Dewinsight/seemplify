@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .auth-wrap {
+      max-width: 460px;
+      margin: 48px auto;
+      padding: 20px;
+    }
+    .auth-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      padding: 20px;
+      display: grid;
+      gap: 12px;
+    }
+    .auth-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 28px;
+      letter-spacing: -0.02em;
+    }
+    .auth-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .auth-card label {
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .auth-card .input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .auth-card .input:focus {
+      outline: none;
+      border-color: rgba(56, 189, 248, .7);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, .18);
+    }
+    .verify-chip {
+      width: fit-content;
+      border: 1px solid rgba(56, 189, 248, .35);
+      border-radius: 999px;
+      background: rgba(56, 189, 248, .08);
+      color: var(--text);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .auth-footer {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <span class="verify-chip">Verify Account</span>
+      <h1 class="auth-title"><%= brandLearningName || 'Seemplify Learning' %></h1>
+      <p class="auth-subtitle">
+        Enter the 6-digit code sent to <strong><%= email || 'your email' %></strong> to activate your
+        <strong><%= String(requestedRole || 'admin').replace(/_/g, ' ') %></strong> access.
+      </p>
+
+      <% if (error) { %>
+        <div class="alert alert-error"><%= error %></div>
+      <% } %>
+      <% if (success) { %>
+        <div class="alert alert-success"><%= success %></div>
+      <% } %>
+      <% if (info) { %>
+        <div class="alert alert-info"><%= info %></div>
+      <% } %>
+      <% if (inviteExpired) { %>
+        <div class="alert alert-error">This verification session expired. Request a fresh invite from a super admin.</div>
+      <% } %>
+
+      <form method="post" action="/verify-account" style="display:grid; gap:10px;">
+        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+        <input type="hidden" name="admin_invite_token" value="<%= adminInviteToken || '' %>">
+        <input type="hidden" name="email" value="<%= email || '' %>">
+        <label>Email</label>
+        <input class="input" type="email" value="<%= email || '' %>" readonly>
+
+        <label>Verification Code</label>
+        <input class="input" type="text" name="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" <%= verificationReady ? '' : 'disabled' %>>
+
+        <button class="btn btn-primary" type="submit" <%= verificationReady ? '' : 'disabled' %>>Verify and Continue</button>
+      </form>
+
+      <% if (canResend) { %>
+        <form method="post" action="/verify-account/resend" style="display:grid; gap:8px;">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
+          <input type="hidden" name="admin_invite_token" value="<%= adminInviteToken || '' %>">
+          <input type="hidden" name="email" value="<%= email || '' %>">
+          <button class="btn btn-secondary" type="submit">Resend Code</button>
+        </form>
+      <% } %>
+
+      <p class="auth-footer"><a href="/login">Back to sign in</a></p>
+    </div>
+  </div>
+</body>
+</html>

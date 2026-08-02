@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Banking & Direct Deposit - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style><%- include('../public/css/idp-theme.css') %></style>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css?v=2">
+    <script src="/js/theme.js?v=2"></script>
+</head>
+<body>
+    <%- include('partials/nav', { activePage: 'profile' }) %>
+    <%
+    const jurisdictionEntries = Array.isArray(bankJurisdictions) ? bankJurisdictions : [];
+    const jurisdictionMap = Object.fromEntries(jurisdictionEntries.map((item) => [item.value, item]));
+    const nigeriaBankEntries = Array.isArray(nigerianBanks) ? nigerianBanks : [];
+    const nigeriaBankMap = Object.fromEntries(nigeriaBankEntries.map((item) => [item.code, item.name]));
+    const findJurisdiction = (country) => jurisdictionMap[country] || jurisdictionMap.Other || jurisdictionEntries[0] || null;
+    const maskValue = (value) => {
+        const text = String(value || '').trim();
+        return text ? `**** ${text.slice(-4)}` : 'Not provided';
+    };
+    const truncateValue = (value, visible = 8) => {
+        const text = String(value || '').trim();
+        if (!text) return 'Not provided';
+        return text.length <= visible ? text : `${text.slice(0, visible)}...`;
+    };
+    const getLocalSummary = (account) => {
+        const jurisdiction = findJurisdiction(account?.country);
+        const localField = jurisdiction?.localField;
+        if (!localField) return null;
+        const rawValue = account?.[localField.key];
+        if (!rawValue) return null;
+        if (account?.country === 'Nigeria' && localField.key === 'bankCode') {
+            return { label: 'Bank', value: `${nigeriaBankMap[rawValue] || 'Selected bank'} (${rawValue})` };
+        }
+        return { label: localField.label, value: rawValue };
+    };
+    const formatAccountType = (value) => {
+        const text = String(value || 'bank account').replace(/_/g, ' ');
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    };
+    %>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>Banking & Direct Deposit</h1>
+                <div class="header-subtitle">Manage the bank account payroll should use for your payouts.</div>
+            </div>
+        </div>
+        <%- include('partials/profile-nav', { activeProfileSection }) %>
+        <div id="alertSuccess" class="alert alert-success"></div>
+        <div id="alertError" class="alert alert-error"></div>
+        <div class="card" style="background: var(--hover-bg); border-color: var(--brand);">
+            <h3 style="margin: 0 0 6px; font-size: 16px; color: var(--text);">Your Information is Secure</h3>
+            <p style="margin: 0; font-size: 14px; color: var(--muted);">
+                Bank detail requirements now follow payroll-supported jurisdictions. Add SWIFT / BIC whenever this account may receive international transfers.
+            </p>
+        </div>
+        <div class="card">
+            <h3 style="font-size: 18px; margin-bottom: 16px;">Direct Deposit Accounts</h3>
+            <% if (user.profile?.banking?.accounts && user.profile.banking.accounts.length > 0) { %>
+                <% user.profile.banking.accounts.forEach((account, index) => { const jurisdiction = findJurisdiction(account?.country); const localSummary = getLocalSummary(account); %>
+                    <div style="padding: 16px; background: var(--hover-bg); border-radius: 8px; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; gap: 16px;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                                    <span style="background: var(--brand); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 8px;"><%= jurisdiction?.label || account.country || 'Bank Account' %></span>
+                                    <%= account.bankName || 'Bank Account' %> (<%= formatAccountType(account.accountType) %>)
+                                </div>
+                                <% if (localSummary) { %><div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;"><%= localSummary.label %>: <%= localSummary.value %></div><% } %>
+                                <% if (account.accountNumber) { %><div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">Account: <%= maskValue(account.accountNumber) %></div><% } %>
+                                <% if (account.iban) { %><div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">IBAN: <%= truncateValue(account.iban) %></div><% } %>
+                                <% if (account.bicSwift) { %><div style="font-size: 14px; color: var(--muted); margin-bottom: 4px;">SWIFT / BIC: <%= account.bicSwift %></div><% } %>
+                                <div style="font-size: 14px; color: var(--text); margin-top: 8px;"><strong><%= account.percentage || 100 %>%</strong> of paycheck</div>
+                            </div>
+                            <button type="button" class="btn btn-secondary" onclick="editAccount(<%= index %>)">Edit</button>
+                        </div>
+                    </div>
+                <% }) %>
+            <% } else { %>
+                <div style="text-align: center; padding: 40px; color: var(--muted);">
+                    <p>No bank accounts configured yet</p>
+                    <p style="font-size: 14px;">Add the payout account payroll should use for your salary.</p>
+                </div>
+            <% } %>
+        </div>
+        <div class="card">
+            <h3 id="bankingFormTitle" style="font-size: 18px; margin-bottom: 16px;">Add Payment Account</h3>
+            <p id="salaryAccountNotice" class="form-hint" style="display:none; margin-bottom: 16px;">Only one salary account is allowed. Edit the existing salary account instead of creating another one.</p>
+            <form id="bankingForm">
+                <input type="hidden" id="accountIndex" name="accountIndex" value="">
+                <div class="form-group">
+                    <label for="country">Country <span style="color: var(--error);">*</span></label>
+                    <select id="country" name="country" required onchange="updateFormFields()">
+                        <option value="">Select country...</option>
+                        <% jurisdictionEntries.forEach((item) => { %><option value="<%= item.value %>"><%= item.label %></option><% }) %>
+                    </select>
+                    <div class="form-hint">These options are aligned to the payroll jurisdictions your organization supports.</div>
+                </div>
+                <div id="countryDescriptionCard" class="card" style="display:none; margin-top: 0; margin-bottom: 16px; padding: 16px; background: var(--hover-bg);">
+                    <div id="countryDescriptionText" style="font-size: 14px; color: var(--muted);"></div>
+                </div>
+                <div id="nigeriaBankField" class="form-group" style="display:none;">
+                    <label for="nigeriaBank">Select Bank</label>
+                    <select id="nigeriaBank" name="nigeriaBank" onchange="applyNigeriaBankSelection()">
+                        <option value="">Choose your bank...</option>
+                        <% nigeriaBankEntries.forEach((bank) => { %><option value="<%= bank.code %>"><%= bank.name %> (<%= bank.code %>)</option><% }) %>
+                    </select>
+                    <div class="form-hint">Selecting a Nigerian bank fills the bank name and bank code automatically.</div>
+                </div>
+                <div class="form-group">
+                    <label for="bankName">Bank Name <span style="color: var(--error);">*</span></label>
+                    <input type="text" id="bankName" name="bankName" placeholder="e.g. Chase Bank" required>
+                </div>
+                <div class="form-group">
+                    <label for="accountType">Account Type <span style="color: var(--error);">*</span></label>
+                    <select id="accountType" name="accountType" required></select>
+                    <div class="form-hint">Choose the type of bank account payroll should pay into.</div>
+                </div>
+                <div id="accountNumberField" class="form-group" style="display:none;">
+                    <label id="accountNumberLabel" for="accountNumber">Account Number <span style="color: var(--error);">*</span></label>
+                    <input type="text" id="accountNumber" name="accountNumber" placeholder="Account number">
+                    <div id="accountNumberHint" class="form-hint">Your local bank account number.</div>
+                </div>
+                <div id="accountNumberConfirmField" class="form-group" style="display:none;">
+                    <label for="accountNumberConfirm">Confirm Account Number <span style="color: var(--error);">*</span></label>
+                    <input type="text" id="accountNumberConfirm" name="accountNumberConfirm" placeholder="Re-enter account number">
+                </div>
+                <div id="localFieldWrapper" class="form-group" style="display:none;">
+                    <label id="localFieldLabel" for="localFieldInput">Local Bank Code</label>
+                    <input type="text" id="localFieldInput" name="localFieldInput" placeholder="">
+                    <div id="localFieldHint" class="form-hint"></div>
+                </div>
+                <div id="ibanField" class="form-group" style="display:none;">
+                    <label id="ibanLabel" for="iban">IBAN</label>
+                    <input type="text" id="iban" name="iban" placeholder="IBAN">
+                    <div id="ibanHint" class="form-hint"></div>
+                </div>
+                <div id="swiftField" class="form-group" style="display:none;">
+                    <label id="swiftLabel" for="bicSwift">SWIFT / BIC</label>
+                    <input type="text" id="bicSwift" name="bicSwift" placeholder="SWIFT / BIC code" maxlength="11">
+                    <div id="swiftHint" class="form-hint"></div>
+                </div>
+                <div class="form-group">
+                    <label for="accountHolderName">Account Holder Name</label>
+                    <input type="text" id="accountHolderName" name="accountHolderName" placeholder="Full name on account">
+                </div>
+                <div class="form-group">
+                    <label for="percentage">Percentage of Paycheck</label>
+                    <input type="number" id="percentage" name="percentage" min="1" max="100" value="100">
+                    <div class="form-hint">What percentage of your paycheck should go to this account? Default: 100%.</div>
+                </div>
+            </form>
+        </div>
+        <div class="card">
+            <div class="form-actions">
+                <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveBankingInfo()"><span id="btnText">Add Payment Account</span><span id="btnSpinner" style="display:none;">Saving...</span></button>
+                <button type="button" class="btn btn-secondary" id="cancelBtn" onclick="handleCancel()">Cancel</button>
+            </div>
+            <div style="margin-top: 16px; padding: 16px; background: var(--hover-bg); border-radius: 8px; font-size: 14px; color: var(--muted);">
+                <strong>Important:</strong> Changes to banking information will sync to payroll. Add SWIFT / BIC if this account can receive international transfers.
+            </div>
+        </div>
+    </div>
+    <script>
+        const bankJurisdictions = <%- JSON.stringify(jurisdictionEntries).replace(/</g, '\\u003c') %>;
+        const bankJurisdictionMap = Object.fromEntries(bankJurisdictions.map((item) => [item.value, item]));
+        const nigerianBanks = <%- JSON.stringify(nigeriaBankEntries).replace(/</g, '\\u003c') %>;
+        const bankAccounts = <%- JSON.stringify((user.profile?.banking?.accounts || []).map((account, index) => ({ index, country: account.country || '', bankName: account.bankName || '', routingNumber: account.routingNumber || '', accountNumber: account.accountNumber || '', sortCode: account.sortCode || '', iban: account.iban || '', bicSwift: account.bicSwift || '', bankCode: account.bankCode || '', accountType: account.accountType || '', accountHolderName: account.accountHolderName || '', percentage: Number(account.percentage || 100), isActive: account.isActive !== false }))).replace(/</g, '\\u003c') %>;
+        let editingAccountIndex = null;
+        const bankForm = document.getElementById('bankingForm');
+        const bankFormTitle = document.getElementById('bankingFormTitle');
+        const accountIndexField = document.getElementById('accountIndex');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const btnText = document.getElementById('btnText');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const salaryAccountNotice = document.getElementById('salaryAccountNotice');
+        const alertSuccess = document.getElementById('alertSuccess');
+        const alertError = document.getElementById('alertError');
+        const countryInput = document.getElementById('country');
+        const nigeriaBankField = document.getElementById('nigeriaBankField');
+        const nigeriaBankInput = document.getElementById('nigeriaBank');
+        const bankNameInput = document.getElementById('bankName');
+        const accountTypeInput = document.getElementById('accountType');
+        const accountNumberField = document.getElementById('accountNumberField');
+        const accountNumberLabel = document.getElementById('accountNumberLabel');
+        const accountNumberInput = document.getElementById('accountNumber');
+        const accountNumberHint = document.getElementById('accountNumberHint');
+        const accountNumberConfirmField = document.getElementById('accountNumberConfirmField');
+        const accountNumberConfirmInput = document.getElementById('accountNumberConfirm');
+        const localFieldWrapper = document.getElementById('localFieldWrapper');
+        const localFieldLabel = document.getElementById('localFieldLabel');
+        const localFieldInput = document.getElementById('localFieldInput');
+        const localFieldHint = document.getElementById('localFieldHint');
+        const ibanField = document.getElementById('ibanField');
+        const ibanLabel = document.getElementById('ibanLabel');
+        const ibanInput = document.getElementById('iban');
+        const ibanHint = document.getElementById('ibanHint');
+        const swiftField = document.getElementById('swiftField');
+        const swiftLabel = document.getElementById('swiftLabel');
+        const swiftInput = document.getElementById('bicSwift');
+        const swiftHint = document.getElementById('swiftHint');
+        const accountHolderNameInput = document.getElementById('accountHolderName');
+        const percentageInput = document.getElementById('percentage');
+        const countryDescriptionCard = document.getElementById('countryDescriptionCard');
+        const countryDescriptionText = document.getElementById('countryDescriptionText');
+        const getJurisdiction = (country) => bankJurisdictionMap[String(country || '').trim()] || bankJurisdictionMap.Other || bankJurisdictions[0];
+        const getLocalFieldValue = (account) => account?.country === 'USA' ? (account.routingNumber || '') : account?.country === 'UK' ? (account.sortCode || '') : (account?.bankCode || '');
+        function clearAlerts() { alertSuccess.classList.remove('show'); alertError.classList.remove('show'); }
+        function getPreferredAccountType(country, currentValue = '') {
+            const accountTypes = getJurisdiction(country)?.accountTypes || [];
+            const salaryLocked = bankAccounts.some((account) => account.isActive !== false && String(account.accountType || '').toLowerCase() === 'salary' && account.index !== editingAccountIndex);
+            if (currentValue && accountTypes.some((item) => item.value === currentValue) && !(salaryLocked && currentValue === 'salary')) return currentValue;
+            return (accountTypes.find((item) => !(salaryLocked && item.value === 'salary')) || accountTypes[0] || { value: 'current' }).value;
+        }
+        function updateAccountTypeOptions(country, selectedValue = '') {
+            const accountTypes = getJurisdiction(country)?.accountTypes || [];
+            const nextValue = getPreferredAccountType(country, selectedValue);
+            accountTypeInput.innerHTML = '';
+            accountTypes.forEach((item) => {
+                const option = document.createElement('option');
+                option.value = item.value;
+                option.textContent = item.label;
+                option.selected = item.value === nextValue;
+                accountTypeInput.appendChild(option);
+            });
+        }
+        function updateSalaryAccountAvailability() {
+            const salaryLocked = bankAccounts.some((account) => account.isActive !== false && String(account.accountType || '').toLowerCase() === 'salary' && account.index !== editingAccountIndex);
+            const salaryOption = accountTypeInput.querySelector('option[value="salary"]');
+            if (salaryOption) salaryOption.disabled = salaryLocked;
+            if (salaryLocked && accountTypeInput.value === 'salary') accountTypeInput.value = getPreferredAccountType(countryInput.value, '');
+            salaryAccountNotice.style.display = salaryOption && salaryLocked ? 'block' : 'none';
+        }
+        function applyNigeriaBankSelection() {
+            const selected = nigerianBanks.find((bank) => bank.code === nigeriaBankInput.value);
+            if (!selected) return;
+            bankNameInput.value = selected.name;
+            localFieldInput.value = selected.code;
+        }
+        function updateFormFields() {
+            const jurisdiction = getJurisdiction(countryInput.value);
+            const localField = jurisdiction?.localField || null;
+            countryDescriptionText.textContent = jurisdiction?.description || '';
+            countryDescriptionCard.style.display = countryInput.value ? 'block' : 'none';
+            nigeriaBankField.style.display = jurisdiction?.bankDirectory === 'nigeria' ? 'block' : 'none';
+            accountNumberField.style.display = jurisdiction?.requiresAccountNumber ? 'block' : 'none';
+            accountNumberConfirmField.style.display = jurisdiction?.requiresAccountNumber ? 'block' : 'none';
+            accountNumberInput.required = !!jurisdiction?.requiresAccountNumber;
+            accountNumberConfirmInput.required = !!jurisdiction?.requiresAccountNumber;
+            accountNumberLabel.innerHTML = `${jurisdiction?.accountNumberLabel || 'Account Number'} <span style="color: var(--error);">*</span>`;
+            accountNumberInput.placeholder = jurisdiction?.accountNumberPlaceholder || 'Account number';
+            accountNumberHint.textContent = jurisdiction?.accountNumberHint || 'Use the account number your bank expects for local payments.';
+            localFieldWrapper.style.display = localField ? 'block' : 'none';
+            localFieldInput.required = !!localField?.required;
+            localFieldInput.placeholder = localField?.placeholder || '';
+            localFieldHint.textContent = localField?.hint || '';
+            if (localField) localFieldLabel.innerHTML = `${localField.label}${localField.required ? ' <span style="color: var(--error);">*</span>' : ''}`;
+            ibanField.style.display = jurisdiction?.supportsIban ? 'block' : 'none';
+            ibanInput.required = !!jurisdiction?.requiresIban;
+            ibanLabel.innerHTML = `IBAN${jurisdiction?.requiresIban ? ' <span style="color: var(--error);">*</span>' : ''}`;
+            ibanHint.textContent = jurisdiction?.ibanHint || 'Add your IBAN if your bank uses one.';
+            swiftField.style.display = jurisdiction?.supportsSwift ? 'block' : 'none';
+            swiftInput.required = !!jurisdiction?.swiftRequired;
+            swiftLabel.innerHTML = `SWIFT / BIC${jurisdiction?.swiftRequired ? ' <span style="color: var(--error);">*</span>' : ''}`;
+            swiftHint.textContent = jurisdiction?.swiftHint || 'Add the bank SWIFT / BIC code if this account can receive international transfers.';
+            updateAccountTypeOptions(countryInput.value, accountTypeInput.value);
+            updateSalaryAccountAvailability();
+        }
+        function resetBankingForm() {
+            bankForm.reset();
+            editingAccountIndex = null;
+            accountIndexField.value = '';
+            bankFormTitle.textContent = 'Add Payment Account';
+            btnText.textContent = 'Add Payment Account';
+            cancelBtn.textContent = 'Cancel';
+            clearAlerts();
+            updateFormFields();
+        }
+        function handleCancel() { if (editingAccountIndex !== null) return resetBankingForm(); window.location.href = '/profile'; }
+        function editAccount(index) {
+            const account = bankAccounts.find((item) => item.index === index);
+            if (!account) return;
+            editingAccountIndex = index;
+            accountIndexField.value = String(index);
+            bankFormTitle.textContent = 'Edit Payment Account';
+            btnText.textContent = 'Save Account Changes';
+            cancelBtn.textContent = 'Cancel Edit';
+            clearAlerts();
+            countryInput.value = account.country || '';
+            updateFormFields();
+            bankNameInput.value = account.bankName || '';
+            accountHolderNameInput.value = account.accountHolderName || '';
+            percentageInput.value = account.percentage || 100;
+            accountTypeInput.value = getPreferredAccountType(account.country, account.accountType || '');
+            accountNumberInput.value = account.accountNumber || '';
+            accountNumberConfirmInput.value = account.accountNumber || '';
+            localFieldInput.value = getLocalFieldValue(account);
+            ibanInput.value = account.iban || '';
+            swiftInput.value = account.bicSwift || '';
+            nigeriaBankInput.value = account.country === 'Nigeria' ? (account.bankCode || '') : '';
+            updateSalaryAccountAvailability();
+            const offsetTop = bankForm.getBoundingClientRect().top + window.scrollY - 120;
+            window.scrollTo({ top: Math.max(offsetTop, 0), behavior: 'smooth' });
+        }
+        function saveBankingInfo() {
+            clearAlerts();
+            const country = countryInput.value;
+            const jurisdiction = getJurisdiction(country);
+            const localField = jurisdiction?.localField || null;
+            const accountNumber = accountNumberInput.value.trim();
+            const accountNumberConfirm = accountNumberConfirmInput.value.trim();
+            const localValue = localFieldInput.value.trim();
+            const ibanValue = ibanInput.value.trim();
+            const swiftValue = swiftInput.value.trim();
+            if (!country) return showError('Please select a country');
+            if (!bankNameInput.value.trim()) return showError('Bank name is required');
+            if (jurisdiction.requiresAccountNumber && accountNumber !== accountNumberConfirm) return showError('Account numbers do not match');
+            if (country === 'USA' && !/^\d{9}$/.test(localValue.replace(/\D+/g, ''))) return showError('Routing number must be exactly 9 digits');
+            if (country === 'UK' && !/^\d{2}-?\d{2}-?\d{2}$/.test(localValue)) return showError('Sort code must be in format XX-XX-XX');
+            if (country === 'Nigeria' && !/^\d{3}$/.test(localValue.replace(/\D+/g, ''))) return showError('Bank code must be exactly 3 digits');
+            if (country === 'Nigeria' && !/^\d{10}$/.test(accountNumber.replace(/\D+/g, ''))) return showError('Nigerian account numbers must be exactly 10 digits');
+            if (country === 'South Africa' && localValue && !/^\d{6}$/.test(localValue.replace(/\D+/g, ''))) return showError('South African branch codes should be 6 digits');
+            if (swiftValue && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/i.test(swiftValue)) return showError('SWIFT / BIC code must be 8 or 11 letters or numbers');
+            saveBtn.disabled = true; btnText.style.display = 'none'; btnSpinner.style.display = 'inline';
+            fetch('/api/profile/banking', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    country,
+                    accountIndex: accountIndexField.value,
+                    account: {
+                        country,
+                        bankName: bankNameInput.value.trim(),
+                        accountHolderName: accountHolderNameInput.value.trim(),
+                        percentage: Number.parseInt(percentageInput.value, 10) || 100,
+                        accountType: accountTypeInput.value,
+                        accountNumber: jurisdiction.requiresAccountNumber ? accountNumber : '',
+                        iban: jurisdiction.supportsIban ? ibanValue : '',
+                        bicSwift: jurisdiction.supportsSwift ? swiftValue : '',
+                        routingNumber: localField?.key === 'routingNumber' ? localValue : '',
+                        sortCode: localField?.key === 'sortCode' ? localValue : '',
+                        bankCode: localField?.key === 'bankCode' ? localValue : ''
+                    }
+                })
+            }).then(async (response) => {
+                const result = await response.json();
+                if (!response.ok) return showError(result.error || 'Failed to update banking information');
+                alertSuccess.textContent = result.message || 'Banking information updated successfully! Payroll has been notified.';
+                alertSuccess.classList.add('show');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                if (result?.nextStep?.route && result.nextStep.key !== 'banking') {
+                    return setTimeout(() => { window.location.href = `${result.nextStep.route}?wizard=1`; }, 900);
+                }
+                setTimeout(() => window.location.reload(), 1200);
+            }).catch((error) => {
+                console.error('Error:', error);
+                showError('An error occurred while saving');
+            }).finally(() => {
+                saveBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnSpinner.style.display = 'none';
+            });
+        }
+        function showError(message) {
+            alertError.textContent = message;
+            alertError.classList.add('show');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        updateFormFields();
+    </script>
+    <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+</html>

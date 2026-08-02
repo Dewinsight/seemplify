@@ -1,0 +1,135 @@
+/**
+ * Glowing Card Effect - Plain CSS/JS Implementation
+ * Works with EJS templates
+ * 
+ * Usage:
+ * 1. Include this CSS in your stylesheet
+ * 2. Include the JS script
+ * 3. Add class="glowing-card" to your card elements
+ * 4. Add data attributes for customization if needed
+ */
+
+.glowing-card {
+  position: relative;
+  border-radius: 1.25rem;
+  background: var(--lmsv-surface, #fff);
+  border: 1px solid var(--lmsv-border, #e2e8f0);
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glowing-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.4) 0%,
+    rgba(59, 130, 246, 0.3) 25%,
+    rgba(16, 185, 129, 0.3) 50%,
+    rgba(245, 158, 11, 0.3) 75%,
+    rgba(139, 92, 246, 0.4) 100%
+  );
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.glowing-card:hover::before {
+  opacity: 1;
+}
+
+.glowing-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 10px 40px -10px rgba(139, 92, 246, 0.3),
+    0 0 20px -5px rgba(139, 92, 246, 0.2);
+}
+
+/* Glow container - tracks mouse position */
+.glow-spotlight {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(
+    circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    rgba(139, 92, 246, 0.15) 0%,
+    rgba(59, 130, 246, 0.1) 25%,
+    transparent 60%
+  );
+}
+
+.glowing-card:hover .glow-spotlight,
+.glowing-card.active .glow-spotlight {
+  opacity: 1;
+}
+
+/* Inner card content */
+.glowing-card-inner {
+  position: relative;
+  z-index: 1;
+  background: inherit;
+  border-radius: inherit;
+  padding: 1.5rem;
+  height: 100%;
+}
+
+/* Variants */
+.glowing-card--purple::before {
+  background: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.5) 0%,
+    rgba(168, 85, 247, 0.3) 100%
+  );
+}
+
+.glowing-card--blue::before {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.5) 0%,
+    rgba(96, 165, 250, 0.3) 100%
+  );
+}
+
+.glowing-card--green::before {
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.5) 0%,
+    rgba(52, 211, 153, 0.3) 100%
+  );
+}
+
+.glowing-card--orange::before {
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.5) 0%,
+    rgba(251, 191, 36, 0.3) 100%
+  );
+}
+
+.glowing-card--pink::before {
+  background: linear-gradient(
+    135deg,
+    rgba(236, 72, 153, 0.5) 0%,
+    rgba(249, 115, 22, 0.3) 100%
+  );
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .glowing-card,
+  .glowing-card::before,
+  .glow-spotlight {
+    transition: none;
+  }
+}

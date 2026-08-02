@@ -1,6 +1,3 @@
-# Access credentials - DO NOT COMMIT
-access/
-
 # Environment files
 *.env
 *.env.local
@@ -17,10 +14,25 @@ secrets/
 *.secret
 *credentials*
 *token*
+!recruiter/frontend/app/public/ai-interview/\[token\]/
+!recruiter/frontend/app/public/ai-interview/\[token\]/page.tsx
+!ai-interview/frontend/app/public/ai-interview/\[token\]/
+!ai-interview/frontend/app/public/ai-interview/\[token\]/page.tsx
+access/
 
 # Logs
 *.log
 logs/
+.playwright-cli/
+
+# Local test and automation artifacts
+.codex-temp/
+.local-runtime/
+**/eng.traineddata
+output/
+test-results/
+playwright-report/
+.playwright/
 
 # OS files
 .DS_Store
@@ -37,9 +49,20 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+ai-interview/backend/src/data/store.json
 
 # Build outputs
 dist/
 build/
 .next/
 .netlify/
+nul
+
+# LMS restore - contains DB credentials
+lms/docker/site_config_restored.json
+lms/docker/site_config_931.json
+lms/docker/lms-prod-dump.sql
+
+
+# CV Files
+cv/

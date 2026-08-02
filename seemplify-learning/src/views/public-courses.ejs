@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    /* ── Catalog page enhancements ── */
+    .lmsv-catalog-hero {
+      position: relative;
+      overflow: hidden;
+    }
+    .lmsv-catalog-hero::before {
+      content: '';
+      position: absolute;
+      top: -40%;
+      left: -10%;
+      width: 50%;
+      height: 180%;
+      background: radial-gradient(ellipse, rgba(124,58,237,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .lmsv-catalog-hero::after {
+      content: '';
+      position: absolute;
+      bottom: -30%;
+      right: -5%;
+      width: 40%;
+      height: 160%;
+      background: radial-gradient(ellipse, rgba(14,165,233,0.10) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .lmsv-catalog-hero-inner {
+      position: relative;
+      z-index: 1;
+    }
+    .lmsv-catalog-breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: rgba(226,232,240,0.6);
+      margin-bottom: 12px;
+      justify-content: center;
+    }
+    .lmsv-catalog-breadcrumb a {
+      color: rgba(226,232,240,0.7);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .lmsv-catalog-breadcrumb a:hover {
+      color: #e2e8f0;
+    }
+    .lmsv-catalog-breadcrumb svg {
+      width: 14px;
+      height: 14px;
+      color: rgba(226,232,240,0.4);
+    }
+    .lmsv-hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    .lmsv-hero-stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(226,232,240,0.75);
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .lmsv-hero-stat-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .lmsv-hero-stat-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+    .lmsv-hero-stat strong {
+      color: #f8fafc;
+      font-weight: 700;
+    }
+
+    /* ── Filter bar ── */
+    .lmsv-filter-bar {
+      background: var(--lmsv-surface);
+      border: 1px solid var(--lmsv-border);
+      border-radius: 16px;
+      padding: 20px 24px;
+      margin-top: -32px;
+      position: relative;
+      z-index: 2;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    }
+    .lmsv-filter-bar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .lmsv-filter-bar-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--lmsv-text-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .lmsv-filter-bar-title svg {
+      width: 16px;
+      height: 16px;
+      color: var(--lmsv-text-muted);
+    }
+    .lmsv-clear-filters {
+      font-size: 13px;
+      font-weight: 600;
+      color: #7c3aed;
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+    .lmsv-clear-filters:hover {
+      background: rgba(124,58,237,0.06);
+    }
+    .lmsv-filter-rows {
+      display: grid;
+      gap: 12px;
+    }
+    .lmsv-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .lmsv-filter-row-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--lmsv-text-muted);
+      min-width: 72px;
+      flex-shrink: 0;
+    }
+
+    /* ── Results header ── */
+    .lmsv-results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--lmsv-border);
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .lmsv-results-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--lmsv-text);
+      margin: 0;
+    }
+    .lmsv-results-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .lmsv-active-filter-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .lmsv-active-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(124,58,237,0.08);
+      color: #7c3aed;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Course card author row ── */
+    .lmsv-course-author {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-top: 4px;
+    }
+    .lmsv-course-author-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #7c3aed, #0ea5e9);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .lmsv-course-author-name {
+      font-size: 12px;
+      color: var(--lmsv-text-muted);
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .lmsv-course-enrollment {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--lmsv-text-muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .lmsv-course-enrollment svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* ── Empty state improved ── */
+    .lmsv-empty-catalog {
+      border: 1px dashed var(--lmsv-border);
+      border-radius: 16px;
+      background: var(--lmsv-surface-soft);
+      text-align: center;
+      padding: 56px 24px;
+      display: grid;
+      gap: 16px;
+      justify-items: center;
+    }
+    .lmsv-empty-catalog-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: rgba(124,58,237,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #7c3aed;
+    }
+    .lmsv-empty-catalog-icon svg {
+      width: 28px;
+      height: 28px;
+    }
+    .lmsv-empty-catalog h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--lmsv-text);
+    }
+    .lmsv-empty-catalog p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--lmsv-text-muted);
+      max-width: 36ch;
+      line-height: 1.6;
+    }
+    .lmsv-empty-catalog-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .lmsv-empty-catalog-actions a {
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .lmsv-empty-catalog-actions .lmsv-btn-primary {
+      background: #7c3aed;
+      color: #fff;
+    }
+    .lmsv-empty-catalog-actions .lmsv-btn-primary:hover {
+      background: #6d28d9;
+    }
+    .lmsv-empty-catalog-actions .lmsv-btn-ghost {
+      background: transparent;
+      color: var(--lmsv-text-soft);
+      border: 1px solid var(--lmsv-border);
+    }
+    .lmsv-empty-catalog-actions .lmsv-btn-ghost:hover {
+      border-color: var(--lmsv-text-muted);
+    }
+
+    /* ── Teach CTA banner ── */
+    .lmsv-teach-cta-banner {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      border-radius: 20px;
+      padding: 40px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-top: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .lmsv-teach-cta-banner::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -10%;
+      width: 50%;
+      height: 200%;
+      background: radial-gradient(ellipse, rgba(124,58,237,0.15) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .lmsv-teach-cta-content {
+      position: relative;
+      z-index: 1;
+    }
+    .lmsv-teach-cta-content h3 {
+      margin: 0 0 6px;
+      color: #f8fafc;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .lmsv-teach-cta-content p {
+      margin: 0;
+      color: rgba(226,232,240,0.7);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .lmsv-teach-cta-btn {
+      position: relative;
+      z-index: 1;
+      flex-shrink: 0;
+      padding: 12px 24px;
+      border-radius: 10px;
+      background: #7c3aed;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .lmsv-teach-cta-btn:hover {
+      background: #6d28d9;
+    }
+    @media (max-width: 640px) {
+      .lmsv-teach-cta-banner {
+        flex-direction: column;
+        text-align: center;
+        padding: 32px 20px;
+      }
+      .lmsv-hero-stats {
+        gap: 20px;
+      }
+      .lmsv-filter-bar {
+        margin-top: -24px;
+        padding: 16px;
+      }
+      .lmsv-filter-row-label {
+        min-width: unset;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body class="public-site public-courses-page">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
+
+  <%
+    const courseHref = (course) => `/courses/${course._id}${course.slug ? `/${course.slug}` : ''}`
+    const fallbackCourseVisuals = [
+      'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80',
+      'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80'
+    ]
+    const categoryVisualHints = [
+      { match: ['data', 'analytics', 'ai', 'machine', 'science'], image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['project', 'management', 'leadership', 'business'], image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['communication', 'professional', 'soft'], image: 'https://images.unsplash.com/photo-1573497019236-61f323342eb1?auto=format&fit=crop&w=1200&q=80' },
+      { match: ['engineering', 'dev', 'code', 'software'], image: 'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80' }
+    ]
+    const courseImageFor = (course, index) => {
+      if (course?.banner?.url) return course.banner.url
+      const normalizedCategory = String(course?.category || '').toLowerCase()
+      const match = categoryVisualHints.find((entry) => entry.match.some((term) => normalizedCategory.includes(term)))
+      if (match?.image) return match.image
+      return fallbackCourseVisuals[index % fallbackCourseVisuals.length]
+    }
+    const formatDuration = (minutes) => {
+      const total = Number.isFinite(Number(minutes)) ? Number(minutes) : 0
+      if (total >= 60) {
+        const hours = Math.floor(total / 60)
+        const remain = total % 60
+        return remain > 0 ? `${hours}h ${remain}m` : `${hours}h`
+      }
+      return `${Math.max(0, Math.round(total))}m`
+    }
+
+    const state = {
+      q: String(filters?.query || '').trim(),
+      category: String(filters?.category || '').trim(),
+      level: String(filters?.level || '').trim().toLowerCase()
+    }
+    const hasActiveFilters = Boolean(state.q || state.category || state.level)
+
+    const buildCatalogHref = (patch = {}) => {
+      const next = {
+        q: state.q,
+        category: state.category,
+        level: state.level,
+        ...patch
+      }
+      const params = new URLSearchParams()
+      if (next.q) params.set('q', next.q)
+      if (next.category) params.set('category', next.category)
+      if (next.level) params.set('level', next.level)
+      const queryString = params.toString()
+      return queryString ? `/courses?${queryString}` : '/courses'
+    }
+
+    const authorInitials = (name) => {
+      return String(name || '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((w) => w.charAt(0).toUpperCase())
+        .join('')
+        .slice(0, 2) || 'LT'
+    }
+
+    const totalCourseCount = courses.length
+    const uniqueCategories = categories.length
+  %>
+
+  <main class="lmsv-shell">
+    <!-- Hero Section -->
+    <section class="lmsv-catalog-hero">
+      <div class="lmsv-catalog-hero-inner">
+        <nav class="lmsv-catalog-breadcrumb" aria-label="Breadcrumb">
+          <a href="/">Home</a>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <span>Explore Courses</span>
+        </nav>
+
+        <h1>Explore Courses</h1>
+        <p>Browse our catalog of expert-led courses. Find the skills you need to grow your career and build with confidence.</p>
+
+        <form method="get" action="/courses" class="lmsv-hero-search-form">
+          <input type="hidden" name="category" value="<%= state.category %>">
+          <input type="hidden" name="level" value="<%= state.level %>">
+          <svg class="lmsv-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="search" name="q" value="<%= state.q %>" placeholder="Search for courses, skills, or topics...">
+        </form>
+
+        <div class="lmsv-hero-stats">
+          <div class="lmsv-hero-stat">
+            <span class="lmsv-hero-stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            </span>
+            <strong><%= totalCourseCount %></strong> Published Courses
+          </div>
+          <div class="lmsv-hero-stat">
+            <span class="lmsv-hero-stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </span>
+            <strong><%= uniqueCategories %></strong> Categories
+          </div>
+          <div class="lmsv-hero-stat">
+            <span class="lmsv-hero-stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="13"/></svg>
+            </span>
+            All Skill Levels
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filter Bar (overlapping hero) -->
+    <section class="lmsv-section" style="padding-top: 0;">
+      <div class="lmsv-filter-bar">
+        <div class="lmsv-filter-bar-head">
+          <span class="lmsv-filter-bar-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filters
+          </span>
+          <% if (hasActiveFilters) { %>
+            <a href="/courses" class="lmsv-clear-filters">Clear all</a>
+          <% } %>
+        </div>
+        <div class="lmsv-filter-rows">
+          <div class="lmsv-filter-row">
+            <span class="lmsv-filter-row-label">Category</span>
+            <div class="lmsv-chip-row">
+              <a href="<%= buildCatalogHref({ category: '' }) %>" class="lmsv-filter-chip<%= state.category ? '' : ' is-active' %>">All</a>
+              <% categories.forEach((category) => { %>
+                <a href="<%= buildCatalogHref({ category }) %>" class="lmsv-filter-chip<%= state.category === category ? ' is-active' : '' %>"><%= category %></a>
+              <% }) %>
+            </div>
+          </div>
+          <div class="lmsv-filter-row">
+            <span class="lmsv-filter-row-label">Level</span>
+            <div class="lmsv-chip-row">
+              <a href="<%= buildCatalogHref({ level: '' }) %>" class="lmsv-filter-chip<%= state.level ? '' : ' is-active' %>">All Levels</a>
+              <% levels.forEach((level) => { %>
+                <a href="<%= buildCatalogHref({ level: level.value }) %>" class="lmsv-filter-chip<%= state.level === level.value ? ' is-active' : '' %>"><%= level.label %></a>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section class="lmsv-section lmsv-results-section">
+      <div class="lmsv-results-header">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <h2 class="lmsv-results-title"><%= hasActiveFilters ? 'Filtered Results' : 'All Courses' %></h2>
+          <% if (hasActiveFilters) { %>
+            <div class="lmsv-active-filter-tags">
+              <% if (state.q) { %>
+                <span class="lmsv-active-tag">&ldquo;<%= state.q %>&rdquo;</span>
+              <% } %>
+              <% if (state.category) { %>
+                <span class="lmsv-active-tag"><%= state.category %></span>
+              <% } %>
+              <% if (state.level) { %>
+                <span class="lmsv-active-tag"><%= levels.find(l => l.value === state.level)?.label || state.level %></span>
+              <% } %>
+            </div>
+          <% } %>
+        </div>
+        <div class="lmsv-results-meta">
+          <span class="lmsv-count-pill"><%= courses.length %> course<%= courses.length !== 1 ? 's' : '' %> found</span>
+        </div>
+      </div>
+
+      <% if (!courses || courses.length === 0) { %>
+        <div class="lmsv-empty-catalog">
+          <div class="lmsv-empty-catalog-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </div>
+          <h3>No courses found</h3>
+          <p>We couldn't find courses matching your current filters. Try adjusting your search or browse all available courses.</p>
+          <div class="lmsv-empty-catalog-actions">
+            <a href="/courses" class="lmsv-btn-primary">Browse All Courses</a>
+            <% if (typeof teachCtaHref === 'string') { %>
+              <a href="<%= teachCtaHref %>" class="lmsv-btn-ghost">Start Teaching</a>
+            <% } %>
+          </div>
+        </div>
+      <% } else { %>
+        <div class="lmsv-course-grid">
+          <% courses.forEach((course, index) => { %>
+            <article class="lmsv-course-card">
+              <a href="<%= courseHref(course) %>" class="lmsv-course-media">
+                <img src="<%= courseImageFor(course, index) %>" alt="<%= course.title %> banner" loading="lazy">
+                <span class="lmsv-level-pill"><%= course.levelLabel %></span>
+              </a>
+              <div class="lmsv-course-body">
+                <div class="lmsv-pill-row lmsv-pill-row-muted">
+                  <% if (course.category) { %><span><%= course.category %></span><% } %>
+                  <span><%= course.lessonCount %> lesson<%= course.lessonCount !== 1 ? 's' : '' %></span>
+                  <span><%= formatDuration(course.estimatedDurationMinutes) %></span>
+                </div>
+                <h3><a href="<%= courseHref(course) %>"><%= course.title %></a></h3>
+                <p><%= course.previewSummary %></p>
+                <div class="lmsv-course-author">
+                  <span class="lmsv-course-author-avatar"><%= authorInitials(course.authorName) %></span>
+                  <span class="lmsv-course-author-name"><%= course.authorName %></span>
+                  <% if (course.enrollmentCount > 0) { %>
+                    <span class="lmsv-course-enrollment">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      <%= course.enrollmentCount %>
+                    </span>
+                  <% } %>
+                </div>
+                <div class="lmsv-course-foot">
+                  <span class="lmsv-price-tag"><%= course.displayPrice %></span>
+                  <a href="<%= courseHref(course) %>" class="lmsv-inline-link">View Details &rarr;</a>
+                </div>
+              </div>
+            </article>
+          <% }) %>
+        </div>
+      <% } %>
+    </section>
+
+    <!-- Teach CTA Banner -->
+    <section class="lmsv-section" style="padding-bottom: 48px;">
+      <div class="lmsv-teach-cta-banner">
+        <div class="lmsv-teach-cta-content">
+          <h3>Share your expertise with thousands of learners</h3>
+          <p>Create and publish courses on AIIN Learning. Reach learners across Nigeria and build your teaching brand.</p>
+        </div>
+        <a href="<%= typeof teachCtaHref === 'string' ? teachCtaHref : '/teach' %>" class="lmsv-teach-cta-btn">Start Teaching</a>
+      </div>
+    </section>
+  </main>
+
+  <%- include('./partials/public-footer') %>
+</body>
+</html>

@@ -11,7 +11,13 @@ const SalaryGradeSchema = new Schema({
   
   // Salary Range
   salaryRange: {
-    currency: { type: String, default: 'USD' },
+    currency: {
+      type: String,
+      default: 'USD',
+      uppercase: true,
+      trim: true,
+      maxlength: 3
+    },
     minimum: { type: Number, required: true },
     maximum: { type: Number, required: true },
     midpoint: { type: Number, required: true }

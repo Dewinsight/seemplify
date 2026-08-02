@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login - AIIN Identity Provider</title>
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="admin-login-page">
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <h1>Admin Panel</h1>
+        <p>Identity Provider Management Console</p>
+      </div>
+
+      <% if (locals.error) { %>
+        <div class="alert alert-danger" role="alert" aria-live="polite">
+          <span class="alert-icon">&#9888;&#65039;</span>
+          <span><%= error %></span>
+        </div>
+      <% } %>
+
+      <% if (locals.message) { %>
+        <div class="alert alert-success" role="status" aria-live="polite">
+          <span class="alert-icon">&#9989;</span>
+          <span><%= message %></span>
+        </div>
+      <% } %>
+
+      <form id="adminLoginForm" action="/admin/login" method="POST" class="login-form">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            class="form-control"
+            placeholder="admin@example.com"
+            autocomplete="email"
+            inputmode="email"
+            autocapitalize="none"
+            spellcheck="false"
+            required
+            autofocus
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="password-field">
+            <input
+              type="password"
+              id="password"
+              name="password"
+              class="form-control"
+              placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"
+              autocomplete="current-password"
+              required
+            >
+            <button type="button" id="adminPasswordToggle" class="password-toggle" aria-label="Show password" aria-controls="password" aria-pressed="false">
+              <svg class="password-toggle-icon password-toggle-icon--show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              <svg class="password-toggle-icon password-toggle-icon--hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.7 21.7 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.72 21.72 0 0 1-3.1 4.44M1 1l22 22"/>
+              </svg>
+            </button>
+          </div>
+          <div id="adminCapsLockHint" class="caps-lock-hint" aria-live="polite"></div>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" name="remember" value="true">
+            <span>Remember me for 7 days</span>
+          </label>
+        </div>
+
+        <button type="submit" id="adminSubmitBtn" class="btn btn-primary btn-block">
+          <span id="adminSubmitText">Sign In</span>
+        </button>
+      </form>
+
+      <div id="adminValidationMessage" class="validation-message" aria-live="polite"></div>
+
+      <div class="login-footer">
+        <p class="security-notice">
+          &#128274; Protected Area - Admin access only
+        </p>
+        <a href="/" class="back-link">
+          &larr; Back to Hub
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('adminLoginForm');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const passwordToggle = document.getElementById('adminPasswordToggle');
+    const submitBtn = document.getElementById('adminSubmitBtn');
+    const submitText = document.getElementById('adminSubmitText');
+    const validationMessage = document.getElementById('adminValidationMessage');
+    const capsLockHint = document.getElementById('adminCapsLockHint');
+
+    function setSubmitState(isSubmitting) {
+      if (!submitBtn || !submitText) return;
+      submitBtn.disabled = isSubmitting;
+      submitBtn.classList.toggle('is-loading', isSubmitting);
+      submitText.innerHTML = isSubmitting ? '<span class="spinner"></span>Signing in...' : 'Sign In';
+    }
+
+    form.addEventListener('submit', (event) => {
+      let isValid = true;
+
+      if (!emailInput.value.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        emailInput.classList.add('error');
+        isValid = false;
+      } else {
+        emailInput.classList.remove('error');
+      }
+
+      if (passwordInput.value.length < 1) {
+        passwordInput.classList.add('error');
+        isValid = false;
+      } else {
+        passwordInput.classList.remove('error');
+      }
+
+      if (!isValid) {
+        event.preventDefault();
+        validationMessage.textContent = 'Please enter a valid email and password.';
+        setSubmitState(false);
+        return;
+      }
+
+      validationMessage.textContent = '';
+      setSubmitState(true);
+    });
+
+    window.addEventListener('pageshow', () => {
+      setSubmitState(false);
+    });
+
+    [emailInput, passwordInput].forEach((input) => {
+      input.addEventListener('input', () => {
+        input.classList.remove('error');
+        validationMessage.textContent = '';
+      });
+    });
+
+    if (passwordToggle && passwordInput) {
+      passwordToggle.addEventListener('click', () => {
+        const shouldShowPassword = passwordInput.type === 'password';
+        passwordInput.type = shouldShowPassword ? 'text' : 'password';
+        passwordToggle.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
+        passwordToggle.setAttribute('aria-label', shouldShowPassword ? 'Hide password' : 'Show password');
+        passwordToggle.classList.toggle('is-visible', shouldShowPassword);
+        passwordInput.focus();
+      });
+    }
+
+    if (passwordInput && capsLockHint) {
+      const updateCapsLockHint = (event) => {
+        const isCapsLock = Boolean(event.getModifierState && event.getModifierState('CapsLock'));
+        capsLockHint.textContent = isCapsLock ? 'Caps Lock is on' : '';
+      };
+
+      ['keydown', 'keyup', 'focus', 'blur'].forEach((eventName) => {
+        passwordInput.addEventListener(eventName, updateCapsLockHint);
+      });
+    }
+
+    emailInput.focus();
+  </script>
+</body>
+</html>

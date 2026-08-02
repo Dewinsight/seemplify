@@ -1,6 +1,23 @@
+import type { Metadata } from 'next'
 import React from 'react';
 import { FileText, Scale, AlertCircle, ShieldCheck, Users, Globe } from 'lucide-react';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+    title: 'Terms of Service',
+    description: 'Read the Seemplify terms of service.',
+    alternates: {
+        canonical: '/terms',
+        languages: {
+            en: '/terms',
+        },
+    },
+    openGraph: {
+        title: 'Terms of Service | Seemplify',
+        description: 'Read the Seemplify terms of service.',
+        url: '/terms',
+    },
+}
 
 export default function TermsOfService() {
     const lastUpdated = "January 6, 2026";

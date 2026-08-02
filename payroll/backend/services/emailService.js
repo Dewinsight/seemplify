@@ -223,6 +223,9 @@ class PayrollEmailService {
     async sendPayrollCompleteNotification(to, adminName, period, totalEmployees, totalPayroll, currency = 'USD') {
         const displayName = adminName || 'HR Admin';
         const periodLabel = `${new Date(0, period.month - 1).toLocaleString('default', { month: 'long' })} ${period.year}`;
+        const totalPayrollLabel = currency === 'MIXED'
+            ? 'Mixed currencies'
+            : `${currency} ${Number(totalPayroll || 0).toLocaleString()}`;
 
         const htmlContent = `
       <!DOCTYPE html>
@@ -256,7 +259,7 @@ class PayrollEmailService {
               </div>
               <div style="display: flex; justify-content: space-between;">
                 <span style="color: #666;">Total Payroll:</span>
-                <span style="font-weight: bold; font-size: 20px; color: #16a34a;">${currency} ${totalPayroll.toLocaleString()}</span>
+                <span style="font-weight: bold; font-size: 20px; color: #16a34a;">${totalPayrollLabel}</span>
               </div>
             </div>
             
@@ -282,7 +285,7 @@ class PayrollEmailService {
             to,
             subject: `Payroll Run Complete - ${periodLabel} ✅`,
             html: htmlContent,
-            text: `Hi ${displayName}, the payroll run for ${periodLabel} has been completed. ${totalEmployees} employees processed. Total: ${currency} ${totalPayroll.toLocaleString()}`
+            text: `Hi ${displayName}, the payroll run for ${periodLabel} has been completed. ${totalEmployees} employees processed. Total: ${totalPayrollLabel}`
         });
     }
 

@@ -25,11 +25,11 @@
 					)
 				}}
 			</div>
-			<div v-if="quiz.data.passing_percentage" class="leading-relaxed">
+			<div class="leading-relaxed">
 				{{
 					__(
 						'You will have to get {0}% correct answers in order to pass the quiz.'
-					).format(quiz.data.passing_percentage)
+					).format(quizPassMark)
 				}}
 			</div>
 			<div v-if="quiz.data.max_attempts" class="leading-5">
@@ -246,30 +246,52 @@
 				</div>
 			</div>
 		</div>
-		<div v-else class="border rounded-md p-20 text-center space-y-2">
-			<div class="text-lg font-semibold text-ink-gray-9">
-				{{ __('Quiz Summary') }}
-			</div>
+		<div
+			v-else
+			class="lms-quiz-summary border rounded-md p-20 text-center space-y-2"
+		>
 			<div
 				v-if="quizSubmission.data.is_open_ended"
 				class="leading-5 text-ink-gray-7"
 			>
+				<div class="text-lg font-semibold text-ink-gray-9 mb-2">
+					{{ __('Quiz Summary') }}
+				</div>
 				{{
 					__(
 						"Your submission has been successfully saved. The instructor will review and grade it shortly, and you'll be notified of your final result."
 					)
 				}}
 			</div>
-			<div v-else class="text-ink-gray-7">
-				{{
-					__(
-						'You got {0}% correct answers with a score of {1} out of {2}'
-					).format(
-						Math.ceil(quizSubmission.data.percentage),
-						quizSubmission.data.score,
-						quizSubmission.data.score_out_of
-					)
-				}}
+			<div
+				v-else
+				class="lms-quiz-celebration"
+				:class="`is-${quizResultLevel}`"
+			>
+				<div
+					v-if="quizResultLevel !== 'needs-practice'"
+					class="lms-quiz-confetti"
+					aria-hidden="true"
+				>
+					<span v-for="index in 16" :key="index"></span>
+				</div>
+				<div v-else class="lms-quiz-progress-pulse" aria-hidden="true">
+					<span v-for="index in 3" :key="index"></span>
+				</div>
+				<img
+					:src="quizResultImage"
+					alt=""
+					class="lms-quiz-trophy"
+				/>
+				<div class="lms-quiz-celebration-kicker">
+					{{ __(quizResultKicker) }}
+				</div>
+				<div class="lms-quiz-celebration-title">
+					{{ __(quizResultTitle).format(quizPercentage) }}
+				</div>
+				<div class="lms-quiz-celebration-copy">
+					{{ quizResultCopy }}
+				</div>
 			</div>
 			<div class="space-x-2">
 				<Button
@@ -291,12 +313,19 @@
 		</div>
 		<div
 			v-if="
-				quiz.data.show_submission_history &&
 				attempts?.data &&
 				attempts.data.length > 0
 			"
 			class="mt-10"
 		>
+			<div class="lms-quiz-history-header">
+				<div class="lms-quiz-history-title">
+					{{ __('Your Previous Quiz Attempts') }}
+				</div>
+				<div class="lms-quiz-history-copy">
+					{{ __('Latest attempt is shown first. Pass mark: {0}%.').format(quizPassMark) }}
+				</div>
+			</div>
 			<ListView
 				:columns="getSubmissionColumns()"
 				:rows="attempts?.data"
@@ -415,6 +444,16 @@ const timerProgress = computed(() => {
 	return (timer.value / (quiz.data.duration * 60)) * 100
 })
 
+const defaultPassingPercentage = 60
+
+const normalizePercentage = (value) => {
+	return Math.max(0, Math.ceil(Number(value || 0)))
+}
+
+const quizPassMark = computed(() => {
+	return Math.ceil(Number(quiz.data?.passing_percentage || defaultPassingPercentage))
+})
+
 const shuffleArray = (array) => {
 	for (let i = array.length - 1; i > 0; i--) {
 		const j = Math.floor(Math.random() * (i + 1))
@@ -445,8 +484,15 @@ const attempts = createResource({
 	},
 	transform(data) {
 		data.forEach((submission, index) => {
+			const passingPercentage =
+				submission.passing_percentage ||
+				quiz.data?.passing_percentage ||
+				defaultPassingPercentage
 			submission.creation = timeAgo(submission.creation)
 			submission.idx = index + 1
+			submission.percentage = normalizePercentage(submission.percentage)
+			submission.status =
+				submission.percentage >= passingPercentage ? __('Passed') : __('Try Again')
 		})
 	},
 })
@@ -457,10 +503,17 @@ watch(
 		if (quiz.data) {
 			populateQuestions()
 		}
-		if (quiz.data && quiz.data.max_attempts) {
+		if (quiz.data && user.data?.name) {
 			attempts.reload()
 			resetQuiz()
 		}
+	}
+)
+
+watch(
+	() => user.data?.name,
+	() => {
+		if (quiz.data && user.data?.name) attempts.reload()
 	}
 )
 
@@ -472,6 +525,57 @@ const quizSubmission = createResource({
 			results: localStorage.getItem(quiz.data.title),
 		}
 	},
+})
+
+const quizPercentage = computed(() => {
+	return normalizePercentage(quizSubmission.data?.percentage)
+})
+
+const quizResultLevel = computed(() => {
+	if (quizPercentage.value >= 90) return 'excellent'
+	if (quizPercentage.value >= quizPassMark.value) return 'passed'
+	return 'needs-practice'
+})
+
+const quizResultImage = computed(() => {
+	if (quizResultLevel.value == 'excellent') {
+		return '/assets/lms/images/stanbic/stanbic-quiz-excellent.png'
+	}
+	if (quizResultLevel.value == 'passed') {
+		return '/assets/lms/images/stanbic/stanbic-quiz-trophy-clean.png'
+	}
+	return '/assets/lms/images/stanbic/stanbic-quiz-keep-going.png'
+})
+
+const quizResultKicker = computed(() => {
+	if (quizResultLevel.value == 'excellent') return 'Excellent Result'
+	if (quizResultLevel.value == 'passed') return 'Quiz Passed'
+	return 'Quiz Complete'
+})
+
+const quizResultTitle = computed(() => {
+	if (quizResultLevel.value == 'excellent') {
+		return 'Excellent work! You scored {0}%.'
+	}
+	if (quizResultLevel.value == 'passed') {
+		return 'Well done! You passed with {0}%.'
+	}
+	return 'Keep going. You scored {0}%.'
+})
+
+const quizResultCopy = computed(() => {
+	const score = quizSubmission.data?.score || 0
+	const scoreOutOf = quizSubmission.data?.score_out_of || 0
+	if (quizResultLevel.value == 'needs-practice') {
+		return __(
+			'Your score is {0} out of {1}. You need {2}% to pass. Review the lesson and try again.'
+		).format(score, scoreOutOf, quizPassMark.value)
+	}
+	return __('Your score is {0} out of {1}. Pass mark: {2}%.').format(
+		score,
+		scoreOutOf,
+		quizPassMark.value
+	)
 })
 
 const questionDetails = createResource({
@@ -623,7 +727,7 @@ const createSubmission = () => {
 		{
 			onSuccess(data) {
 				markLessonProgress()
-				if (quiz.data && quiz.data.max_attempts) attempts.reload()
+				attempts.reload()
 				if (quiz.data.duration) clearInterval(timerInterval)
 			},
 			onError(err) {
@@ -695,6 +799,11 @@ const getSubmissionColumns = () => {
 		{
 			label: 'Percentage',
 			key: 'percentage',
+			align: 'center',
+		},
+		{
+			label: 'Status',
+			key: 'status',
 			align: 'center',
 		},
 	]

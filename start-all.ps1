@@ -15,10 +15,12 @@ $apps = @(
     @{ Name = "Payroll Backend"; Path = "$workspace\payroll\backend"; Command = "npm run dev"; Color = "Magenta" },
     @{ Name = "Performance Management Backend"; Path = "$workspace\performance\backend"; Command = "npm run dev"; Color = "Cyan" },
     @{ Name = "Recruiter Backend"; Path = "$workspace\recruiter\backend"; Command = "npm run dev"; Color = "Blue" },
+    @{ Name = "Time Attendance Backend"; Path = "$workspace\time-attendance\backend"; Command = "npm run dev"; Color = "DarkYellow" },
     @{ Name = "Leave Management Frontend"; Path = "$workspace\leave-management\frontend"; Command = "npm run dev"; Color = "Yellow" },
     @{ Name = "Payroll Frontend"; Path = "$workspace\payroll\frontend"; Command = "npm run dev"; Color = "Magenta" },
     @{ Name = "Performance Management Frontend"; Path = "$workspace\performance\frontend"; Command = "npm run dev"; Color = "Cyan" },
-    @{ Name = "Recruiter Frontend"; Path = "$workspace\recruiter\frontend"; Command = "npm run dev"; Color = "Blue" }
+    @{ Name = "Recruiter Frontend"; Path = "$workspace\recruiter\frontend"; Command = "npm run dev"; Color = "Blue" },
+    @{ Name = "Time Attendance Frontend"; Path = "$workspace\time-attendance\frontend"; Command = "npm run dev"; Color = "DarkYellow" }
 )
 
 # Start each app in a new PowerShell window
@@ -52,6 +54,7 @@ Write-Host "  - Recruiter Frontend:     http://localhost:5000" -ForegroundColor 
 Write-Host "  - Leave Management:       http://localhost:5003" -ForegroundColor White
 Write-Host "  - Performance Management:  http://localhost:5005" -ForegroundColor White
 Write-Host "  - Payroll:                http://localhost:5007" -ForegroundColor White
+Write-Host "  - Time Attendance:        http://localhost:5009" -ForegroundColor White
 Write-Host ""
 Write-Host "Note: Backend services will start on their configured ports." -ForegroundColor Gray
 Write-Host ""

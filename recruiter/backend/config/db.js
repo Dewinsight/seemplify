@@ -22,6 +22,24 @@ const connectDB = async () => {
     
     // Remove unique email index if it exists
     await removeEmailUniqueIndex();
+
+    // Repair historical CV/runtime data before Mongoose builds the guarded
+    // idempotency index or any worker can dispatch queued uploads.
+    const { ensureCvRuntimeCompatibility } = require('../services/cvRuntimeCompatibilityService');
+    const compatibility = await ensureCvRuntimeCompatibility();
+    console.log('CV runtime compatibility checks complete:', compatibility);
+
+    // Raw AI usage events are the authoritative ledger. Repair legacy event
+    // identities and rebuild any missing/ghost materialized projections before
+    // the API begins accepting inference traffic.
+    const {
+      ensureAIUsageProjectionCompatibility,
+      repairPendingUsageProjectionsOnStartup
+    } = require('../services/aiRuntime/usageService');
+    const usageCompatibility = await ensureAIUsageProjectionCompatibility();
+    console.log('AI usage projection checks complete:', usageCompatibility);
+    const usageRepair = await repairPendingUsageProjectionsOnStartup();
+    console.log('AI usage pending projection repair complete:', usageRepair);
     
   } catch (error) {
     console.error(`Error: ${error.message}`);

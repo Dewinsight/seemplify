@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="flex h-full flex-col justify-between transition-all duration-300 ease-in-out border-r bg-surface-menu-bar"
+		class="lms-app-sidebar flex h-full flex-col justify-between transition-all duration-300 ease-in-out border-r bg-surface-menu-bar"
 		:class="sidebarStore.isSidebarCollapsed ? 'w-14' : 'w-56'"
 	>
 		<div
@@ -9,15 +9,15 @@
 		>
 			<UserDropdown :isCollapsed="sidebarStore.isSidebarCollapsed" />
 			<div class="flex flex-col" v-if="sidebarSettings.data">
-				<div v-for="link in sidebarLinks" class="mx-2 my-2.5">
+				<div v-for="link in sidebarLinks" class="lms-sidebar-group mx-2 my-2.5">
 					<div
 						v-if="!link.hideLabel"
-						class="mb-2 mt-3 flex cursor-pointer gap-1.5 px-1 text-base font-medium text-ink-gray-5 transition-all duration-300 ease-in-out"
+						class="lms-sidebar-group-label mb-2 mt-3 flex cursor-pointer gap-1.5 px-1 text-base font-medium text-ink-gray-5 transition-all duration-300 ease-in-out"
 					>
 						<span>{{ __(link.label) }}</span>
 					</div>
 					<nav class="space-y-1">
-						<div v-for="item in link.items">
+						<div v-for="item in link.items" class="w-full">
 							<SidebarLink
 								:link="item"
 								:isCollapsed="sidebarStore.isSidebarCollapsed"
@@ -79,7 +79,7 @@
 				</div>
 			</div>
 		</div>
-		<div class="m-2 flex flex-col gap-1">
+		<div class="lms-sidebar-footer m-2 flex flex-col gap-1">
 			<div
 				v-if="readOnlyMode && !sidebarStore.isSidebarCollapsed"
 				class="z-10 m-2 bg-surface-modal py-2.5 px-3 text-xs text-ink-gray-7 leading-5 rounded-md"

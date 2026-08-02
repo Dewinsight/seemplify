@@ -15,9 +15,10 @@ import crypto from 'crypto'
 // Registered webhook endpoints for each backend
 const WEBHOOK_ENDPOINTS = {
   smarthr: process.env.SMARTHR_WEBHOOK_URL || 'http://localhost:3001/api/webhooks/idp',
-  leaveManagement: process.env.LEAVE_WEBHOOK_URL || 'http://localhost:5006/api/webhooks/idp',
-  payroll: process.env.PAYROLL_WEBHOOK_URL || 'http://localhost:5007/api/webhooks/idp',
-  performance: process.env.PERFORMANCE_WEBHOOK_URL || 'http://localhost:5008/api/webhooks/idp',
+  // Backends (not frontends). These defaults should match local dev ports for each service.
+  leaveManagement: process.env.LEAVE_WEBHOOK_URL || 'http://localhost:5002/api/webhooks/idp',
+  payroll: process.env.PAYROLL_WEBHOOK_URL || 'http://localhost:5006/api/webhooks/idp',
+  performance: process.env.PERFORMANCE_WEBHOOK_URL || 'http://localhost:5004/api/webhooks/idp',
 }
 
 const WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || 'your-webhook-secret-key'

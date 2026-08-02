@@ -43,6 +43,54 @@ interface CandidateData extends CandidateFormValues {
   source?: string;
 }
 
+export interface CVProcessingStatus {
+  jobId: string;
+  state: 'queued' | 'waiting_for_local_runtime' | 'processing' | 'completed' | 'failed';
+  stage?: 'ingesting' | 'uploading' | 'extracting' | 'analyzing' | 'finalizing' | 'completed' | 'failed' | null;
+  progress: number;
+  position: number | null;
+  candidateId: string | null;
+  attempts?: number;
+  aiAttempts?: number;
+  retry?: {
+    available: boolean;
+    availableUntil?: string | null;
+    nextAttemptAt?: string | null;
+    requestedStage?: 'failed' | 'parsing' | 'analysis';
+    manualRequests?: number;
+    automaticRetries?: number;
+    manualRetries?: number;
+  };
+  attemptHistory?: Array<{
+    number: number;
+    trigger: 'initial' | 'automatic' | 'manual';
+    requestedStage: 'failed' | 'parsing' | 'analysis';
+    status: 'processing' | 'waiting_for_runtime' | 'failed' | 'completed';
+    stage?: string | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    errorCode?: string | null;
+  }>;
+  error?: { code?: string; message?: string };
+}
+
+export interface AcceptedCVProcessing extends CVProcessingStatus {
+  statusToken: string;
+  statusUrl: string;
+}
+
+export class CVProcessingError extends Error {
+  status: CVProcessingStatus;
+  accepted: AcceptedCVProcessing;
+
+  constructor(message: string, status: CVProcessingStatus, accepted: AcceptedCVProcessing) {
+    super(message);
+    this.name = 'CVProcessingError';
+    this.status = status;
+    this.accepted = accepted;
+  }
+}
+
 interface UploadCVResponse {
   msg: string;
   candidate: CandidateData;
@@ -78,7 +126,58 @@ const handleOrganizationError = (error: ApiError) => {
   throw new Error(error.msg || 'An error occurred');
 };
 
-export const uploadCV = async (formData: FormData): Promise<UploadCVResponse> => {
+const waitForCVProcessing = async (
+  accepted: AcceptedCVProcessing,
+  onStatus?: (status: CVProcessingStatus) => void,
+): Promise<UploadCVResponse> => {
+  let status: CVProcessingStatus = accepted;
+  onStatus?.(status);
+  while (!['completed', 'failed'].includes(status.state)) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const response = await apiRequest(`${accepted.statusUrl}?token=${encodeURIComponent(accepted.statusToken)}`, { method: 'GET' });
+    if (!response.ok) throw new Error('Could not read CV processing status');
+    status = await response.json();
+    onStatus?.(status);
+  }
+  if (status.state === 'failed' || !status.candidateId) {
+    throw new CVProcessingError(status.error?.message || 'CV processing failed', status, accepted);
+  }
+  const candidate = await getCandidateById(status.candidateId);
+  return {
+    msg: 'Candidate created successfully from CV',
+    candidate,
+    processingResults: {
+      cloudinaryUpload: true,
+      cvParsing: true,
+      aiAnalysis: true,
+      textExtracted: true,
+      fieldsExtracted: Object.keys(candidate.parsedData || {}).length,
+    },
+  };
+};
+
+export const retryCVProcessing = async (
+  accepted: AcceptedCVProcessing,
+  onStatus?: (status: CVProcessingStatus) => void,
+  stage: 'failed' | 'parsing' | 'analysis' = 'failed',
+): Promise<UploadCVResponse> => {
+  const response = await apiRequest(`/api/candidates/cv-jobs/${encodeURIComponent(accepted.jobId)}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.msg || result.message || 'CV processing could not be retried');
+  }
+  onStatus?.(result as CVProcessingStatus);
+  return waitForCVProcessing(accepted, onStatus);
+};
+
+export const uploadCV = async (
+  formData: FormData,
+  onStatus?: (status: CVProcessingStatus) => void,
+): Promise<UploadCVResponse> => {
   const token = localStorage.getItem('jwt');
   const response = await apiRequest(`/api/candidates/upload-cv`, {
     method: "POST",
@@ -108,7 +207,9 @@ export const uploadCV = async (formData: FormData): Promise<UploadCVResponse> =>
     // Throw error with the full message from backend
     throw new Error(errorMessage);
   }
-  return response.json();
+  const result = await response.json();
+  if (response.status === 202) return waitForCVProcessing(result, onStatus);
+  return result;
 };
 
 export const createCandidateManually = async (data: CandidateFormValues): Promise<CreateCandidateResponse> => {
@@ -239,6 +340,31 @@ export const bulkDeleteCandidates = async (candidateIds: string[]): Promise<{
   return response.json();
 };
 
+// Bulk download a ZIP with one folder per candidate (profile.pdf + CV)
+export const bulkDownloadCandidates = async (candidateIds: string[]): Promise<void> => {
+  const response = await apiRequest(`/api/candidates/bulk-download`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ candidateIds })
+  });
+
+  if (!response.ok) {
+    const errorResult: ApiError = await response.json();
+    handleOrganizationError(errorResult);
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'candidates.zip';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 // Get accessible resume URLs for PDFs
 export const getAccessibleResumeUrl = async (candidateId: string): Promise<{
   accessibleUrl: string;
@@ -263,8 +389,7 @@ export const checkEmbeddingStatus = async (candidateId: string): Promise<{
   candidateId: string;
   isEmbedded: boolean;
   embeddingCreatedAt?: string;
-  existsInWeaviate?: boolean;
-  existsInPinecone?: boolean; // Legacy field for backwards compatibility
+  existsInVectorStore: boolean;
   needsEmbedding: boolean;
 }> => {
   const response = await apiRequest(`/api/candidates/${candidateId}/embedding-status`, {
@@ -348,4 +473,54 @@ export const deleteComment = async (candidateId: string, commentId: string): Pro
 // For now, this assumes it's accessible or we can redefine it here if needed.
 // export type { CandidateFormValues }; // Re-export if defined elsewhere and imported here
 // Or define a similar type here if not exported from page.tsx
-export type { CandidateData }; // Exporting for use in the page component
+// Bulk upload types and API
+export interface BulkUploadResponse {
+  msg: string;
+  batchId: string;
+  totalFiles: number;
+  statusUrl: string;
+}
+
+export interface BulkUploadStatus {
+  batchId: string;
+  totalFiles: number;
+  completed: number;
+  successful: number;
+  failed: number;
+  processing: number;
+  queued: number;
+  results: Array<{ fileName: string; candidateId: string; candidateName: string; success: true }>;
+  errors: Array<{ fileName: string; error: string; success: false }>;
+  startedAt: string;
+  completedAt: string | null;
+  state: 'processing' | 'waiting_for_local_runtime' | 'completed';
+}
+
+export const bulkUploadCVs = async (files: File[]): Promise<BulkUploadResponse> => {
+  const token = localStorage.getItem('jwt');
+  const formData = new FormData();
+  files.forEach((file) => formData.append('resumes', file));
+
+  const response = await apiRequest('/api/bulk-upload/cv', {
+    method: 'POST',
+    headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err: any = await response.json().catch(() => ({ msg: 'Bulk upload failed' }));
+    throw new Error(err.msg || err.error || 'Bulk upload failed');
+  }
+  return response.json();
+};
+
+export const getBulkUploadStatus = async (batchId: string): Promise<BulkUploadStatus> => {
+  const response = await apiRequest(`/api/bulk-upload/status/${batchId}`, { method: 'GET' });
+  if (!response.ok) {
+    const err: any = await response.json().catch(() => ({ msg: 'Status check failed' }));
+    throw new Error(err.msg || 'Status check failed');
+  }
+  return response.json();
+};
+
+export type { CandidateData };

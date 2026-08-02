@@ -4,26 +4,20 @@ import { tokenManager } from '../utils/tokenManager';
 import { handleCreditError, extractCreditError } from '../utils/creditErrorHandler';
 
 const isBrowser = typeof window !== 'undefined';
+const ACTIVE_ORGANIZATION_STORAGE_KEY = 'seemplify_active_organization_id';
 
-// Detect if running in local development environment
-function isLocalDevelopment(): boolean {
-  if (!isBrowser) {
-    return process.env.NODE_ENV === 'development';
-  }
-  const hostname = window.location.hostname;
-  return hostname === 'localhost' || 
-         hostname === '127.0.0.1' || 
-         hostname.startsWith('192.168.') ||
-         hostname.startsWith('10.') ||
-         hostname.endsWith('.local');
+function activeOrganizationHeader() {
+  if (!isBrowser) return {};
+  const activeOrganizationId = localStorage.getItem(ACTIVE_ORGANIZATION_STORAGE_KEY);
+  return activeOrganizationId ? { 'X-Organization-Id': activeOrganizationId } : {};
 }
 
-// Set appropriate fallback URLs based on environment
-let FALLBACK_API = isLocalDevelopment() ? 'http://localhost:5001' : 'https://api.seemplifyai.com';
-let FALLBACK_WS = isLocalDevelopment() ? 'ws://localhost:5001' : 'wss://api.seemplifyai.com';
+// Use runtime configuration
+let FALLBACK_API = 'https://api.seemplifyai.com';
+let FALLBACK_WS = 'wss://api.seemplifyai.com';
 
-// Attempt to load fallback-config.json at startup (best-effort, browser only, production only)
-if (isBrowser && !isLocalDevelopment()) {
+// Attempt to load fallback-config.json at startup (best-effort, browser only)
+if (isBrowser) {
   fetch('/fallback-config.json')
     .then((r) => r.ok ? r.json() : null)
     .then((cfg) => {
@@ -170,38 +164,40 @@ export const getAuthHeaders = () => {
   return {
     'Content-Type': 'application/json',
     ...(token && { 'Authorization': `Bearer ${token}` }),
+    ...activeOrganizationHeader(),
   };
 };
 
 // Removed throttling for organization API calls as it was causing issues
 
 // Internal fetch with token refresh
-async function fetchWithTokenRefresh(url: string, options: RequestInit): Promise<Response> {
+async function fetchWithTokenRefresh(
+  url: string,
+  options: RequestInit,
+  hasRetriedAfterRefresh = false
+): Promise<Response> {
   // Check if token needs refresh before making request
   if (isBrowser && tokenManager.needsRefresh()) {
-    console.log('🔄 Token needs refresh before request');
+    console.log('Token needs refresh before request');
     await tokenManager.refreshTokens();
   }
 
   // Make the request
   const response = await fetch(url, options);
 
-  // If 401 and not already refreshing, try to refresh and retry once
-  const headers = options.headers as Record<string, string> | undefined;
-  if (response.status === 401 && !headers?.['X-Retry-After-Refresh']) {
-    console.log('🔄 Got 401, attempting token refresh and retry');
-    
+  // If 401, try to refresh and retry once (avoid custom retry headers that trigger CORS preflight)
+  if (response.status === 401 && !hasRetriedAfterRefresh) {
+    console.log('Got 401, attempting token refresh and retry');
+
     const refreshResult = await tokenManager.refreshTokens();
     if (refreshResult) {
-      // Update headers with new token
       const newHeaders = {
         ...options.headers,
-        'Authorization': `Bearer ${refreshResult.accessToken}`,
-        'X-Retry-After-Refresh': 'true' // Prevent infinite retry
+        Authorization: `Bearer ${refreshResult.accessToken}`,
       };
 
-      // Retry the request with new token
-      return fetch(url, { ...options, headers: newHeaders });
+      // Retry once after refresh
+      return fetchWithTokenRefresh(url, { ...options, headers: newHeaders }, true);
     }
   }
 
@@ -210,6 +206,11 @@ async function fetchWithTokenRefresh(url: string, options: RequestInit): Promise
 
 // Centralized API request wrapper with 401 handling and security
 export const apiRequest = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  const incomingHeaders = options.headers as Record<string, string> | undefined;
+  const skipBodySanitization =
+    incomingHeaders?.['X-Skip-Body-Sanitization'] === 'true' ||
+    incomingHeaders?.['x-skip-body-sanitization'] === 'true';
+
   // Prevent clickjacking on first request
   if (isBrowser && !window.__clickjackingChecked) {
     preventClickjacking();
@@ -225,7 +226,7 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   }
   
   // Sanitize request body to prevent injection attacks
-  if (options.body && typeof options.body === 'string') {
+  if (!skipBodySanitization && options.body && typeof options.body === 'string') {
     try {
       const parsed = JSON.parse(options.body);
       const sanitized = sanitizeObject(parsed);
@@ -256,6 +257,11 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   // Check if this is an admin API call
   const isAdminCall = url.includes('/api/admin');
   const headers = options.headers as any || {};
+  const {
+    ['X-Skip-Body-Sanitization']: _skipBodySanitizationUpper,
+    ['x-skip-body-sanitization']: _skipBodySanitizationLower,
+    ...requestHeaders
+  } = headers;
   
   // Check if this is a file upload (FormData in body)
   const isFileUpload = options.body instanceof FormData;
@@ -268,13 +274,14 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
     const token = isBrowser ? tokenManager.getAccessToken() : null;
     finalHeaders = {
       ...(token && { 'Authorization': `Bearer ${token}` }),
-      ...headers
+      ...activeOrganizationHeader(),
+      ...requestHeaders
     };
     console.log('📎 File upload detected - letting browser set Content-Type automatically');
-  } else if (isAdminCall && headers['x-admin-auth-token']) {
-    finalHeaders = { ...headers };
+  } else if (isAdminCall && requestHeaders['x-admin-auth-token']) {
+    finalHeaders = { ...requestHeaders };
   } else {
-    finalHeaders = { ...getAuthHeaders(), ...headers };
+    finalHeaders = { ...getAuthHeaders(), ...requestHeaders };
   }
 
   // Helper to build URL from base
@@ -414,3 +421,5 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
 
   return response;
 };
+
+

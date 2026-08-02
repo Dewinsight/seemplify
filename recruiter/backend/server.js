@@ -1,6 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const { corsOptions } = require('./config/corsOptions');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const path = require('path');
@@ -9,16 +10,33 @@ const { sessionMiddleware } = require('./middleware/sessionMiddleware');
 const authMiddleware = require('./middleware/authMiddleware');
 const http = require('http');
 const websocketService = require('./services/websocketService');
+const aiInterviewVoiceLiveService = require('./services/aiInterviewVoiceLiveService');
 const grantVerificationScheduler = require('./scripts/grantVerificationScheduler');
 const interviewFeedbackEmailService = require('./services/interviewQuestionEmailService');
 const backgroundServiceManager = require('./services/backgroundServiceManager');
+const memoryManager = require('./services/memoryManager');
+const multiCandidateRetryService = require('./services/multiCandidateRetryService');
+const interviewBotJoinService = require('./services/interviewBotJoinService');
+const aiInterviewEmailService = require('./services/aiInterviewEmailService');
+const localAIRuntimeHealthService = require('./services/localAIRuntimeHealthService');
 const { requestValidation } = require('./middleware/requestValidation');
+const { requireFeature } = require('./middleware/featureFlagMiddleware');
+const { aiRequestContextMiddleware } = require('./services/aiRuntime/requestContext');
+const {
+  persistUsageEnvelope,
+  usageProjectionRepairHealth
+} = require('./services/aiRuntime/usageService');
+const {
+  assertUsageMeteringOutboxReady,
+  usageMeteringOutbox,
+  usageMeteringOutboxReady
+} = require('./services/aiRuntime/usageMeteringOutbox');
 
 // Load environment variables
 dotenv.config();
 
 // Connect to database
-connectDB();
+const databaseReady = connectDB();
 
 const app = express();
 
@@ -35,7 +53,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https:", "http:", "blob:"],
-      connectSrc: ["'self'", "https://api.nylas.com", "https://api.brevo.com", "wss:", "ws:", "http://localhost:*", "https://thesmarthr.netlify.app"],
+      connectSrc: ["'self'", "https://api.nylas.com", "https://api.brevo.com", "https://*.seemplifyai.com", "https://*.aiinnigeria.com", "wss:", "ws:", "http://localhost:*", "https://thesmarthr.netlify.app"],
       mediaSrc: ["'self'", "blob:"],
       objectSrc: ["'none'"],
       frameSrc: ["'self'", "https://api.nylas.com"],
@@ -65,7 +83,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   
   // Permissions policy
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(self), camera=()');
   
   // Cache control for security
   if (req.url.includes('/api/')) {
@@ -79,51 +97,7 @@ app.use((req, res, next) => {
 
 // Request Validation Middleware (prevents HTTP desync attacks)
 app.use(requestValidation);
-
-// Enhanced CORS configuration with proper preflight handling
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, postman)
-    if (!origin) return callback(null, true);
-    
-    // Explicitly allowed origins
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5000', 
-      'https://thesmarthr.netlify.app',
-      'https://app.seemplifyai.com',
-      'https://api.seemplifyai.com',
-      'https://auth.seemplifyai.com',
-      'https://smarthr.aiinnigeria.com',
-      'https://smarthrhandover-dev.sterling.ng',
-      'smarthrhandover-dev.sterling.ng',
-      'https://producive.com',
-      'https://www.producive.com'
-    ];
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    // Allow localhost for development
-    if (origin.includes('localhost')) return callback(null, true);
-    
-    // Allow all netlify domains
-    if (origin.includes('netlify.app') || origin.includes('netlify.com')) {
-      return callback(null, true);
-    }
-    
-    // Allow HTTPS origins for now (tighten this later)
-    if (origin.startsWith('https://')) return callback(null, true);
-    
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true, // Allow cookies to be sent
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], // Explicitly allow all methods
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-ID', 'X-Nylas-Signature', 'x-admin-auth-token'], // Standard headers + admin token
-  exposedHeaders: ['X-Session-ID'], // Expose session ID header to frontend
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
-};
+app.use(aiRequestContextMiddleware);
 
 // Apply CORS with webhook bypass
 app.use((req, res, next) => {
@@ -161,6 +135,16 @@ app.use('/api/webhooks', express.raw({ type: 'application/json' }), (req, res, n
   }
 });
 
+app.use('/api/internal/ai', express.raw({ type: 'application/json', limit: '2mb' }), (req, res, next) => {
+  try {
+    req.rawBody = req.body;
+    req.body = JSON.parse(req.body.toString('utf8'));
+    next();
+  } catch (_error) {
+    return res.status(400).json({ code: 'AI_GATEWAY_INVALID_JSON', message: 'Invalid JSON payload' });
+  }
+});
+
 // Debug middleware for file uploads
 app.use((req, res, next) => {
   if (req.path.includes('/upload-cv')) {
@@ -183,7 +167,8 @@ app.use((req, res, next) => {
   // Skip JSON parsing for file upload routes (multer will handle these)
   if (req.path.includes('/upload-cv') || 
       req.path.includes('/bulk-upload') || 
-      req.path.includes('/cv/parse')) {
+      req.path.includes('/cv/parse') ||
+      req.path.includes('/api/internal/ai')) {
     console.log(`⏭️ Skipping JSON parser for file upload route: ${req.path}`);
     return next();
   }
@@ -247,19 +232,23 @@ const upload = multer({
 
 // Define Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/platform', require('./routes/platform'));
 app.use('/api/users', require('./routes/user')); // User profile routes
 // REMOVED global multer middleware - handled at route level for better control
 app.use('/api/candidates', require('./routes/candidate')); // File upload handled in route
+app.use('/api/candidate-lists', require('./routes/candidateLists')); // Saved candidate list routes
+app.use('/api/bulk-upload', requireFeature('bulkCvUpload'), require('./routes/bulkUpload')); // Bulk CV upload with BullMQ
 app.use('/api/jobs', require('./routes/job')); // Job routes
 app.use('/api/feedback-forms', require('./routes/feedbackForm')); // Feedback form templates and custom fields
 app.use('/api/embeddings', require('./routes/embeddingRoutes')); // Embedding management routes
 app.use('/api/sessions', sessionMiddleware, require('./routes/sessionRoutes')); // Session routes with session middleware
-app.use('/api/chat-sessions', authMiddleware, sessionMiddleware, require('./routes/chatSessions')); // Chat session routes with auth and session
-app.use('/api/ai', require('./routes/ai')); // AI routes - auth handled per route
+app.use('/api/chat-sessions', requireFeature('aiAssistant'), authMiddleware, sessionMiddleware, require('./routes/chatSessions')); // Chat session routes with auth and session
+app.use('/api/ai', requireFeature('aiAssistant'), require('./routes/ai')); // AI routes - auth handled per route
 app.use('/api/trusted-devices', require('./routes/trustedDevices')); // Trusted devices management
 
 // NEW: Nylas integration routes
 app.use('/api/interviews', require('./routes/interview')); // Interview scheduling routes
+app.use('/api/ai-interviews', requireFeature('aiInterviews'), require('./routes/aiInterviews')); // Async AI Interviewer routes
 app.use('/api/interview-status', require('./routes/interviewStatus')); // Interview status management routes
 app.use('/api/interview-stages', require('./routes/interviewStages')); // Interview stages management routes
 app.use('/api/ai-analysis', require('./routes/aiAnalysis')); // AI interview analysis routes
@@ -276,15 +265,25 @@ app.use('/api/notifications', require('./routes/notifications')); // Notificatio
 app.use('/api/pipeline', require('./routes/pipelineBatch')); // Pipeline batch operations routes
 app.use('/api/candidate-emails', require('./routes/candidateEmails')); // Candidate email notification routes
 app.use('/api/candidate-shortlists', require('./routes/candidateShortlists')); // Candidate shortlist information routes
+const onboardingRoutes = require('./routes/onboarding');
+app.use('/api/onboarding', requireFeature('peopleTransitions'), onboardingRoutes); // Backward-compatible onboarding routes
+app.use('/api/people-transitions', requireFeature('peopleTransitions'), onboardingRoutes); // Recruiter people transitions routes
+app.use('/api/candidate-portal', require('./routes/candidatePortal')); // External candidate portal routes
+app.use('/api/enrichment', requireFeature('candidateEnrichment'), require('./routes/enrichment')); // Background enrichment and ranking routes
 app.use('/api/subscription', require('./routes/subscription')); // Subscription upgrade request routes
 app.use('/api/plans', require('./routes/plan')); // Subscription plan management routes
 app.use('/api/credits', require('./routes/credits')); // Credits management routes
 app.use('/api/credit-packs', require('./routes/creditPacks')); // Credit pack purchase routes
 
 // Admin portal routes
+app.use('/api/admin/ai-interviews', require('./routes/adminAIInterviews')); // Platform AI interview monitoring
+app.use('/api/admin/activity', require('./routes/adminActivity')); // Organization and user activity monitoring
+app.use('/api/admin/ai-runtime', require('./routes/adminAIRuntime')); // AI provider configuration and monitoring
 app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management
+app.use('/api/internal/ai', require('./routes/internalAI')); // Signed service-to-service AI gateway
+app.use('/api/internal/local-cv-queue', require('./routes/internalLocalCvQueue')); // Signed local Control Center history
 
 // Serve static files from the "uploads" directory (if needed for direct access, though Cloudinary is primary)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -293,6 +292,22 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Basic GET route
 app.get('/', (req, res) => {
   res.json({ message: "SmartHR Backend API Running" });
+});
+
+// Health must be registered before the catch-all 404 middleware.
+app.get('/api/health', (req, res) => {
+  const health = backgroundServiceManager.getHealthCheck();
+  const meteringOutbox = usageMeteringOutbox.status();
+  const projectionRepair = usageProjectionRepairHealth();
+  const healthy = health.healthy
+    && usageMeteringOutboxReady(meteringOutbox)
+    && projectionRepair.healthy;
+  res.status(healthy ? 200 : 503).json({
+    ...health,
+    healthy,
+    aiUsageMeteringOutbox: meteringOutbox,
+    aiUsageProjectionRepair: projectionRepair
+  });
 });
 
 // Error handling middleware (must be after all routes)
@@ -311,6 +326,7 @@ const server = http.createServer(app);
 
 // Initialize WebSocket service
 websocketService.initialize(server);
+aiInterviewVoiceLiveService.initialize(server);
 
 // Start grant verification scheduler
 grantVerificationScheduler.start();
@@ -321,25 +337,64 @@ interviewCompletionService.startPeriodicCompletionCheck();
 
 // Start interview status service (handles missed interviews)
 const interviewStatusService = require('./services/interviewStatusService');
+const aiInterviewScoringRetryService = require('./services/aiInterviewScoringRetryService');
 
 // Register all background services
 backgroundServiceManager.register('interviewFeedbackEmail', interviewFeedbackEmailService);
+backgroundServiceManager.register('aiInterviewEmail', aiInterviewEmailService);
 backgroundServiceManager.register('interviewCompletion', interviewCompletionService);
 backgroundServiceManager.register('interviewStatus', interviewStatusService);
+backgroundServiceManager.register('interviewBotJoin', interviewBotJoinService);
 backgroundServiceManager.register('grantVerification', grantVerificationScheduler);
+backgroundServiceManager.register('multiCandidateRetry', multiCandidateRetryService);
+backgroundServiceManager.register('aiInterviewScoringRetry', aiInterviewScoringRetryService);
+backgroundServiceManager.register('localAIRuntimeHealth', localAIRuntimeHealthService);
+backgroundServiceManager.register('memoryManager', memoryManager);
 
-// Start all background services
-backgroundServiceManager.startAll();
-
-// Add health check endpoint
-app.get('/api/health', (req, res) => {
-  const health = backgroundServiceManager.getHealthCheck();
-  res.status(health.healthy ? 200 : 503).json(health);
-});
-
-server.listen(PORT, () => {
+async function startServer() {
+  await databaseReady;
+  try {
+    const meteringOutbox = await usageMeteringOutbox.start(persistUsageEnvelope);
+    assertUsageMeteringOutboxReady(meteringOutbox);
+  } catch (error) {
+    console.error('AI usage metering worker failed to start:', error.message);
+    if (process.env.NODE_ENV === 'production') throw error;
+  }
+  backgroundServiceManager.startAll();
+  server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 WebSocket available at ws://localhost:${PORT}/ws/assistant`);
   console.log(`📊 Background services status:`, backgroundServiceManager.getStatus());
   console.log(`🔥 Session middleware applied selectively to prevent infinite loops`);
+
+  // Drain pre-durable bulk jobs by migrating them into cv-analysis-local.
+  try {
+    const bulkUploadService = require('./services/bulkUploadService');
+    await bulkUploadService.initQueue();
+    console.log('Legacy bulk upload migration queue initialized');
+  } catch (err) {
+    console.warn('Legacy bulk migration init deferred:', err.message);
+  }
+  try {
+    const cvAnalysisQueue = require('./services/cvAnalysisQueueService');
+    await cvAnalysisQueue.initWorker();
+    console.log('Local CV analysis queue initialized');
+  } catch (err) {
+    console.warn('Local CV analysis queue init deferred:', err.message);
+  }
+
+  // Initialize BullMQ worker for enrichment ranking
+  try {
+    const enrichmentService = require('./services/enrichmentService');
+    await enrichmentService.initQueue();
+    console.log('📈 BullMQ enrichment queue initialized');
+  } catch (err) {
+    console.warn('⚠️ Enrichment queue init failed (non-fatal, enrichment will init on first use):', err.message);
+  }
+  });
+}
+
+void startServer().catch((error) => {
+  console.error('Recruiter backend startup failed:', error.message);
+  process.exit(1);
 });

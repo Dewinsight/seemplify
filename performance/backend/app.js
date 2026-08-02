@@ -116,15 +116,42 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
     const OKR = require('./models/OKR');
     const { PerformanceReview } = require('./models/PerformanceReview');
     const Feedback = require('./models/Feedback');
+    const User = require('./models/User');
 
     const userId = req.session?.user?.id;
+    const { teamId, allTeams } = req.query;
+    const userTeams = req.userTeams || [];
+    const directReports = req.directReports || [];
+    
+    // Determine which users to get data for
+    let targetUserIds = [userId];
+    
+    if (allTeams === 'true') {
+      // Get all team members from all managed teams
+      const managedTeams = userTeams.filter(t => t.isManager || t.role === 'line_manager');
+      const allMemberIds = new Set(directReports);
+      
+      managedTeams.forEach(team => {
+        if (team.members) {
+          team.members.forEach(m => {
+            allMemberIds.add(m.userId || m.id);
+          });
+        }
+      });
+      
+      targetUserIds = Array.from(allMemberIds);
+    } else if (teamId) {
+      // Get members from specific team
+      const team = userTeams.find(t => t.id === teamId);
+      if (team && team.members) {
+        targetUserIds = team.members.map(m => m.userId || m.id);
+      }
+    }
 
     // Get OKRs from database
     let okrs = [];
-    if (userId) {
-      okrs = await OKR.find({ ownerId: userId });
-    } else {
-      okrs = await OKR.find({}).limit(10);
+    if (targetUserIds.length > 0) {
+      okrs = await OKR.find({ ownerId: { $in: targetUserIds } });
     }
 
     // Calculate OKR progress
@@ -136,25 +163,21 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
 
     // Get pending reviews
     let reviews = [];
-    if (userId) {
+    if (targetUserIds.length > 0) {
       reviews = await PerformanceReview.find({
-        $or: [{ userId }, { managerId: userId }],
+        userId: { $in: targetUserIds },
         status: { $nin: ['completed'] }
       });
-    } else {
-      reviews = await PerformanceReview.find({ status: { $nin: ['completed'] } }).limit(10);
     }
 
     // Get recent feedback (last 30 days)
     let feedback = [];
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    if (userId) {
+    if (targetUserIds.length > 0) {
       feedback = await Feedback.find({
-        receiverId: userId,
+        receiverId: { $in: targetUserIds },
         createdAt: { $gte: thirtyDaysAgo }
       });
-    } else {
-      feedback = await Feedback.find({ createdAt: { $gte: thirtyDaysAgo } }).limit(10);
     }
 
     // Count upcoming deadlines
@@ -173,7 +196,9 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
       recentFeedback: feedback.length,
       totalOkrs: okrs.length,
       completedOkrs: okrs.filter(o => o.status === 'closed').length,
-      upcomingDeadlines: upcomingDeadlines
+      upcomingDeadlines: upcomingDeadlines,
+      teamView: allTeams === 'true' ? 'all' : teamId || 'current',
+      memberCount: targetUserIds.length
     });
   } catch (error) {
     console.error('Error fetching dashboard summary:', error);
@@ -361,6 +386,9 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
 
     const tokenSet = await client.callback(redirectUri, params, checks);
     const userinfo = await client.userinfo(tokenSet);
+    const currentOrganization = userinfo.currentOrganization || userinfo.current_organization || null;
+    const currentOrganizationId = currentOrganization?.id || userinfo.organizations?.[0]?.id || null;
+    const currentOrganizationDesignation = currentOrganization?.designation || null;
 
     console.log('✅ OIDC tokens received for:', userinfo.email);
     console.log('📊 Organization claims:', userinfo.organizations?.length || 0);
@@ -375,7 +403,9 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
       organizations: userinfo.organizations || [],
       teams: userinfo.teams || [],
       idpTeams: userinfo.teams || [],
-      currentOrganization: userinfo.currentOrganization,
+      currentOrganization,
+      designation: currentOrganizationDesignation,
+      employeeId: currentOrganization?.employeeId || null,
       accessToken: tokenSet.access_token,
       refreshToken: tokenSet.refresh_token,
       idToken: tokenSet.id_token,
@@ -388,25 +418,46 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
     let user = await User.findOne({ email: userinfo.email });
 
     if (user) {
-      // Only update profile and current org preference - organizations come from IDP session
+      // Update profile, current org preference, AND idpTeams on every login
       user.lastGrantRefresh = new Date();
-      if (userinfo.currentOrganization?.id) {
-        user.currentOrganizationId = userinfo.currentOrganization.id;
+      user.idpSub = userinfo.sub;
+      if (currentOrganizationId) {
+        user.currentOrganizationId = currentOrganizationId;
+      }
+      // IMPORTANT: Sync idpTeams from IDP on every login
+      user.idpTeams = userinfo.teams || [];
+      user.idpOrganizations = userinfo.organizations || [];
+      user.idpTeamPermissions = userinfo.team_permissions || [];
+      if (userinfo.name) {
+        user.profile = user.profile || {};
+        user.profile.displayName = userinfo.name;
+      }
+      if (currentOrganizationDesignation) {
+        user.profile = user.profile || {};
+        user.profile.title = currentOrganizationDesignation;
       }
       await user.save();
+      console.log('✅ Updated user teams:', user.email, 'teams:', user.idpTeams?.length || 0);
     } else {
       user = new User({
         email: userinfo.email,
+        idpSub: userinfo.sub,
         profile: {
           firstName: userinfo.given_name || userinfo.name?.split(' ')[0] || 'Performance',
           lastName: userinfo.family_name || userinfo.name?.split(' ').slice(1).join(' ') || 'User',
-          displayName: userinfo.name
+          displayName: userinfo.name,
+          title: currentOrganizationDesignation || undefined
         },
         lastGrantRefresh: new Date(),
-        currentOrganizationId: userinfo.currentOrganization?.id || (userinfo.organizations?.[0]?.id) || null,
-        hasCompletedOrganizationSetup: true
+        currentOrganizationId,
+        hasCompletedOrganizationSetup: true,
+        // IMPORTANT: Save idpTeams for new users
+        idpTeams: userinfo.teams || [],
+        idpOrganizations: userinfo.organizations || [],
+        idpTeamPermissions: userinfo.team_permissions || []
       });
       await user.save();
+      console.log('✅ Created new user:', user.email, 'teams:', user.idpTeams?.length || 0);
     }
     
     console.log('✅ User synced (orgs from IDP):', userinfo.email, 'orgs:', userinfo.organizations?.length || 0);
@@ -416,10 +467,8 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
     res.clearCookie('oidc_state');
 
     // Set current organization in session
-    if (userinfo.currentOrganization) {
-      req.session.currentOrganizationId = userinfo.currentOrganization.id;
-    } else if (userinfo.organizations?.length > 0) {
-      req.session.currentOrganizationId = userinfo.organizations[0].id;
+    if (currentOrganizationId) {
+      req.session.currentOrganizationId = currentOrganizationId;
     }
 
     // Redirect to frontend with access token
@@ -447,7 +496,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     const teams = req.session.user.teams || req.session.user.userinfo?.teams || [];
     
     // Get current organization - prefer session, fallback to db preference
-    const currentOrganization = req.session.user.currentOrganization;
+    const currentOrganization = req.session.user.currentOrganization || req.session.user.userinfo?.currentOrganization || req.session.user.userinfo?.current_organization;
     const currentOrgId = req.session.currentOrganizationId || 
                          dbUser?.currentOrganizationId || 
                          currentOrganization?.id ||
@@ -511,11 +560,17 @@ app.post('/api/auth/refresh', requireAuth, async (req, res) => {
 
     // Get fresh userinfo
     const userinfo = await getUserInfo(tokenSet.access_token);
+    const currentOrganization = userinfo.currentOrganization || userinfo.current_organization || null;
     req.session.user.userinfo = userinfo;
     req.session.user.organizations = userinfo.organizations || [];
     req.session.user.teams = userinfo.teams || [];
     req.session.user.idpTeams = userinfo.teams || [];
-    req.session.user.currentOrganization = userinfo.currentOrganization;
+    req.session.user.currentOrganization = currentOrganization;
+    req.session.user.designation = currentOrganization?.designation || null;
+    req.session.user.employeeId = currentOrganization?.employeeId || null;
+    if (currentOrganization?.id) {
+      req.session.currentOrganizationId = currentOrganization.id;
+    }
 
     res.json({
       success: true,

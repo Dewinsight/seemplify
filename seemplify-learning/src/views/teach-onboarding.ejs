@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>
+    <%= title %>
+  </title>
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body class="public-site">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
+  <%
+    const currencyOptions = Array.isArray(supportedCurrencies) && supportedCurrencies.length > 0
+      ? supportedCurrencies
+      : [{ code: 'NGN', name: 'Nigerian Naira', symbol: 'NGN' }]
+    const currencyCodes = currencyOptions.map((currencyOption) => String(currencyOption?.code || '').trim().toUpperCase()).filter(Boolean)
+    const requestedCurrency = String(defaultCourseCurrency || 'NGN').trim().toUpperCase()
+    const defaultCurrency = currencyCodes.includes(requestedCurrency)
+      ? requestedCurrency
+      : (currencyCodes[0] || 'NGN')
+  %>
+
+    <main class="lmsv-shell">
+      <% if (error) { %>
+        <div class="alert alert-error">
+          <%= error %>
+        </div>
+        <% } %>
+          <% if (success) { %>
+            <div class="alert alert-success">
+              <%= success %>
+            </div>
+            <% } %>
+              <% if (info) { %>
+                <div class="alert">
+                  <%= info %>
+                </div>
+                <% } %>
+                  <% if (roleWasUpgraded) { %>
+                    <div class="alert alert-success">Course publishing is enabled for your account.</div>
+                    <% } %>
+
+                      <section class="lmsv-surface-card">
+                        <p class="lmsv-kicker">Course Setup</p>
+                        <h1
+                          style="margin:0; color:var(--lmsv-title); font-size:clamp(28px,3.5vw,42px); letter-spacing:-0.04em; line-height:1.05;">
+                          Set up your first course</h1>
+                        <p
+                          style="margin:0; color:var(--lmsv-text-muted); font-size:15px; line-height:1.6; max-width:62ch;">
+                          This wizard creates a starter draft, then sends you to Course Studio for full editing and
+                          approval submission.
+                        </p>
+                        <div class="lmsv-chip-row">
+                          <span class="lmsv-filter-chip is-active">Role: <%= String(role || 'learner'
+                              ).replace(/_/g, ' ' ) %></span>
+                          <span class="lmsv-filter-chip">Courses Created: <%= courseCount %></span>
+                          <% if (latestCourse) { %>
+                            <span class="lmsv-filter-chip">Latest: <%= latestCourse.title %></span>
+                            <% } %>
+                        </div>
+                      </section>
+
+                      <section class="lmsv-onboard-layout">
+                        <article class="lmsv-surface-card lmsv-onboard-card">
+                          <div class="lmsv-wizard-progress">
+                            <span class="lmsv-wizard-dot active" data-dot="1">1</span>
+                            <span class="lmsv-wizard-line"></span>
+                            <span class="lmsv-wizard-dot" data-dot="2">2</span>
+                            <span class="lmsv-wizard-line"></span>
+                            <span class="lmsv-wizard-dot" data-dot="3">3</span>
+                          </div>
+
+                          <form id="creatorWizardForm" method="post" action="/teach/get-started/create-first-course"
+                            class="lmsv-wizard-form">
+                            <section class="lmsv-wizard-step active" data-step="1">
+                              <h2>Step 1: Course Basics</h2>
+                              <p>Define what you are teaching and who this course is for.</p>
+                              <div class="lmsv-form-grid">
+                                <div>
+                                  <label>Course Title</label>
+                                  <input class="lmsv-input" name="title" required
+                                    placeholder="Project Management Essentials">
+                                </div>
+                                <div>
+                                  <label>Category</label>
+                                  <input class="lmsv-input" name="category" placeholder="Leadership">
+                                </div>
+                                <div>
+                                  <label>Level</label>
+                                  <select class="lmsv-input" name="level">
+                                    <option value="beginner">Beginner</option>
+                                    <option value="intermediate">Intermediate</option>
+                                    <option value="advanced">Advanced</option>
+                                    <option value="mixed" selected>Mixed</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div>
+                                <label>Summary</label>
+                                <textarea class="lmsv-input" name="summary" rows="3"
+                                  placeholder="A short promise of what learners will achieve."></textarea>
+                              </div>
+                            </section>
+
+                            <section class="lmsv-wizard-step" data-step="2">
+                              <h2>Step 2: Content Direction</h2>
+                              <p>Share context so we can generate a starter structure for chapters and lessons.</p>
+                              <div>
+                                <label>Course Description</label>
+                                <textarea class="lmsv-input" name="description" rows="6"
+                                  placeholder="Describe goals, prerequisites, and real outcomes from this course."></textarea>
+                              </div>
+                              <div class="lmsv-hint-grid">
+                                <article class="lmsv-hint-card">
+                                  <h3>What happens next?</h3>
+                                  <p>We auto-create a draft with starter chapters, then you refine lessons in Course
+                                    Studio.</p>
+                                </article>
+                                <article class="lmsv-hint-card">
+                                  <h3>Can I change everything?</h3>
+                                  <p>Yes. You can edit title, chapters, quizzes, banner, videos, and visibility at any
+                                    time.</p>
+                                </article>
+                              </div>
+                            </section>
+
+                            <section class="lmsv-wizard-step" data-step="3">
+                              <h2>Step 3: Pricing Setup</h2>
+                              <p>Choose whether this starter course is free or paid.</p>
+                              <div class="lmsv-form-grid">
+                                <div>
+                                  <label>Payment Mode</label>
+                                  <select class="lmsv-input" name="paymentMode" id="wizardPaymentMode">
+                                    <option value="free" selected>Free</option>
+                                    <option value="paid">Paid</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label>Price (major units)</label>
+                                  <input class="lmsv-input" type="number" step="0.01" inputmode="decimal" name="amount" min="0" value="0"
+                                    id="wizardAmount">
+                                </div>
+                                <div>
+                                  <label>Currency</label>
+                                  <select class="lmsv-input" name="currency">
+                                    <% currencyOptions.forEach((currencyOption) => { %>
+                                      <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                                      <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                                      <option value="<%= optionCode %>" <%= defaultCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                                    <% }) %>
+                                  </select>
+                                </div>
+                              </div>
+                              <div class="lmsv-hint-card">
+                                <h3>Submit to create your starter draft</h3>
+                                <p>After submission, use Course Studio to upload banner images, add videos, and submit
+                                  for approval.</p>
+                              </div>
+                            </section>
+
+                            <div class="lmsv-wizard-actions">
+                              <button type="button" class="btn btn-secondary" id="wizardPrev" disabled>Back</button>
+                              <button type="button" class="btn btn-primary" id="wizardNext">Next</button>
+                              <button type="submit" class="btn btn-primary" id="wizardSubmit"
+                                style="display:none;">Create Starter Course</button>
+                            </div>
+                          </form>
+                        </article>
+
+                        <aside class="lmsv-surface-card lmsv-onboard-card lmsv-onboard-side">
+                          <h2 style="margin:0; color:var(--lmsv-text); font-size:20px; letter-spacing:-0.02em;">After
+                            the Wizard</h2>
+                          <ol class="lmsv-onboard-checklist">
+                            <li>Upload a banner image for the course card.</li>
+                            <li>Add chapter lessons and video links.</li>
+                            <li>Attach quiz questions and resources.</li>
+                            <li>Submit for admin approval when ready.</li>
+                          </ol>
+                          <div class="lmsv-actions">
+                            <a href="/simple-lms/studio/courses" class="btn btn-secondary btn-sm">Open Course
+                              Studio</a>
+                            <a href="/simple-lms?view=program-studio" class="btn btn-secondary btn-sm">Open Program
+                              Studio</a>
+                          </div>
+                          <% if (latestCourse) { %>
+                            <div class="lmsv-onboard-latest">
+                              <p class="lmsv-kicker">Latest Course</p>
+                              <p style="margin:0;"><strong style="color:var(--lmsv-text);">
+                                  <%= latestCourse.title %>
+                                </strong></p>
+                              <p style="margin:0; color:var(--lmsv-text-muted); font-size:12px;">Status: <%=
+                                  latestCourse.status %>
+                              </p>
+                              <a class="btn btn-primary btn-sm"
+                                href="/simple-lms/studio/courses?editCourse=<%= latestCourse._id %>">Continue
+                                Editing</a>
+                            </div>
+                            <% } %>
+                        </aside>
+                      </section>
+    </main>
+
+    <%- include('./partials/public-footer') %>
+
+      <script>
+        (() => {
+          const steps = Array.from(document.querySelectorAll('.lmsv-wizard-step'))
+          const dots = Array.from(document.querySelectorAll('.lmsv-wizard-dot'))
+          const nextButton = document.getElementById('wizardNext')
+          const prevButton = document.getElementById('wizardPrev')
+          const submitButton = document.getElementById('wizardSubmit')
+          const paymentMode = document.getElementById('wizardPaymentMode')
+          const amountInput = document.getElementById('wizardAmount')
+          let currentStep = 1
+
+          const updateWizard = () => {
+            steps.forEach((step, index) => {
+              const stepNumber = index + 1
+              step.classList.toggle('active', stepNumber === currentStep)
+            })
+            dots.forEach((dot, index) => {
+              const stepNumber = index + 1
+              dot.classList.toggle('active', stepNumber <= currentStep)
+            })
+
+            prevButton.disabled = currentStep === 1
+            nextButton.style.display = currentStep === steps.length ? 'none' : 'inline-flex'
+            submitButton.style.display = currentStep === steps.length ? 'inline-flex' : 'none'
+          }
+
+          const toggleAmountState = () => {
+            const isPaid = paymentMode && paymentMode.value === 'paid'
+            if (!amountInput) return
+            amountInput.disabled = !isPaid
+            if (!isPaid) amountInput.value = '0'
+          }
+
+          if (nextButton) {
+            nextButton.addEventListener('click', () => {
+              currentStep = Math.min(steps.length, currentStep + 1)
+              updateWizard()
+            })
+          }
+          if (prevButton) {
+            prevButton.addEventListener('click', () => {
+              currentStep = Math.max(1, currentStep - 1)
+              updateWizard()
+            })
+          }
+          if (paymentMode) {
+            paymentMode.addEventListener('change', toggleAmountState)
+          }
+
+          updateWizard()
+          toggleAmountState()
+        })()
+      </script>
+</body>
+
+</html>
+
+

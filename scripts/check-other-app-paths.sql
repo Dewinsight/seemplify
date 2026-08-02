@@ -1,0 +1,1 @@
+SELECT name, "buildPath", "dockerContextPath", dockerfile, "sourceType" FROM application WHERE name IN ('leave-backend-nf5uyf', 'approver-app', 'identity-provider-skj7oj') OR "applicationId" IN (SELECT "applicationId" FROM application WHERE name LIKE '%leave%' OR name LIKE '%approver%' OR name LIKE '%identity%') LIMIT 10;

@@ -13,7 +13,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward the application to the backend
-    const backendResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/api/jobs/public/apply`, {
+    const backendBaseUrl =
+      process.env.BACKEND_URL ||
+      (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
+    const backendResponse = await fetch(`${backendBaseUrl}/api/jobs/public/apply`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

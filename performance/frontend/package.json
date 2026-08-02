@@ -14,7 +14,7 @@
     "@mui/icons-material": "^7.3.6",
     "@mui/lab": "^7.0.1-beta.20",
     "@mui/material": "^7.3.6",
-    "axios": "^1.13.2",
+    "axios": "^1.14.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
@@ -25,6 +25,9 @@
     "recharts": "^3.6.0",
     "swr": "^2.3.8",
     "tailwind-merge": "^2.6.0"
+  },
+  "overrides": {
+    "axios": "^1.14.0"
   },
   "devDependencies": {
     "@types/lodash": "^4.17.21",

@@ -1,17 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { CheckCircle, XCircle, Clock, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
+import api, { isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 
 interface ApprovalRequest {
     _id: string;
     userId: string;
     userName: string;
-    type: 'salary_revision' | 'bonus' | 'overtime' | 'allowance';
-    amount: number;
-    currency: string;
+    type: string;
+    amount?: number;
+    currency?: string;
+    overtimeHours?: number;
+    overtimeMultiplier?: number;
     reason: string;
-    status: 'pending' | 'approved' | 'rejected';
+    status: string;
     createdAt: string;
     approvals: Array<{
         approvedBy: string;
@@ -27,6 +32,10 @@ const getTypeIcon = (type: string) => {
         case 'salary_revision': return TrendingUp;
         case 'bonus': return DollarSign;
         case 'overtime': return Clock;
+        case 'reimbursement': return DollarSign;
+        case 'commission': return DollarSign;
+        case 'incentive': return DollarSign;
+        case 'allowance': return DollarSign;
         default: return DollarSign;
     }
 };
@@ -37,15 +46,24 @@ const getTypeLabel = (type: string) => {
         case 'bonus': return 'Bonus';
         case 'overtime': return 'Overtime';
         case 'allowance': return 'Allowance';
+        case 'reimbursement': return 'Reimbursement';
+        case 'commission': return 'Commission';
+        case 'incentive': return 'Incentive';
         default: return type;
     }
 };
 
+const isPendingStatus = (status: string) => ['pending', 'approved_l1', 'approved_l2'].includes(status);
+const isApprovedStatus = (status: string) => ['approved', 'processed'].includes(status);
+
 const getStatusBadge = (status: string) => {
     switch (status) {
         case 'pending':
+        case 'approved_l1':
+        case 'approved_l2':
             return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-medium"><Clock className="h-3 w-3" /> Pending</span>;
         case 'approved':
+        case 'processed':
             return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-medium"><CheckCircle className="h-3 w-3" /> Approved</span>;
         case 'rejected':
             return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-medium"><XCircle className="h-3 w-3" /> Rejected</span>;
@@ -55,6 +73,7 @@ const getStatusBadge = (status: string) => {
 };
 
 export default function ApprovalsPage() {
+    const router = useRouter();
     const [requests, setRequests] = useState<ApprovalRequest[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -62,16 +81,18 @@ export default function ApprovalsPage() {
     const [processingId, setProcessingId] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!isAuthenticated()) {
+            router.push('/login');
+            return;
+        }
         fetchApprovals();
-    }, []);
+    }, [router]);
 
     const fetchApprovals = async () => {
         try {
             setLoading(true);
-            const res = await fetch('/api/compensation/approvals', { credentials: 'include' });
-            if (!res.ok) throw new Error('Failed to fetch approvals');
-            const data = await res.json();
-            // Backend returns array directly, not { requests: [] }
+            const res = await api.get('/compensation/approvals');
+            const data = res.data;
             setRequests(Array.isArray(data) ? data : data.requests || []);
         } catch (err: any) {
             setError(err.message);
@@ -83,13 +104,10 @@ export default function ApprovalsPage() {
     const handleApprove = async (requestId: string) => {
         setProcessingId(requestId);
         try {
-            const res = await fetch(`/api/compensation/${requestId}/action`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ action: 'approve', comment: 'Approved by HR Admin' })
+            await api.post(`/compensation/${requestId}/action`, {
+                action: 'approve',
+                comment: 'Approved by HR Admin'
             });
-            if (!res.ok) throw new Error('Failed to approve');
             await fetchApprovals();
         } catch (err: any) {
             alert(err.message);
@@ -104,13 +122,10 @@ export default function ApprovalsPage() {
 
         setProcessingId(requestId);
         try {
-            const res = await fetch(`/api/compensation/${requestId}/action`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ action: 'reject', comment: notes })
+            await api.post(`/compensation/${requestId}/action`, {
+                action: 'reject',
+                comment: notes
             });
-            if (!res.ok) throw new Error('Failed to reject');
             await fetchApprovals();
         } catch (err: any) {
             alert(err.message);
@@ -119,11 +134,15 @@ export default function ApprovalsPage() {
         }
     };
 
-    const filteredRequests = requests.filter(r =>
-        filter === 'all' ? true : r.status === filter
-    );
+    const filteredRequests = requests.filter((r) => {
+        if (filter === 'all') return true;
+        if (filter === 'pending') return isPendingStatus(r.status);
+        if (filter === 'approved') return isApprovedStatus(r.status);
+        if (filter === 'rejected') return r.status === 'rejected';
+        return true;
+    });
 
-    const pendingCount = requests.filter(r => r.status === 'pending').length;
+    const pendingCount = requests.filter(r => isPendingStatus(r.status)).length;
 
     if (loading) {
         return (
@@ -216,7 +235,9 @@ export default function ApprovalsPage() {
                                     <div className="flex items-center gap-4">
                                         <div className="text-right">
                                             <div className="text-2xl font-bold text-white">
-                                                {request.currency} {request.amount?.toLocaleString()}
+                                                {request.type === 'overtime' && request.overtimeHours
+                                                    ? `${request.overtimeHours}h @ ${request.overtimeMultiplier || 1.5}x`
+                                                    : formatPayrollMoney(request.amount || 0, request.currency || 'USD')}
                                             </div>
                                             <div className="text-xs text-zinc-500">Requested Amount</div>
                                         </div>

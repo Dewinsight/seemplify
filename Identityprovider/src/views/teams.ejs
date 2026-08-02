@@ -1,216 +1,158 @@
 <!DOCTYPE html>
 <html>
-
 <head>
   <meta charset="UTF-8">
   <title>Teams - <%= organization.name %> - AIIN Identity</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
+    .split-layout {
+      display: grid;
+      gap: 18px;
+    }
+    .inline-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .mini-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
   </style>
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
 </head>
-
 <body>
-  <!-- Top Navigation -->
-  <nav class="top-nav">
-    <a href="https://seemplifyai.com" class="top-nav-brand">
-      <svg viewBox="0 0 100 100" aria-hidden="true">
-        <defs>
-          <linearGradient id="seemplifyNavGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#3b82f6" />
-            <stop offset="50%" stop-color="#8b5cf6" />
-            <stop offset="100%" stop-color="#ec4899" />
-          </linearGradient>
-        </defs>
-        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
-          stroke="url(#seemplifyNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <circle cx="65" cy="25" r="6" class="logo-dot" />
-        <circle cx="50" cy="50" r="6" class="logo-dot" />
-        <circle cx="35" cy="75" r="6" class="logo-dot" />
-      </svg>
-      <span>Seemplify</span>
-    </a>
-    <div class="top-nav-links">
-      <a href="/" class="top-nav-link">Home</a>
-      <a href="/organizations" class="top-nav-link active">Organizations</a>
-      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
-      <a href="/profile" class="top-nav-link">Profile</a>
-      <a href="/logout" class="top-nav-link">Logout</a>
-    </div>
-    <div class="top-nav-user">
-      <div class="theme-dropdown">
-        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5" />
-            <path
-              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </svg>
-          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            style="display:none;">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-        </button>
-        <div class="theme-menu" id="theme-menu">
-          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <circle cx="12" cy="12" r="5" />
-              <path
-                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-            </svg>
-            Light
-          </button>
-          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-            Dark
-          </button>
-          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            System
-          </button>
-        </div>
-      </div>
-      <div class="top-nav-user-info">
-        <div class="top-nav-user-name">
-          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
-        </div>
-        <div class="top-nav-user-email">
-          <%= user.email %>
-        </div>
-      </div>
-      <a href="/logout" class="top-nav-logout">Logout</a>
-    </div>
-  </nav>
+  <%- include('partials/nav', { activePage: 'organizations' }) %>
 
   <div class="container">
     <a href="/organizations" class="back-link">← Back to Organizations</a>
 
     <div class="header">
       <div>
-        <h1>Teams</h1>
-        <div class="header-subtitle">
-          <%= organization.name %>
-        </div>
+        <h1>Departments & Teams</h1>
+        <div class="header-subtitle"><%= organization.name %></div>
       </div>
       <div class="header-actions">
-        <% if (['owner', 'admin' ].includes(yourRole)) { %>
-          <button class="btn btn-primary" onclick="showCreateModal()">
-            + Create Team
-          </button>
-          <% } %>
+        <% if (canManageTeams) { %>
+          <button class="btn btn-secondary" onclick="showDepartmentModal()">+ Department</button>
+          <button class="btn btn-primary" onclick="showCreateModal()">+ Team</button>
+        <% } %>
       </div>
     </div>
 
-    <% if (typeof error !=='undefined' && error) { %>
-      <div class="alert alert-error">
-        <%= error %>
-      </div>
-      <% } %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
-        <% if (typeof success !=='undefined' && success) { %>
-          <div class="alert alert-success">
-            <%= success %>
+    <div class="split-layout">
+      <div class="card">
+        <div class="header" style="margin-bottom: 12px;">
+          <div>
+            <h2 style="margin: 0;">Departments</h2>
+            <div class="header-subtitle">Every team must belong to a department.</div>
           </div>
-          <% } %>
-
-            <% if (teams && teams.length> 0) { %>
-              <% teams.forEach(team=> { %>
-                <div class="card team-card">
-                  <div class="team-info">
-                    <% if (team.parentTeam) { %>
-                      <div class="hierarchy-path">
-                        📁 Parent: <%= team.parentTeam.name %>
-                      </div>
-                      <% } %>
-                        <div class="team-name">
-                          <%= team.name %>
-                            <% if (team.manager) { %>
-                              <span class="manager-badge">👤 <%= team.manager.name || team.manager.email %></span>
-                              <% } %>
-                        </div>
-                        <% if (team.description) { %>
-                          <div class="team-description">
-                            <%= team.description %>
-                          </div>
-                          <% } %>
-                            <div class="team-meta">
-                              <span>
-                                <%= team.memberCount || 0 %> member<%= team.memberCount !==1 ? 's' : '' %>
-                              </span>
-                              <% if (team.manager) { %>
-                                <span>Manager: <%= team.manager.name || team.manager.email %></span>
-                                <% } else { %>
-                                  <span style="color: var(--warning);">No manager assigned</span>
-                                  <% } %>
-                            </div>
-                            <% if (team.members && team.members.length> 0) { %>
-                              <div class="members-list">
-                                <div
-                                  style="font-size: 13px; color: var(--muted); margin-bottom: 8px; font-weight: 600;">
-                                  Members:</div>
-                                <% team.members.slice(0, 3).forEach(member=> { %>
-                                  <div style="display: inline-block; margin-right: 12px; margin-bottom: 8px;">
-                                    <span class="role-badge role-<%= member.role %>">
-                                      <%= member.role.replace('_', ' ' ) %>
-                                    </span>
-                                    <span style="font-size: 12px; color: var(--muted); margin-left: 6px;">
-                                      <%= member.name || member.email %>
-                                    </span>
-                                  </div>
-                                  <% }) %>
-                                    <% if (team.members.length> 3) { %>
-                                      <span style="font-size: 12px; color: var(--muted);">+<%= team.members.length - 3
-                                          %> more</span>
-                                      <% } %>
-                              </div>
-                              <% } %>
-                  </div>
-                  <div class="team-actions">
-                    <button class="btn btn-secondary btn-sm"
-                      onclick="manageMembers('<%= team.id %>', <%- JSON.stringify(team.name) %>)">
-                      👥 Members
-                    </button>
-                    <% if (['owner', 'admin' ].includes(yourRole)) { %>
-                      <button class="btn btn-secondary btn-sm"
-                        onclick="setManager('<%= team.id %>', <%- JSON.stringify(team.name) %>)">
-                        👤 Manager
-                      </button>
-                      <button class="btn btn-secondary btn-sm"
-                        onclick="editTeam('<%= team.id %>', <%- JSON.stringify(team.name) %>, <%- JSON.stringify(team.description || '') %>, '<%= team.parentTeam ? team.parentTeam.id : '' %>')">
-                        ✏️ Edit
-                      </button>
-                      <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', <%- JSON.stringify(team.name) %>)">
-                        🗑️ Delete
-                      </button>
-                      <% } %>
-                  </div>
+        </div>
+        <div class="inline-grid">
+          <% departments.forEach(department => { %>
+            <div class="card" style="margin: 0;">
+              <div style="font-weight: 700;"><%= department.name %></div>
+              <div class="mini-meta">
+                <span>Parent: <%= departments.find(d => d.id === department.parentDepartment)?.name || 'Root' %></span>
+                <span>Head: <%= department.headName || 'Not assigned' %></span>
+              </div>
+              <% if (canManageTeams) { %>
+                <div style="margin-top: 12px;">
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    onclick='editDepartment(<%- JSON.stringify(department) %>)'
+                  >
+                    Edit
+                  </button>
                 </div>
-                <% }) %>
-                  <% } else { %>
-                    <div class="card empty-state">
-                      <h3>No teams yet</h3>
-                      <p>Create teams to organize your organization structure.</p>
-                      <% if (['owner', 'admin' ].includes(yourRole)) { %>
-                        <button class="btn btn-primary" onclick="showCreateModal()">
-                          + Create Team
-                        </button>
-                        <% } %>
-                    </div>
-                    <% } %>
+              <% } %>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="header" style="margin-bottom: 12px;">
+          <div>
+            <h2 style="margin: 0;">Teams</h2>
+            <div class="header-subtitle">Teams remain optional for members, but teams are always nested inside departments.</div>
+          </div>
+        </div>
+
+        <% if (teams && teams.length > 0) { %>
+          <% teams.forEach(team => { %>
+            <div class="card team-card" style="margin-bottom: 16px;">
+              <div class="team-info">
+                <div class="team-name"><%= team.name %></div>
+                <% if (team.description) { %><div class="team-description"><%= team.description %></div><% } %>
+                <div class="mini-meta">
+                  <span>Department: <strong><%= team.department?.name || 'General' %></strong></span>
+                  <span>Parent Team: <%= team.parentTeam?.name || 'None' %></span>
+                  <span>Manager: <%= team.manager?.name || team.manager?.email || 'Not assigned' %></span>
+                  <span><%= team.memberCount || 0 %> member<%= team.memberCount !== 1 ? 's' : '' %></span>
+                </div>
+              </div>
+              <div class="team-actions">
+                <button class="btn btn-secondary btn-sm" onclick="manageMembers('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Members</button>
+                <% if (canManageTeams) { %>
+                  <button class="btn btn-secondary btn-sm" onclick="setManager('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Manager</button>
+                  <button class="btn btn-secondary btn-sm" onclick='editTeam(<%- JSON.stringify(team) %>)'>Edit</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Delete</button>
+                <% } %>
+              </div>
+            </div>
+          <% }) %>
+        <% } else { %>
+          <div class="card empty-state" style="margin: 0;">
+            <h3>No teams yet</h3>
+            <p>Create teams to organize your department structure.</p>
+          </div>
+        <% } %>
+      </div>
+    </div>
   </div>
 
-  <!-- Create Team Modal -->
+  <div class="modal" id="departmentModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="departmentModalTitle">Create Department</h2>
+        <button class="modal-close" onclick="hideDepartmentModal()">&times;</button>
+      </div>
+      <form id="departmentForm">
+        <input type="hidden" id="departmentId">
+        <div class="form-group">
+          <label for="departmentName">Department Name *</label>
+          <input type="text" id="departmentName" required maxlength="120">
+        </div>
+        <div class="form-group">
+          <label for="departmentDescription">Description</label>
+          <textarea id="departmentDescription" maxlength="500"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="parentDepartment">Parent Department</label>
+          <select id="parentDepartment"></select>
+        </div>
+        <div class="form-group">
+          <label for="departmentHead">Head of Department</label>
+          <select id="departmentHead"></select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideDepartmentModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Department</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal" id="createModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -220,24 +162,19 @@
       <form id="createForm">
         <div class="form-group">
           <label for="teamName">Team Name *</label>
-          <input type="text" id="teamName" name="name" required maxlength="100"
-            placeholder="e.g., Engineering, Sales, Marketing">
+          <input type="text" id="teamName" required maxlength="100">
         </div>
         <div class="form-group">
           <label for="teamDescription">Description</label>
-          <textarea id="teamDescription" name="description" maxlength="500"
-            placeholder="Brief description (optional)"></textarea>
+          <textarea id="teamDescription" maxlength="500"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="teamDepartment">Department *</label>
+          <select id="teamDepartment" required onchange="syncParentTeamOptions('teamDepartment', 'parentTeam', '')"></select>
         </div>
         <div class="form-group">
           <label for="parentTeam">Parent Team (optional)</label>
-          <select id="parentTeam" name="parentTeamId">
-            <option value="">No parent (root team)</option>
-            <% teams.forEach(team=> { %>
-              <option value="<%= team.id %>">
-                <%= team.name %>
-              </option>
-              <% }) %>
-          </select>
+          <select id="parentTeam"></select>
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="hideCreateModal()">Cancel</button>
@@ -247,7 +184,6 @@
     </div>
   </div>
 
-  <!-- Edit Team Modal -->
   <div class="modal" id="editModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -258,22 +194,19 @@
         <input type="hidden" id="editTeamId">
         <div class="form-group">
           <label for="editTeamName">Team Name *</label>
-          <input type="text" id="editTeamName" name="name" required maxlength="100">
+          <input type="text" id="editTeamName" required maxlength="100">
         </div>
         <div class="form-group">
           <label for="editTeamDescription">Description</label>
-          <textarea id="editTeamDescription" name="description" maxlength="500"></textarea>
+          <textarea id="editTeamDescription" maxlength="500"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="editTeamDepartment">Department *</label>
+          <select id="editTeamDepartment" required onchange="syncParentTeamOptions('editTeamDepartment', 'editParentTeam', document.getElementById('editTeamId').value)"></select>
         </div>
         <div class="form-group">
           <label for="editParentTeam">Parent Team (optional)</label>
-          <select id="editParentTeam" name="parentTeamId">
-            <option value="">No parent (root team)</option>
-            <% teams.forEach(team=> { %>
-              <option value="<%= team.id %>">
-                <%= team.name %>
-              </option>
-              <% }) %>
-          </select>
+          <select id="editParentTeam"></select>
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="hideEditModal()">Cancel</button>
@@ -283,57 +216,101 @@
     </div>
   </div>
 
-  <!-- Manage Members Modal -->
   <div class="modal" id="membersModal">
     <div class="modal-content">
       <div class="modal-header">
         <h2 id="membersModalTitle">Team Members</h2>
         <button class="modal-close" onclick="hideMembersModal()">&times;</button>
       </div>
-      <div id="membersModalContent">
-        <div style="text-align: center; padding: 20px;">
-          <div class="spinner"
-            style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;">
-          </div>
-          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
-        </div>
-      </div>
+      <div id="membersModalContent"></div>
     </div>
   </div>
 
-  <!-- Set Manager Modal -->
   <div class="modal" id="managerModal">
     <div class="modal-content">
       <div class="modal-header">
         <h2 id="managerModalTitle">Set Team Manager</h2>
         <button class="modal-close" onclick="hideManagerModal()">&times;</button>
       </div>
-      <div id="managerModalContent">
-        <div style="text-align: center; padding: 20px;">
-          <div class="spinner"
-            style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;">
-          </div>
-          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
-        </div>
-      </div>
+      <div id="managerModalContent"></div>
     </div>
   </div>
 
   <script>
     const orgId = '<%= organization._id %>';
-    const orgMembers = <%- JSON.stringify(orgMembers) %>;
-    const teams = <%- JSON.stringify(teams) %>;
+    const departments = <%- JSON.stringify(departments || []) %>;
+    const orgMembers = <%- JSON.stringify(orgMembers || []) %>;
+    const teams = <%- JSON.stringify(teams || []) %>;
+
+    function setOptions(selectId, options, placeholder, selectedValue = '') {
+      const select = document.getElementById(selectId);
+      select.innerHTML = placeholder ? `<option value="">${placeholder}</option>` : '';
+      options.forEach(option => {
+        const el = document.createElement('option');
+        el.value = option.value;
+        el.textContent = option.label;
+        if (selectedValue && selectedValue === option.value) el.selected = true;
+        select.appendChild(el);
+      });
+    }
+
+    function hydrateDepartmentSelectors() {
+      const departmentOptions = departments.map(department => ({ value: department.id, label: department.name }));
+      setOptions('teamDepartment', departmentOptions, '');
+      setOptions('editTeamDepartment', departmentOptions, '');
+      setOptions('parentDepartment', departments.map(department => ({ value: department.id, label: department.name })), 'Root / no parent');
+      setOptions('departmentHead', orgMembers.map(member => ({ value: member.id, label: `${member.name || member.email} (${member.departmentName || 'General'})` })), 'No head assigned');
+    }
+
+    function syncParentTeamOptions(departmentSelectId, teamSelectId, currentTeamId) {
+      const departmentId = document.getElementById(departmentSelectId).value;
+      const filteredTeams = teams.filter(team => team.department?.id === departmentId && team.id !== currentTeamId);
+      setOptions(teamSelectId, filteredTeams.map(team => ({ value: team.id, label: team.name })), 'No parent team');
+    }
+
+    function showDepartmentModal() {
+      document.getElementById('departmentModalTitle').textContent = 'Create Department';
+      document.getElementById('departmentForm').reset();
+      document.getElementById('departmentId').value = '';
+      hydrateDepartmentSelectors();
+      document.getElementById('departmentModal').classList.add('active');
+    }
+
+    function editDepartment(department) {
+      hydrateDepartmentSelectors();
+      document.getElementById('departmentModalTitle').textContent = 'Edit Department';
+      document.getElementById('departmentId').value = department.id;
+      document.getElementById('departmentName').value = department.name || '';
+      document.getElementById('departmentDescription').value = department.description || '';
+      document.getElementById('parentDepartment').value = department.parentDepartment || '';
+      document.getElementById('departmentHead').value = department.headAccount || '';
+      document.getElementById('departmentModal').classList.add('active');
+    }
+
+    function hideDepartmentModal() {
+      document.getElementById('departmentModal').classList.remove('active');
+    }
 
     function showCreateModal() {
+      document.getElementById('createForm').reset();
+      hydrateDepartmentSelectors();
+      if (departments[0]) document.getElementById('teamDepartment').value = departments[0].id;
+      syncParentTeamOptions('teamDepartment', 'parentTeam', '');
       document.getElementById('createModal').classList.add('active');
     }
 
     function hideCreateModal() {
       document.getElementById('createModal').classList.remove('active');
-      document.getElementById('createForm').reset();
     }
 
-    function showEditModal() {
+    function editTeam(team) {
+      hydrateDepartmentSelectors();
+      document.getElementById('editTeamId').value = team.id;
+      document.getElementById('editTeamName').value = team.name || '';
+      document.getElementById('editTeamDescription').value = team.description || '';
+      document.getElementById('editTeamDepartment').value = team.department?.id || '';
+      syncParentTeamOptions('editTeamDepartment', 'editParentTeam', team.id);
+      document.getElementById('editParentTeam').value = team.parentTeam?.id || '';
       document.getElementById('editModal').classList.add('active');
     }
 
@@ -341,86 +318,58 @@
       document.getElementById('editModal').classList.remove('active');
     }
 
-    function editTeam(teamId, name, description, parentTeamId) {
-      document.getElementById('editTeamId').value = teamId;
-      document.getElementById('editTeamName').value = name;
-      document.getElementById('editTeamDescription').value = description || '';
-      document.getElementById('editParentTeam').value = parentTeamId || '';
-      showEditModal();
-    }
-
     async function manageMembers(teamId, teamName) {
-      document.getElementById('membersModalTitle').textContent = `Manage Members - ${teamName}`;
+      document.getElementById('membersModalTitle').textContent = `Team Members - ${teamName}`;
+      document.getElementById('membersModal').classList.add('active');
+      const response = await fetch(`/api/teams/${teamId}`);
+      const team = await response.json();
+      const availableMembers = orgMembers.filter(member => !team.members.some(current => current.id === member.id) && member.departmentId === team.department?.id);
       document.getElementById('membersModalContent').innerHTML = `
-        <div style="text-align: center; padding: 20px;">
-          <div class="spinner" style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
+        <div class="mini-meta" style="margin-bottom: 16px;">
+          <span>Department: ${escapeHtml(team.department?.name || 'General')}</span>
+          <span>Only members in this department can join the team.</span>
+        </div>
+        ${team.members.map(member => `
+          <div class="card" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
+              <div>
+                <div style="font-weight: 600;">${escapeHtml(member.name || member.email)}</div>
+                <div style="color: var(--muted); font-size: 13px;">${escapeHtml(member.email)}</div>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select onchange="updateMemberRole('${teamId}', '${member.id}', this.value)">
+                  <option value="member" ${member.role === 'member' ? 'selected' : ''}>Member</option>
+                  <option value="line_manager" ${member.role === 'line_manager' ? 'selected' : ''}>Line Manager</option>
+                  <option value="team_lead" ${member.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
+                </select>
+                <button class="btn btn-danger btn-sm" onclick="removeMember('${teamId}', '${member.id}', '${escapeHtml(member.name || member.email)}')">Remove</button>
+              </div>
+            </div>
+          </div>
+        `).join('') || '<p style="color: var(--muted);">No members yet.</p>'}
+        <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line);">
+          <form onsubmit="event.preventDefault(); addMember('${teamId}');">
+            <div class="form-group">
+              <label for="newMemberId">Add Member</label>
+              <select id="newMemberId" required>
+                <option value="">Choose a member...</option>
+                ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)} (${escapeHtml(member.departmentName || 'General')})</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="newMemberRole">Role</label>
+              <select id="newMemberRole">
+                <option value="member">Member</option>
+                <option value="line_manager">Line Manager</option>
+                <option value="team_lead">Team Lead</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit">Add Member</button>
+            </div>
+          </form>
         </div>
       `;
-      document.getElementById('membersModal').classList.add('active');
-
-      try {
-        const response = await fetch(`/api/teams/${teamId}`);
-        const team = await response.json();
-
-        const currentMemberIds = team.members.map(m => m.id);
-        const availableMembers = orgMembers.filter(m => !currentMemberIds.includes(m.id));
-
-        document.getElementById('membersModalContent').innerHTML = `
-          <div class="members-list">
-            <h3 style="font-size: 16px; margin-bottom: 16px; color: var(--text);">Current Members (${team.members.length})</h3>
-            ${team.members.length > 0 ? team.members.map(m => `
-              <div class="member-item">
-                <div class="member-info">
-                  <div class="member-name">
-                    ${m.name || 'No name'}
-                    ${team.manager && team.manager.id === m.id ? '<span class="is-manager">MANAGER</span>' : ''}
-                  </div>
-                  <div class="member-email">${m.email}</div>
-                </div>
-                <div class="member-actions">
-                  <select onchange="updateMemberRole('${teamId}', '${m.id}', this.value)" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 13px; margin-right: 8px;">
-                    <option value="member" ${m.role === 'member' ? 'selected' : ''}>Member</option>
-                    <option value="line_manager" ${m.role === 'line_manager' ? 'selected' : ''}>Line Manager</option>
-                    <option value="team_lead" ${m.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
-                  </select>
-                  <button class="btn btn-danger btn-sm" onclick="removeMember('${teamId}', '${m.id}', '${escapeHtml(m.name || m.email)}')">Remove</button>
-                </div>
-              </div>
-            `).join('') : '<p style="color: var(--muted); padding: 12px 0;">No members yet</p>'}
-          </div>
-          <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line);">
-            <h3 style="font-size: 16px; margin-bottom: 16px; color: var(--text);">Add Member</h3>
-            <form id="addMemberForm" onsubmit="event.preventDefault(); addMember('${teamId}');">
-              <div class="form-group">
-                <label for="newMemberId">Select Member</label>
-                <select id="newMemberId" required style="margin-bottom: 12px;">
-                  <option value="">Choose a member...</option>
-                  ${availableMembers.map(m => `
-                    <option value="${m.id}">${escapeHtml(m.name || m.email)} (${m.email})</option>
-                  `).join('')}
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="newMemberRole">Role</label>
-                <select id="newMemberRole" required>
-                  <option value="member">Member</option>
-                  <option value="line_manager">Line Manager</option>
-                  <option value="team_lead">Team Lead</option>
-                </select>
-              </div>
-              <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Add Member</button>
-              </div>
-            </form>
-          </div>
-        `;
-      } catch (error) {
-        console.error('Failed to load team:', error);
-        document.getElementById('membersModalContent').innerHTML = `
-          <div class="alert alert-error">Failed to load team members</div>
-        `;
-      }
     }
 
     function hideMembersModal() {
@@ -428,132 +377,67 @@
     }
 
     async function addMember(teamId) {
-      const memberId = document.getElementById('newMemberId').value;
+      const accountId = document.getElementById('newMemberId').value;
       const role = document.getElementById('newMemberRole').value;
-
-      if (!memberId) {
-        alert('Please select a member');
-        return;
-      }
-
-      try {
-        const response = await fetch(`/api/teams/${teamId}/members`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accountId: memberId, role })
-        });
-
-        if (response.ok) {
-          const team = teams.find(t => t.id === teamId);
-          manageMembers(teamId, team ? team.name : 'Team');
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to add member');
-        }
-      } catch (error) {
-        console.error('Add member error:', error);
-        alert('Failed to add member');
+      const response = await fetch(`/api/teams/${teamId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId, role })
+      });
+      if (response.ok) {
+        const team = teams.find(item => item.id === teamId);
+        manageMembers(teamId, team?.name || 'Team');
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to add member');
       }
     }
 
     async function removeMember(teamId, memberId, memberName) {
       if (!confirm(`Remove ${memberName} from this team?`)) return;
-
-      try {
-        const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
-          method: 'DELETE'
-        });
-
-        if (response.ok) {
-          const team = teams.find(t => t.id === teamId);
-          manageMembers(teamId, team ? team.name : 'Team');
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to remove member');
-        }
-      } catch (error) {
-        console.error('Remove member error:', error);
-        alert('Failed to remove member');
+      const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, { method: 'DELETE' });
+      if (response.ok) {
+        const team = teams.find(item => item.id === teamId);
+        manageMembers(teamId, team?.name || 'Team');
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to remove member');
       }
     }
 
-    async function updateMemberRole(teamId, memberId, newRole) {
-      try {
-        const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: newRole })
-        });
-
-        if (response.ok) {
-          const team = teams.find(t => t.id === teamId);
-          manageMembers(teamId, team ? team.name : 'Team');
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to update role');
-        }
-      } catch (error) {
-        console.error('Update role error:', error);
-        alert('Failed to update role');
+    async function updateMemberRole(teamId, memberId, role) {
+      const response = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role })
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        alert(data.error || 'Failed to update role');
       }
     }
 
     async function setManager(teamId, teamName) {
-      document.getElementById('managerModalTitle').textContent = `Set Manager - ${teamName}`;
-      document.getElementById('managerModalContent').innerHTML = `
-        <div style="text-align: center; padding: 20px;">
-          <div class="spinner" style="border: 3px solid var(--line); border-top: 3px solid var(--brand); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-          <p style="margin-top: 12px; color: var(--muted);">Loading...</p>
-        </div>
-      `;
+      document.getElementById('managerModalTitle').textContent = `Set Team Manager - ${teamName}`;
       document.getElementById('managerModal').classList.add('active');
-
-      try {
-        const response = await fetch(`/api/teams/${teamId}`);
-        const team = await response.json();
-
-        // Only show members with line_manager role
-        const lineManagers = team.members.filter(m => m.role === 'line_manager');
-
-        document.getElementById('managerModalContent').innerHTML = `
-          <p style="color: var(--muted); margin-bottom: 16px; font-size: 14px;">
-            Only members with <strong>line_manager</strong> role can be set as team manager.
-            ${team.manager ? `Current manager: <strong>${team.manager.name || team.manager.email}</strong>` : 'No manager currently assigned.'}
-          </p>
-          ${lineManagers.length > 0 ? `
-            <form id="setManagerForm" onsubmit="event.preventDefault(); doSetManager('${teamId}');">
-              <div class="form-group">
-                <label for="managerAccountId">Select Manager</label>
-                <select id="managerAccountId">
-                  <option value="">Clear manager (no manager)</option>
-                  ${lineManagers.map(m => `
-                    <option value="${m.id}" ${team.manager && team.manager.id === m.id ? 'selected' : ''}>
-                      ${escapeHtml(m.name || m.email)} (${m.email})
-                    </option>
-                  `).join('')}
-                </select>
-              </div>
-              <div class="form-actions">
-                <button type="button" class="btn btn-secondary" onclick="hideManagerModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Set Manager</button>
-              </div>
-            </form>
-          ` : `
-            <div class="alert alert-error">
-              No members with line_manager role found. Assign line_manager role to a team member first.
-            </div>
-            <div class="form-actions">
-              <button type="button" class="btn btn-secondary" onclick="hideManagerModal()">Close</button>
-              <button type="button" class="btn btn-primary" onclick="hideManagerModal(); manageMembers('${teamId}', '${teamName}');">Manage Members</button>
-            </div>
-          `}
-        `;
-      } catch (error) {
-        console.error('Failed to load team:', error);
-        document.getElementById('managerModalContent').innerHTML = `
-          <div class="alert alert-error">Failed to load team</div>
-        `;
-      }
+      const response = await fetch(`/api/teams/${teamId}`);
+      const team = await response.json();
+      const lineManagers = team.members.filter(member => member.role === 'line_manager');
+      document.getElementById('managerModalContent').innerHTML = `
+        <form onsubmit="event.preventDefault(); doSetManager('${teamId}');">
+          <div class="form-group">
+            <label for="managerAccountId">Select Manager</label>
+            <select id="managerAccountId">
+              <option value="">Clear manager</option>
+              ${lineManagers.map(member => `<option value="${member.id}" ${team.manager?.id === member.id ? 'selected' : ''}>${escapeHtml(member.name || member.email)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="hideManagerModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Manager</button>
+          </div>
+        </form>
+      `;
     }
 
     function hideManagerModal() {
@@ -561,92 +445,95 @@
     }
 
     async function doSetManager(teamId) {
-      const accountId = document.getElementById('managerAccountId').value;
-
-      try {
-        const response = await fetch(`/api/teams/${teamId}/manager`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accountId: accountId || null })
-        });
-
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to set manager');
-        }
-      } catch (error) {
-        console.error('Set manager error:', error);
-        alert('Failed to set manager');
+      const accountId = document.getElementById('managerAccountId').value || null;
+      const response = await fetch(`/api/teams/${teamId}/manager`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId })
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to set manager');
       }
     }
 
-    document.getElementById('createForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('teamName').value;
-      const description = document.getElementById('teamDescription').value;
-      const parentTeamId = document.getElementById('parentTeam').value || null;
-
-      try {
-        const response = await fetch(`/api/organizations/${orgId}/teams`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, description, parentTeamId })
-        });
-
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to create team');
-        }
-      } catch (error) {
-        alert('Failed to create team');
+    document.getElementById('departmentForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const departmentId = document.getElementById('departmentId').value;
+      const payload = {
+        name: document.getElementById('departmentName').value,
+        description: document.getElementById('departmentDescription').value,
+        parentDepartment: document.getElementById('parentDepartment').value || null,
+        headAccount: document.getElementById('departmentHead').value || null
+      };
+      const url = departmentId
+        ? `/api/organizations/${orgId}/departments/${departmentId}`
+        : `/api/organizations/${orgId}/departments`;
+      const method = departmentId ? 'PUT' : 'POST';
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to save department');
       }
     });
 
-    document.getElementById('editForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    document.getElementById('createForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const response = await fetch(`/api/organizations/${orgId}/teams`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('teamName').value,
+          description: document.getElementById('teamDescription').value,
+          departmentId: document.getElementById('teamDepartment').value,
+          parentTeamId: document.getElementById('parentTeam').value || null
+        })
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create team');
+      }
+    });
+
+    document.getElementById('editForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
       const teamId = document.getElementById('editTeamId').value;
-      const name = document.getElementById('editTeamName').value;
-      const description = document.getElementById('editTeamDescription').value;
-      const parentTeamId = document.getElementById('editParentTeam').value || null;
-
-      try {
-        const response = await fetch(`/api/teams/${teamId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, description, parentTeamId })
-        });
-
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to update team');
-        }
-      } catch (error) {
-        alert('Failed to update team');
+      const response = await fetch(`/api/teams/${teamId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('editTeamName').value,
+          description: document.getElementById('editTeamDescription').value,
+          departmentId: document.getElementById('editTeamDepartment').value,
+          parentTeamId: document.getElementById('editParentTeam').value || null
+        })
+      });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to update team');
       }
     });
 
     async function deleteTeam(teamId, name) {
       if (!confirm(`Delete team "${name}"? This cannot be undone.`)) return;
-
-      try {
-        const response = await fetch(`/api/teams/${teamId}`, {
-          method: 'DELETE'
-        });
-
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to delete team');
-        }
-      } catch (error) {
-        alert('Failed to delete team');
+      const response = await fetch(`/api/teams/${teamId}`, { method: 'DELETE' });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to delete team');
       }
     }
 
@@ -656,18 +543,20 @@
       return div.innerHTML;
     }
 
-    // Close modals on outside click
     document.querySelectorAll('.modal').forEach(modal => {
-      modal.addEventListener('click', (e) => {
-        if (e.target.classList.contains('modal')) {
+      modal.addEventListener('click', (event) => {
+        if (event.target.classList.contains('modal')) {
           modal.classList.remove('active');
         }
       });
     });
-  </script>
 
-  <!-- Invitation Gatekeeper - Blocks page until invitation decision is made -->
+    hydrateDepartmentSelectors();
+    if (departments[0]) {
+      document.getElementById('teamDepartment').value = departments[0].id;
+      syncParentTeamOptions('teamDepartment', 'parentTeam', '');
+    }
+  </script>
   <script src="/js/invitation-gatekeeper.js"></script>
 </body>
-
 </html>

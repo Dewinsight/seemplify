@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -8,21 +8,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/components/ui/use-toast'
 import { 
+  AlertTriangle,
+  ListChecks,
   Mail, 
+  MessageSquare,
+  Settings,
   Users, 
   Send, 
-  X,
-  CheckCircle2,
-  AlertTriangle,
-  MessageSquare,
-  Target,
-  Zap,
-  Clock
 } from 'lucide-react'
 import candidateEmailService, { CandidateEmailData } from '@/services/candidateEmailService'
+import { openCandidateEmailTemplate } from '@/lib/candidateEmailTemplateNavigation'
 
 interface ShortlistCandidate {
   _id: string
@@ -36,13 +33,17 @@ interface ShortlistEmailControlsProps {
   candidates: ShortlistCandidate[]
   jobId: string
   jobTitle?: string
+  preselectedCandidateIds?: string[]
   onEmailSent?: () => void
 }
+
+type DialogMode = 'selected' | 'all' | 'manual'
 
 export function ShortlistEmailControls({ 
   candidates, 
   jobId, 
   jobTitle = 'Job',
+  preselectedCandidateIds = [],
   onEmailSent 
 }: ShortlistEmailControlsProps) {
   const { toast } = useToast()
@@ -50,9 +51,62 @@ export function ShortlistEmailControls({
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([])
   const [reason, setReason] = useState('')
   const [sending, setSending] = useState(false)
+  const [dialogMode, setDialogMode] = useState<DialogMode>('manual')
 
-  // Filter out rejected candidates
-  const availableCandidates = candidates.filter(c => c.status !== 'rejected')
+  const availableCandidates = useMemo(
+    () => candidates.filter((candidate) => candidate.status !== 'rejected'),
+    [candidates]
+  )
+
+  const candidateMap = useMemo(
+    () => new Map(availableCandidates.map((candidate) => [candidate._id, candidate])),
+    [availableCandidates]
+  )
+
+  const eligibleCandidateIds = useMemo(
+    () => availableCandidates.map((candidate) => candidate._id),
+    [availableCandidates]
+  )
+
+  const shortlistSelectedEligibleIds = useMemo(
+    () => preselectedCandidateIds.filter((candidateId) => candidateMap.has(candidateId)),
+    [candidateMap, preselectedCandidateIds]
+  )
+
+  useEffect(() => {
+    setSelectedCandidates((prev) => prev.filter((candidateId) => candidateMap.has(candidateId)))
+  }, [candidateMap])
+
+  const applyDialogMode = (mode: DialogMode) => {
+    setDialogMode(mode)
+
+    if (mode === 'selected') {
+      setSelectedCandidates([...shortlistSelectedEligibleIds])
+      return
+    }
+
+    if (mode === 'all') {
+      setSelectedCandidates([...eligibleCandidateIds])
+      return
+    }
+  }
+
+  const openBulkDialog = (mode: DialogMode) => {
+    if (availableCandidates.length === 0) {
+      return
+    }
+
+    setReason('')
+
+    if (mode === 'manual') {
+      setDialogMode('manual')
+      setSelectedCandidates([...shortlistSelectedEligibleIds])
+    } else {
+      applyDialogMode(mode)
+    }
+
+    setBulkDialogOpen(true)
+  }
 
   const toggleCandidate = (candidateId: string) => {
     setSelectedCandidates(prev => 
@@ -81,10 +135,13 @@ export function ShortlistEmailControls({
     try {
       setSending(true)
       
-      const emailData: CandidateEmailData[] = selectedCandidates.map(candidateId => {
-        const candidate = availableCandidates.find(c => c._id === candidateId)!
+      const selectedCandidateRecords = selectedCandidates
+        .map((candidateId) => candidateMap.get(candidateId))
+        .filter((candidate): candidate is ShortlistCandidate => Boolean(candidate))
+
+      const emailData: CandidateEmailData[] = selectedCandidateRecords.map(candidate => {
         return {
-          candidateId,
+          candidateId: candidate._id,
           jobId,
           stage: 'Shortlist Review'
         }
@@ -114,6 +171,7 @@ export function ShortlistEmailControls({
       // Reset form
       setReason('')
       setSelectedCandidates([])
+      setDialogMode('manual')
 
     } catch (error: any) {
       toast({
@@ -130,59 +188,72 @@ export function ShortlistEmailControls({
     return null
   }
 
-  const openBulkDialog = () => {
-    setSelectedCandidates(availableCandidates.map(c => c._id)) // Pre-select all
-    setBulkDialogOpen(true)
-  }
-
   return (
     <>
-      <Card className="border-0 bg-gradient-to-r from-red-50 via-orange-50 to-yellow-50 dark:from-red-950 dark:via-orange-950 dark:to-yellow-950 shadow-lg">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-red-500 to-orange-500 shadow-lg">
-                <Mail className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                  Shortlist Email Management
-                  <Badge variant="secondary" className="bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
-                    {availableCandidates.length} candidates
+      <Card className="border border-orange-200/70 bg-gradient-to-r from-orange-50 via-red-50 to-rose-50 shadow-sm dark:border-orange-800/40 dark:from-orange-950/50 dark:via-red-950/40 dark:to-rose-950/40">
+        <CardContent className="p-4 sm:p-5">
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-red-500" />
+                    Shortlist Rejection Center
+                  </h3>
+                  <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200">
+                    {availableCandidates.length} eligible
                   </Badge>
-                </h3>
-                <p className="text-sm text-muted-foreground dark:text-muted-foreground/70 mt-1">
-                  Send personalized rejection emails to shortlisted candidates for <span className="font-medium">{jobTitle}</span>
+                  <Badge variant="outline" className="border-blue-200 text-blue-700 dark:border-blue-700 dark:text-blue-300">
+                    {shortlistSelectedEligibleIds.length} selected on shortlist
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  Reject selected candidates, reject every eligible candidate, or choose a custom set before sending emails.
                 </p>
               </div>
+              <Button type="button" variant="outline" onClick={() => openCandidateEmailTemplate('shortlistRejection')}>
+                <Settings className="mr-2 h-4 w-4" />
+                Customize Rejection Email
+              </Button>
             </div>
-            
-            <div className="flex items-center space-x-3">
-              <div className="hidden sm:flex items-center space-x-4 text-sm text-muted-foreground dark:text-muted-foreground/70">
-                <div className="flex items-center gap-1">
-                  <Target className="h-4 w-4 text-blue-500" />
-                  <span>Targeted</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Zap className="h-4 w-4 text-yellow-500" />
-                  <span>Personalized</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4 text-green-500" />
-                  <span>Instant</span>
-                </div>
-              </div>
-              
-              <Separator orientation="vertical" className="h-8 hidden sm:block" />
-              
-              <Button 
-                onClick={openBulkDialog}
-                className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
-                size="lg"
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => openBulkDialog('selected')}
+                disabled={shortlistSelectedEligibleIds.length === 0}
+                className="justify-start border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"
+              >
+                <ListChecks className="h-4 w-4 mr-2" />
+                Reject Selected ({shortlistSelectedEligibleIds.length})
+              </Button>
+              <Button
+                type="button"
+                onClick={() => openBulkDialog('all')}
+                className="justify-start bg-gradient-to-r from-red-600 to-orange-600 text-white hover:from-red-700 hover:to-orange-700"
+              >
+                <Mail className="h-4 w-4 text-white" />
+                <span className="ml-2">Reject All Eligible ({availableCandidates.length})</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => openBulkDialog('manual')}
+                className="justify-start border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-slate-900 dark:text-gray-200"
               >
                 <Users className="h-4 w-4 mr-2" />
-                Send Bulk Rejections
+                Choose Candidates
               </Button>
+            </div>
+
+            <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <p>
+                  Rejection emails are sent immediately and shortlisted candidates are updated to rejected after delivery.
+                </p>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -190,18 +261,77 @@ export function ShortlistEmailControls({
 
       {/* Bulk Email Dialog */}
       <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <MessageSquare className="h-5 w-5 text-red-500" />
-              Send Shortlist Rejection Emails
-            </DialogTitle>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <MessageSquare className="h-5 w-5 text-red-500" />
+                Shortlist Rejection Center
+              </DialogTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBulkDialogOpen(false)
+                  openCandidateEmailTemplate('shortlistRejection')
+                }}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Customize Email
+              </Button>
+            </div>
             <DialogDescription>
-              Send personalized rejection emails to selected shortlisted candidates for <strong>{jobTitle}</strong>
+              Select who to reject from <strong>{jobTitle}</strong> and send personalized shortlist rejection emails.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6">
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Quick Scope</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <Button
+                  type="button"
+                  variant={dialogMode === 'selected' ? 'default' : 'outline'}
+                  onClick={() => applyDialogMode('selected')}
+                  disabled={shortlistSelectedEligibleIds.length === 0}
+                  className={dialogMode === 'selected' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                >
+                  Selected ({shortlistSelectedEligibleIds.length})
+                </Button>
+                <Button
+                  type="button"
+                  variant={dialogMode === 'all' ? 'default' : 'outline'}
+                  onClick={() => applyDialogMode('all')}
+                  className={dialogMode === 'all' ? 'bg-red-600 hover:bg-red-700' : ''}
+                >
+                  All Eligible ({availableCandidates.length})
+                </Button>
+                <Button
+                  type="button"
+                  variant={dialogMode === 'manual' ? 'default' : 'outline'}
+                  onClick={() => setDialogMode('manual')}
+                  className={dialogMode === 'manual' ? 'bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600' : ''}
+                >
+                  Manual Selection
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+              <p className="font-medium">
+                {selectedCandidates.length} recipient{selectedCandidates.length !== 1 ? 's' : ''} selected
+              </p>
+              <p className="text-xs mt-1">
+                {dialogMode === 'all'
+                  ? 'Every eligible shortlisted candidate will receive a rejection email.'
+                  : dialogMode === 'selected'
+                    ? 'Only candidates currently selected in the shortlist view will receive emails.'
+                    : 'Pick exactly which shortlisted candidates should receive rejection emails.'
+                }
+              </p>
+            </div>
+
             {/* Candidate Selection */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -233,7 +363,7 @@ export function ShortlistEmailControls({
                           <span className="font-medium text-gray-900 dark:text-gray-100">
                             {candidate.firstName} {candidate.lastName}
                           </span>
-                          <span className="text-muted-foreground text-sm ml-2">({candidate.email})</span>
+                          <span className="text-gray-500 text-sm ml-2">({candidate.email})</span>
                         </div>
                         <Badge variant="outline" className="text-xs">
                           Shortlisted
@@ -259,7 +389,7 @@ export function ShortlistEmailControls({
                 rows={4}
                 className="resize-none"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-gray-500">
                 Leave empty to use the default rejection message template.
               </p>
             </div>

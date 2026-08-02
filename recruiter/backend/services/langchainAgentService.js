@@ -1,5 +1,7 @@
 require('dotenv').config(); // Load .env from current directory (backend/)
-const { ChatOpenAI, AzureChatOpenAI } = require('@langchain/openai');
+const { ChatOpenAI } = require('@langchain/openai');
+const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
+const { GROQ_120B } = require('../config/aiRuntimeCatalog');
 const { AgentExecutor, createToolCallingAgent } = require('langchain/agents');
 const { ChatPromptTemplate, MessagesPlaceholder } = require('@langchain/core/prompts');
 const allTools = require('./langchainTools');
@@ -9,53 +11,38 @@ const JobAgent = require('../agents/jobAgent'); // Import JobAgent
 const CandidateAgent = require('../agents/candidateAgent'); // Import CandidateAgent
 const chatSessionService = require('./chatSessionService'); // Import for title generation
 
+const ASSISTANT_ROUTING_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['category', 'intent', 'confidence', 'reasoning', 'context_signals'],
+  properties: {
+    category: { type: ['string', 'null'], enum: ['job', 'candidate', null] },
+    intent: { type: ['string', 'null'] },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+    reasoning: { type: 'string' },
+    context_signals: { type: 'array', items: { type: 'string' } },
+    extracted_data: { type: 'object' }
+  }
+};
+
 /**
- * Initializes and returns an instance of the ChatOpenAI model configured for Azure.
+ * Initializes a LangChain client whose transport is the central AI runtime.
  * 
- * @returns {AzureChatOpenAI} Instance of AzureChatOpenAI.
- * @throws {Error} If essential Azure OpenAI environment variables are missing.
+ * @returns {ChatOpenAI} Runtime-backed ChatOpenAI-compatible client.
  */
-function getOpenAIModel() {
-  const requiredEnvVars = [
-    'azure_openai_key',
-    'azure_openai_model',
-    'azure_openai_url'
-  ];
-
-  for (const envVar of requiredEnvVars) {
-    if (!process.env[envVar]) {
-      throw new Error(`Missing required Azure OpenAI environment variable: ${envVar}. Please check your .env file.`);
-    }
-  }
-
-  // Extract instance name and API version from the URL
-  const urlMatch = process.env.azure_openai_url.match(/https:\/\/([^.]+)\.cognitiveservices\.azure\.com.*api-version=([^&]+)/);
-  if (!urlMatch) {
-    throw new Error('Could not parse Azure OpenAI instance name and API version from azure_openai_url');
-  }
-  
-  const instanceName = urlMatch[1];
-  const apiVersion = urlMatch[2];
-
-  console.log('🔧 Configuring Azure OpenAI for LangChain:');
-  console.log('  - Instance:', instanceName);
-  console.log('  - Deployment:', process.env.azure_openai_model);
-  console.log('  - API Version:', apiVersion);
-  console.log('  - API Key present:', !!process.env.azure_openai_key);
-
-  const config = {
-    azureOpenAIApiKey: process.env.azure_openai_key,
-    azureOpenAIApiInstanceName: instanceName,
-    azureOpenAIApiDeploymentName: process.env.azure_openai_model,
-    azureOpenAIApiVersion: apiVersion,
+function getOpenAIModel(activity = 'assistant.chat') {
+  return new ChatOpenAI({
+    model: GROQ_120B,
+    apiKey: 'managed-by-seemplify-ai-runtime',
     streaming: true,
-    temperature: 0.4, // Increased for faster decision-making and more varied responses
-  };
+    streamUsage: true,
+    temperature: 0.4,
+    configuration: {
+      baseURL: 'https://seemplify-ai-runtime.invalid/v1',
+      fetch: aiRuntimeService.createLangChainFetch(activity)
+    }
+  });
 
-  console.log('🔧 AzureChatOpenAI config:', JSON.stringify(config, (key, value) => 
-    key.includes('Key') ? '[REDACTED]' : value, 2));
-
-  return new AzureChatOpenAI(config);
 }
 
 const model = getOpenAIModel();
@@ -874,7 +861,7 @@ async function streamMessageWithAgent(userInput, userId, chatSessionId, authToke
         if (chunk.output) {
           finalOutput = chunk.output;
           agentCompleted = true;
-          console.log('🎯 Agent output captured:', finalOutput);
+          console.log('Agent output captured.');
         }
         
         // Send data to callbacks with enhanced information
@@ -950,7 +937,7 @@ async function streamMessageWithAgent(userInput, userId, chatSessionId, authToke
           responseText = JSON.stringify(finalOutput);
         }
         
-        console.log(`📝 Saving - Input: "${userInput}", Output: "${responseText}"`);
+        console.log('Saving assistant interaction metadata.');
         
         // Save to memory using LangChain's expected format
         await memory.saveContext(
@@ -1026,7 +1013,7 @@ async function extractJobDataFromConversation(conversationContent, userInput) {
   try {
     console.log('🔍 Extracting job data from conversation...');
     console.log('📝 User input:', userInput);
-    console.log('📄 Conversation content preview:', conversationContent.substring(0, 200) + '...');
+    console.log('Conversation content prepared for structured extraction.');
     
     // First, try to extract job data from HTML comment
     const commentMatch = conversationContent.match(/<!-- JOBDATA:(.+?) -->/);
@@ -1044,8 +1031,8 @@ async function extractJobDataFromConversation(conversationContent, userInput) {
     }
     
     // Fallback to AI extraction if HTML comment not found
-    const AzureOpenAIService = require('./azureOpenAIService');
-    const model = new AzureOpenAIService();
+    const AIModelService = require('./aiModelService');
+    const model = new AIModelService();
     
     const extractionPrompt = `You are an expert AI assistant analyzing a complete job posting. Extract ALL available information from this job description and return a comprehensive JSON object.
 
@@ -1084,16 +1071,18 @@ IMPORTANT:
 
 Return only the JSON object:`;
 
-    const response = await model.client.chat.completions.create({
+    const response = (await aiRuntimeService.structuredComplete('assistant.job_extract', {
+      promptVersion: 'assistant-job-extract-v1',
       messages: [
         { role: 'system', content: 'You are a job data extraction specialist. Extract job information from conversations and return only valid JSON or null.' },
         { role: 'user', content: extractionPrompt }
       ],
       max_completion_tokens: 500,
       temperature: 0.5, // Increased for faster job data extraction decisions
-      model: model.modelName,
-      response_format: { type: "json_object" }
-    });
+      jsonSchema: { type: 'object', additionalProperties: true },
+      schemaName: 'assistant_job_extract',
+      schemaStrict: false
+    })).raw;
     
     try {
       const content = response.choices[0].message.content.trim();
@@ -1101,7 +1090,7 @@ Return only the JSON object:`;
         return null;
       }
       
-      // Parse the JSON response directly (since we used response_format: json_object)
+      // The runtime has already validated this as a JSON object.
       const jobData = JSON.parse(content);
       
       // Validate that this looks like job creation data
@@ -1290,7 +1279,7 @@ async function detectIntent(userInput) {
   console.log(`🧠 AI-POWERED Intent Router: "${userInput}"`);
   
   try {
-    const model = getOpenAIModel();
+    const model = getOpenAIModel('assistant.tool_selection');
     
     // Comprehensive intent routing prompt
     const routingPrompt = `You are an expert AI assistant for HR management system routing. Your job is to analyze user input and determine if they want to work with JOBS or CANDIDATES, and what specific operation they want to perform.
@@ -1382,25 +1371,20 @@ If no clear intent is detected, return: {"category": null, "intent": null, "conf
 
 Return only the JSON object:`;
 
-    const response = await model.invoke([
-      { role: 'system', content: 'You are an expert HR intent routing AI. Analyze user input and route to appropriate job or candidate operations. Return only valid JSON.' },
-      { role: 'user', content: routingPrompt }
-    ]);
+    const response = await aiRuntimeService.structuredComplete('assistant.tool_selection', {
+      promptVersion: 'assistant-routing-v2',
+      messages: [
+        { role: 'system', content: 'Route the user request to the correct HR operation using only supplied context.' },
+        { role: 'user', content: routingPrompt }
+      ],
+      jsonSchema: ASSISTANT_ROUTING_SCHEMA,
+      schemaName: 'assistant_routing',
+      schemaStrict: false,
+      temperature: 0.1,
+      max_tokens: 700
+    });
     
-    // Parse AI response
-    let routingResult;
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        routingResult = JSON.parse(jsonMatch[0]);
-      } else {
-        routingResult = JSON.parse(response.content);
-      }
-    } catch (parseError) {
-      console.warn('AI intent routing failed to parse JSON:', parseError.message);
-      // Fallback to simplified rule-based detection
-      return detectIntentFallback(userInput);
-    }
+    const routingResult = response.data;
     
     // Validate AI routing result
     if (!routingResult || (!routingResult.category && !routingResult.intent)) {
@@ -1630,7 +1614,7 @@ function detectIntentFallback(userInput) {
  */
 async function extractJobDataFromInput(input) {
   try {
-    const model = getOpenAIModel();
+    const model = getOpenAIModel('assistant.job_extract');
     
     // Detect if this looks like a full job description
     const isFullJD = input.length > 500 || 
@@ -1707,25 +1691,20 @@ Examples:
 Return only the JSON object, no other text:`;
     }
 
-    const response = await model.invoke([
-      { role: 'system', content: 'You are an expert job information extraction assistant. Extract comprehensive job details and return only valid JSON.' },
-      { role: 'user', content: extractionPrompt }
-    ]);
+    const response = await aiRuntimeService.structuredComplete('assistant.job_extract', {
+      promptVersion: 'assistant-job-input-v2',
+      messages: [
+        { role: 'system', content: 'Extract only job details supported by the user request.' },
+        { role: 'user', content: extractionPrompt }
+      ],
+      jsonSchema: { type: 'object', additionalProperties: true },
+      schemaName: 'assistant_job_input',
+      schemaStrict: false,
+      temperature: 0.2,
+      max_tokens: 1800
+    });
     
-    // Parse the AI response
-    let extractedData = {};
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        extractedData = JSON.parse(jsonMatch[0]);
-      } else {
-        extractedData = JSON.parse(response.content);
-      }
-    } catch (parseError) {
-      console.warn('AI extraction failed, using fallback parsing:', parseError.message);
-      // Fallback: simple keyword extraction
-      extractedData = fallbackJobExtraction(input);
-    }
+    const extractedData = response.data || {};
     
     console.log(`🤖 AI extracted job data (FullJD=${isFullJD}):`, {
       title: extractedData.title,
@@ -1916,7 +1895,7 @@ async function formatJobAgentResponse(jobResult, userInput = '') {
     console.log('📝 User wants CONTENT - using OpenAI for dynamic generation');
     
     try {
-      const model = getOpenAIModel();
+      const model = getOpenAIModel('job.description');
       
       // Extract role from user input
       const roleMatch = userInput.match(/for (?:a |an )?(.+?)(?:\s+role|\s+position|$)/i);
@@ -2170,7 +2149,7 @@ async function formatCandidateAgentResponse(candidateResult, userInput = '') {
     console.log('💬 User wants information/advice - using AI for dynamic response');
     
     try {
-      const model = getOpenAIModel();
+      const model = getOpenAIModel('assistant.chat');
       
       const advicePrompt = `The user asked: "${userInput}"
 

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workspace Setup - Seemplify Learning</title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    .setup-shell {
+      max-width: 1180px;
+      margin: 20px auto 32px;
+      padding: 0 18px;
+      display: grid;
+      gap: 14px;
+    }
+    .setup-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 12px;
+    }
+    .setup-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--card-bg);
+      box-shadow: var(--card-shadow);
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+    }
+    .setup-card h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 19px;
+    }
+    .setup-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .setup-card label {
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      margin-top: 3px;
+    }
+    .setup-card .input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      color: var(--text);
+      padding: 9px 11px;
+      font-size: 13px;
+    }
+    .setup-card .input:focus {
+      outline: none;
+      border-color: rgba(56, 189, 248, .65);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, .17);
+    }
+    .setup-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 6px;
+    }
+    .setup-list li {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--field-bg);
+      padding: 9px 10px;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .setup-inline {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <%- include('partials/nav', { activePage: 'setup', user }) %>
+
+  <main class="setup-shell">
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <section class="setup-card">
+      <h2>Workspace Overview</h2>
+      <p>Manage organizations, members, and team hierarchy for Seemplify Learning.</p>
+      <div class="setup-inline">
+        <span class="lms-chip">Organizations: <%= (organizations || []).length %></span>
+        <span class="lms-chip">Members: <%= (members || []).length %></span>
+        <span class="lms-chip">Teams: <%= (teams || []).length %></span>
+      </div>
+      <% if (currentOrganization) { %>
+        <p>Current Organization: <strong><%= currentOrganization.name %></strong></p>
+      <% } %>
+      <div class="setup-inline">
+        <a href="/simple-lms" class="btn btn-primary btn-sm">Open Simple LMS</a>
+      </div>
+    </section>
+
+    <section class="setup-grid">
+      <article class="setup-card">
+        <h2>Switch Organization</h2>
+        <form method="post" action="/setup/switch-organization" style="display:grid; gap:8px;">
+          <label>Organization</label>
+          <select class="input" name="organizationId" required>
+            <% (organizations || []).forEach((organization) => { %>
+              <option value="<%= organization.id %>" <%= organization.isCurrent ? 'selected' : '' %>>
+                <%= organization.name %> - <%= organization.role %>
+              </option>
+            <% }) %>
+          </select>
+          <button class="btn btn-secondary btn-sm" type="submit">Switch</button>
+        </form>
+      </article>
+
+      <article class="setup-card">
+        <h2>Create Organization</h2>
+        <form method="post" action="/setup/organization" style="display:grid; gap:8px;">
+          <label>Name</label>
+          <input class="input" name="name" required placeholder="New Organization">
+          <label>Description</label>
+          <textarea class="input" name="description" rows="2" placeholder="Optional"></textarea>
+          <button class="btn btn-secondary btn-sm" type="submit">Create</button>
+        </form>
+      </article>
+
+      <article class="setup-card">
+        <h2>Add Member</h2>
+        <form method="post" action="/setup/member" style="display:grid; gap:8px;">
+          <label>Name</label>
+          <input class="input" name="name" placeholder="Optional for existing account">
+          <label>Email</label>
+          <input class="input" type="email" name="email" required placeholder="member@company.com">
+          <label>Organization Role</label>
+          <select class="input" name="role" required>
+            <option value="staff">Staff</option>
+            <option value="recruiter">Recruiter</option>
+            <option value="interviewer">Interviewer</option>
+            <option value="hr_manager">HR Manager</option>
+            <option value="admin">Admin</option>
+            <option value="owner">Owner</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" type="submit">Add Member</button>
+        </form>
+      </article>
+
+      <article class="setup-card">
+        <h2>Create Team</h2>
+        <form method="post" action="/setup/team" style="display:grid; gap:8px;">
+          <label>Team Name</label>
+          <input class="input" name="name" required placeholder="Engineering Team A">
+          <label>Description</label>
+          <textarea class="input" name="description" rows="2" placeholder="Optional"></textarea>
+          <label>Parent Team</label>
+          <select class="input" name="parentTeamId">
+            <option value="">No parent team</option>
+            <% (teams || []).forEach((team) => { %>
+              <option value="<%= team._id %>"><%= team.name %></option>
+            <% }) %>
+          </select>
+          <label>Manager (line manager)</label>
+          <select class="input" name="managerAccountId">
+            <option value="">None</option>
+            <% (members || []).forEach((member) => { %>
+              <option value="<%= member.accountId %>"><%= member.name %> (<%= member.email %>)</option>
+            <% }) %>
+          </select>
+          <label class="setup-inline" style="text-transform:none; letter-spacing:0; font-weight:600;">
+            <input type="checkbox" name="addSelfAsManager">
+            Add me as manager if none selected
+          </label>
+          <button class="btn btn-secondary btn-sm" type="submit">Create Team</button>
+        </form>
+      </article>
+
+      <article class="setup-card">
+        <h2>Assign Team Member</h2>
+        <form method="post" action="/setup/team-member" style="display:grid; gap:8px;">
+          <label>Team</label>
+          <select class="input" name="teamId" required>
+            <option value="">Select team</option>
+            <% (teams || []).forEach((team) => { %>
+              <option value="<%= team._id %>"><%= team.name %></option>
+            <% }) %>
+          </select>
+          <label>Member</label>
+          <select class="input" name="accountId" required>
+            <option value="">Select member</option>
+            <% (members || []).forEach((member) => { %>
+              <option value="<%= member.accountId %>"><%= member.name %> (<%= member.email %>)</option>
+            <% }) %>
+          </select>
+          <label>Team Role</label>
+          <select class="input" name="role" required>
+            <option value="member">Member</option>
+            <option value="team_lead">Team Lead</option>
+            <option value="line_manager">Line Manager</option>
+          </select>
+          <label class="setup-inline" style="text-transform:none; letter-spacing:0; font-weight:600;">
+            <input type="checkbox" name="setAsManager">
+            Set as team manager (line manager role required)
+          </label>
+          <button class="btn btn-secondary btn-sm" type="submit">Assign</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="setup-grid">
+      <article class="setup-card">
+        <h2>Members</h2>
+        <% if (!members || members.length === 0) { %>
+          <p>No active members yet.</p>
+        <% } else { %>
+          <ul class="setup-list">
+            <% members.forEach((member) => { %>
+              <li><strong><%= member.name %></strong> - <%= member.email %> (<%= member.role %>)</li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </article>
+
+      <article class="setup-card">
+        <h2>Teams</h2>
+        <% if (!teams || teams.length === 0) { %>
+          <p>No teams yet.</p>
+        <% } else { %>
+          <ul class="setup-list">
+            <% teams.forEach((team) => { %>
+              <li>
+                <strong><%= team.name %></strong>
+                <% if (team.description) { %> - <%= team.description %><% } %>
+                <% if (team.parentTeam) { %> (child team)<% } %>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,7 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { BarChart3, Download, FileText, DollarSign, Users, Calendar, TrendingUp } from 'lucide-react';
+import api, { isAuthenticated } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 
 interface ReportSummary {
     totalPayroll: number;
@@ -13,75 +16,60 @@ interface ReportSummary {
 }
 
 export default function ReportsPage() {
+    const router = useRouter();
     const [summary, setSummary] = useState<ReportSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [reportType, setReportType] = useState<'summary' | 'department' | 'monthly'>('summary');
     const [year, setYear] = useState(new Date().getFullYear());
 
-    useEffect(() => {
-        fetchReportData();
-    }, [year]);
-
-    const fetchReportData = async () => {
+    const fetchReportData = useCallback(async () => {
         try {
             setLoading(true);
-            const res = await fetch(`/api/payroll/reports/summary?year=${year}`, { credentials: 'include' });
-            if (!res.ok) throw new Error('Failed to fetch report data');
-            const data = await res.json();
-            setSummary(data);
+            const res = await api.get('/payroll/reports/summary', { params: { year } });
+            setSummary(res.data);
+            setError(null);
         } catch (err: any) {
             setError(err.message);
-            // Mock data for demo
-            setSummary({
-                totalPayroll: 2450000,
-                totalEmployees: 45,
-                avgSalary: 54444,
-                currency: 'USD',
-                byDepartment: [
-                    { department: 'Engineering', total: 850000, count: 15 },
-                    { department: 'Sales', total: 650000, count: 12 },
-                    { department: 'Marketing', total: 450000, count: 8 },
-                    { department: 'Operations', total: 350000, count: 7 },
-                    { department: 'HR', total: 150000, count: 3 },
-                ],
-                byMonth: [
-                    { month: 'Jan', gross: 205000, net: 165000, deductions: 40000 },
-                    { month: 'Feb', gross: 205000, net: 165000, deductions: 40000 },
-                    { month: 'Mar', gross: 210000, net: 168000, deductions: 42000 },
-                    { month: 'Apr', gross: 210000, net: 168000, deductions: 42000 },
-                    { month: 'May', gross: 215000, net: 172000, deductions: 43000 },
-                    { month: 'Jun', gross: 215000, net: 172000, deductions: 43000 },
-                ]
-            });
+            setSummary(null);
         } finally {
             setLoading(false);
         }
-    };
+    }, [year]);
+
+    useEffect(() => {
+        if (!isAuthenticated()) {
+            router.push('/login');
+            return;
+        }
+        fetchReportData();
+    }, [router, fetchReportData]);
 
     const handleExport = async (format: 'csv' | 'pdf') => {
         try {
-            const res = await fetch(`/api/payroll/reports/export?format=${format}&year=${year}`, {
-                credentials: 'include'
+            if (format !== 'csv') {
+                alert('Only CSV export is supported right now.');
+                return;
+            }
+
+            const res = await api.get('/payroll/reports/export', {
+                params: { format, year },
+                responseType: 'blob'
             });
-            if (!res.ok) throw new Error('Export failed');
-            const blob = await res.blob();
+            const blob = res.data as Blob;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `payroll-report-${year}.${format}`;
+            a.download = `payroll-register-${year}.${format}`;
             a.click();
+            URL.revokeObjectURL(url);
         } catch (err: any) {
-            alert('Export feature coming soon');
+            alert(err.message || 'Export failed');
         }
     };
 
     const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: summary?.currency || 'USD',
-            minimumFractionDigits: 0,
-        }).format(amount);
+        return formatPayrollMoney(amount, summary?.currency || 'USD');
     };
 
     if (loading) {
@@ -117,7 +105,7 @@ export default function ReportsPage() {
                         className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm font-medium transition-colors"
                     >
                         <Download className="h-4 w-4" />
-                        Export CSV
+                        Accounting CSV
                     </button>
                 </div>
             </div>
@@ -257,8 +245,8 @@ export default function ReportsPage() {
                             >
                                 <FileText className="h-5 w-5 text-green-400" />
                                 <div className="text-left">
-                                    <div className="text-sm font-medium text-white">CSV Export</div>
-                                    <div className="text-xs text-zinc-500">Spreadsheet format</div>
+                                    <div className="text-sm font-medium text-white">Accounting CSV</div>
+                                    <div className="text-xs text-zinc-500">Payroll register with bank details</div>
                                 </div>
                             </button>
                             <button

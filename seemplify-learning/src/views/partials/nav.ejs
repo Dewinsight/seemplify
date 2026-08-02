@@ -1,0 +1,193 @@
+<%
+  const safeUser = typeof user !== 'undefined' ? user : null
+  const safeAccessProfile = typeof accessProfile !== 'undefined' ? accessProfile : null
+  const safeActivePage = typeof activePage === 'string' ? activePage : ''
+  const safeActiveLmsView = typeof activeLmsView === 'string' ? activeLmsView : ''
+  const safeUserRole = String(safeUser?.learningRole || safeUser?.role || '').trim().toLowerCase()
+  const canAccessAdmin = Boolean(
+    safeUser && (
+      safeAccessProfile?.platformRole
+      || safeUser.isSuperAdmin
+      || safeUser.isSystemAdmin
+      || ['super_admin', 'admin'].includes(safeUserRole)
+    )
+  )
+  const canAccessPartnerDashboard = Boolean(
+    safeUser && (
+      safeAccessProfile?.partnerAccess
+      || ['channel_partner_super', 'channel_partner_user', 'partner_super', 'partner_user'].includes(safeUserRole)
+    )
+  )
+  const canAccessAgentDashboard = Boolean(
+    safeUser && (
+      safeAccessProfile?.agentAccess
+      || safeUserRole === 'channel_sales_agent'
+    )
+  )
+  const canSwitchWorkspace = Boolean(safeUser && safeAccessProfile?.hasMultiplePrivilegedDashboards)
+  const currentBrandKey = typeof brandKey === 'string' && brandKey.trim() ? brandKey.trim() : 'seemplify'
+  const isAiinBrand = currentBrandKey === 'aiin'
+  const brandDisplayName = isAiinBrand
+    ? 'AIIN Learning'
+    : (typeof brandLearningName === 'string' && brandLearningName.trim()
+      ? brandLearningName.trim()
+      : 'Seemplify Learning')
+  const aiinLogoUrl = '/images/aiin_logo.png'
+  const teachNavLabel = 'Teach on AIIN Nigeria'
+  const formatRoleLabel = (value, fallback = 'Learner') => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return fallback
+    return normalized
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
+  const safeUserDisplayName = safeUser?.profile?.name || safeUser?.email || ''
+  const safeUserInitials = safeUserDisplayName
+    ? safeUserDisplayName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('')
+      .slice(0, 2)
+    : 'U'
+  const desktopRoleLabel = (() => {
+    if (!safeUser) return ''
+    if (safeActivePage === 'admin') {
+      return formatRoleLabel(safeAccessProfile?.platformRole || (safeUser.isSuperAdmin ? 'super_admin' : 'admin'), 'Admin')
+    }
+    if (safeActivePage === 'partner-dashboard') {
+      return formatRoleLabel(safeAccessProfile?.partnerAccess?.dashboardRole || safeUserRole, 'Partner')
+    }
+    if (safeActivePage === 'agent-dashboard') {
+      return 'Agent'
+    }
+    if (safeUserRole === 'creator') {
+      return 'Creator'
+    }
+    return 'Learner'
+  })()
+%>
+
+<input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
+<label for="mobile-nav-toggle" class="mobile-nav-overlay" aria-label="Close menu"></label>
+
+<aside class="mobile-drawer">
+  <label for="mobile-nav-toggle" class="mobile-drawer-close" aria-label="Close menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  </label>
+
+  <div class="mobile-drawer-links">
+    <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(safeActivePage) ? ' active' : '' %>">Explore Courses</a>
+    <a href="/teach" class="top-nav-link<%= safeActivePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
+    <% if (safeUser) { %>
+      <a href="/simple-lms" class="top-nav-link<%= safeActivePage === 'simple-lms' && safeActiveLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
+      <a href="/simple-lms?view=settings" class="top-nav-link<%= safeActiveLmsView === 'settings' ? ' active' : '' %>">Settings</a>
+      <% if (canAccessAdmin) { %>
+        <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
+      <% } %>
+      <% if (canAccessPartnerDashboard) { %>
+        <a href="/partner-dashboard" class="top-nav-link<%= safeActivePage === 'partner-dashboard' ? ' active' : '' %>">Partner Dashboard</a>
+      <% } %>
+      <% if (canAccessAgentDashboard) { %>
+        <a href="/agent-dashboard" class="top-nav-link<%= safeActivePage === 'agent-dashboard' ? ' active' : '' %>">Agent Dashboard</a>
+      <% } %>
+      <% if (canSwitchWorkspace) { %>
+        <a href="/choose-workspace" class="top-nav-link<%= safeActivePage === 'choose-workspace' ? ' active' : '' %>">Switch Workspace</a>
+      <% } %>
+    <% } %>
+  </div>
+
+  <div class="mobile-drawer-user">
+    <% if (safeUser) { %>
+      <div class="top-nav-user-info">
+        <div class="top-nav-user-name"><%= safeUser.profile?.name || safeUser.email %></div>
+        <div class="top-nav-user-email"><%= safeUser.email %></div>
+      </div>
+      <a href="/logout" class="top-nav-logout">Sign out</a>
+    <% } else { %>
+      <a href="/login" class="btn btn-secondary">Sign in</a>
+      <a href="/register" class="btn btn-primary">Create account</a>
+    <% } %>
+  </div>
+</aside>
+
+<nav class="top-nav">
+  <div class="top-nav-inner">
+    <a href="/" class="top-nav-brand" style="display: flex; align-items: center; text-decoration: none;">
+      <img src="https://cdn.magicpatterns.com/uploads/ww1vwmrPLZ6xmKi1VHDkh9/AIIN_LOGO.png" alt="AIIN Learning" style="height: 38px; width: auto; max-width: none; display: block;">
+      <span class="sr-only">AIIN Learning</span>
+    </a>
+
+    <div class="top-nav-center">
+      <div class="top-nav-links">
+      <a href="/courses" class="top-nav-link<%= ['home', 'courses'].includes(safeActivePage) ? ' active' : '' %>">Explore Courses</a>
+      <a href="/teach" class="top-nav-link<%= safeActivePage === 'teach' ? ' active' : '' %>"><%= teachNavLabel %></a>
+      <% if (safeUser) { %>
+        <a href="/simple-lms" class="top-nav-link<%= safeActivePage === 'simple-lms' && safeActiveLmsView !== 'settings' ? ' active' : '' %>">Learning Workspace</a>
+        <% if (canAccessAdmin) { %>
+          <a href="/admin" class="top-nav-link<%= safeActivePage === 'admin' ? ' active' : '' %>">Admin</a>
+        <% } %>
+        <% if (canAccessPartnerDashboard) { %>
+          <a href="/partner-dashboard" class="top-nav-link<%= safeActivePage === 'partner-dashboard' ? ' active' : '' %>">Partner Dashboard</a>
+        <% } %>
+        <% if (canAccessAgentDashboard) { %>
+          <a href="/agent-dashboard" class="top-nav-link<%= safeActivePage === 'agent-dashboard' ? ' active' : '' %>">Agent Dashboard</a>
+        <% } %>
+        <% if (canSwitchWorkspace) { %>
+          <a href="/choose-workspace" class="top-nav-link<%= safeActivePage === 'choose-workspace' ? ' active' : '' %>">Switch Workspace</a>
+        <% } %>
+      <% } %>
+      </div>
+    </div>
+
+    <div class="top-nav-actions">
+      <% if (safeUser) { %>
+        <div class="top-nav-utility">
+          <a href="/simple-lms/cart" class="top-nav-icon-link<%= safeActiveLmsView === 'cart' ? ' active' : '' %>" aria-label="Shopping cart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"></circle>
+              <circle cx="20" cy="21" r="1"></circle>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+            </svg>
+            <% if (typeof simpleLmsCartCount === 'number' && simpleLmsCartCount > 0) { %>
+              <span class="top-nav-badge"><%= simpleLmsCartCount %></span>
+            <% } %>
+          </a>
+          <a href="/simple-lms?view=settings" class="top-nav-icon-link<%= safeActiveLmsView === 'settings' ? ' active' : '' %>" aria-label="Open settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </a>
+        </div>
+
+        <span class="top-nav-divider" aria-hidden="true"></span>
+
+        <div class="top-nav-profile">
+          <span class="top-nav-avatar" aria-hidden="true"><%= safeUserInitials %></span>
+          <div class="top-nav-user-info">
+            <div class="top-nav-user-name"><%= safeUserDisplayName %></div>
+            <div class="top-nav-user-meta"><%= desktopRoleLabel %></div>
+          </div>
+        </div>
+        <a href="/logout" class="top-nav-signout-link">Sign out</a>
+      <% } else { %>
+        <div class="top-nav-user top-nav-user-guest" style="gap: 16px;">
+          <a href="/login" class="top-nav-signin" style="font-weight: 500; font-size: 14px; text-decoration: none;">Sign in</a>
+          <a href="/register" class="btn btn-primary btn-sm" style="background-color: #0ea5e9; border-color: #0ea5e9; border-radius: 999px; padding: 8px 16px; font-weight: 600;">Create account</a>
+        </div>
+      <% } %>
+    </div>
+
+    <label for="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Toggle navigation">
+      <span></span>
+      <span></span>
+      <span></span>
+    </label>
+  </div>
+</nav>

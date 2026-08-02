@@ -136,12 +136,7 @@
 
 /* Dashboard specific dark mode improvements */
 .dark .dashboard-container {
-	background-color: transparent; /* Use parent background from AppShell */
-}
-
-/* Dashboard uses parent dark background - no override needed */
-.dashboard-container {
-	background-color: transparent;
+	background-color: rgb(15,23,42); /* slate-900 */
 }
 
 /* Mobile optimization for dashboard - targeting screens below 768px */
