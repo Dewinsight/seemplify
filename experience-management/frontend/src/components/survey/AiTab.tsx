@@ -132,7 +132,7 @@ function ResearchAnswerDetails({ payload }: { payload: ResearchAnswerPayload }) 
 
 function InsightDetails({ insight }: { insight: Insight }) {
   if (insight.kind === 'research_answer') return <ResearchAnswerDetails payload={(insight.payload || {}) as ResearchAnswerPayload} />;
-  return <RawDataDetails payload={insight.payload} />;
+  return <pre className="max-h-80 overflow-auto whitespace-pre-wrap border bg-muted/30 p-3 text-xs leading-5">{JSON.stringify(insight.payload, null, 2)}</pre>;
 }
 
 export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKey }: { survey: Survey; hasUnsavedChanges: boolean; onApplyImprovement: (values: any) => void; refreshKey: number }) {
