@@ -164,7 +164,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
 
   await page.getByRole('tab', { name: 'Reply' }).click();
   await page.getByRole('button', { name: 'Draft reply' }).click();
-  await expect(page.getByText('Review required')).toBeVisible();
+  await expect(page.getByTestId('assistant-run-detail').getByText('Review required', { exact: true })).toBeVisible();
   const draft = page.getByLabel('Reply', { exact: true });
   if (process.env.CAPTURE_VISUALS) {
     await draft.scrollIntoViewIfNeeded();

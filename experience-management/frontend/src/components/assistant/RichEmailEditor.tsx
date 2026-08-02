@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import CharacterCount from '@tiptap/extension-character-count';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -51,6 +51,8 @@ export function RichEmailEditor({ id, value, onChange, disabled = false, maxLeng
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const latestValue = useRef(value);
+  latestValue.current = value;
   const editor = useEditor({
     immediatelyRender: false,
     editable: !disabled,
@@ -69,6 +71,9 @@ export function RichEmailEditor({ id, value, onChange, disabled = false, maxLeng
         'aria-multiline': 'true',
         class: 'tiptap min-h-52 px-4 py-3 text-sm leading-6 outline-none'
       }
+    },
+    onCreate: ({ editor: current }) => {
+      current.commands.setContent(emailBodyToHtml(latestValue.current), { emitUpdate: false });
     },
     onUpdate: ({ editor: current }) => onChange(current.getHTML())
   });

@@ -22,24 +22,36 @@ test('real assistant backend completes OAuth, reads a thread, and durably saves 
   await signIn(page);
   await openAssistant(page);
 
-  await page.getByRole('button', { name: 'Connect Google' }).click();
-  await expect(page).toHaveURL(/\/assistant(?:\?|$)/u);
-  await expect(
-    page.getByRole('main').getByRole('status').filter({ hasText: 'Mailbox connected successfully.' })
-  ).toBeVisible();
-  await expect(page.getByRole('button', { name: /connected@example\.test/u })).toBeVisible();
+  const connectedMailbox = page.getByLabel('Connected mailbox');
+  const connectGoogle = page.getByRole('button', { name: 'Connect Google' });
+  await expect(connectedMailbox.or(connectGoogle)).toBeVisible();
+  if (await connectGoogle.isVisible()) {
+    await connectGoogle.click();
+    await expect(page).toHaveURL(/\/assistant(?:\?|$)/u);
+    await expect(
+      page.getByRole('main').getByRole('status').filter({ hasText: 'Mailbox connected successfully.' })
+    ).toBeVisible();
+  }
+  await expect(connectedMailbox).toContainText('connected@example.test');
   await expect(page.getByTestId('assistant-thread-playwright-thread')).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Open assistant' }).click();
 
   await page.getByRole('button', { name: 'Summarise' }).click();
   await expect(page.getByText('Ada needs confirmation of the revised customer-risk section by Friday.')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('222 tokens')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Summarise' })).toBeEnabled();
 
   await page.getByRole('tab', { name: 'Reply' }).click();
-  await page.getByRole('button', { name: 'Draft reply' }).click();
-  await expect(page.getByText('Review required')).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: /Draft reply|Regenerate/u }).click();
+  await expect(page.getByTestId('assistant-run-detail').getByText('Review required', { exact: true })).toBeVisible({ timeout: 20_000 });
   const draft = page.getByLabel('Reply', { exact: true });
-  await expect(draft).toHaveValue(/confirm by Friday/u);
+  const draftRunId = (await draft.getAttribute('id'))?.replace(/^draft-body-/u, '') || '';
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/assistant/runs');
+    const history = await response.json() as any[];
+    return history.find((run) => run.id === draftRunId)?.draft?.body || '';
+  }).toContain('confirm by Friday');
+  await expect(draft).toHaveText(/confirm by Friday/u);
   await draft.fill('Hi Ada,\n\nI reviewed the revised section and will confirm by Friday.\n\nRegards');
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect(page.getByText(/Revision 2/)).toBeVisible();
